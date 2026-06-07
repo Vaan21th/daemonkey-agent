@@ -1,0 +1,9 @@
+{
+  "_comment": "项目别名表 · 你提到的名字 -> 实际 workspace 绝对路径。新增/改名直接编辑这个文件。",
+  "_format": "alias (lower-case match) -> absolute workspace path",
+
+  "projects": {
+  },
+
+  "_help": "给每个常用项目至少配 1 个别名 -> 它的 workspace 绝对路径，例如 \"我的项目\": \"D:\\\\code\\\\my-project\""
+}

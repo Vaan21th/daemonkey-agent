@@ -1,0 +1,107 @@
+{
+  "walk": {
+    "action": "walk",
+    "frame_count": 8,
+    "files": [
+      "walk_01.png",
+      "walk_02.png",
+      "walk_03.png",
+      "walk_04.png",
+      "walk_05.png",
+      "walk_06.png",
+      "walk_07.png",
+      "walk_08.png"
+    ],
+    "canvas_side": 687,
+    "alignment": "ground"
+  },
+  "idle": {
+    "action": "idle",
+    "frame_count": 4,
+    "files": [
+      "idle_01.png",
+      "idle_02.png",
+      "idle_03.png",
+      "idle_04.png"
+    ],
+    "canvas_side": 1030,
+    "alignment": "ground"
+  },
+  "sleep": {
+    "action": "sleep",
+    "frame_count": 4,
+    "files": [
+      "sleep_01.png",
+      "sleep_02.png",
+      "sleep_03.png",
+      "sleep_04.png"
+    ],
+    "canvas_side": 1342,
+    "alignment": "ground"
+  },
+  "meow": {
+    "action": "meow",
+    "frame_count": 4,
+    "files": [
+      "meow_01.png",
+      "meow_02.png",
+      "meow_03.png",
+      "meow_04.png"
+    ],
+    "canvas_side": 927,
+    "alignment": "ground"
+  },
+  "jump": {
+    "action": "jump",
+    "frame_count": 6,
+    "files": [
+      "jump_01.png",
+      "jump_02.png",
+      "jump_03.png",
+      "jump_04.png",
+      "jump_05.png",
+      "jump_06.png"
+    ],
+    "canvas_side": 536,
+    "alignment": "preserve-y"
+  },
+  "paw": {
+    "action": "paw",
+    "frame_count": 4,
+    "files": [
+      "paw_01.png",
+      "paw_02.png",
+      "paw_03.png",
+      "paw_04.png"
+    ],
+    "canvas_side": 699,
+    "alignment": "ground"
+  },
+  "curious": {
+    "action": "curious",
+    "frame_count": 5,
+    "files": [
+      "curious_01.png",
+      "curious_02.png",
+      "curious_03.png",
+      "curious_04.png",
+      "curious_05.png"
+    ],
+    "canvas_side": 915,
+    "alignment": "ground"
+  },
+  "run": {
+    "action": "run",
+    "frame_count": 6,
+    "files": [
+      "run_01.png",
+      "run_02.png",
+      "run_03.png",
+      "run_04.png",
+      "run_05.png",
+      "run_06.png"
+    ],
+    "canvas_side": 1114,
+    "alignment": "ground"
+  }
+}

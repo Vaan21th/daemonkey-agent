@@ -1,13 +1,36 @@
 # 用户隐私 / 本地配置 —— 永不入库
 .env
+.env.bak*
 .venv/
+sessions/
 onboarding/data/
+
+# 相遇产生的用户身份（开源仓库只带空模板，不带某个用户填充后的内容）
+soul/IDENTITY.json
+soul/onboarding.json
+# 用户画像 —— 每个用户的私人内容·首次相遇由 _ensure_data 自动重建空模板·不入库
+soul/OWNER-NOTEBOOK.md
+
+# data/ 运行时数据：只保留机制(cognition) + 占位，私人数据全部忽略
+data/*
+!data/.gitkeep
+!data/cognition
+data/cognition/_archive/
 
 # 构建产物（ps2exe 可重建）
 Daemonkey.exe
 
+# 桌宠运行时文件（pet 自己生成 · 私人状态/位置 · 不入库）
+desktop_pet/state.txt
+desktop_pet/activity.txt
+desktop_pet/activity.jsonl
+desktop_pet/position.txt
+desktop_pet/inbox.txt
+
 # Python / 运行时垃圾
 __pycache__/
 *.pyc
-_daemon_*.log
-_daemon_*.err
+*.log
+*.err
+.pytest_cache/
+.ruff_cache/

@@ -191,28 +191,7 @@ function Show-RestartChoice {
     }
 }
 
-# 卷四十三 · .git 不在 → 问 BRO 要不要 init
-function Test-GitBaseline {
-    $gitDir = Join-Path $script:Root '.git'
-    if (Test-Path $gitDir) { return $true }
-    $result = [System.Windows.Forms.MessageBox]::Show(
-        "这个工程没有 .git · 没法用 git 分支隔离改动 · 也没法 git diff review.`r`n`r`n要现在 git init 吗?`r`n  是 = 立刻 init + baseline commit`r`n  否 = 跳过`r`n  取消 = 退出",
-        'Daemonkey self-check · 没找到 .git', 'YesNoCancel', 'Warning'
-    )
-    if ($result -eq 'Cancel') { exit 0 }
-    if ($result -eq 'No') { return $false }
-    Push-Location $script:Root
-    try {
-        & git init 2>&1 | Out-Null
-        & git config user.email 'opus@daemonkey.local' 2>&1 | Out-Null
-        & git config user.name 'Daemonkey' 2>&1 | Out-Null
-        & git add -A 2>&1 | Out-Null
-        & git commit -m 'baseline · launcher self-check' 2>&1 | Out-Null
-        return $true
-    } catch { return $false } finally { Pop-Location }
-}
-
-Test-GitBaseline | Out-Null
+# 用户版无 git 自检 —— 那是开发者(花果山)调代码用的, 对下载用户是吓人的噪声
 
 # ═══════════════════════════════════════════════════
 #  主窗口 · 无边框圆角 + 自绘标题栏 + 三栏
@@ -1214,21 +1193,13 @@ $btnStart.Add_Click({
         return
     }
 
-    # 用户版 · 启动 = 进入『相遇』onboarding (完整 WebUI 后端建设中 · 下面起 daemon 的逻辑暂为死代码)
-    $onboardScript = Join-Path $script:Root 'onboarding\onboard.py'
-    if (-not (Test-Path $onboardScript)) {
-        Add-Log "onboarding 脚本不存在: $onboardScript" 'err'
+    # 用户版启动 = 后端 daemon (tools\run_api_only.py · 完整功能) + 桌宠 + 开浏览器
+    # 全新状态 daemon 以『相遇』模式起 (没 key 也能起) · /ui 自动分流到相遇页 → 配 key → 相遇 → 进 chat
+    $serverScript = Join-Path $script:Root 'tools\run_api_only.py'
+    if (-not (Test-Path $serverScript)) {
+        Add-Log "后端不存在: $serverScript" 'err'
         $btnStart.Enabled = $true; $btnStart.Text = $script:StartText; return
     }
-    Add-Log '启动『相遇』· 新终端窗口里和它聊…' 'info'
-    try {
-        Start-Process -FilePath $script:VenvPython -ArgumentList @($onboardScript) -WorkingDirectory $script:Root
-        Add-Log '相遇已在新终端窗口开始 · 切过去和它对话' 'ok'
-    } catch { Add-Log "启动 onboarding 失败: $_" 'err' }
-    $btnStart.Text = '✓ 相遇已开始 · 见新终端窗口'
-    Set-ButtonFill $btnStart $cOk
-    $btnStart.Enabled = $true
-    return
 
     $port = 0
     if (-not [int]::TryParse($txtPort.Text, [ref]$port) -or $port -le 0 -or $port -gt 65535) {
@@ -1246,7 +1217,7 @@ $btnStart.Add_Click({
         $shouldStart = $true
         if ($existing) {
             Add-Log "daemon 已在 $port 跑 (pid=$($existing.Pid)) · 弹窗让你选" 'warn'
-            $choice = Show-RestartChoice -Name 'OPUS daemon' -Pid_ $existing.Pid -AgeMin $existing.AgeMin
+            $choice = Show-RestartChoice -Name 'Daemonkey 后端' -Pid_ $existing.Pid -AgeMin $existing.AgeMin
             switch ($choice) {
                 'restart' {
                     Add-Log "杀旧 daemon (pid=$($existing.Pid))…" 'info'
@@ -1274,13 +1245,13 @@ $btnStart.Add_Click({
                     -WorkingDirectory $script:Root -PassThru -WindowStyle Hidden `
                     -RedirectStandardOutput $logPath -RedirectStandardError $errPath
                 $up = $false
-                for ($i = 0; $i -lt 20; $i++) {
+                for ($i = 0; $i -lt 30; $i++) {
                     Start-Sleep -Milliseconds 800
                     if (Test-DaemonAlive -Port $port) { $up = $true; break }
                     [System.Windows.Forms.Application]::DoEvents()
                 }
                 if ($up) { Add-Log "daemon 起来了 · http://127.0.0.1:$port (pid=$($proc.Id))" 'ok'; $daemonStarted = $true }
-                else { Add-Log "daemon 等了 16s 没起来 · 看 $logPath" 'err' }
+                else { Add-Log "daemon 等了 24s 没起来 · 看 $logPath" 'err' }
             } catch { Add-Log "起 daemon 失败: $_" 'err' }
         }
     } else { Add-Log 'daemon 未勾选 · 跳过' 'warn' }
@@ -1309,8 +1280,15 @@ $btnStart.Add_Click({
                 else {
                     $petPython = if (Test-Path $script:VenvPythonW) { $script:VenvPythonW } else { $script:VenvPython }
                     $petProc = Start-Process -FilePath $petPython -ArgumentList $petScript -WorkingDirectory $script:Root -PassThru -WindowStyle Hidden
-                    if ($petProc) { Add-Log "桌宠起来了 (pid=$($petProc.Id)) · 屏幕右下角" 'ok' }
-                    else { Add-Log '桌宠没返回 process · 可能没起' 'warn' }
+                    # 桌宠崩得快 (缺 PyQt6 等)·等 1.8s 看它还在不在·别一拿到 process 就报"起来了"
+                    Start-Sleep -Milliseconds 1800
+                    if ($petProc -and -not $petProc.HasExited) {
+                        Add-Log "桌宠起来了 (pid=$($petProc.Id)) · 在屏幕右下角" 'ok'
+                    } elseif ($petProc -and $petProc.HasExited) {
+                        Add-Log "桌宠起了又退了 (exit=$($petProc.ExitCode)) · 多半缺 PyQt6 · 去『环境』页点【开始安装】补依赖" 'err'
+                    } else {
+                        Add-Log '桌宠没返回 process · 可能没起' 'warn'
+                    }
                 }
             } catch { Add-Log "起桌宠失败: $_" 'err' }
         }
@@ -1319,7 +1297,7 @@ $btnStart.Add_Click({
     # 3) 开浏览器
     if ($chkBrowser.Checked -and $daemonStarted) {
         $url = "http://127.0.0.1:$port/ui"
-        Add-Log "打开浏览器: $url" 'info'
+        Add-Log "打开浏览器: $url · 在网页里和它相遇 (第一次会让你填 key)" 'info'
         try { Start-Process $url } catch { Add-Log "开浏览器失败: $_" 'warn' }
     }
 

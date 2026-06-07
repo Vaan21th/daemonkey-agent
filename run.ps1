@@ -104,16 +104,24 @@ Write-Step 'checking dependencies...'
 $reqPath = Join-Path $PSScriptRoot 'requirements.txt'
 $needsInstall = $false
 try {
-    & $venvPython -c "import openai" 2>&1 | Out-Null
+    & $venvPython -c "import openai, fastapi, uvicorn, PyQt6" 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { $needsInstall = $true }
 } catch { $needsInstall = $true }
 
 if ($needsInstall) {
-    Write-Step 'installing requirements (one-time, may take ~1 min)...'
-    & $venvPython -m pip install --quiet --upgrade pip
-    & $venvPython -m pip install --quiet -r $reqPath
+    Write-Step 'installing requirements (one-time, may take ~1-2 min)...'
+    # 国内装大包 (PyQt6 的 Qt6 运行库 ~78MB 等) 走清华镜像·秒级；国际源常卡到十几分钟。
+    # 镜像若不可用 (海外用户 / 镜像维护中) 自动回退默认 PyPI。
+    $mirror = 'https://pypi.tuna.tsinghua.edu.cn/simple'
+    & $venvPython -m pip install --quiet --upgrade pip -i $mirror
+    & $venvPython -m pip install --quiet -i $mirror -r $reqPath
     if ($LASTEXITCODE -ne 0) {
-        Write-Step 'pip install failed. In China try: -i https://pypi.tuna.tsinghua.edu.cn/simple' 'err'
+        Write-Step 'mirror install failed · retrying with default PyPI...' 'warn'
+        & $venvPython -m pip install --quiet --upgrade pip
+        & $venvPython -m pip install --quiet -r $reqPath
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Step 'pip install failed. Check network / proxy.' 'err'
         exit 1
     }
     Write-Step 'dependencies installed' 'ok'
@@ -121,20 +129,16 @@ if ($needsInstall) {
     Write-Step 'dependencies already installed' 'ok'
 }
 
-# 6) Ensure .env exists
+# 6) Ensure .env exists（不再弹记事本——key 在网页里填，对小白更友好）
 $envPath = Join-Path $PSScriptRoot '.env'
 if (-not (Test-Path $envPath)) {
-    Write-Step '.env not found - creating from template' 'warn'
     Copy-Item -Path (Join-Path $PSScriptRoot '.env.example') -Destination $envPath
-    Write-Step 'opened .env in notepad - fill in your LLM API key and save' 'warn'
-    notepad $envPath
-    Write-Host ''
-    Write-Step 'after saving .env, go back to the launcher and click 启动.' 'warn'
-    exit 0
+    Write-Step '.env created from template (key 启动后在网页里填)' 'ok'
+} else {
+    Write-Step '.env present' 'ok'
 }
-Write-Step '.env present' 'ok'
 
 # 7) Ready（用户版不检查 soul·不启 daemon——只把环境铺好）
 Write-Host ''
-Write-Step 'environment ready. 回启动器点【启动】开始相遇。' 'ok'
+Write-Step 'environment ready. 回启动器点【启动】· 浏览器里和它相遇并填 key。' 'ok'
 exit 0

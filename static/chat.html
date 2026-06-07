@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#16131f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Daemonkey · 工作室</title>
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico">
+<!-- 卷五十五 · 2026-06-03 · P1 前端错误边界 (boot-guard)。
+     必须内联在 <head> · 先于所有 body 脚本执行 —— 否则 chat.js 自身 parse 失败时白屏,
+     它内部的 window.onerror 根本注册不上。 捕获两类灾难: ① 任何脚本 parse/运行抛错
+     ② chat.js 没能把 __OPUS_APP_READY 置 true (= 没初始化成功) → 弹纯原生 DOM 兑底层
+     (不依赖任何已崩的 CSS/JS),给重载 / 重启 daemon / (无 Cursor 用户)维修指引,
+     而不是甩给用户一片白屏。 -->
+<script>
+(function () {
+  var shown = false, lastErr = '';
+  function detail(e) {
+    try {
+      if (e && e.error && e.error.stack) return String(e.error.stack).slice(0, 600);
+      if (e && e.message) return String(e.message) + (e.filename ? (' @ ' + e.filename + ':' + e.lineno) : '');
+      if (e && e.reason) return String((e.reason && e.reason.stack) || e.reason).slice(0, 600);
+    } catch (_) {}
+    return '';
+  }
+  function esc(s) { return String(s).replace(/[<>&]/g, function (c) { return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]; }); }
+  function restart() {
+    var t = '';
+    try { t = localStorage.getItem('opus_ui_token') || ''; } catch (_) {}
+    var btn = document.getElementById('__opusFatalRestart');
+    if (!t) { if (btn) btn.textContent = '没存 token · 请去 start.bat 启动器重启'; return; }
+    if (btn) { btn.textContent = '重启中… ~8 秒后自动刷新'; btn.disabled = true; }
+    try {
+      fetch('/restart-daemon', { method: 'POST', headers: { 'Authorization': 'Bearer ' + t, 'Content-Type': 'application/json' }, body: '{}' }).catch(function () {});
+    } catch (_) {}
+    setTimeout(function () { location.reload(); }, 8000);
+  }
+  window.__opusShowFatal = function (title, det) {
+    if (shown) return; shown = true;
+    det = det || lastErr || '';
+    var html =
+      '<div style="position:fixed;inset:0;z-index:2147483647;background:#15161a;color:#e8e8ea;'
+      + 'font-family:system-ui,-apple-system,Segoe UI,sans-serif;display:flex;align-items:center;'
+      + 'justify-content:center;padding:24px;box-sizing:border-box">'
+      + '<div style="max-width:560px;width:100%;background:#1e2026;border:1px solid #34373f;'
+      + 'border-radius:14px;padding:28px 26px;box-shadow:0 12px 40px rgba(0,0,0,.5)">'
+      + '<div style="font-size:1.25rem;font-weight:700;margin-bottom:6px">\u26a0 ' + esc(title || '界面出错了') + '</div>'
+      + '<div style="opacity:.7;font-size:.9rem;line-height:1.6;margin-bottom:16px">'
+      + '界面脚本没能正常加载或运行。 你的对话和数据都还在 · 这只是前端崩了。 先试「重载页面」 · 不行就「重启 daemon」。</div>'
+      + (det ? ('<pre style="white-space:pre-wrap;word-break:break-word;background:#101116;border:1px solid #2a2c33;'
+        + 'border-radius:8px;padding:10px 12px;font-size:.72rem;color:#ff9b9b;max-height:160px;overflow:auto;margin:0 0 16px">'
+        + esc(det) + '</pre>') : '')
+      + '<div style="display:flex;gap:10px;flex-wrap:wrap">'
+      + '<button onclick="location.reload()" style="flex:1;min-width:120px;padding:11px;border:0;border-radius:9px;'
+      + 'background:#5b8cff;color:#fff;font-size:.95rem;font-weight:600;cursor:pointer">重载页面</button>'
+      + '<button id="__opusFatalRestart" style="flex:1;min-width:120px;padding:11px;border:1px solid #4a4d57;'
+      + 'border-radius:9px;background:transparent;color:#e8e8ea;font-size:.95rem;cursor:pointer">重启 daemon</button>'
+      + '</div>'
+      + '<div style="opacity:.45;font-size:.72rem;margin-top:14px;line-height:1.5">反复白屏? 去 '
+      + '<code style="color:#9fb4ff">start.bat</code> 启动器重启 · 或跑维修台 '
+      + '<code style="color:#9fb4ff">python tools/repair_console.py</code> (无 Cursor 也能自救)。</div>'
+      + '</div></div>';
+    try {
+      var host = document.createElement('div');
+      host.id = '__opusFatalHost'; host.innerHTML = html;
+      (document.body || document.documentElement).appendChild(host);
+      var rb = document.getElementById('__opusFatalRestart');
+      if (rb) rb.addEventListener('click', restart);
+    } catch (_) {
+      try { document.documentElement.innerHTML = '<body style="background:#15161a;color:#eee;font-family:sans-serif;padding:40px">界面崩了。 按 F5 重载 · 或去 start.bat 重启 daemon。</body>'; } catch (__) {}
+    }
+  };
+  window.addEventListener('error', function (e) {
+    if (window.__OPUS_APP_READY) return;          // 初始化成功后的零星错误不弹兑底
+    if (!e.message && !e.error) return;           // 跳过纯资源加载失败 (img/css 404)
+    lastErr = detail(e) || lastErr;
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    if (window.__OPUS_APP_READY) return;
+    lastErr = detail(e) || lastErr;
+  });
+  function check() { if (!window.__OPUS_APP_READY) window.__opusShowFatal('界面没能加载起来', lastErr); }
+  window.addEventListener('load', function () { setTimeout(check, 1800); });
+  setTimeout(check, 12000);   // 绝对兜底 · 防 load 因脚本卡住迟迟不触发
+})();
+</script>
+<link rel="stylesheet" href="/static/chat.css">
+<link rel="stylesheet" href="/static/lib/litegraph.core.css">
+<link rel="stylesheet" href="/static/workshop.css">
+<link rel="stylesheet" href="/static/lib/remixicon/remixicon.css">
+</head>
+<body>
+
+<header>
+  <span class="header-logo"><i class="ri-diamond-fill"></i> <span style="color:var(--opus)">Daemonkey</span> · 工作室</span>
+    <span class="pulse-indicator" id="pulseIndicator" title="脉搏 · 点击看最近活动" onclick="togglePulsePanel()">
+    <span class="pulse-dot" id="pulseDot">●</span>
+  </span>
+  <div class="pulse-panel" id="pulsePanel" style="display:none">
+    <div class="pulse-panel-head"><i class="ri-heart-pulse-fill"></i> 脉搏 <span style="font-size:0.7rem;opacity:0.6">最近活动</span></div>
+    <div class="pulse-panel-list" id="pulseList"></div>
+  </div>
+  <div class="header-spacer"></div>
+  <button class="restart-btn" id="restartBtn" onclick="restartDaemon()" title="重启 daemon 进程 · 装载新代码后用"><i class="ri-restart-line"></i></button>
+  <button class="restart-btn rollback-btn" id="rollbackBtn" onclick="rollbackDaemon()" title="回档 · 代码改崩了 · 一键回到上一个良好 commit"><i class="ri-rewind-fill"></i></button>
+  <button class="restart-btn shutdown-btn" id="shutdownBtn" onclick="shutdownDaemon()" title="关闭 daemon · 不起新进程 · 之后去 GUI 启动器手动起"><i class="ri-shut-down-fill"></i></button>
+  <div class="model-switch" id="modelSwitch">
+    <button class="model-btn" onclick="toggleModelMenu()" title="切换模型">
+      <span class="model-dot">●</span>
+      <span class="model-name" id="modelNameLabel">未连接</span>
+      <span class="caret">▾</span>
+    </button>
+    <div class="model-menu" id="modelMenu">
+      <div class="model-menu-head">切换模型</div>
+      <div id="modelMenuList">
+        <div class="model-menu-empty">加载中…</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <h2><span style="color:var(--opus)">Daemonkey</span> · 会话</h2>
+    <button class="drawer-new" onclick="newConversation()">+ 新对话</button>
+  </div>
+  <div class="drawer-list" id="sessionList">
+    <div class="drawer-empty">还没有对话</div>
+  </div>
+</div>
+
+<div class="main-layout">
+
+  <aside class="nav-rail" id="navRail">
+    <div class="nav-groups" id="navGroups"></div>
+    <div class="nav-bottom">
+      <button class="nav-collapse-btn" onclick="toggleNavCollapse()" title="收起左导航 (Alt+B)">
+        <span class="icon">«</span>
+        <span class="label">收起左导航</span>
+      </button>
+      <button class="nav-settings-btn" onclick="openSettings()" title="设置">
+        <span class="icon">⚙</span>
+        <span class="label">设置</span>
+      </button>
+    </div>
+  </aside>
+
+  <div class="col-resizer" id="resizerLeft" data-side="left" title="拖动调节左导航宽度"></div>
+
+  <main class="detail-pane" id="detailPane">
+  </main>
+
+  <div class="col-resizer" id="resizerRight" data-side="right" title="拖动调节对话栏宽度"></div>
+
+  <section class="chat-pane">
+    <div class="chat-pane-head">
+      <button class="chat-history-btn" onclick="openDrawer()" title="历史会话">☰</button>
+      <span class="chat-session-name" id="currentSessionLabel">新对话</span>
+      <button class="chat-pane-new" onclick="newConversation()" title="新建会话">+</button>
+    </div>
+    <div id="chatTabBar" class="chat-tab-bar" hidden></div>
+    <div id="messages"></div>
+    <div id="toolProgress" class="tool-progress" hidden>
+      <div class="tool-progress-bar">
+        <span class="tool-progress-icon">⚙</span>
+        <span class="tool-progress-text">准备工具中…</span>
+        <button class="tool-progress-detail" type="button" onclick="toggleToolDetail()" title="展开 / 收起最近工具调用">详情 ▾</button>
+      </div>
+      <div id="toolProgressDetail" class="tool-progress-detail-list" hidden></div>
+    </div>
+    <div class="input-bar">
+      <div id="attachmentPreviews" class="attachment-previews" hidden></div>
+      <div class="input-row">
+        <button id="attachBtn" type="button" title="添加图片或文件 (支持拖拽 / Ctrl+V 粘贴)"><i class="ri-attachment-2"></i></button>
+        <button id="micBtn" type="button" title="语音输入 · 点一下开始说"><i class="ri-mic-line"></i></button>
+        <textarea id="input" rows="1"
+                  placeholder="说点什么…  (Shift+回车换行)"
+                  autocomplete="off" autocapitalize="off"></textarea>
+        <button id="send" type="button" title="Enter 发送 · Shift+Enter 换行">发送</button>
+      </div>
+      <input type="file" id="attachFile" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,.pdf,.txt,.md,.docx,.pptx,.json,.csv" multiple hidden>
+    </div>
+  </section>
+
+</div>
+
+<div class="modal" id="settings">
+  <div class="modal-body">
+    <h2>设置 · 第一次需要填 token</h2>
+    <div class="field">
+      <label>API Token (Bearer)</label>
+      <input id="tokenInput" type="password" placeholder="OPUS_API_TOKEN 的值">
+      <div class="field-hint">来自电脑 .env 文件里 OPUS_API_TOKEN。填一次浏览器记住。</div>
+    </div>
+    <div class="field">
+      <label>Session ID</label>
+      <input id="sessionInput" type="text" placeholder="留空 = 开新对话 · 或贴已有 api- 开头的">
+      <div class="field-hint">每条新会话自动写一个；想换会话就清空。</div>
+    </div>
+    <div class="field">
+      <label>Auto-confirm 策略</label>
+      <select id="autoConfirm">
+        <option value="auto">auto · 只跑 AUTO 工具（最保守）</option>
+        <option value="confirm" selected>confirm · AUTO + CONFIRM 都跑（推荐）</option>
+        <option value="guard">guard · 三档全开（远程 yolo，慎用）</option>
+      </select>
+      <div class="field-hint">远程没法按 y/n，所以这里预设策略。GUARD 工具默认还是会被拒。</div>
+    </div>
+
+    <div class="field llm-config-block">
+      <label>🧠 LLM 配置 · 多个 Provider 管理</label>
+      <div class="field-hint">完整的 Provider / Model / API Key 管理在中栏设置里 · 支持多配置 + 勾选右上角显示</div>
+      <div class="actions" style="margin-top:8px">
+        <button class="btn-ghost" type="button" onclick="closeSettings(); setTimeout(openSettingsView, 200)">→ 进 LLM 设置中栏</button>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn-ghost" id="settingsCancel">取消</button>
+      <button class="btn-primary" id="settingsSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="confirm" style="z-index:1001">
+  <div class="modal-body">
+    <h2 id="confirm-title">确认操作</h2>
+    <p id="confirm-msg">…</p>
+    <div class="actions">
+      <button class="btn-ghost" id="confirmCancel">取消</button>
+      <button class="btn-primary" id="confirmOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- 卷五十四 · 统一 H5 modal (opusConfirm/opusPrompt/opusAlert 的载体)。
+     病根: 旧版这里是简版 id="omModal"+omBody·但 chat.js 找的是 id="opusModal"+omIcon/omMessage/omInputWrap/omInput
+     → _omEl/_omIcon 全 null → opusPrompt 一调就在 _omRender 抛错 → restart/rollback/shutdown 三键 + 所有
+     用统一对话框的地方全哑 (HEAD 卷五十一起就埋着·BRO 今天点重启键才暴露)。 补齐结构对上 chat.js。 -->
+<div class="modal" id="opusModal" aria-hidden="true" style="z-index:1002">
+  <div class="modal-body opus-modal-body">
+    <div class="om-icon" id="omIcon"></div>
+    <h2 id="omTitle">消息</h2>
+    <div class="om-message" id="omMessage"></div>
+    <div class="om-input-wrap" id="omInputWrap" hidden>
+      <input type="text" id="omInput" autocomplete="off">
+    </div>
+    <div class="actions om-actions">
+      <button class="btn-ghost" id="omCancel">取消</button>
+      <button class="btn-primary" id="omOk">确定</button>
+    </div>
+  </div>
+</div>
+
+<div id="chatToastHost" class="chat-toast-host"></div>
+
+<!-- BI 看板图表 · Chart.js (卷五十六 · 2026-06-03 · 本地化 + defer)
+     原来从 cdn.jsdelivr.net 同步加载 —— 国内常慢/超时·实测拉一次 17s+·这个阻塞 <script>
+     排在 chat.js 前面 → 主界面被它干等几十秒才出内容 (= BRO 报的"每次启动慢/白屏·硬刷新也慢")。
+     Chart 只在 BI 看板用·主界面加载不需要 → 改本地 + defer·主界面 0 等待·BI 照常。 -->
+<script defer src="/static/lib/chart.umd.min.js"></script>
+<script src="/static/lib/litegraph.core.js"></script>
+<script src="/static/workshop.js"></script>
+<script src="/static/chat.js"></script>
+
+</body>
+</html>

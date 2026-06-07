@@ -1,0 +1,31 @@
+{
+  "servers": {
+    "filesystem": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "F:/Desktop/OPUS-DAEMON"],
+      "description": "Read/write files in OPUS-DAEMON project (sandboxed to project root)"
+    },
+    "github": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "ghp_xxx"
+      },
+      "description": "Github repos / issues / PRs / search"
+    },
+    "playwright": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"],
+      "description": "Full browser automation (alternative to our browser_fetch when CDP unavailable)"
+    },
+    "openclaw_remote_example": {
+      "transport": "sse",
+      "url": "http://localhost:3001/mcp",
+      "description": "Example: an OpenClaw-hosted MCP server reachable over SSE"
+    }
+  },
+  "_README": "Copy this to servers.json and edit. Each server is lazy—not connected until first call. mcp_list shows what's configured; mcp_call_tool actually invokes."
+}

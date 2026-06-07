@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1b1726">
+<title>Daemonkey</title>
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico">
+<link rel="stylesheet" href="/static/lib/remixicon/remixicon.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <img id="brandIco" src="/static/favicon.ico" alt="">
+    <div class="brand-text">
+      <div class="brand-name">Daemonkey</div>
+      <div class="brand-slogan">一个记住你所想，与你一起成长，有七十二变的 AI 搭档</div>
+    </div>
+    <button id="resetBtn" class="ghost-btn" title="重新相遇（清空对话与记忆）"><i class="ri-refresh-line"></i></button>
+  </header>
+
+  <!-- 配置 key 卡片 -->
+  <section id="keyCard" class="card hidden">
+    <h2><i class="ri-key-2-line"></i> 先给你的 Daemonkey 一把钥匙
+      <button id="keyHelpBtn" class="help-btn" type="button" title="怎么获取 key？怎么填？"><i class="ri-question-line"></i></button>
+    </h2>
+    <p class="muted">它跑在你自己的 LLM key 上（你的钥匙只存在本机 <code>.env</code>，不上传任何地方）。</p>
+
+    <div id="keyHelp" class="key-help hidden">
+      <strong>没有 key？以 DeepSeek 为例（3 步搞定）：</strong>
+      <ol>
+        <li>浏览器打开 <code>platform.deepseek.com</code>，注册并登录。</li>
+        <li>左侧「API keys」→「创建 API key」→ 复制 <code>sk-</code> 开头那一长串（只显示一次，记得存好）。</li>
+        <li>回到这里：服务商选「DeepSeek 官方」，把 key 粘进下面的「API Key」框，点保存即可。</li>
+      </ol>
+      <p class="hint"><b>接口地址 base_url</b> 是服务商的 API 入口——选了预设会自动填好（DeepSeek 是 <code>https://api.deepseek.com</code>），一般不用动。换别的服务商（如 GLM 智谱）就选对应预设，或选「自定义」填它给你的地址。<b>模型 model</b> 已替你选好默认（DeepSeek 是 <code>deepseek-v4-pro</code>），一般不用动。</p>
+    </div>
+
+    <label class="field-label">服务商</label>
+    <select id="presetSel">
+      <option value="https://api.deepseek.com">DeepSeek 官方（api.deepseek.com）</option>
+      <option value="https://open.bigmodel.cn/api/paas/v4">GLM 智谱官方（bigmodel.cn）</option>
+      <option value="__custom__">自定义…</option>
+    </select>
+
+    <label class="field-label">接口地址 base_url</label>
+    <input id="baseUrlInp" type="text" value="https://api.deepseek.com" autocomplete="off" spellcheck="false">
+
+    <label class="field-label">API Key</label>
+    <div class="key-row">
+      <input id="apiKeyInp" type="password" placeholder="粘贴你的 key（sk-...）" autocomplete="off" spellcheck="false">
+      <button id="eyeBtn" class="ghost-btn" type="button" title="显示/隐藏"><i class="ri-eye-line"></i></button>
+    </div>
+
+    <label class="field-label">模型 model</label>
+    <input id="modelInp" type="text" value="deepseek-v4-pro" autocomplete="off" spellcheck="false">
+    <p class="hint">默认已给你选好——填了 DeepSeek 的 key 就直接用上目前最好的 <code>deepseek-v4-pro</code>。想换可改：GLM 常用 <code>glm-4.6</code>。</p>
+
+    <button id="saveKeyBtn" class="primary-btn"><i class="ri-check-line"></i> 保存并开始相遇</button>
+    <div id="keyMsg" class="key-msg"></div>
+  </section>
+
+  <!-- 对话 -->
+  <main id="chat"></main>
+
+  <!-- 输入区 -->
+  <footer id="composer" class="hidden">
+    <textarea id="input" rows="1" placeholder="说点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
+    <button id="sendBtn" class="primary-btn" title="发送"><i class="ri-send-plane-2-fill"></i></button>
+  </footer>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

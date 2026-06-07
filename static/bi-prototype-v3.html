@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BI 看板 · OPUS 工作室</title>
+<link href="lib/remixicon/remixicon.css" rel="stylesheet">
+<script src="lib/chart.umd.min.js"></script>
+<style>
+/* ── 变量 · 对齐 chat.css VI ── */
+:root {
+  --opus: #9F7AEA;
+  --opus-dim: #7B5DC4;
+  --bro: #48BB78;
+  --red: #F56565;
+  --orange: #F6AD55;
+  --blue: #63B3ED;
+  --teal: #4FD1C5;
+  --bg: #1a1a1a;
+  --bg2: #252525;
+  --bg3: #303030;
+  --border: #383838;
+  --text: #e8e8e8;
+  --dim: #888;
+  --dim2: #666;
+  --radius: 10px;
+  --radius-sm: 8px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding: 24px;
+  max-width: 960px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* ── 顶部标题栏 ── */
+.bi-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 20px;
+}
+.bi-head h2 { font-size: 20px; color: var(--text); }
+.bi-head h2 i { color: var(--opus); margin-right: 6px; }
+.bi-head .meta { font-size: 11px; color: var(--dim2); }
+
+/* ── KPI 数字条 ── */
+.kpi-bar {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.kpi-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  text-align: center;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.kpi-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+.kpi-icon { font-size: 22px; margin-bottom: 6px; }
+.kpi-value { font-size: 28px; font-weight: 700; color: var(--text); line-height: 1; }
+.kpi-label { font-size: 11px; color: var(--dim); margin-top: 4px; }
+.kpi-delta {
+  font-size: 11px; margin-top: 2px;
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+}
+.kpi-delta.up { color: var(--bro); }
+
+/* ── 双列布局 ── */
+.bi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+/* ── 通用 section ── */
+.bi-section {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.bi-section.full { grid-column: 1 / -1; }
+.sec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sec-head h3 { font-size: 14px; color: var(--text); }
+.sec-head .badge { font-size: 10px; background: var(--bg3); color: var(--dim); padding: 2px 8px; border-radius: 10px; }
+
+/* ── 图表容器 ── */
+.chart-wrap { position: relative; height: 160px; }
+.chart-wrap.tall { height: 200px; }
+.chart-wrap canvas { width: 100% !important; height: 100% !important; }
+
+/* ── 信号流卡 ── */
+.signal-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  border-left: 3px solid transparent;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.signal-item:hover { background: var(--bg3); border-color: var(--opus); }
+.signal-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.signal-dot.radar { background: var(--opus); }
+.signal-dot.trend { background: var(--teal); }
+.signal-dot.opp { background: var(--orange); }
+.signal-dot.report { background: var(--blue); }
+.signal-body { flex: 1; min-width: 0; }
+.signal-title { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.signal-meta { font-size: 10px; color: var(--dim2); margin-top: 1px; }
+
+/* ── 机会卡 · 紧凑版 ── */
+.opp-card {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--bg);
+  border-left: 3px solid var(--orange);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.opp-card:hover { transform: translateX(3px); }
+.opp-score {
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700;
+  flex-shrink: 0;
+}
+.opp-score.high { background: rgba(72,187,120,0.2); color: var(--bro); }
+.opp-score.med  { background: rgba(246,173,85,0.2); color: var(--orange); }
+.opp-score.low  { background: rgba(245,101,101,0.2); color: var(--red); }
+.opp-body { flex: 1; min-width: 0; }
+.opp-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.opp-summary { font-size: 11px; color: var(--dim); margin-top: 2px; line-height: 1.4; }
+.opp-tags { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.opp-tag { font-size: 10px; padding: 2px 7px; border-radius: 8px; background: var(--bg3); color: var(--dim); }
+
+/* ── 今日动态 · 时间线 ── */
+.timeline { display: flex; flex-direction: column; gap: 2px; }
+.tl-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 0;
+  font-size: 11px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.tl-time { font-size: 10px; color: var(--dim2); width: 44px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.tl-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.tl-text { flex: 1; min-width: 0; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tl-domain { font-size: 10px; color: var(--dim2); flex-shrink: 0; }
+
+/* ── 热力图网格 ── */
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.heatmap-cell {
+  aspect-ratio: 1;
+  border-radius: 3px;
+  background: var(--bg3);
+  cursor: pointer;
+  transition: transform 0.1s;
+  position: relative;
+}
+.heatmap-cell:hover { transform: scale(1.2); z-index: 1; }
+.heatmap-cell[data-total="0"] { background: var(--bg3); }
+.heatmap-cell[data-total="1"] { background: rgba(159,122,234,0.25); }
+.heatmap-cell[data-total="2"] { background: rgba(159,122,234,0.45); }
+.heatmap-cell[data-total="3"] { background: rgba(159,122,234,0.65); }
+.heatmap-cell[data-total="4"] { background: rgba(159,122,234,0.85); }
+.heatmap-cell[data-total] { background: var(--opus); }
+.heatmap-labels {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
+  font-size: 10px; color: var(--dim2); text-align: center; margin-bottom: 4px;
+}
+
+/* ── 维度产出环形图 · 图例 ── */
+.donut-legend { display: flex; flex-wrap: wrap; gap: 8px; }
+.donut-legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--dim); }
+.donut-legend-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+/* ── 加载 / 错误 ── */
+.loading { text-align: center; padding: 20px; color: var(--dim2); font-size: 12px; }
+.err-msg { color: var(--red); font-size: 11px; padding: 8px; }
+.skeleton { animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:0.8} }
+
+/* ── 响应式 ── */
+@media (max-width: 700px) {
+  body { padding: 12px; }
+  .kpi-bar { grid-template-columns: repeat(3, 1fr); }
+  .bi-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .kpi-bar { grid-template-columns: repeat(2, 1fr); }
+  .bi-head { flex-direction: column; gap: 4px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── 顶部 ── -->
+<div class="bi-head">
+  <h2><i class="ri-dashboard-fill"></i>BI 看板</h2>
+  <span class="meta" id="updateTime">加载中…</span>
+</div>
+
+<!-- ── KPI 数字条 ── -->
+<div class="kpi-bar" id="kpiBar">
+  <div class="kpi-card skeleton"><div class="kpi-value">…</div><div class="kpi-label">加载中</div></div>
+  <div class="kpi-card skeleton"><div class="kpi-value">…</div><div class="kpi-label">加载中</div></div>
+  <div class="kpi-card skeleton"><div class="kpi-value">…</div><div class="kpi-label">加载中</div></div>
+  <div class="kpi-card skeleton"><div class="kpi-value">…</div><div class="kpi-label">加载中</div></div>
+  <div class="kpi-card skeleton"><div class="kpi-value">…</div><div class="kpi-label">加载中</div></div>
+</div>
+
+<!-- ── 第一行：日历热力图 + 信号流 ── -->
+<div class="bi-grid">
+  <div class="bi-section">
+    <div class="sec-head"><h3><i class="ri-calendar-fill" style="color:var(--opus)"></i> 30 天活动热力</h3><span class="badge" id="calBadge">6月</span></div>
+    <div class="heatmap-labels"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+    <div class="heatmap-grid" id="heatmapGrid"></div>
+  </div>
+
+  <div class="bi-section">
+    <div class="sec-head"><h3><i class="ri-radar-fill" style="color:var(--opus)"></i> 信号流</h3><span class="badge" id="sigCount">…</span></div>
+    <div id="signalList"><div class="loading">加载中…</div></div>
+  </div>
+</div>
+
+<!-- ── 第二行：图表 × 2 ── -->
+<div class="bi-grid">
+  <div class="bi-section">
+    <div class="sec-head"><h3><i class="ri-bar-chart-fill" style="color:var(--teal)"></i> 30 天雷达密度</h3></div>
+    <div class="chart-wrap"><canvas id="chartRadarDensity"></canvas></div>
+  </div>
+  <div class="bi-section">
+    <div class="sec-head"><h3><i class="ri-pie-chart-fill" style="color:var(--orange)"></i> 维度产出分布</h3></div>
+    <div class="chart-wrap"><canvas id="chartDomainDonut"></canvas></div>
+    <div class="donut-legend" id="donutLegend"></div>
+  </div>
+</div>
+
+<!-- ── 第三行：掘金机会 + 最近动态 ── -->
+<div class="bi-grid">
+  <div class="bi-section">
+    <div class="sec-head"><h3><i class="ri-diamond-fill" style="color:var(--orange)"></i> 掘金机会</h3><span class="badge" id="oppCount">…</span></div>
+    <div id="oppList"><div class="loading">加载中…</div></div>
+  </div>
+  <div class="bi-section">
+    <div class="sec-head"><h3><i class="ri-history-fill" style="color:var(--dim)"></i> 最近动态</h3></div>
+    <div class="timeline" id="timeline"><div class="loading">加载中…</div></div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+//  API 层
+// ═══════════════════════════════════════════
+const API = '';
+
+async function af(path) {
+  const r = await fetch(API + path);
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+
+// ═══════════════════════════════════════════
+//  KPI 卡
+// ═══════════════════════════════════════════
+async function loadKPIs() {
+  const data = await af('/dashboard/cockpit?head=1');
+  const domains = data.domains || [];
+
+  // 选 5 个关键维度做 KPI 卡
+  const picks = [
+    { id: 'radar',    icon: 'ri-radar-fill',     color: 'var(--opus)',   label: '雷达信号' },
+    { id: 'trends',   icon: 'ri-line-chart-fill', color: 'var(--teal)',   label: '今日趋势' },
+    { id: 'reports',  icon: 'ri-article-fill',    color: 'var(--blue)',   label: '报告产出' },
+    { id: 'wishlist', icon: 'ri-lightbulb-fill',  color: 'var(--orange)', label: '心愿单' },
+    { id: 'plugins',  icon: 'ri-puzzle-fill',     color: 'var(--dim)',    label: '已装插件' },
+  ];
+
+  const map = {};
+  domains.forEach(d => { map[d.id] = d; });
+
+  let html = '';
+  picks.forEach(p => {
+    const d = map[p.id];
+    const total = d ? d.total : 0;
+    html += `<div class="kpi-card">
+      <div class="kpi-icon" style="color:${p.color}"><i class="${p.icon}"></i></div>
+      <div class="kpi-value">${total}</div>
+      <div class="kpi-label">${p.label}</div>
+    </div>`;
+  });
+  document.getElementById('kpiBar').innerHTML = html;
+  document.getElementById('updateTime').textContent =
+    '更新 ' + new Date(data.generated_at).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'});
+}
+
+// ═══════════════════════════════════════════
+//  日历热力图
+// ═══════════════════════════════════════════
+async function loadCalendar() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const data = await af(`/dashboard/calendar?domain_filter=${y}-${m}&head=42`);
+  const days = data.days || [];
+
+  // 前面补空到 month 第一天
+  const first = days[0];
+  const offset = first ? ((first.weekday + 6) % 7) : 0; // day=0 Sunday → offset: Mon=0 … Sun=6
+
+  let html = '';
+  for (let i = 0; i < offset; i++) html += '<div></div>';
+  days.forEach(d => {
+    const t = d.total || 0;
+    const attr = t >= 5 ? '' : `data-total="${t}"`;
+    const title = `${d.date} · ${d.radar}📡 ${d.trends}🌊 ${d.reports}📄 ${d.outcomes}✅`;
+    html += `<div class="heatmap-cell" ${attr} title="${title}"></div>`;
+  });
+
+  document.getElementById('heatmapGrid').innerHTML = html;
+  document.getElementById('calBadge').textContent = `${y}/${m}`;
+}
+
+// ═══════════════════════════════════════════
+//  信号流（混合雷达 + 趋势）
+// ═══════════════════════════════════════════
+async function loadSignals() {
+  const [radar, trends] = await Promise.all([
+    af('/dashboard/radar?head=6'),
+    af('/dashboard/trends?head=3')
+  ]);
+
+  const items = [];
+
+  (trends.trends || []).forEach(t => {
+    items.push({
+      kind: 'trend',
+      dotClass: 'trend',
+      icon: 'ri-line-chart-fill',
+      title: t.title || '(趋势)',
+      meta: (t.summary || '').slice(0, 60),
+      color: 'var(--teal)'
+    });
+  });
+
+  (radar.items || []).forEach(r => {
+    items.push({
+      kind: 'radar',
+      dotClass: 'radar',
+      icon: 'ri-radar-fill',
+      title: r.title || r.title_en || '(信号)',
+      meta: r.source || '',
+      color: 'var(--opus)'
+    });
+  });
+
+  document.getElementById('sigCount').textContent = items.length + ' 条';
+
+  if (!items.length) {
+    document.getElementById('signalList').innerHTML = '<div class="loading">暂无信号 · 跟 OPUS 说「巡一圈」</div>';
+    return;
+  }
+
+  let html = '';
+  items.slice(0, 8).forEach(it => {
+    html += `<div class="signal-item" title="${it.meta}">
+      <div class="signal-dot ${it.dotClass}"></div>
+      <div class="signal-body">
+        <div class="signal-title">${esc(it.title)}</div>
+        <div class="signal-meta">${esc(it.meta)}</div>
+      </div>
+    </div>`;
+  });
+  document.getElementById('signalList').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════
+//  图表：30 天雷达密度柱状图
+// ═══════════════════════════════════════════
+let chartRadar = null;
+async function loadRadarChart() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const data = await af(`/dashboard/calendar?domain_filter=${y}-${m}&head=42`);
+  const days = (data.days || []).filter(d => !d.out_of_month);
+
+  const labels = days.map(d => d.date.slice(-2));
+  const values = days.map(d => d.radar || 0);
+
+  // 7 日均线
+  const ma = [];
+  for (let i = 0; i < values.length; i++) {
+    const slice = values.slice(Math.max(0, i - 3), Math.min(values.length, i + 4));
+    ma.push(slice.reduce((a,b) => a + b, 0) / slice.length);
+  }
+
+  const ctx = document.getElementById('chartRadarDensity').getContext('2d');
+  if (chartRadar) chartRadar.destroy();
+  chartRadar = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '雷达信号',
+          data: values,
+          backgroundColor: 'rgba(159,122,234,0.5)',
+          borderColor: 'rgba(159,122,234,0)',
+          borderWidth: 0,
+          borderRadius: 3,
+        },
+        {
+          label: '7日均线',
+          data: ma,
+          type: 'line',
+          borderColor: '#4FD1C5',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0.3,
+          fill: false,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#666', font: { size: 9 }, maxTicksLimit: 15 }, grid: { display: false } },
+        y: { ticks: { color: '#666', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.04)' }, beginAtZero: true }
+      },
+      interaction: { intersect: false, mode: 'index' }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════
+//  图表：维度产出环形图
+// ═══════════════════════════════════════════
+let chartDonut = null;
+async function loadDonutChart() {
+  const data = await af('/dashboard/cockpit?head=1');
+  const domains = data.domains || [];
+
+  const map = {};
+  domains.forEach(d => { map[d.id] = d; });
+
+  // 选几个有产出计数的维度
+  const slices = [
+    { id: 'radar',   label: '雷达',   color: '#9F7AEA' },
+    { id: 'reports', label: '报告',   color: '#63B3ED' },
+    { id: 'content', label: '内容',   color: '#48BB78' },
+    { id: 'dev',     label: '开发',   color: '#F6AD55' },
+    { id: 'docs',    label: '文档',   color: '#4FD1C5' },
+  ];
+
+  const labels = [];
+  const values = [];
+  const bgColors = [];
+  const legendItems = [];
+
+  slices.forEach(s => {
+    const d = map[s.id];
+    const v = d ? d.total : 0;
+    labels.push(s.label);
+    values.push(v);
+    bgColors.push(s.color);
+    legendItems.push({ label: s.label, color: s.color, value: v });
+  });
+
+  // 图例
+  document.getElementById('donutLegend').innerHTML = legendItems
+    .map(it => `<div class="donut-legend-item"><div class="donut-legend-dot" style="background:${it.color}"></div>${it.label} ${it.value}</div>`)
+    .join('');
+
+  const ctx = document.getElementById('chartDomainDonut').getContext('2d');
+  if (chartDonut) chartDonut.destroy();
+  chartDonut = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: bgColors,
+        borderColor: 'var(--bg2)',
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '65%',
+      plugins: {
+        legend: { display: false },
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════
+//  掘金机会
+// ═══════════════════════════════════════════
+async function loadOpportunities() {
+  let opps = [];
+  try {
+    const data = await af('/dashboard/opportunities?head=4');
+    opps = data.opportunities || [];
+  } catch (e) {
+    // fallback: cockpit
+    try {
+      const c = await af('/dashboard/cockpit?head=4');
+      const dom = (c.domains || []).find(d => d.id === 'opportunities');
+      if (dom) opps = dom.items || [];
+    } catch (e2) {}
+  }
+
+  document.getElementById('oppCount').textContent = opps.length + ' 个';
+
+  if (!opps.length) {
+    document.getElementById('oppList').innerHTML = '<div class="loading">暂无掘金机会 · 跟 OPUS 说「巡一圈」</div>';
+    return;
+  }
+
+  let html = '';
+  opps.forEach(o => {
+    const score = o.score || o.recommendation_score || 50;
+    const cls = score >= 70 ? 'high' : score >= 40 ? 'med' : 'low';
+    const tags = o.tags || [];
+    html += `<div class="opp-card">
+      <div class="opp-score ${cls}">${score}</div>
+      <div class="opp-body">
+        <div class="opp-title">${esc(o.title || '(未命名)')}</div>
+        ${o.summary ? `<div class="opp-summary">${esc(o.summary).slice(0,80)}</div>` : ''}
+        ${tags.length ? `<div class="opp-tags">${tags.map(t => `<span class="opp-tag">${esc(t)}</span>`).join('')}</div>` : ''}
+      </div>
+    </div>`;
+  });
+  document.getElementById('oppList').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════
+//  最近动态（时间线）
+// ═══════════════════════════════════════════
+async function loadTimeline() {
+  let items = [];
+  try {
+    const digest = await af('/digest?hours=24');
+    // 从 digest 拼时间线
+    const dItems = digest.items || [];
+    dItems.forEach(d => {
+      const count = d.new_count || 0;
+      if (count > 0) {
+        items.push({
+          domain: d.domain,
+          label: d.label,
+          count: count,
+          time: '',
+        });
+      }
+    });
+  } catch (e) {}
+
+  // 补充 cockpit 各维度
+  try {
+    const c = await af('/dashboard/cockpit?head=1');
+    (c.domains || []).forEach(d => {
+      if (d.total > 0 && !items.find(i => i.domain === d.id)) {
+        items.push({ domain: d.id, label: d.label, count: d.total, time: d.last_updated || '' });
+      }
+    });
+  } catch (e2) {}
+
+  if (!items.length) {
+    document.getElementById('timeline').innerHTML = '<div class="loading">暂无动态</div>';
+    return;
+  }
+
+  const colors = {
+    radar: 'var(--opus)', trends: 'var(--teal)', reports: 'var(--blue)',
+    content: 'var(--bro)', dev: 'var(--orange)', docs: 'var(--teal)',
+    cognition: 'var(--opus)', opportunities: 'var(--orange)',
+    wishlist: 'var(--orange)', plugins: 'var(--dim)',
+  };
+
+  let html = '';
+  items.slice(0, 8).forEach(it => {
+    const t = it.time ? new Date(it.time).toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}) : '--:--';
+    html += `<div class="tl-item">
+      <span class="tl-time">${t}</span>
+      <div class="tl-dot" style="background:${colors[it.domain] || 'var(--dim)'}"></div>
+      <span class="tl-text">${it.label} <span style="color:var(--dim2)">+${it.count}</span></span>
+      <span class="tl-domain">${it.domain}</span>
+    </div>`;
+  });
+  document.getElementById('timeline').innerHTML = html;
+}
+
+// ═══════════════════════════════════════════
+//  辅助
+// ═══════════════════════════════════════════
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ═══════════════════════════════════════════
+//  主加载
+// ═══════════════════════════════════════════
+(async function main() {
+  try {
+    await Promise.all([
+      loadKPIs(),
+      loadCalendar(),
+      loadSignals(),
+      loadRadarChart(),
+      loadDonutChart(),
+      loadOpportunities(),
+      loadTimeline(),
+    ]);
+  } catch (e) {
+    console.error('BI load error:', e);
+    document.getElementById('updateTime').textContent = '部分加载失败 · 刷新重试';
+  }
+})();
+</script>
+</body>
+</html>

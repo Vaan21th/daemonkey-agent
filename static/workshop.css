@@ -1,0 +1,1797 @@
+/*
+ * workshop.css · OPUS 出品工坊 · 卷四十四 K stage 1b
+ *
+ * 设计:
+ *   - 全部样式 scope 在 .workshop-view 下 · 不污染主 chat.css
+ *   - 二栏:左工具集 (固定 248px · 可隐藏) + 右工作台 (canvas 铺满)
+ *   - 视觉跟主 UI 一致 (深色 + 紫 #9F7AEA · 复用 var(--opus) 等)
+ *   - 在 detail-pane 里·继承 detail-pane 的 100% 高度
+ */
+
+.detail-pane > .workshop-view {
+  /* detail-pane 默认有 padding · 工坊要顶满 · 把 padding 抵消 */
+  position: absolute;
+  inset: 0;
+}
+
+.workshop-view {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  background: #1a1a1a;
+  color: #e8e8e8;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* ─── 卷四十四 K stage 2a · tabs bar (📦 应用 / ✨ 创建 / ⚛ 工作流) ─── */
+.workshop-view .ws-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #2c2c30;
+  background: #1e1e22;
+  flex-shrink: 0;
+  height: 44px;
+}
+.workshop-view .ws-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #aaa;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 500;
+  transition: all .12s;
+}
+.workshop-view .ws-tab:hover {
+  background: #252528;
+  color: #e0e0e0;
+}
+.workshop-view .ws-tab.active {
+  background: rgba(159, 122, 234, .14);
+  color: var(--opus, #9F7AEA);
+  border-color: rgba(159, 122, 234, .3);
+}
+.workshop-view .ws-tabs-spacer { flex: 1; }
+.workshop-view .ws-tabs-hint {
+  color: #555;
+  font-size: 11px;
+  letter-spacing: .5px;
+}
+
+/* ─── tab 内容区 (apps / create / canvas 共用) ─── */
+.workshop-view .ws-content {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+.workshop-view .ws-pane {
+  position: absolute;
+  inset: 0;
+  display: none;
+  overflow: auto;
+}
+.workshop-view[data-tab="apps"] .ws-pane[data-pane="apps"],
+.workshop-view[data-tab="create"] .ws-pane[data-pane="create"],
+.workshop-view[data-tab="canvas"] .ws-pane[data-pane="canvas"] {
+  display: block;
+}
+/* 卷四十六续 11 · apps tab 改成 sidebar + main 二栏 (Coze/Dify 风) · 覆盖默认 block */
+.workshop-view[data-tab="apps"] .ws-pane-apps {
+  display: flex !important;
+  flex-direction: row;
+  overflow: hidden;  /* 内部 sidebar/main 各自滚 · 外层不出现双滚动条 */
+}
+
+/* canvas tab 是二栏 grid · 其余是单栏 */
+.workshop-view .ws-pane-canvas {
+  display: grid !important;
+  grid-template-columns: 248px 1fr;
+}
+.workshop-view[data-tab="canvas"][data-tb-collapsed="1"] .ws-pane-canvas {
+  grid-template-columns: 0 1fr;
+}
+.workshop-view[data-tab="apps"] .ws-pane-canvas,
+.workshop-view[data-tab="create"] .ws-pane-canvas {
+  display: none !important;
+}
+
+.workshop-view[data-tb-collapsed="1"] .ws-pane-canvas {
+  grid-template-columns: 0 1fr;
+}
+
+/* ─── 卷四十六续 11 · sidebar 应用列表 + main 详情 二栏 ─── */
+/* 设计: sidebar 220px · 折叠后 52px (只 icon) · main 占其余宽度 */
+/* 老 .ws-apps-grid 在 sidebar 内 · CSS 自动改成单列紧凑列表 */
+.workshop-view .ws-apps-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: #18181c;
+  border-right: 1px solid #2c2c30;
+  display: flex;
+  flex-direction: column;
+  transition: width .18s ease-out;
+  overflow: hidden;
+}
+.workshop-view .ws-apps-sidebar.collapsed {
+  width: 56px;
+}
+.workshop-view .ws-apps-side-head {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px 8px;
+  flex-shrink: 0;
+  gap: 8px;
+}
+.workshop-view .wash-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ddd;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.workshop-view .wash-collapse {
+  background: transparent;
+  border: 1px solid #2c2c30;
+  color: #888;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.workshop-view .wash-collapse:hover {
+  color: var(--opus, #9F7AEA);
+  border-color: var(--opus, #9F7AEA);
+}
+.workshop-view .ws-apps-side-search {
+  padding: 0 14px 8px;
+  flex-shrink: 0;
+}
+.workshop-view #wsAppsSideFilter {
+  width: 100%;
+  background: #232328;
+  border: 1px solid #2c2c30;
+  color: #ddd;
+  padding: 6px 9px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-family: inherit;
+  box-sizing: border-box;
+  outline: none;
+}
+.workshop-view #wsAppsSideFilter:focus {
+  border-color: var(--opus, #9F7AEA);
+}
+.workshop-view #wsAppsSideFilter::-webkit-search-cancel-button { display: none; }
+
+/* 折叠态下隐藏 title/search/desc/meta · 只留 icon */
+.workshop-view .ws-apps-sidebar.collapsed .wash-title,
+.workshop-view .ws-apps-sidebar.collapsed .ws-apps-side-search {
+  display: none;
+}
+.workshop-view .ws-apps-sidebar.collapsed .wash-collapse {
+  margin: 0 auto;
+}
+/* sidebar 内的 grid · 强制单列 · 不再用 auto-fill grid */
+.workshop-view .ws-apps-sidebar .ws-apps-grid {
+  display: flex !important;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 8px 14px;
+  overflow-y: auto;
+  flex: 1;
+}
+/* sidebar 卡片 · 紧凑横条 · 不显示 desc/meta */
+.workshop-view .ws-apps-sidebar .ws-app-card {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: all .12s;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 0;
+  position: relative;
+}
+.workshop-view .ws-apps-sidebar .ws-app-card:hover {
+  background: #232328;
+  border-color: #2c2c30;
+  transform: none;
+  box-shadow: none;
+}
+.workshop-view .ws-apps-sidebar .ws-app-card.active {
+  background: rgba(159,122,234,.14);
+  border-color: rgba(159,122,234,.45);
+}
+.workshop-view .ws-apps-sidebar .ws-app-card .wac-icon {
+  font-size: 22px;
+  width: 32px;
+  text-align: center;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.workshop-view .ws-apps-sidebar .ws-app-card .wac-body {
+  flex: 1;
+  min-width: 0;
+}
+.workshop-view .ws-apps-sidebar .ws-app-card .wac-title {
+  font-size: 12.5px;
+  font-weight: 500;
+  margin-bottom: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* sidebar 内默认隐藏卡片的 desc · meta · trash 按钮 · 这些只在网格大卡显示 */
+.workshop-view .ws-apps-sidebar .ws-app-card .wac-desc { display: none; }
+.workshop-view .ws-apps-sidebar .ws-app-card .wac-meta { display: none; }
+.workshop-view .ws-apps-sidebar .ws-app-card .wac-trash-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: opacity .12s;
+}
+.workshop-view .ws-apps-sidebar .ws-app-card:hover .wac-trash-btn {
+  opacity: 1;
+}
+/* + 长一个新应用 · sidebar 内底部 · dashed border */
+.workshop-view .ws-apps-sidebar .ws-app-card.ws-app-add {
+  margin-top: 8px;
+  border: 1px dashed #3a3a40;
+  background: transparent;
+}
+.workshop-view .ws-apps-sidebar .ws-app-card.ws-app-add:hover {
+  border-color: var(--opus, #9F7AEA);
+  background: rgba(159,122,234,.08);
+}
+.workshop-view .ws-apps-sidebar .ws-app-card.ws-app-add .wac-icon {
+  color: var(--opus, #9F7AEA);
+}
+
+/* 折叠态下卡片只显示 icon · 居中 */
+.workshop-view .ws-apps-sidebar.collapsed .ws-app-card {
+  justify-content: center;
+  padding: 8px 4px;
+  gap: 0;
+}
+.workshop-view .ws-apps-sidebar.collapsed .ws-app-card .wac-icon {
+  width: 100%;
+}
+.workshop-view .ws-apps-sidebar.collapsed .ws-app-card .wac-body {
+  display: none;
+}
+.workshop-view .ws-apps-sidebar.collapsed .ws-app-card .wac-trash-btn {
+  display: none;
+}
+
+/* main 区 · 没选 = welcome · 选了 = detail */
+.workshop-view .ws-apps-main {
+  flex: 1;
+  min-width: 0;
+  background: #16161a;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.workshop-view .ws-apps-welcome {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 22px;
+  text-align: center;
+}
+.workshop-view .ws-apps-welcome-icon {
+  font-size: 56px;
+  margin-bottom: 14px;
+  opacity: 0.85;
+}
+.workshop-view .ws-apps-welcome-title {
+  font-size: 20px;
+  color: #ddd;
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+.workshop-view .ws-apps-welcome-sub {
+  color: #888;
+  font-size: 13px;
+  margin: 0 0 24px;
+}
+.workshop-view .ws-apps-welcome-stats {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+.workshop-view .wawm-stat {
+  font-size: 12px;
+  color: #888;
+}
+.workshop-view .wawm-stat b {
+  color: var(--opus, #9F7AEA);
+  font-size: 22px;
+  font-weight: 600;
+  display: block;
+}
+.workshop-view .ws-apps-welcome-tips {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-width: 460px;
+}
+.workshop-view .wawt-row {
+  font-size: 12px;
+  color: #777;
+  text-align: left;
+  padding: 8px 14px;
+  background: #1c1c20;
+  border-radius: 6px;
+  border-left: 2px solid #2c2c30;
+}
+
+/* 折叠态下复用 sidebar 头部的 « 按钮 (JS 切换 textContent 成 ») · 不再有 sidebar 外侧的展开按钮 */
+
+/* ─── 老网格 (Card 大模式) · 卷四十四 K stage 2a · 保留 · 给 trash tab 或者将来回退用 ─── */
+.workshop-view .ws-apps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+  padding: 22px;
+}
+.workshop-view .ws-app-card {
+  background: #1e1e22;
+  border: 1px solid #2c2c30;
+  border-radius: 10px;
+  padding: 18px;
+  cursor: pointer;
+  transition: all .15s;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  min-height: 110px;
+}
+.workshop-view .ws-app-card:hover {
+  border-color: var(--opus, #9F7AEA);
+  background: #232328;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0,0,0,.25);
+}
+.workshop-view .ws-app-card .wac-icon {
+  font-size: 36px;
+  flex-shrink: 0;
+  width: 48px;
+  text-align: center;
+  line-height: 1;
+}
+.workshop-view .ws-app-card .wac-body {
+  flex: 1;
+  min-width: 0;
+}
+.workshop-view .ws-app-card .wac-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e8e8e8;
+  margin-bottom: 6px;
+}
+.workshop-view .ws-app-card .wac-desc {
+  font-size: 12px;
+  color: #999;
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+.workshop-view .ws-app-card .wac-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.workshop-view .ws-app-card .wac-kind {
+  background: rgba(159,122,234,.18);
+  color: var(--opus, #9F7AEA);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+.workshop-view .ws-app-card .wac-stage {
+  background: #2c2c30;
+  color: #888;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+.workshop-view .ws-app-card.ws-app-add {
+  border: 1px dashed #4a3a6c;
+  background: linear-gradient(135deg, #1e1e22, #232328);
+}
+.workshop-view .ws-app-card.ws-app-add:hover {
+  background: linear-gradient(135deg, #232328, #2c2230);
+}
+.workshop-view .ws-app-card.ws-app-add .wac-icon {
+  color: var(--opus, #9F7AEA);
+}
+
+/* ─── 卷四十四 K stage 2a · 应用详情 (产物历史 / 配置 / 测试) ─── */
+.workshop-view .ws-app-detail {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.workshop-view .ws-ad-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  border-bottom: 1px solid #2c2c30;
+  background: #1e1e22;
+  flex-shrink: 0;
+}
+.workshop-view .ws-ad-back {
+  background: transparent;
+  border: 1px solid #3a3a40;
+  color: #aaa;
+  padding: 5px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+}
+.workshop-view .ws-ad-back:hover { background: #2c2c30; color: var(--opus, #9F7AEA); }
+.workshop-view .ws-ad-icon { font-size: 24px; line-height: 1; }
+.workshop-view .ws-ad-title { font-size: 16px; font-weight: 600; color: #e8e8e8; }
+.workshop-view .ws-ad-kind {
+  background: rgba(159,122,234,.18);
+  color: var(--opus, #9F7AEA);
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.workshop-view .ws-ad-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 22px;
+  border-bottom: 1px solid #2c2c30;
+  background: #18181c;
+  flex-shrink: 0;
+  /* 卷四十六续 11 · sub-tab 永远可见 (sidebar+main 布局下 main 内部滚动) */
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.workshop-view .ws-ad-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: #777;
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+}
+.workshop-view .ws-ad-tab:hover { color: #ccc; }
+.workshop-view .ws-ad-tab.active {
+  color: var(--opus, #9F7AEA);
+  border-bottom-color: var(--opus, #9F7AEA);
+}
+.workshop-view .ws-ad-pane {
+  flex: 1;
+  overflow-y: auto;
+  padding: 22px;
+}
+.workshop-view .ws-ad-loading,
+.workshop-view .ws-ad-error,
+.workshop-view .ws-ad-empty {
+  text-align: center;
+  padding: 32px 18px;
+  color: #777;
+  font-size: 13px;
+}
+.workshop-view .ws-ad-error { color: #fc8181; }
+.workshop-view .ws-ad-meta { font-size: 11px; color: #666; margin-bottom: 12px; }
+.workshop-view .ws-ad-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.workshop-view .ws-ad-kinds .wkk-label { font-size: 11px; color: #666; margin-right: 4px; }
+.workshop-view .ws-ad-kinds .wkk-chip {
+  background: #2c2c30;
+  color: #aaa;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.workshop-view .ws-ad-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.workshop-view .ws-ad-card {
+  background: #1e1e22;
+  border: 1px solid #2c2c30;
+  border-radius: 6px;
+  padding: 12px 14px;
+  transition: border-color .12s;
+}
+.workshop-view .ws-ad-card:hover { border-color: #3a3a40; }
+.workshop-view .ws-ad-c-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.workshop-view .ws-ad-c-title { font-size: 13px; font-weight: 500; color: #e0e0e0; flex: 1; }
+.workshop-view .ws-ad-c-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: #666;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+.workshop-view .ws-ad-c-path { font-family: Consolas, 'Courier New', monospace; font-size: 10px; color: #555; }
+.workshop-view .ws-ad-c-summary {
+  font-size: 12px;
+  color: #999;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+/* 老 .ws-ad-stub (居中圆角框) · 留给 config tab 的"stage 2b 上线"那块 stub 用 */
+.workshop-view .ws-ad-stub {
+  max-width: 580px;
+  margin: 30px auto;
+  padding: 28px;
+  background: #1e1e22;
+  border: 1px solid #2c2c30;
+  border-radius: 10px;
+  text-align: center;
+}
+.workshop-view .ws-ad-stub .ws-stub-icon { font-size: 40px; margin-bottom: 12px; opacity: .6; }
+.workshop-view .ws-ad-stub h3 { color: var(--opus, #9F7AEA); margin: 0 0 12px 0; font-size: 16px; }
+.workshop-view .ws-ad-stub p { color: #aaa; line-height: 1.7; margin: 8px 0; font-size: 13px; }
+.workshop-view .ws-ad-stub ul { text-align: left; color: #bbb; line-height: 1.8; padding-left: 22px; margin: 12px 0; }
+.workshop-view .ws-ad-stub ul li b { color: #e8e8e8; }
+.workshop-view .ws-ad-stub .ws-stub-hint {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #2c2c30;
+  color: #777;
+  font-size: 11px;
+}
+
+/* ─── 卷四十六续 11 补丁 · OPUS 造的 app 产物历史样式重写 ─── */
+/* BRO 反馈: 外框冗余 / 不自适应 / 系统提示词 markdown 没渲染 */
+/* 改用 .ws-app-stub · 撑满 main 宽度 · 章节式布局 · md 真渲染 */
+.workshop-view .ws-app-stub {
+  max-width: none;
+  /* 父容器 .ws-ad-pane 已经 padding: 22px · stub 自己不再叠加 */
+  padding: 0;
+  color: #ccc;
+}
+.workshop-view .ws-app-desc {
+  font-size: 13px;
+  color: #aaa;
+  line-height: 1.6;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px dashed #2c2c30;
+}
+.workshop-view .ws-app-meta-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.workshop-view .wamc-chip {
+  background: #1e1e22;
+  border: 1px solid #2c2c30;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: #aaa;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.workshop-view .wamc-chip code {
+  background: rgba(159,122,234,.15);
+  color: var(--opus, #9F7AEA);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+.workshop-view .wamc-chip i { color: #777; }
+.workshop-view .ws-app-section {
+  margin-bottom: 18px;
+}
+.workshop-view .ws-app-section-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  margin-bottom: 8px;
+}
+.workshop-view .ws-app-empty {
+  color: #666;
+  font-style: italic;
+  font-size: 12px;
+  padding: 8px 0;
+}
+.workshop-view .ws-app-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  color: #aaa;
+}
+.workshop-view .ws-app-tools code {
+  background: #1e1e22;
+  border: 1px solid #2c2c30;
+  color: #bbb;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
+.workshop-view .ws-app-hint {
+  margin-top: 24px;
+  padding: 10px 14px;
+  background: rgba(159,122,234,.06);
+  border-left: 2px solid rgba(159,122,234,.5);
+  border-radius: 0 4px 4px 0;
+  color: #888;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+/* ─── markdown 渲染样式 (复用 chat.js mdRender) · 仅在 ws-app-md 容器内生效 ─── */
+.workshop-view .ws-app-md {
+  font-size: 13px;
+  line-height: 1.65;
+  color: #ccc;
+}
+.workshop-view .ws-app-md h1,
+.workshop-view .ws-app-md h2,
+.workshop-view .ws-app-md h3,
+.workshop-view .ws-app-md h4 {
+  color: #e8e8e8;
+  margin: 16px 0 8px;
+  font-weight: 600;
+}
+.workshop-view .ws-app-md h1 { font-size: 17px; }
+.workshop-view .ws-app-md h2 { font-size: 15px; color: var(--opus, #9F7AEA); }
+.workshop-view .ws-app-md h3 { font-size: 14px; }
+.workshop-view .ws-app-md h4 { font-size: 13px; color: #ccc; }
+.workshop-view .ws-app-md p { margin: 8px 0; }
+.workshop-view .ws-app-md ul,
+.workshop-view .ws-app-md ol { padding-left: 22px; margin: 8px 0; }
+.workshop-view .ws-app-md li { margin: 3px 0; }
+.workshop-view .ws-app-md blockquote {
+  border-left: 3px solid #3a3a40;
+  margin: 8px 0;
+  padding: 4px 0 4px 12px;
+  color: #999;
+  background: #1a1a1e;
+}
+.workshop-view .ws-app-md code {
+  background: rgba(159,122,234,.12);
+  color: #d4a3ff;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: ui-monospace, monospace;
+}
+.workshop-view .ws-app-md pre {
+  background: #16161a;
+  border: 1px solid #2c2c30;
+  padding: 12px 14px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+.workshop-view .ws-app-md pre code {
+  background: transparent;
+  color: #ccc;
+  padding: 0;
+  border-radius: 0;
+  font-size: 12px;
+  display: block;
+  white-space: pre;
+}
+.workshop-view .ws-app-md table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 10px 0;
+  font-size: 12px;
+}
+.workshop-view .ws-app-md th,
+.workshop-view .ws-app-md td {
+  border: 1px solid #2c2c30;
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.workshop-view .ws-app-md th {
+  background: #1c1c20;
+  color: #ddd;
+  font-weight: 600;
+}
+.workshop-view .ws-app-md td { color: #bbb; }
+.workshop-view .ws-app-md tr:nth-child(even) td { background: #18181c; }
+.workshop-view .ws-app-md a {
+  color: var(--opus, #9F7AEA);
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(159,122,234,.4);
+}
+.workshop-view .ws-app-md a:hover { border-bottom-style: solid; }
+.workshop-view .ws-app-md hr {
+  border: none;
+  border-top: 1px solid #2c2c30;
+  margin: 14px 0;
+}
+
+/* ─── 卷四十六续 12 · wish-165ea1f6 phase A · 应用测试表单 ─── */
+.workshop-view .ws-ad-form {
+  max-width: 640px;
+  margin: 24px auto;
+  padding: 24px 26px 22px;
+  background: #1e1e22;
+  border: 1px solid #2c2c30;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.workshop-view .ws-form-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #2c2c30;
+}
+.workshop-view .ws-form-app-icon { font-size: 22px; }
+.workshop-view .ws-form-app-name {
+  font-size: 15px;
+  color: var(--opus, #9F7AEA);
+  font-weight: 600;
+}
+.workshop-view .ws-form-app-desc {
+  flex: 1;
+  font-size: 12px;
+  color: #888;
+  margin-left: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workshop-view .ws-form-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.workshop-view .ws-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.workshop-view .ws-form-label {
+  color: #d8d8d8;
+  font-size: 12px;
+  letter-spacing: .2px;
+}
+.workshop-view .ws-form-req {
+  color: #e07070;
+  margin-left: 4px;
+}
+.workshop-view .ws-form-help {
+  color: #777;
+  font-size: 11px;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+.workshop-view .ws-form-field input[type="text"],
+.workshop-view .ws-form-field input[type="number"],
+.workshop-view .ws-form-field input[type="file"],
+.workshop-view .ws-form-field textarea,
+.workshop-view .ws-form-field select {
+  background: #15151a;
+  border: 1px solid #2e2e34;
+  color: #e8e8e8;
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: border-color .08s, background .08s;
+}
+.workshop-view .ws-form-field textarea {
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.55;
+}
+.workshop-view .ws-form-field input:focus,
+.workshop-view .ws-form-field textarea:focus,
+.workshop-view .ws-form-field select:focus {
+  outline: none;
+  border-color: var(--opus, #9F7AEA);
+  background: #18181d;
+}
+.workshop-view .ws-form-field-bool {
+  flex-direction: row;
+  align-items: center;
+}
+.workshop-view .ws-form-bool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: #d8d8d8;
+  font-size: 12px;
+}
+.workshop-view .ws-form-bool input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--opus, #9F7AEA);
+  cursor: pointer;
+}
+.workshop-view .ws-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid #2c2c30;
+  flex-wrap: wrap;
+}
+.workshop-view .ws-form-autosend {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #888;
+  font-size: 11px;
+  cursor: pointer;
+}
+.workshop-view .ws-form-autosend input[type="checkbox"] {
+  width: 12px;
+  height: 12px;
+  accent-color: var(--opus, #9F7AEA);
+  cursor: pointer;
+}
+.workshop-view .ws-btn-primary {
+  background: rgba(159, 122, 234, .18);
+  border-color: rgba(159, 122, 234, .42);
+  color: #e0d0ff;
+  font-weight: 600;
+}
+.workshop-view .ws-btn-primary:hover {
+  background: rgba(159, 122, 234, .28);
+  border-color: var(--opus, #9F7AEA);
+  color: #f0e4ff;
+}
+.workshop-view .ws-form-preview {
+  margin-top: 4px;
+  padding: 12px 14px;
+  background: #15151a;
+  border: 1px dashed #3a3a40;
+  border-radius: 6px;
+}
+.workshop-view .ws-form-preview-head {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 6px;
+}
+.workshop-view .ws-form-preview-body {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  color: #c8c8c8;
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 0;
+  font-family: 'Consolas', 'Menlo', monospace;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.workshop-view .ws-form-empty .ws-form-empty-actions {
+  text-align: left;
+  list-style: none;
+  padding-left: 0;
+}
+.workshop-view .ws-form-empty .ws-form-empty-actions li {
+  margin: 8px 0;
+  color: #aaa;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.workshop-view .ws-form-empty .ws-form-empty-actions code {
+  background: #15151a;
+  border: 1px solid #2c2c30;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #c8b0f0;
+}
+.workshop-view .ws-form-empty button.ws-btn-primary {
+  margin-top: 16px;
+}
+
+/* ─── 卷四十六续 12 · wish-165ea1f6 phase B · 真跑输出 + 浮层 ─── */
+.workshop-view .ws-form-run {
+  margin-top: 6px;
+  padding: 12px 14px;
+  background: #15151a;
+  border: 1px solid #2c2c30;
+  border-radius: 6px;
+}
+.workshop-view .ws-form-run-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #2c2c30;
+  margin-bottom: 8px;
+}
+.workshop-view .ws-form-run-title {
+  color: var(--opus, #9F7AEA);
+  font-size: 13px;
+  font-weight: 600;
+}
+.workshop-view .ws-form-run-status {
+  color: #aaa;
+  font-size: 11px;
+  background: #1e1e22;
+  border: 1px solid #2e2e34;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.workshop-view .ws-form-run-events {
+  max-height: 320px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Menlo', monospace;
+  font-size: 11px;
+  line-height: 1.55;
+  background: #0e0e12;
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+.workshop-view .ws-form-run-event {
+  display: grid;
+  grid-template-columns: 60px 80px 1fr;
+  gap: 8px;
+  padding: 2px 0;
+  border-bottom: 1px dashed #1f1f26;
+}
+.workshop-view .ws-form-run-event:last-child { border-bottom: none; }
+.workshop-view .ws-fre-ts { color: #555; }
+.workshop-view .ws-fre-kind {
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workshop-view .ws-fre-text {
+  color: #c8c8c8;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.workshop-view .ws-fre-tool .ws-fre-kind { color: #5DA3F0; }
+.workshop-view .ws-fre-tool-ok .ws-fre-kind { color: #48BB78; }
+.workshop-view .ws-fre-llm .ws-fre-kind { color: var(--opus, #9F7AEA); }
+.workshop-view .ws-fre-err .ws-fre-kind,
+.workshop-view .ws-fre-err .ws-fre-text { color: #e07070; }
+.workshop-view .ws-form-run-outputs {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #2c2c30;
+}
+.workshop-view .ws-run-media {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.workshop-view .ws-run-media-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: #1a1a1f;
+  border: 1px solid #2c2c30;
+  border-radius: 6px;
+}
+.workshop-view .ws-run-media-label {
+  font-size: 11px;
+  color: #888;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+}
+.workshop-view .ws-run-media-img {
+  max-width: 100%;
+  max-height: 480px;
+  border-radius: 4px;
+  background: #0c0c10;
+  object-fit: contain;
+  display: block;
+}
+.workshop-view .ws-run-media-video {
+  max-width: 100%;
+  max-height: 360px;
+  border-radius: 4px;
+  background: #0c0c10;
+}
+.workshop-view .ws-run-media-item audio {
+  width: 100%;
+  filter: invert(0.85) hue-rotate(180deg);
+}
+.workshop-view .ws-run-media-link {
+  font-size: 11px;
+  color: #5DA3F0;
+  text-decoration: none;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  word-break: break-all;
+}
+.workshop-view .ws-run-media-link:hover { text-decoration: underline; }
+.workshop-view .ws-run-outputs-json {
+  margin: 0;
+  padding: 8px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  background: #0c0c10;
+  border: 1px solid #2c2c30;
+  border-radius: 4px;
+  color: #cbd5e0;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.workshop-view .ws-fre-tool .ws-fre-text { color: #cbd5e0; }
+
+/* 工作流真跑浮层 · 画布右下角悬停 */
+.workshop-view .ws-flow-run-overlay {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 540px;
+  max-width: calc(100% - 28px);
+  max-height: 480px;
+  display: flex;
+  flex-direction: column;
+  background: #15151a;
+  border: 1px solid #2c2c30;
+  border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  z-index: 100;
+  padding: 10px 12px;
+}
+.workshop-view .ws-flow-run-overlay .ws-form-run-events {
+  max-height: 320px;
+  flex: 1;
+}
+
+/* ─── 卷四十四 K stage 2b · 工作流画布 toolbar · 保存/加载强调 ─── */
+.workshop-view .ws-btn-emphasis {
+  background: rgba(159, 122, 234, .14);
+  border-color: rgba(159, 122, 234, .35);
+  color: var(--opus, #9F7AEA);
+  font-weight: 600;
+}
+.workshop-view .ws-btn-emphasis:hover {
+  background: rgba(159, 122, 234, .22);
+  border-color: var(--opus, #9F7AEA);
+  color: #e0d0ff;
+}
+.workshop-view .ws-btn-divider {
+  width: 1px;
+  height: 18px;
+  background: #3a3a40;
+  margin: 0 4px;
+}
+
+/* ─── 左:工具集 ─── */
+.workshop-view .ws-toolbox {
+  border-right: 1px solid #2c2c30;
+  background: #1e1e22;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  transition: opacity .12s;
+}
+.workshop-view[data-tb-collapsed="1"] .ws-toolbox {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.workshop-view .ws-tb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #2c2c30;
+  background: #232328;
+}
+.workshop-view .ws-tb-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--opus, #9F7AEA);
+}
+.workshop-view .ws-tb-toggle {
+  background: transparent;
+  border: 1px solid #3a3a40;
+  color: #aaa;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.workshop-view .ws-tb-toggle:hover {
+  background: #2c2c30;
+  color: var(--opus, #9F7AEA);
+}
+
+.workshop-view .ws-tb-search {
+  padding: 8px 10px;
+  border-bottom: 1px solid #2c2c30;
+}
+.workshop-view .ws-tb-search input {
+  width: 100%;
+  background: #18181c;
+  border: 1px solid #2c2c30;
+  border-radius: 4px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: #e8e8e8;
+  font-family: inherit;
+  outline: none;
+}
+.workshop-view .ws-tb-search input:focus {
+  border-color: var(--opus, #9F7AEA);
+}
+
+.workshop-view .ws-tb-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+/* 滚动条美化 (跟 chat.css 风格一致) */
+.workshop-view .ws-tb-body::-webkit-scrollbar { width: 8px; }
+.workshop-view .ws-tb-body::-webkit-scrollbar-track { background: transparent; }
+.workshop-view .ws-tb-body::-webkit-scrollbar-thumb { background: #2c2c30; border-radius: 4px; }
+.workshop-view .ws-tb-body::-webkit-scrollbar-thumb:hover { background: #3a3a40; }
+
+.workshop-view .ws-tg {
+  margin: 0 0 4px 0;
+}
+.workshop-view .ws-tg-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 11px;
+  color: #999;
+  letter-spacing: .3px;
+  text-transform: none;
+  font-weight: 500;
+  user-select: none;
+}
+.workshop-view .ws-tg-head:hover { background: #232328; color: #ccc; }
+.workshop-view .ws-tg-arrow { font-size: 10px; transition: transform .12s; }
+.workshop-view .ws-tg.collapsed .ws-tg-arrow { transform: rotate(-90deg); }
+.workshop-view .ws-tg-label { flex: 1; }
+.workshop-view .ws-tg-count {
+  background: #2c2c30;
+  color: #888;
+  border-radius: 8px;
+  padding: 1px 7px;
+  font-size: 10px;
+}
+.workshop-view .ws-tg-body {
+  padding: 2px 8px 6px;
+}
+.workshop-view .ws-tg.collapsed .ws-tg-body { display: none; }
+
+.workshop-view .ws-tool {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 5px;
+  cursor: grab;
+  background: transparent;
+  margin: 1px 0;
+  user-select: none;
+  transition: background .08s;
+}
+.workshop-view .ws-tool:hover {
+  background: #2c2c30;
+}
+.workshop-view .ws-tool.dragging {
+  opacity: .4;
+  cursor: grabbing;
+}
+.workshop-view .ws-tool-ico {
+  font-size: 16px;
+  width: 22px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.workshop-view .ws-tool-name {
+  font-size: 12px;
+  color: #d8d8d8;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workshop-view .ws-tg[data-group="composite"] .ws-tool-ico { filter: hue-rotate(0deg); }
+.workshop-view .ws-tg[data-group="atomic"] .ws-tool-name { color: #b8c8e0; }
+.workshop-view .ws-tg[data-group="custom"] .ws-tool-name { color: #b8e0c8; }
+
+/* 卷五十四 · 未实装节点 (composite/atomic) · 明标 + 禁拖 · 不误导 BRO (孪法第4条) */
+.workshop-view .ws-tool-unimpl {
+  cursor: not-allowed;
+  opacity: .5;
+}
+.workshop-view .ws-tool-unimpl:hover { background: #2a2630; }
+.workshop-view .ws-tool-unimpl .ws-tool-name { color: #8a8a92; }
+.workshop-view .ws-tool-soon,
+.workshop-view .ws-tg-soon {
+  font-size: 9px;
+  color: #c9a227;
+  border: 1px solid #6b5a14;
+  background: #2b2410;
+  border-radius: 6px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  flex-shrink: 0;
+  letter-spacing: .5px;
+}
+.workshop-view .ws-tg-soon { font-weight: 600; }
+
+.workshop-view .ws-tb-add {
+  padding: 8px 10px;
+  border-top: 1px solid #2c2c30;
+  margin-top: 6px;
+}
+.workshop-view .ws-tb-add button {
+  width: 100%;
+  background: linear-gradient(135deg, #2c2c30, #232328);
+  border: 1px dashed #4a3a6c;
+  color: var(--opus, #9F7AEA);
+  padding: 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all .12s;
+}
+.workshop-view .ws-tb-add button:hover {
+  border-color: var(--opus, #9F7AEA);
+  background: #2c2230;
+}
+
+/* ─── 浮动展开按钮 (工具集隐藏时) ─── */
+.workshop-view .ws-tb-show {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  transform: translateY(-50%);
+  z-index: 5;
+  background: #2c2c30;
+  border: 1px solid #3a3a40;
+  color: var(--opus, #9F7AEA);
+  width: 22px;
+  height: 60px;
+  border-radius: 0 6px 6px 0;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0;
+}
+.workshop-view .ws-tb-show:hover { background: #3a2a4a; }
+
+/* ─── 右:工作台 (canvas) ─── */
+.workshop-view .ws-canvas-wrap {
+  position: relative;
+  background: #14141a;
+  background-image:
+    radial-gradient(circle, #22222a 1px, transparent 1px);
+  background-size: 24px 24px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.workshop-view .ws-canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  height: 36px;
+  background: rgba(30, 30, 34, .92);
+  border-bottom: 1px solid #2c2c30;
+  backdrop-filter: blur(6px);
+  flex-shrink: 0;
+  z-index: 2;
+}
+.workshop-view .ws-canvas-title {
+  font-weight: 600;
+  color: var(--opus, #9F7AEA);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.workshop-view .ws-canvas-hint {
+  color: #666;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workshop-view .ws-spacer { flex: 1; }
+
+.workshop-view .ws-btn {
+  background: #2c2c30;
+  border: 1px solid #3a3a40;
+  color: #d8d8d8;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: all .08s;
+}
+.workshop-view .ws-btn:hover {
+  background: #3a2a4a;
+  border-color: var(--opus, #9F7AEA);
+  color: var(--opus, #9F7AEA);
+}
+.workshop-view .ws-lang-btn {
+  width: 36px;
+  text-align: center;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.workshop-view #wsCanvas {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+}
+.workshop-view #wsCanvas:active { cursor: grabbing; }
+
+.workshop-view .ws-canvas-empty {
+  position: absolute;
+  inset: 36px 0 0 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  color: #444;
+  text-align: center;
+  z-index: 1;
+}
+/* `display: flex` 优先级 (0,0,2,0) 高过浏览器内置 [hidden] {display:none} (0,0,1,0) ·
+   JS empty.hidden = true 必须配合这条作者级覆盖才真隐藏 (卷四十六续 19) */
+.workshop-view .ws-canvas-empty[hidden] { display: none; }
+.workshop-view .ws-empty-icon { font-size: 48px; opacity: .25; margin-bottom: 12px; }
+.workshop-view .ws-empty-title { font-size: 16px; color: #555; margin-bottom: 4px; }
+.workshop-view .ws-empty-hint { font-size: 12px; color: #444; max-width: 360px; line-height: 1.6; }
+
+/* ─── LiteGraph 自带的 contextmenu / dialogs 样式覆盖 ─── */
+/* (LiteGraph 的菜单是 fixed 渲染到 body 里·不在 .workshop-view 下) */
+.litecontextmenu {
+  background: #232328 !important;
+  border: 1px solid #3a3a40 !important;
+  color: #d8d8d8 !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+  font-size: 12px !important;
+  border-radius: 5px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .5) !important;
+  padding: 4px 0 !important;
+}
+.litecontextmenu .litemenu-entry {
+  padding: 6px 14px !important;
+  color: #d8d8d8 !important;
+}
+.litecontextmenu .litemenu-entry:hover {
+  background: #3a2a4a !important;
+  color: var(--opus, #9F7AEA) !important;
+}
+.litecontextmenu .litemenu-entry.separator {
+  border-top: 1px solid #2c2c30 !important;
+  margin: 2px 0 !important;
+}
+.litegraph.litesearchbox {
+  background: #232328 !important;
+  border: 1px solid var(--opus, #9F7AEA) !important;
+  color: #e8e8e8 !important;
+}
+
+/* ─── 响应式:窄屏自动收起工具集 ─── */
+@media (max-width: 900px) {
+  .workshop-view {
+    grid-template-columns: 0 1fr;
+  }
+  .workshop-view .ws-toolbox {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 248px;
+    z-index: 4;
+    transform: translateX(-100%);
+    transition: transform .15s;
+  }
+  .workshop-view[data-tb-collapsed="0"] .ws-toolbox {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* ─── 卷四十四 K stage 2c++ · wish-6fd76512 · 回收站 + 卡片删除按钮 ─── */
+.workshop-view[data-tab="trash"] .ws-pane[data-pane="trash"] {
+  display: block;
+}
+.workshop-view[data-tab="trash"] .ws-pane-canvas {
+  display: none !important;
+}
+
+.workshop-view .ws-app-card { position: relative; }
+.workshop-view .wac-trash-btn {
+  position: absolute;
+  top: 6px; right: 6px;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(40, 40, 44, 0.92);
+  color: #d18888;
+  border: 1px solid #3a2a2a;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .12s, background .12s, color .12s;
+  z-index: 2;
+}
+.workshop-view .ws-app-card:hover .wac-trash-btn {
+  opacity: 0.85;
+}
+.workshop-view .wac-trash-btn:hover {
+  opacity: 1;
+  background: #3a2222;
+  color: #ff7878;
+  border-color: #6a3030;
+}
+
+.workshop-view .ws-trash-pane {
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.workshop-view .ws-trash-loading,
+.workshop-view .ws-trash-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #888;
+}
+.workshop-view .ws-trash-empty .ws-empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+.workshop-view .ws-trash-empty .ws-empty-title {
+  font-size: 16px;
+  color: #c8c8c8;
+  margin-bottom: 6px;
+}
+.workshop-view .ws-trash-empty .ws-empty-hint {
+  font-size: 12px;
+  color: #888;
+  max-width: 540px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+.workshop-view .ws-trash-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #2c2c30;
+  margin-bottom: 6px;
+}
+.workshop-view .ws-trash-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #d8d8d8;
+}
+.workshop-view .ws-trash-section-title {
+  font-size: 12px;
+  color: #888;
+  padding: 12px 4px 4px;
+  border-bottom: 1px dashed #2c2c30;
+  margin-top: 6px;
+}
+.workshop-view .ws-trash-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: #1d1d20;
+  border: 1px solid #2a2a2e;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.workshop-view .ws-trash-row:hover {
+  background: #232328;
+}
+.workshop-view .ws-trash-icon {
+  font-size: 18px;
+  width: 24px;
+  text-align: center;
+}
+.workshop-view .ws-trash-name {
+  color: #d8d8d8;
+  font-weight: 500;
+  min-width: 140px;
+}
+.workshop-view .ws-trash-kind {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: #2c2c30;
+  border-radius: 3px;
+  color: #aaa;
+}
+.workshop-view .ws-trash-id {
+  font-family: monospace;
+  color: #777;
+  font-size: 11px;
+}
+.workshop-view .ws-trash-deleted {
+  color: #888;
+  font-size: 11px;
+}
+.workshop-view .ws-spacer { flex: 1; }
+
+.workshop-view .ws-btn-danger {
+  background: #3a2222 !important;
+  color: #ff8888 !important;
+  border-color: #6a3030 !important;
+}
+.workshop-view .ws-btn-danger:hover {
+  background: #4a2828 !important;
+  color: #ffaaaa !important;
+  border-color: #8a3838 !important;
+}
+.workshop-view .ws-trash-restore {
+  color: #9F7AEA;
+  border-color: #4a3a6a;
+}
+.workshop-view .ws-trash-restore:hover {
+  background: #2a2438;
+  color: #c4a8ff;
+  border-color: #6a4aaa;
+}
+.workshop-view .ws-trash-hard-del {
+  color: #d18888;
+  border-color: #4a2a2a;
+}
+.workshop-view .ws-trash-hard-del:hover {
+  background: #3a2222;
+  color: #ff7878;
+  border-color: #6a3030;
+}
+
+
+/* ─── wish-ccd2fc5f · 产出卡片预览 + 画廊 ─── */
+
+/* 卡片内 actions 行 */
+.workshop-view .ws-ad-c-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.workshop-view .ws-btn-sm {
+  font-size: 11px;
+  padding: 3px 10px;
+  background: #2a2a30;
+  border: 1px solid #3a3a40;
+  color: #bbb;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background .12s;
+}
+.workshop-view .ws-btn-sm:hover { background: #3a3a40; color: #e0e0e0; }
+
+/* 内嵌预览展开区 */
+.workshop-view .ws-ad-c-preview {
+  margin-top: 10px;
+  border-top: 1px solid #2c2c30;
+  padding-top: 10px;
+}
+.workshop-view .ws-ad-preview-body {
+  background: #16161a;
+  border: 1px solid #2c2c30;
+  border-radius: 6px;
+  padding: 14px 18px;
+  max-height: 600px;
+  overflow-y: auto;
+}
+.workshop-view .ws-ad-preview-md {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #ccc;
+}
+.workshop-view .ws-ad-preview-md h1 { font-size: 18px; color: #e0e0e0; margin: 0 0 10px; }
+.workshop-view .ws-ad-preview-md h2 { font-size: 15px; color: #d0d0d0; margin: 16px 0 6px; border-bottom: 1px solid #2c2c30; padding-bottom: 4px; }
+.workshop-view .ws-ad-preview-md h3 { font-size: 13px; color: #c0c0c0; margin: 10px 0 4px; }
+.workshop-view .ws-ad-preview-md p { margin: 6px 0; }
+.workshop-view .ws-ad-preview-md code { background: #2a2a30; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+.workshop-view .ws-ad-preview-md pre { background: #12121a; padding: 10px; border-radius: 5px; overflow-x: auto; font-size: 12px; }
+.workshop-view .ws-ad-preview-md blockquote { border-left: 3px solid #9F7AEA; margin: 8px 0; padding: 4px 12px; color: #999; }
+.workshop-view .ws-ad-preview-md table { border-collapse: collapse; margin: 8px 0; font-size: 12px; width: 100%; }
+.workshop-view .ws-ad-preview-md th, .workshop-view .ws-ad-preview-md td { border: 1px solid #2c2c30; padding: 4px 8px; text-align: left; }
+.workshop-view .ws-ad-preview-md th { background: #1e1e22; color: #bbb; }
+
+/* 产出画廊 */
+.workshop-view .ws-output-gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+.workshop-view .ws-gallery-card {
+  background: #1e1e22;
+  border: 1px solid #2c2c30;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color .12s;
+  cursor: pointer;
+}
+.workshop-view .ws-gallery-card:hover { border-color: #4a4a55; }
+.workshop-view .ws-gallery-img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+}
+.workshop-view .ws-gallery-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  gap: 6px;
+}
+.workshop-view .ws-gallery-name {
+  font-size: 11px;
+  color: #bbb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.workshop-view .ws-gallery-size {
+  font-size: 10px;
+  color: #666;
+  flex-shrink: 0;
+}
+.workshop-view .ws-gallery-audio,
+.workshop-view .ws-gallery-video {
+  grid-column: 1 / -1;
+  padding: 12px;
+}
+.workshop-view .ws-gallery-icon {
+  font-size: 28px;
+  text-align: center;
+  padding: 10px 0 4px;
+}
+.workshop-view .ws-gallery-player {
+  width: 100%;
+  min-height: 240px;
+  max-height: 400px;
+  margin: 0;
+  background: #000;
+  border-radius: 6px;
+}
+.workshop-view .ws-ad-hint {
+  font-size: 11px;
+  color: #666;
+  margin-top: 6px;
+}
+
+/* opus app 产出 tab · 应用说明头 */
+.workshop-view .ws-opus-app-header {
+  background: #1a1a20;
+  border: 1px solid #2c2c30;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+.workshop-view .ws-opus-app-desc {
+  font-size: 13px;
+  color: #bbb;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+.workshop-view .ws-opus-app-tools-label {
+  font-size: 11px;
+  color: #777;
+  margin-top: 8px;
+}
+.workshop-view .ws-opus-app-tools-label code {
+  background: #2a2a30;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #9F7AEA;
+}
+/* lightbox 图片预览 */
+.ws-lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+}
+.ws-lightbox.active { display: flex; }
+.ws-lightbox .ws-lightbox-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.88);
+  cursor: pointer;
+}
+.ws-lightbox .ws-lightbox-body {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.ws-lightbox .ws-lightbox-close {
+  position: absolute;
+  top: -36px;
+  right: 0;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.ws-lightbox .ws-lightbox-img {
+  max-width: 90vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 6px;
+}
+.ws-lightbox .ws-lightbox-name {
+  color: #999;
+  font-size: 12px;
+  margin-top: 8px;
+  max-width: 90vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

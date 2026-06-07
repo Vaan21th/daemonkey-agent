@@ -1,6 +1,36 @@
-# Daemonkey 用户版 · 运行依赖
-# 当前『相遇』onboarding 只需要 LLM SDK。
-# 完整 WebUI 后端 (fastapi / uvicorn 等) 会在用户版后端去 OPUS 化成型后再加。
-
+anthropic>=0.40.0
 openai>=1.50.0
 python-dotenv>=1.0.0
+rich>=13.7.0
+fastapi>=0.115.0
+uvicorn>=0.30.0
+
+# 卷四十四 K stage 2c++ · wish-8d6b76a6 · service_start 跨平台进程检测
+psutil>=5.9.0
+
+# 卷四十六 II · wish-43f705b8 · FTS5 中文 tokenizer · 修中文 recall_memory 0 命中
+jieba>=0.42.0
+
+# wish-4a6331b2 · OPUS 视觉能力 · 图片压缩
+Pillow>=10.0.0
+
+# wish-41ed72ef · 文档上传 · PDF 文本提取
+PyPDF2>=3.0.0
+
+# wish-41ed72ef · 文档上传 · DOCX 文本提取
+python-docx>=1.0.0
+
+# wish-41ed72ef · 文档上传 · PPTX 文本提取
+python-pptx>=1.0.0
+
+# 卷五十八续 · lint_check 工具 · 抓"语法对逻辑错"的 bug (未定义名/未用导入/重定义)
+ruff>=0.6.0
+
+# 微信渠道（官方 ClawBot / iLink）· 扫码连微信 + 二维码生成 + 主动消息
+# 走腾讯官方 ilinkai.weixin.qq.com·零私有服务器·每个用户扫码连自己的微信
+requests>=2.31.0
+qrcode>=7.4.2
+
+# 桌宠（可选）· 桌面上游走的像素小猫·反映 daemon 实时活动
+# 没装也不影响主程序·只是启动器里的"召唤桌宠"按钮点了会提示装 PyQt6
+PyQt6>=6.6.0
