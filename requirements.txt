@@ -1,0 +1,6 @@
+# Daemonkey 用户版 · 运行依赖
+# 当前『相遇』onboarding 只需要 LLM SDK。
+# 完整 WebUI 后端 (fastapi / uvicorn 等) 会在用户版后端去 OPUS 化成型后再加。
+
+openai>=1.50.0
+python-dotenv>=1.0.0

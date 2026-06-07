@@ -1,0 +1,13 @@
+# 用户隐私 / 本地配置 —— 永不入库
+.env
+.venv/
+onboarding/data/
+
+# 构建产物（ps2exe 可重建）
+Daemonkey.exe
+
+# Python / 运行时垃圾
+__pycache__/
+*.pyc
+_daemon_*.log
+_daemon_*.err
