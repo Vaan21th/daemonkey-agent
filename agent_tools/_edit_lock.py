@@ -95,11 +95,12 @@ def guard(
         if existing and not force:
             # 道 1: 另一个对话 TTL 内持锁 → 排队软提示
             if existing.get("owner") != owner and (now - existing.get("ts", 0)) < TTL_SECONDS:
-                return False, (
+                from identity import localize_narration as _ln
+                return False, _ln(
                     f"⚠️ 编辑锁冲突：这个文件 {_fmt_ago(now - existing['ts'])}前正被【另一个对话】"
                     f"(session {_short(existing['owner'])} · 用 {existing.get('tool', '?')})改，"
                     "它可能还没收尾。\n"
-                    "为避免你俩互相覆盖，最好等它弄完——可以先去做别的、或问用户那边是不是在改这个文件。\n"
+                    "为避免你俩互相覆盖，最好等它弄完——可以先去做别的、或问 BRO 那边是不是在改这个文件。\n"
                     "→ 如果确认现在就要改（那个对话已经停了 / 你确定改的不是同一段），"
                     "再调一次本工具并带 force=true。"
                 )

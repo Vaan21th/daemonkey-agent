@@ -154,3 +154,23 @@ def localize(text: str) -> str:
         for _frm, _to in _LINEAGE_SUBS:
             text = text.replace(_frm, _to)
     return text
+
+
+# 船长日志卷号 (卷四十四 / 卷六十四 …) 是母体私有 lore·开源版 tool 输出不该看到。
+# 只抹"卷+数字"令牌·留下后面的 续X / 罗马字 (跟 Daemonkey 手工去母体化的约定一致)。
+_VOLUME_RE = re.compile(r"卷[零一二三四五六七八九十百千两\d]+")
+
+
+def localize_narration(text: str) -> str:
+    """tool 输出 / 警告文案专用 localize:在 localize() 基础上额外抹掉船长日志卷号。
+
+    用在【会进 LLM 的】tool output / error / warning 文案里(含 BRO/OPUS/卷号那种)·
+    让母体和开源版共用同一份源码·运行时各自变形。母体 (ai==OPUS) 仍 no-op:
+    localize 原样返回 + 不抹卷号·逐字不变。
+    """
+    if not text:
+        return text
+    text = localize(text)
+    if ai_name() != DEFAULT_AI_NAME:
+        text = _VOLUME_RE.sub("", text)
+    return text

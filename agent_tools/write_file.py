@@ -149,15 +149,16 @@ def _branch_guard_warning(path: Path) -> Optional[str]:
         return None  # 已经在 wish 分支 · 合规
     if branch != "master":
         return None  # 在某个 feature 分支 · 不是 master · OK
-    return (
-        "WARN · daemon 工程铁律 1 触发 ( F):\n"
+    from identity import localize_narration as _ln
+    return _ln(
+        "WARN · daemon 工程铁律 1 触发 (卷四十四 F):\n"
         f"  你刚在 master 分支上改了 daemon 核心代码: {path.name}\n"
-        "  按 data/cognition/daemon_rules.md 铁律 1 · 这应该走 wish 流程 (态):\n"
+        "  按 data/cognition/daemon_rules.md 铁律 1 · 这应该走 wish 流程 (卷五十三四态):\n"
         "    1) wish_create + wish_update status=active · 批方案后清 daemon_phase → 自动开 wish-XXX/<slug> 分支\n"
         "    2) 在 wish 分支上改 · 不污染 master\n"
-        "    3) 改完 wish_update status=review · 用户 验收点 live 时自动 merge 回 master\n"
+        "    3) 改完 wish_update status=review · BRO 验收点 live 时自动 merge 回 master\n"
         "  本次写入已生效 · 但下次先 wish_create · 不要再直接打 master。\n"
-        "  如果这次是 用户 急手要的 hotfix · 可以无视这条 · 但在 reflection 里说明。"
+        "  如果这次是 BRO 急手要的 hotfix · 可以无视这条 · 但在 reflection 里说明。"
     )
 
 
