@@ -205,3 +205,4 @@ from . import session_search       # noqa: E402,F401  ( II · wish-2a92774d · s
 from . import request_restart      # noqa: E402,F401  ( III · wish-ed5553d5 · daemon 重启工具)
 from . import verify_daemon_endpoints  # noqa: E402,F401  ( III · wish-ed5553d5 · daemon 路由冒烟)
 from . import look_at              # noqa: E402,F401  ( III · wish-4a6331b2 · OPUS 的"眼睛")
+from . import update_core          # noqa: E402,F401  (卷六十四续六 · 选择性内核升级 · 只覆盖白名单·不碰灵魂)

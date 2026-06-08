@@ -6,7 +6,9 @@
   "sources": {
     "primary": "gitee",
     "note": "支持多源(gitee+github)。真相源唯一=母体 master;只单向往外 push,下游只拉不推。update_core 可指定从哪个 remote 拉。",
-    "remotes": {}
+    "remotes": {
+      "gitee": "https://gitee.com/vaan21th/dae-monkey.git"
+    }
   },
   "kernel": {
     "写文件与编辑安全": [
@@ -73,6 +75,11 @@
     "provider机制": [
       "model_aliases.py",
       "provider_presets.py"
+    ],
+    "内核自升级机制": [
+      "core_manifest.json",
+      "workers/core_update.py",
+      "agent_tools/update_core.py"
     ]
   },
   "excluded_borderline": {
