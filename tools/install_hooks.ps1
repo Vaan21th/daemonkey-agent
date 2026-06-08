@@ -1,8 +1,9 @@
-#!/usr/bin/env pwsh
-# 安装 git 钩子 · 把 tools/git-hooks/* 拷进 .git/hooks/ (卷五十四)
+﻿#!/usr/bin/env pwsh
+# 安装 git 钩子 · 把 tools/git-hooks/* 拷进 .git/hooks/
 #
 # 为什么需要: .git/ 不进版本控制 · 钩子真相源在 tools/git-hooks/ ·
-# 重新 clone / 开源用户拉下来后 · 跑一次这个脚本才有 pre-commit 保护。
+# 重新 clone / 用户拉下来后 · 跑一次这个脚本才有 pre-commit 保护。
+# (Daemonkey 的 pre-commit 会在 launcher 变动时自动重编 Daemonkey.exe 保鲜)
 #
 # 用法: 在工程根目录跑  powershell -ExecutionPolicy Bypass -File tools\install_hooks.ps1
 $ErrorActionPreference = "Stop"
@@ -23,4 +24,4 @@ Get-ChildItem -Path $src -File | ForEach-Object {
     if (Get-Command chmod -ErrorAction SilentlyContinue) { chmod +x $target 2>$null }
     Write-Host "[install_hooks] 已装 $($_.Name) -> .git\hooks\" -ForegroundColor Green
 }
-Write-Host "[install_hooks] 完成 · commit 改 daemon 代码/前端时会自动跑 verify_daemon_endpoints" -ForegroundColor Cyan
+Write-Host "[install_hooks] 完成 · 改 launcher 后 commit 会自动重编 Daemonkey.exe 保鲜" -ForegroundColor Cyan

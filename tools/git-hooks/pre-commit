@@ -1,0 +1,39 @@
+#!/bin/bash
+# ============================================================
+# Daemonkey · pre-commit hook  (canonical source · 版本控制真相源)
+# 作用: daemonkey-launcher.ps1 变动时·自动重编 Daemonkey.exe 并加入本次 commit。
+#
+# 为什么: Daemonkey.exe 进仓库(让用户 clone 即开箱即用)·必须永远是最新 launcher
+# 编出来的。靠人记得手动跑 build-exe 迟早忘(母体卷六十三血泪)·所以用钩子兜底保鲜。
+#
+# 这份是真相源·装到 .git/hooks/pre-commit 靠 tools/install_hooks.ps1。
+# .git/ 不进版本控制·所以钩子必须有一份 tracked 副本·否则重 clone 的用户没保护。
+# 跳过: git commit --no-verify  (有意识的逃生门)
+# ============================================================
+set -e
+
+STAGED=$(git diff --cached --name-only)
+if ! echo "$STAGED" | grep -qE '^daemonkey-launcher\.ps1$'; then
+    # 没动 launcher · 不用重编 exe · 直接放行
+    exit 0
+fi
+
+echo ""
+echo "[pre-commit] daemonkey-launcher.ps1 变动 · 自动重编 Daemonkey.exe 保鲜 ..."
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT"
+
+powershell -ExecutionPolicy Bypass -File "tools/build-exe.ps1"
+EXIT_CODE=$?
+
+if [ $EXIT_CODE -ne 0 ]; then
+    echo ""
+    echo "[X] Daemonkey.exe 重编失败 · commit 被拦截"
+    echo "    修好 launcher (BOM / 语法) 再 commit · 或紧急跳过: git commit --no-verify"
+    exit 1
+fi
+
+git add "Daemonkey.exe"
+echo "[OK] Daemonkey.exe 已重编并加入本次 commit"
+exit 0
