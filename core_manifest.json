@@ -1,0 +1,91 @@
+{
+  "manifest_version": 1,
+  "description": "Daemonkey 内核(L1)白名单 — update_core 只同步这里列出的文件;清单外的一律物理不碰(用户的功能/应用/灵魂永不被覆盖)。人类可读版见 docs/CORE-MANIFEST.md。",
+  "updated": "2026-06-08",
+  "log_ref": "卷六十四续五",
+  "sources": {
+    "primary": "gitee",
+    "note": "支持多源(gitee+github)。真相源唯一=母体 master;只单向往外 push,下游只拉不推。update_core 可指定从哪个 remote 拉。",
+    "remotes": {}
+  },
+  "kernel": {
+    "写文件与编辑安全": [
+      "agent_tools/edit_file.py",
+      "agent_tools/write_file.py",
+      "agent_tools/_edit_lock.py",
+      "agent_tools/_git_lock.py",
+      "agent_tools/_subprocess_helper.py",
+      "workers/safe_write.py",
+      "workers/edit_selfcheck.py",
+      "workers/schema_guard.py",
+      "workers/secret_redactor.py"
+    ],
+    "代码读搜执行": [
+      "agent_tools/read_file.py",
+      "agent_tools/outline_file.py",
+      "agent_tools/glob_files.py",
+      "agent_tools/grep_files.py",
+      "agent_tools/search_code.py",
+      "agent_tools/lint_check.py",
+      "agent_tools/python_exec.py",
+      "agent_tools/shell_exec.py"
+    ],
+    "git纪律与上线闸": [
+      "workers/git_ops.py",
+      "workers/worktree_state.py",
+      "agent_tools/worktree_status.py",
+      "workers/verify_gate.py",
+      "workers/frontend_check.py",
+      "workers/boot_health.py",
+      "agent_tools/verify_daemon_endpoints.py",
+      "tools/install_hooks.ps1",
+      "tools/git-hooks/pre-commit"
+    ],
+    "daemon生命周期与救命": [
+      "workers/daemon_lifecycle.py",
+      "workers/resume_runner.py",
+      "agent_tools/request_restart.py",
+      "workers/session_repair.py",
+      "tools/run_api_only.py",
+      "tools/repair_console.py",
+      "workers/env_reloader.py"
+    ],
+    "运行护栏与可观测": [
+      "workers/opus_logging.py",
+      "workers/audit_logger.py",
+      "workers/rate_limiter.py",
+      "workers/token_budget_guard.py",
+      "workers/net_client.py"
+    ],
+    "身份与灵魂加载机制": [
+      "identity.py",
+      "soul_loader.py"
+    ],
+    "核心循环与路由骨架": [
+      "tool_loop.py",
+      "daemon_runtime.py",
+      "daemon_session.py",
+      "api_routes/__init__.py",
+      "api_routes/_deps.py",
+      "api_routes/core.py",
+      "workers/scheduler.py"
+    ],
+    "provider机制": [
+      "model_aliases.py",
+      "provider_presets.py"
+    ]
+  },
+  "excluded_borderline": {
+    "daemon_api.py": "API骨架混着功能路由在一个大文件,同步会盖掉用户加的路由;长期拆出core骨架后再纳入",
+    "provider_configs.py": "含 provider key,属数据层(L3),不进白名单"
+  },
+  "never_sync": [
+    "soul/**",
+    "data/**",
+    "sessions/**",
+    "static/**",
+    ".env",
+    ".env.*",
+    "所有清单外的 workers/* agent_tools/* api_routes/* (=L2功能,用户自演化)"
+  ]
+}
