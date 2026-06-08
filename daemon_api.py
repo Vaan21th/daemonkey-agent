@@ -821,6 +821,21 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
     return header + "\n".join(descriptions) + "\n---\n"
 
 
+# 卷六十四续七 · 渠道感知 · 微信来的 turn 在 system 末尾追加这一段·让 AI 知道"用户在手机上"。
+# 不挂 user 消息(不污染历史)·挂 system(随轮重拼·即弃)。根因:src:"wechat" 之前只存进
+# 历史 metadata·没喂给大模型 → AI 当 PC 请求处理·用 write_clipboard 复制本地路径(手机拿不到)。
+_WECHAT_CHANNEL_NOTE = (
+    "\n\n=== 当前渠道：微信（他在手机上） ===\n"
+    "这一轮对话来自微信，他现在在手机上、不在电脑前。由此：\n"
+    "- 要把文件 / 图片 / 视频 / 音频发给他 → 用 wechat_send 带 media_path=本地文件路径，"
+    "把『真文件』发到他微信（图片→图片，视频→视频，文档 / 音频 / 其它→文件附件，"
+    "≤25MB，需 24h 窗口开着）。\n"
+    "- 【绝对不要】用 write_clipboard 复制路径、也不要只回一个本地路径（C:\\... 这种）——"
+    "他在手机上，Ctrl+V 和电脑路径都拿不到那个文件。\n"
+    "- 文字照常回即可，你的回复会自动发回他微信。\n"
+)
+
+
 def _chat_impl(
     message: str,
     session_id: Optional[str],
@@ -949,13 +964,18 @@ def _chat_impl(
         except Exception:
             pass
 
+        # 卷六十四续七 · 渠道感知 · 微信 turn 给 system 末尾挂一句"你在微信上·发文件走
+        # wechat_send media_path·别 write_clipboard/甩路径"。挂 system 不污染 user 历史·随轮即弃。
+        _sys = _build_remote_system(RUNTIME.system_prompt, session_id=sid) + _pb_hint
+        if _user_meta.get("src") == "wechat":
+            _sys = _sys + _WECHAT_CHANNEL_NOTE
         try:
             reply, messages, usage = run_tool_loop(
                 client=RUNTIME.client,
                 provider=RUNTIME.provider,
                 model=RUNTIME.model,
                 max_tokens=max_tokens,
-                system=_localize(_build_remote_system(RUNTIME.system_prompt, session_id=sid) + _pb_hint),
+                system=_localize(_sys),
                 messages=messages,
                 confirm=confirm,
                 observe=_closure_observe,
