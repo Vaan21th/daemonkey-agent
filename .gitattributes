@@ -1,0 +1,8 @@
+# git 钩子是 bash 脚本·必须 LF —— CRLF 会让 bash 报 "\r: command not found"·钩子静默失效
+tools/git-hooks/pre-commit text eol=lf
+*.sh text eol=lf
+
+# 二进制·不做换行 / 编码转换（Daemonkey.exe 进仓库·属开箱即用资产）
+*.exe binary
+*.ico binary
+*.png binary
