@@ -28,6 +28,13 @@ from typing import Any
 
 from . import TIER_AUTO, ToolResult, ToolSpec, register_tool
 
+# 兜底领域是【实例配置】(母体 ai / 开源版 self-evolve)·不是代码常量。
+try:
+    from identity import default_domain as _default_domain
+except Exception:
+    def _default_domain():
+        return "ai"
+
 
 def _summarize(args: dict) -> str:
     action = args.get("action") or "?"
@@ -45,7 +52,7 @@ def _format_source_line(s: dict) -> str:
     return (
         f"  - {s['id']} {enabled_mark}  "
         f"{s.get('display', s['id'])}  "
-        f"domain={s.get('domain', 'self-evolve')}  "
+        f"domain={s.get('domain', _default_domain())}  "
         f"category={s.get('category', '?')}  "
         f"type={s.get('type', 'rss')}  "
         f"max={s.get('max_items', 10)}  "
@@ -103,7 +110,7 @@ def _run(args: dict) -> ToolResult:
             # 按 domain 分组展示 · 一目了然
             by_domain: dict[str, list[dict]] = {}
             for s in sources:
-                d = s.get("domain", "self-evolve")
+                d = s.get("domain", _default_domain())
                 by_domain.setdefault(d, []).append(s)
 
             for did, group in by_domain.items():
@@ -154,7 +161,7 @@ def _run(args: dict) -> ToolResult:
                 output=(
                     f"已添加源 · id={new['id']} · name={new['name']}\n"
                     f"  url={new['url']}\n"
-                    f"  domain={new.get('domain', 'self-evolve')}  category={new['category']}  type={new['type']}\n"
+                    f"  domain={new.get('domain', _default_domain())}  category={new['category']}  type={new['type']}\n"
                     f"\n下次 worker 跑时会包含这个源。立即生效请用 action=refresh。"
                 ),
             )

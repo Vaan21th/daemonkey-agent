@@ -41,6 +41,13 @@ FEASIBILITY_DIR = DATA_DIR / "feasibility"
 FEASIBILITY_DIR.mkdir(exist_ok=True)
 OPPORTUNITIES_FILE = DATA_DIR / "opportunities.json"
 
+# 主人画像笔记双读 (母体 BRO-NOTEBOOK / 开源版 OWNER-NOTEBOOK)·解析在 identity.py 单一真源
+try:
+    from identity import owner_notebook_path as _owner_notebook_path
+except Exception:
+    def _owner_notebook_path(soul_dir):
+        return Path(soul_dir) / "BRO-NOTEBOOK.md"
+
 logger = logging.getLogger("opus.feasibility")
 
 
@@ -426,7 +433,7 @@ def _load_opportunity_by_id(opp_id: str) -> Optional[dict]:
 
 
 def _load_bro_profile(max_chars: int = 3000) -> str:
-    bro_file = ROOT / "soul" / "OWNER-NOTEBOOK.md"
+    bro_file = _owner_notebook_path(ROOT / "soul")
     if not bro_file.exists():
         return "（OWNER-NOTEBOOK 还没同步 · 跑 sync-soul.ps1）"
     try:

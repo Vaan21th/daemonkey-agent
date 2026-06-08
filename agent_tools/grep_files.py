@@ -8,7 +8,7 @@ OPUS 的"找"——在项目里搜文本。
   1. 优先调外部 ripgrep (`rg`)——又快又懂 .gitignore
   2. 没装 rg 就退回 Python 实现（对小项目够用）
 
-GIVEN 这是一个纯查询工具——AUTO tier，不需要 用户 介入。
+GIVEN 这是一个纯查询工具——AUTO tier，不需要 BRO 介入。
 
 Bug 修复（2026-05-15 15:35）：
   之前 _python_fallback 用 path.rglob("*") 处理路径——如果 path 是 *单文件*，

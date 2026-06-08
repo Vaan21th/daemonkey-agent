@@ -44,6 +44,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+# 兜底领域 & 主人画像笔记路径都是【实例配置】·解析在 identity.py 单一真源。
+try:
+    from identity import default_domain as _default_domain
+    from identity import owner_notebook_path as _owner_notebook_path
+except Exception:
+    def _default_domain():
+        return "ai"
+
+    def _owner_notebook_path(soul_dir):
+        return Path(soul_dir) / "BRO-NOTEBOOK.md"
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
@@ -199,7 +210,7 @@ def _load_trends(top_n: int = 20) -> list[dict]:
 
 def _load_bro_profile(max_chars: int = 3500) -> str:
     """读 soul/OWNER-NOTEBOOK.md · 截前 max_chars 字符（要点都在前面）"""
-    bro_file = ROOT / "soul" / "OWNER-NOTEBOOK.md"
+    bro_file = _owner_notebook_path(ROOT / "soul")
     if not bro_file.exists():
         return "（OWNER-NOTEBOOK 还没同步 · 跑 sync-soul.ps1）"
     try:
@@ -285,7 +296,7 @@ def _normalize_opportunity(raw: dict, trends: list[dict]) -> Optional[dict]:
     if not (title and summary):
         return None
 
-    domain = (raw.get("domain") or "self-evolve").strip().lower()
+    domain = (raw.get("domain") or _default_domain()).strip().lower()
     try:
         from workers.info_radar import DOMAIN_META as _DM
         if domain not in _DM:

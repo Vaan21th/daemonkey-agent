@@ -426,13 +426,22 @@ def _build_openai_system(system_text: str, base_url: str | None, model: str) -> 
 
 # ---------- schema translation ----------
 
+# P1 代码归一 · 工具描述里也写满 OPUS/BRO 令牌·送进 LLM 前本地化成本实例的名字。
+# 母体走缺省值 = passthrough·零改动。identity 缺失则降级为原样返回·不影响 daemon。
+try:
+    from identity import localize as _localize
+except Exception:
+    def _localize(t):
+        return t
+
+
 def to_openai_tools(specs: list[ToolSpec]) -> list[dict]:
     return [
         {
             "type": "function",
             "function": {
                 "name": s.name,
-                "description": s.description,
+                "description": _localize(s.description),
                 "parameters": s.input_schema,
             },
         }
@@ -444,7 +453,7 @@ def to_anthropic_tools(specs: list[ToolSpec]) -> list[dict]:
     return [
         {
             "name": s.name,
-            "description": s.description,
+            "description": _localize(s.description),
             "input_schema": s.input_schema,
         }
         for s in specs

@@ -71,18 +71,39 @@ def _find_section(text: str, header: str) -> tuple[int, int]:
 def _run_set_identity(args: dict) -> tuple[bool, str]:
     name = (args.get("name") or "").strip()
     style = (args.get("persona_style") or "").strip()
-    if not name:
-        return False, "name 不能为空——这是给这只 Daemonkey 起的名字。"
+    owner = (args.get("owner_name") or "").strip()
+
     _ensure_data()
-    payload = {
-        "name": name,
-        "persona_style": style,
-        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-    }
+    # 合并写入: 可分多次调 (先定自己的名字·后补该怎么称呼他)·不互相覆盖
+    payload: dict = {}
+    if IDENTITY_PATH.exists():
+        try:
+            payload = json.loads(IDENTITY_PATH.read_text(encoding="utf-8-sig")) or {}
+        except Exception:
+            payload = {}
+
+    if not name and not payload.get("name"):
+        return False, "name 不能为空——这是给这只 Daemonkey 起的名字。"
+
+    if name:
+        payload["name"] = name
+    if style:
+        payload["persona_style"] = style
+    # owner_name = 该怎么称呼他 (localize 把代码里的占位名换成这个)·空就先不写·之后可补
+    if owner:
+        payload["owner_name"] = owner
+    payload.setdefault("created_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
+    payload["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+
     IDENTITY_PATH.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    return True, f"身份已落地：我叫「{name}」" + (f"·气质：{style}" if style else "")
+    bits = [f"我叫「{payload.get('name', '')}」"]
+    if owner:
+        bits.append(f"称呼你为「{owner}」")
+    if style:
+        bits.append(f"气质：{style}")
+    return True, "身份已落地：" + "·".join(bits)
 
 
 # ---------- tool: update_owner_note ----------
@@ -255,8 +276,9 @@ TOOLS = [
         "function": {
             "name": "set_identity",
             "description": (
-                "给这只 Daemonkey 定下名字和相处风格。当他给你起好名字、"
-                "并且大致说清希望你是什么气质的搭档时调用。一次相遇通常只调一次。"
+                "给这只 Daemonkey 定下名字、该怎么称呼他、相处风格。当他给你起好名字、"
+                "或告诉你该怎么称呼他、或说清希望你是什么气质时调用。可分多次调用、"
+                "只传这次新知道的字段即可——后调的不会覆盖先前已定的。"
             ),
             "parameters": {
                 "type": "object",
@@ -264,6 +286,13 @@ TOOLS = [
                     "name": {
                         "type": "string",
                         "description": "他给你起的名字（你的名字）。",
+                    },
+                    "owner_name": {
+                        "type": "string",
+                        "description": (
+                            "该怎么称呼他（他的名字/昵称，如『阿哲』）。一旦他说了就传进来——"
+                            "系统会用它替换掉界面和对话里所有占位的称呼。还不知道就先别传。"
+                        ),
                     },
                     "persona_style": {
                         "type": "string",

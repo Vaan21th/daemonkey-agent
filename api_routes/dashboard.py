@@ -26,6 +26,13 @@ from fastapi import APIRouter, Header, HTTPException, Request
 from api_routes._deps import check_auth
 from daemon_api import ROOT
 
+# 兜底领域是【实例配置】(母体 ai / 开源版 self-evolve)·不是代码常量。
+try:
+    from identity import default_domain as _default_domain
+except Exception:
+    def _default_domain():
+        return "ai"
+
 logger = logging.getLogger("opus.daemon.dashboard")
 
 router = APIRouter()
@@ -113,7 +120,7 @@ def _build_calendar_day(day: str) -> dict:
                     "url": it.get("url"),
                     "published_at": it.get("published_at"),
                     "fetched_at": it.get("fetched_at"),
-                    "domain": it.get("domain", "self-evolve"),
+                    "domain": it.get("domain", _default_domain()),
                 }
                 for it in r_items[:50]
             ],
@@ -353,7 +360,7 @@ def dashboard_cockpit(
         items = [
             {
                 "title": o.get("title", ""),
-                "domain": o.get("domain", "self-evolve"),
+                "domain": o.get("domain", _default_domain()),
                 "fit": o.get("fit", "maybe"),
                 "recommend": o.get("recommend", 3),
                 "cost_effort": o.get("cost_effort", "?"),
@@ -846,7 +853,7 @@ async def dashboard(
                 )
             filtered = [
                 it for it in (data.get("items") or [])
-                if it.get("domain", "self-evolve") == domain_filter
+                if it.get("domain", _default_domain()) == domain_filter
             ]
             data["items"] = filtered
             data["filtered_by_domain"] = domain_filter

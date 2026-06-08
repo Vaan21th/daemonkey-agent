@@ -103,12 +103,36 @@ class _ReloaderState:
 _STATE = _ReloaderState()
 
 
+def _read_env_text(path: Path) -> str:
+    """容错读 .env 文本 · 与 tools/run_api_only._read_env_text 同语义。
+
+    先 UTF-8(含 BOM)·失败按行回退 GBK/latin-1·防混合编码 .env 让
+    hot-reload watcher 永久读不出新值 (历史: 中文注释被按 GBK 写入)。
+    """
+    raw = path.read_bytes()
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        pass
+    lines = []
+    for bline in raw.split(b"\n"):
+        for enc in ("utf-8", "gbk", "latin-1"):
+            try:
+                lines.append(bline.decode(enc))
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            lines.append(bline.decode("utf-8", errors="replace"))
+    return "\n".join(lines)
+
+
 def _parse_env_file(path: Path) -> dict[str, str]:
     """复刻 tools/run_api_only._load_env · 但返回 dict 不写 os.environ"""
     out: dict[str, str] = {}
     if not path.exists():
         return out
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in _read_env_text(path).splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

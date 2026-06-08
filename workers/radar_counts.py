@@ -27,6 +27,13 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Optional
 
+# 兜底领域是【实例配置】(母体 ai / 开源版 self-evolve)·不是代码常量。
+try:
+    from identity import default_domain as _default_domain
+except Exception:
+    def _default_domain():
+        return "ai"
+
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 RADAR_FILE = DATA_DIR / "radar.json"
@@ -161,7 +168,7 @@ def radar_stats(items: Optional[list[dict]] = None, *, today: Optional[str] = No
     new_today_by_domain: dict[str, int] = {}
     new_today = 0
     for it in vis:
-        d = it.get("domain") or "self-evolve"
+        d = it.get("domain") or _default_domain()
         by_domain[d] = by_domain.get(d, 0) + 1
         if target and item_day(it, seen_map=seen_map) == target:
             new_today += 1

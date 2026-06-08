@@ -308,7 +308,8 @@ def rebuild() -> int:
 
     # ---- 索引 soul/ 下的 md 文件 ----
     soul_files = [
-        ("OWNER-NOTEBOOK.md", "BRO-NOTEBOOK"),
+        ("OWNER-NOTEBOOK.md", "OWNER-NOTEBOOK"),
+        ("BRO-NOTEBOOK.md", "BRO-NOTEBOOK"),
         ("SELF-EVOLUTION.md", "SELF-EVOLUTION"),
         ("OPUS-MEMORIES.md", "OPUS-MEMORIES"),
         ("SKILL.md", "SKILL"),
@@ -607,7 +608,7 @@ def check_stale() -> bool:
 
     db_mtime = DB_PATH.stat().st_mtime
 
-    soul_files = ["OWNER-NOTEBOOK.md", "SELF-EVOLUTION.md", "OPUS-MEMORIES.md", "SKILL.md"]
+    soul_files = ["OWNER-NOTEBOOK.md", "BRO-NOTEBOOK.md", "SELF-EVOLUTION.md", "OPUS-MEMORIES.md", "SKILL.md"]
     for fn in soul_files:
         p = SOUL_DIR / fn
         if p.exists() and p.stat().st_mtime > db_mtime:

@@ -17,7 +17,7 @@ slack / notion / playwright / OpenClaw 内的所有 server / 你自己写的 …
   - mcp_describe_tool(server, tool) · 看某个 tool 的 schema
 
 设计：
-  - 配置文件：.mcp/servers.json（不存在就给 .example 提示 用户 创建）
+  - 配置文件：.mcp/servers.json（不存在就给 .example 提示 BRO 创建）
   - **lazy connect**：调用时才连，不调不开 server 进程
   - **session pooling**：同一 daemon 进程内 server 连接缓存
     （OPUS 第一次调 github 慢 2s，后面都是 ms 级）
@@ -56,7 +56,7 @@ def _load_servers() -> tuple[dict, str]:
                 f"未找到 .mcp/servers.json。看 {SERVERS_EXAMPLE.relative_to(PROJECT_ROOT)} 模板，"
                 f"复制并去掉 .example 后缀，按需要编辑"
             )
-        return {}, f".mcp/servers.json 不存在 + 没有模板，用户 需要手动创建"
+        return {}, f".mcp/servers.json 不存在 + 没有模板，BRO 需要手动创建"
     try:
         data = json.loads(SERVERS_CONFIG.read_text(encoding="utf-8"))
         servers = data.get("servers", {})

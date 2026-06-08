@@ -53,7 +53,15 @@ from typing import Optional
 
 
 ROOT = Path(__file__).resolve().parent.parent
-BRO_NOTEBOOK = ROOT / "soul" / "OWNER-NOTEBOOK.md"
+
+# 主人画像笔记双读 (母体 BRO-NOTEBOOK / 开源版 OWNER-NOTEBOOK)·解析在 identity.py 单一真源
+try:
+    from identity import owner_notebook_path as _owner_notebook_path
+except Exception:
+    def _owner_notebook_path(soul_dir):
+        return Path(soul_dir) / "BRO-NOTEBOOK.md"
+
+BRO_NOTEBOOK = _owner_notebook_path(ROOT / "soul")
 OPUS_DIARY = ROOT / "data" / "cognition" / "opus-diary.md"
 
 

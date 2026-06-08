@@ -150,6 +150,14 @@ def summarize_engineering_milestones(since: str, until: str) -> str:
     return _llm_mini_call(prompt, max_tokens=2000, fallback="(LLM 调用失败 · 没生成里程碑摘要)")
 
 
+# P1 代码归一 · 这些 worker 自建 prompt 直连 LLM·绕过 soul/tool/remote 三出口·要单独本地化
+try:
+    from identity import localize as _localize
+except Exception:
+    def _localize(t):
+        return t
+
+
 def _llm_mini_call(prompt: str, max_tokens: int = 2000, fallback: str = "",
                    *, retries: int = 3) -> str:
     """调一次 LLM mini-call · 用 daemon RUNTIME.client (跟 capability_mirror 同款)。
@@ -158,6 +166,7 @@ def _llm_mini_call(prompt: str, max_tokens: int = 2000, fallback: str = "",
     直接显示错误串或留空。 这里加重试 (默认 3 次·退避 1s/2s)·返空也算软失败一并重试·
     全部耗尽才返 fallback (附尝试次数·让 用户 区分『真挂了』还是『网络抖一下』)。
     """
+    prompt = _localize(prompt)  # P1 · prompt 里写死的 OPUS 令牌换成本实例名 (母体 no-op)
     try:
         from daemon_runtime import RUNTIME
     except Exception as e:

@@ -570,6 +570,13 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
     if with_runtime:
         system_prompt = system_prompt + runtime_context_addendum(root)
 
+    # P1 代码归一 · 把 OPUS/BRO 令牌本地化成本实例的名字 (母体走缺省值 = no-op·零改动)
+    try:
+        from identity import localize as _localize
+        system_prompt = _localize(system_prompt)
+    except Exception:
+        pass
+
     # --- FTS5 记忆索引 · 启动时自动检查 (卷三十五 · wish-273374f6) ---
     # 索引不存在或过期 (源文件比 db 新) → 后台重建。
     # 非阻塞：重建失败不影响 daemon 启动——recall_memory 会优雅降级。

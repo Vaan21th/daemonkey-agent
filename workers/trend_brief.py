@@ -31,6 +31,13 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+# 兜底领域是【实例配置】(母体 ai / 开源版 self-evolve)·不是代码常量。
+try:
+    from identity import default_domain as _default_domain
+except Exception:
+    def _default_domain():
+        return "ai"
+
 ROOT = Path(__file__).resolve().parent.parent
 BRIEF_DIR = ROOT / "data" / "trend_briefs"
 
@@ -119,7 +126,7 @@ def _pick_items(year: int, month: int, domain: Optional[str], top: int = 40) -> 
         d = item_date(it)
         if not d or d.year != year or d.month != month:
             continue
-        if domain and (it.get("domain") or "self-evolve") != domain:
+        if domain and (it.get("domain") or _default_domain()) != domain:
             continue
         nt = _norm_title(it)
         if len(nt) >= 20 and nt in seen:

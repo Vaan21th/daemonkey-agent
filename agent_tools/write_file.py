@@ -36,10 +36,12 @@ from . import (
     TIER_GUARD,
     ToolResult,
     ToolSpec,
+    current_session_id,
     register_tool,
 )
 from ._subprocess_helper import no_window_kwargs
 from ._git_lock import daemon_git_lock
+from ._edit_lock import guard as _edit_guard, note_write as _edit_note
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -230,6 +232,24 @@ def _run(args: dict) -> ToolResult:
                 ),
             )
 
+    # 编辑并发软锁: 覆盖/追加已存在文件时·另一个对话正改它 / 磁盘被外部改过 → 软提示 (可 force 过)
+    # create 模式是新建文件·没有覆盖风险(撞 already exists 已在上面拦)·跳过。
+    _owner = current_session_id()
+    _lock_note = None
+    if mode != "create" and path.exists():
+        if old_content is not None:
+            _cur_text = old_content
+        else:
+            try:
+                _cur_text = path.read_text(encoding="utf-8")
+            except Exception:
+                _cur_text = ""
+        _lock_ok, _lock_note = _edit_guard(
+            str(path), _owner, _cur_text, force=bool(args.get("force")), tool=f"write_file:{mode}"
+        )
+        if not _lock_ok:
+            return ToolResult(ok=False, output="", error=_lock_note or "编辑锁冲突")
+
     try:
         if mode == "append":
             with path.open("a", encoding="utf-8") as f:
@@ -289,6 +309,9 @@ def _run(args: dict) -> ToolResult:
             ),
         )
 
+    # 写成功 · 把编辑锁刷新到新内容指纹(同一对话连续写不误报·也记录"这文件谁动过")
+    _edit_note(str(path), _owner, written, tool=f"write_file:{mode}")
+
     try:
         size = path.stat().st_size
     except OSError:
@@ -298,6 +321,8 @@ def _run(args: dict) -> ToolResult:
         f"wrote {path}\n"
         f"mode={mode}  bytes_on_disk={size}  chars_written={len(content)}  verified=utf-8-roundtrip"
     )
+    if _lock_note:
+        base_output = f"{base_output}\n{_lock_note}"
 
     #  F · branch guard
     warn = _branch_guard_warning(path)
@@ -347,6 +372,14 @@ SPEC = ToolSpec(
                     "Bypass the shrink-guard. Only set true when you INTENTIONALLY shrink a large file "
                     ">40% (e.g. deleting a big dead-code block). For normal edits to big files, "
                     "use edit_file (str_replace) instead — never overwrite."
+                ),
+            },
+            "force": {
+                "type": "boolean",
+                "description": (
+                    "Override the concurrent-edit advisory lock (another conversation editing this file, "
+                    "or the file changed on disk since the last tool write). Only set true after confirming "
+                    "you won't clobber someone else's work. Default false."
                 ),
             },
         },

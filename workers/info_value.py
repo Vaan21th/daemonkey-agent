@@ -33,6 +33,13 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Optional
 
+# 兜底领域是【实例配置】(母体 ai / 开源版 self-evolve)·不是代码常量。
+try:
+    from identity import default_domain as _default_domain
+except Exception:
+    def _default_domain():
+        return "ai"
+
 ROOT = Path(__file__).resolve().parent.parent
 
 logger = logging.getLogger("opus.info_value")
@@ -229,7 +236,7 @@ def build_value_calendar(year: int, month: int, domain: Optional[str] = None) ->
         DOMAIN_META = {}
     dom_counts: dict[str, int] = {}
     for it in month_items:
-        dkey = it.get("domain") or "self-evolve"
+        dkey = it.get("domain") or _default_domain()
         dom_counts[dkey] = dom_counts.get(dkey, 0) + 1
     domains = [{"id": "all", "label": "全部", "icon": "🌐", "color": "#9f7aea",
                 "count": len(month_items)}]
@@ -240,7 +247,7 @@ def build_value_calendar(year: int, month: int, domain: Optional[str] = None) ->
                         "color": meta.get("color", "#888"), "count": cnt})
 
     items = month_items if not domain else [
-        it for it in month_items if (it.get("domain") or "self-evolve") == domain]
+        it for it in month_items if (it.get("domain") or _default_domain()) == domain]
 
     # date -> {seen_titles, value, count, peak_value, peak_title}
     buckets: dict[str, dict] = {}
@@ -348,7 +355,7 @@ def day_signals(date_str: str, domain: Optional[str] = None, limit: int = 20) ->
 
     items = _load_radar_items()
     if domain:
-        items = [it for it in items if (it.get("domain") or "self-evolve") == domain]
+        items = [it for it in items if (it.get("domain") or _default_domain()) == domain]
     fb = _fb_map()
     now = datetime.now(timezone.utc)
     try:
@@ -381,7 +388,7 @@ def day_signals(date_str: str, domain: Optional[str] = None, limit: int = 20) ->
             "title_en": it.get("title") or "",
             "url": url,
             "source": it.get("source_display") or it.get("source") or "",
-            "domain": it.get("domain") or "self-evolve",
+            "domain": it.get("domain") or _default_domain(),
             "value": item_value(it, now=now, fb_map=fb),
             "summary": (it.get("summary_zh") or it.get("summary") or "")[:200],
             "feedback": (entry.get("feedback") if entry else None),

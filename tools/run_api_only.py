@@ -54,12 +54,38 @@ if sys.platform.startswith("win"):
         pass  # 不要因为藏窗口失败就崩 daemon
 
 
+def _read_env_text(path: Path) -> str:
+    """容错读 .env 文本 · 先 UTF-8(含 BOM)·失败按行回退 GBK/latin-1。
+
+    Windows 上往 .env 追加中文注释时·若工具按系统默认 ANSI/GBK 写回·
+    文件会变成混合编码 (前段 UTF-8 + 后段 GBK)·纯 utf-8 读到 GBK 字节
+    (如 0xb4) 直接 UnicodeDecodeError 把 daemon 卡死在启动。逐行回退让
+    这种文件仍能读出 key·绝不因一行坏注释拖垮整个 daemon。
+    """
+    raw = path.read_bytes()
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        pass
+    lines = []
+    for bline in raw.split(b"\n"):
+        for enc in ("utf-8", "gbk", "latin-1"):
+            try:
+                lines.append(bline.decode(enc))
+                break
+            except UnicodeDecodeError:
+                continue
+        else:
+            lines.append(bline.decode("utf-8", errors="replace"))
+    return "\n".join(lines)
+
+
 def _load_env():
     """读 .env 文件 · 不依赖 python-dotenv（保持依赖轻）"""
     env = ROOT / ".env"
     if not env.exists():
         return
-    for line in env.read_text(encoding="utf-8").splitlines():
+    for line in _read_env_text(env).splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue

@@ -2,7 +2,7 @@
 agent_tools/pdf_read.py
 =======================
 
-读 PDF 提取文本——离职月 用户 大概率会让 OPUS 看 offer / 合同 / 论文。
+读 PDF 提取文本——离职月 BRO 大概率会让 OPUS 看 offer / 合同 / 论文。
 
 设计：
   - pypdf（纯 Python，无系统依赖，轻量 338KB）
@@ -185,12 +185,12 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="pdf_read",
     description=(
-        "Extract text from a PDF file. Use for: 用户's contracts/offers (离职月), "
+        "Extract text from a PDF file. Use for: BRO's contracts/offers (离职月), "
         "research papers, manuals, anything in PDF.\n"
         "  - pages: 'all' (default) | '1-3' | '1,3,5' | '1-3,5-7'\n"
         "  - max_chars: 500-50000 (default 8000)\n"
         "Returns clean text with page markers. If PDF is scanned (image-based), returns empty body "
-        "with a hint—then ask 用户 to use OCR or paste text.\n"
+        "with a hint—then ask BRO to use OCR or paste text.\n"
         "AUTO tier (read-only)."
     ),
     tier=TIER_AUTO,

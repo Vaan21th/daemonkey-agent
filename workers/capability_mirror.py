@@ -161,6 +161,14 @@ def _load_recent_summaries(max_chars: int = 4000) -> str:
 
 # ── Prompt 模板 ────────────────────────────────────────────────
 
+# P1 代码归一 · 这个 worker 自建 SYSTEM_PROMPT 直连 LLM·绕过三出口·送进 LLM 前单独本地化
+try:
+    from identity import localize as _localize
+except Exception:
+    def _localize(t):
+        return t
+
+
 SYSTEM_PROMPT = """你是 OPUS 的"市场能力镜像"分析引擎。
 
 你的任务不是给 BRO 打分——是帮他**看见自己**。
@@ -256,8 +264,8 @@ def generate_snapshot() -> dict:
             resp = RUNTIME.client.messages.create(
                 model=RUNTIME.model,
                 max_tokens=10000,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_prompt}],
+                system=_localize(SYSTEM_PROMPT),
+                messages=[{"role": "user", "content": _localize(user_prompt)}],
             )
             for block in resp.content:
                 if getattr(block, "type", "") == "text":
@@ -274,8 +282,8 @@ def generate_snapshot() -> dict:
                 model=RUNTIME.model,
                 max_tokens=10000,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
+                    {"role": "system", "content": _localize(SYSTEM_PROMPT)},
+                    {"role": "user", "content": _localize(user_prompt)},
                 ],
             )
             raw_output = resp.choices[0].message.content or ""

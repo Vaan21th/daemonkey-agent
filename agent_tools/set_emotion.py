@@ -16,7 +16,7 @@ OPUS 通过文件桥控制桌宠表情（[情绪通道-001]）。
 使用建议（OPUS 自己看的）：
   - 不要每说一句话就切——会很闹
   - 关键时刻切：开始长任务（working）/ 完成（happy）/ 思考长 plan（thinking）/
-    用户 久不在又回来（greeting）/ 凌晨 5 点了（sleepy 提醒 用户 休息）
+    BRO 久不在又回来（greeting）/ 凌晨 5 点了（sleepy 提醒 BRO 休息）
 """
 
 from __future__ import annotations
@@ -84,7 +84,7 @@ SPEC = ToolSpec(
         "idle, thinking, working, happy, surprised, confused, sleepy, greeting. "
         "Writes to desktop_pet/state.txt; the pet (if running) polls that file every second. "
         "Use sparingly—pick key moments (start long task→working, finish→happy, "
-        "thinking through a plan→thinking, 用户 returns→greeting, late night→sleepy). "
+        "thinking through a plan→thinking, BRO returns→greeting, late night→sleepy). "
         "Don't switch on every reply or it'll feel noisy."
     ),
     tier=TIER_AUTO,

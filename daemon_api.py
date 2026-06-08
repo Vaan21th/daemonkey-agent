@@ -385,6 +385,14 @@ daemon 在 chat 里给你装了一个 inline confirm 卡片系统。当你调 CO
 """
 
 
+# P1 代码归一 · 把 system 里的 OPUS/BRO 令牌本地化成本实例的名字 (母体走缺省值 = no-op)
+try:
+    from identity import localize as _localize
+except Exception:
+    def _localize(t):
+        return t
+
+
 def _build_remote_system(base: str, session_id: str = "") -> str:
     """拼装 system prompt · 静态 soul + 远程 hint + 动态 telemetry (wish-1d286099)。"""
     result = base + _REMOTE_SYSTEM_HINT
@@ -880,6 +888,12 @@ def _chat_impl(
         set_session_id(sid)
         # 卷四十六 III · wish-ed5553d5 hookup · 让 request_restart 等工具能拿到当前 session
         RUNTIME.session_id = sid
+        # 编辑并发软锁 · 把当前对话身份写进 ContextVar · 让 edit_file/write_file 能区分"哪个对话在改"
+        try:
+            from agent_tools import set_session_context
+            set_session_context(sid)
+        except Exception:
+            pass
 
         # wish-4a6331b2 · 处理图片附件 → 调 look_at → 拼描述到 message 头部
         if attachments:
@@ -941,7 +955,7 @@ def _chat_impl(
                 provider=RUNTIME.provider,
                 model=RUNTIME.model,
                 max_tokens=max_tokens,
-                system=_build_remote_system(RUNTIME.system_prompt, session_id=sid) + _pb_hint,
+                system=_localize(_build_remote_system(RUNTIME.system_prompt, session_id=sid) + _pb_hint),
                 messages=messages,
                 confirm=confirm,
                 observe=_closure_observe,
@@ -1090,7 +1104,6 @@ def build_app():
     from api_routes import models as _routes_models
     from api_routes import providers as _routes_providers
     from api_routes import dashboard as _routes_dashboard
-    from api_routes import onboarding as _routes_onboarding  # 形态 Z · 相遇初始化
     app.include_router(_routes_core.router)
     app.include_router(_routes_lifecycle.router)
     app.include_router(_routes_governance.router)
@@ -1103,7 +1116,13 @@ def build_app():
     app.include_router(_routes_models.router)
     app.include_router(_routes_providers.router)
     app.include_router(_routes_dashboard.router)
-    app.include_router(_routes_onboarding.router)
+
+    # 形态 Z · 相遇初始化路由 (开源版 Daemonkey 有·母体 OPUS 无此模块 → 守卫跳过)
+    try:
+        from api_routes import onboarding as _routes_onboarding
+        app.include_router(_routes_onboarding.router)
+    except Exception:
+        pass
 
     return app
 

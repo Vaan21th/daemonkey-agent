@@ -40,6 +40,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
+# 兜底领域是【实例配置】(母体 ai / 开源版 self-evolve)·不是代码常量。
+try:
+    from identity import default_domain as _default_domain
+except Exception:
+    def _default_domain():
+        return "ai"
+
 try:
     import httpx
 except ImportError:
@@ -358,7 +365,7 @@ def list_domains() -> list[dict]:
     sources = _load_sources_file()
     src_counts: dict[str, int] = {}
     for s in sources:
-        d = s.get("domain", "self-evolve")
+        d = s.get("domain", _default_domain())
         src_counts[d] = src_counts.get(d, 0) + 1
 
     # 卷五十八续 X · 分类计数走唯一真相源 radar_counts (扣 hidden)·
@@ -372,7 +379,7 @@ def list_domains() -> list[dict]:
             if RADAR_FILE.exists():
                 radar = json.loads(RADAR_FILE.read_text(encoding="utf-8"))
                 for it in radar.get("items") or []:
-                    d = it.get("domain", "self-evolve")
+                    d = it.get("domain", _default_domain())
                     item_counts[d] = item_counts.get(d, 0) + 1
         except Exception:
             pass
@@ -548,7 +555,7 @@ def list_sources(
     if category:
         sources = [s for s in sources if s.get("category") == category]
     if domain:
-        sources = [s for s in sources if s.get("domain", "self-evolve") == domain]
+        sources = [s for s in sources if s.get("domain", _default_domain()) == domain]
     return sources
 
 
@@ -726,7 +733,7 @@ def _parse_rss_or_atom(
                     summary=(desc[:400] if desc else ""),
                     published_at=pub,
                     fetched_at=fetched_at,
-                    domain=source.get("domain", "self-evolve"),
+                    domain=source.get("domain", _default_domain()),
                 )
             )
         return items
@@ -762,7 +769,7 @@ def _parse_rss_or_atom(
                 summary=summary[:400],
                 published_at=pub,
                 fetched_at=fetched_at,
-                domain=source.get("domain", "self-evolve"),
+                domain=source.get("domain", _default_domain()),
             )
         )
 
@@ -824,7 +831,7 @@ def refresh_radar(progress=None, translate: bool = True) -> dict:
                 {
                     "source": src["id"],
                     "display": src.get("display", src["id"]),
-                    "domain": src.get("domain", "self-evolve"),
+                    "domain": src.get("domain", _default_domain()),
                     "fetched": len(items),
                     "ok": bool(items),
                     "elapsed_ms": int((time.time() - t0) * 1000),
@@ -837,7 +844,7 @@ def refresh_radar(progress=None, translate: bool = True) -> dict:
                 {
                     "source": src["id"],
                     "display": src.get("display", src["id"]),
-                    "domain": src.get("domain", "self-evolve"),
+                    "domain": src.get("domain", _default_domain()),
                     "fetched": 0,
                     "ok": False,
                     "error": str(e),
@@ -886,7 +893,7 @@ def refresh_radar(progress=None, translate: bool = True) -> dict:
 
     domains_breakdown: dict[str, int] = {}
     for it in items_dicts:
-        d = it.get("domain", "self-evolve")
+        d = it.get("domain", _default_domain())
         domains_breakdown[d] = domains_breakdown.get(d, 0) + 1
 
     payload = {
@@ -995,11 +1002,11 @@ def backfill_radar_domain() -> dict:
         return {"note": "radar empty · nothing to backfill"}
 
     sources = _load_sources_file()
-    source_domain_map = {s["id"]: s.get("domain", "self-evolve") for s in sources}
+    source_domain_map = {s["id"]: s.get("domain", _default_domain()) for s in sources}
 
     updated = 0
     for it in items:
-        new_domain = source_domain_map.get(it.get("source", ""), "self-evolve")
+        new_domain = source_domain_map.get(it.get("source", ""), _default_domain())
         if it.get("domain") != new_domain:
             it["domain"] = new_domain
             updated += 1
@@ -1007,7 +1014,7 @@ def backfill_radar_domain() -> dict:
     # 顺便重算 domains_breakdown
     breakdown: dict[str, int] = {}
     for it in items:
-        d = it.get("domain", "self-evolve")
+        d = it.get("domain", _default_domain())
         breakdown[d] = breakdown.get(d, 0) + 1
     data["items"] = items
     data["domains_breakdown"] = breakdown
@@ -1015,7 +1022,7 @@ def backfill_radar_domain() -> dict:
 
     # 同步 sources_meta 里也带上 domain
     for m in data.get("sources_meta") or []:
-        m["domain"] = source_domain_map.get(m.get("source", ""), "self-evolve")
+        m["domain"] = source_domain_map.get(m.get("source", ""), _default_domain())
 
     _atomic_write(RADAR_FILE, json.dumps(data, ensure_ascii=False, indent=2))
 

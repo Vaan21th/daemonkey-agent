@@ -12,7 +12,7 @@ OPUS 切自己的"容器"——把当前对话的 base 模型换成另一个。
 
 档位：
   - persist=False → AUTO（无副作用，只是改进程内变量）
-  - persist=True  → CONFIRM（要写 .env 这一行；不是破坏性的，但应该让 用户 看见）
+  - persist=True  → CONFIRM（要写 .env 这一行；不是破坏性的，但应该让 BRO 看见）
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ SPEC = ToolSpec(
     name="set_model",
     description=(
         "Switch the underlying LLM model that OPUS itself runs on, at runtime. "
-        "Useful when the user (用户) asks to try a different model "
+        "Useful when the user (BRO) asks to try a different model "
         "(deepseek / kimi / glm / sonnet / opus / r1 / gpt / gemini etc). "
         "Accepts a short alias or a full AiHubMix model id. "
         "Set persist=true to also write OPUS_MODEL into .env so the choice survives restart. "

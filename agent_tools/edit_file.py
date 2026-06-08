@@ -37,8 +37,10 @@ from . import (
     TIER_CONFIRM,
     ToolResult,
     ToolSpec,
+    current_session_id,
     register_tool,
 )
+from ._edit_lock import guard as _edit_guard, note_write as _edit_note
 from .write_file import _resolve, _classify, _branch_guard_warning
 
 
@@ -124,6 +126,14 @@ def _run(args: dict) -> ToolResult:
             error="拒绝: 替换后整个文件几乎为空·疑似 old_string 吃掉了全文。检查 old_string 范围。",
         )
 
+    # 编辑并发软锁: 另一个对话 TTL 内正改这文件 / 磁盘被外部改过 → 软提示排队 (可 force 过)
+    _owner = current_session_id()
+    _lock_ok, _lock_note = _edit_guard(
+        str(path), _owner, original, force=bool(args.get("force")), tool="edit_file"
+    )
+    if not _lock_ok:
+        return ToolResult(ok=False, output="", error=_lock_note or "编辑锁冲突")
+
     try:
         path.write_text(updated, encoding="utf-8")
     except Exception as e:
@@ -140,6 +150,9 @@ def _run(args: dict) -> ToolResult:
             error=f"verify roundtrip mismatch (疑似编码丢失 / 并发覆盖 / 磁盘错){_rollback(path, original)}",
         )
 
+    # 写成功 · 把编辑锁刷新到新内容指纹(同一对话连续编辑不误报)
+    _edit_note(str(path), _owner, updated, tool="edit_file")
+
     n_repl = count if replace_all else 1
     delta = len(updated) - len(original)
     base = (
@@ -147,6 +160,8 @@ def _run(args: dict) -> ToolResult:
         f"replaced {n_repl} occurrence(s) · size {len(original)} → {len(updated)} chars "
         f"({delta:+d}) · verified=utf-8-roundtrip"
     )
+    if _lock_note:
+        base = f"{base}\n{_lock_note}"
 
     warn = _branch_guard_warning(path)
     if warn:
@@ -201,6 +216,14 @@ SPEC = ToolSpec(
             "replace_all": {
                 "type": "boolean",
                 "description": "Replace EVERY occurrence instead of requiring uniqueness. Default false.",
+            },
+            "force": {
+                "type": "boolean",
+                "description": (
+                    "Override the concurrent-edit advisory lock. Only set true after the user confirms "
+                    "no other conversation is mid-edit on this file (you'll be told if there's a conflict). "
+                    "Default false."
+                ),
             },
         },
         "required": ["path", "old_string", "new_string"],
