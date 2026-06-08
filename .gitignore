@@ -17,8 +17,8 @@ data/*
 !data/cognition
 data/cognition/_archive/
 
-# 构建产物（ps2exe 可重建）
-Daemonkey.exe
+# Daemonkey.exe 故意【不】忽略——它进仓库让用户 clone 即开箱即用。
+# 由 tools/build-exe.ps1 编译·pre-commit 钩子在 launcher 变动时自动重编保鲜。
 
 # 桌宠运行时文件（pet 自己生成 · 私人状态/位置 · 不入库）
 desktop_pet/state.txt
