@@ -29,7 +29,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from workers.git_ops import ROOT, _has_git, _lock, _run_git, checkpoint_commit
+from workers.git_ops import ROOT, _ensure_identity, _has_git, _lock, _run_git, checkpoint_commit
 
 MANIFEST_PATH = ROOT / "core_manifest.json"
 
@@ -150,6 +150,7 @@ def apply_update(remote: str, branch: str = "master", base: str = "HEAD",
 
     # ② 抢一次锁 · 做 fetch → diff → checkout → commit (不嵌套 checkpoint · 锁不可重入)
     with _lock("core_update:apply"):
+        _ensure_identity()  # 工作区本来干净时 checkpoint 提前返回没设身份 · 这里兜底
         ok, msg = _fetch_locked(remote)
         if not ok:
             out["note"] = f"fetch 失败 · {msg}"

@@ -66,6 +66,22 @@ def _run_git(cmd: list[str], timeout: int = 15) -> tuple[int, str, str]:
         return 1, "", f"{type(e).__name__}: {e}"
 
 
+def _ensure_identity() -> None:
+    """没配 git 身份就给【本仓库】设一个兜底身份 (调用方已持锁)。
+
+    病根 (2026-06-08 update_core 联调发现): 开源版用户 clone 下来的全新仓库 ·
+    机器上若从没 `git config user.name/email` · 任何 commit 都会 "Author identity
+    unknown" 直接失败 —— 这会让 checkpoint / wish 分支 / merge / update_core 的安全
+    存档【全线崩掉】· 用户的活儿反而更容易丢。 这里做 lazy 兜底: 只在缺失时设 ·
+    且只写 --local (这一个仓库) · 绝不碰用户的全局 git 配置。
+    """
+    rc, out, _ = _run_git(["config", "user.email"], timeout=5)
+    if rc == 0 and out.strip():
+        return
+    _run_git(["config", "user.email", "daemonkey@localhost"], timeout=5)
+    _run_git(["config", "user.name", "Daemonkey"], timeout=5)
+
+
 def current_branch() -> Optional[str]:
     if not _has_git():
         return None
@@ -99,6 +115,7 @@ def checkpoint_commit(reason: str) -> dict:
         if not st.strip():
             out["note"] = "工作区干净 · 无需 checkpoint"
             return out
+        _ensure_identity()  # 全新 clone 没配身份会让 commit 直接失败 · 先兜底
         br_rc, br_out, _ = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], timeout=5)
         out["branch"] = br_out.strip() if br_rc == 0 else None
         add_rc, _, add_err = _run_git(["add", "-A"], timeout=20)
@@ -127,6 +144,7 @@ def branch_from_master(wish_id: str, slug: str) -> tuple[Optional[str], str]:
         return None, "git 未 init · 跳过自动分支"
     branch = f"{wish_id}/{slug}"
     with _lock("git_ops:branch_from_master"):
+        _ensure_identity()
         cb_rc, cb_out, _ = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], timeout=5)
         cur = cb_out.strip() if cb_rc == 0 else ""
         if cur.startswith(wish_id):
@@ -235,6 +253,7 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
         out["note"] = f"分支无效或本就是 master ({branch!r}) · 跳过 merge"
         return out
     with _lock("git_ops:merge"):
+        _ensure_identity()
         ex_rc, _, _ = _run_git(["show-ref", "--verify", f"refs/heads/{branch}"], timeout=5)
         if ex_rc != 0:
             out["note"] = f"分支 `{branch}` 不存在 · 无法 merge"
