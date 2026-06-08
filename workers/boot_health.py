@@ -90,6 +90,34 @@ def _on_master() -> bool:
     return rc == 0 and out.strip() == "master"
 
 
+def ensure_git_hooks() -> None:
+    """让 git 钩子(pre-commit 保鲜闸 / exe 保鲜)对本仓库自动生效 · 幂等 · 启动时调一次。
+
+    为什么 (卷六十四续六 · 2026-06-08): .git/hooks 不进版本控制 · 钩子真相源在 tracked
+    的 tools/git-hooks/。 全新 clone 的开源版用户钩子默认【不生效】—— 自演化时 commit 不
+    过安全闸、改了 launcher 的 exe 不保鲜·而且没人会记得手动跑 install_hooks。
+
+    解法: 把 git 的 core.hooksPath 指到仓库内的 tools/git-hooks。 一次设置 · 随 pull
+    永远用最新钩子 · 对所有用户自动生效 · 比 install_hooks.ps1 的拷贝式更省心。
+    只写 --local (这一个仓库) · 绝不碰用户全局 git 配置。
+    """
+    try:
+        if not (ROOT / ".git").exists():
+            return
+        # 必须确有 pre-commit 文件才重定向 · 否则把 hooksPath 指到空目录会【反而禁用】钩子
+        if not (ROOT / "tools" / "git-hooks" / "pre-commit").exists():
+            return
+        rc, out, _ = _git(["config", "--local", "core.hooksPath"], timeout=5)
+        if rc == 0 and out.strip().replace("\\", "/").rstrip("/") == "tools/git-hooks":
+            return  # 已指向仓库钩子目录 · 幂等跳过
+        _git(["config", "--local", "core.hooksPath", "tools/git-hooks"], timeout=5)
+        print("[boot_health] git 钩子已挂 (core.hooksPath=tools/git-hooks) · "
+              "pre-commit 保鲜闸对本仓库生效", flush=True)
+    except Exception as e:
+        # 钩子没装上不该阻断 daemon 启动 · 降级放行
+        print(f"[boot_health] WARN · ensure_git_hooks 跳过 (不阻塞启动): {type(e).__name__}: {e}", flush=True)
+
+
 # ── 健康自检 ──────────────────────────────────────────────────────────
 
 def preflight_health() -> tuple[bool, str]:

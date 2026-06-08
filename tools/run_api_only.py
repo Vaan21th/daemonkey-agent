@@ -282,6 +282,13 @@ def main():
     except Exception as e:
         print(f"[opus-api] WARN · boot_health 前端自检跳过 (不阻塞启动): {type(e).__name__}: {e}")
 
+    # 卷六十四续六 · 启动时自动挂 git 钩子 (pre-commit 保鲜闸对所有用户生效·免手动 install_hooks)
+    try:
+        from workers.boot_health import ensure_git_hooks
+        ensure_git_hooks()
+    except Exception as e:
+        print(f"[opus-api] WARN · ensure_git_hooks 跳过 (不阻塞启动): {type(e).__name__}: {e}")
+
     # 卷三十三补丁 · 关键修复：必须先初始化 RUNTIME · 否则 /chat 端点直接 500
     try:
         _init_runtime()
