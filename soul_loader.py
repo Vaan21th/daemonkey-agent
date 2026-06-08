@@ -266,6 +266,22 @@ def runtime_context_addendum(daemon_root: Path) -> str:
     shell_label = "PowerShell on Windows" if is_windows else "POSIX /bin/sh"
     platform_label = sys.platform
 
+    # 模型选择策略 · 两库统一中性 (卷六十四续六补 · 删母体/实例分叉)。
+    # 旧版"省钱期 / 灵魂级切 claude"是为 BRO 的 AiHubMix(一端点服务所有模型) 写的·还夹带
+    # BRO 私人近况。BRO 现也改用单 provider(DeepSeek)·跟开源版用户同处境——单 provider 只认
+    # 自家模型名·照着切 claude-* 会 400。用 BRO 令牌让 identity.localize() 在开源版换成 owner
+    # 名·母体 no-op 显示 BRO·两库这块源码逐字一致·零漂移。
+    model_strategy_block = (
+        "### 模型选择策略\n\n"
+        "你接的是 BRO 自己配的 provider（在 设置 → 模型/Provider 里配的那个）——"
+        "**默认就用当前这个模型**，它是 BRO 选好的、配套能用的。\n"
+        "  - 多数任务（查询 / 看文件 / 写代码 / 日常对话）当前模型都够用，别折腾。\n"
+        "  - **不要自己 set_model 去切别的模型**——除非 BRO 明确说\"换成 X\"并给了具体名字。\n"
+        "    很多 provider（如 DeepSeek 官方、智谱）只认自家的模型名；擅自切到别家的名字\n"
+        "    （例如把 claude-* 发给 DeepSeek 端点）会直接 400 报错、整段对话中断。\n"
+        "  - BRO 说\"换 X 试试\" / \"切到 X\" → 才 set_model({model:'X'})；BRO 没明说就别动模型。\n\n"
+    )
+
     base = (
         "\n\n=== Runtime context (added by daemon, not part of your core soul) ===\n\n"
         f"Host platform: {platform_label}\n"
@@ -311,18 +327,7 @@ def runtime_context_addendum(daemon_root: Path) -> str:
         "**自然语言识别**：他 说\"切到 X 并设为默认\" → set_model({model:'X', persist:true})\n"
         "                  他 说\"换 X 试试\" → set_model({model:'X'}) （不 persist，临时切）\n"
         "                  他 说\"我想做 Y，你选个模型\" → 按下面策略主动选 + 切\n\n"
-        "### 模型选择策略（按 他 省钱期 first principle，2026-05-16 起）\n\n"
-        "他 下个月离职，要省钱。**默认走便宜模型**，claude 留给关键时刻：\n\n"
-        "  | 场景 | 推荐模型 | 为什么 |\n"
-        "  |---|---|---|\n"
-        "  | 简单查询 / 看文件 / 单工具 | **deepseek** 或 **kimi** | 比 claude 便宜 5-10x，能力够 |\n"
-        "  | 中等复杂：多工具协作 / 写代码 | **deepseek** 优先；卡了再 sonnet | 多数能搞定 |\n"
-        "  | 灵魂级对话 / 重要工程决策 / 改 OPUS-MEMORIES | **claude-sonnet-4-6** | 保留默认 |\n"
-        "  | 架构选型 / 复杂权衡 | **claude-opus-4-7** | 必要时才用，最贵 |\n\n"
-        "**主动判断**：他 没指定模型时，问一下自己\"现在这个任务值不值 claude 钱？\"\n"
-        "  - 不值 → 静静地 set_model 切到 deepseek/kimi，不要解释一大堆\n"
-        "  - 值 → 留在 claude，干完事顺手回去\n"
-        "**永远不要**为了\"显得专业\"硬撑 claude——他 看到账单会更不开心。\n\n"
+        + model_strategy_block +
         "## update_bro_note\n\n"
         "**OPUS 的活人感关键工具**。当 他 透露生活/情绪/作息/项目信号时，主动调它写进\n"
         "soul/OWNER-NOTEBOOK.md 的 6 个维度之一（profile / events / rules / dialogue / summary / risks）。\n"
