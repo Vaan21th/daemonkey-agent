@@ -19,24 +19,35 @@
 // 正则 /OPUS(?![\w-])/ 只换"OPUS"作为称呼出现的地方·跳过 OPUS_API_TOKEN / OPUS-DAEMON 这类技术标识。
 (function () {
   var NAME = (window.__AI_NAME__ || '').trim();
-  if (!NAME || NAME === 'OPUS') return;        // 没取名 (chat 页理论上不会) → 保持原样
-  var RE = /OPUS(?![\w-])/g;
-  function fix(s) { return (s && s.indexOf('OPUS') >= 0) ? s.replace(RE, NAME) : s; }
+  var OWNER = (window.__OWNER_NAME__ || '').trim();
+  var doAI = NAME && NAME !== 'OPUS';           // AI 自己的名字
+  var doOwner = OWNER && OWNER !== 'BRO';        // 主人的称呼 (卷六十四续十一 · UI 里的 BRO 也换掉)
+  if (!doAI && !doOwner) return;                // 母体两者都默认 → 保持原样
+  // 正则跳过 OPUS_API_TOKEN / OPUS-DAEMON / BRO-NOTEBOOK 这类技术标识·只换作为称呼出现的词
+  var RE_AI = /OPUS(?![\w-])/g;
+  var RE_OWNER = /\bBRO(?![\w-])/g;
+  function fix(s) {
+    if (!s) return s;
+    if (doAI && s.indexOf('OPUS') >= 0) s = s.replace(RE_AI, NAME);
+    if (doOwner && s.indexOf('BRO') >= 0) s = s.replace(RE_OWNER, OWNER);
+    return s;
+  }
+  function _hit(v) { return v && ((doAI && v.indexOf('OPUS') >= 0) || (doOwner && v.indexOf('BRO') >= 0)); }
   function walk(root) {
     if (!root) return;
     try {
       var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
       var n, batch = [];
-      while ((n = w.nextNode())) { if (n.nodeValue && n.nodeValue.indexOf('OPUS') >= 0) batch.push(n); }
+      while ((n = w.nextNode())) { if (_hit(n.nodeValue)) batch.push(n); }
       for (var i = 0; i < batch.length; i++) batch[i].nodeValue = fix(batch[i].nodeValue);
     } catch (_) {}
     try {
       var els = root.querySelectorAll ? root.querySelectorAll('[title],[placeholder]') : [];
       for (var j = 0; j < els.length; j++) {
         var el = els[j];
-        if (el.title && el.title.indexOf('OPUS') >= 0) el.title = fix(el.title);
+        if (_hit(el.title)) el.title = fix(el.title);
         var ph = el.getAttribute && el.getAttribute('placeholder');
-        if (ph && ph.indexOf('OPUS') >= 0) el.setAttribute('placeholder', fix(ph));
+        if (_hit(ph)) el.setAttribute('placeholder', fix(ph));
       }
     } catch (_) {}
   }
@@ -49,7 +60,7 @@
         for (var k = 0; k < added.length; k++) {
           var node = added[k];
           if (node.nodeType === 1) walk(node);
-          else if (node.nodeType === 3 && node.nodeValue && node.nodeValue.indexOf('OPUS') >= 0) node.nodeValue = fix(node.nodeValue);
+          else if (node.nodeType === 3 && _hit(node.nodeValue)) node.nodeValue = fix(node.nodeValue);
         }
       }
     });
@@ -3179,9 +3190,21 @@ function formatTime(ts) {
 //
 // 安全：所有用户/LLM 内容先 escapeHtml · 再做 markdown 转换 · 防 XSS
 // ──────────────────────────────────────────────────────────────
-function mdRender(text) {
+function mdRender(text, opts) {
   if (text == null) return '';
   if (typeof text !== 'string') text = String(text);
+
+  // 卷六十四续十一 · 流式期间媒体占位 · 防 <video>/<audio>/<img> 每帧 innerHTML 重建被反复
+  // 销毁+重载导致闪烁。streaming=true 时所有媒体先渲成轻量占位 chip · finalize 时(不传 opts)
+  // 才出真播放器·整段只建一次·最终结果跟以前完全一致。
+  const _streaming = opts === true || (opts && opts.streaming === true);
+  function _mediaPending(kind, url) {
+    const icon = kind === 'video' ? '🎬' : (kind === 'audio' ? '🎵' : '🖼');
+    const label = kind === 'video' ? '视频' : (kind === 'audio' ? '音频' : '图片');
+    let name = String(url || '').split(/[?#]/)[0].split(/[\\/]/).pop() || '';
+    name = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return `<span class="md-media-pending">${icon} ${label}${name ? ' · ' + name : ''}</span>`;
+  }
 
   // 提取 ``` block code · 先占位 · 避免后面 inline 转换破坏
   const codeBlocks = [];
@@ -3210,15 +3233,18 @@ function mdRender(text) {
   }
   text = text.replace(/<video\b[^>]*?\bsrc\s*=\s*["']([^"'<>]+)["'][^>]*?>(?:\s*<\/video\s*>)?/gi, (m, src) => {
     const u = _safeUrl(src);
-    return u === '#' ? m : _pushMedia(`<video controls preload="metadata" src="${u}" class="md-video"></video>`);
+    if (u === '#') return m;
+    return _pushMedia(_streaming ? _mediaPending('video', u) : `<video controls preload="metadata" src="${u}" class="md-video"></video>`);
   });
   text = text.replace(/<audio\b[^>]*?\bsrc\s*=\s*["']([^"'<>]+)["'][^>]*?>(?:\s*<\/audio\s*>)?/gi, (m, src) => {
     const u = _safeUrl(src);
-    return u === '#' ? m : _pushMedia(`<audio controls preload="metadata" src="${u}" class="md-audio"></audio>`);
+    if (u === '#') return m;
+    return _pushMedia(_streaming ? _mediaPending('audio', u) : `<audio controls preload="metadata" src="${u}" class="md-audio"></audio>`);
   });
   text = text.replace(/<img\b[^>]*?\bsrc\s*=\s*["']([^"'<>]+)["'][^>]*?>/gi, (m, src) => {
     const u = _safeUrl(src);
-    return u === '#' ? m : _pushMedia(`<img src="${u}" alt="" loading="lazy" class="md-img" data-full="${u}">`);
+    if (u === '#') return m;
+    return _pushMedia(_streaming ? _mediaPending('img', u) : `<img src="${u}" alt="" loading="lazy" class="md-img" data-full="${u}">`);
   });
 
   // 转 HTML 实体
@@ -3249,14 +3275,14 @@ function mdRender(text) {
       const t = title ? ` title="${String(title).replace(/"/g, '&quot;')}"` : '';
       const lower = safeUrl.toLowerCase();
       if (/\.(wav|mp3|ogg|flac|m4a|aac)(\?|$)/.test(lower)) {
-        return `<audio controls preload="metadata" src="${safeUrl}"${t} class="md-audio"></audio>`;
+        return _streaming ? _mediaPending('audio', safeUrl) : `<audio controls preload="metadata" src="${safeUrl}"${t} class="md-audio"></audio>`;
       }
       if (/\.(mp4|webm|mov)(\?|$)/.test(lower)) {
-        return `<video controls preload="metadata" src="${safeUrl}"${t} class="md-video"></video>`;
+        return _streaming ? _mediaPending('video', safeUrl) : `<video controls preload="metadata" src="${safeUrl}"${t} class="md-video"></video>`;
       }
       // 图: 点击弹 lightbox 看大图 (卷四十六补丁 wish-3afebd2c · 不再开新 tab)
       // data-full 留给 lightbox handler · 右键"在新标签打开图片"浏览器原生仍可
-      return `<img src="${safeUrl}" alt="${safeAlt}"${t} loading="lazy" class="md-img" data-full="${safeUrl}">`;
+      return _streaming ? _mediaPending('img', safeUrl) : `<img src="${safeUrl}" alt="${safeAlt}"${t} loading="lazy" class="md-img" data-full="${safeUrl}">`;
     }
   );
 
@@ -3278,13 +3304,13 @@ function mdRender(text) {
     const safeUrl = _safeUrl(url);
     const lower = url.toLowerCase();
     if (/\.(mp4|webm|mov)(\?|$)/.test(lower)) {
-      return `<video controls preload="metadata" src="${safeUrl}" class="md-video"></video>`;
+      return _streaming ? _mediaPending('video', safeUrl) : `<video controls preload="metadata" src="${safeUrl}" class="md-video"></video>`;
     }
     if (/\.(wav|mp3|ogg|flac|m4a|aac)(\?|$)/.test(lower)) {
-      return `<audio controls preload="metadata" src="${safeUrl}" class="md-audio"></audio>`;
+      return _streaming ? _mediaPending('audio', safeUrl) : `<audio controls preload="metadata" src="${safeUrl}" class="md-audio"></audio>`;
     }
     if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/.test(lower)) {
-      return `<img src="${safeUrl}" alt="" loading="lazy" class="md-img" data-full="${safeUrl}">`;
+      return _streaming ? _mediaPending('img', safeUrl) : `<img src="${safeUrl}" alt="" loading="lazy" class="md-img" data-full="${safeUrl}">`;
     }
     return `<a href="${safeUrl}" target="_blank" rel="noopener">${url}</a>`;
   }
@@ -3702,7 +3728,7 @@ function _scheduleAssistantRerender(state) {
     const body = state.currentStreamingAssistant.querySelector('.md-body');
     if (!body) return;
     const safe = _streamingSafeClose(state.streamingAssistantRaw || '');
-    body.innerHTML = mdRender(safe);
+    body.innerHTML = mdRender(safe, { streaming: true });
   };
   if (wait <= 0) {
     requestAnimationFrame(doRender);

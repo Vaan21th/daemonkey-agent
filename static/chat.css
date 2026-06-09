@@ -512,6 +512,25 @@ header {
   background: #000;
 }
 
+/* 卷六十四续十一 · 流式期间的媒体占位 chip · 等流结束 finalize 才换成真播放器·
+   避免每帧 innerHTML 重建把 <video>/<audio>/<img> 反复重载导致闪烁 */
+.md-body .md-media-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-dim, #8a8f98);
+  background: var(--bg-soft, rgba(127, 127, 127, 0.1));
+  border: 1px dashed var(--border, rgba(127, 127, 127, 0.3));
+  border-radius: 6px;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* 卷四十六补丁 (wish-3afebd2c) · md 图片 lightbox
    chat 里点 .md-img 弹全屏遮罩看大图 · 不开新 tab
    关闭: 点遮罩 / 点 × / ESC */

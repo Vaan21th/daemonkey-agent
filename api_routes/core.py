@@ -70,14 +70,33 @@ def _ai_name() -> str:
     return ""
 
 
+def _owner_name() -> str:
+    """读用户在『相遇』里给的称呼 (soul/IDENTITY.json owner_name)。没有/还没问到就空。"""
+    try:
+        import json
+        p = ROOT / "soul" / "IDENTITY.json"
+        if p.exists():
+            return (json.loads(p.read_text(encoding="utf-8-sig")).get("owner_name") or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
 def _inject_ai_name(html: str) -> str:
-    """把 AI 名字注成 window.__AI_NAME__ · 前端据此把界面里写死的 "OPUS" 换成用户取的名。"""
+    """把 AI 名字 / 主人称呼注成 window.__AI_NAME__ / __OWNER_NAME__ ·
+    前端据此把界面里写死的 "OPUS"/"BRO" 换成用户取的名。母体两者都空 → 不注入 → 行为不变。"""
+    import json
+    tags = []
     name = _ai_name()
-    if not name:
+    if name:
+        tags.append(f"window.__AI_NAME__={json.dumps(name, ensure_ascii=False)};")
+    owner = _owner_name()
+    if owner:
+        tags.append(f"window.__OWNER_NAME__={json.dumps(owner, ensure_ascii=False)};")
+    if not tags:
         return html
     # JSON 编码防止名字里有引号 / 特殊字符破坏 <script>
-    import json
-    tag = f"<script>window.__AI_NAME__={json.dumps(name, ensure_ascii=False)};</script>"
+    tag = "<script>" + "".join(tags) + "</script>"
     if "</head>" in html:
         return html.replace("</head>", tag + "</head>", 1)
     return tag + html

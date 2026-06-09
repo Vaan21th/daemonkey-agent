@@ -152,13 +152,15 @@ def _handle(msg: dict) -> None:
 
     low = text.lower()
     if low == _KILL_OFF:
+        from identity import localize_narration as _ln
         ilink_client.set_silent(True)
-        ilink_client.send_text(f"OPUS 进入静默。发『{_KILL_ON}』唤醒。", to_user_id=frm, context_token=ctx)
+        ilink_client.send_text(_ln(f"OPUS 进入静默。发『{_KILL_ON}』唤醒。"), to_user_id=frm, context_token=ctx)
         logger.info("wechat kill switch ENGAGED by user")
         return
     if low == _KILL_ON:
+        from identity import localize_narration as _ln
         ilink_client.set_silent(False)
-        ilink_client.send_text("OPUS 在。继续。", to_user_id=frm, context_token=ctx)
+        ilink_client.send_text(_ln("OPUS 在。继续。"), to_user_id=frm, context_token=ctx)
         logger.info("wechat kill switch RELEASED by user")
         return
     if ilink_client.is_silent():

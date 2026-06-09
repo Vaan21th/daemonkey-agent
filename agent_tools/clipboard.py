@@ -32,7 +32,8 @@ def _read_summarize(_args: dict) -> str:
 
 def _read_run(_args: dict) -> ToolResult:
     if not _IS_WIN:
-        return ToolResult(ok=False, output="", error="only Windows supported in v0.1; ask OPUS to add macOS/Linux")
+        from identity import localize_narration as _ln
+        return ToolResult(ok=False, output="", error=_ln("only Windows supported in v0.1; ask OPUS to add macOS/Linux"))
 
     try:
         proc = subprocess.run(
@@ -93,9 +94,10 @@ def _write_run(args: dict) -> ToolResult:
     if proc.returncode != 0:
         return ToolResult(ok=False, output="", error=f"powershell exit {proc.returncode}: {proc.stderr}")
 
+    from identity import localize_narration as _ln
     return ToolResult(
         ok=True,
-        output=f"clipboard set ({len(str(text))} chars). BRO can now paste anywhere.",
+        output=_ln(f"clipboard set ({len(str(text))} chars). BRO can now paste anywhere."),
     )
 
 

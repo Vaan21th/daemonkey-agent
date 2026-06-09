@@ -210,9 +210,10 @@ def _run(args: dict) -> ToolResult:
     chosen_mode = ""
     if mode == "cdp":
         if not cdp_ok:
+            from identity import localize_narration as _ln
             return ToolResult(
                 ok=False, output="",
-                error=(
+                error=_ln(
                     f"CDP requested but no Edge listening on {CDP_URL}. "
                     f"BRO needs to start Edge with: msedge.exe --remote-debugging-port=9222 "
                     f"(can add to taskbar shortcut target)"
@@ -244,9 +245,11 @@ def _run(args: dict) -> ToolResult:
     if truncated:
         text = text[:max_chars]
 
+    from identity import localize_narration as _ln
     out_lines = [
         f"browser_fetch · {final_url}",
-        f"mode: {chosen_mode}{' (BRO Edge cookies shared)' if chosen_mode == 'cdp' else ' (no login state)'}",
+        # 只本地化这条 meta 行(BRO→主人名)·正文 text 是透传网页内容·不动
+        _ln(f"mode: {chosen_mode}{' (BRO Edge cookies shared)' if chosen_mode == 'cdp' else ' (no login state)'}"),
     ]
     if title:
         out_lines.append(f"title: {title}")

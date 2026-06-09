@@ -80,7 +80,10 @@ def snapshot_mtimes() -> dict[str, float]:
 
 
 def _format_warning(problems: list[str]) -> str:
-    return (
+    # 这条警告会被 append 到 write_file/edit_file/python_exec(透传类·不在 tool_loop 白名单)的
+    # output 里喂回 LLM·所以在源头去母体化(抹卷号·母体 no-op)。
+    from identity import localize_narration as _ln
+    return _ln(
         "⚠️  编辑后自检 (卷五十四 B4): 你刚改的文件现在【语法坏了】· 这版直接重启/上线会崩 —\n"
         + "\n".join(problems)
         + "\n  (这只是提醒 · 没拦你 · 你可能正改到一半。 但记得修好再 request_restart / merge ·"

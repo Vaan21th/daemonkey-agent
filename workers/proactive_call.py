@@ -233,8 +233,10 @@ def _proactive_session() -> str:
     """主动 CALL 专用会话 · 固定 id + 服务端标签 · 不混进用户的工作对话 · 列表里一眼认出。"""
     try:
         from daemon_session import set_session_meta, get_session_meta
-        if (get_session_meta(_PROACTIVE_SID).get("label") or "") != _PROACTIVE_LABEL:
-            set_session_meta(_PROACTIVE_SID, label=_PROACTIVE_LABEL)
+        from identity import localize_narration as _ln
+        label = _ln(_PROACTIVE_LABEL)  # UI 会话标签·OPUS→本实例名(母体 no-op)
+        if (get_session_meta(_PROACTIVE_SID).get("label") or "") != label:
+            set_session_meta(_PROACTIVE_SID, label=label)
     except Exception:
         pass
     return _PROACTIVE_SID

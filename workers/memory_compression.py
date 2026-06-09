@@ -332,7 +332,10 @@ def _generate_summary(
     if client is None:
         raise RuntimeError("LLM client not available for summary generation")
 
-    prompt = f"{SUMMARY_MODEL_HINT}\n\n--- 待压缩的对话 ---\n\n{text_to_summarize}"
+    # SUMMARY_MODEL_HINT 带 BRO/OPUS/「下一根毛」自指·会让摘要器照着产出母体 lore·
+    # 在使用点按实例去母体化(母体 no-op)。
+    from identity import localize_narration as _ln
+    prompt = f"{_ln(SUMMARY_MODEL_HINT)}\n\n--- 待压缩的对话 ---\n\n{text_to_summarize}"
 
     if provider == "anthropic":
         resp = client.messages.create(

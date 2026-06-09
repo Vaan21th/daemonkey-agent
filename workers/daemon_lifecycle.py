@@ -196,6 +196,9 @@ def _classify_active_sessions(window_min: int = 30) -> list[Path]:
 
 def _inject_system_notice(session_path: Path, content: str) -> bool:
     """往 session jsonl 末尾追加一条 system message · 返 True = 成功写入"""
+    # 续场 notice 注进 session·下一轮主 LLM 会看到·去母体化(BRO→主人名·母体 no-op)。
+    from identity import localize_narration as _ln
+    content = _ln(content)
     try:
         last_role: Optional[str] = None
         try:

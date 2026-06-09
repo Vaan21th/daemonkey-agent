@@ -40,6 +40,35 @@ from typing import Any, Callable
 from agent_tools import REGISTRY, ToolResult, ToolSpec, _TOOL_PROGRESS_HOOK, TIER_AUTO
 
 try:
+    from identity import localize_narration as _localize_narration
+except Exception:  # 极端环境 identity 不可用 → 退化成原样
+    def _localize_narration(s):  # type: ignore
+        return s
+
+# 卷六十四续十一 · 去母体化 · 纯叙述型工具的 output 全是工程写给 LLM 的话(会带
+# OPUS/BRO/卷号自指)·开源版要换成本实例名。这里只列【纯叙述/格式化】工具——它们不
+# 透传文件/命令/网页正文。read_file/shell_exec/grep_files/web_* 等透传类【绝不】列进来
+# (否则会把用户自己代码里的 OPUS 也改掉·污染 AI 读到的原文)。母体 ai==OPUS 时 no-op。
+_NARRATION_TOOLS = frozenset({
+    "read_dashboard", "propose_next_move", "record_outcome", "tag_radar_item",
+    "manage_info_source", "remove_domain", "init_domain", "analyze_feasibility",
+    "intent_to_wish", "wish_add", "wish_update", "add_iron_rule", "list_iron_rules",
+    "monthly_review", "mine_opportunities", "expand_trend_to_report", "draft_studio",
+    "auto_pipeline", "update_self_evolution", "recall_memory", "extract_playbook",
+    "verify_claim", "service_stop",
+})
+
+
+def _localize_tool_content(name: str, content: str) -> str:
+    """叙述型工具的 tool_result 文本去母体化(母体 no-op)。透传类工具不在白名单·原样返回。"""
+    if name in _NARRATION_TOOLS:
+        try:
+            return _localize_narration(content)
+        except Exception:
+            pass
+    return content
+
+try:
     from desktop_pet.activities import write_activity as _pet_write_activity
     from desktop_pet.activities import write_pulse_end as _pet_write_pulse_end
 except Exception:
@@ -929,7 +958,7 @@ def _loop_openai(
             tool_entry = {
                 "role": "tool",
                 "tool_call_id": tc["id"] or "",
-                "content": result.to_string(),
+                "content": _localize_tool_content(name, result.to_string()),
             }
             oai_messages.append(tool_entry)
             _commit(tool_entry)
@@ -1161,7 +1190,7 @@ def _loop_anthropic(
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": tu.id,
-                "content": result.to_string(),
+                "content": _localize_tool_content(tu.name, result.to_string()),
                 "is_error": not result.ok,
             })
 

@@ -141,10 +141,11 @@ def _run(args: dict) -> ToolResult:
         is_binary, reason = _classify_bytes(raw_bytes)
         if is_binary:
             dump = _hexdump_head(raw_bytes, 64)
+            from identity import localize_narration as _ln
             return ToolResult(
                 ok=False,
                 output="",
-                error=(
+                error=_ln(
                     f"file looks binary ({size} bytes): {reason}.\n\n"
                     f"--- first 64 bytes ---\n{dump}\n\n"
                     "Decision aid for OPUS:\n"

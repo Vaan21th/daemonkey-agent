@@ -56,7 +56,8 @@ def _load_servers() -> tuple[dict, str]:
                 f"未找到 .mcp/servers.json。看 {SERVERS_EXAMPLE.relative_to(PROJECT_ROOT)} 模板，"
                 f"复制并去掉 .example 后缀，按需要编辑"
             )
-        return {}, f".mcp/servers.json 不存在 + 没有模板，BRO 需要手动创建"
+        from identity import localize_narration as _ln
+        return {}, _ln(".mcp/servers.json 不存在 + 没有模板，BRO 需要手动创建")
     try:
         data = json.loads(SERVERS_CONFIG.read_text(encoding="utf-8"))
         servers = data.get("servers", {})

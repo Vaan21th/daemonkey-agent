@@ -75,9 +75,10 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(ok=False, output="", error=f"save failed: {e!r}")
 
     rel = out_path.relative_to(PROJECT_ROOT)
+    from identity import localize_narration as _ln
     return ToolResult(
         ok=True,
-        output=(
+        output=_ln(
             f"screenshot saved\n"
             f"  path: {rel}\n"
             f"  size: {img.size[0]}x{img.size[1]} px\n"
