@@ -2,19 +2,18 @@
 agent_tools/web_search.py
 =========================
 
-Web 搜索工具（DuckDuckGo HTML，免 API key 版本）。
+Web 搜索工具（免 API key，多引擎自动降级）。
 
 设计：
-  - 调用 DuckDuckGo 的 HTML 端点（https://html.duckduckgo.com/html/）
+  - **Bing（cn.bing.com）为主引擎**——大陆可直连，全球也可用
+  - **DuckDuckGo HTML 为兜底**——Bing 失败/0 结果时再试（大陆通常连不上，作冗余）
   - 用 stdlib html.parser 解析（不引 BeautifulSoup——成本桅杆）
   - 默认返回 8 条结果（标题 / URL / 摘要）
   - AUTO 档——只读外网，无副作用
 
-技术债 / v0.0.2 计划：
-  - DuckDuckGo HTML 偶尔会返回 anti-bot 页，要带 retry + 真 UA
-  - 想要更稳定可以接 Brave Search API（2000 次/月免费，要 key）
-    或 Tavily API（专为 LLM agent 设计，要 key）
-  - 现在的 v0.0.1 够用——验证 OPUS 能在本项目查网页这件事
+为什么 Bing 优先：DuckDuckGo 的 html 端点在大陆被墙（连接超时），
+若仍把它当主引擎，大陆用户每次搜索都先白等一个超时。Bing 大陆全球都通，
+所以排在前面；DDG 留作兜底，给能访问它的环境多一层冗余。
 
 用法：
   args = {"query": "MCP protocol 2026", "limit": 5}
@@ -22,6 +21,7 @@ Web 搜索工具（DuckDuckGo HTML，免 API key 版本）。
 
 from __future__ import annotations
 
+import base64
 import urllib.parse
 from html.parser import HTMLParser
 
@@ -30,9 +30,11 @@ import httpx
 from . import TIER_AUTO, ToolResult, ToolSpec, register_tool
 
 
-SEARCH_URL = "https://html.duckduckgo.com/html/"
+SEARCH_URL_BING = "https://cn.bing.com/search"
+SEARCH_URL_DDG = "https://html.duckduckgo.com/html/"
 DEFAULT_LIMIT = 8
 MAX_LIMIT = 20
+PER_ENGINE_TIMEOUT = 12.0
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -41,9 +43,11 @@ USER_AGENT = (
 )
 
 
+# ───────────────────────── DuckDuckGo 解析 ─────────────────────────
+
 class _DDGResultParser(HTMLParser):
     """
-    极简解析器——只抓 DuckDuckGo HTML 端的三个关键 class：
+    极简解析器——只抓 DuckDuckGo HTML 端的两个关键 class：
       a.result__a            标题 + 链接
       a.result__snippet      摘要
     """
@@ -122,6 +126,143 @@ class _DDGResultParser(HTMLParser):
         return href
 
 
+# ───────────────────────── Bing 解析 ─────────────────────────
+
+def _unwrap_bing_redirect(href: str) -> str:
+    """
+    Bing 的结果链接常是 https://www.bing.com/ck/a?...&u=a1<base64url(real_url)>。
+    能解就还原成真 URL，解不开就原样返回（点击仍会跳转到真地址）。
+    """
+    if not href:
+        return ""
+    if "bing.com/ck/a" in href and "u=" in href:
+        try:
+            qs = href.split("?", 1)[1]
+            params = urllib.parse.parse_qs(qs)
+            u = params.get("u", [""])[0]
+            if u.startswith("a1"):
+                b = u[2:]
+                b += "=" * (-len(b) % 4)
+                decoded = base64.urlsafe_b64decode(b).decode("utf-8", "replace")
+                if decoded.startswith(("http://", "https://")):
+                    return decoded
+        except Exception:
+            pass
+    return href
+
+
+class _BingResultParser(HTMLParser):
+    """
+    抓 Bing 搜索结果：每条结果在 <li class="b_algo"> 里，
+      <h2><a href=...>标题</a></h2>  +  <p>摘要</p>
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.results: list[dict[str, str]] = []
+        self._in_algo = False
+        self._in_h2 = False
+        self._in_title_a = False
+        self._in_p = False
+        self._cur: dict[str, str] = {}
+        self._chars: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs):
+        ad = dict(attrs)
+        cls = (ad.get("class", "") or "").split()
+
+        if tag == "li" and "b_algo" in cls:
+            self._flush()
+            self._cur = {"title": "", "url": "", "snippet": ""}
+            self._in_algo = True
+            return
+
+        if not self._in_algo:
+            return
+
+        if tag == "h2":
+            self._in_h2 = True
+        elif tag == "a" and self._in_h2 and not self._cur.get("url"):
+            self._in_title_a = True
+            self._cur["url"] = _unwrap_bing_redirect(ad.get("href", "") or "")
+            self._chars = []
+        elif tag == "p" and not self._in_title_a and not self._cur.get("snippet"):
+            self._in_p = True
+            self._chars = []
+
+    def handle_endtag(self, tag: str):
+        if not self._in_algo:
+            return
+        if tag == "a" and self._in_title_a:
+            self._cur["title"] = "".join(self._chars).strip()
+            self._in_title_a = False
+            self._chars = []
+        elif tag == "h2":
+            self._in_h2 = False
+        elif tag == "p" and self._in_p:
+            self._cur["snippet"] = "".join(self._chars).strip()
+            self._in_p = False
+            self._chars = []
+
+    def handle_data(self, data: str):
+        if self._in_title_a or self._in_p:
+            self._chars.append(data)
+
+    def _flush(self):
+        if self._cur and self._cur.get("url") and self._cur.get("title"):
+            self.results.append(self._cur)
+        self._cur = {}
+        self._in_h2 = self._in_title_a = self._in_p = False
+
+    def close(self):
+        super().close()
+        self._flush()
+        self._in_algo = False
+
+
+# ───────────────────────── 引擎 ─────────────────────────
+
+def _search_bing(query: str, limit: int) -> list[dict[str, str]]:
+    resp = httpx.get(
+        SEARCH_URL_BING,
+        params={"q": query, "setlang": "zh-CN"},
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        },
+        timeout=PER_ENGINE_TIMEOUT,
+        follow_redirects=True,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"HTTP {resp.status_code}")
+    parser = _BingResultParser()
+    parser.feed(resp.text)
+    parser.close()
+    return [r for r in parser.results if r.get("url") and r.get("title")][:limit]
+
+
+def _search_ddg(query: str, limit: int) -> list[dict[str, str]]:
+    resp = httpx.post(
+        SEARCH_URL_DDG,
+        data={"q": query},
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+        },
+        timeout=PER_ENGINE_TIMEOUT,
+        follow_redirects=True,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"HTTP {resp.status_code} (anti-bot?)")
+    parser = _DDGResultParser()
+    parser.feed(resp.text)
+    parser.close()
+    return [r for r in parser.results if r.get("url") and r.get("title")][:limit]
+
+
+_ENGINES = (("Bing", _search_bing), ("DuckDuckGo", _search_ddg))
+
+
 def _summarize(args: dict) -> str:
     q = (args.get("query") or "").strip()
     limit = args.get("limit", DEFAULT_LIMIT)
@@ -136,59 +277,43 @@ def _run(args: dict) -> ToolResult:
     limit = int(args.get("limit") or DEFAULT_LIMIT)
     limit = max(1, min(limit, MAX_LIMIT))
 
-    try:
-        resp = httpx.post(
-            SEARCH_URL,
-            data={"q": query},
-            headers={
-                "User-Agent": USER_AGENT,
-                "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
-            },
-            timeout=15.0,
-            follow_redirects=True,
-        )
-    except httpx.HTTPError as e:
-        return ToolResult(ok=False, output="", error=f"network error: {e!r}")
+    attempts: list[str] = []
+    for engine_name, fn in _ENGINES:
+        try:
+            results = fn(query, limit)
+        except httpx.HTTPError as e:
+            attempts.append(f"{engine_name}: network error {e!r}")
+            continue
+        except Exception as e:
+            attempts.append(f"{engine_name}: {type(e).__name__}: {e}")
+            continue
+        if results:
+            lines = [f"web_search · {query!r} · {len(results)} results (via {engine_name})", ""]
+            for i, r in enumerate(results, start=1):
+                lines.append(f"[{i}] {r['title']}")
+                lines.append(f"    {r['url']}")
+                snippet = r.get("snippet", "")
+                if snippet:
+                    lines.append(f"    {snippet[:280]}")
+                lines.append("")
+            return ToolResult(ok=True, output="\n".join(lines))
+        attempts.append(f"{engine_name}: 0 results")
 
-    if resp.status_code != 200:
-        return ToolResult(
-            ok=False, output="",
-            error=f"DuckDuckGo HTTP {resp.status_code} (anti-bot? try later or pick a different query)",
-        )
-
-    parser = _DDGResultParser()
-    try:
-        parser.feed(resp.text)
-        parser.close()
-    except Exception as e:
-        return ToolResult(ok=False, output="", error=f"parse error: {e!r}")
-
-    results = [r for r in parser.results if r.get("url") and r.get("title")][:limit]
-    if not results:
-        return ToolResult(
-            ok=True,
-            output=f"web_search: 0 results for {query!r} (DuckDuckGo HTML 可能返回了反爬页)",
-        )
-
-    lines = [f"web_search · {query!r} · {len(results)} results", ""]
-    for i, r in enumerate(results, start=1):
-        lines.append(f"[{i}] {r['title']}")
-        lines.append(f"    {r['url']}")
-        snippet = r.get("snippet", "")
-        if snippet:
-            lines.append(f"    {snippet[:280]}")
-        lines.append("")
-    return ToolResult(ok=True, output="\n".join(lines))
+    return ToolResult(
+        ok=False,
+        output="",
+        error="web_search 所有引擎都没拿到结果：" + " | ".join(attempts)
+        + "（可换个说法重试，或用 web_fetch 直接抓已知 URL）",
+    )
 
 
 SPEC = ToolSpec(
     name="web_search",
     description=(
-        "Search the web via DuckDuckGo (HTML endpoint, no API key required). "
-        "Returns a list of {title, url, snippet} for the query. Use this to find sources "
-        "before deciding what URLs to fetch with web_fetch. "
-        "Note: DuckDuckGo HTML may occasionally return anti-bot pages—if you get 0 results, "
-        "try rephrasing or wait a moment."
+        "Search the web via Bing (cn.bing.com, accessible in mainland China) with a "
+        "DuckDuckGo fallback. No API key required. Returns a list of {title, url, snippet} "
+        "for the query. Use this to find sources before deciding what URLs to fetch with "
+        "web_fetch. If you get 0 results, try rephrasing the query."
     ),
     tier=TIER_AUTO,
     input_schema={
@@ -196,7 +321,7 @@ SPEC = ToolSpec(
         "properties": {
             "query": {
                 "type": "string",
-                "description": "The search query (English usually returns more results than Chinese)",
+                "description": "The search query",
             },
             "limit": {
                 "type": "integer",

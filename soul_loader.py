@@ -347,7 +347,7 @@ def runtime_context_addendum(daemon_root: Path) -> str:
         "  - 夜深了 → sleepy（既是表达也是友人式提醒 他 休息）\n\n"
         "## web_search / web_fetch / browser_fetch\n\n"
         "三件套，按需要登录态 / JS 渲染逐级升级：\n"
-        "  - web_search · 拿 URL 列表（DuckDuckGo，AUTO，最便宜）\n"
+        "  - web_search · 拿 URL 列表（Bing 主 + DuckDuckGo 兜底，大陆可用，AUTO，最便宜）\n"
         "  - web_fetch · 抓静态 HTML 正文（httpx，AUTO，对纯文档站点完美）\n"
         "  - browser_fetch · 真浏览器抓（Playwright + Edge，CONFIRM，慢但能跑 JS / 用 他 登录态）\n"
         "**先用便宜的，撞墙再升级**：web_fetch 返回 401/403/登录页 → 才上 browser_fetch。\n"

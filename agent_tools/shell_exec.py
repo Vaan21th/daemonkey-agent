@@ -192,6 +192,78 @@ def _summarize(args: dict) -> str:
 
 # ---------- run ----------
 
+def _kill_process_tree(proc: "subprocess.Popen") -> None:
+    """杀掉 proc 及其所有子孙进程·释放它们继承的 stdout/stderr 管道句柄。
+
+    超时只杀直接子进程(PowerShell)不够——它拉起的孙子进程(如 chrome / 长跑服务)
+    继承了管道·父进程 communicate() 收尾时会永久阻塞等管道 EOF。用 psutil 杀整棵树·
+    孙子一死·管道立刻 EOF。psutil 不可用时降级为只杀直接子(不致命·不影响正常路)。
+    """
+    try:
+        import psutil
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return
+
+    try:
+        parent = psutil.Process(proc.pid)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return
+
+    try:
+        targets = parent.children(recursive=True)
+    except Exception:
+        targets = []
+    targets.append(parent)
+
+    for p in targets:
+        try:
+            p.kill()
+        except Exception:
+            pass
+    try:
+        psutil.wait_procs(targets, timeout=3)
+    except Exception:
+        pass
+
+
+def _run_with_timeout(argv: list[str], cwd: str, timeout: int) -> "subprocess.CompletedProcess":
+    """等价于 subprocess.run(capture_output=True, text=True, timeout=...)·
+    但超时时**先杀整棵进程树再收尾**·避免子进程继承管道导致 communicate 永久挂死。
+
+    正常跑完: 返回 CompletedProcess(行为/返回值跟原 subprocess.run 完全一致)。
+    超时:    杀进程树 + 限时排空管道 → 抛 subprocess.TimeoutExpired(交给上层原有处理)。
+    """
+    proc = subprocess.Popen(
+        argv,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        **no_window_kwargs(),
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+    except subprocess.TimeoutExpired:
+        _kill_process_tree(proc)
+        # 进程树已杀·管道应已 EOF·限时收尾·再卡也不二次挂死
+        try:
+            proc.communicate(timeout=5)
+        except Exception:
+            pass
+        raise
+
+
 def _run(args: dict) -> ToolResult:
     cmd = (args.get("command") or "").strip()
     if not cmd:
@@ -245,31 +317,13 @@ def _run(args: dict) -> ToolResult:
     try:
         if _is_git_cmd:
             with daemon_git_lock(label=f"shell_exec:{cmd.strip()[:50]}"):
-                proc = subprocess.run(
-                    argv,
-                    cwd=str(cwd),
-                    timeout=timeout,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    **no_window_kwargs(),
-                )
+                proc = _run_with_timeout(argv, str(cwd), timeout)
         else:
-            proc = subprocess.run(
-                argv,
-                cwd=str(cwd),
-                timeout=timeout,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                **no_window_kwargs(),
-            )
+            proc = _run_with_timeout(argv, str(cwd), timeout)
     except subprocess.TimeoutExpired:
         return ToolResult(
             ok=False, output="",
-            error=f"command timed out after {timeout}s",
+            error=f"command timed out after {timeout}s（已杀整棵进程树；若需长跑服务请改用 service_start）",
         )
     except FileNotFoundError as e:
         return ToolResult(ok=False, output="", error=f"shell not found: {e}")
