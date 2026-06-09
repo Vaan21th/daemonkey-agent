@@ -48,7 +48,17 @@ def _run_media(media_path: str, caption: str) -> ToolResult:
     try:
         from workers import ilink_client, ilink_media
     except Exception as e:
-        return ToolResult(ok=False, output="", error=f"微信媒体模块不可用: {type(e).__name__}: {e}")
+        return ToolResult(
+            ok=False, output="",
+            error=(
+                f"微信发媒体的依赖没装好: {type(e).__name__}: {e}\n"
+                "发文件/图片/视频需要 cryptography (AES 加密走微信 CDN)。装上就能发:\n"
+                "  .venv\\Scripts\\pip install cryptography\n"
+                "(或重跑 run.ps1 / 启动器·会按 requirements.txt 补装)\n"
+                "【重要】装好前别退而给本地 http://127.0.0.1 链接——他在手机上打不开"
+                "(127.0.0.1 在手机上指的是手机自己)。如实说『发文件还差个依赖·装上就能发』。"
+            ),
+        )
     if not ilink_client.enabled():
         return ToolResult(ok=False, output="", error=_NOT_CONFIGURED)
     r = ilink_media.send_media(media_path, caption=caption)
