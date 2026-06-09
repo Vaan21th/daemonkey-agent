@@ -1,5 +1,7 @@
 # Daemonkey
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+
 > 一个记住你所想，与你一起成长，有七十二变的 AI 搭档。
 
 这是 Daemonkey 的**用户版**——开源、不含任何作者的私有记忆。第一次打开时，
@@ -57,4 +59,16 @@ Daemonkey/
 
 ## 许可
 
-开源（许可证待定：AGPLv3 候选）。Daemonkey 永久免费——若你为它付过费，请向卖家退款。
+Copyright (c) 2026 vaan21th
+
+本项目采用 **GNU Affero 通用公共许可证 v3.0（AGPL-3.0）** 开源，完整条款见根目录 [LICENSE](LICENSE)。
+
+简单说：
+
+- 你可以自由地**使用、修改、分发**本软件；
+- 但**任何修改版——哪怕只是架成网络服务给别人用（不分发也算）——都必须以同样的 AGPL-3.0 协议公开源代码**；
+- 必须保留版权声明与许可声明，注明改动。
+
+这条 copyleft 是为了让 Daemonkey 始终对社区开放，挡住"拿去闭源商用"。
+
+Daemonkey 永久免费——若你为它付过费，请向卖家退款。
