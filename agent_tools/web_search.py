@@ -5,15 +5,19 @@ agent_tools/web_search.py
 Web 搜索工具（免 API key，多引擎自动降级）。
 
 设计：
-  - **Bing（cn.bing.com）为主引擎**——大陆可直连，全球也可用
-  - **DuckDuckGo HTML 为兜底**——Bing 失败/0 结果时再试（大陆通常连不上，作冗余）
+  - **360 搜索（so.com）为主引擎**——大陆直连，中文长尾覆盖好，真实 URL 直接在 data-mdurl
+  - **Bing（cn.bing.com）次选**——英文/技术词好，中文长尾差（会退化成字典/不相关），作降级
+  - **DuckDuckGo HTML 兜底**——给能访问它的境外环境多一层冗余（大陆通常连不上）
   - 用 stdlib html.parser 解析（不引 BeautifulSoup——成本桅杆）
   - 默认返回 8 条结果（标题 / URL / 摘要）
   - AUTO 档——只读外网，无副作用
 
-为什么 Bing 优先：DuckDuckGo 的 html 端点在大陆被墙（连接超时），
-若仍把它当主引擎，大陆用户每次搜索都先白等一个超时。Bing 大陆全球都通，
-所以排在前面；DDG 留作兜底，给能访问它的环境多一层冗余。
+为什么 360 优先（卷六十四续十四的教训）：
+  实测 cn.bing.com 的 HTML 端对中文 query 极不可靠——搜"口播文案技巧"返回的
+  是"口"字的百度百科释义、甚至混入成人内容；不同 query 还返回完全相同的结果，
+  且没 SafeSearch。360 / 搜狗对同样的中文 query 都给出精准结果，其中 360 的真实
+  URL 直接挂在 <a data-mdurl> 上（不用解加密跳转，比搜狗 /link?url= 更省一次请求），
+  所以选 360 作主引擎。Bing 留作英文/技术词的次选，DDG 兜底境外环境。
 
 用法：
   args = {"query": "MCP protocol 2026", "limit": 5}
@@ -30,6 +34,7 @@ import httpx
 from . import TIER_AUTO, ToolResult, ToolSpec, register_tool
 
 
+SEARCH_URL_360 = "https://www.so.com/s"
 SEARCH_URL_BING = "https://cn.bing.com/search"
 SEARCH_URL_DDG = "https://html.duckduckgo.com/html/"
 DEFAULT_LIMIT = 8
@@ -220,12 +225,99 @@ class _BingResultParser(HTMLParser):
         self._in_algo = False
 
 
+# ───────────────────────── 360 搜索解析 ─────────────────────────
+
+class _So360Parser(HTMLParser):
+    """
+    抓 360 搜索（so.com）结果：每条在 <li class="res-list"> 里，
+      <h3 class="res-title"><a href=... data-mdurl="真实URL">标题</a></h3>
+      <p class="res-desc">摘要</p>
+    真实 URL 在 data-mdurl（href 是 so.com/link 加密跳转，无法离线解码，故优先 data-mdurl）。
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.results: list[dict[str, str]] = []
+        self._in_item = False
+        self._in_title_a = False
+        self._in_desc = False
+        self._cur: dict[str, str] = {}
+        self._chars: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs):
+        ad = dict(attrs)
+        cls = (ad.get("class", "") or "").split()
+
+        if tag == "li" and "res-list" in cls:
+            self._flush()
+            self._cur = {"title": "", "url": "", "snippet": ""}
+            self._in_item = True
+            return
+
+        if not self._in_item:
+            return
+
+        if tag == "a" and not self._cur.get("url") and not self._cur.get("title"):
+            self._cur["url"] = ad.get("data-mdurl") or ad.get("href", "") or ""
+            self._in_title_a = True
+            self._chars = []
+        elif tag == "p" and "res-desc" in cls:
+            self._in_desc = True
+            self._chars = []
+
+    def handle_endtag(self, tag: str):
+        if not self._in_item:
+            return
+        if tag == "a" and self._in_title_a:
+            self._cur["title"] = "".join(self._chars).strip()
+            self._in_title_a = False
+            self._chars = []
+        elif tag == "p" and self._in_desc:
+            self._cur["snippet"] = "".join(self._chars).strip()
+            self._in_desc = False
+            self._chars = []
+
+    def handle_data(self, data: str):
+        if self._in_title_a or self._in_desc:
+            self._chars.append(data)
+
+    def _flush(self):
+        if self._cur and self._cur.get("url") and self._cur.get("title"):
+            self.results.append(self._cur)
+        self._cur = {}
+        self._in_title_a = self._in_desc = False
+
+    def close(self):
+        super().close()
+        self._flush()
+        self._in_item = False
+
+
 # ───────────────────────── 引擎 ─────────────────────────
+
+
+def _search_360(query: str, limit: int) -> list[dict[str, str]]:
+    resp = httpx.get(
+        SEARCH_URL_360,
+        params={"q": query},
+        headers={
+            "User-Agent": USER_AGENT,
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        },
+        timeout=PER_ENGINE_TIMEOUT,
+        follow_redirects=True,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"HTTP {resp.status_code}")
+    parser = _So360Parser()
+    parser.feed(resp.text)
+    parser.close()
+    return [r for r in parser.results if r.get("url") and r.get("title")][:limit]
 
 def _search_bing(query: str, limit: int) -> list[dict[str, str]]:
     resp = httpx.get(
         SEARCH_URL_BING,
-        params={"q": query, "setlang": "zh-CN"},
+        params={"q": query, "setlang": "zh-CN", "safesearch": "strict"},
         headers={
             "User-Agent": USER_AGENT,
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
@@ -260,7 +352,7 @@ def _search_ddg(query: str, limit: int) -> list[dict[str, str]]:
     return [r for r in parser.results if r.get("url") and r.get("title")][:limit]
 
 
-_ENGINES = (("Bing", _search_bing), ("DuckDuckGo", _search_ddg))
+_ENGINES = (("360", _search_360), ("Bing", _search_bing), ("DuckDuckGo", _search_ddg))
 
 
 def _summarize(args: dict) -> str:
@@ -310,10 +402,10 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="web_search",
     description=(
-        "Search the web via Bing (cn.bing.com, accessible in mainland China) with a "
-        "DuckDuckGo fallback. No API key required. Returns a list of {title, url, snippet} "
-        "for the query. Use this to find sources before deciding what URLs to fetch with "
-        "web_fetch. If you get 0 results, try rephrasing the query."
+        "Search the web via 360 Search (so.com, mainland-China friendly, good Chinese "
+        "coverage) with Bing and DuckDuckGo fallbacks. No API key required. Returns a list "
+        "of {title, url, snippet} for the query. Use this to find sources before deciding "
+        "what URLs to fetch with web_fetch. If you get 0 results, try rephrasing the query."
     ),
     tier=TIER_AUTO,
     input_schema={
