@@ -124,7 +124,8 @@ def wish_closure_gate(target_status: str, *, acked: bool = False) -> Optional[st
         return None  # 没干活 · 别拦 (纯状态流转 / 批准 / 改优先级)
     if did_sink(tools):
         return None  # 已经沉淀过 · 放行
-    return (
+    from identity import localize_narration as _ln
+    return _ln(
         "收尾三问没过 (铁律 9 · 代码闸 · 卷五十九)\n\n"
         f"本回合你干了带副作用的活 (改文件 / 跑命令 / 造 app ...) · 但还没调过任何沉淀工具就想标 `{target_status}`。\n"
         "先过一遍三问 (不是『觉得该不该』· 是硬纪律):\n"

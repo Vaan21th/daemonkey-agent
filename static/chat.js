@@ -3216,6 +3216,10 @@ function mdRender(text) {
     const u = _safeUrl(src);
     return u === '#' ? m : _pushMedia(`<audio controls preload="metadata" src="${u}" class="md-audio"></audio>`);
   });
+  text = text.replace(/<img\b[^>]*?\bsrc\s*=\s*["']([^"'<>]+)["'][^>]*?>/gi, (m, src) => {
+    const u = _safeUrl(src);
+    return u === '#' ? m : _pushMedia(`<img src="${u}" alt="" loading="lazy" class="md-img" data-full="${u}">`);
+  });
 
   // 转 HTML 实体
   text = text
