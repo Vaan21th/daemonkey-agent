@@ -3199,6 +3199,24 @@ function mdRender(text) {
     return `\x00INLINE${idx}\x00`;
   });
 
+  // 卷六十四续九 · LLM 有时直接写原始 <video>/<audio> HTML 标签 (不走 markdown)。
+  // 转义前抽出来·只保留 src + controls·渲染成干净播放器 (丢 width/style 等属性防 XSS)·
+  // 占位符避开后面的实体转义。_safeUrl 是函数声明·已 hoist·这里可用。
+  const mediaTags = [];
+  function _pushMedia(html) {
+    const idx = mediaTags.length;
+    mediaTags.push(html);
+    return `\x00MEDIA${idx}\x00`;
+  }
+  text = text.replace(/<video\b[^>]*?\bsrc\s*=\s*["']([^"'<>]+)["'][^>]*?>(?:\s*<\/video\s*>)?/gi, (m, src) => {
+    const u = _safeUrl(src);
+    return u === '#' ? m : _pushMedia(`<video controls preload="metadata" src="${u}" class="md-video"></video>`);
+  });
+  text = text.replace(/<audio\b[^>]*?\bsrc\s*=\s*["']([^"'<>]+)["'][^>]*?>(?:\s*<\/audio\s*>)?/gi, (m, src) => {
+    const u = _safeUrl(src);
+    return u === '#' ? m : _pushMedia(`<audio controls preload="metadata" src="${u}" class="md-audio"></audio>`);
+  });
+
   // 转 HTML 实体
   text = text
     .replace(/&/g, '&amp;')
@@ -3246,6 +3264,37 @@ function mdRender(text) {
       const t = title ? ` title="${String(title).replace(/"/g, '&quot;')}"` : '';
       return `<a href="${safeUrl}" target="_blank" rel="noopener"${t}>${label}</a>`;
     }
+  );
+
+  // 卷六十四续九 · 裸 URL 自动识别 (markdown []/![] 都没用·LLM 直接甩链接的情况)。
+  // 视频/音频/图 → 内联播放器/图 (聊天窗口里直接看);其他 → 可点链接 (新标签打开)。
+  // 守卫: 前导是行首/空白/( · 避开上面刚生成的 <a href="..."> / <video src="..."> 里的 URL
+  // (那些 URL 前是 ")·这里不会误吞)。已 placeholder 的 code/media 不含裸 URL·天然安全。
+  function _mediaOrLink(url) {
+    const safeUrl = _safeUrl(url);
+    const lower = url.toLowerCase();
+    if (/\.(mp4|webm|mov)(\?|$)/.test(lower)) {
+      return `<video controls preload="metadata" src="${safeUrl}" class="md-video"></video>`;
+    }
+    if (/\.(wav|mp3|ogg|flac|m4a|aac)(\?|$)/.test(lower)) {
+      return `<audio controls preload="metadata" src="${safeUrl}" class="md-audio"></audio>`;
+    }
+    if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/.test(lower)) {
+      return `<img src="${safeUrl}" alt="" loading="lazy" class="md-img" data-full="${safeUrl}">`;
+    }
+    return `<a href="${safeUrl}" target="_blank" rel="noopener">${url}</a>`;
+  }
+  // (a) 完整 http(s) URL
+  text = text.replace(/(^|[\s(])(https?:\/\/[^\s<>"']+)/g, (m, pre, url) => {
+    let tail = '';
+    const tm = url.match(/[)\].,;!?·，。；！？、"']+$/);
+    if (tm) { tail = tm[0]; url = url.slice(0, -tail.length); }
+    return pre + _pushMedia(_mediaOrLink(url)) + tail;
+  });
+  // (b) 根相对的【媒体】路径 (如 /workshop/outputs/x.mp4)·只认带媒体后缀的·防误吞普通 /路径
+  text = text.replace(
+    /(^|[\s(])(\/[^\s<>"']+\.(?:mp4|webm|mov|wav|mp3|ogg|flac|m4a|aac|png|jpe?g|gif|webp|bmp)(?:\?[^\s<>"']*)?)/gi,
+    (m, pre, url) => pre + _pushMedia(_mediaOrLink(url))
   );
 
   // bold (优先于 italic) · **x** 和 __x__
@@ -3429,6 +3478,9 @@ function mdRender(text) {
     const cls = lang ? ` class="lang-${lang}"` : '';
     return `<pre><code${cls}>${escaped}</code></pre>`;
   });
+
+  // 卷六十四续九 · 还原媒体占位符 (原始 <video>/<audio> 标签 + 裸 URL 自动链接的产物)
+  html = html.replace(/\x00MEDIA(\d+)\x00/g, (m, i) => mediaTags[+i] || '');
 
   return html;
 }
