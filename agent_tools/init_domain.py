@@ -153,12 +153,12 @@ def _run(args: dict) -> ToolResult:
 
     if not added and not failed:
         # 补丁 · 允许"占位建领域"——不再当作半失败
-        # 原因：用户 上次试"文玩"领域时·DuckDuckGo 限流让 LLM 没法 search 出可靠源
-        # 卡死在"search 失败 → 不敢调 init_domain"的循环
-        # 现在允许 LLM 先建领域占位 · 后续慢慢用 manage_info_source 加源
+        # 原因：历史上 search 限流过·让 LLM 没法搜出可靠源·卡死在"search 失败 → 不敢调 init_domain"
+        # web_search 主引擎换 360（大陆中文搜得准）后这个卡点基本消除·但仍保留"先占位再补源"的兜底·稳。
         lines.append(
             "ℹ 领域已建·但还没加源。下一步可以：\n"
-            f"  - 用 web_search / browser_fetch 找到该领域的 RSS / blog URL\n"
+            f"  - 用 web_search（360 主·大陆中文好）/ browser_fetch 找该领域的 RSS / blog URL\n"
+            f"  - 按 **大陆 70% + 海外 30%** 配比挑源·别加大陆超时的（HN/HuggingFace）\n"
             f"  - 再调 manage_info_source action=add (一次加一个)·或重新调 init_domain 带 sources 一次性加多个\n"
             f"  - 也可以让 用户 直接给几个他知道的网址·OPUS 一一验证\n"
             f"  - **不要因为 search 不顺就放弃这一步**·领域占位先建好·后面慢慢填"
@@ -175,12 +175,17 @@ SPEC = ToolSpec(
         "  - 用户 说'帮我关注 D4 新赛季淘金' / '帮我加一个文玩类目' → OPUS 直接调本工具\n"
         "  - 用户 说'我要开始追 AI 视频生成这个方向' → 同上\n"
         "  - 任何'帮我关注 X' / '加一个 Y 领域' 都触发\n\n"
-        "**补丁 · 优先策略**:\n"
+        "**源配比标准（硬指标）**:\n"
+        "  - **大陆 70% + 海外 30%**——每加一批源都按这个比例配（如加 5 个 → 3~4 个国内 + 1~2 个海外）\n"
+        "  - 国内源优先用原生 RSS（量子位/36氪/雷锋网/IT之家/少数派/InfoQ中国/爱范儿/虎嗅… 视领域而定）·大陆抓得快、不踩墙\n"
+        "  - 海外只挑'大陆能直连 + 高价值'的（arxiv 论文 / 官方 blog / GitHub releases.atom）·**别加 Hacker News / HuggingFace 这类大陆超时的**\n"
+        "  - 加之前最好用 web_fetch 验证 URL 真返回 RSS/Atom·宁可少加几个真能抓的·也别凑数塞死链接\n\n"
+        "**优先策略**:\n"
         "  - **可以先建空领域占位**（sources=[]）·然后慢慢加源·不要求一次找齐\n"
-        "  - 如果 web_search 限流 / 找不到可用 RSS·**先建领域**·再用 manage_info_source 单加\n"
+        "  - 找不到可用 RSS·**先建领域**·再用 manage_info_source 单加\n"
         "  - 比起'卡死在 search'·**先建占位再补源**几乎总是更好的策略\n\n"
         "**理想路径**:\n"
-        "  1. 先调 web_search 看看·能找到 2-3 个像样的 RSS 就一起传\n"
+        "  1. 先调 web_search（360 主引擎·大陆中文搜得准）找 2-3 个像样的 RSS·按 70/30 配比挑\n"
         "  2. 找不到也没关系·sources=[] 也能调·领域先建出来\n"
         "  3. domain_slug 用 ascii + dash · 比如 'd4-gold' 'ai-video' 'wenwan'\n"
         "  4. label 用中文 · 给 UI 看的\n"
