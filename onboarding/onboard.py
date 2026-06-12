@@ -1,6 +1,6 @@
 """
-daemonkey-proto/onboard.py
-==========================
+onboarding/onboard.py
+=====================
 最小可跑的 Daemonkey "相遇" onboarding 原型。
 
 目的：先验证体验，再搬骨架。BRO 亲自在终端跳一遍三幕相遇，
@@ -12,9 +12,9 @@ daemonkey-proto/onboard.py
     只挂三个 onboarding 工具——避免把 50+ 个 OPUS 工具拖进"相遇"污染体验。
 
 跑法（在项目根目录）：
-  .venv\\Scripts\\python.exe daemonkey-proto\\onboard.py
+  .venv\\Scripts\\python.exe onboarding\\onboard.py
 
-重新体验：删掉 daemonkey-proto/data/ 再跑（或加 --reset）。
+重新体验：删掉 soul/onboarding.json 再跑（或加 --reset）。
 """
 
 from __future__ import annotations
@@ -151,8 +151,8 @@ def main() -> None:
 
         if proto_tools.is_onboarded():
             print(f"{GREEN}── 相遇完成 ──{RESET}")
-            print(f"{DIM}产物落在 daemonkey-proto/data/："
-                  f"identity.json / OWNER-NOTEBOOK.md / onboarding.json{RESET}")
+            print(f"{DIM}产物落在 soul/："
+                  f"IDENTITY.json / OWNER-NOTEBOOK.md / onboarding.json{RESET}")
             break
 
         try:

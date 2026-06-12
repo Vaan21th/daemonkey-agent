@@ -1,6 +1,6 @@
 """
-daemonkey-proto/onboarding_prompt.py
-====================================
+onboarding/onboarding_prompt.py
+===============================
 "相遇" system prompt。
 
 设计：

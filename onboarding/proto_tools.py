@@ -1,6 +1,6 @@
 """
-daemonkey-proto/proto_tools.py
-==============================
+onboarding/proto_tools.py
+=========================
 Onboarding 原型的三个采集工具 —— 自包含·只写本目录 data/·不碰主工程代码。
 
   - set_identity        · 给这只 Daemonkey 起名 + 定相处风格  → data/identity.json

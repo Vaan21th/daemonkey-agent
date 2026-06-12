@@ -5278,16 +5278,11 @@ function renderConfirmCard(data, state) {
   if (!state || !state.$container) return null;
   if (!data || !data.tool_call_id) return null;
 
-  // 中央模态 · 用户痛点: inline 卡片滚出可视区看不到等死 · 走"满屏遮罩 + 中央卡片"模式 · 强焦点不可能错过
-  const backdrop = document.createElement('div');
-  backdrop.className = 'confirm-modal-backdrop';
-  backdrop.dataset.toolCallId = data.tool_call_id;
-
+  // 对话流内联 · 用户钉死: 不要弹窗/全屏遮罩 (遮罩在 daemon 重启 / turn 中断时收不到 confirm_resolved → 残留 fixed 层锁死整页) · 卡片直接进消息流
   const wrap = document.createElement('div');
-  wrap.className = 'msg confirm-card confirm-modal';
+  wrap.className = 'msg confirm-card';
   wrap.dataset.toolCallId = data.tool_call_id;
   wrap.dataset.turnId = data.turn_id || '';
-  wrap._backdrop = backdrop;  // collapseConfirmCard 时一起移除
 
   // 标题: ⚠ OPUS 申请执行 <tool>
   const head = _confirmEl('div', 'confirm-head',
@@ -5411,31 +5406,10 @@ function renderConfirmCard(data, state) {
   status.textContent = '等待决议 · 30min 后自动拒绝';
   wrap.appendChild(status);
 
-  // append 到 body 顶层 (模态) · 同时在消息流插一条占位行
-  // 占位让用户滚消息流时仍知道"这里在等确认" · 点占位可重弹模态
-  document.body.appendChild(backdrop);
-  document.body.appendChild(wrap);
-
-  // 消息流占位 (轻量 chip · 关掉模态后可点重弹)
-  const placeholder = document.createElement('div');
-  placeholder.className = 'msg confirm-placeholder';
-  placeholder.dataset.toolCallId = data.tool_call_id;
-  placeholder.innerHTML = `<i class="ri-question-fill"></i> OPUS 申请执行 <code>${(data.tool_name || '?').replace(/[<>&]/g, '')}</code> · <button type="button" class="confirm-reopen-btn">重新打开弹窗</button>`;
-  placeholder.querySelector('.confirm-reopen-btn').addEventListener('click', () => {
-    if (!document.body.contains(wrap)) return;  // 已经被决议关掉了 · 不再 reopen
-    wrap.classList.add('confirm-modal-show');
-    backdrop.classList.add('confirm-modal-backdrop-show');
-  });
-  state.$container.appendChild(placeholder);
-  wrap._placeholder = placeholder;
-
-  // 触发 CSS transition (next frame 加 class · 让动画跑起来)
-  requestAnimationFrame(() => {
-    backdrop.classList.add('confirm-modal-backdrop-show');
-    wrap.classList.add('confirm-modal-show');
-  });
-
+  // 直接进消息流末尾 · 无遮罩 (不会锁死页面) · 滚到视野确保看得到
+  state.$container.appendChild(wrap);
   scrollToBottom(state.$container);
+  try { wrap.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* noop */ }
   return wrap;
 }
 
