@@ -135,6 +135,7 @@ def _run_update_owner_note(args: dict) -> tuple[bool, str]:
 
 def _run_complete_onboarding(args: dict) -> tuple[bool, str]:
     summary = (args.get("summary") or "").strip()
+    owner_name = (args.get("owner_name") or "").strip()
     _ensure_data()
     identity = {}
     if IDENTITY_PATH.exists():
@@ -142,6 +143,17 @@ def _run_complete_onboarding(args: dict) -> tuple[bool, str]:
             identity = json.loads(IDENTITY_PATH.read_text(encoding="utf-8-sig"))
         except Exception:
             identity = {}
+    # 兜底：收尾时带了称呼、而 IDENTITY 还没记 owner_name → 补写进去。
+    # 界面替换只认 IDENTITY.owner_name·光记进画像笔记界面拿不到 → 会一直露默认占位。
+    if owner_name and not (identity.get("owner_name") or "").strip():
+        identity["owner_name"] = owner_name
+        identity["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+        try:
+            IDENTITY_PATH.write_text(
+                json.dumps(identity, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception:
+            pass
     payload = {
         "onboarded": True,
         "completed_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -383,7 +395,7 @@ TOOLS = [
             "name": "complete_onboarding",
             "description": (
                 "聊到位、要自然收尾时调用：把这次相遇标记为完成、把他领进正式界面。"
-                "调用前应已 set_identity 并至少写过一两条 owner_note。"
+                "调用前应已 set_identity（尤其是该怎么称呼他 owner_name）并至少写过一两条 owner_note。"
                 "在调用它的同一条消息里，先告诉他往后在正式界面怎么跟你一起干（举具体例子），再邀请他进门。"
             ),
             "parameters": {
@@ -392,6 +404,14 @@ TOOLS = [
                     "summary": {
                         "type": "string",
                         "description": "一段简短的相遇摘要：我是谁、记住了他的什么、我们要一起做什么。",
+                    },
+                    "owner_name": {
+                        "type": "string",
+                        "description": (
+                            "收尾时再确认一遍该怎么称呼他（名字/昵称）。这是保险：界面和对话对他的"
+                            "称呼全靠这个字段，前面 set_identity 记过就重复传一遍、没记过这里补上；"
+                            "要是聊下来他始终没给称呼，就留空。"
+                        ),
                     },
                 },
                 "required": ["summary"],
