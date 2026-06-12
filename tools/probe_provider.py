@@ -143,8 +143,8 @@ def deep_verify_openai_compat(base_url: str, key: str, model: str, timeout: floa
     headers = {
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://opus-daemon.local",
-        "X-Title": "OPUS-Daemon-probe",
+        "HTTP-Referer": "https://daemonkey.local",
+        "X-Title": "Daemonkey-probe",
     }
     payload = {
         "model": model,

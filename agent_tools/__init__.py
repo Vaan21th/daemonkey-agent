@@ -80,6 +80,37 @@ def current_session_id() -> str:
 # ────────────────────────────────────────────────────────────────────────
 
 
+# ── 0.2.0 · 信任 flow 上下文 (用户痛点: 跑过 OK 的 flow 不要次次问) ──
+# agent_tools/run_flow.py 启动时检查 flow.trust_level ≥ 2 · 设这个 ContextVar 为 flow_id
+# daemon 的 confirm callback 看到这个 ContextVar 不为空 · 对 CONFIRM tier 的工具直接返 "yes" ·
+# 但 GUARD 仍走原流程 (保命线)。
+# 设计原则:
+#   - 只覆盖 CONFIRM · GUARD 永远要用户拍 (rm -rf / drop / 改 .env 之类)
+#   - 用 ContextVar 而非全局变量 · 多会话并发安全
+#   - 设了之后由调用方在结束时 reset · 避免泄露到其他 task
+_TRUSTED_FLOW_CTX: contextvars.ContextVar[Optional[str]] = \
+    contextvars.ContextVar("_trusted_flow_ctx", default=None)
+
+
+def set_trusted_flow_context(flow_id: Optional[str]) -> contextvars.Token:
+    """run_flow 启动前调 · 返回 Token · 结束后调 reset_trusted_flow_context(token) 清回"""
+    return _TRUSTED_FLOW_CTX.set(flow_id or None)
+
+
+def reset_trusted_flow_context(token: contextvars.Token) -> None:
+    """run_flow 结束时调 · 防泄露到下一个 task"""
+    try:
+        _TRUSTED_FLOW_CTX.reset(token)
+    except Exception:
+        pass
+
+
+def current_trusted_flow() -> Optional[str]:
+    """daemon confirm callback 调这个查 · 拿到 flow_id 说明现在在信任 flow 内部 · 可降级"""
+    return _TRUSTED_FLOW_CTX.get()
+# ────────────────────────────────────────────────────────────────────────
+
+
 @dataclass
 class ToolResult:
     ok: bool
@@ -205,4 +236,12 @@ from . import session_search       # noqa: E402,F401  ( II · wish-2a92774d · s
 from . import request_restart      # noqa: E402,F401  ( III · wish-ed5553d5 · daemon 重启工具)
 from . import verify_daemon_endpoints  # noqa: E402,F401  ( III · wish-ed5553d5 · daemon 路由冒烟)
 from . import look_at              # noqa: E402,F401  ( III · wish-4a6331b2 · OPUS 的"眼睛")
-from . import update_core          # noqa: E402,F401  (卷六十四续六 · 选择性内核升级 · 只覆盖白名单·不碰灵魂)
+from . import update_core          # noqa: E402,F401  (选择性内核升级 · 只覆盖白名单·不碰灵魂)
+from . import manage_app_asset     # noqa: E402,F401  (app 资产登记表 · 用户个性沉淀单一事实源)
+from . import run_app              # noqa: E402,F401  (主对话直接执行工坊 app · 先查再搓)
+from . import run_flow             # noqa: E402,F401  (沿 steps 工作流执行 · 状态落盘断点续跑)
+from . import app_versions         # noqa: E402,F401  (app 历史版本 list/show/diff/rollback)
+from . import list_apps            # noqa: E402,F401  (列工坊 app · 补 glob 看不到的盲区)
+from . import list_flows           # noqa: E402,F401  (列工坊 flow · 补 glob 看不到的盲区)
+from . import trust_flow           # noqa: E402,F401  (0.2.0 · 信任账本手动控制 · 用户一句话信任)
+from . import rerun_flow_step      # noqa: E402,F401  (0.2.0 · 单步重跑 · 用户主动要求)

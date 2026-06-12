@@ -5,10 +5,10 @@ tools/self_verify.py
 卷四十六 III 补丁 5 · 一键自测 · 验 11 个新 commit 是否都跑通
 
 跑法 (推荐):
-    双击 F:\\Desktop\\OPUS-DAEMON\\verify.bat
+    双击项目根目录的 verify.bat
 
 跑法 (命令行):
-    cd F:\\Desktop\\OPUS-DAEMON
+    cd 到项目根目录
     .\\.venv\\Scripts\\python.exe tools\\self_verify.py
 
 它做的事:

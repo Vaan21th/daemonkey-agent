@@ -964,9 +964,18 @@ def _chat_impl(
         except Exception:
             pass
 
+        # 能力感知注入：每轮把"命中的现成 app/flow + 活跃 run"递到上下文里·
+        # 让对话里的 AI 先知道工坊有什么·别从零手搓。 失败不阻塞对话。
+        _workshop_hint = ""
+        try:
+            from workers.workshop_context import workshop_hint as _ws_hint
+            _workshop_hint = _ws_hint(message)
+        except Exception:
+            pass
+
         # 卷六十四续七 · 渠道感知 · 微信 turn 给 system 末尾挂一句"你在微信上·发文件走
         # wechat_send media_path·别 write_clipboard/甩路径"。挂 system 不污染 user 历史·随轮即弃。
-        _sys = _build_remote_system(RUNTIME.system_prompt, session_id=sid) + _pb_hint
+        _sys = _build_remote_system(RUNTIME.system_prompt, session_id=sid) + _pb_hint + _workshop_hint
         if _user_meta.get("src") == "wechat":
             _sys = _sys + _WECHAT_CHANNEL_NOTE
         try:

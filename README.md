@@ -48,7 +48,7 @@ Daemonkey/
 │   ├── index.html
 │   ├── style.css
 │   ├── app.js
-│   └── favicon.ico          浏览器标签页图标（猴王）
+│   └── favicon.ico          浏览器标签页图标
 ├── onboarding/              "相遇" onboarding
 │   ├── onboard.py           终端版对话（原型 · 仍可单独跑）
 │   ├── web_loop.py          网页版 tool-use 循环

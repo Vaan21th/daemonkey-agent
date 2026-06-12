@@ -1,13 +1,13 @@
 """
 daemonkey-proto/proto_tools.py
 ==============================
-Onboarding 原型的三个采集工具 —— 自包含·只写本目录 data/·不碰花果山主代码。
+Onboarding 原型的三个采集工具 —— 自包含·只写本目录 data/·不碰主工程代码。
 
   - set_identity        · 给这只 Daemonkey 起名 + 定相处风格  → data/identity.json
   - update_owner_note   · 把对他的认识写进画像                → data/OWNER-NOTEBOOK.md
   - complete_onboarding · 标记"相遇"完成                      → data/onboarding.json
 
-蓝本是花果山的 agent_tools/update_bro_note.py（6 维认知笔记），
+蓝本是主工程的 agent_tools/update_bro_note.py（6 维认知笔记），
 这里精简成原型自洽版：去掉全局 sync / FTS5 / 热重载，只留最小写盘。
 画像 6 维和 BRO-NOTEBOOK 同构 —— 将来搬骨架时直接兼容。
 """

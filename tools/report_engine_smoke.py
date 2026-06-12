@@ -34,7 +34,7 @@ os.environ["OPUS_API_TOKEN"] = "smoke-test-token-do-not-leak"
 
 
 SAMPLE_MD = """\
-本测试报告用于验证 OPUS-DAEMON 的文档生产能力。
+本测试报告用于验证本工程的文档生产能力。
 
 ## 一、核心能力
 
@@ -54,7 +54,7 @@ OPUS 现在可以通过自然语言触发 `generate_report` 工具 · 把 markdo
 | 维度 | 主题 | 状态 |
 |---|---|---|
 | 信息 | OPUS 紫 | ✅ |
-| 内容 | 漫聚深蓝 | ✅ |
+| 内容 | 深蓝 | ✅ |
 | 报告 | 双主题 | ✅ |
 
 ## 二、引用 + 代码
@@ -94,8 +94,8 @@ class ReportEngineTests(unittest.TestCase):
             md_text=SAMPLE_MD,
             output_path=out,
             cover={
-                "title": "OPUS-DAEMON 文档引擎 Smoke",
-                "subtitle": "卷二十四 · 自检",
+                "title": "文档引擎 Smoke",
+                "subtitle": "自检",
                 "audience": "BRO 自看",
                 "note": "本文档由 report_engine 直接生成 · 不经过 generate_report 工具",
             },
@@ -114,7 +114,7 @@ class ReportEngineTests(unittest.TestCase):
         final = render_report(
             md_text=SAMPLE_MD,
             output_path=out,
-            cover={"title": "漫聚原版主题验证", "audience": "BRO"},
+            cover={"title": "深蓝主题验证", "audience": "BRO"},
             theme="manju",
         )
         self.assertTrue(final.exists())
@@ -215,7 +215,7 @@ class GenerateReportToolTests(unittest.TestCase):
 
     def test_happy_path_manju_theme(self):
         r = self.tool.run({
-            "title": "Smoke-漫聚主题",
+            "title": "Smoke-深蓝主题",
             "body": "## 段落\n\n正文。",
             "theme": "manju",
         })

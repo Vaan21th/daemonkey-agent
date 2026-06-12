@@ -191,7 +191,7 @@ function Show-RestartChoice {
     }
 }
 
-# 用户版无 git 自检 —— 那是开发者(花果山)调代码用的, 对下载用户是吓人的噪声
+# 用户版无 git 自检 —— 那是开发者调代码用的, 对下载用户是吓人的噪声
 
 # ═══════════════════════════════════════════════════
 #  主窗口 · 无边框圆角 + 自绘标题栏 + 三栏
@@ -210,7 +210,7 @@ $form.ForeColor = $cText
 $form.Font = F 9
 $form.FormBorderStyle = 'None'
 $form.MaximizeBox = $false
-# 任务栏 / Alt-Tab 图标 = 猴王 (窗口图标和 exe 文件图标都对齐到同一个 .ico)
+# 任务栏 / Alt-Tab 图标 (窗口图标和 exe 文件图标都对齐到同一个 .ico)
 $icoFile = Join-Path $script:Root 'assets\daemonkey.ico'
 if (Test-Path $icoFile) { try { $form.Icon = New-Object System.Drawing.Icon($icoFile) } catch {} }
 # 圆角窗口 (无边框 · Region 裁出圆角)

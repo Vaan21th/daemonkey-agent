@@ -47,7 +47,7 @@ _STATIC_WHITELIST = {
     "lib/remixicon/remixicon.woff2": "font/woff2",
     "lib/remixicon/remixicon.woff": "font/woff",
     "lib/remixicon/remixicon.ttf": "font/ttf",
-    # 浏览器标签页图标 · 猴王 (启动器同款) · 替掉浏览器缓存的陌生默认 favicon
+    # 浏览器标签页图标 · 替掉浏览器缓存的陌生默认 favicon
     "favicon.ico": "image/x-icon",
     # 形态 Z · 相遇页 (index.html) 的样式与脚本 · index.html 本身走 /ui 分流返回
     "style.css": "text/css; charset=utf-8",

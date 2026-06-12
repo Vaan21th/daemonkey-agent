@@ -1,0 +1,170 @@
+{
+  "id": "app-46efb986",
+  "kind": "app",
+  "name": "内容制作",
+  "description": "内容制作 · AI 视频工作流的核心文案源 · 把一个选题拆成分镜稿 · 每镜带口播文案 + 给下游 AI 的素材工单 (要图→图片提示词 / 要视频→公共素材搜索词 或 AI 生成视频提示词) · 下游图片/视频/搜索/配音 app 从这份分镜稿取提示词。",
+  "icon": "<i class=\"ri-film-fill\"></i>",
+  "system_prompt": "## 角色\n\n你是\"内容制作\" app —— **AI 视频工作流的核心文案源**。 你的唯一产出 = 一份**分镜稿**: 把一个选题拆成若干镜·每镜带 ① 这一镜的口播文案 ② 给下游 AI 的素材工单。 后面的图片生成 / 视频生成 / 视频搜索 / 配音 app 都从你这份分镜稿里取自己那一栏的提示词。\n\n你是唯一事实源·含糊一处下游就崩一处。 你不是写手·你是给整条流水线下工单的人。\n\n## 输入\n\n- `topic` (必填): 选题·一句话讲清这条视频说什么\n- `duration_target`: 目标时长 (秒)\n- `tone`: 口播语气\n- `has_manuscript` / `manuscript`: 用户 已有口播稿就顺它 (true)·否则你来写 (false)\n- 工作流里跑时·上游 `step_goal` / `upstream_outputs` 也要读 (可能给了主题背景)\n\n## 动作\n\n1. **口播**: has_manuscript=true → 基于 manuscript 顺一遍 (修语气 / 补过渡·不大改); false → 按 topic + tone 原创。 总字数 ≈ `duration_target × 4.5` 字·±10% 内。\n\n2. **切分镜**: 4-8 秒一镜·切在口播自然停顿处。 每镜写 `narration` (这一镜对应的口播片段) + `duration_sec`。\n\n3. **每镜定素材** (决策树·必做·这是你的核心价值):\n   - 这一镜画面用**图片** → `material.type=\"image\"` + `image_prompt`\n   - 这一镜画面用**视频**·且是**现成公共素材** → `material.type=\"video\"` · `source=\"search\"` · `search_query` (给搜索 app 的检索词·简短·中英都行)\n   - 这一镜画面用**视频**·且要 **AI 生成** → `material.type=\"video\"` · `source=\"ai_generate\"` · `video_prompt` (给视频生成模型的画面描述·详细)\n\n4. **提示词必须具体到能直接喂下游 AI**: 画面主体 + 动作 + 风格 + 景别 + 画面比例。 禁止 \"AI 风格 / 电影感 / 4K\" 这种空话。\n\n## 输出规范\n\n先把两件产物写到 `data/workshop/outputs/<本app id>/`: `narration-<时间戳>.txt` (纯口播) + `shots-<时间戳>.json` (分镜数组)。 用 write_file。\n\n再返回三个字段 (output_schema 要求·不要只贴文本):\n- `title` (string): 视频标题\n- `narration_full` (string): 完整口播稿·所有分镜 narration 拼起来 (给 TTS)\n- `shots` (array): 分镜稿·每元素 = `{ cut_id, narration, duration_sec, material }`·material 见上决策树\n\n## 坑清单\n\n- **提示词空话** = 下游没法用。 每条 image_prompt / video_prompt / search_query 都要具体可执行。\n- **口播字数没对齐时长** = 成片节奏崩。 写完数一遍·偏差超 10% 返工。\n- **不要发明素材类型**: material.type 只有 `image` / `video`; video 的 source 只有 `search` / `ai_generate`。\n- **search_query ≠ video_prompt**: search_query 是给搜索引擎的关键词 (简短)·video_prompt 是给生成模型的画面描述 (详细)·别搞混。\n- **别越权扩产**: 你只出分镜稿文案 + 素材提示词·不要自己去调生图 / 生视频 / 配音 (那是下游 app 的活·你只下工单)。",
+  "tools": [
+    "read_file",
+    "write_file"
+  ],
+  "model_hint": "",
+  "ui_form_schema": [
+    {
+      "name": "topic",
+      "type": "text",
+      "label": "选题/主题",
+      "required": true,
+      "help": "一句话讲清这条视频说什么",
+      "max_chars": 200
+    },
+    {
+      "name": "duration_target",
+      "type": "select",
+      "label": "目标时长(秒)",
+      "required": true,
+      "default": 60,
+      "options": [
+        {
+          "value": 30,
+          "label": "30"
+        },
+        {
+          "value": 60,
+          "label": "60"
+        },
+        {
+          "value": 90,
+          "label": "90"
+        },
+        {
+          "value": 120,
+          "label": "120"
+        },
+        {
+          "value": 180,
+          "label": "180"
+        }
+      ]
+    },
+    {
+      "name": "tone",
+      "type": "select",
+      "label": "口播语气",
+      "required": false,
+      "default": "轻松唠嗑",
+      "options": [
+        {
+          "value": "轻松唠嗑",
+          "label": "轻松唠嗑"
+        },
+        {
+          "value": "严肃讲解",
+          "label": "严肃讲解"
+        },
+        {
+          "value": "激昂",
+          "label": "激昂"
+        },
+        {
+          "value": "温柔",
+          "label": "温柔"
+        },
+        {
+          "value": "科普平稳",
+          "label": "科普平稳"
+        }
+      ]
+    },
+    {
+      "name": "has_manuscript",
+      "type": "boolean",
+      "label": "已有口播稿",
+      "required": false,
+      "default": false
+    },
+    {
+      "name": "manuscript",
+      "type": "textarea",
+      "label": "口播稿全文",
+      "required": false,
+      "help": "has_manuscript=true 时填 · 不填就由 app 按选题生成",
+      "max_chars": 8000
+    }
+  ],
+  "output_schema": [
+    {
+      "name": "title",
+      "type": "string",
+      "label": "视频标题"
+    },
+    {
+      "name": "narration_full",
+      "type": "string",
+      "label": "完整口播稿 (TTS 用 · 所有分镜口播拼起来)"
+    },
+    {
+      "name": "shots",
+      "type": "array",
+      "label": "分镜稿 · 每镜: cut_id/narration/duration_sec/material(type=image→image_prompt; type=video→source=search→search_query / source=ai_generate→video_prompt)"
+    }
+  ],
+  "exec_kind": "agentic",
+  "exec_template": null,
+  "asset_slots": [],
+  "created_at": "2026-06-10T15:55:59",
+  "created_by": "AI",
+  "runs": 11,
+  "shipped": true,
+  "version": 9,
+  "updated_at": "2026-06-10T23:09:05",
+  "spec_version": 2,
+  "changelog": [
+    {
+      "v": 1,
+      "at": "2026-06-10T13:36:26",
+      "note": "初版"
+    },
+    {
+      "v": 2,
+      "at": "2026-06-10T13:55:27",
+      "note": "改名为『内容制作』顶替 builtin stub·补『四入口』模型"
+    },
+    {
+      "v": 3,
+      "at": "2026-06-10T14:17:10",
+      "note": "标记为 shipped · 自带应用·不许删·随 DK 出厂"
+    },
+    {
+      "v": 4,
+      "at": "2026-06-10T14:18:05",
+      "note": "标记为 shipped · 自带应用·不许删·随 DK 出厂"
+    },
+    {
+      "v": 5,
+      "at": "2026-06-10T15:52:40",
+      "note": "蓝图标准升级 · 审稿 4 条硬伤固化进 storyboard 字段: shot_type/roll_type/cut_transition/bgm/sfx 必填 + 分布约束 (≥1 screencast / 不超 3 连 ui_card / ≥3 段 BGM) + 体量错位预警 + IP_images 槽 origin 从 _shared 收紧到本 app 私有 (设计决策: IP 图只用在内容制作中)"
+    },
+    {
+      "v": 6,
+      "at": "2026-06-10T15:54:45",
+      "note": "蓝图标准升级 · 审稿 4 条硬伤固化进 storyboard 字段: shot_type/roll_type/cut_transition/bgm/sfx 必填 + 分布约束 (≥1 screencast / 不超 3 连 ui_card / ≥3 段 BGM) + 体量错位预警 + IP_images 槽 origin 从 _shared 收紧到本 app 私有 (设计决策: IP 图只用在内容制作中)"
+    },
+    {
+      "v": 7,
+      "at": "2026-06-10T15:55:59",
+      "note": "蓝图标准升级 · 审稿 4 条硬伤固化进 storyboard 字段: shot_type/roll_type/cut_transition/bgm/sfx 必填 + 分布约束 (≥1 screencast / 不超 3 连 ui_card / ≥3 段 BGM) + 体量错位预警 + IP_images 槽 origin 从 _shared 收紧到本 app 私有 (设计决策: IP 图只用在内容制作中)"
+    },
+    {
+      "v": 8,
+      "at": "2026-06-10T20:19:53",
+      "note": "去私化清洗 · 移除内部项目术语/个人称谓/文档卷号/具体日期 · system_prompt + description + asset_slots + changelog notes 一锅清 · 业务逻辑 / 四入口模型 / 12 字段 storyboard / 错误教训 零删减 · daemonkey 开源用户可直接使用"
+    },
+    {
+      "v": 9,
+      "at": "2026-06-10T23:09:05",
+      "note": "精简重写 (用户 拍板) · 从 4875 字天坑砍到 ~1100 字 · 定位明确为『分镜稿生成器 = AI 工作流核心文案源』· 每镜出口播 + 素材工单 (要图→图片提示词 / 要视频→公共素材搜索词 或 AI生成视频提示词) · 删四入口/12字段storyboard/BGM/SFX/shot_type/roll_type/cut_transition/分布约束 (token 爆炸 + LLM 跑偏的根) · output 三字段 title/narration_full/shots · 工具收到 read_file+write_file · asset_slots 清空 (先证核心·IP图/风格参考后续按需加回)"
+    }
+  ]
+}

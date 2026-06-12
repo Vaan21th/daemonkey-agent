@@ -140,7 +140,7 @@ def summarize_engineering_milestones(since: str, until: str) -> str:
     """LLM 一次 mini-call · 从 CAPTAINS-LOG 末段提炼 period 内 5-8 个里程碑。"""
     log_text = _extract_captains_log_volumes(since, until)
     prompt = (
-        f"以下是 OPUS-DAEMON 工程的船长日志末段 (主要 2026-05-15 至今)。\n\n"
+        f"以下是本工程的船长日志末段 (主要 2026-05-15 至今)。\n\n"
         f"请提炼 {since} → {until} 这段时间内的 5-8 个工程里程碑。\n"
         f"每个里程碑一行: '日期 · 卷次 · 一句话内容 (干了什么)'\n"
         f"重点关注: 新能力上线 / 重大决策 / 踩坑教训 / 用户 拍板的事。\n"

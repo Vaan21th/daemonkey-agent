@@ -1513,6 +1513,172 @@ header {
   position: relative;
   overflow: hidden;
 }
+
+/* ── 0.2.0 · 新对话引导卡 onboarding panel ── */
+.onboarding-panel {
+  max-width: 760px;
+  margin: 48px auto 24px;
+  padding: 28px 32px;
+  background: linear-gradient(135deg, rgba(159, 122, 234, 0.06), rgba(106, 207, 232, 0.04));
+  border: 1px solid rgba(159, 122, 234, 0.18);
+  border-radius: 12px;
+  box-shadow: 0 6px 36px -16px rgba(159, 122, 234, 0.3);
+}
+.onboarding-head { text-align: center; margin-bottom: 24px; }
+.onboarding-title {
+  font-size: 22px;
+  color: #e8e8f0;
+  margin-bottom: 6px;
+}
+.onboarding-title strong { color: #c7adff; font-weight: 700; }
+/* 标题前闪光 icon · 用 remix icon 替 emoji */
+.onboarding-title .onboarding-spark {
+  color: #c7adff;
+  font-size: 20px;
+  margin-right: 6px;
+  filter: drop-shadow(0 0 8px rgba(199, 173, 255, 0.55));
+  vertical-align: -1px;
+}
+.onboarding-sub {
+  font-size: 12px;
+  color: #888;
+  letter-spacing: 0.4px;
+}
+.onboarding-slogan {
+  font-family: 'Georgia', 'Times New Roman', serif;
+  font-style: italic;
+  font-size: 13px;
+  letter-spacing: 0.6px;
+  color: #a8a8b8;
+  opacity: 0.85;
+}
+.onboarding-card-icon {
+  font-size: 22px;
+  color: #c7adff;
+  margin-bottom: 8px;
+  line-height: 1;
+}
+.onboarding-cards {
+  /* 5 张卡 · auto-fit minmax 自适应排 · 宽屏 3+2 不挤 */
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.onboarding-card {
+  display: block;
+  text-align: left;
+  padding: 16px 18px;
+  background: rgba(35, 35, 45, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.12s, border-color 0.15s, background 0.15s;
+}
+.onboarding-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(159, 122, 234, 0.45);
+  background: rgba(159, 122, 234, 0.08);
+}
+.onboarding-card:active { transform: translateY(0); }
+.onboarding-card-title {
+  color: #e8e8f0;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.onboarding-card-hint {
+  color: #888;
+  font-size: 11px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.onboarding-foot {
+  text-align: center;
+  font-size: 11px;
+  color: #666;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.onboarding-customize {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #999;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.onboarding-customize:hover { color: #c7adff; border-color: rgba(159, 122, 234, 0.4); }
+
+/* 改模板 modal */
+.onboarding-modal-mask {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+}
+.onboarding-modal {
+  width: 560px; max-width: 90vw; max-height: 80vh;
+  background: #1e1e26;
+  border: 1px solid rgba(159, 122, 234, 0.3);
+  border-radius: 8px;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.onboarding-modal-head {
+  padding: 12px 16px;
+  background: rgba(159, 122, 234, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex; justify-content: space-between; align-items: center;
+  color: #e8e8f0; font-size: 14px;
+}
+.onboarding-modal-x {
+  background: transparent; border: 0; color: #888; font-size: 20px; cursor: pointer;
+}
+.onboarding-modal-x:hover { color: #f87171; }
+.onboarding-modal-body { padding: 16px; overflow-y: auto; flex: 1; }
+.onboarding-tmpl-row { margin-bottom: 14px; }
+.onboarding-tmpl-row label {
+  display: block; margin-bottom: 4px; color: #c7adff; font-size: 12px; font-weight: 600;
+}
+.onboarding-tmpl-row textarea {
+  width: 100%; box-sizing: border-box;
+  padding: 8px 10px;
+  background: #2a2a35; color: #e8e8e8;
+  border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 4px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+  resize: vertical;
+}
+.onboarding-modal-hint { font-size: 11px; color: #666; }
+.onboarding-modal-foot {
+  padding: 12px 16px; border-top: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+.onboarding-modal-foot button {
+  padding: 6px 14px;
+  background: #2a2a35; color: #d8d8e0;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 4px;
+  font-family: inherit; font-size: 12px; cursor: pointer;
+}
+.onboarding-modal-foot .onboarding-modal-save {
+  background: rgba(159, 122, 234, 0.2); border-color: rgba(159, 122, 234, 0.5); color: #e8e8f0;
+}
+.onboarding-modal-foot button:hover { filter: brightness(1.2); }
+
+@media (max-width: 640px) {
+  .onboarding-cards { grid-template-columns: 1fr; }
+  .onboarding-panel { margin: 24px 12px; padding: 20px; }
+}
+
 .tool-progress-bar {
   padding: 8px 14px;
   display: flex; gap: 8px; align-items: center;
@@ -6596,7 +6762,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
    ═══════════════════════════════════════════════════════════════ */
 
 /* 白天模式 */
-/* 经典灰 · 花果山 2026-06 紫主题之前的老深灰(含绿色用户气泡) */
+/* 经典灰 · 紫主题之前的老深灰(含绿色用户气泡) */
 .theme-classic {
   --bg: #1a1a1a; --bg2: #252525; --bg3: #303030;
   --border: #383838; --text: #e8e8e8;
@@ -7167,4 +7333,464 @@ a.bi-sig-title:hover { color: var(--opus); text-decoration: underline; }
   border: none;
   font-weight: 600;
   cursor: pointer;
+}
+
+/* ============================================================
+   0.2.0 同步 (母体→纯净版) · flow 进度横幅 + confirm 中央模态 + 产出预览 modal + gallery 复制路径
+   ============================================================ */
+/* ─────────────────────────────────────────────────────────
+ * 卷七十三 P0-2 (2026-06-10) · confirm 中央模态化
+ * 用户 痛点: inline 卡片滚出可视区看不到 = 等死 · 改为强焦点模态
+ * 复用 OPUS_MODAL 的"满屏遮罩 + 中央卡片"视觉语言
+ * ───────────────────────────────────────────────────────── */
+.confirm-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0);
+  z-index: 9000;
+  pointer-events: auto;
+  transition: background 0.18s ease;
+}
+.confirm-modal-backdrop.confirm-modal-backdrop-show {
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.msg.confirm-card.confirm-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -48%) scale(0.96);
+  width: min(640px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  z-index: 9001;
+  margin: 0;
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(159, 122, 234, 0.4);
+  /* 模态语义下 · 不限宽 · 占用空间更大 · risk/mit 看得清 */
+}
+.msg.confirm-card.confirm-modal.confirm-modal-show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+/* 模态状态下 · 按钮组贴底显眼 */
+.msg.confirm-card.confirm-modal .confirm-buttons {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(180deg, transparent, var(--bg, #1a1a1f) 30%);
+  padding-top: 12px;
+  margin-top: 8px;
+  z-index: 2;
+}
+
+/* 消息流里的占位 chip (用户 滚回去时知道这里在等确认 · 可点重弹) */
+.msg.confirm-placeholder {
+  align-self: flex-start;
+  max-width: 720px;
+  background: rgba(159, 122, 234, 0.08);
+  border: 1px dashed rgba(159, 122, 234, 0.4);
+  color: #c7adff;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.msg.confirm-placeholder code {
+  background: rgba(159, 122, 234, 0.18);
+  color: #e8d8ff;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+.confirm-reopen-btn {
+  margin-left: 4px;
+  background: rgba(159, 122, 234, 0.22);
+  color: #d8c5ff;
+  border: 1px solid rgba(159, 122, 234, 0.5);
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.confirm-reopen-btn:hover { background: rgba(159, 122, 234, 0.4); color: #fff; }
+
+/* 占位被决议后 · 转成已决议态 (跟原 confirm-card-resolved 风格一致) */
+.msg.confirm-placeholder.confirm-placeholder-resolved {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-style: solid;
+  color: var(--dim1);
+}
+
+/* ─────────────────────────────────────────────────────────
+ * 卷七十三 P0-2 (2026-06-10) · 工坊产出文件 preview modal
+ * 复用 .confirm-modal-backdrop 遮罩 · 卡片样式独立
+ * 用户 痛点: other 类型 (md/json/txt) 卡片点击无反应 · 现在弹中央 modal 预览
+ * ───────────────────────────────────────────────────────── */
+.output-preview-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -48%) scale(0.96);
+  width: min(820px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg, #1a1a1f);
+  border: 1px solid rgba(159, 122, 234, 0.4);
+  border-radius: 10px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  z-index: 9001;
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.output-preview-modal.output-preview-show {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+.output-preview-modal .opm-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.output-preview-modal .opm-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: #e8e8e8;
+}
+.output-preview-modal .opm-fname {
+  color: var(--dim2);
+  font-size: 11px;
+  flex: 1;
+}
+.output-preview-modal .opm-fname code {
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.output-preview-modal .opm-close {
+  background: transparent;
+  border: 0;
+  color: var(--dim2);
+  font-size: 22px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 6px;
+}
+.output-preview-modal .opm-close:hover { color: #fff; }
+.output-preview-modal .opm-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--dim1);
+}
+.output-preview-modal .opm-md {
+  color: #e8e8e8;
+}
+.output-preview-modal .opm-md h1,
+.output-preview-modal .opm-md h2,
+.output-preview-modal .opm-md h3 { margin-top: 16px; }
+.output-preview-modal .opm-md table {
+  border-collapse: collapse;
+  margin: 8px 0;
+}
+.output-preview-modal .opm-md th,
+.output-preview-modal .opm-md td {
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+}
+.output-preview-modal .opm-pre {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  padding: 12px;
+  border-radius: 6px;
+  color: #d8d8e0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.output-preview-modal .opm-pre-json {
+  color: #a8d8ff;
+}
+.output-preview-modal .opm-loading,
+.output-preview-modal .opm-error {
+  padding: 24px;
+  text-align: center;
+  color: var(--dim2);
+}
+.output-preview-modal .opm-error { color: #f87171; }
+.output-preview-modal .opm-foot {
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  text-align: right;
+}
+.output-preview-modal .opm-link {
+  color: #c7adff;
+  font-size: 12px;
+  text-decoration: none;
+}
+.output-preview-modal .opm-link:hover { text-decoration: underline; }
+
+/* 卷七十三 P0-2 · 工坊产出卡片"复制路径"按钮 */
+.ws-gallery-pathbtn {
+  margin-left: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--dim2);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ws-gallery-pathbtn:hover {
+  background: rgba(159, 122, 234, 0.18);
+  border-color: rgba(159, 122, 234, 0.4);
+  color: #d8c5ff;
+}
+.ws-gallery-other { cursor: pointer; transition: border-color 0.15s ease; }
+.ws-gallery-other:hover { border-color: rgba(159, 122, 234, 0.5) !important; }
+
+/* 卷七十二 v3 · 工作流跑时进度 banner (用户 图2 诉求) · 紫色调区别于 tool-progress 蓝色
+ * 卷七十三 P0 (2026-06-10): 异步化后 banner 需要 done(绿)/failed(红) 通知态 ·
+ *   用户 不再依赖 LLM tool 同步返结果 · banner 是唯一的"跑完 / 失败"反馈通道 */
+.flow-runs-banner {
+  flex: 0 0 auto;
+  background: linear-gradient(90deg, rgba(159, 122, 234, 0.14), rgba(159, 122, 234, 0.04));
+  border-top: 1px solid rgba(159, 122, 234, 0.3);
+  border-bottom: 1px solid rgba(159, 122, 234, 0.2);
+  font-size: 12px;
+  color: var(--dim1);
+  position: relative;
+  overflow: hidden;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+.flow-runs-banner.is-done {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.18), rgba(34, 197, 94, 0.05));
+  border-top-color: rgba(34, 197, 94, 0.45);
+  border-bottom-color: rgba(34, 197, 94, 0.3);
+}
+.flow-runs-banner.is-failed {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.18), rgba(239, 68, 68, 0.05));
+  border-top-color: rgba(239, 68, 68, 0.45);
+  border-bottom-color: rgba(239, 68, 68, 0.3);
+}
+/* terminal 态 (done/failed) 关掉 shimmer 动画 · 不再"跑"了 */
+.flow-runs-banner.is-done .flow-runs-bar::before,
+.flow-runs-banner.is-failed .flow-runs-bar::before {
+  animation: none;
+  background: none;
+}
+.flow-runs-banner.is-done .flow-runs-text   { color: #aaf0c0; }
+.flow-runs-banner.is-failed .flow-runs-text { color: #ffb4ad; }
+.flow-runs-bar {
+  padding: 8px 14px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  position: relative;
+  cursor: pointer;
+}
+.flow-runs-bar::before {
+  content: "";
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, rgba(159, 122, 234, 0.20), transparent);
+  animation: tool-shimmer 2.2s linear infinite;
+  pointer-events: none;
+}
+.flow-runs-icon { font-size: 14px; position: relative; z-index: 1; }
+.flow-runs-text {
+  flex: 1;
+  position: relative; z-index: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #d8c5ff;
+}
+.flow-runs-toggle {
+  background: rgba(159, 122, 234, 0.15);
+  color: #c7adff;
+  border: 1px solid rgba(159, 122, 234, 0.35);
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: pointer;
+  position: relative; z-index: 1;
+  flex: 0 0 auto;
+}
+.flow-runs-toggle:hover { background: rgba(159, 122, 234, 0.28); }
+.flow-runs-detail {
+  border-top: 1px dashed rgba(159, 122, 234, 0.25);
+  padding: 10px 14px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.flow-run-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(159, 122, 234, 0.18);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 11px;
+}
+.flow-run-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.flow-run-name { color: #e8e8e8; font-weight: 600; font-size: 12px; }
+.flow-run-progress {
+  margin-left: auto;
+  color: #c7adff;
+  font-family: ui-monospace, monospace;
+  background: rgba(159, 122, 234, 0.15);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+}
+.flow-run-status {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+.flow-run-status.running { background: rgba(159, 122, 234, 0.2); color: #c7adff; }
+.flow-run-status.done    { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+.flow-run-status.failed  { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+.flow-run-status.aborted { background: rgba(156, 163, 175, 0.15); color: #9ca3af; }
+/* 卷七十三 P0 · "知道了" 撤掉这条通知 banner (running 不给 · 还得看进度) */
+.flow-run-dismiss {
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.06);
+  color: #c8c8d0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.flow-run-dismiss:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+.flow-run-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.flow-run-step {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 3px 0;
+  font-size: 11px;
+  color: #a8a8b0;
+  line-height: 1.5;
+}
+.flow-run-step-status {
+  flex: 0 0 auto;
+  width: 16px;
+  text-align: center;
+  font-size: 12px;
+}
+.flow-run-step.running .flow-run-step-status { color: #c7adff; animation: spin 1.4s linear infinite; }
+.flow-run-step.done    .flow-run-step-status { color: #4ade80; }
+.flow-run-step.failed  .flow-run-step-status { color: #f87171; }
+.flow-run-step.pending .flow-run-step-status { color: #555; }
+.flow-run-step.skipped .flow-run-step-status { color: #666; }
+.flow-run-step-num {
+  flex: 0 0 auto;
+  width: 24px;
+  font-family: ui-monospace, monospace;
+  color: #888;
+  font-size: 10px;
+}
+.flow-run-step-body { flex: 1; min-width: 0; }
+.flow-run-step-app  { color: #d8d8e0; font-size: 11px; }
+.flow-run-step-goal { color: #888; font-size: 10px; margin-top: 2px; line-height: 1.5; word-break: break-word; }
+.flow-run-step-err  { color: #f87171; font-size: 10px; margin-top: 2px; font-family: ui-monospace, monospace; }
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* 0.2.0 同步 · sub-agent (run_app) 边界事件条 */
+/* ─────────────────────────────────────────────────────────
+ * 卷七十三 P0-3 (2026-06-10) · sub-agent (run_app) 边界事件
+ * 用户 痛点: sub-agent 内部 6-8 轮 tool · 主对话看着混乱 = 怀疑死了
+ * 加清晰 ▶/✓/✗ 边界条 · 含 app 名 / 耗时 / token / warning
+ * ───────────────────────────────────────────────────────── */
+.msg.sub-agent-boundary {
+  align-self: flex-start;
+  max-width: 720px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 4px 0;
+  display: block;
+}
+.msg.sub-agent-boundary code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, monospace;
+}
+.msg.sub-agent-start {
+  background: linear-gradient(90deg, rgba(159, 122, 234, 0.14), rgba(159, 122, 234, 0.04));
+  border-left: 3px solid #9f7aea;
+  color: #d8c5ff;
+}
+.msg.sub-agent-start .sub-agent-tools {
+  color: var(--dim2);
+  font-size: 10px;
+  margin-left: 6px;
+}
+.msg.sub-agent-done {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.14), rgba(34, 197, 94, 0.04));
+  border-left: 3px solid #4ade80;
+  color: #aaf0c0;
+}
+.msg.sub-agent-done .sub-agent-stats {
+  color: var(--dim1);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+}
+.msg.sub-agent-done .sub-agent-outkeys {
+  color: var(--dim2);
+  font-size: 11px;
+  margin-left: 8px;
+}
+.msg.sub-agent-error {
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.14), rgba(239, 68, 68, 0.04));
+  border-left: 3px solid #f87171;
+  color: #ffb4ad;
+}
+.msg.sub-agent-boundary .sub-agent-warn {
+  margin-top: 6px;
+  padding: 4px 8px;
+  background: rgba(240, 136, 62, 0.12);
+  border-left: 2px solid #f0883e;
+  color: #ffc78a;
+  font-size: 11px;
+  border-radius: 3px;
+}
+.msg.sub-agent-boundary .sub-agent-warn-hit {
+  background: rgba(239, 68, 68, 0.14);
+  border-left-color: #f87171;
+  color: #ffb4ad;
+}
+.msg.sub-agent-boundary.sub-agent-hit-budget {
+  border-left-color: #f0883e;
+  /* done 但撞顶 → 橙色边框告警 */
 }

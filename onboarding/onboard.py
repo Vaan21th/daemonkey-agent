@@ -7,11 +7,11 @@ daemonkey-proto/onboard.py
 感觉对了，再把这套搬进正式独立的 Daemonkey 用户版仓库。
 
 特点：
-  - 复用花果山 .env 的 OPUS_API_KEY / OPUS_BASE_URL / OPUS_MODEL（OpenAI 兼容协议）
-  - **完全自包含**的极简 tool-use 循环：不 import 花果山的 tool_loop / REGISTRY，
+  - 复用 .env 的 OPUS_API_KEY / OPUS_BASE_URL / OPUS_MODEL（OpenAI 兼容协议）
+  - **完全自包含**的极简 tool-use 循环：不 import 主工程的 tool_loop / REGISTRY，
     只挂三个 onboarding 工具——避免把 50+ 个 OPUS 工具拖进"相遇"污染体验。
 
-跑法（在花果山根目录）：
+跑法（在项目根目录）：
   .venv\\Scripts\\python.exe daemonkey-proto\\onboard.py
 
 重新体验：删掉 daemonkey-proto/data/ 再跑（或加 --reset）。
@@ -61,7 +61,7 @@ def build_client(env: dict):
     base_url = env.get("OPUS_BASE_URL")
     model = env.get("OPUS_MODEL") or "anthropic/claude-sonnet-4.5"
     if not api_key or not base_url:
-        print(f"{DIM}缺 OPUS_API_KEY / OPUS_BASE_URL（在花果山 .env 里）。{RESET}")
+        print(f"{DIM}缺 OPUS_API_KEY / OPUS_BASE_URL（在 .env 里）。{RESET}")
         sys.exit(1)
     client = OpenAI(api_key=api_key, base_url=base_url, timeout=60)
     return client, model

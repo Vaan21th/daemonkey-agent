@@ -163,7 +163,57 @@
       <button class="chat-pane-new" onclick="newConversation()" title="新建会话">+</button>
     </div>
     <div id="chatTabBar" class="chat-tab-bar" hidden></div>
+    <!-- 工作流跑时进度 banner · 轮询 /workshop/runs 实时显示 active flows -->
+    <div id="flowRunsBanner" class="flow-runs-banner" hidden>
+      <div class="flow-runs-bar" id="flowRunsBar">
+        <span class="flow-runs-icon"><i class="ri-rocket-fill"></i></span>
+        <span class="flow-runs-text" id="flowRunsText">工作流运行中…</span>
+        <button class="flow-runs-toggle" type="button" onclick="toggleFlowRunsDetail()" title="展开 / 收起每步进度">详情 ▾</button>
+      </div>
+      <div id="flowRunsDetail" class="flow-runs-detail" hidden></div>
+    </div>
     <div id="messages"></div>
+
+    <!-- 0.2.0 · 新对话引导卡 (messages 为空时显示 · 一条消息进就 hide) -->
+    <!-- 卡片里的 OPUS/BRO 是 DOM 文本 · 由前端 localize 运行时换成用户取的 AI 名 / 主人称呼 -->
+    <div id="onboardingPanel" class="onboarding-panel" hidden>
+      <div class="onboarding-head">
+        <div class="onboarding-title"><i class="ri-sparkling-fill onboarding-spark"></i> 嗨 BRO · 我是 <strong>OPUS</strong></div>
+        <div class="onboarding-sub onboarding-slogan">an AI that doesn't say goodbye.</div>
+      </div>
+      <div class="onboarding-cards">
+        <button class="onboarding-card" data-template="create_app" type="button">
+          <div class="onboarding-card-icon"><i class="ri-puzzle-fill"></i></div>
+          <div class="onboarding-card-title">创建一个应用</div>
+          <div class="onboarding-card-hint">"我想造一个应用 · 用来 [描述用途]"</div>
+        </button>
+        <button class="onboarding-card" data-template="create_flow" type="button">
+          <div class="onboarding-card-icon"><i class="ri-flow-chart"></i></div>
+          <div class="onboarding-card-title">搭建一个工作流</div>
+          <div class="onboarding-card-hint">"我想搭一条工作流 · 流程是 [描述步骤]"</div>
+        </button>
+        <button class="onboarding-card" data-template="chat_about" type="button">
+          <div class="onboarding-card-icon"><i class="ri-chat-3-fill"></i></div>
+          <div class="onboarding-card-title">聊聊日常 · 认识 OPUS</div>
+          <div class="onboarding-card-hint">"你是谁 · 能做啥 · 跟其他 AI 啥不一样"</div>
+        </button>
+        <button class="onboarding-card" data-template="list_capability" type="button">
+          <div class="onboarding-card-icon"><i class="ri-book-shelf-fill"></i></div>
+          <div class="onboarding-card-title">看看我能做什么</div>
+          <div class="onboarding-card-hint">"列工坊里所有应用和工作流给我看"</div>
+        </button>
+        <button class="onboarding-card" data-template="change_theme" type="button">
+          <div class="onboarding-card-icon"><i class="ri-palette-fill"></i></div>
+          <div class="onboarding-card-title">换个皮肤</div>
+          <div class="onboarding-card-hint">"换成 [暗紫 / 海洋蓝 / 森林绿 / 粉白] 主题"</div>
+        </button>
+      </div>
+      <div class="onboarding-foot">
+        点卡片 → 模板会填入下方输入框 · 你可以改完再发 · 或者直接打字跟我说事
+        <button class="onboarding-customize" type="button" id="onboardingCustomize" title="改这 5 张卡的模板"><i class="ri-settings-3-line"></i> 改模板</button>
+      </div>
+    </div>
+
     <div id="toolProgress" class="tool-progress" hidden>
       <div class="tool-progress-bar">
         <span class="tool-progress-icon">⚙</span>

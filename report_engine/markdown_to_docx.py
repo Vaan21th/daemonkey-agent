@@ -4,10 +4,9 @@ report_engine/markdown_to_docx.py
 
 通用 markdown → docx 渲染器
 
-源流：抽象自 G:\\AIMANJU2\\docs\\cooperation\\volcano-cmcc-haishan\\build-doc.py
-     （以及同源的 competitive-analysis / recruiting 三个 build-*-doc.py）
+源流：抽象自一套成熟的 build-doc.py 渲染器。
 
-跟漫聚原版的差异：
+设计差异：
   - 视觉规范不再 hardcoded · 改为接受 Theme 对象（见 themes.py）
   - 不再 hardcoded 多份 DOCS_CONFIG · 改为接受单文档参数
   - 公共 API `render_report` · 上层只需 (markdown_text, output_path, cover, theme)
@@ -56,7 +55,7 @@ from .themes import Theme, get_theme, THEME_OPUS_STUDIO
 def resolve_writable_path(target: Path) -> Path:
     """如果默认 docx 被 Word 等占用·自动换名为 -v2 / -v3 ...
 
-    源自漫聚 build-doc.py 的 _resolve_out_docx · 保留这个稳定性容错。
+    _resolve_out_docx · 保留这个稳定性容错。
     """
     if not target.exists():
         return target

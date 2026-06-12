@@ -109,7 +109,7 @@ _TYPE_MARKER_RE = re.compile(r"^<!--\s*type:\s*(\w+)\s*-->", re.MULTILINE)
 # self_evolution · 改 daemon 代码 / 走 wish 流程 / UI 自检 / 重启验装 (铁律 0-5 这类)
 # app_creation   · 造工坊资产 (app/workflow/skill) 的工艺 (铁律 6 / 7)
 # workflow_creation · 跟 app_creation 区别细 · 当前未用
-# client_ops     · 客户运营 / 漫聚客户档案速查那一支 (未来)
+# client_ops     · 客户运营 / 客户档案速查那一支 (未来)
 # production     · 生产环境 (服务器部署 / 远程访问) 的工艺 (未来)
 # reflection     · 复盘 / 月度 review / 自我演化反思 (未来)
 _VALID_DOMAINS = (

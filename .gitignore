@@ -17,6 +17,14 @@ data/*
 !data/cognition
 data/cognition/_archive/
 
+# 自带应用「内容制作」随仓库出厂（用户开箱即用·对齐后续应用/工作流的参考样板）。
+# git 坑: 父目录被 data/* 忽略时·子文件的 ! 白名单必须逐级放行父目录才生效。
+!data/workshop
+data/workshop/*
+!data/workshop/apps
+data/workshop/apps/*
+!data/workshop/apps/app-46efb986.json
+
 # Daemonkey.exe 故意【不】忽略——它进仓库让用户 clone 即开箱即用。
 # 由 tools/build-exe.ps1 编译·pre-commit 钩子在 launcher 变动时自动重编保鲜。
 

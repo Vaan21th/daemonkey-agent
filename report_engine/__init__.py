@@ -3,19 +3,12 @@ report_engine · 文档生产引擎
 
 工作室"内容编辑 OPUS / 信息官 OPUS"工位的核心生产工具。
 
-源流（卷二十四 BRO 关键决策）：
-  G:\\AIMANJU2\\docs\\cooperation\\volcano-cmcc-haishan\\build-doc.py
-  G:\\AIMANJU2\\docs\\competitive-analysis\\build-comparison-doc.py
-  G:\\AIMANJU2\\docs\\competitive-analysis\\build-movieflow-doc.py
-  G:\\AIMANJU2\\docs\\recruiting\\build-doc.py
-
-  BRO 已经在漫聚那边沉淀了 4 个同源 build-*-doc.py。本 engine 把那套渲染器
-  抽象成通用 markdown → docx 引擎 · 让 OPUS 也能调。
+把一套成熟的 docx 渲染器抽象成通用 markdown → docx 引擎 · 让 OPUS 也能调。
 
 设计原则：
-  - 不引入额外依赖：python-docx 是漫聚那边一直在用的 · OPUS 这边也已经在用
-  - 不破坏漫聚原版：copy + adapt · 不 import G 盘代码 · 花果山自包含
-  - 主题可换：漫聚深蓝（保留作 manju 主题）+ 工作室紫（OPUS 主题）+ 未来可扩
+  - 不引入额外依赖：python-docx 已是本工程依赖
+  - 自包含：copy + adapt · 不依赖外部代码
+  - 主题可换：深蓝（manju 主题）+ 工作室紫（OPUS 主题）+ 未来可扩
   - 失败可观察：docx 被 Word 占用时自动换名 · 错误信息清晰
 
 公共 API:

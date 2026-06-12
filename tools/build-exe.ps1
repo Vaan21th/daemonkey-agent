@@ -22,7 +22,7 @@ $ico  = Join-Path $root 'assets\daemonkey.ico'
 if (-not (Test-Path $ps1)) { throw "找不到 $ps1" }
 
 # 占用检查：只在跑的正是【本目录这个 exe】时才拦
-# （按进程名拦会误伤同名的母体 OPUS-DAEMON 进程——它锁的是别的路径，不影响本目录重编）
+# （按进程名拦会误伤同名的母体进程——它锁的是别的路径，不影响本目录重编）
 $running = Get-Process -Name 'Daemonkey' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe }
 if ($running) {
     Write-Host "[!] 本目录的 Daemonkey.exe 正在运行 (pid=$($running.Id -join ','))·先关掉它再重编" -ForegroundColor Yellow

@@ -13,7 +13,7 @@ OPUS 自我演化心愿单 · 卷三十五
   1. OPUS 在 self-evolve domain 看到同类工程的好东西 → wish_add 写进 心愿单
   2. BRO 在 WebUI 心愿单维度看到 → 批准 / 驳回 / 推给 DAEMON / 推给 Cursor
   3. 实现路径：
-     - daemon 路径：OPUS-DAEMON 自己改自己代码 (高风险 · 卷三十六做)
+     - daemon 路径：本工程自己改自己代码 (高风险 · 卷三十六做)
      - cursor 路径：BRO 在 Cursor 里手动让 Claude 改 (当下用)
   4. 完成后 mark done + BRO 写 reflection notes
 

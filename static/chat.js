@@ -16,14 +16,14 @@
 // === AI 名字本地化 (Daemonkey 分家) ===
 // 用户在『相遇』里给这只 Daemonkey 起的名字·由后端注成 window.__AI_NAME__。
 // 界面里历史遗留写死的 "OPUS" 全部换成它——一个集中机制·不必逐处改 100+ 串。
-// 正则 /OPUS(?![\w-])/ 只换"OPUS"作为称呼出现的地方·跳过 OPUS_API_TOKEN / OPUS-DAEMON 这类技术标识。
+// 正则 /OPUS(?![\w-])/ 只换"OPUS"作为称呼出现的地方·跳过 OPUS_API_TOKEN 这类技术标识。
 (function () {
   var NAME = (window.__AI_NAME__ || '').trim();
   var OWNER = (window.__OWNER_NAME__ || '').trim();
   var doAI = NAME && NAME !== 'OPUS';           // AI 自己的名字
   var doOwner = OWNER && OWNER !== 'BRO';        // 主人的称呼 (卷六十四续十一 · UI 里的 BRO 也换掉)
-  if (!doAI && !doOwner) return;                // 母体两者都默认 → 保持原样
-  // 正则跳过 OPUS_API_TOKEN / OPUS-DAEMON / BRO-NOTEBOOK 这类技术标识·只换作为称呼出现的词
+  if (!doAI && !doOwner) return;                // 两者都默认 → 保持原样
+  // 正则跳过 OPUS_API_TOKEN 这类技术标识·只换作为称呼出现的词
   var RE_AI = /OPUS(?![\w-])/g;
   var RE_OWNER = /\bBRO(?![\w-])/g;
   function fix(s) {
@@ -68,6 +68,146 @@
   } catch (_) {}
   window.AI_NAME = NAME;                        // 给后续代码直接用 (拼新串时优先用它)
 })();
+
+// ── 0.2.0 · 新对话引导卡 onboarding panel ──
+// messages 容器空 (新对话 / 切到没消息的会话) → 显示 panel · 一旦有消息 → hide
+// 点卡 → 把模板填入输入框 + focus + 不直接发 (可改完再发)
+// 模板可自定义 · 存 localStorage 'opus.onboarding.templates'
+// 注意: 模板文本是 prefill 进输入框的·不走前端 localize·所以这里不能写死 OPUS·要中性
+const _ONBOARD_DEFAULT_TEMPLATES = {
+  create_app: '我想造一个应用 · 用来 [描述用途 · 例如「自动抓 B 站热门评论」]\n输入是: [列字段]\n输出是: [列字段]\n你帮我设计 system_prompt + 工具白名单 + ui_form_schema · 然后落到工坊。',
+  create_flow: '我想搭一条工作流 · 名字叫 [起一个]\n流程是:\n  1. [第一步用什么 app · 干啥]\n  2. [第二步用什么 app · 干啥]\n  3. ...\n你帮我用 create_workflow 落档 · 我看了再说跑不跑。',
+  chat_about: '聊聊吧 · 你是谁 · 你能做什么 · 你跟其他 AI 有什么不一样\n你为什么叫这个名字 · 你平时最擅长帮我做什么\n说人话 · 不要列表式答 · 像跟朋友吹水',
+  list_capability: '把工坊里所有应用 (list_apps detailed=true) 和工作流 (list_flows detailed=true) 都列给我看看\n按用途分类 · 我想知道哪些能直接跑 · 哪些是给工作流当零件用的',
+  // 换皮肤卡 · 模板里"换成 X 主题"会触发前端 matchThemePreset 直接切主题
+  change_theme: '把界面主题换成 [暗紫 / 经典灰 / 白天 / 护眼暖黄 / 海洋蓝 / 森林绿 / 日落橙 / 粉色 / 粉白] 主题\n或者 · 你帮我设计一套 [描述风格 · 例如「赛博蓝紫·像 dune 沙漠」] 的配色 · 输出 ```theme JSON``` 代码块',
+};
+
+function _loadOnboardingTemplates() {
+  try {
+    const raw = localStorage.getItem('opus.onboarding.templates');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return Object.assign({}, _ONBOARD_DEFAULT_TEMPLATES, parsed);
+    }
+  } catch (e) {}
+  return _ONBOARD_DEFAULT_TEMPLATES;
+}
+
+function _saveOnboardingTemplates(custom) {
+  try {
+    localStorage.setItem('opus.onboarding.templates', JSON.stringify(custom));
+  } catch (e) {}
+}
+
+// 判断: visible .session-msgs 里有没有实质的 .msg.bro / .msg.opus (排除 sys / thinking 兜底)
+function refreshOnboardingPanel() {
+  const panel = document.getElementById('onboardingPanel');
+  const messages = document.getElementById('messages');
+  if (!panel || !messages) return;
+  let scope = messages.querySelector(':scope > .session-msgs:not([hidden])');
+  if (!scope) scope = messages;
+  const hasRealMsg = !!scope.querySelector('.msg.bro, .msg.opus:not(.thinking)');
+  panel.hidden = hasRealMsg;
+}
+window.refreshOnboardingPanel = refreshOnboardingPanel;
+
+function _initOnboardingPanel() {
+  const panel = document.getElementById('onboardingPanel');
+  if (!panel) return;
+  panel.addEventListener('click', (ev) => {
+    const card = ev.target.closest('[data-template]');
+    if (!card) return;
+    const key = card.dataset.template;
+    const tmpls = _loadOnboardingTemplates();
+    const text = tmpls[key] || '';
+    if (!text) return;
+    const input = document.getElementById('input');
+    if (!input) return;
+    input.value = text;
+    input.focus();
+    const placeholderIdx = text.indexOf('[');
+    if (placeholderIdx >= 0) {
+      const endIdx = text.indexOf(']', placeholderIdx);
+      if (endIdx > placeholderIdx) input.setSelectionRange(placeholderIdx + 1, endIdx);
+    }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  const customizeBtn = document.getElementById('onboardingCustomize');
+  if (customizeBtn) customizeBtn.addEventListener('click', _openOnboardingCustomizer);
+  // 监听 messages 变化 (有消息 → hide · 清空 → show) · subtree + hidden 属性都要看
+  const messages = document.getElementById('messages');
+  if (messages && 'MutationObserver' in window) {
+    new MutationObserver(refreshOnboardingPanel).observe(messages, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['hidden'],
+    });
+  }
+  refreshOnboardingPanel();
+}
+
+function _openOnboardingCustomizer() {
+  const tmpls = _loadOnboardingTemplates();
+  const labels = {
+    create_app: '<i class="ri-puzzle-fill"></i> 创建一个应用',
+    create_flow: '<i class="ri-flow-chart"></i> 搭建一个工作流',
+    chat_about: '<i class="ri-chat-3-fill"></i> 聊聊日常 · 认识我',
+    list_capability: '<i class="ri-book-shelf-fill"></i> 看看我能做什么',
+    change_theme: '<i class="ri-palette-fill"></i> 换个皮肤',
+  };
+  let modal = document.getElementById('onboardingCustomizerModal');
+  if (modal) modal.remove();
+  modal = document.createElement('div');
+  modal.id = 'onboardingCustomizerModal';
+  modal.className = 'onboarding-modal-mask';
+  const rows = Object.keys(labels).map(k => `
+    <div class="onboarding-tmpl-row">
+      <label>${labels[k]}</label>
+      <textarea data-tmpl-key="${k}" rows="4">${String(tmpls[k] || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+    </div>
+  `).join('');
+  modal.innerHTML = `
+    <div class="onboarding-modal">
+      <div class="onboarding-modal-head">
+        <span><i class="ri-settings-3-line"></i> 改新对话引导卡模板</span>
+        <button type="button" class="onboarding-modal-x">×</button>
+      </div>
+      <div class="onboarding-modal-body">
+        ${rows}
+        <div class="onboarding-modal-hint">改完点保存 · 存在浏览器本地 (localStorage) · 不上传 daemon</div>
+      </div>
+      <div class="onboarding-modal-foot">
+        <button type="button" class="onboarding-modal-reset">恢复默认</button>
+        <button type="button" class="onboarding-modal-save">保存</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('.onboarding-modal-x').addEventListener('click', () => modal.remove());
+  modal.querySelector('.onboarding-modal-reset').addEventListener('click', () => {
+    Object.keys(_ONBOARD_DEFAULT_TEMPLATES).forEach(k => {
+      const ta = modal.querySelector(`[data-tmpl-key="${k}"]`);
+      if (ta) ta.value = _ONBOARD_DEFAULT_TEMPLATES[k];
+    });
+  });
+  modal.querySelector('.onboarding-modal-save').addEventListener('click', () => {
+    const custom = {};
+    modal.querySelectorAll('[data-tmpl-key]').forEach(ta => {
+      custom[ta.dataset.tmplKey] = ta.value.trim();
+    });
+    _saveOnboardingTemplates(custom);
+    modal.remove();
+  });
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initOnboardingPanel);
+} else {
+  _initOnboardingPanel();
+}
 
 const STORAGE = {
   token: 'opus_ui_token',
@@ -210,6 +350,255 @@ let _proactiveLastSeen = new Date().toISOString();
 // pending = 当前 visible session 的状态·切换 session 时从对应 state 里读
 // (是 _sessions[sessionId].pending 的 visible mirror)
 let pending = false;
+
+// 0.2.0 · 工作流跑时进度 banner (进度可视化诉求)
+// 轮询 /workshop/runs · 有 active flow / 最近完成都显示 banner · 点击展开看每 step 进度
+// 异步化后 banner 必须显示 done/failed 通知 · 否则用户等不到回声
+const _FLOW_RUNS_POLL_MS = 3000;
+const _FLOW_RECENT_TERMINAL_MS = 90 * 1000;  // 90s 内的 done/failed 也显示 (用户看到结果再消失)
+let _flowRunsTimer = null;
+let _flowRunsActive = [];       // 当前展示集合 (running + 最近 90s 内 done/failed)
+let _flowRunsDetailOpen = false;
+let _flowRunsDetailCache = {};  // run_id → 完整 state (展开时 fetch · 折叠时也保留供下次秒开)
+let _flowRunsDismissed = {};    // run_id → true · 用户点 "知道了" 后不再 banner
+
+function _flowRunsToken() {
+  try { return localStorage.getItem(STORAGE.token) || ''; } catch (e) { return ''; }
+}
+
+function _isRecentTerminal(run) {
+  const st = run.status || '';
+  if (st !== 'done' && st !== 'failed') return false;
+  const ts = run.updated_at || '';
+  if (!ts) return false;
+  const t = Date.parse(ts);  // ISO 不带时区 · 当本地时间 parse (跟 daemon 同主机)
+  if (isNaN(t)) return false;
+  return (Date.now() - t) < _FLOW_RECENT_TERMINAL_MS;
+}
+
+// 跨 tab 提醒 (用户切走 tab 也能感知 flow 跑完)
+let _flowRunsPrevStatuses = {};       // run_id → 上次 poll 看到的 status · 用来 diff "running → done/failed"
+let _flowRunsTitleTimer = null;
+const _ORIGINAL_TITLE = document.title;
+
+function _flashTitle(prefix) {
+  if (_flowRunsTitleTimer) { clearInterval(_flowRunsTitleTimer); _flowRunsTitleTimer = null; }
+  let on = true;
+  document.title = prefix + ' ' + _ORIGINAL_TITLE;
+  _flowRunsTitleTimer = setInterval(() => {
+    on = !on;
+    document.title = on ? (prefix + ' ' + _ORIGINAL_TITLE) : _ORIGINAL_TITLE;
+  }, 1100);
+}
+
+function _stopTitleFlash() {
+  if (_flowRunsTitleTimer) { clearInterval(_flowRunsTitleTimer); _flowRunsTitleTimer = null; }
+  document.title = _ORIGINAL_TITLE;
+}
+
+// 用户切回 tab 自动停闪 (有把 tab 切走的场景才需要闪 · 看了就不闪)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) _stopTitleFlash();
+});
+
+async function pollFlowRuns() {
+  const token = _flowRunsToken();
+  if (!token) return;
+  try {
+    // 拉最近 12 条 (不过滤 status) · 客户端筛 running + 最近 terminal
+    const r = await fetch('/workshop/runs?limit=12', {
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    const all = data.runs || [];
+
+    // diff: 上轮 running 这轮 done/failed → 触发 title 闪烁通知 (跨 tab 感知 · 切走也能看到)
+    let flashKind = null;  // 'done' / 'failed' / null
+    for (const r of all) {
+      const prev = _flowRunsPrevStatuses[r.run_id];
+      if (prev === 'running' && (r.status === 'done' || r.status === 'failed')) {
+        // failed 优先级高 (覆盖 done · 一组 run 任意一个失败先报失败)
+        if (r.status === 'failed') { flashKind = 'failed'; break; }
+        if (!flashKind) flashKind = 'done';
+      }
+      _flowRunsPrevStatuses[r.run_id] = r.status;
+    }
+    // tab 不在前台时才闪 (前台直接看 banner 即可 · 不打扰)
+    if (flashKind && document.hidden) {
+      _flashTitle(flashKind === 'done' ? '[✓ 跑完]' : '[✗ 失败]');
+    }
+
+    _flowRunsActive = all.filter(r => {
+      if (_flowRunsDismissed[r.run_id]) return false;
+      if (r.status === 'running') return true;
+      return _isRecentTerminal(r);
+    });
+    renderFlowRunsBanner();
+    if (_flowRunsDetailOpen) await refreshFlowRunsDetail();
+  } catch (e) { /* 静默 · 下次 poll 再试 */ }
+}
+
+function renderFlowRunsBanner() {
+  const banner = document.getElementById('flowRunsBanner');
+  const text = document.getElementById('flowRunsText');
+  if (!banner || !text) return;
+  if (_flowRunsActive.length === 0) {
+    banner.hidden = true;
+    _flowRunsDetailOpen = false;
+    const detail = document.getElementById('flowRunsDetail');
+    if (detail) detail.hidden = true;
+    // 状态色复位
+    banner.classList.remove('is-done', 'is-failed', 'is-mixed');
+    return;
+  }
+  banner.hidden = false;
+
+  // 计算混合状态着色: 任意 running → running (紫); 全 done → done (绿); 任意 failed → failed (红)
+  const hasRunning = _flowRunsActive.some(r => r.status === 'running');
+  const hasFailed  = _flowRunsActive.some(r => r.status === 'failed');
+  const allDone    = !hasRunning && !hasFailed && _flowRunsActive.every(r => r.status === 'done');
+  banner.classList.toggle('is-done',   allDone);
+  banner.classList.toggle('is-failed', hasFailed && !hasRunning);
+  banner.classList.toggle('is-mixed',  hasRunning && (hasFailed || _flowRunsActive.some(r => r.status === 'done')));
+
+  // 主文案: 优先报 running · 没 running 就报 done/failed 通知
+  let primary;
+  if (hasRunning) {
+    const r = _flowRunsActive.find(x => x.status === 'running');
+    const prog = `${r.current_step || 0}/${r.total_steps || 0}`;
+    primary = `${r.flow_name || r.flow_id || '(?)'} · 跑中 (${prog})`;
+  } else if (hasFailed) {
+    const r = _flowRunsActive.find(x => x.status === 'failed');
+    primary = `${r.flow_name || r.flow_id || '(?)'} · ✗ 失败在第 ${r.current_step}/${r.total_steps} 步`;
+  } else {
+    const r = _flowRunsActive[0];
+    primary = `${r.flow_name || r.flow_id || '(?)'} · ✓ 跑完 (${r.total_steps} 步)`;
+  }
+  const more = _flowRunsActive.length > 1 ? ` · +${_flowRunsActive.length - 1} 条` : '';
+  text.textContent = primary + more;
+}
+
+// 用户点"知道了" 把已完成 run 从 banner 撤掉 (running 不许撤 · 还得看进度)
+function dismissFlowRun(runId) {
+  if (!runId) return;
+  _flowRunsDismissed[runId] = true;
+  // 立刻刷一次 · 别等下个 poll tick
+  _flowRunsActive = _flowRunsActive.filter(r => r.run_id !== runId);
+  renderFlowRunsBanner();
+  if (_flowRunsDetailOpen) {
+    const detail = document.getElementById('flowRunsDetail');
+    if (detail) {
+      const cards = detail.querySelectorAll('.flow-run-card');
+      cards.forEach(c => { if (c.dataset.runId === runId) c.remove(); });
+    }
+  }
+}
+window.dismissFlowRun = dismissFlowRun;
+
+async function refreshFlowRunsDetail() {
+  const detail = document.getElementById('flowRunsDetail');
+  if (!detail) return;
+  const token = _flowRunsToken();
+  if (!token) return;
+  // 为每条 active run 拉详情 (并发)
+  const promises = _flowRunsActive.map(async (summary) => {
+    try {
+      const r = await fetch('/workshop/runs/' + encodeURIComponent(summary.run_id), {
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+      if (!r.ok) return null;
+      const full = await r.json();
+      _flowRunsDetailCache[summary.run_id] = full;
+      return full;
+    } catch (e) { return _flowRunsDetailCache[summary.run_id] || null; }
+  });
+  const fulls = (await Promise.all(promises)).filter(Boolean);
+  if (fulls.length === 0) {
+    detail.innerHTML = '<div style="color:#888;font-size:11px;padding:6px 0">拉详情失败 · 下次 poll 再试</div>';
+    return;
+  }
+  detail.innerHTML = fulls.map(renderFlowRunCard).join('');
+}
+
+function renderFlowRunCard(state) {
+  const status = state.status || 'running';
+  const cur = state.current_step || 0;
+  const total = state.total_steps || (state.steps || []).length || 0;
+  const stepsHtml = (state.steps || []).map(s => renderFlowRunStep(s)).join('');
+  const fname = state.flow_name || state.flow_id || '(?)';
+  const runId = state.run_id || '';
+  // done/failed 给一个"知道了"按钮 · 用户看完撤掉 banner (running 不给)
+  const dismissBtn = (status === 'done' || status === 'failed')
+    ? `<button class="flow-run-dismiss" type="button" onclick="dismissFlowRun('${escAttr(runId)}')" title="收到 · 撤掉这条 banner 通知">知道了</button>`
+    : '';
+  return `
+    <div class="flow-run-card" data-run-id="${escAttr(runId)}">
+      <div class="flow-run-head">
+        <span class="flow-run-name">${escHtml(fname)}</span>
+        <span class="flow-run-status ${status}">${escHtml(status)}</span>
+        <span class="flow-run-progress">${cur}/${total}</span>
+        ${dismissBtn}
+      </div>
+      <div class="flow-run-steps">${stepsHtml}</div>
+    </div>
+  `;
+}
+
+function escAttr(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderFlowRunStep(step) {
+  const status = step.status || 'pending';
+  const iconMap = { running: '◐', done: '✓', failed: '×', pending: '○', skipped: '·' };
+  const icon = iconMap[status] || '○';
+  const appRef = step.app || '';
+  const meta = (window._opusWorkshopApps || []).find(a => a.id === appRef);
+  const appName = (meta && meta.name) ? meta.name : appRef;
+  const goal = step.goal || '';
+  const err = step.error || '';
+  return `
+    <div class="flow-run-step ${status}">
+      <span class="flow-run-step-status" title="${escHtml(status)}">${icon}</span>
+      <span class="flow-run-step-num">#${step.idx || ''}</span>
+      <div class="flow-run-step-body">
+        <div class="flow-run-step-app">${escHtml(appName)}</div>
+        ${goal ? `<div class="flow-run-step-goal">${escHtml(goal)}</div>` : ''}
+        ${err ? `<div class="flow-run-step-err">${escHtml(err)}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+async function toggleFlowRunsDetail() {
+  const detail = document.getElementById('flowRunsDetail');
+  const btn = document.querySelector('.flow-runs-toggle');
+  if (!detail) return;
+  if (detail.hidden) {
+    detail.hidden = false;
+    _flowRunsDetailOpen = true;
+    if (btn) btn.textContent = '收起 ▴';
+    await refreshFlowRunsDetail();
+  } else {
+    detail.hidden = true;
+    _flowRunsDetailOpen = false;
+    if (btn) btn.textContent = '详情 ▾';
+  }
+}
+window.toggleFlowRunsDetail = toggleFlowRunsDetail;
+
+// 启动轮询 · 立即 fire 一次 + 之后每 3 秒一次 (DOMContentLoaded 后 + 别在没 token 时空跑)
+function _startFlowRunsPoll() {
+  if (_flowRunsTimer) return;
+  pollFlowRuns();
+  _flowRunsTimer = setInterval(pollFlowRuns, _FLOW_RUNS_POLL_MS);
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _startFlowRunsPoll);
+} else {
+  _startFlowRunsPoll();
+}
 
 // === wish-3fef4bc7 · 真并行多对话 UI ===
 //
@@ -4358,6 +4747,72 @@ async function send() {
         break;
       }
 
+      // sub-agent (run_app) 边界事件 · 用户痛点:
+      // 之前 run_app 跑 6-8 轮 sub-agent 内部 LLM · 主对话 ticker 文字一直变 (各种 read_file/write_file)
+      // 但没人告诉用户 "这是 sub-agent 在内部跑" · 用户看着混乱 = 怀疑死了 / 跑偏了
+      // 修: 在消息流插一条清晰的"▶ 子任务启动 / ✓ 子任务完成" 边界条 · 含 app 名 / 耗时 / token / warning
+      case 'app_run_start': {
+        if (!state.$container) break;
+        const startTs = Date.now();
+        const div = document.createElement('div');
+        div.className = 'msg sub-agent-boundary sub-agent-start';
+        div.dataset.appId = data.app_id || '';
+        div.dataset.startedAt = String(startTs);
+        const appName = data.app_name || data.app_id || '?';
+        const tools = (data.tools || []).slice(0, 6).join(', ') + ((data.tools || []).length > 6 ? ' ...' : '');
+        div.innerHTML = `<i class="ri-play-circle-fill"></i> <strong>子任务启动</strong>: <code>${escHtml(appName)}</code>` +
+          (tools ? ` <span class="sub-agent-tools" title="允许的工具白名单">[${escHtml(tools)}]</span>` : '');
+        state.$container.appendChild(div);
+        // 记录到 state · 让 app_run_done 算耗时
+        state._subAgentMeta = state._subAgentMeta || {};
+        state._subAgentMeta[data.app_id] = { startTs, startDiv: div, appName };
+        scrollToBottom(state.$container, { force: false });
+        break;
+      }
+
+      case 'app_run_done': {
+        if (!state.$container) break;
+        const meta = (state._subAgentMeta || {})[data.app_id] || {};
+        const elapsed = meta.startTs ? Math.floor((Date.now() - meta.startTs) / 1000) : 0;
+        const appName = meta.appName || data.app_id || '?';
+        const iter = data.iterations || 0;
+        const maxIter = data.max_iterations || 0;
+        const usage = data.usage || {};
+        const inTok = usage.input_tokens || 0;
+        const outTok = usage.output_tokens || 0;
+        const cacheTok = usage.cache_read_tokens || 0;
+        const warning = data.warning;
+        const hitBudget = data.hit_budget;
+        const iterBadge = maxIter ? `${iter}/${maxIter} 轮` : `${iter} 轮`;
+        const tokBadge = `in <code>${inTok.toLocaleString()}</code> · out <code>${outTok.toLocaleString()}</code>` +
+          (cacheTok ? ` · cache <code>${cacheTok.toLocaleString()}</code>` : '');
+        let warnHtml = '';
+        if (warning) {
+          warnHtml = `<div class="sub-agent-warn${hitBudget ? ' sub-agent-warn-hit' : ''}"><i class="ri-error-warning-fill"></i> ${escHtml(warning)}</div>`;
+        }
+        const outKeys = (data.outputs_keys || []).join(', ');
+        const div = document.createElement('div');
+        div.className = 'msg sub-agent-boundary sub-agent-done' + (hitBudget ? ' sub-agent-hit-budget' : '');
+        div.innerHTML = `<i class="ri-checkbox-circle-fill"></i> <strong>子任务完成</strong>: <code>${escHtml(appName)}</code> · ` +
+          `<span class="sub-agent-stats">${iterBadge} · ${elapsed}s · ${tokBadge}</span>` +
+          (outKeys ? ` <span class="sub-agent-outkeys" title="output_schema 字段">→ ${escHtml(outKeys)}</span>` : '') +
+          warnHtml;
+        state.$container.appendChild(div);
+        scrollToBottom(state.$container, { force: false });
+        break;
+      }
+
+      case 'app_run_error': {
+        if (!state.$container) break;
+        const meta = (state._subAgentMeta || {})[data.app_id] || {};
+        const div = document.createElement('div');
+        div.className = 'msg sub-agent-boundary sub-agent-error';
+        div.innerHTML = `<i class="ri-error-warning-fill"></i> <strong>子任务失败</strong>: <code>${escHtml(meta.appName || data.app_id || '?')}</code> · ${escHtml(data.error || '未知错误')}`;
+        state.$container.appendChild(div);
+        scrollToBottom(state.$container, { force: false });
+        break;
+      }
+
       case 'tool_result': {
         const div = document.createElement('div');
         div.className = 'msg tool-result' + (data.ok ? '' : ' failed');
@@ -4596,7 +5051,7 @@ const NAV_GROUPS = [
 ];
 
 const DOMAIN_META = {
-  // 市场信息 · 外部信号 · OPUS-DAEMON 看世界的眼睛 · 不含 OPUS 自己的观察
+  // 市场信息 · 外部信号 · 本工程看世界的眼睛 · 不含 OPUS 自己的观察
   radar:         { icon: '<i class="ri-radar-fill"></i>', label: '信息雷达', section: 'market', stub: false },
   trends:        { icon: '<i class="ri-line-chart-fill"></i>', label: '今日趋势', section: 'market', stub: false },
   reports:       { icon: '<i class="ri-article-fill"></i>', label: '报告库',   section: 'market', stub: false },
@@ -4823,10 +5278,16 @@ function renderConfirmCard(data, state) {
   if (!state || !state.$container) return null;
   if (!data || !data.tool_call_id) return null;
 
+  // 中央模态 · 用户痛点: inline 卡片滚出可视区看不到等死 · 走"满屏遮罩 + 中央卡片"模式 · 强焦点不可能错过
+  const backdrop = document.createElement('div');
+  backdrop.className = 'confirm-modal-backdrop';
+  backdrop.dataset.toolCallId = data.tool_call_id;
+
   const wrap = document.createElement('div');
-  wrap.className = 'msg confirm-card';
+  wrap.className = 'msg confirm-card confirm-modal';
   wrap.dataset.toolCallId = data.tool_call_id;
   wrap.dataset.turnId = data.turn_id || '';
+  wrap._backdrop = backdrop;  // collapseConfirmCard 时一起移除
 
   // 标题: ⚠ OPUS 申请执行 <tool>
   const head = _confirmEl('div', 'confirm-head',
@@ -4950,7 +5411,30 @@ function renderConfirmCard(data, state) {
   status.textContent = '等待决议 · 30min 后自动拒绝';
   wrap.appendChild(status);
 
-  state.$container.appendChild(wrap);
+  // append 到 body 顶层 (模态) · 同时在消息流插一条占位行
+  // 占位让用户滚消息流时仍知道"这里在等确认" · 点占位可重弹模态
+  document.body.appendChild(backdrop);
+  document.body.appendChild(wrap);
+
+  // 消息流占位 (轻量 chip · 关掉模态后可点重弹)
+  const placeholder = document.createElement('div');
+  placeholder.className = 'msg confirm-placeholder';
+  placeholder.dataset.toolCallId = data.tool_call_id;
+  placeholder.innerHTML = `<i class="ri-question-fill"></i> OPUS 申请执行 <code>${(data.tool_name || '?').replace(/[<>&]/g, '')}</code> · <button type="button" class="confirm-reopen-btn">重新打开弹窗</button>`;
+  placeholder.querySelector('.confirm-reopen-btn').addEventListener('click', () => {
+    if (!document.body.contains(wrap)) return;  // 已经被决议关掉了 · 不再 reopen
+    wrap.classList.add('confirm-modal-show');
+    backdrop.classList.add('confirm-modal-backdrop-show');
+  });
+  state.$container.appendChild(placeholder);
+  wrap._placeholder = placeholder;
+
+  // 触发 CSS transition (next frame 加 class · 让动画跑起来)
+  requestAnimationFrame(() => {
+    backdrop.classList.add('confirm-modal-backdrop-show');
+    wrap.classList.add('confirm-modal-show');
+  });
+
   scrollToBottom(state.$container);
   return wrap;
 }
@@ -5010,6 +5494,25 @@ function collapseConfirmCard(card, decision, reason, autoTimeout, result) {
   card.classList.remove('confirm-card-submitting');
   card.classList.add('confirm-card-resolved');
 
+  // 关闭中央模态 + 移除遮罩 + 把 inline 占位转成"已决议"记录条
+  if (card.classList.contains('confirm-modal')) {
+    if (card._backdrop && card._backdrop.parentNode) {
+      card._backdrop.classList.remove('confirm-modal-backdrop-show');
+      // 等遮罩淡出再 remove DOM
+      setTimeout(() => { if (card._backdrop && card._backdrop.parentNode) card._backdrop.remove(); }, 200);
+    }
+    card.classList.remove('confirm-modal-show');
+    // 模态本体延迟 remove · 让淡出动画跑完 · 同时把"已决议摘要"渲染到 inline 占位上
+    setTimeout(() => { if (card.parentNode === document.body) card.remove(); }, 200);
+    // 把渲染目标切到占位行 (用户滚消息流时这里留痕)
+    if (card._placeholder) {
+      const ph = card._placeholder;
+      ph.innerHTML = '';  // 清空 "等待 + 重新打开" 内容
+      ph.classList.add('confirm-placeholder-resolved');
+      card.__renderInto = ph;
+    }
+  }
+
   const labelMap = {
     approve_once: '<i class="ri-check-fill"></i> 批准 (只这次)',
     trust_30min: '⏰ 批准 + 信任 30min',
@@ -5021,7 +5524,13 @@ function collapseConfirmCard(card, decision, reason, autoTimeout, result) {
   if (autoTimeout) label = '⏱ 超时 auto-deny (30min 未响应)';
 
   const toolName = (card.querySelector('.confirm-tool') || {}).textContent || '';
-  card.innerHTML = '';
+  // 模态版本: 渲染目标改成 inline 占位 (不再渲染到将要 remove 的 modal card)
+  const renderHost = card.__renderInto || card;
+  if (renderHost !== card) {
+    card = renderHost;
+  } else {
+    card.innerHTML = '';
+  }
 
   const line = _confirmEl('div', 'confirm-resolved-line');
   const lbl = _confirmEl('span', 'confirm-resolved-label');
@@ -10286,9 +10795,9 @@ function wishFromRadar(title, url) {
     `**这是邀请·不是命令** —— 你要自己判断·不是 用户 让你装你就装。\n\n` +
     `请你：\n` +
     `1. 用 web_search / web_fetch 弄清这个工程做啥 · 看 README / 主要特性\n` +
-    `2. 对照 OPUS-DAEMON 现状·想清楚：\n` +
+    `2. 对照本工程现状·想清楚：\n` +
     `   - 你有没有这个能力·还是缺\n` +
-    `   - 它的设计哲学跟 OPUS-DAEMON 是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
+    `   - 它的设计哲学跟本工程是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
     `   - 如果合拍·这能力对 用户 这个具体的人有啥用 (而不是"通用上有用")\n` +
     `3. 然后明确告诉 用户：\n` +
     `   - 值得装 → 调 wish_add 写一份心愿 (title / why / source_kind=radar / source_ref + url / design_sketch / complexity / hours / priority / opus_take = 你自己的态度)\n` +
@@ -10312,7 +10821,7 @@ function wishFromOpp(oneBasedIdx) {
     `2. 想清楚：\n` +
     `   - OPUS 现状有没有这能力·缺哪一块\n` +
     `   - 装上之后真正受益的是 用户 哪个具体痛点 (而不是泛泛的"AI 升级")\n` +
-    `   - 跟 OPUS-DAEMON 现有架构合拍吗\n` +
+    `   - 跟本工程现有架构合拍吗\n` +
     `3. 明确表态:\n` +
     `   - 值得装 → wish_add (title 改写成"OPUS 装 X" / why = 对 用户 的具体价值 / source_kind=opportunity / source_ref=opp_id / design_sketch=2-3 步改造方案 / complexity / hours / cost / priority)\n` +
     `   - 不值得 → 说清为啥·不强 add\n` +

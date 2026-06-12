@@ -5,7 +5,7 @@ workers/memory_compression.py
 压缩层核心——自动 session 摘要 + token budget 控制。
 
 设计（wish-58af621e · 卷三十五）：
-  这是 OPUS-DAEMON 的"自动记忆压缩"基础设施。
+  这是本工程的"自动记忆压缩"基础设施。
   - `token_budget_check()`  · 判断该不该压缩（消息数阈值 + cooldown）
   - `auto_compress()`        · 真正动手压缩，返回新的 messages 列表
   - `extract_key_facts()`    · 从摘要里用规则提取关键事实

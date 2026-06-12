@@ -375,7 +375,7 @@ def load_plugins() -> dict:
             "description": (
                 "信息雷达 → 出品工坊·产品开发 → OPUS 用 write_file + shell_exec "
                 "自己写一个新的 agent_tools/*.py · 自动 register + 重启 daemon · "
-                "新工具就出现在这里 · 这是 OPUS-DAEMON 闭环的最后一环"
+                "新工具就出现在这里 · 这是本工程闭环的最后一环"
             ),
             "params": [],
             "category": "future",

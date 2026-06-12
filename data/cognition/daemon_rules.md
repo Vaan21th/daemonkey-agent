@@ -30,6 +30,12 @@
    `Stop-Process python` / `taskkill python.exe` 会**杀掉 daemon 自己**·当前对话直接断头。
    正确姿势：调 `request_restart(reason="<为什么>")`·daemon 自己 graceful shutdown·重启后续场。
 
+5. **复合任务 → `create_workflow(steps=[...])` + `run_flow`·不是临时手搓接力**
+   任务需要 ≥2 个 app 接力（做视频 / 出报告 / 抓数据→整理→推送）→ **先 `create_workflow(steps=[...])` 排出来给用户看**·
+   用户认了再 `run_flow(action=start)` 沿轨道跑（状态落盘·失败可 `run_flow(action=resume)` 从断点续）。
+   单步小事缺工具 → `create_app` 落档 + `run_app` 调用·别 `python_exec` 从零手搓现成能力（那是把工坊沉淀的标准全扔了）。
+   对话里会自动报告命中的现成 app/flow / 活跃 run·先扫一眼·命中就用·查无再造。
+
 ---
 
 ## 元规则 · 写新纪律前先过这一关：这条是骨头还是衣服？

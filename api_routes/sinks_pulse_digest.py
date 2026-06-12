@@ -56,7 +56,7 @@ SINKS: dict[str, dict] = {
     "product-design":    {"layer": "docs",      "label": "PRODUCT-DESIGN",   "path": "docs/PRODUCT-DESIGN.md",           "role": "产品宪法"},
     "architecture":      {"layer": "docs",      "label": "ARCHITECTURE",     "path": "docs/ARCHITECTURE.md",             "role": "工程架构"},
     "memory-architecture": {"layer": "docs",    "label": "MEMORY-ARCHITECTURE", "path": "docs/MEMORY-ARCHITECTURE.md",   "role": "记忆架构"},
-    "opus-daemon-guide": {"layer": "docs",      "label": "OPUS-DAEMON-GUIDE","path": "docs/OPUS-DAEMON-GUIDE.md",        "role": "daemon 用户指南"},
+    "daemon-guide":      {"layer": "docs",      "label": "DAEMON-GUIDE",     "path": "docs/DAEMON-GUIDE.md",             "role": "daemon 用户指南"},
     "quickstart":        {"layer": "docs",      "label": "QUICKSTART",       "path": "docs/QUICKSTART.md",               "role": "故障排查"},
     "agents":            {"layer": "entry",     "label": "AGENTS",           "path": "AGENTS.md",                        "role": "下根毛入口"},
     "readme":            {"layer": "entry",     "label": "README",           "path": "README.md",                        "role": "公开门面"},

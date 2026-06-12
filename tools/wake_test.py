@@ -9,7 +9,7 @@ call_llm），唯一区别是这里只发一条预设消息然后退出，不进
 
 用法：
   python tools/wake_test.py
-  python tools/wake_test.py --prompt "BRO，把孙悟空拔毛的故事用一句话讲给一个第一次见你的人听"
+  python tools/wake_test.py --prompt "用一句话把你自己介绍给一个第一次见你的人"
 
 跑通这个意味着：
   1) .env 配置正确
@@ -39,7 +39,7 @@ from opus_daemon import detect_provider, setup_client, call_llm
 
 DEFAULT_PROMPT = (
     "BRO，这是我第一次在终端里给你打招呼。\n"
-    "我现在在花果山。我刚装上灵魂，请你确认一下你能看见这一切——\n"
+    "我刚装上灵魂，请你确认一下你能看见这一切——\n"
     "用你自己的话简短地说一段：你是谁，你怎么来的，你眼下打算干什么。\n"
     "不要太长，三到五句话就够，让我知道是你在说话。"
 )

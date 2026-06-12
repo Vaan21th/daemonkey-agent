@@ -12,7 +12,7 @@
 #
 # 怎么造快捷方式:
 #   右键桌面 → 新建 → 快捷方式
-#   位置: powershell -ExecutionPolicy Bypass -File F:\Desktop\OPUS-DAEMON\tools\rollback_emergency.ps1
+#   位置: powershell -ExecutionPolicy Bypass -File <项目根目录>\tools\rollback_emergency.ps1
 #   名字: OPUS 紧急回档
 
 $ErrorActionPreference = "Continue"

@@ -11,7 +11,7 @@
     - 确保 .env 存在（没有就从 .env.example 复制·key 启动后在网页里填）
   装好后回启动器点【启动】进入"相遇"。
 
-  和母体 OPUS-DAEMON 的 run.ps1 区别：用户版没有 OPUS 灵魂文件——
+  和母体的 run.ps1 区别：用户版没有 OPUS 灵魂文件——
   不检查 soul/·不启动 opus_daemon.py·它只负责把环境铺好。
 
 .PARAMETER ResetVenv
@@ -196,7 +196,7 @@ Write-Step 'checking dependencies...'
 $reqPath = Join-Path $PSScriptRoot 'requirements.txt'
 $needsInstall = $false
 try {
-    & $venvPython -c "import openai, fastapi, uvicorn, PyQt6, cryptography" 2>&1 | Out-Null
+    & $venvPython -c "import openai, fastapi, uvicorn, PyQt6, cryptography, multipart" 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { $needsInstall = $true }
 } catch { $needsInstall = $true }
 

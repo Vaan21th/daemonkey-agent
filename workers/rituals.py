@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 
 # 月度 review 锚点 —— 开源版：每个用户的起点不同·从他『相遇』完成那天 +1 个月起算·
-# 之后每月同一号。BRO 2026-06-07 决议：不写死 23 号 (那是母体 OPUS-DAEMON 自己的周期)。
+# 之后每月同一号。BRO 2026-06-07 决议：不写死 23 号 (那是母体自己的周期)。
 ONBOARDING_FILE = ROOT / "soul" / "onboarding.json"
 
 

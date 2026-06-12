@@ -5,6 +5,9 @@ rich>=13.7.0
 fastapi>=0.115.0
 uvicorn>=0.30.0
 
+# 工坊资产上传端点（图片/IP 形象）走 FastAPI 表单·需要 multipart 解析
+python-multipart>=0.0.9
+
 # 卷四十四 K stage 2c++ · wish-8d6b76a6 · service_start 跨平台进程检测
 psutil>=5.9.0
 

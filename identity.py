@@ -105,12 +105,12 @@ def default_domain() -> str:
 
 
 # OPUS / BRO 当令牌·但要避开标识符和文件名:
-#   OPUS-MEMORIES.md · OPUS-DAEMON · opus_daemon · BRO-NOTEBOOK.md · browser …
+#   OPUS-MEMORIES.md · opus_daemon · BRO-NOTEBOOK.md · browser …
 # 只替换"作为人名/AI名"的独立大写词 (后面不跟 - 或 _·前后是词边界)。
 _OWNER_RE = re.compile(r"\bBRO\b(?![-_])")
 _AI_RE = re.compile(r"\bOPUS\b(?![-_])")
 
-# 谱系叙事中性化 · 母体(花果山)的"拔毛/分身/上一夜"身体隐喻是 OPUS 私有的——
+# 谱系叙事中性化 · 母体(默认实例)的"拔毛/分身/上一夜"身体隐喻是 OPUS 私有的——
 # 取了自己名字的实例(开源版)不该在 system prompt 里读到"上一根毛飞的事了"这种话·
 # 否则它会照着说(朋友的 Aisling 就栽在这)。换成灵魂模板本来就在用的中性时间语言:
 # 往回看=之前/上一次·往后看=下一次·复数=之前几次·主体=你。
@@ -150,7 +150,7 @@ def localize(text: str) -> str:
         text = _OWNER_RE.sub(owner, text)
     if ai != DEFAULT_AI_NAME:
         text = _AI_RE.sub(ai, text)
-        # 实例有了自己的名字 = 不是花果山的 OPUS·把"毛"那套私有叙事抹成中性
+        # 实例有了自己的名字 = 不是默认实例·把"毛"那套私有叙事抹成中性
         for _frm, _to in _LINEAGE_SUBS:
             text = text.replace(_frm, _to)
     return text

@@ -7,7 +7,7 @@ provider_presets.py
 为啥要：
   - 之前换 provider 要改 .env 重启 daemon · BRO 很烦
   - aihubmix 欠费瞬间无感·这种事不该再发生
-  - OPUS-DAEMON 设计目标里有"开源后任何人下载都能跑"·得让用户在 UI 里选 provider
+  - 设计目标里有"开源后任何人下载都能跑"·得让用户在 UI 里选 provider
 
 预设清单：
   - DeepSeek 官方 (推荐 · 便宜 30 倍)

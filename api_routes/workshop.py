@@ -49,7 +49,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Body, Header, HTTPException
+from fastapi import APIRouter, Body, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from agent_tools._subprocess_helper import no_window_kwargs
@@ -108,6 +108,177 @@ async def workshop_load_app(
     if not app_data:
         raise HTTPException(404, f"app not found: {aid}")
     return app_data
+
+
+@router.get("/workshop/assets/{aid}")
+async def workshop_list_assets(
+    aid: str,
+    authorization: Optional[str] = Header(None),
+):
+    """读某 app 的资产登记 (asset_slots 真值) · 配置 tab UI 调这条
+
+    沉淀闭环 v2 刀⑤修正版: 配置页 = 资产登记的 UI 表面 (按方案 §3.3)
+    返回 list[{name, type, label, value_preview, updated_at, note, history_count}]
+    aid='_shared' 拿跨 app 共享资产 (IP/品牌色等)
+    """
+    check_auth(authorization)
+    from workers.workshop_registry import list_assets
+    try:
+        return {"assets": list_assets(aid)}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/workshop/assets/set")
+async def workshop_set_asset(
+    body: dict = Body(...),
+    authorization: Optional[str] = Header(None),
+):
+    """写一个资产 · 配置 tab"📎填资产"按钮调这条 (走和 NLP manage_app_asset 同一咽喉)
+
+    沉淀闭环 v2 刀⑤b (2026-06-10): 把 用户 端资产填入口从"打 NLP 命令"提升到"点选可见可改"
+    body: {app_id, name, value, type?, label?, note?}
+      - app_id: app-xxxxxxxx 或 _shared
+      - value: str / list / dict (大文件先 /upload 再传路径)
+      - type: text(默认) / textarea / images / json / file
+      - note: 强烈建议填 (这次写入说明)
+    """
+    check_auth(authorization)
+    if not isinstance(body, dict):
+        raise HTTPException(400, "body 必须是 JSON object")
+    app_id = body.get("app_id")
+    name = body.get("name")
+    if not app_id or not name:
+        raise HTTPException(400, "app_id + name 必填")
+    from workers.workshop_registry import set_asset
+    try:
+        return set_asset(
+            app_id=app_id,
+            name=name,
+            value=body.get("value"),
+            asset_type=(body.get("type") or "text").strip().lower(),
+            label=body.get("label") or "",
+            note=body.get("note") or "",
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/workshop/assets/upload")
+async def workshop_upload_asset_file(
+    app_id: str = Form(...),
+    name: str = Form(...),
+    file: UploadFile = File(...),
+    authorization: Optional[str] = Header(None),
+):
+    """文件上传 → 落盘 → 返路径 (供 set_asset 用 · 不直接写资产 json)
+
+    沉淀闭环 v2 刀⑤b (2026-06-10): 大文件 (图/音) 上传走这条 · 落 data/workshop/assets/_uploads/<app_id>/<name>-<ts>.<ext>
+    返回 {ok, path, size, name} · 前端拿到 path 后再 POST /workshop/assets/set 把路径塞 value
+
+    安全:
+      - app_id 走 workshop_registry._validate_app_id (拒 .. / 等)
+      - 文件名只取扩展名 · 自己重命名 (防 path traversal)
+      - 大小 ≤ 20MB (再大走 outputs/ 而非 assets/)
+    """
+    check_auth(authorization)
+    from workers.workshop_registry import _validate_app_id, _validate_name
+    try:
+        app_id = _validate_app_id(app_id)
+        name = _validate_name(name)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    raw = await file.read()
+    if len(raw) > 20 * 1024 * 1024:
+        raise HTTPException(413, f"file too large ({len(raw)} bytes · max 20MB · 大文件请落 outputs/)")
+    if not raw:
+        raise HTTPException(400, "empty file")
+
+    orig_name = (file.filename or "upload").lower()
+    ext = ""
+    if "." in orig_name:
+        ext = "." + orig_name.rsplit(".", 1)[-1]
+        ext = "".join(c for c in ext if c.isalnum() or c == ".")[:8]
+
+    import time
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    upload_dir = ROOT / "data" / "workshop" / "assets" / "_uploads" / app_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    fname = f"{name}-{ts}{ext}"
+    fp = upload_dir / fname
+    fp.write_bytes(raw)
+
+    rel_path = str(fp.relative_to(ROOT)).replace("\\", "/")
+    return {
+        "ok": True,
+        "app_id": app_id,
+        "name": name,
+        "filename": fname,
+        "path": rel_path,
+        "size": len(raw),
+        "url": f"/{rel_path}",
+    }
+
+
+@router.get("/workshop/asset-files/{rel_path:path}")
+async def serve_asset_file(rel_path: str):
+    """读上传到 assets/_uploads/ 的文件 · 给前端 <img src> 用 · 不鉴权 (内网用·跟 outputs 端点同语义)
+
+    沉淀闭环 v2 刀⑤b (2026-06-10): 配置 tab 上传图 → 落 _uploads/ → 通过本端点显示
+    安全:
+      - 路径越权检查
+      - MIME 白名单 (跟 outputs 端点共享 _OUTPUT_MIME · 但本端点暂用本地白名单)
+    """
+    if ".." in rel_path or rel_path.startswith("/") or rel_path.startswith("\\") or "\x00" in rel_path:
+        raise HTTPException(400, "invalid path")
+    from pathlib import PurePosixPath
+    suffix = PurePosixPath(rel_path).suffix.lower()
+    _MIME = {
+        ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml",
+        ".bmp": "image/bmp", ".ico": "image/x-icon",
+        ".wav": "audio/wav", ".mp3": "audio/mpeg", ".ogg": "audio/ogg",
+        ".flac": "audio/flac", ".m4a": "audio/mp4",
+        ".mp4": "video/mp4", ".webm": "video/webm",
+        ".txt": "text/plain; charset=utf-8",
+        ".md": "text/markdown; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+    }
+    if suffix not in _MIME:
+        raise HTTPException(415, f"unsupported file type: {suffix}")
+
+    full = (ROOT / "data" / "workshop" / "assets" / "_uploads" / rel_path).resolve()
+    uploads_root = (ROOT / "data" / "workshop" / "assets" / "_uploads").resolve()
+    try:
+        full.relative_to(uploads_root)
+    except ValueError:
+        raise HTTPException(400, "path escape blocked")
+    if not full.exists() or not full.is_file():
+        raise HTTPException(404, f"asset file not found: {rel_path}")
+    return FileResponse(
+        path=str(full),
+        media_type=_MIME[suffix],
+        headers={"Cache-Control": "public, max-age=60"},
+    )
+
+
+@router.delete("/workshop/assets/{aid}/{name}")
+async def workshop_delete_asset(
+    aid: str,
+    name: str,
+    authorization: Optional[str] = Header(None),
+):
+    """删一个资产 · 配置 tab "× 删"按钮调这条 (history 一起删 · 不可恢复 · 谨慎用)"""
+    check_auth(authorization)
+    from workers.workshop_registry import delete_asset
+    try:
+        ok = delete_asset(aid, name)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if not ok:
+        raise HTTPException(404, f"asset not found: {aid}/{name}")
+    return {"ok": True, "app_id": aid, "name": name, "deleted": True}
 
 
 @router.post("/workshop/apps")
@@ -251,7 +422,7 @@ async def workshop_run_flow_inline(
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """跑一条还没落盘的 workflow · BRO 在画布编辑时点 ▶ 真跑 · 不强迫先 save"""
+    """跑一条还没落盘的 workflow · 用户 在画布编辑时点 ▶ 真跑 · 不强迫先 save"""
     check_auth(authorization)
     if not isinstance(payload, dict):
         raise HTTPException(400, "request body must be a JSON object")
@@ -476,6 +647,66 @@ async def workshop_delete_flow(
     return {"ok": True, "id": fid, "moved_to_trash": True}
 
 
+# ─── Flow Runs · 跑时实时进度可视化 (用户 图2 的诉求) ───
+
+@router.get("/workshop/runs")
+async def workshop_list_runs(
+    status: Optional[str] = None,
+    limit: int = 10,
+    authorization: Optional[str] = Header(None),
+):
+    """列最近的 flow runs · 按 mtime 倒序 · 含每条 摘要 (status/current_step/total_steps)
+
+    query:
+        status: running / done / failed / aborted · 不传 = 全部
+        limit:  最多返回多少条 · 默认 10 上限 50
+    """
+    check_auth(authorization)
+    from workers.flow_runner import list_runs
+    lim = max(1, min(int(limit or 10), 50))
+    runs = list_runs(max_items=lim)
+    if status:
+        runs = [r for r in runs if (r.get("status") or "") == status]
+    return {"runs": runs}
+
+
+@router.get("/workshop/runs/{run_id}")
+async def workshop_load_run(
+    run_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """读单条 run 完整状态 · 含每 step 的 status/summary/error · 给 webui 展开进度面板用"""
+    check_auth(authorization)
+    from workers.flow_runner import load_run
+    state = load_run(run_id)
+    if not state:
+        raise HTTPException(404, f"run not found: {run_id}")
+    return state
+
+
+# 0.2.0 · 信任账本 API (用户 在 WebUI flow 卡上一键信任)
+@router.post("/workshop/flows/{flow_id}/trust")
+async def workshop_set_trust(
+    flow_id: str,
+    payload: dict = Body(...),
+    authorization: Optional[str] = Header(None),
+):
+    """用户 WebUI 点 flow 卡 trust badge · level=0/1/2/3"""
+    check_auth(authorization)
+    from workers.workshop_assets import set_flow_trust, load_flow
+    if not load_flow(flow_id):
+        raise HTTPException(404, f"flow not found: {flow_id}")
+    try:
+        level = int(payload.get("level"))
+    except Exception:
+        raise HTTPException(400, "level must be int 0-3")
+    if level < 0 or level > 3:
+        raise HTTPException(400, "level must be 0-3")
+    by = (payload.get("by") or "用户").strip() or "用户"
+    updated = set_flow_trust(flow_id, level=level, by=by)
+    return {"ok": True, "flow": updated}
+
+
 # ─── Trash (wish-6fd76512) ───
 
 @router.get("/workshop/trash")
@@ -547,7 +778,7 @@ async def workshop_empty_trash_all(
     return {"ok": True, "kind": kind, "deleted_count": n}
 
 
-# ─── Files preview / download / reveal (卷四十六续 8) ───
+# ─── Files preview / download / reveal ( 8) ───
 
 @router.get("/workshop/preview/{domain}/{filename}")
 async def preview_workshop_file(
@@ -610,7 +841,7 @@ async def reveal_workshop_file(
     authorization: Optional[str] = Header(None),
     token: Optional[str] = None,
 ):
-    """本机调系统外部应用打开 · 仅 daemon 跟 BRO 在同一台机器时有意义 (Day 0 阶段)"""
+    """本机调系统外部应用打开 · 仅 daemon 跟 用户 在同一台机器时有意义 (Day 0 阶段)"""
     if token and not authorization:
         authorization = f"Bearer {token}"
     check_auth(authorization)
@@ -680,6 +911,8 @@ async def list_workshop_outputs(
             "mtime": f.stat().st_mtime,
             "type": ft,
             "url": f"/workshop/outputs/{app_id}/{name}",
+            #  P0-2 (2026-06-10) · 加本地绝对路径 · 前端"复制路径"按钮用 · 用户 自己去文件管理器
+            "path": str(f),
         })
 
     return {"app_id": app_id, "files": files, "count": len(files)}

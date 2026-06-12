@@ -32,7 +32,7 @@ workers/market_sense.py
 
 红线：
   - 不爬需要登录的内容
-  - User-Agent 标识自己 (OPUS-DAEMON-MarketSense)
+  - User-Agent 标识自己 (Daemonkey-MarketSense)
   - 单站请求间隔 ≥ 2s
   - 评论数据**只读**给 LLM 做背景·不做 BI 分析（那是 BRO 的事）
 """
