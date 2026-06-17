@@ -4,13 +4,13 @@
   "core_version_note": "内核语义版本 · 版本号唯一真相源。内核有实质更新就在这里 bump · launcher/WebUI 动态读它显示 · update_core check 拿它和远程对比报「有新版」。manifest_version 是清单结构版本(很少变) · core_version 才是用户感知的内核版本。",
   "description": "Daemonkey 内核(L1)白名单 — update_core 只同步这里列出的文件;清单外的一律物理不碰(用户的功能/应用/灵魂永不被覆盖)。人类可读版见 docs/CORE-MANIFEST.md。",
   "updated": "2026-06-18",
-  "log_ref": "卷六十四续五 · 卷七十四续十八(核心前端) · 卷七十四续二十(core_version 版本号体系 + github 源占位)",
+  "log_ref": "卷六十四续五 · 卷七十四续十八(核心前端) · 卷七十四续二十(core_version 版本号体系) · 卷七十四续二十一(github 备份源接通)",
   "sources": {
     "primary": "gitee",
-    "note": "支持多源(gitee+github)。真相源唯一=母体 master;只单向往外 push,下游只拉不推。update_core 可指定从哪个 remote 拉。",
+    "note": "支持多源(gitee+github)。真相源唯一=母体 master;只单向往外 push,下游只拉不推。update_core 可指定从哪个 remote 拉。github 当前为作者私有备份源(下游需授权方可匿名拉·转公开后即可当 gitee 的海外/抽风兜底源)。",
     "remotes": {
       "gitee": "https://gitee.com/vaan21th/dae-monkey.git",
-      "github": "(规划中 · github 镜像仓库待建 · 形如 https://github.com/<你的账号>/daemonkey.git · 建好并 push 后把这行换成真 URL · 用户 git remote add github <URL> 即可当备用升级源 · gitee 抽风/海外用户兜底)"
+      "github": "https://github.com/Vaan21th/daemonkey.git"
     }
   },
   "kernel": {
