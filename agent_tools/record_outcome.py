@@ -71,7 +71,7 @@ def _format_outcome(outcome: dict) -> str:
     st = outcome.get("status", "not_started")
     label = _STATUS_LABEL.get(st, st)
     lines = [
-        f"### {label} · {outcome.get('opp_title', '?')}",
+        f"### {label} · {outcome.get('opp_title') or outcome.get('opp_id') or '?'}",
         "",
         f"- **领域**: {outcome.get('opp_domain', '?')}",
         f"- **opp_id**: `{outcome.get('opp_id', '?')}`",
@@ -164,6 +164,7 @@ def _run(args: dict) -> ToolResult:
         result = record_outcome(
             opp_id,
             status=args.get("status"),
+            opp_title=args.get("opp_title"),
             decision_reason=args.get("decision_reason"),
             actual_revenue_cny=args.get("actual_revenue_cny"),
             actual_cost_cny=args.get("actual_cost_cny"),
@@ -236,6 +237,12 @@ SPEC = ToolSpec(
                 "type": "string",
                 "enum": ["not_started", "in_progress", "completed", "abandoned"],
                 "description": "机会的当前状态",
+            },
+            "opp_title": {
+                "type": "string",
+                "description": "机会标题快照·建议带上(尤其机会可能已被新一轮 mine 挤出当前列表时)·"
+                               "这样执行反馈卡片永远有标题·不会显示成 '?'",
+                "maxLength": 120,
             },
             "decision_reason": {
                 "type": "string",

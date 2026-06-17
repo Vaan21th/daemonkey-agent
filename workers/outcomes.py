@@ -53,6 +53,25 @@ _STATUS_LABEL = {
 }
 
 
+def _display_title(out: dict) -> str:
+    """机会标题兜底（卷七十四续十四）。
+
+    opp_title 是新建 outcome 时从 opportunities.json 抓的快照·但机会列表会轮替·
+    旧机会被挤出后 _opp_lookup 拿不到标题·title 就成了 None·UI 只能显示裸 "?"。
+    这里按 opp_title → 决策理由摘要 → opp_id → 占位文案逐级兜底·让卡片永远有意义。
+    """
+    t = (out.get("opp_title") or "").strip()
+    if t:
+        return t
+    dr = (out.get("decision_reason") or "").strip()
+    if dr:
+        return (dr[:24] + "…") if len(dr) > 24 else dr
+    oid = (out.get("opp_id") or "").strip()
+    if oid:
+        return f"机会 {oid}"
+    return "未命名机会"
+
+
 def _atomic_write(path: Path, text: str) -> None:
     """卷四十六 III · wish-badd4 收编到 safe_write
     outcomes.json 是 BRO 实战收益记录·backup=True"""
@@ -98,6 +117,7 @@ def record_outcome(
     opp_id: str,
     *,
     status: Optional[str] = None,
+    opp_title: Optional[str] = None,
     decision_reason: Optional[str] = None,
     actual_revenue_cny: Optional[float] = None,
     actual_cost_cny: Optional[float] = None,
@@ -149,6 +169,12 @@ def record_outcome(
     if status is not None and status != prev_status:
         out["status"] = status
         changed_fields.append(f"status: {prev_status} → {status}")
+    # 标题快照兜底·机会轮替后再补一次·只在当前为空时写·不覆盖已有快照
+    if opp_title is not None:
+        t = opp_title.strip()
+        if t and not (out.get("opp_title") or "").strip():
+            out["opp_title"] = t[:120]
+            changed_fields.append("opp_title")
     if decision_reason is not None:
         d = decision_reason.strip()
         if d and d != out.get("decision_reason"):
@@ -212,7 +238,7 @@ def list_outcomes(*, max_items: int = 50) -> dict:
             data = json.loads(f.read_text(encoding="utf-8"))
             items.append({
                 "opp_id": data.get("opp_id", f.stem),
-                "opp_title": data.get("opp_title") or "?",
+                "opp_title": _display_title(data),
                 "opp_domain": data.get("opp_domain") or "?",
                 "status": data.get("status", "not_started"),
                 "status_label": _STATUS_LABEL.get(

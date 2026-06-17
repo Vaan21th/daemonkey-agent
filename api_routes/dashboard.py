@@ -984,6 +984,7 @@ async def dashboard(
         #   - 每项含 source_opp 元数据（回链到掘金机会）
         from workers.outcomes import (
             _STATUS_LABEL,
+            _display_title,
             list_outcomes,
             load_outcome,
         )
@@ -1010,6 +1011,10 @@ async def dashboard(
                         break
             except Exception as e:
                 logger.debug("attach opp_snapshot failed: %s", e)
+            # 标题兜底·机会轮替后快照丢失时别让 UI 显示裸 "?"(卷七十四续十四)
+            if not (d.get("opp_title") or "").strip():
+                snap_t = ((d.get("opp_snapshot") or {}).get("title") or "").strip()
+                d["opp_title"] = snap_t or _display_title(d)
             return d
 
         # 列表 · 按状态分组
