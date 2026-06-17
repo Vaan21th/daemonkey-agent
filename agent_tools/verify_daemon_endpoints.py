@@ -31,6 +31,8 @@ _SKIP = "⏭️"
 _DANGEROUS_POST = {
     "/restart-daemon",
     "/shutdown-daemon",
+    "/api/wechat/test",      # 真往用户微信发一条占位 · smoke/pre-commit 不该触发 (卷七十四续十九)
+    "/api/proactive/test",   # 真跑一次 proactive LLM turn + 投递 · 同上 · 别在 commit 时空转
 }
 
 # SSE 端点——走 probe=1 诊断分支 (纯 JSON · 不进流循环)
