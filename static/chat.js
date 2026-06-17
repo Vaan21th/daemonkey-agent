@@ -3503,6 +3503,30 @@ async function _checkProactiveInbox() {
   } catch (e) { /* 静默 · 收件箱失败不影响主功能 */ }
 }
 
+// 卷七十四续十七 · 微信入站对话 WebUI 自动感知 · 复用后台轮询那套(零新逻辑)
+// 微信对话固定进 api-wechat 会话 · daemon 后台 turn(_run_bg_turn)已注册 active_turn ·
+// 但前端只在"切进会话那一刻"单次探测(_maybeStartPoll) · 之后用户在手机发消息 ·
+// 前端没人再探 → WebUI 聋到手刷。这里加一个持续探测 · 探到就调现成的 _startSessionPoll
+// (3s 轮询 reload + 跑完弹 toast + tab 红点 · 跟 WebUI 自己的并行对话同一套机制)。
+async function _checkWechatActivity() {
+  if (!token) return;
+  const WX_SID = 'api-wechat';
+  try {
+    let st = _sessions[WX_SID];
+    if (st && (st.pollIntervalId || st.pending)) return;  // 已在轮询/正跑 · 别重复触发
+    const r = await fetch(`/sessions/${WX_SID}/active_turn`, {
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (!j || !j.turn_id) return;
+    // 有后台 turn 在跑 → 确保 container 存在(没打开时建隐藏的 · 不抢占当前显示) · 纳入轮询
+    _getOrCreateContainer(WX_SID);
+    st = _getOrCreateSession(WX_SID);
+    if (st && !st.pollIntervalId) _startSessionPoll(st, j.turn_id);
+  } catch {}
+}
+
 // 卷六十 · OPUS 主动找你的 toast · 点击切到那个 session · 比普通完成 toast 多停一会
 function _showProactiveToast(it) {
   const $host = document.getElementById('chatToastHost');
@@ -10910,6 +10934,7 @@ if (token) {
   refreshNavBadges();
   loadCurrentModel();  // 卷二十九 · 顶栏模型切换器
   _checkProactiveInbox();  // 卷六十 · 开页先查一次 OPUS 有没有主动找过
+  _checkWechatActivity();  // 卷七十四续十七 · 开页先探一次微信后台 turn
   setInterval(() => {
     if (!document.hidden) {
       refreshNavBadges();
@@ -10920,6 +10945,10 @@ if (token) {
       }
     }
   }, 30000);
+  // 卷七十四续十七 · 微信入站对话探测心跳(6s · 比 30s 跟手 · 微信 turn 短 · 30s 会整段错过)
+  setInterval(() => {
+    if (!document.hidden) _checkWechatActivity();
+  }, 6000);
 }
 
 
