@@ -1057,13 +1057,13 @@ function Invoke-CheckUpdate {
         Pop-Location
     }
 }
-$cardPatch = New-Card $pgExt 24 188 532 84 '检查更新' '比对 gitee/github 上的最新内核版本 · 有新版就去 WebUI 对 OPUS 说「升级内核」一键升(自动备份·可回退·只动内核·不碰你的数据/应用/灵魂)。'
-$btnPatch = New-ActionButton $cardPatch '检查更新' 372 24 142 40 $cBtn $cText
+$cardPatch = New-Card $pgExt 24 188 532 104 '检查更新' '比对中心库最新内核版本 · 有新版就在对话里说「升级内核」一键升级 · 自动备份可回退 · 只动内核不碰你的数据。'
+$btnPatch = New-ActionButton $cardPatch '检查更新' 372 32 142 40 $cBtn $cText
 $btnPatch.Add_Click({ Invoke-CheckUpdate })
 
 $extNote = New-Object System.Windows.Forms.Label
 $extNote.Text = '检查更新已开放 · 插件市场等核心稳定后开放。'
-$extNote.Location = P 24 288
+$extNote.Location = P 24 308
 $extNote.Size = Sz 532 20
 $extNote.ForeColor = $cMuted
 $extNote.Font = F 9
