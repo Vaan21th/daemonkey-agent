@@ -37,7 +37,10 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from agent_tools import REGISTRY, ToolResult, ToolSpec, _TOOL_PROGRESS_HOOK, TIER_AUTO
+from agent_tools import (
+    REGISTRY, ToolResult, ToolSpec, _TOOL_PROGRESS_HOOK, TIER_AUTO,
+    set_current_turn_text,
+)
 
 try:
     from identity import localize_narration as _localize_narration
@@ -878,6 +881,13 @@ def _loop_openai(
             final_text = text
             break
 
+        # 卷七十四续十五 · 把本轮回复正文暴露给工具(两步法长文档兜底·generate_report/write_file
+        # 的 body/content 没传时从这里抓·只对走兜底的弱模型生效·前沿模型传了参数根本不碰)
+        try:
+            set_current_turn_text(text)
+        except Exception:
+            pass
+
         aborted = False
         # 卷五十八续 ⑤ · 整批全只读 AUTO → 并发预跑 (否则 {} · 主循环照常串行)
         _sa_names = []
@@ -1117,6 +1127,12 @@ def _loop_anthropic(
         if resp.stop_reason != "tool_use" or not tool_use_blocks:
             final_text = text
             break
+
+        # 卷七十四续十五 · 把本轮回复正文暴露给工具(两步法长文档兜底·同 OpenAI 路)
+        try:
+            set_current_turn_text(text)
+        except Exception:
+            pass
 
         tool_results: list[dict] = []
         aborted = False

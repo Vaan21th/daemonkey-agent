@@ -87,10 +87,32 @@ def _run(args: dict) -> ToolResult:
             ok=False, output="",
             error="title 必填 · 这是报告标题 + 落盘文件名的来源",
         )
+
+    # 卷七十四续十五 · 两步法兜底 · body 没传/空 → 抓"LLM 本轮回复正文"当正文。
+    # 给 tool call 长参数易丢的弱模型(DeepSeek 等)留一条不走结构化长参数的路:
+    # 先把完整 markdown 写在回复里(文本流是强项)·再调本工具【不带 body】。
+    # 前沿模型直接传 body·根本进不来这个分支·零影响。
+    grabbed_from_turn = False
+    if not body or not body.strip():
+        try:
+            from . import current_turn_text
+            grabbed = (current_turn_text() or "").strip()
+        except Exception:
+            grabbed = ""
+        if grabbed:
+            body = grabbed
+            grabbed_from_turn = True
+
     if not body or not body.strip():
         return ToolResult(
             ok=False, output="",
-            error="body 必填 · 这是报告 markdown 正文 (不必含 # 一级标题)",
+            error=(
+                "没拿到正文 · 两种给法二选一:\n"
+                "  ① 把完整 markdown 正文直接放进 body 参数(一步到位);\n"
+                "  ② 先在你这条回复正文里写完整 markdown · 再调本工具【不带 body】 · "
+                "我会自动抓你刚写的正文(适合长文档·或对长参数不稳的模型)。\n"
+                "现在 body 为空、你这条回复也没有可抓的正文——请补上正文再调一次。"
+            ),
         )
 
     theme = (args.get("theme") or "opus_studio").lower().strip()
@@ -180,7 +202,8 @@ def _run(args: dict) -> ToolResult:
         f"  路径: {rel_path}",
         f"  大小: {size_kb:.1f} KB",
         f"  主题: {theme}",
-        f"  正文长度: {len(body)} 字符",
+        f"  正文长度: {len(body)} 字符"
+        + ("（来自本轮回复正文 · 两步法兜底）" if grabbed_from_turn else ""),
     ]
     if include_cover:
         lines.append(f"  封面: 含 title='{title}'"
@@ -199,7 +222,10 @@ SPEC = ToolSpec(
         "把 markdown 正文一键渲染成精排 DOCX 报告 · 自动加封面 + 视觉规范 · "
         "落 data/reports/ · 之后 用户 在 WebUI 可下载。"
         "适合：本周雷达汇总 / 对客户的方案文档 / 把某段对话整理成档案 / 任何"
-        "需要交付正式格式文档的场景。"
+        "需要交付正式格式文档的场景。\n"
+        "两种用法 · ① 直接把正文放 body 参数;② 长文档推荐——先把完整 markdown 正文"
+        "写在你的回复里 · 再调本工具【只给 title · 不带 body】 · 工具自动抓你回复的正文。"
+        "(② 适合正文很长、或当前模型对超长结构化参数不稳时 · 走文本流更稳)"
     ),
     tier=TIER_CONFIRM,
     input_schema={
@@ -216,7 +242,9 @@ SPEC = ToolSpec(
                     "不必含 # 一级标题（封面会用 title）。"
                     "支持 ## ### 标题 / 段落 / **加粗** / `代码` / 列表 / "
                     "表格 / > 引用 / ``` 代码块 / --- 分割线 / "
-                    "![alt](xxx.png) 图片。必填。"
+                    "![alt](xxx.png) 图片。\n"
+                    "【可选】不传 body 时 · 工具自动抓你【本条回复的正文】当报告主体——"
+                    "所以长文档可以:先把完整 markdown 写在回复里 · 再调本工具只给 title。"
                 ),
             },
             "subtitle": {
@@ -253,7 +281,7 @@ SPEC = ToolSpec(
                 ),
             },
         },
-        "required": ["title", "body"],
+        "required": ["title"],
         "additionalProperties": False,
     },
     run=_run,

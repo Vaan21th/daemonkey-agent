@@ -77,6 +77,27 @@ def current_session_id() -> str:
     if sid:
         return sid
     return f"t{threading.get_ident()}"
+
+
+# ── 卷七十四续十五 · 本轮回复正文 ContextVar(两步法长文档生成兜底) ─────────────
+# 痛点: DeepSeek 等模型 tool call 的长 JSON 参数(generate_report.body / write_file.content)
+# 经常丢成空壳——它们写正文(普通文本流)是强项·丢的只是结构化长参数。
+# 解法(只增不减): LLM 先把完整正文写在【回复正文】里(强项)·再调工具【不带 body/content】·
+# 工具自动从这个 ContextVar 抓正文。 tool_loop 在执行每个工具前 set 进来(同 session/flow
+# 范式·跟随执行上下文进 spec.run·零侵入·不改 run 签名)。
+# 前沿模型(Claude/GPT)照旧直接传 body·根本不碰这条兜底·零影响。
+_CURRENT_TURN_TEXT: contextvars.ContextVar[str] = \
+    contextvars.ContextVar("_current_turn_text", default="")
+
+
+def set_current_turn_text(text: str) -> None:
+    """tool_loop 在执行每个工具前调它·把本轮 LLM 已写的回复正文暴露给工具。"""
+    _CURRENT_TURN_TEXT.set(text or "")
+
+
+def current_turn_text() -> str:
+    """工具内部读 LLM 本轮已写的回复正文(两步法长文档兜底)。 没设过 → 空串。"""
+    return _CURRENT_TURN_TEXT.get()
 # ────────────────────────────────────────────────────────────────────────
 
 
