@@ -82,6 +82,12 @@ def _run(args: dict) -> ToolResult:
             ok, msg = cu.fetch(remote)
             if not ok:
                 return ToolResult(ok=False, output="", error=f"fetch 失败 · {msg}")
+            # 版本号对比 (卷七十四续二十) · fetch 之后远程 ref 已就位 · 拿两边 core_version 比
+            lv = cu.local_core_version(manifest)
+            rv = cu.remote_core_version(remote, branch)
+            ver_line = f"内核版本 · 本地 {lv or '?'} · 远程 {rv or '?'}"
+            if lv and rv and lv != rv:
+                ver_line += "  ← 有新版本可升级!"
             d = cu.diff_kernel(remote, branch)
             if d.get("error"):
                 return ToolResult(ok=False, output="", error=d["error"])
@@ -89,9 +95,10 @@ def _run(args: dict) -> ToolResult:
             total = len(changed) + len(added)
             if total == 0 and not deleted:
                 return ToolResult(ok=True, output=(
+                    f"{ver_line}\n"
                     f"✅ 内核已是最新 ({why} · 分支 {branch}) · 没有白名单文件需要更新。\n"
                     f"你的应用 / 工作流 / soul 灵魂记忆本来也不在更新范围内。"))
-            lines = [f"内核更新预览 · 源={why} · 分支 {branch}", ""]
+            lines = [ver_line, f"内核更新预览 · 源={why} · 分支 {branch}", ""]
             if changed:
                 lines.append(f"  改动 {len(changed)} 个内核文件:")
                 lines += [f"    ~ {f}" for f in changed]

@@ -3527,6 +3527,30 @@ async function _checkWechatActivity() {
   } catch {}
 }
 
+// 卷七十四续二十 · 顶部品牌区显示内核版本号 · 纯靠 chat.js 动态挂标签(不依赖 chat.html ·
+// 因为 chat.html 是皮肤层不随内核同步 · chat.js 在白名单 · 这样升级内核版本号显示就会跟着更新)。
+// 版本号唯一真相源 = core_manifest.json 的 core_version · 后端 /api/core/version 出口(无鉴权)。
+async function _showCoreVersion() {
+  try {
+    const logo = document.querySelector('.header-logo');
+    if (!logo) return;
+    const r = await fetch('/api/core/version');
+    if (!r.ok) return;
+    const j = await r.json();
+    const v = ((j && j.core_version) || '').trim();
+    if (!v) return;
+    let tag = document.getElementById('coreVersionTag');
+    if (!tag) {
+      tag = document.createElement('span');
+      tag.id = 'coreVersionTag';
+      tag.style.cssText = 'margin-left:8px;font-size:0.62rem;font-weight:600;opacity:0.55;letter-spacing:0.3px;vertical-align:middle;';
+      logo.appendChild(tag);
+    }
+    tag.textContent = 'v' + v;
+    tag.title = '内核版本 v' + v + ' · 想看有没有新版 → 对我说「看看内核有没有更新」';
+  } catch {}
+}
+
 // 卷六十 · OPUS 主动找你的 toast · 点击切到那个 session · 比普通完成 toast 多停一会
 function _showProactiveToast(it) {
   const $host = document.getElementById('chatToastHost');
@@ -10933,6 +10957,7 @@ if (!token) {
 if (token) {
   refreshNavBadges();
   loadCurrentModel();  // 卷二十九 · 顶栏模型切换器
+  _showCoreVersion();  // 卷七十四续二十 · 顶部品牌区显示内核版本号
   _checkProactiveInbox();  // 卷六十 · 开页先查一次 OPUS 有没有主动找过
   _checkWechatActivity();  // 卷七十四续十七 · 开页先探一次微信后台 turn
   setInterval(() => {

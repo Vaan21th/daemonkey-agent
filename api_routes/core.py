@@ -138,6 +138,26 @@ async def ping_test():
     }
 
 
+@router.get("/api/core/version")
+async def core_version_endpoint():
+    """内核语义版本号 · 不鉴权(版本号不敏感·手机浏览器也要能拿) · 卷七十四续二十。
+
+    版本号唯一真相源 = core_manifest.json 的 core_version。WebUI 顶部品牌区开页拉它显示 ·
+    launcher 优先直接读文件(daemon 没起也能显示) · 这个端点是 daemon 在跑时的统一出口。
+    """
+    try:
+        from workers import core_update as cu
+        m = cu.load_manifest()
+        return {
+            "core_version": str(m.get("core_version") or ""),
+            "manifest_version": m.get("manifest_version"),
+            "updated": m.get("updated"),
+            "log_ref": m.get("log_ref"),
+        }
+    except Exception:
+        return {"core_version": ""}
+
+
 @router.get("/ui", response_class=HTMLResponse)
 async def web_ui():
     # 不鉴权: HTML 本身不含敏感信息, token 由 JS 让用户手动填进 localStorage

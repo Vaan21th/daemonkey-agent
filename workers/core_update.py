@@ -42,6 +42,33 @@ def load_manifest() -> dict:
         return {"kernel": {}, "never_sync": [], "sources": {}}
 
 
+def local_core_version(manifest: Optional[dict] = None) -> str:
+    """本地内核语义版本 (core_manifest.json 的 core_version) · 没有返空串。
+
+    这是版本号唯一真相源的【本地侧】 · launcher / WebUI / update_core 全读它。
+    """
+    m = manifest or load_manifest()
+    return str(m.get("core_version") or "").strip()
+
+
+def remote_core_version(remote: str, branch: str = "master") -> str:
+    """中心库那一份 core_manifest.json 里的 core_version · 拿不到返空串。
+
+    用 `git show <remote>/<branch>:core_manifest.json` 直接读远程文件内容(不动工作区) ·
+    调用前应已 fetch 过该 remote(check 流程里 fetch 在前)。给「有没有新版」的对比用。
+    """
+    if not _has_git() or not remote:
+        return ""
+    with _lock("core_update:remote_ver"):
+        rc, out, _ = _run_git(["show", f"{remote}/{branch}:core_manifest.json"], timeout=15)
+    if rc != 0 or not out.strip():
+        return ""
+    try:
+        return str(json.loads(out).get("core_version") or "").strip()
+    except Exception:
+        return ""
+
+
 def kernel_files(manifest: Optional[dict] = None) -> list[str]:
     """把 manifest.kernel 下所有分类的文件名拍平成一个去重列表 (posix 斜杠)。"""
     m = manifest or load_manifest()

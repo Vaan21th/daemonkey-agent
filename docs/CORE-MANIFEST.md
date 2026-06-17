@@ -101,4 +101,15 @@
 4. ✅ 写 `update_core` 工具: `git fetch` → 按白名单算 diff → 预览 → 只覆盖白名单文件 → checkpoint 可回退 (已实装 · 见 `agent_tools/update_core.py`)
 5. ✅ 包成对话工具 (用户说「看下内核更新」即可触发 check/preview/apply)
 6. ✅ 核心前端机制 (`chat.js`/`workshop.js`) 上移进白名单 + dirty 本地改过提示 (卷七十四续十八)
-7. ⬜ 长期: 拆 `daemon_api.py` 的 core 骨架出来再纳入白名单
+7. ✅ 内核版本号体系 `core_version` (卷七十四续二十): manifest 加 `core_version` 当唯一真相源 · launcher/WebUI 动态读它显示 · `update_core check` 拿本地/远程两边对比报「有新版」· launcher「检查更新」卡片接上 · github 源占位(待建镜像库)
+8. ⬜ 长期: 拆 `daemon_api.py` 的 core 骨架出来再纳入白名单
+
+---
+
+## 版本号怎么走 (core_version · 卷七十四续二十)
+
+- **唯一真相源** = `core_manifest.json` 的 `core_version` (语义版本 · 如 `0.2.0`)。内核有实质更新就在这里 bump · **只此一处**。
+- **谁读它**: launcher (启动时直接读文件 · daemon 没起也能显示) / WebUI (`chat.js` 开页 fetch `/api/core/version` 挂到顶部品牌区) / `update_core check` (和远程对比)。
+- **怎么看有没有新版**: 对 AI 说「看看内核有没有更新」→ `update_core check` 会 fetch 中心库 · 读远程那份 manifest 的 `core_version` · 和本地比 · 不同就报「← 有新版本可升级!」。launcher 那张「检查更新」卡片是同一逻辑的 GUI 入口 (只读检查 · 真升级仍走对话 `update_core apply` · 护栏全在那条路上)。
+- **bump 时机**: 每次往中心库 push 内核更新 · 若白名单文件有实质变化 · 就把 `core_version` 往上抬 · 这样下游 check 才能看出「该升了」。
+- `manifest_version` 是清单**结构**版本 (字段怎么排 · 极少变) · `core_version` 才是用户感知的**内核**版本 · 两者别混。

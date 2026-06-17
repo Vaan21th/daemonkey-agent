@@ -57,7 +57,15 @@ function New-BufferedPanel {
 $script:DefaultPort = 7860
 $script:VenvPython  = Join-Path $script:Root '.venv\Scripts\python.exe'
 $script:VenvPythonW = Join-Path $script:Root '.venv\Scripts\pythonw.exe'
+# 版本号 · 真相源 = core_manifest.json 的 core_version (卷七十四续二十) · 读不到回退硬编码
 $script:Version     = 'v0.1.0'
+try {
+    $mfPath = Join-Path $script:Root 'core_manifest.json'
+    if (Test-Path $mfPath) {
+        $cv = (Get-Content $mfPath -Raw -Encoding UTF8 | ConvertFrom-Json).core_version
+        if ($cv) { $script:Version = "v$cv" }
+    }
+} catch {}
 $script:StartText   = '启动'
 $script:BiliUrl     = 'https://space.bilibili.com/4060618'
 
@@ -1008,13 +1016,53 @@ $cardPlugin = New-Card $pgExt 24 92 532 84 '插件市场' '社区分享的插件
 $btnPlugin = New-ActionButton $cardPlugin '敬请期待' 372 24 142 40 $cMuted $cDim
 $btnPlugin.Enabled = $false
 
-# TODO(留口): 升级补丁 —— 官方签名 release 增量补丁 · 确定性替换 · 数据层不动 (见开源方案 8.x)
-$cardPatch = New-Card $pgExt 24 188 532 84 '检查更新 / 拉补丁' '升级到最新 Daemonkey · 代码层替换 / 数据层不碰 · 接口已留 · 即将开放。'
-$btnPatch = New-ActionButton $cardPatch '敬请期待' 372 24 142 40 $cMuted $cDim
-$btnPatch.Enabled = $false
+# 检查更新 (卷七十四续二十) —— launcher 只做【只读检查】: 比对中心库 core_version。
+# 真升级走 WebUI 对话 update_core(有 checkpoint + diff 预览 + dirty 提示全套护栏)· launcher 不自己 apply。
+function Invoke-CheckUpdate {
+    $title = 'Daemonkey · 检查更新'
+    $mfPath = Join-Path $script:Root 'core_manifest.json'
+    $localVer = ''
+    try { if (Test-Path $mfPath) { $localVer = (Get-Content $mfPath -Raw -Encoding UTF8 | ConvertFrom-Json).core_version } } catch {}
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $git) {
+        [System.Windows.Forms.MessageBox]::Show("当前环境没有 git · 无法联网检查内核更新。`r`n本地内核版本: v$localVer", $title) | Out-Null
+        return
+    }
+    Push-Location $script:Root
+    try {
+        $inside = (git rev-parse --is-inside-work-tree 2>$null)
+        if ($LASTEXITCODE -ne 0 -or "$inside".Trim() -ne 'true') {
+            [System.Windows.Forms.MessageBox]::Show("这个 Daemonkey 还没启用自助升级(不是 git 仓库)。`r`n本地内核版本: v$localVer`r`n`r`n去 WebUI 对 OPUS 说「我要启用内核自助升级」即可。", $title) | Out-Null
+            return
+        }
+        $remotes = @(git remote 2>$null)
+        if ($remotes.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("还没配置升级源。`r`n去 WebUI 对 OPUS 说「配置升级源」· 或手动: git remote add gitee <中心库URL>", $title) | Out-Null
+            return
+        }
+        $remote = if ($remotes -contains 'gitee') { 'gitee' } elseif ($remotes -contains 'github') { 'github' } else { $remotes[0] }
+        git fetch $remote --prune 2>&1 | Out-Null
+        $remoteVer = ''
+        try { $remoteVer = (git show "$remote/master:core_manifest.json" 2>$null | ConvertFrom-Json).core_version } catch {}
+        if ($localVer -and $remoteVer -and ($localVer -ne $remoteVer)) {
+            [System.Windows.Forms.MessageBox]::Show("发现新版内核!`r`n`r`n本地: v$localVer`r`n最新: v$remoteVer   (源: $remote)`r`n`r`n去 WebUI 对 OPUS 说「升级内核」即可一键升级。`r`n升级会自动备份·可回退·只动内核·你的数据/应用/灵魂一个字节都不碰。", $title) | Out-Null
+        } elseif ($localVer -and $remoteVer) {
+            [System.Windows.Forms.MessageBox]::Show("已是最新内核 v$localVer   (源: $remote)。", $title) | Out-Null
+        } else {
+            [System.Windows.Forms.MessageBox]::Show("已联网检查 (源: $remote)。`r`n本地内核版本: v$localVer`r`n远程版本号暂时读不到 · 可去 WebUI 让 OPUS「看看内核有没有更新」看详情。", $title) | Out-Null
+        }
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("检查更新出错: $($_.Exception.Message)", $title) | Out-Null
+    } finally {
+        Pop-Location
+    }
+}
+$cardPatch = New-Card $pgExt 24 188 532 84 '检查更新' '比对 gitee/github 上的最新内核版本 · 有新版就去 WebUI 对 OPUS 说「升级内核」一键升(自动备份·可回退·只动内核·不碰你的数据/应用/灵魂)。'
+$btnPatch = New-ActionButton $cardPatch '检查更新' 372 24 142 40 $cBtn $cText
+$btnPatch.Add_Click({ Invoke-CheckUpdate })
 
 $extNote = New-Object System.Windows.Forms.Label
-$extNote.Text = '为开源生态预留的接口位 · 核心稳定后开放。'
+$extNote.Text = '检查更新已开放 · 插件市场等核心稳定后开放。'
 $extNote.Location = P 24 288
 $extNote.Size = Sz 532 20
 $extNote.ForeColor = $cMuted
