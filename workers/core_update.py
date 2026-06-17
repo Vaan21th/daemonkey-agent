@@ -54,6 +54,30 @@ def kernel_files(manifest: Optional[dict] = None) -> list[str]:
     return files
 
 
+def dirty_kernel_files(manifest: Optional[dict] = None) -> list[str]:
+    """白名单文件里 · 当前工作区有未提交改动的 (git status --porcelain)。
+
+    给 update_core 用:升级前提醒「这些内核文件你本地改过 · 覆盖前会先 checkpoint ·
+    可 git revert 找回」——对应「用户最爱改前端 · 别被无声覆盖」那条护栏(卷七十四续十八)。
+    """
+    if not _has_git():
+        return []
+    files = kernel_files(manifest)
+    if not files:
+        return []
+    with _lock("core_update:dirty"):
+        rc, out, _ = _run_git(["status", "--porcelain", "--"] + files, timeout=15)
+    if rc != 0:
+        return []
+    dirty: list[str] = []
+    for line in out.splitlines():
+        # porcelain 行: "XY <path>" · 路径从第 4 字符起 · 带引号的去掉
+        p = line[3:].strip().strip('"').replace("\\", "/")
+        if p and p not in dirty:
+            dirty.append(p)
+    return dirty
+
+
 def list_configured_remotes() -> dict[str, str]:
     """解析 `git remote -v` → {name: fetch_url}。 没仓库/没远程返空。"""
     if not _has_git():

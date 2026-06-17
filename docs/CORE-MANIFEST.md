@@ -56,6 +56,14 @@
 ### 6. 身份本地化机制 (归一地基)
 - `identity.py` — ai_name / owner_name / localize 出口本地化
 
+### 7. 核心前端机制 (卷七十四续十八 · 2026-06-18 纳入)
+> 前端分两层: **机制层**(核心交互逻辑 · 所有人共享的 bug 修复/能力增强)与**皮肤层**(用户自定义主题/样式)。
+> 机制层该随内核同步 · 皮肤层永不碰。下面两个是机制层:
+- `static/chat.js` — 主对话前端 (会话/轮询/工具渲染/微信 WebUI 自动感知… 核心交互机制)
+- `static/workshop.js` — 工坊前端 (应用/工作流的核心交互机制)
+>
+> 安全: 同步走 update_core 标准护栏——apply 前 checkpoint(可 git revert) + diff 预览 + dirty 提示(本地改过会醒目标注) · 绝不无声覆盖用户的 UI 改动。
+
 ---
 
 ## 边界文件 · 已圈定 (2026-06-08 BRO 拍板: 全按建议)
@@ -79,7 +87,8 @@
 ## 明确不同步 (清单外 · 用户自管 · 永不覆盖)
 
 - **L2 功能**: 雷达 / 掘金 / 可行性 / 复盘 / 能力镜像 / 报告引擎 / 心愿单 / 工坊应用 / 工作流 / 微信·iLink 渠道 / 视觉 / 日历 / dashboard —— 所有这些 `workers/*` + `agent_tools/*` + `api_routes/*` 功能件
-- **前端 UI**: `static/*` (用户最爱改的一层)
+- **前端 UI · 皮肤层**: `static/*` 里用户自定义的主题/样式 (用户最爱改的一层 · 永不覆盖)
+  - 例外: `static/chat.js` · `static/workshop.js` 是**前端机制层** · 已上移进 L1 白名单随 update_core 同步 (见上「7. 核心前端机制」)
 - **L3 私人数据**: `soul/` · `data/` · `sessions/` (本就 gitignore / 私人,git 都不碰)
 
 ---
@@ -88,6 +97,8 @@
 
 1. ✅ BRO 圈定「边界文件」→ 白名单落定
 2. ✅ 白名单转机器可读 `core_manifest.json`
-3. ⬜ 建中心库 (支持 **Gitee + GitHub 双源**;真相源唯一=母体,下游只拉不推) — 配 remote + 首次 push 干净 Daemonkey
-4. ⬜ 写 `update_core` 工具: `git fetch` → 按白名单算 diff → 预览给用户 → 只覆盖白名单文件 → 自检 + 失败回滚 (预留多源口子: 可指定从哪个 remote 拉)
-5. ⬜ 包成对话工具 (用户说「看下更新」即可)
+3. ✅ 建中心库 (Gitee 源已就绪 `gitee.com/vaan21th/dae-monkey`;真相源唯一=母体,下游只拉不推)
+4. ✅ 写 `update_core` 工具: `git fetch` → 按白名单算 diff → 预览 → 只覆盖白名单文件 → checkpoint 可回退 (已实装 · 见 `agent_tools/update_core.py`)
+5. ✅ 包成对话工具 (用户说「看下内核更新」即可触发 check/preview/apply)
+6. ✅ 核心前端机制 (`chat.js`/`workshop.js`) 上移进白名单 + dirty 本地改过提示 (卷七十四续十八)
+7. ⬜ 长期: 拆 `daemon_api.py` 的 core 骨架出来再纳入白名单

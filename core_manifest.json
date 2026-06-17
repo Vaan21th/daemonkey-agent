@@ -1,8 +1,8 @@
 {
   "manifest_version": 1,
   "description": "Daemonkey 内核(L1)白名单 — update_core 只同步这里列出的文件;清单外的一律物理不碰(用户的功能/应用/灵魂永不被覆盖)。人类可读版见 docs/CORE-MANIFEST.md。",
-  "updated": "2026-06-08",
-  "log_ref": "卷六十四续五",
+  "updated": "2026-06-18",
+  "log_ref": "卷六十四续五 · 卷七十四续十八(纳入核心前端机制 chat.js/workshop.js)",
   "sources": {
     "primary": "gitee",
     "note": "支持多源(gitee+github)。真相源唯一=母体 master;只单向往外 push,下游只拉不推。update_core 可指定从哪个 remote 拉。",
@@ -76,6 +76,10 @@
       "model_aliases.py",
       "provider_presets.py"
     ],
+    "核心前端机制(L1·机制层·非用户皮肤层)": [
+      "static/chat.js",
+      "static/workshop.js"
+    ],
     "内核自升级机制": [
       "core_manifest.json",
       "workers/core_update.py",
@@ -90,7 +94,7 @@
     "soul/**",
     "data/**",
     "sessions/**",
-    "static/**",
+    "static/** —— 用户自定义皮肤/样式层永不覆盖;但 chat.js/workshop.js 这两个核心前端机制文件已纳入内核白名单·随 update_core 同步(带 diff 预览 + checkpoint 可回退·不无声覆盖)",
     ".env",
     ".env.*",
     "所有清单外的 workers/* agent_tools/* api_routes/* (=L2功能,用户自演化)"

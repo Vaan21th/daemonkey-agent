@@ -101,6 +101,13 @@ def _run(args: dict) -> ToolResult:
             if deleted:
                 lines.append(f"  中心库已删 {len(deleted)} 个 (update_core 不会删你本地 · 仅提示):")
                 lines += [f"    - {f}" for f in deleted]
+            dirty = cu.dirty_kernel_files(manifest)
+            dirty_in_update = [f for f in (changed + added) if f in dirty]
+            if dirty_in_update:
+                lines.append("")
+                lines.append("⚠ 这些待更新的内核文件 · 你本地有未提交改动:")
+                lines += [f"    ! {f}" for f in dirty_in_update]
+                lines.append("  升级会先 checkpoint 存档(可 git revert 找回)再覆盖 · 不会无声丢你的改动。")
             lines.append("")
             lines.append("⛑  只会覆盖上面列出的白名单文件 · 你的 soul/ data/ 应用 物理不碰。")
             if action == "preview" and total:
