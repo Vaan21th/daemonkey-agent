@@ -57,19 +57,37 @@ if ($remotes -contains 'gitee') {
 }
 
 # 3. fetch
-Say "[3/3] 联网拉取最新内核索引(git fetch) ..."
+Say "[3/4] 联网拉取最新内核索引(git fetch) ..."
+$fetchOk = $false
 git fetch gitee --prune 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Say "[!] fetch 没成功 · 多半是网络 · 或 gitee 仓库不是「公开」的。" Yellow
     Say "    确认浏览器能打开 $GITEE 后重跑本脚本。" Yellow
 } else {
+    $fetchOk = $true
     Say "      索引就绪。" Green
+}
+
+# 4. 首次把内核对齐到最新(外科手术 · 只换白名单文件 · 自动 checkpoint 可回退)
+#    用本地自带的 core_update.apply_update · 不依赖实例里有没有 update_core 工具(解鸡生蛋:
+#    老版本实例没这工具也能靠这一步先升到带工具的版本·之后再走对话升级)。
+$py = Join-Path $root '.venv\Scripts\python.exe'
+if (-not (Test-Path $py)) { $py = Join-Path $root 'venv\Scripts\python.exe' }
+$cu = Join-Path $root 'workers\core_update.py'
+if ($fetchOk -and (Test-Path $py) -and (Test-Path $cu)) {
+    Say "[4/4] 首次把内核对齐到最新(只换白名单文件 · 自动备份 · 你的数据/应用/记忆不碰) ..."
+    $code = "import sys; sys.path.insert(0,'.'); from workers.core_update import apply_update; r=apply_update('gitee','master'); print(('OK' if r.get('ok') else 'FAIL'), '| updated', len(r.get('updated',[])), '| added', len(r.get('added',[])), '|', r.get('note',''))"
+    & $py -c $code
+    if ($LASTEXITCODE -eq 0) { Say "      内核已对齐 · 重启 Daemonkey 生效。" Green }
+    else { Say "[!] 自动对齐没跑成 · 启动后对 AI 说「升级内核」也能升。" Yellow }
+} else {
+    Say "[4/4] 跳过自动对齐(没找到 .venv 或 core_update) · 启动后对 AI 说「升级内核」即可。" DarkGray
 }
 
 Say ""
 Say "============================================" Cyan
 Say "  启用完成!" Green
-Say "  打开 Daemonkey · 对 AI 说:" Cyan
+Say "  打开 Daemonkey · 以后想升级随时对 AI 说:" Cyan
 Say "    「看看内核有没有更新」 -> 查有没有新版" Gray
 Say "    「升级内核」          -> 一键升到最新(自动备份 · 可回退)" Gray
 Say "  升级只换内核骨架 · 你的对话 / 应用 / 记忆一个字节都不动。" DarkGray
