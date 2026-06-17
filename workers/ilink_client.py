@@ -26,6 +26,10 @@ _ROOT = Path(__file__).resolve().parent.parent
 _TOKEN_FILE = _ROOT / "data" / "runtime" / "ilink_token.json"
 _CTX_FILE = _ROOT / "data" / "runtime" / "ilink_last_context.json"
 _SILENT_FLAG = _ROOT / "data" / "runtime" / "wechat_silent.flag"
+# 主动 CALL 时窗口关着 → 问候先攒这里 · 用户下次在微信开口续窗时由 flush_pending 补发
+_PENDING_FILE = _ROOT / "data" / "runtime" / "wechat_pending.jsonl"
+_PENDING_MAX = 5              # 最多攒几条 · 超了丢最旧的(防越积越多 + 补发刷屏)
+_PENDING_TTL_SEC = 48 * 3600  # 隔太久补发会很突兀 · 超 48h 的丢弃
 
 # 官方插件常量 (Tencent/openclaw-weixin package.json): ilink_appid="bot" · version=2.4.3
 _APP_ID = "bot"
@@ -233,9 +237,96 @@ def send_media_item(
     return {"ok": True}
 
 
-def proactive_deliver(text: str) -> bool:
-    """主动 CALL 用：窗口开 + 没静默 才把这条问候推到微信。返回是否真发出去。"""
+# ---------------------------------------------------------------- 主动问候暂存 / 补发
+def _read_pending() -> list[dict]:
+    if not _PENDING_FILE.exists():
+        return []
+    out: list[dict] = []
+    try:
+        for line in _PENDING_FILE.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    except OSError:
+        return []
+    return out
+
+
+def _write_pending(rows: list[dict]) -> None:
+    try:
+        _PENDING_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _PENDING_FILE.write_text(
+            "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows),
+            encoding="utf-8",
+        )
+    except OSError as e:
+        logger.warning("write pending failed: %s", e)
+
+
+def _clear_pending() -> None:
+    try:
+        if _PENDING_FILE.exists():
+            _PENDING_FILE.unlink()
+    except OSError as e:
+        logger.warning("clear pending failed: %s", e)
+
+
+def queue_pending(text: str) -> None:
+    """窗口关着时把主动问候攒起来 · 只留最近 _PENDING_MAX 条。"""
+    text = (text or "").strip()
+    if not text:
+        return
+    rows = _read_pending()
+    rows.append({"text": text, "ts": datetime.now(timezone.utc).isoformat()})
+    _write_pending(rows[-_PENDING_MAX:])
+
+
+def pending_count() -> int:
+    return len(_read_pending())
+
+
+def flush_pending() -> int:
+    """用户在微信开口、窗口开着时调 · 把攒下的主动问候合成一条补发。返回补发条数。
+    超 _PENDING_TTL_SEC 的丢弃(隔太久补发突兀)；发成功才清队列(失败保留下次再补)。"""
     if not enabled() or is_silent() or not window_open():
+        return 0
+    rows = _read_pending()
+    if not rows:
+        return 0
+    now = datetime.now(timezone.utc)
+    fresh: list[dict] = []
+    for r in rows:
+        try:
+            ts = datetime.fromisoformat(r.get("ts", ""))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            age = (now - ts).total_seconds()
+        except (ValueError, TypeError):
+            age = 0
+        if age <= _PENDING_TTL_SEC:
+            fresh.append(r)
+    if not fresh:
+        _clear_pending()  # 全过期 · 清掉
+        return 0
+    body = "\n\n".join(r["text"] for r in fresh)
+    prefix = "（这是我之前想跟你说、但当时微信窗口关着没发出去的话——）\n\n"
+    if send_text(prefix + body).get("ok"):
+        _clear_pending()
+        return len(fresh)
+    return 0  # 没发成功 · 保留队列下次再试
+
+
+def proactive_deliver(text: str) -> bool:
+    """主动 CALL 用：窗口开 + 没静默 才把这条问候推到微信。返回是否真发出去。
+    窗口关着(但已配置、没静默) → 不丢弃 · 攒进队列 · 等用户下次在微信开口由 flush_pending 补发。"""
+    if not enabled() or is_silent():
+        return False
+    if not window_open():
+        queue_pending(text)
         return False
     return bool(send_text(text).get("ok"))
 
@@ -249,4 +340,5 @@ def status() -> dict:
         "window_open": window_open(),
         "context_age_hours": round(age / 3600, 2) if age is not None else None,
         "window_hours": _WINDOW_SEC / 3600,
+        "pending_proactive": pending_count(),
     }

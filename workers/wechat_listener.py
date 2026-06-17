@@ -167,6 +167,14 @@ def _handle(msg: dict) -> None:
         logger.debug("wechat silent · dropping %r", text[:40])
         return
 
+    # 用户在微信开口了 → 窗口续上了 → 把之前窗口关时攒下的主动问候补发出来(卷七十四续十六)
+    try:
+        flushed = ilink_client.flush_pending()
+        if flushed:
+            logger.info("wechat flushed %d pending proactive greeting(s)", flushed)
+    except Exception as e:
+        logger.debug("flush pending failed: %s", e)
+
     attachments, notes = ([], [])
     if any(it.get("type") in _MEDIA_TYPES or it.get("type") == _ITEM_VOICE for it in items):
         attachments, notes = _collect_media(items)
