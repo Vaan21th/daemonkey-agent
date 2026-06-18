@@ -178,7 +178,9 @@ def _classify(args: dict) -> str:
 def _summarize(args: dict) -> str:
     p = args.get("path", "?")
     mode = args.get("mode", "overwrite")
-    content = args.get("content", "")
+    content = str(args.get("content") or "")
+    if not content.strip():
+        return f"write_file  {p}  mode={mode}  (content 空·将自动抓本轮回复正文兜底)"
     n_lines = content.count("\n") + (1 if content else 0)
     return f"write_file  {p}  mode={mode}  size={len(content)} chars / {n_lines} lines"
 
@@ -187,9 +189,35 @@ def _run(args: dict) -> ToolResult:
     raw = args.get("path")
     if not raw:
         return ToolResult(ok=False, output="", error="missing 'path'")
+
+    # 卷七十四续二十四 · 两步法兜底 (补 __init__.py 第 84 行注释承诺却没实现的 "write_file.content 兜底")。
+    # 痛点: DeepSeek 等弱模型 tool call 的长 content 经常丢成空壳 → 被门口 _validate_args 当
+    # "缺必填字段" 挡回 → 30+ 次空调用死循环 (弱模型做 word 翻车的现场)。
+    # 解法 (对齐 generate_report): content 没传 / 纯空白 → 抓 "LLM 本轮已写的回复正文" 当内容
+    # (写文本流是弱模型强项·丢的只是结构化长参数)。 前沿模型照旧直接传 content·根本不进这条兜底。
     content = args.get("content")
-    if content is None:
-        return ToolResult(ok=False, output="", error="missing 'content'")
+    grabbed_from_turn = False
+    if content is None or not str(content).strip():
+        try:
+            from . import current_turn_text
+            grabbed = current_turn_text() or ""
+        except Exception:
+            grabbed = ""
+        if grabbed.strip():
+            content = grabbed
+            grabbed_from_turn = True
+        else:
+            return ToolResult(
+                ok=False, output="",
+                error=(
+                    "没拿到 content · 两种给法二选一:\n"
+                    "  ① 把完整内容直接放进 content 参数;\n"
+                    "  ② 先在你这条回复正文里写完整内容 · 再调本工具【只给 path · 不带 content】 · "
+                    "我会自动抓你刚写的正文 (适合长文档·或对长参数不稳的模型)。\n"
+                    "→ 要做精排 word/docx 文档 (带封面/排版/可下载) 请改用 generate_report·"
+                    "它只需 title·正文同样能自动抓·别用 write_file 写 .docx (会写成假 docx 纯文本)。"
+                ),
+            )
     mode = (args.get("mode") or "overwrite").lower()
     if mode not in ("create", "overwrite", "append"):
         return ToolResult(ok=False, output="", error=f"invalid mode: {mode}")
@@ -322,6 +350,11 @@ def _run(args: dict) -> ToolResult:
         f"wrote {path}\n"
         f"mode={mode}  bytes_on_disk={size}  chars_written={len(content)}  verified=utf-8-roundtrip"
     )
+    if grabbed_from_turn:
+        base_output += (
+            "\n(content 为空 · 已自动抓取你本轮回复正文当文件内容 · "
+            "若不是你想写的·重新调用并显式传 content)"
+        )
     if _lock_note:
         base_output = f"{base_output}\n{_lock_note}"
 
@@ -348,7 +381,11 @@ SPEC = ToolSpec(
         "Write text content to a file (create / overwrite / append). "
         "用户 will be asked to confirm before writes. "
         "Writes to .env, soul/, .git/, .venv/, or any opus-soul/skills-cursor path "
-        "require explicit 'do it' from 用户 (GUARD tier)."
+        "require explicit 'do it' from 用户 (GUARD tier).\n"
+        "做精排 word/docx 文档(带封面/排版/WebUI 可下载)请用 generate_report·不要用本工具写 .docx"
+        "(写出来是假 docx 纯文本)。\n"
+        "两步法(长文档/对长参数不稳的模型推荐): 先把完整内容写在你的回复正文里 · 再调本工具"
+        "【只给 path·不带 content】 · 会自动抓你回复的正文当文件内容。"
     ),
     tier=TIER_CONFIRM,
     input_schema={
@@ -360,7 +397,11 @@ SPEC = ToolSpec(
             },
             "content": {
                 "type": "string",
-                "description": "Full content to write (or to append in append mode).",
+                "description": (
+                    "Full content to write (or to append in append mode). "
+                    "【可选】不传 content 时·工具自动抓你【本条回复的正文】当文件内容——"
+                    "长文档可:先把完整内容写在回复里·再调本工具只给 path。"
+                ),
             },
             "mode": {
                 "type": "string",
@@ -384,7 +425,7 @@ SPEC = ToolSpec(
                 ),
             },
         },
-        "required": ["path", "content"],
+        "required": ["path"],
     },
     run=_run,
     summarize=_summarize,
