@@ -220,6 +220,64 @@ def relevant_playbooks(message: str, *, limit: int = 2) -> str:
     return "\n".join(lines)
 
 
+# ── ① 记忆自动注入 (保守版) ───────────────────────────────────────
+# 把「相关画像自动浮现」从 OPUS 自觉 recall 挪成 daemon 命中即注入·堵
+# 「夸了他 / 让他记下来·下次却不自动想起」这个断点 (闭环: 命中即浮现·不靠 OPUS 自觉)。
+# 保守起步: 只 scope=bro · 高 bm25 门槛 · 最多 1 条 · 只给标题+单行摘要 (token 便宜)。
+# 注入进 system 动态尾巴 (跟 relevant_playbooks 同处·不进灵魂缓存前缀)。
+# 阈值/条数是经验值·先开着测命中率与噪音·再按真实使用调。
+# _MEM_INJECT_MIN_SCORE 校准 (14 块画像语料实测):
+#   离题 query (写代码/天气/量子物理) top bm25 ∈ [-8, -4.5]
+#   真命中 (作息/偏好/计划类)          top bm25 ∈ [-13, -10.2]
+#   取 -9.0 卡在中间·挡掉离题·放进真命中。
+#   注: bm25 绝对值随画像增长会漂移·语料变大后按 logger 的命中率重校 (调味位)。
+_MEM_INJECT_MIN_SCORE = -9.0    # bm25 越负越相关·只留 <= 此值的强命中·挡离题噪音
+_MEM_INJECT_LIMIT = 1           # 最多注入几条画像 (保守起步=1)
+_MEM_INJECT_MIN_MSG_LEN = 8     # 消息太短不触发 (画像注入比 playbook 更克制)
+_MEM_SNIPPET_CHARS = 180
+
+
+def relevant_memories(message: str, *, limit: int = _MEM_INJECT_LIMIT) -> str:
+    """用户消息强命中画像 → 返回一段拼进 system 的背景提示;无强命中返回空串。
+
+    保守版: 只搜 scope=bro · 卡 bm25 高门槛 (_MEM_INJECT_MIN_SCORE) · 最多 limit 条 ·
+    只给 章节标题 + 单行短摘要。目的是把相关偏好/标准在命中时自动递到 OPUS 手边·
+    而不是每轮硬塞 (那样既烧 token 又污染推理又破坏缓存)。
+    """
+    msg = (message or "").strip()
+    if len(msg) < _MEM_INJECT_MIN_MSG_LEN:
+        return ""
+    try:
+        from workers.memory_index import search as _fts_search
+        hits = _fts_search(
+            msg, top_k=max(3, limit), scope="bro",
+            context_window=4000, min_score=_MEM_INJECT_MIN_SCORE,
+        )
+    except Exception:
+        return ""
+    if not hits:
+        return ""
+
+    top = hits[:limit]
+    lines = [
+        "\n\n=== 相关画像 · daemon 自动检索 (来自用户画像·背景参考·别复述这段) ===",
+        "下面是跟这次请求相关的用户画像条目·参照它对齐用户的偏好/标准:",
+    ]
+    for c in top:
+        sec = (getattr(c, "section", "") or "").strip()
+        head = f"【{sec}】" if sec else ""
+        snippet = " ".join((c.content or "").split())[:_MEM_SNIPPET_CHARS]
+        lines.append(f"- {head}{snippet}")
+    try:
+        logger.info(
+            "relevant_memories 注入 %d 条 (scope=bro · top_score=%.3f)",
+            len(top), getattr(top[0], "score", 0.0),
+        )
+    except Exception:
+        pass
+    return "\n".join(lines)
+
+
 # ── P2/P3 · turn 结束反思 ─────────────────────────────────────────
 def turn_end_report(tools: Optional[list] = None) -> Optional[dict]:
     """一轮 chat 结束后调。返回 None = 不必提示;返回 dict = 该提醒收尾沉淀。

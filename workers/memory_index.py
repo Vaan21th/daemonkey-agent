@@ -138,6 +138,9 @@ class MemoryChunk:
     content: str = ""
     token_count: int = 0
     updated_at: str = ""
+    # FTS5 bm25 排名分数 · 越负越相关 (0.0 = LIKE 退化路径无分数)。
+    # 自动注入靠它做相关性门槛 · 没分数门槛会每轮硬塞 top_k 噪音
+    score: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -641,14 +644,18 @@ def search(
     top_k: int = 5,
     scope: str = "all",
     context_window: int = 8000,
+    min_score: float | None = None,
 ) -> list[MemoryChunk]:
     """FTS5 全文检索。
 
     Args:
         query: 搜索关键词
         top_k: 返回条数 (1-20)
-        scope: 'all' | 'bro' | 'self' | 'sessions'
+        scope: 'all' | 'bro' | 'self' | 'sessions' | 'skill'
         context_window: 总内容上限 (chars)，超出截断
+        min_score: bm25 相关性门槛 · 只留 score <= min_score 的块 (越负越相关)。
+            None = 不过滤 (recall_memory 工具走高召回)。
+            自动注入 (relevant_memories) 传一个负阈值·把弱命中挡在外面·防每轮塞噪音。
 
     Returns:
         按 BM25 排名的 MemoryChunk 列表
@@ -671,7 +678,8 @@ def search(
 
     scope_filter_c = ""
     if scope == "bro":
-        scope_filter_c = "AND c.source = 'BRO-NOTEBOOK'"
+        # 开源版画像在 OWNER-NOTEBOOK·母体历史在 BRO-NOTEBOOK·两个都搜 (自动注入靠这个 scope)
+        scope_filter_c = "AND c.source IN ('OWNER-NOTEBOOK', 'BRO-NOTEBOOK')"
     elif scope == "self":
         scope_filter_c = "AND c.source IN ('SELF-EVOLUTION', 'OPUS-MEMORIES', 'SKILL')"
     elif scope == "sessions":
@@ -680,10 +688,11 @@ def search(
     elif scope == "skill":
         scope_filter_c = "AND c.source = 'skill'"
 
+    has_score = True
     try:
         rows = conn.execute(
             f"SELECT memory_fts.rowid, c.source, c.section, c.chunk_index, "
-            f"       c.content, c.token_count, c.updated_at "
+            f"       c.content, c.token_count, c.updated_at, memory_fts.rank "
             f"FROM memory_fts "
             f"JOIN memory_chunks c ON memory_fts.rowid = c.id "
             f"WHERE memory_fts MATCH ? {scope_filter_c} "
@@ -692,6 +701,7 @@ def search(
         ).fetchall()
     except sqlite3.OperationalError as e:
         logger.warning("FTS5 search failed (%s) · 退化 LIKE · 用原 query", e)
+        has_score = False  # LIKE 路径没 bm25 分数 · min_score 过滤跳过
         try:
             like_sql = f"""
                 SELECT c.id, c.source, c.section, c.chunk_index, c.content,
@@ -710,6 +720,11 @@ def search(
     total_chars = 0
 
     for row in rows:
+        score = float(row[7]) if has_score and len(row) > 7 else 0.0
+        # min_score 门槛 · bm25 越负越相关 → score 比阈值大 (更接近 0) 说明太弱·丢掉。
+        # LIKE 退化路径没分数·不过滤 (has_score=False)。
+        if min_score is not None and has_score and score > min_score:
+            continue
         chunk = MemoryChunk(
             id=row[0],
             source=row[1],
@@ -718,6 +733,7 @@ def search(
             content=row[4],
             token_count=row[5],
             updated_at=row[6],
+            score=score,
         )
         if total_chars + len(chunk.content) > context_window:
             chunk.content = chunk.content[: context_window - total_chars] + "..."
@@ -727,6 +743,55 @@ def search(
         total_chars += len(chunk.content)
 
     conn.close()
+    return results
+
+
+def get_chunks_by_ids(ids: list[int], context_window: int = 12000) -> list[MemoryChunk]:
+    """按 chunk id 批量取全文 · 给 recall_memory 两段式的 fetch 阶段用。
+
+    第一阶段 (mode=list) 返回 id + 摘要让 OPUS 挑·这里按挑中的 id 取原文。
+    保持入参 ids 的顺序返回 (OPUS 挑的优先级)·超 context_window 截断尾部。
+    """
+    if not ids:
+        return []
+    if not DB_PATH.exists():
+        return []
+
+    safe_ids = [int(i) for i in ids if str(i).strip().lstrip("-").isdigit()][:20]
+    if not safe_ids:
+        return []
+
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.execute("PRAGMA journal_mode=WAL")
+    placeholders = ",".join("?" for _ in safe_ids)
+    try:
+        rows = conn.execute(
+            f"SELECT id, source, section, chunk_index, content, token_count, updated_at "
+            f"FROM memory_chunks WHERE id IN ({placeholders})",
+            safe_ids,
+        ).fetchall()
+    except sqlite3.OperationalError:
+        conn.close()
+        return []
+    conn.close()
+
+    by_id = {row[0]: row for row in rows}
+    results: list[MemoryChunk] = []
+    total_chars = 0
+    for cid in safe_ids:
+        row = by_id.get(cid)
+        if row is None:
+            continue
+        chunk = MemoryChunk(
+            id=row[0], source=row[1], section=row[2], chunk_index=row[3],
+            content=row[4], token_count=row[5], updated_at=row[6],
+        )
+        if total_chars + len(chunk.content) > context_window:
+            chunk.content = chunk.content[: max(0, context_window - total_chars)] + "..."
+            results.append(chunk)
+            break
+        results.append(chunk)
+        total_chars += len(chunk.content)
     return results
 
 

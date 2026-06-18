@@ -439,21 +439,34 @@ _DEEPSEEK_LANG_HINT = (
 )
 
 
-def _build_openai_system(system_text: str, base_url: str | None, model: str) -> Any:
-    """system 在 OpenAI 协议里默认是 string；满足条件时改成 list-of-blocks 带 cache_control."""
-    # 卷三十八 · DeepSeek 强制中文 reasoning
+def _build_openai_system(
+    system_stable: str, system_suffix: str, base_url: str | None, model: str
+) -> Any:
+    """拼 OpenAI 协议的 system·把「稳定前缀」与「每轮变的尾巴」分开。
+
+    3b · 缓存前缀稳定化 (best practice · DeepSeek/Anthropic 同理):
+      - system_stable: 灵魂 + 远程 hint · 一个 session 内字节不变 → 可被缓存的前缀
+      - system_suffix: telemetry(含时间/git) + playbook/记忆/工坊提示 · 每轮变 → 缓存外
+      把易变内容压到稳定前缀之后·DeepSeek 自动 disk cache 命中前缀· Claude 缓存断点
+      只打在稳定块上·尾巴变了也不会冲掉灵魂缓存 (之前整段一个块·尾巴一变全重建)。
+    """
+    stable = system_stable
+    # 卷三十八 · DeepSeek 强制中文 reasoning · 常量·并入稳定前缀 (一起被缓存)
     if base_url and "deepseek.com" in base_url.lower():
-        system_text = system_text + _DEEPSEEK_LANG_HINT
+        stable = stable + _DEEPSEEK_LANG_HINT
 
     if _supports_aihubmix_cache(base_url, model):
-        return [
-            {
-                "type": "text",
-                "text": system_text,
-                "cache_control": {"type": "ephemeral"},
-            }
+        blocks = [
+            {"type": "text", "text": stable, "cache_control": {"type": "ephemeral"}},
         ]
-    return system_text
+        if system_suffix:
+            # 易变尾巴单独成块·不打 cache_control → 不进缓存前缀·变了不冲灵魂缓存
+            blocks.append({"type": "text", "text": system_suffix})
+        return blocks
+
+    # 不走 cache_control 的端点 (含 DeepSeek 自动缓存): 拼成一个 string·
+    # 稳定前缀在前·易变尾巴在后·让 DeepSeek 的前缀匹配命中稳定段。
+    return stable + system_suffix
 
 
 # ---------- schema translation ----------
@@ -509,6 +522,7 @@ def run_tool_loop(
     progress: ProgressHook | None = None,
     cancel_check: Callable[[], bool] | None = None,
     on_message_commit: Callable[[dict], None] | None = None,
+    system_suffix: str = "",
 ) -> tuple[str, list[dict], UsageStats]:
     """
     多轮 tool use 循环。返回 (最终 OPUS 文本回复, 更新后的 messages, UsageStats)。
@@ -517,6 +531,9 @@ def run_tool_loop(
     便于 daemon 一次循环结束后直接持久化 / 继续下一轮对话。
 
     base_url: 用来判断是否启用 prompt caching（目前只对 aihubmix.com 启用）。
+    system_suffix: 3b · 每轮随消息变的「易变尾巴」(telemetry + playbook/记忆/工坊提示)。
+                  与 system (稳定前缀) 分开传·缓存断点只打在 system 上·尾巴留缓存外。
+                  默认 "" → 等价老行为 (system 单块·全部参与缓存)·所有老调用方零改动。
     progress: 可选的事件推送 hook（卷十七加，给 SSE 端点用）。
     cancel_check: 可选 · 卷三十六加 · 每个 iteration 头部 check 一次 · 返回 True
                   则提前结束 loop。LLM 调用正在阻塞时拦不下 · 但下一轮前就停。
@@ -570,6 +587,7 @@ def run_tool_loop(
             max_iterations=max_iterations, base_url=base_url,
             progress=progress, cancel_check=cancel_check,
             on_message_commit=on_message_commit,
+            system_suffix=system_suffix,
         )
     elif provider == "anthropic":
         return _loop_anthropic(
@@ -579,6 +597,7 @@ def run_tool_loop(
             max_iterations=max_iterations,
             progress=progress, cancel_check=cancel_check,
             on_message_commit=on_message_commit,
+            system_suffix=system_suffix,
         )
     else:
         raise RuntimeError(f"unknown provider: {provider}")
@@ -587,16 +606,28 @@ def run_tool_loop(
 # ---------- OpenAI-protocol loop (AiHubMix / OpenRouter / 自建中转) ----------
 
 def _extract_openai_cache_usage(usage: Any) -> tuple[int, int]:
-    """AiHubMix 把 Anthropic cache 字段挂在 usage 上，但具体字段名两套都见过：
-       - cache_creation_input_tokens / cache_read_input_tokens   (Anthropic 原生)
-       - prompt_tokens_details.cached_tokens                     (OpenAI 风格)
-    按优先级摸一遍，返回 (creation, read)。
+    """OpenAI 协议各家把 cache 命中挂在 usage 上·字段名三套都见过：
+       - cache_creation_input_tokens / cache_read_input_tokens   (Anthropic 原生 · AiHubMix)
+       - prompt_tokens_details.cached_tokens                     (OpenAI / LiteLLM 归一风格)
+       - prompt_cache_hit_tokens / prompt_cache_miss_tokens      (DeepSeek 自动 disk cache)
+    按优先级摸一遍，返回 (creation, read)。read 走我们的计费估算 10% 那档。
     """
     # Anthropic-style flat fields (AiHubMix 经常用这套)
     creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
     read = getattr(usage, "cache_read_input_tokens", 0) or 0
     if creation or read:
         return creation, read
+
+    # DeepSeek 自动 disk cache (3a · 补抓·之前 0 命中是看不见不是没省)
+    # DeepSeek 不区分 creation/read·命中即按 hit 价 (~1/50 miss 价)·映射成 read 这档。
+    # 字段可能直接挂 usage·也可能被 openai SDK 收进 model_extra·两处都摸。
+    ds_hit = getattr(usage, "prompt_cache_hit_tokens", None)
+    if ds_hit is None:
+        extra = getattr(usage, "model_extra", None) or {}
+        if isinstance(extra, dict):
+            ds_hit = extra.get("prompt_cache_hit_tokens")
+    if ds_hit:
+        return 0, int(ds_hit)
 
     # OpenAI-style nested cached_tokens (no creation distinction here)
     details = getattr(usage, "prompt_tokens_details", None)
@@ -613,6 +644,7 @@ def _loop_openai(
     confirm, observe, max_iterations, base_url,
     progress=None, cancel_check=None,
     on_message_commit=None,
+    system_suffix: str = "",
 ) -> tuple[str, list[dict], UsageStats]:
     def _commit(entry: dict) -> None:
         if on_message_commit is None:
@@ -624,7 +656,7 @@ def _loop_openai(
     specs = list(REGISTRY.values())
     tools_param = to_openai_tools(specs) if specs else None
 
-    system_payload = _build_openai_system(system, base_url, model)
+    system_payload = _build_openai_system(system, system_suffix, base_url, model)
     oai_messages: list[dict] = [{"role": "system", "content": system_payload}] + list(messages)
     total = UsageStats()
     final_text = ""
@@ -1057,6 +1089,7 @@ def _loop_anthropic(
     confirm, observe, max_iterations,
     progress=None, cancel_check=None,
     on_message_commit=None,
+    system_suffix: str = "",
 ) -> tuple[str, list[dict], UsageStats]:
     def _commit(entry: dict) -> None:
         if on_message_commit is None:
@@ -1068,10 +1101,15 @@ def _loop_anthropic(
     specs = list(REGISTRY.values())
     tools_param = to_anthropic_tools(specs) if specs else None
 
-    # Anthropic 原生：system 用 list-of-blocks，最后一个 block 加 cache_control
+    # Anthropic 原生：system 用 list-of-blocks。
+    # 3b · 缓存断点只打在「稳定前缀」块上 (cache 覆盖 tools + 稳定 system·因为处理顺序
+    # 是 tools→system→messages·断点前的全进缓存)。易变尾巴 (telemetry/提示) 单独成块·
+    # 不带 cache_control → 尾巴每轮变也不会冲掉灵魂+tools 的缓存 (省钱关键)。
     system_blocks = [
         {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
     ]
+    if system_suffix:
+        system_blocks.append({"type": "text", "text": system_suffix})
 
     ant_messages: list[dict] = list(messages)
     total = UsageStats()

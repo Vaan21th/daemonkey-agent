@@ -394,15 +394,28 @@ except Exception:
 
 
 def _build_remote_system(base: str, session_id: str = "") -> str:
-    """拼装 system prompt · 静态 soul + 远程 hint + 动态 telemetry (wish-1d286099)。"""
-    result = base + _REMOTE_SYSTEM_HINT
-    if session_id:
-        try:
-            from workers.dynamic_telemetry import build_dynamic_telemetry
-            result += build_dynamic_telemetry(session_id)
-        except Exception:
-            pass  # telemetry 炸了不影响正常对话
-    return result
+    """稳定前缀 · 静态 soul + 远程接入 hint。
+
+    3b · 缓存前缀稳定化: 一个 session 内字节不变 → DeepSeek 自动缓存命中它 /
+    Claude 缓存断点打在它上面。 动态 telemetry (会变) 已挪到 _build_remote_tail·
+    进 system_suffix·不再污染缓存前缀 (之前 telemetry 拼这里·每轮变·冲掉灵魂缓存)。
+    session_id 参数保留只为兼容签名·已不再使用。
+    """
+    return base + _REMOTE_SYSTEM_HINT
+
+
+def _build_remote_tail(session_id: str = "") -> str:
+    """易变尾巴 · 动态 telemetry (当前时间 / git 脏区 / daemon uptime · wish-1d286099)。
+
+    每轮都变 → 必须留在缓存前缀之外 (放 system_suffix)·否则每轮冲掉灵魂缓存。
+    """
+    if not session_id:
+        return ""
+    try:
+        from workers.dynamic_telemetry import build_dynamic_telemetry
+        return build_dynamic_telemetry(session_id)
+    except Exception:
+        return ""  # telemetry 炸了不影响正常对话
 
 
 def _make_remote_confirm(
@@ -956,11 +969,14 @@ def _chat_impl(
         #   relevant_playbooks 把命中的 playbook 递到 OPUS 手边 (P2 · 堵"下次自动取出来用"断点 B)
         _closure_observe = _no_observe
         _pb_hint = ""
+        _mem_hint = ""
         try:
             from workers import closure_check as _cc
             _cc.begin_turn()
             _closure_observe = _cc.make_observe()
             _pb_hint = _cc.relevant_playbooks(message)
+            # ① 记忆自动注入 (保守版) · 相关画像命中即递到 OPUS 手边
+            _mem_hint = _cc.relevant_memories(message)
         except Exception:
             pass
 
@@ -975,16 +991,23 @@ def _chat_impl(
 
         # 卷六十四续七 · 渠道感知 · 微信 turn 给 system 末尾挂一句"你在微信上·发文件走
         # wechat_send media_path·别 write_clipboard/甩路径"。挂 system 不污染 user 历史·随轮即弃。
-        _sys = _build_remote_system(RUNTIME.system_prompt, session_id=sid) + _pb_hint + _workshop_hint
+        # 3b · 缓存前缀稳定化: 把 system 拆成「稳定前缀」+「易变尾巴」两段传。
+        #   稳定前缀 (_sys_stable = 灵魂 + 远程 hint) 一个 session 内字节不变·是可缓存前缀;
+        #   易变尾巴 (_sys_tail = telemetry时间/git + playbook/记忆/工坊提示 + 微信备注) 每轮变·
+        #   走 system_suffix 留在缓存断点之外 → 尾巴变也不冲掉灵魂缓存 (省钱关键)。
+        #   localize 对两段分别做 (纯 token 替换·分段等价)。
+        _sys_stable = _build_remote_system(RUNTIME.system_prompt)
+        _sys_tail = _build_remote_tail(sid) + _pb_hint + _mem_hint + _workshop_hint
         if _user_meta.get("src") == "wechat":
-            _sys = _sys + _WECHAT_CHANNEL_NOTE
+            _sys_tail = _sys_tail + _WECHAT_CHANNEL_NOTE
         try:
             reply, messages, usage = run_tool_loop(
                 client=RUNTIME.client,
                 provider=RUNTIME.provider,
                 model=RUNTIME.model,
                 max_tokens=max_tokens,
-                system=_localize(_sys),
+                system=_localize(_sys_stable),
+                system_suffix=_localize(_sys_tail),
                 messages=messages,
                 confirm=confirm,
                 observe=_closure_observe,
