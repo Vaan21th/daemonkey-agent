@@ -48,7 +48,7 @@ class ProviderPreset:
     note: str = ""
 
 
-# 5 个预设 · 按推荐度排序 (DeepSeek 官方第一 · 实测便宜 30 倍)
+# LLM provider 预设 · 按推荐度排序 (DeepSeek 官方第一 · 实测便宜 30 倍 · 智谱官方第二)
 PRESETS: list[ProviderPreset] = [
     ProviderPreset(
         id="deepseek-official",
@@ -78,6 +78,36 @@ PRESETS: list[ProviderPreset] = [
         key_hint="sk-xxx · 32 位左右",
         signup_url="https://platform.deepseek.com/api_keys",
         note="实测便宜 aihubmix 30 倍 · 强烈推荐",
+    ),
+    ProviderPreset(
+        id="zhipu-official",
+        name="智谱 AI 官方 (BigModel)",
+        base_url="https://open.bigmodel.cn/api/paas/v4",
+        provider_kind="openai",
+        recommended_models=[
+            {
+                "id": "glm-5.2",
+                "label": "GLM-5.2 · 智谱旗舰 · 带 thinking · 后端自带缓存",
+                "note": "200K · 推理强 · 实测缓存命中~99% 极省 · thinking 模型记得给够 max_tokens",
+                "family": "glm",
+                "context_window": 200_000,
+                "max_output": 16_384,
+                "max_tokens_default": 16_384,
+            },
+            {
+                "id": "glm-5v-turbo",
+                "label": "GLM-5V-Turbo · 多模态视觉",
+                "note": "看图理解 · 多模态 · 实测视觉准",
+                "family": "glm",
+                "context_window": 16_384,
+                "max_output": 8_192,
+                "max_tokens_default": 8_192,
+                "vision": True,
+            },
+        ],
+        key_hint="智谱开放平台 API Key · 形如 xxxxx.yyyyy",
+        signup_url="https://open.bigmodel.cn/usercenter/apikeys",
+        note="官方直连 · GLM 全系 · 后端原生上下文缓存 (实测 glm-5.2 命中 99%)",
     ),
     ProviderPreset(
         id="aihubmix",
@@ -315,7 +345,9 @@ def recommended_max_tokens(model_id: str) -> int:
         return 4_096
     if "gpt-5" in model_lower or "gpt-4" in model_lower:
         return 16_384
-    if "kimi" in model_lower or "glm" in model_lower or "qwen" in model_lower:
+    if "glm" in model_lower:
+        return 16_384  # GLM 5.x 偏 thinking · reasoning 吃 token · 未注册型号也给足 buffer
+    if "kimi" in model_lower or "qwen" in model_lower:
         return 8_192
     if "gemini" in model_lower:
         return 8_192
@@ -353,6 +385,8 @@ def guess_preset_id(base_url: str, provider_kind: str = "openai") -> str:
     url_lower = base_url.lower().rstrip("/")
     if "api.deepseek.com" in url_lower:
         return "deepseek-official"
+    if "bigmodel.cn" in url_lower:
+        return "zhipu-official"
     if "aihubmix" in url_lower:
         return "aihubmix"
     if "openrouter" in url_lower:

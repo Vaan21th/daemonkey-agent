@@ -23,6 +23,8 @@ OPUS 容器（base 模型）切换的"短名表"。
 
 from __future__ import annotations
 
+import re
+
 
 # alias (lower-case key) → real model id (case-sensitive 真名，原样发给 AiHubMix)
 MODEL_ALIASES: dict[str, str] = {
@@ -55,11 +57,16 @@ MODEL_ALIASES: dict[str, str] = {
     "kimi-old":        "Kimi-K2-0905",
     "kimi-0905":       "Kimi-K2-0905",
 
-    # === GLM (智谱) family（纯文本 · 不支持视觉） ===
-    "glm":             "glm-5.1",               # 实测通·200K·智谱旗舰
+    # === GLM (智谱) family · 5.x 旗舰带 thinking · 智谱后端自带上下文缓存 ===
+    # glm-5v-turbo 是多模态 (V=Vision · 实测看图准)·其余纯文本
+    "glm":             "glm-5.2",               # 默认指向最新旗舰·智谱官方实测缓存命中~99%
+    "glm-5.2":         "glm-5.2",
     "glm-5.1":         "glm-5.1",
     "glm-5":           "glm-5",
     "glm-4.7":         "glm-4.7",
+    "glm-5v":          "glm-5v-turbo",          # 多模态·看图
+    "glm-5v-turbo":    "glm-5v-turbo",
+    "glm-v":           "glm-5v-turbo",
     "glm-coding":      "coding-glm-5.1",        # ⚠ z.ai 限流，可能 429
 
     # === GPT family（支持视觉） ===
@@ -133,6 +140,10 @@ def supports_vision(model: str) -> bool:
             return RUNTIME.vision_override
     except Exception:
         pass
+    # GLM 的 V 系列 (glm-4v / glm-5v / glm-5v-turbo) 是多模态·虽然 glm family 整体默认判纯文本。
+    # 实测 glm-5v-turbo 走智谱官方能直接看图·所以按型号名特判·让 auto 档不必手动勾也对。
+    if re.search(r"glm-\d[\d.]*v", (model or "").lower()):
+        return True
     return family_of(model) in VISION_CAPABLE_FAMILIES
 
 
@@ -161,7 +172,8 @@ RECOMMENDED: list[tuple[str, str, str]] = [
     ("opus",     "claude-opus-4-7",           "深聊最强·5x 贵·支持 cache · 👁 视觉"),
     ("deepseek", "deepseek-v4-pro",           "1M 上下文·$0.48/M·中文好·限时 2.5 折 · 🚫 无视觉"),
     ("kimi",     "kimi-k2.6",                 "262K·新出·Agent/工具能力强 · 🚫 无视觉"),
-    ("glm",      "glm-5.1",                   "200K·智谱旗舰·写代码强 · 🚫 无视觉"),
+    ("glm",      "glm-5.2",                   "200K·智谱旗舰·带 thinking·后端缓存~99% · 🚫 纯文本"),
+    ("glm-v",    "glm-5v-turbo",              "智谱多模态·看图理解 · 👁 视觉"),
     ("r1",       "DeepSeek-R1",               "推理特化·数学/逻辑题 · 🚫 无视觉"),
     ("gpt",      "gpt-5.5",                   "GPT 系最新 · 👁 视觉"),
     ("gemini",   "gemini-3.1-pro-preview",    "长上下文·多模态 · 👁 视觉"),
