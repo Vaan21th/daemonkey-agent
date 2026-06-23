@@ -104,7 +104,8 @@ def _get_client():
     if not api_key or not base_url:
         return None, None
     from openai import OpenAI
-    _client = OpenAI(api_key=api_key, base_url=base_url, timeout=60)
+    from daemon_provider import LLM_HTTP_TIMEOUT_SEC  # 单一真相源 · 别再写死短 timeout 坑 thinking 模型
+    _client = OpenAI(api_key=api_key, base_url=base_url, timeout=LLM_HTTP_TIMEOUT_SEC)
     _model = model
     return _client, _model
 

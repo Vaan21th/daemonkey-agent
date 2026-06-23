@@ -63,7 +63,9 @@ def build_client(env: dict):
     if not api_key or not base_url:
         print(f"{DIM}缺 OPUS_API_KEY / OPUS_BASE_URL（在 .env 里）。{RESET}")
         sys.exit(1)
-    client = OpenAI(api_key=api_key, base_url=base_url, timeout=60)
+    # 跟主工程对齐 · thinking 模型 (GLM-5.x 等) 静默推理久 · 60s 太短会 ReadTimeout
+    timeout = float(env.get("OPUS_LLM_TIMEOUT_SEC") or 300)
+    client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
     return client, model
 
 

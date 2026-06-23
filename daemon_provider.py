@@ -25,18 +25,27 @@ ENV_PATH = ROOT / ".env"
 # wish-63f80fdf · 卷四十四 K stage 2c+ · LLM 调用 hard timeout 兜底
 # 不指定时 OpenAI/Anthropic SDK 默认 timeout=600s · 服务端 hang 时 daemon
 # 全瘫 (单一 _API_LOCK 被持锁 worker 占住·新对话排队等 600 秒)。
-# 60s 是经验值: 正常 Sonnet/DeepSeek deep-thinking 推理一般 30-50s 完成 ·
-# 超 60s 大概率是服务端断线但 keep-alive 没 close · 此时直接放弃比死等强。
-# 可被环境变量覆盖 (OPUS_LLM_TIMEOUT_SEC) · 不改这里就走默认 60。
+#
+# ⚠ 这个值在 stream=True 下是『两个 SSE chunk 之间的最大间隔』(httpx read timeout)·
+# 不是整轮总时长。 thinking 模型在 reasoning 阶段可能长时间不吐 SSE chunk:
+#   - DeepSeek-R1 会一字一字吐 reasoning_content (tool_loop line 775 接住) · 静默短
+#   - GLM-5.x 的推理偏『后端静默思考』· 大输入 + 复杂生成时静默期轻松破 60s
+# 卷七十四续 · 2026-06-23: GLM-5.2 写长 WISH (in 11.6 万 token) 反复 60s ReadTimeout 500。
+#
+# 老默认 60s 假设『正常推理 30-50s 完成』· 对 GLM thinking 不成立。 而当初用短 timeout
+# 保『停止按钮响应快』的理由 · 已被 tool_loop 的 cancel watcher (50ms 心跳强 close stream)
+# 取代 —— 停止响应不再依赖这个值。 故默认提到 300s · 给 thinking 模型足够静默窗口 ·
+# 真服务端 hang 仍有 300s 兜底 + watcher 随时可中断。
+# 可被环境变量覆盖 (OPUS_LLM_TIMEOUT_SEC) · 不改这里就走默认 300。
 def _get_llm_timeout() -> float:
     raw = os.getenv("OPUS_LLM_TIMEOUT_SEC", "").strip()
     if not raw:
-        return 60.0
+        return 300.0
     try:
         v = float(raw)
-        return v if v > 0 else 60.0
+        return v if v > 0 else 300.0
     except ValueError:
-        return 60.0
+        return 300.0
 
 
 LLM_HTTP_TIMEOUT_SEC = _get_llm_timeout()
