@@ -234,7 +234,8 @@ def _run(args: dict) -> ToolResult:
             f"\n  5. **自动续场**: 新 daemon 起来后会以 '{follow_up_message[:80]}...' 作为 user message\n"
             f"     触发一次 background LLM turn · 你在 background 跑完落档到 session jsonl\n"
             f"     用户 不用手动发消息 · 进 WebUI 直接看你的验证结果\n"
-            f"     (后台 turn auto_confirm='auto' · 只能跑 read-only 工具 · CONFIRM/GUARD 会被 deny)"
+            f"     (后台 turn auto_confirm='confirm' · 跟主对话同级 · AUTO+CONFIRM 自动 go·\n"
+            f"      能跑 read_file/curl/python_exec/write_file/git commit 等验证类 · 只 GUARD 会被后台 skip/deny)"
         )
 
     return ToolResult(
@@ -334,8 +335,10 @@ SPEC = ToolSpec(
                     "用于『重启完成后请你帮我验证 X / 跑一遍 Y / 检查 Z 是否生效』这种场景。 "
                     "用户 不用手动发消息触发 · 进 WebUI 直接看你的验证结果。\n\n"
                     "**注意**: \n"
-                    "  - 后台 turn auto_confirm='auto' · 只能跑 read-only 工具 (read_file / grep / lifecycle_status 等)\n"
-                    "  - 想跑 CONFIRM/GUARD 工具 · 它们会被 deny · 你看到错信知道是后台 turn · 把结论讲给 用户 由 用户 来确认下一步\n"
+                    "  - 后台 turn auto_confirm='confirm' (跟主对话 WebUI 同级) · AUTO + CONFIRM 自动 go·\n"
+                    "    能跑 read_file / grep / curl / python_exec / write_file / git commit 等 (够你验证自己刚写的代码)\n"
+                    "  - 只有 GUARD 工具 (rm / git push --force / 大改文件) 会被后台 skip/deny (没 SSE 接收方)·\n"
+                    "    那时把结论讲给 用户 由 用户 来确认下一步\n"
                     "  - max 1000 chars\n"
                     "  - 留空 = 不自动续场 · 只注 system message · 用户 手动发消息触发"
                 ),
