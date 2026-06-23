@@ -22,7 +22,7 @@ from __future__ import annotations
 import calendar as _cal
 import json
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -110,6 +110,45 @@ def _mirror_last_done() -> Optional[str]:
         return None
 
 
+# ── 能力发现节律 (入口 A · 每周一提醒挖一轮外部 AI 能力) ──
+# 语义: 每周一是提醒点。 本周 (从本周一起) 没发起过 discover_skill → 提醒该挖了;
+# 发起过 → next_due 顺延到下周一。 触发仍走 NLP (看板按钮 / 节律条 → spawnQuickly →
+# 调 discover_skill) · 这里只算『显示节律』· 跟月度复盘同款『看得见点得动』。
+SKILL_STATE_FILE = DATA_DIR / "skill_discovery_state.json"
+
+
+def _skill_discovery_last_run() -> Optional[date]:
+    """上次发起能力发现的日期 (discover_skill 工具跑完落的时间戳)。 没有返 None。"""
+    if not SKILL_STATE_FILE.exists():
+        return None
+    try:
+        s = (json.loads(SKILL_STATE_FILE.read_text(encoding="utf-8")).get("last_run_at") or "").strip()
+        if s:
+            return datetime.strptime(s[:10], "%Y-%m-%d").date()
+    except Exception:
+        pass
+    return None
+
+
+def _skill_discovery_ritual(today: date) -> dict:
+    this_monday = today - timedelta(days=today.weekday())  # weekday: Mon=0
+    last_run = _skill_discovery_last_run()
+    done_this_week = last_run is not None and last_run >= this_monday
+    next_due = this_monday + timedelta(days=7) if done_this_week else this_monday
+    return {
+        "id": "skill_discovery",
+        "label": "能力发现",
+        "next_due": next_due.isoformat(),
+        "days_left": (next_due - today).days,  # 本周没做且过了周一 → 负数 (过期未做·该提醒)
+        "last_done": last_run.isoformat() if last_run else None,
+        "done_this_week": done_this_week,
+        "draft_prompt": (
+            "帮我做一轮能力发现 (调 discover_skill 工具) · 按我的画像去 GitHub / 技术站"
+            "挖点新的 AI 能力 · 评估后出一份发现报告 · 靠谱的给我落地建议"
+        ),
+    }
+
+
 def get_rituals(today: Optional[date] = None) -> list[dict]:
     """返回所有周期仪式的状态 · 给日历『节律条』用。"""
     today = today or _today()
@@ -144,6 +183,9 @@ def get_rituals(today: Optional[date] = None) -> list[dict]:
         "last_done": _mirror_last_done(),
         "draft_prompt": "帮我照一次市场能力镜像 (mirror_capability action=generate)",
     })
+
+    # 3. 能力发现 (每周一 · 入口 A)
+    out.append(_skill_discovery_ritual(today))
 
     return out
 

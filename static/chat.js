@@ -81,6 +81,8 @@ const _ONBOARD_DEFAULT_TEMPLATES = {
   list_capability: '把工坊里所有应用 (list_apps detailed=true) 和工作流 (list_flows detailed=true) 都列给我看看\n按用途分类 · 我想知道哪些能直接跑 · 哪些是给工作流当零件用的',
   // 换皮肤卡 · 模板里"换成 X 主题"会触发前端 matchThemePreset 直接切主题
   change_theme: '把界面主题换成 [暗紫 / 经典灰 / 白天 / 护眼暖黄 / 海洋蓝 / 森林绿 / 日落橙 / 粉色 / 粉白] 主题\n或者 · 你帮我设计一套 [描述风格 · 例如「赛博蓝紫·像 dune 沙漠」] 的配色 · 输出 ```theme JSON``` 代码块',
+  // 第 6 张卡 · 能力发现 (入口 A · 主动去外面找 SKILL/开源项目升级自己)
+  discover_skill: '帮我找点能升级你自己的新能力 (调 discover_skill 工具) · 去 GitHub / 开源社区找 SKILL / 工具 / 开源项目\n方向: [可留空让你按我画像定 · 或填: 比如 视频口播 / figma 插件 / 调试工作流]\n按我的画像评估 · 靠谱的出一份发现报告 + 落地建议 (playbook / app / 心愿)',
 };
 
 function _loadOnboardingTemplates() {
@@ -156,6 +158,7 @@ function _openOnboardingCustomizer() {
     chat_about: '<i class="ri-chat-3-fill"></i> 聊聊日常 · 认识我',
     list_capability: '<i class="ri-book-shelf-fill"></i> 看看我能做什么',
     change_theme: '<i class="ri-palette-fill"></i> 换个皮肤',
+    discover_skill: '<i class="ri-search-eye-line"></i> 找新能力升级自己',
   };
   let modal = document.getElementById('onboardingCustomizerModal');
   if (modal) modal.remove();
@@ -8951,6 +8954,22 @@ function renderCalendar(data) {
             <div class="cal-ritual-main"><i class="ri-aspect-ratio-fill"></i> 能力镜像 · ${en}</div>
             <div class="cal-ritual-sub">${lastTxt} · 吃对话摘要后照得见对话</div>
             <button class="cal-ritual-btn" data-prompt="${escHtml(r.draft_prompt || '')}" data-label="市场能力镜像">立即照镜</button>
+          </div>`;
+      }
+      if (r.id === 'skill_discovery') {
+        const when = (typeof r.days_left === 'number')
+          ? (r.days_left > 0 ? `下次 ${r.days_left} 天后`
+             : (r.days_left === 0 ? '今天该挖' : `已 ${-r.days_left} 天没挖`))
+          : '';
+        const status = r.done_this_week
+          ? '<span class="cal-ritual-done">本周已挖</span>'
+          : '<span class="cal-ritual-todo">本周未挖</span>';
+        const lastTxt = r.last_done ? `上次 ${escHtml(r.last_done)}` : '尚无记录';
+        return `
+          <div class="cal-ritual-card">
+            <div class="cal-ritual-main"><i class="ri-search-eye-line"></i> 能力发现 · 每周一 · ${when}</div>
+            <div class="cal-ritual-sub">${status} · ${lastTxt}</div>
+            <button class="cal-ritual-btn" data-prompt="${escHtml(r.draft_prompt || '')}" data-label="能力发现">挖一轮</button>
           </div>`;
       }
       return '';

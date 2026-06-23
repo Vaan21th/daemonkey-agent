@@ -732,6 +732,20 @@ def dashboard_closure(
     except Exception as e:
         logger.debug("closure reflow gauge failed: %s", e)
 
+    # 能力发现 (节律层 · 每周一 · 入口 A)
+    try:
+        from workers.rituals import get_rituals
+        sd = next((r for r in get_rituals() if r.get("id") == "skill_discovery"), None)
+        if sd:
+            done = bool(sd.get("done_this_week"))
+            gauges.append({
+                "id": "skill_discovery", "label": "能力发现 → 挖一轮",
+                "total": 1, "closed": 1 if done else 0, "pending": 0 if done else 1,
+                "hint": "本周已挖过" if done else "本周还没挖·点节律「挖一轮」按画像找新 AI 能力",
+            })
+    except Exception as e:
+        logger.debug("closure skill_discovery gauge failed: %s", e)
+
     total_closed = sum(g["closed"] for g in gauges)
     total_all = sum(g["total"] for g in gauges)
     rate = round(100 * total_closed / total_all) if total_all else 100

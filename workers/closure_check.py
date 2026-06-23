@@ -176,6 +176,15 @@ def _keyword_playbooks(message: str, limit: int) -> list[dict]:
     return [pb for _, pb in scored[:limit]]
 
 
+# _PB_INJECT_MIN_SCORE 校准 (2026-06-23 · 6 条 playbook 实测 · 召回探针):
+#   真命中 top bm25 ∈ [-30, -12] (口播 -13.4 / 分镜 -27.3 / 下载 -23.9 / 前端 -20 / MIME -30 / 长文档 -12)
+#   离题/弱噪音 (天气 / Top2-3 撞词) bm25 ∈ [-9.8, -1]
+#   取 -10 卡断层: 6/6 真命中全过·挡掉"问A带出B"的弱噪音 + 离题 (堵 playbook 噪音注入)。
+#   仅剩主题相邻 playbook 互相带·属强相关·注入无害。
+#   注: 库变大后 bm25 绝对值会漂·按真实命中率重校 (跟 relevant_memories 同款调味位)。
+_PB_INJECT_MIN_SCORE = -10.0
+
+
 def relevant_playbooks(message: str, *, limit: int = 2) -> str:
     """用户消息命中已有 playbook → 返回一段拼进 system 的提示;无匹配返回空串。
 
@@ -193,7 +202,10 @@ def relevant_playbooks(message: str, *, limit: int = 2) -> str:
         from workers.memory_index import search as _fts_search
         slug_map = _index_by_slug()
         seen: set[str] = set()
-        for chunk in _fts_search(msg, top_k=4, scope="skill", context_window=2000):
+        for chunk in _fts_search(
+            msg, top_k=4, scope="skill", context_window=2000,
+            min_score=_PB_INJECT_MIN_SCORE,
+        ):
             slug = (getattr(chunk, "section", "") or "").split(":", 1)[0]
             if not slug or slug in seen:
                 continue

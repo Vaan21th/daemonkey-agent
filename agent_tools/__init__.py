@@ -266,3 +266,4 @@ from . import list_apps            # noqa: E402,F401  (列工坊 app · 补 glob
 from . import list_flows           # noqa: E402,F401  (列工坊 flow · 补 glob 看不到的盲区)
 from . import trust_flow           # noqa: E402,F401  (0.2.0 · 信任账本手动控制 · 用户一句话信任)
 from . import rerun_flow_step      # noqa: E402,F401  (0.2.0 · 单步重跑 · 用户主动要求)
+from . import discover_skill       # noqa: E402,F401  (能力发现引擎 · 画像驱动找外部 AI 能力)
