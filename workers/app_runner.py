@@ -282,6 +282,9 @@ def run_app(
     used_max_tokens = max_tokens
     if used_max_tokens is None:
         used_max_tokens = getattr(runtime, "max_tokens", None) or 4096
+    # thinking 模型兜底 · 写死/请求的小值在 GLM/R1 下会被 reasoning 吃光 (单一真相源)
+    from provider_presets import safe_max_tokens as _smt
+    used_max_tokens = _smt(used_max_tokens, app.get("model_hint") or getattr(runtime, "model", ""))
 
     if progress:
         try:

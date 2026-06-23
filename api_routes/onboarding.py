@@ -71,11 +71,14 @@ def _has_key() -> bool:
     return bool(env.get("OPUS_API_KEY") and env.get("OPUS_BASE_URL"))
 
 
-def _max_tokens() -> int:
+def _max_tokens(model: str = "") -> int:
     try:
-        return int(_load_env().get("OPUS_MAX_TOKENS") or 2000)
+        req = int(_load_env().get("OPUS_MAX_TOKENS") or 2000)
     except ValueError:
-        return 2000
+        req = 2000
+    # thinking 模型 (GLM-5.x 等) reasoning 吃 token · 2000 会让初见回复空白 → 兜底抬到安全下限
+    from provider_presets import safe_max_tokens
+    return safe_max_tokens(req, model)
 
 
 def _identity_name() -> str:
@@ -163,7 +166,7 @@ def _run(messages: list):
     if client is None:
         raise HTTPException(400, "还没配置 key")
     try:
-        return web_loop.run_turn(client, model, _max_tokens(), messages)
+        return web_loop.run_turn(client, model, _max_tokens(model), messages)
     except HTTPException:
         raise
     except Exception as e:

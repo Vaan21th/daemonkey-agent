@@ -166,7 +166,8 @@ def _vision_subcall(
         if _url.endswith("/chat/completions"):
             _url = _url[: -len("/chat/completions")]
         from openai import OpenAI as _OpenAI
-        client: Any = _OpenAI(api_key=api_key, base_url=_url, timeout=30)
+        from daemon_provider import LLM_HTTP_TIMEOUT_SEC  # 单一真相源 · 视觉模型也别写死短 timeout
+        client: Any = _OpenAI(api_key=api_key, base_url=_url, timeout=LLM_HTTP_TIMEOUT_SEC)
     else:
         client = RUNTIME.client
         if client is None:

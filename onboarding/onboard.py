@@ -131,7 +131,8 @@ def main() -> None:
 
     env = load_env(ENV_PATH)
     client, model = build_client(env)
-    max_tokens = int(env.get("OPUS_MAX_TOKENS") or 2000)
+    # thinking 模型 (GLM-5.x 等) reasoning 吃 token · 默认抬到 8000 防初见回复空白 (CLI 原型·自包含)
+    max_tokens = int(env.get("OPUS_MAX_TOKENS") or 8000)
 
     print(f"{DIM}{'─' * 56}{RESET}")
     print(f"{DIM}Daemonkey · 相遇原型   (model: {model}){RESET}")

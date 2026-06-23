@@ -252,11 +252,13 @@ def _run_bg_turn(message: str, sid: str, reason: str) -> dict:
         _ACTIVE_TURNS[turn_id] = cancel_event
         _TURN_TO_SID[turn_id] = sid
     try:
+        from daemon_runtime import RUNTIME as _RT
+        from provider_presets import safe_max_tokens as _smt
         return _chat_impl(
             message=message,
             session_id=sid,
             auto_confirm=(os.environ.get("OPUS_PROACTIVE_AUTO_CONFIRM") or "confirm"),
-            max_tokens=2048,
+            max_tokens=_smt(2048, getattr(_RT, "model", "")),
             progress=None,
             cancel_event=cancel_event,
             turn_id=turn_id,

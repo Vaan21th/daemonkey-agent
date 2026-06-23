@@ -83,11 +83,13 @@ def _run_bg_turn(message: str, attachments: Optional[list] = None) -> str:
         _ACTIVE_TURNS[turn_id] = cancel
         _TURN_TO_SID[turn_id] = sid
     try:
+        from daemon_runtime import RUNTIME as _RT
+        from provider_presets import safe_max_tokens as _smt
         result = _chat_impl(
             message=message,
             session_id=sid,
             auto_confirm=(os.environ.get("OPUS_WECHAT_AUTO_CONFIRM") or "confirm"),
-            max_tokens=2048,
+            max_tokens=_smt(2048, getattr(_RT, "model", "")),
             attachments=attachments or None,
             progress=None,
             cancel_event=cancel,

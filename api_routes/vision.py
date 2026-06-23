@@ -73,7 +73,8 @@ async def set_vision_config(
     if do_test:
         try:
             from openai import OpenAI
-            client = OpenAI(api_key=api_key, base_url=base_url, timeout=15)
+            # 测试连接 · 给慢视觉/thinking 模型 buffer · 比主超时短让 key 错时快失败
+            client = OpenAI(api_key=api_key, base_url=base_url, timeout=60)
             resp = client.chat.completions.create(
                 model=model,
                 max_tokens=30,

@@ -354,6 +354,46 @@ def recommended_max_tokens(model_id: str) -> int:
     return 8_192
 
 
+# ── thinking 模型 max_tokens 兜底 · 单一真相源 (卷七十四续 · 2026-06-23 · BRO 全扫拍板) ──
+# 病根: thinking 模型 (GLM-5.x / DeepSeek-R1 / o 系列 / *-think) 把 max_tokens 当成
+#   『reasoning + 可见输出』的总预算·reasoning 先吃。 worker 里写死的小 max_tokens
+#   (如 onboarding 2000 / wechat 2048) 会被 reasoning 吃光 → 回复空白/截断。
+# 根治: 所有写死 max_tokens 的调用点都过 safe_max_tokens()·别再裸传小常量。
+THINKING_MAX_TOKENS_FLOOR = 8192
+
+
+def is_thinking_model(model_id: str) -> bool:
+    """是不是 reasoning/thinking 模型 (max_tokens 含 reasoning 预算·写死小值会被吃光)。"""
+    m = (model_id or "").lower()
+    if not m:
+        return False
+    if "glm-5" in m or "glm-4.7" in m or "coding-glm" in m:   # GLM 5.x / 4.7 全系带 thinking
+        return True
+    if "deepseek-r" in m or "reasoner" in m:                   # DeepSeek R1 / reasoner
+        return True
+    if "think" in m or "qwq" in m or "reasoning" in m:         # claude *-think / *-Think / qwq
+        return True
+    if m.split("-")[0] in ("o1", "o3", "o4"):                  # OpenAI o1/o3/o4 reasoning
+        return True
+    return False
+
+
+def safe_max_tokens(requested, model_id: str) -> int:
+    """写死/请求的 max_tokens 兜底:thinking 模型抬到安全下限·普通模型保持原值不浪费。
+
+    **所有写死 max_tokens 的调用点都该过这个**·别再裸传小常量 (卷七十四续 · 2026-06-23)。
+    """
+    try:
+        req = int(requested) if requested else 0
+    except (TypeError, ValueError):
+        req = 0
+    if req <= 0:
+        req = THINKING_MAX_TOKENS_FLOOR
+    if is_thinking_model(model_id) and req < THINKING_MAX_TOKENS_FLOOR:
+        return THINKING_MAX_TOKENS_FLOOR
+    return req
+
+
 def context_window_for(model_id: str) -> int:
     """按 model_id 查 context_window · 给 UI 显示用 · 找不到返 0."""
     if not model_id:
