@@ -90,8 +90,55 @@ def _on_master() -> bool:
     return rc == 0 and out.strip() == "master"
 
 
+def ensure_git_repo() -> None:
+    """首启 git init 兜底 (0.5.0): ZIP 解压的开源用户没 .git · 装了 git 就自动建仓库 ·
+    解锁回档 / 内核升级 (update_core)。 幂等 · 没装 git 友好跳过 (维修台不依赖 git·仍能救命)。
+
+    为什么: 开源用户两种拿包方式——git clone (自带 .git) vs 下载 ZIP 解压 (没 .git)。
+    后者回档/升级全废 (都依赖 git)。 首启自动 init + master + baseline commit + 打
+    opus-last-good tag · 让 ZIP 用户也有"出厂即版本控制"的底子。 没装 git 的: 跳过 ·
+    维修台 (repair.bat) 不依赖 git · 照样能救崩溃。
+    只动本仓库 (--local 身份) · 绝不碰用户全局 git 配置。
+    """
+    try:
+        if (ROOT / ".git").exists():
+            return  # 已是 git 仓库 · 幂等跳过
+        from shutil import which
+        if which("git") is None:
+            print("[boot_health] 没装 git · 跳过首启版本控制初始化 "
+                  "(回档/升级需 git · 维修台 repair.bat 不需要·仍可救命)", flush=True)
+            return
+        rc, _, err = _git(["init"], timeout=30)
+        if rc != 0:
+            print(f"[boot_health] WARN · git init 失败 (不阻塞启动): {err.strip()[:160]}", flush=True)
+            return
+        # 回档锚定 master · 新版 git 默认可能叫 main · 强制建/切到 master
+        _git(["checkout", "-B", "master"], timeout=15)
+        # 安全闸: 没 .gitignore 就先写最小版 · 绝不把 .env/sessions/data commit 进去 (红线第4条)
+        gi = ROOT / ".gitignore"
+        if not gi.exists():
+            gi.write_text(".env\n.env.*\nsessions/\ndata/\n__pycache__/\n*.pyc\n.venv/\n", encoding="utf-8")
+            print("[boot_health] 没有 .gitignore · 已写入最小版 (拦 .env/sessions/data)", flush=True)
+        # local git 身份 (不碰全局) · 否则 commit 报 "tell me who you are"
+        rc_n, nout, _ = _git(["config", "--local", "user.name"], timeout=5)
+        if rc_n != 0 or not nout.strip():
+            _git(["config", "--local", "user.name", "daemonkey"], timeout=5)
+        rc_e, eout, _ = _git(["config", "--local", "user.email"], timeout=5)
+        if rc_e != 0 or not eout.strip():
+            _git(["config", "--local", "user.email", "daemonkey@localhost"], timeout=5)
+        _git(["add", "-A"], timeout=120)
+        rc_c, _, cerr = _git(["commit", "-m", "baseline: auto-init version control on first boot (0.5.0)"], timeout=120)
+        if rc_c == 0:
+            _git(["tag", "-f", "opus-last-good"], timeout=10)
+            print("[boot_health] ✅ 首启已建立 git 版本控制 (master + baseline + opus-last-good) · 回档/升级已解锁", flush=True)
+        else:
+            print(f"[boot_health] WARN · baseline commit 未成 (不阻塞启动): {cerr.strip()[:160]}", flush=True)
+    except Exception as e:
+        print(f"[boot_health] WARN · ensure_git_repo 跳过 (不阻塞启动): {type(e).__name__}: {e}", flush=True)
+
+
 def ensure_git_hooks() -> None:
-    """让 git 钩子(pre-commit 保鲜闸 / exe 保鲜)对本仓库自动生效 · 幂等 · 启动时调一次。
+    """让 git 钩子(pre-commit 安全闸 / exe 保鲜)对本仓库自动生效 · 幂等 · 启动时调一次。
 
     为什么 (卷六十四续六 · 2026-06-08): .git/hooks 不进版本控制 · 钩子真相源在 tracked
     的 tools/git-hooks/。 全新 clone 的开源版用户钩子默认【不生效】—— 自演化时 commit 不

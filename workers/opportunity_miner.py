@@ -455,11 +455,13 @@ def mine_opportunities(*, top_n_trends: int = 15) -> dict:
     usage: dict = {}
 
     try:
+        from daemon_runtime import bg_max_tokens
         provider = RUNTIME.provider
+        _bg_mt = bg_max_tokens()
         if provider == "anthropic":
             resp = RUNTIME.client.messages.create(
                 model=RUNTIME.model,
-                max_tokens=12000,
+                max_tokens=_bg_mt,
                 system=SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_prompt}],
             )
@@ -476,7 +478,7 @@ def mine_opportunities(*, top_n_trends: int = 15) -> dict:
         else:
             resp = RUNTIME.client.chat.completions.create(
                 model=RUNTIME.model,
-                max_tokens=12000,
+                max_tokens=_bg_mt,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},

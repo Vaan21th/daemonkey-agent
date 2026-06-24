@@ -140,14 +140,15 @@ def _pick_items(year: int, month: int, domain: Optional[str], top: int = 40) -> 
 
 def _call_llm(system: str, user: str) -> tuple[str, dict, Optional[str]]:
     """调 RUNTIME LLM · 返 (raw_text, usage, error)。 mirror trend_finder 的 provider 分支。"""
-    from daemon_runtime import RUNTIME
+    from daemon_runtime import RUNTIME, bg_max_tokens
     if RUNTIME.client is None:
         return "", {}, "RUNTIME.client 未初始化 · daemon 没启动?"
     raw, usage, error = "", {}, None
+    _bg_mt = bg_max_tokens()
     try:
         if RUNTIME.provider == "anthropic":
             resp = RUNTIME.client.messages.create(
-                model=RUNTIME.model, max_tokens=8000,
+                model=RUNTIME.model, max_tokens=_bg_mt,
                 system=system, messages=[{"role": "user", "content": user}],
             )
             for block in resp.content:
@@ -157,7 +158,7 @@ def _call_llm(system: str, user: str) -> tuple[str, dict, Optional[str]]:
                      "output_tokens": getattr(resp.usage, "output_tokens", 0)}
         else:
             resp = RUNTIME.client.chat.completions.create(
-                model=RUNTIME.model, max_tokens=8000,
+                model=RUNTIME.model, max_tokens=_bg_mt,
                 messages=[{"role": "system", "content": system},
                           {"role": "user", "content": user}],
             )

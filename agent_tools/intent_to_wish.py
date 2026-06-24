@@ -142,7 +142,7 @@ def _run(args: dict) -> ToolResult:
 
     context = (args.get("context") or "").strip() or "(没给上下文)"
 
-    from daemon_runtime import RUNTIME
+    from daemon_runtime import RUNTIME, bg_max_tokens
 
     if RUNTIME.client is None:
         return ToolResult(
@@ -157,7 +157,7 @@ def _run(args: dict) -> ToolResult:
         if RUNTIME.provider == "anthropic":
             resp = RUNTIME.client.messages.create(
                 model=RUNTIME.model,
-                max_tokens=4000,
+                max_tokens=bg_max_tokens(),
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_prompt}],
             )
@@ -167,7 +167,7 @@ def _run(args: dict) -> ToolResult:
         else:
             resp = RUNTIME.client.chat.completions.create(
                 model=RUNTIME.model,
-                max_tokens=4000,
+                max_tokens=bg_max_tokens(),
                 messages=[
                     {"role": "system", "content": _SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},

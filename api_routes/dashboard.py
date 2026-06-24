@@ -756,6 +756,55 @@ def dashboard_closure(
     }
 
 
+@router.get("/dashboard/scheduled_tasks")
+def dashboard_scheduled_tasks(authorization: Optional[str] = Header(None)):
+    """定时任务看板 (0.5.0) · 只读列表 + 调度线程状态。
+    创建/改走 NLP (对话里说 · OPUS 调 create/update_scheduled_task) · 前端只放 toggle/delete 快捷操作。
+    必须注册在 /dashboard/{domain} catch-all 之前 · 否则被吞。
+    """
+    check_auth(authorization)
+    try:
+        from workers import task_scheduler as ts
+        return {
+            "tasks": ts.list_tasks(),
+            "scheduler_alive": ts.is_task_scheduler_alive(),
+            "state": ts.get_task_scheduler_state(),
+            "draft_prompt": "帮我建个定时任务：每天早上9点扫一遍AI行情并汇总",
+        }
+    except Exception as e:
+        logger.warning("scheduled_tasks endpoint failed: %s", e)
+        raise HTTPException(500, f"scheduled_tasks failed: {e}")
+
+
+@router.post("/dashboard/scheduled_tasks/toggle")
+async def dashboard_scheduled_tasks_toggle(
+    request: Request, authorization: Optional[str] = Header(None),
+):
+    """前端开关 toggle · body: {task_id, enabled}。"""
+    check_auth(authorization)
+    body = await request.json()
+    tid = (body.get("task_id") or "").strip()
+    from workers import task_scheduler as ts
+    t = ts.toggle_task(tid, bool(body.get("enabled")))
+    if not t:
+        raise HTTPException(404, f"task not found: {tid}")
+    return {"ok": True, "task": t}
+
+
+@router.post("/dashboard/scheduled_tasks/delete")
+async def dashboard_scheduled_tasks_delete(
+    request: Request, authorization: Optional[str] = Header(None),
+):
+    """前端删除 · body: {task_id}。"""
+    check_auth(authorization)
+    body = await request.json()
+    tid = (body.get("task_id") or "").strip()
+    from workers import task_scheduler as ts
+    if not ts.delete_task(tid):
+        raise HTTPException(404, f"task not found: {tid}")
+    return {"ok": True, "deleted": tid}
+
+
 @router.get("/dashboard/{domain}")
 async def dashboard(
     request: Request,

@@ -1,6 +1,7 @@
 /*
  * chat.js · OPUS 工作室 WebUI 行为脚本
  * 卷二十二 Day 2 · 从 chat.html 拆出来
+ * build · 6d39286c483eab36e66a9d19de70ceb9
  *
  * 模块大致顺序：
  *   1. localStorage 状态 (token / sessionId / aliases)
@@ -5126,6 +5127,7 @@ const DOMAIN_META = {
   //   因为"OPUS 对 用户 的观察"跟"用户 真正在跑的项目"是同一码事——
   //   都是「自我视角」·跟外部信号（radar/trends/reports）分开
   execution:     { icon: '<i class="ri-refresh-fill"></i>', label: '执行反馈', section: 'execution', stub: false },
+  scheduled_tasks: { icon: '<i class="ri-timer-2-fill"></i>', label: '定时任务', section: 'execution', stub: false },
   cognition:     { icon: '<i class="ri-brain-fill"></i>', label: '成长日记', section: 'execution', stub: false },
   favorites:     { icon: '<i class="ri-star-fill"></i>', label: '收藏夹',   section: 'execution', stub: false },
   // 卷三十五 · OPUS 自我演化心愿单 · "我想装这个能力"
@@ -7457,11 +7459,129 @@ async function loadDashboard(domain, opts = {}) {
     else if (domain === 'calendar') renderCalendar(data);
     else if (domain === 'plugins') renderPlugins(data);
     else if (domain === 'wishlist') renderWishlist(data);
+    else if (domain === 'scheduled_tasks') renderScheduledTasks(data);
     else if (['content', 'design', 'dev', 'docs'].includes(domain)) renderWorkshop(domain, data);
     else renderDashboardStub(domain, data);
   } catch (e) {
     $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`;
   }
+}
+
+// ── 0.5.0 · ⏰ 定时任务 (NLP 建·到点跑 LLM turn·复用 fav-* 卡片体系) ──
+function _schedLocalTime(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('zh-CN', {
+      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    });
+  } catch (e) { return iso; }
+}
+
+function _schedSummaryCN(sch) {
+  if (!sch) return '?';
+  if (sch.type === 'daily') return `每天 ${sch.time || '09:00'}`;
+  if (sch.type === 'weekly') {
+    const wd = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    const i = sch.weekday;
+    return `每${(typeof i === 'number' && i >= 0 && i < 7) ? wd[i] : '周?'} ${sch.time || '09:00'}`;
+  }
+  if (sch.type === 'interval') return `每 ${sch.interval_min || '?'} 分钟`;
+  if (sch.type === 'once') return `一次性 @ ${_schedLocalTime(sch.once_at)}`;
+  return sch.type || '?';
+}
+
+async function _schedAction(path, body) {
+  try {
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) { alert('操作失败 [' + r.status + ']'); return; }
+    loadDashboard('scheduled_tasks');
+  } catch (e) { alert('网络出错: ' + e.message); }
+}
+
+function renderScheduledTasks(data) {
+  if (data && data.error) {
+    $dashView.innerHTML = `
+      <div class="dash-head"><h2><i class="ri-timer-2-fill"></i> 定时任务</h2></div>
+      <div class="dash-empty">${escHtml(data.error)}</div>`;
+    return;
+  }
+  const tasks = (data && data.tasks) || [];
+  const alive = data && data.scheduler_alive;
+  const draft = (data && data.draft_prompt) || '帮我建个定时任务：每天早上9点扫一遍AI行情并汇总';
+  const banner = `
+    <p class="muted" style="margin-bottom:12px">
+      调度线程: ${alive ? '<span style="color:#4fd1c5">运行中</span>' : '<span style="color:#fc8181">未运行</span>'}
+      · 新建 / 修改请直接对话说（"每天9点扫AI行情" / "每周五提醒我复盘"）· 我会建好放这里。
+    </p>`;
+
+  if (tasks.length === 0) {
+    $dashView.innerHTML = `
+      <div class="dash-head"><h2><i class="ri-timer-2-fill"></i> 定时任务</h2>
+        <span class="dash-meta">空</span></div>
+      ${banner}
+      <div class="dash-empty">
+        <p>还没有定时任务</p>
+        <p class="muted" style="margin-top:8px">对我说一句「${escHtml(draft)}」就能建第一个。</p>
+      </div>`;
+    return;
+  }
+
+  const cards = tasks.map(t => {
+    const a = t.action || {};
+    const enabled = !!t.enabled;
+    const color = enabled ? '#4fd1c5' : '#6b7280';
+    const kindLabel = a.kind === 'reminder'
+      ? '<i class="ri-notification-3-fill"></i> 提醒'
+      : '<i class="ri-play-circle-fill"></i> 执行';
+    const last = t.last_run_at
+      ? `<div class="fav-note">上次 ${_schedLocalTime(t.last_run_at)} [${escHtml(t.last_run_status || '')}] ${escHtml((t.last_run_summary || '').slice(0, 80))}</div>`
+      : '';
+    return `
+      <div class="fav-card" style="border-left-color:${color}">
+        <div class="fav-card-top">
+          <span class="fav-kind" style="color:${color}">${kindLabel} · ${escHtml(_schedSummaryCN(t.schedule))}</span>
+          <span class="fav-domain">${enabled ? '✅ 启用' : '⏸ 停用'}${a.notify_wechat ? ' · 📱微信' : ''}</span>
+        </div>
+        <div class="fav-title">${escHtml(a.prompt || t.raw_text || '(无指令)')}</div>
+        <div class="fav-note">下次 ${_schedLocalTime(t.next_run_at)} · 已跑 ${t.runs_completed || 0} 次</div>
+        ${last}
+        <div class="fav-foot">
+          <span class="muted">${escHtml(t.id)}</span>
+          <div class="fav-actions">
+            <button class="fav-open sched-toggle" data-id="${escHtml(t.id)}" data-enabled="${enabled ? '1' : '0'}">${enabled ? '停用' : '启用'}</button>
+            <button class="fav-remove sched-del" data-id="${escHtml(t.id)}">删除</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  $dashView.innerHTML = `
+    <div class="dash-head">
+      <h2><i class="ri-timer-2-fill"></i> 定时任务</h2>
+      <span class="dash-meta">${tasks.length} 个 · ${tasks.filter(t => t.enabled).length} 启用</span>
+    </div>
+    ${banner}
+    <div class="fav-grid">${cards}</div>`;
+
+  $dashView.querySelectorAll('.sched-toggle').forEach(btn => {
+    btn.onclick = () => _schedAction('/dashboard/scheduled_tasks/toggle', {
+      task_id: btn.getAttribute('data-id'),
+      enabled: btn.getAttribute('data-enabled') !== '1',
+    });
+  });
+  $dashView.querySelectorAll('.sched-del').forEach(btn => {
+    btn.onclick = async () => {
+      const ok = await opusConfirm({
+        title: '删除定时任务', message: '删掉这个定时任务吗？', okText: '删除', cancelText: '保留',
+      });
+      if (!ok) return;
+      _schedAction('/dashboard/scheduled_tasks/delete', { task_id: btn.getAttribute('data-id') });
+    };
+  });
 }
 
 // ── 卷二十六 · <i class="ri-brain-fill"></i> 成长日记 + 我的画像 + 开放问题 ──

@@ -214,6 +214,18 @@ def _maybe_start_proactive(console: Console) -> None:
         console.print(f"  [dim]proactive scheduler: check every {interval} min (set OPUS_PROACTIVE_CALL=0 to disable)[/]\n")
 
 
+def _maybe_start_scheduled_tasks(console: Console) -> None:
+    """0.5.0 · NLP 定时任务调度 · 总开关 OPUS_SCHEDULED_TASKS (默认开)"""
+    try:
+        from workers.task_scheduler import start_task_scheduler_in_background
+        thread = start_task_scheduler_in_background()
+    except Exception as e:
+        console.print(f"  [yellow]task scheduler start failed: {e}[/]")
+        return
+    if thread is not None and thread.is_alive():
+        console.print("  [dim]task scheduler: check due tasks every 60s (set OPUS_SCHEDULED_TASKS=0 to disable)[/]\n")
+
+
 def _maybe_start_wechat(console: Console) -> None:
     """卷六十一 · iLink 微信收消息监听 · 扫过码且 OPUS_WECHAT_ILINK!=0 才起"""
     try:
@@ -267,6 +279,7 @@ def run() -> int:
     _maybe_start_scheduler(console)
     _maybe_start_capability_mirror(console)
     _maybe_start_proactive(console)
+    _maybe_start_scheduled_tasks(console)
     _maybe_start_wechat(console)
 
     max_tokens = int(os.environ.get("OPUS_MAX_TOKENS", "4096"))

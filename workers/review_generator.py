@@ -175,11 +175,14 @@ def _llm_mini_call(prompt: str, max_tokens: int = 2000, fallback: str = "",
     if RUNTIME.client is None:
         return fallback or "(RUNTIME.client 未初始化 · daemon 没启动？此工具需 daemon 在跑)"
 
+    from daemon_runtime import bg_max_tokens
+    _mt = bg_max_tokens(default=max_tokens)
+
     def _once() -> str:
         if RUNTIME.provider == "anthropic":
             resp = RUNTIME.client.messages.create(
                 model=RUNTIME.model,
-                max_tokens=max_tokens,
+                max_tokens=_mt,
                 messages=[{"role": "user", "content": prompt}],
             )
             text = ""
@@ -189,7 +192,7 @@ def _llm_mini_call(prompt: str, max_tokens: int = 2000, fallback: str = "",
             return text.strip()
         resp = RUNTIME.client.chat.completions.create(
             model=RUNTIME.model,
-            max_tokens=max_tokens,
+            max_tokens=_mt,
             messages=[{"role": "user", "content": prompt}],
         )
         return (resp.choices[0].message.content or "").strip()

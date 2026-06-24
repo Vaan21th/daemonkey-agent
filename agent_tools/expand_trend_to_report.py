@@ -173,7 +173,7 @@ def _run(args: dict) -> ToolResult:
         refs_block=_format_refs(refs),
     )
 
-    from daemon_runtime import RUNTIME
+    from daemon_runtime import RUNTIME, bg_max_tokens
 
     if RUNTIME.client is None:
         return ToolResult(
@@ -189,7 +189,7 @@ def _run(args: dict) -> ToolResult:
         if RUNTIME.provider == "anthropic":
             resp = RUNTIME.client.messages.create(
                 model=RUNTIME.model,
-                max_tokens=24000,
+                max_tokens=bg_max_tokens(),
                 system=_REPORT_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_prompt}],
             )
@@ -206,7 +206,7 @@ def _run(args: dict) -> ToolResult:
         else:
             resp = RUNTIME.client.chat.completions.create(
                 model=RUNTIME.model,
-                max_tokens=24000,
+                max_tokens=bg_max_tokens(),
                 messages=[
                     {"role": "system", "content": _REPORT_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},

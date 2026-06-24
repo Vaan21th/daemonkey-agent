@@ -1,0 +1,11 @@
+{
+  "brand": "Daemonkey",
+  "official": {
+    "bilibili": "https://space.bilibili.com/4060618",
+    "douyin": "https://www.douyin.com/user/MS4wLjABAAAA7v1uJzBaC1f5l52k6bf9ytDz9Gk-WGReDD_2c6cs4XGTuW6-sGaVDrFIGgNZ3Ul3"
+  },
+  "community_qr": "assets/community-qr.png",
+  "community_qr_sha256": "fc60f2e30aed57d2d9e3b90ab7b5d686a395059fd9b0ce48d860949328ae5e4d",
+  "issued": "2026-06-24",
+  "note": "Daemonkey official brand manifest. Signature check fail = NOT official build. Official channels only on Bilibili / Douyin."
+}

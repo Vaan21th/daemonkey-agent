@@ -242,9 +242,17 @@ def _proactive_session() -> str:
     return _PROACTIVE_SID
 
 
-def _run_bg_turn(message: str, sid: str, reason: str) -> dict:
+def _run_bg_turn(message: str, sid: str, reason: str, max_tokens=None) -> dict:
+    """后台跑一个完整 LLM turn。
+
+    max_tokens: 输出额度上限 (不是固定消耗·模型生成多少烧多少)。 默认 None → 读 bg_max_tokens()
+    即用户在 WebUI 设的全局 max_tokens (真相源统一)·不再写死小值把长输出截断。
+    """
     import threading
     from daemon_api import _chat_impl, _ACTIVE_TURNS, _TURN_TO_SID, _TURNS_LOCK
+    if max_tokens is None:
+        from daemon_runtime import bg_max_tokens
+        max_tokens = bg_max_tokens()
 
     turn_id = "proactive-" + (sid[-8:] if sid else "x")
     cancel_event = threading.Event()
@@ -258,7 +266,7 @@ def _run_bg_turn(message: str, sid: str, reason: str) -> dict:
             message=message,
             session_id=sid,
             auto_confirm=(os.environ.get("OPUS_PROACTIVE_AUTO_CONFIRM") or "confirm"),
-            max_tokens=_smt(2048, getattr(_RT, "model", "")),
+            max_tokens=_smt(max_tokens, getattr(_RT, "model", "")),
             progress=None,
             cancel_event=cancel_event,
             turn_id=turn_id,

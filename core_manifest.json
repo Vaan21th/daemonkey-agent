@@ -1,10 +1,10 @@
 {
   "manifest_version": 1,
-  "core_version": "0.4.0",
+  "core_version": "0.5.2",
   "core_version_note": "内核语义版本 · 版本号唯一真相源。内核有实质更新就在这里 bump · launcher/WebUI 动态读它显示 · update_core check 拿它和远程对比报「有新版」。manifest_version 是清单结构版本(很少变) · core_version 才是用户感知的内核版本。",
   "description": "Daemonkey 内核(L1)白名单 — update_core 只同步这里列出的文件;清单外的一律物理不碰(用户的功能/应用/灵魂永不被覆盖)。人类可读版见 docs/CORE-MANIFEST.md。",
-  "updated": "2026-06-23",
-  "log_ref": "卷六十四续五 · 卷七十四续十八(核心前端) · 卷七十四续二十(core_version 版本号体系) · 卷七十四续二十一(github 备份源接通) · 卷七十四续二十二(记忆系统纳入内核:自动注入+两段式recall+缓存稳定化·0.3.2 大更) · 卷七十四续二十五(能力发现引擎 discover_skill + 每周一节律 + 看板入口·0.4.0)",
+  "updated": "2026-06-24",
+  "log_ref": "卷六十四续五 · 卷七十四续十八(核心前端) · 卷七十四续二十(core_version 版本号体系) · 卷七十四续二十一(github 备份源接通) · 卷七十四续二十二(记忆系统纳入内核:自动注入+两段式recall+缓存稳定化·0.3.2 大更) · 卷七十四续二十五(能力发现引擎 discover_skill + 每周一节律 + 看板入口·0.4.0) · 0.5.0(NLP 定时任务 task_scheduler + scheduled_tasks 工具组 + 侧边栏定时任务维度 + 宪法两层注入 product_constitution + 急救体系周全 ensure_git_repo首启兜底/维修台优先) · 0.5.2(技能闭环第②环「接住」打通: extract_playbook 加 import 动作 + workers/playbook_import.py 把外部 skill MD 经 LLM 归一成 playbook 入库·memory_index 自动索引·closure_check 按需召回; 启动器关于页双发布入口 B站+抖音; playbook 技能系统(discover发现/import接住/extract沉淀/playbooks存储)整体纳入内核白名单 L1·官方可增量下发改进·写入侧与召回侧不再割裂)",
   "sources": {
     "primary": "gitee",
     "note": "支持多源(gitee+github)。真相源唯一=母体 master;只单向往外 push,下游只拉不推。update_core 可指定从哪个 remote 拉。github 当前为作者私有备份源(下游需授权方可匿名拉·转公开后即可当 gitee 的海外/抽风兜底源)。",
@@ -55,6 +55,12 @@
       "tools/repair_console.py",
       "workers/env_reloader.py"
     ],
+    "急救入口(启动器层·daemon崩了也能用·运行时读IDENTITY中性化)": [
+      "repair.bat",
+      "ROLLBACK.bat",
+      "verify.bat",
+      "tools/rollback_emergency.ps1"
+    ],
     "运行护栏与可观测": [
       "workers/opus_logging.py",
       "workers/audit_logger.py",
@@ -64,7 +70,15 @@
     ],
     "身份与灵魂加载机制": [
       "identity.py",
-      "soul_loader.py"
+      "soul_loader.py",
+      "product_constitution.py"
+    ],
+    "相遇 onboarding 机制(L1·开源用户首启命脉·相遇→生成身份/画像→热重载主daemon)": [
+      "api_routes/onboarding.py",
+      "onboarding/onboard.py",
+      "onboarding/onboarding_prompt.py",
+      "onboarding/proto_tools.py",
+      "onboarding/web_loop.py"
     ],
     "核心循环与路由骨架": [
       "tool_loop.py",
@@ -77,7 +91,8 @@
     ],
     "provider机制": [
       "model_aliases.py",
-      "provider_presets.py"
+      "provider_presets.py",
+      "daemon_provider.py"
     ],
     "核心前端机制(L1·机制层·非用户皮肤层)": [
       "static/chat.js",
@@ -88,6 +103,16 @@
       "workers/closure_check.py",
       "agent_tools/recall_memory.py"
     ],
+    "技能系统(L1·playbook 经验沉淀 + 外部 skill 接住归一·发现→接住→沉淀→召回闭环的写入侧·与记忆系统召回侧配套·官方持续维护归一prompt/字段schema/发现脚手架。用户的 playbook 内容在 data/playbooks 属L3·本清单只管机制代码不碰内容)": [
+      "workers/playbooks.py",
+      "agent_tools/extract_playbook.py",
+      "workers/playbook_import.py",
+      "agent_tools/discover_skill.py"
+    ],
+    "定时任务(L1·NLP自驱·到点跑LLM turn执行/提醒·从被叫醒升级成到点自己动·worker层+工具层随内核下发即跑·工具靠__init__自动发现激活无需手动补import)": [
+      "workers/task_scheduler.py",
+      "agent_tools/scheduled_tasks.py"
+    ],
     "内核自升级机制": [
       "core_manifest.json",
       "workers/core_update.py",
@@ -95,6 +120,7 @@
     ]
   },
   "excluded_borderline": {
+    "agent_tools/__init__.py": "工具注册表·已改 pkgutil 自动发现(drop-in 即注册):新内核工具随 update_core 下发 .py 后·import 时自动激活·激活 gap 已根治不再需手动补 import。剥离工具靠物理删 .py(扫不到即不注册)·停用工具靠 _OPT_OUT(如 set_model)。仍不字节同步的唯一原因:头部基础设施注释有去母体化差异(BRO/卷号→中性)·末尾自动发现段两库已逐字一致",
     "daemon_api.py": "API骨架混着功能路由在一个大文件,同步会盖掉用户加的路由;长期拆出core骨架后再纳入",
     "provider_configs.py": "含 provider key,属数据层(L3),不进白名单"
   },

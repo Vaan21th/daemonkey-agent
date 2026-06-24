@@ -220,9 +220,10 @@ def _translate_descriptions(tasks: list[tuple[str, str]]) -> dict[str, str]:
 
         prompt = _TRANSLATE_PROMPT.format(n=len(batch), items_block=items_block)
         try:
+            from daemon_runtime import bg_max_tokens
             resp = client.chat.completions.create(
                 model=model,
-                max_tokens=8000,
+                max_tokens=bg_max_tokens(),
                 temperature=0.2,
                 messages=[
                     {"role": "system", "content": "你是专业的中英翻译·只输出严格 JSON。"},

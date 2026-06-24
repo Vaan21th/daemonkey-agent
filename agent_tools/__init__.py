@@ -184,86 +184,30 @@ def register_tool(spec: ToolSpec) -> ToolSpec:
     return spec
 
 
-# 触发各工具模块的 register_tool 调用
-# 必须放在所有定义之后——子模块 import agent_tools 时要看见 ToolSpec/register_tool
-from . import shell_exec       # noqa: E402,F401
-from . import python_exec      # noqa: E402,F401  (续 · 消 78.6% inline -c 失败)
-from . import read_file        # noqa: E402,F401
-from . import write_file       # noqa: E402,F401
-from . import edit_file        # noqa: E402,F401  ( · str_replace 局部替换 · 大文件不再整文件覆盖)
-from . import outline_file     # noqa: E402,F401  (续 · 文件大纲 · 大文件改前先看骨架定位)
-from . import lint_check       # noqa: E402,F401  (续 · lint 诊断 · 抓语法对逻辑错的 bug)
-from . import search_code      # noqa: E402,F401  (续 · 语义代码搜索 · 按意思找·不靠猜正则)
-from . import glob_files       # noqa: E402,F401  (续 · 按名字/通配找文件 · 补 Cursor Glob)
-from . import grep_files       # noqa: E402,F401
-# from . import set_model      # 停用 LLM 自主切模型(卷七十四续十四·防"切到当前 key 跑不了的模型→自锁死"·对齐业界·读图由 look_at 独立扛)·用户仍可在设置/终端 /model 手动切
-from . import update_bro_note  # noqa: E402,F401
-from . import set_emotion      # noqa: E402,F401
-from . import web_search       # noqa: E402,F401
-from . import web_fetch        # noqa: E402,F401
-from . import take_screenshot  # noqa: E402,F401
-from . import clipboard        # noqa: E402,F401
-from . import open_app         # noqa: E402,F401
-from . import browser_fetch    # noqa: E402,F401
-from . import summarize_session  # noqa: E402,F401
-from . import update_self_evolution  # noqa: E402,F401
-from . import pdf_read         # noqa: E402,F401
-from . import mcp_call         # noqa: E402,F401
-# Daemonkey C1 · 不带项目档案 / Cursor 召唤 (模块文件未复制·见分家清单)
-from . import wechat_send       # noqa: E402,F401  (微信渠道·官方 iLink·标配)
-# from . import summon_cursor    # noqa: E402,F401
-from . import ssh_remote       # noqa: E402,F401  (通用 SSH 运维)
-# from . import client_handoff   # noqa: E402,F401  (项目客户档案·C2 剥离)
-from . import manage_info_source  # noqa: E402,F401  ( · 工作室信息雷达源管理)
-from . import generate_report     # noqa: E402,F401  ( · markdown→docx 文档生产)
-from . import draft_studio        # noqa: E402,F401  ( · 内容/设计/开发/文档工坊)
-from . import read_dashboard      # noqa: E402,F401  ( · OPUS 对话里读看板)
-from . import propose_next_move   # noqa: E402,F401  ( · 基于画像给方向建议)
-from . import expand_trend_to_report  # noqa: E402,F401  ( · 趋势→报告 一键链路)
-from . import mine_opportunities  # noqa: E402,F401  ( · 掘金机会引擎)
-from . import analyze_feasibility  # noqa: E402,F401  ( · 可行性分析)
-from . import record_outcome       # noqa: E402,F401  ( · 闭环反馈)
-from . import tag_radar_item       # noqa: E402,F401  ( · 雷达条目打标)
-from . import init_domain          # noqa: E402,F401  ( · 一句话建领域)
-from . import remove_domain        # noqa: E402,F401  (补丁 · 删领域)
-from . import toggle_favorite      # noqa: E402,F401  ( · 统一收藏)
-from . import auto_pipeline        # noqa: E402,F401  ( · 自主巡航)
-from . import wish_add             # noqa: E402,F401  ( · OPUS 自我演化心愿单)
-from . import wish_update          # noqa: E402,F401  ( · 心愿状态机)
-from . import intent_to_wish       # noqa: E402,F401  ( G · 模糊请求→wish 草稿)
-from . import verify_claim         # noqa: E402,F401  (补丁3 · 事实较量/单条 claim 验证)
-from . import recall_memory        # noqa: E402,F401  ( · SQLite FTS5 跨会话记忆检索)
-from . import mirror_capability    # noqa: E402,F401  ( · 市场能力镜像)
-from . import extract_playbook  # noqa: E402,F401  ( · playbook 系统)
-from . import create_app           # noqa: E402,F401  ( K stage 2c · 工坊造 app)
-from . import update_app           # noqa: E402,F401  (续 12 · wish-165ea1f6 · 改 app 字段 + 补 ui_form_schema)
-from . import create_workflow      # noqa: E402,F401  ( K stage 2c · 工坊造 workflow)
-from . import app_set_secret       # noqa: E402,F401  ( K stage 2c++ · KEY 安全存 wish-96ee1b52)
-from . import app_list_secrets     # noqa: E402,F401  ( K stage 2c++ · 列 secret 字段名)
-from . import app_delete_secret    # noqa: E402,F401  ( K stage 2c++ · 删 secret)
-from . import add_iron_rule        # noqa: E402,F401  ( K stage 2c++ · 铁律自动双写 wish-a72b2f0a)
-from . import list_iron_rules      # noqa: E402,F401  ( K stage 2c++ · 列现有铁律)
-from . import delete_app_to_trash  # noqa: E402,F401  ( K stage 2c++ · wish-6fd76512 · app 软删)
-from . import restore_app          # noqa: E402,F401  ( K stage 2c++ · wish-6fd76512 · 回收站恢复)
-from . import empty_trash          # noqa: E402,F401  ( K stage 2c++ · wish-6fd76512 · 永久删除)
-from . import web_search_image     # noqa: E402,F401  ( K stage 2c++ · wish-4f25c4a1 · OPUS 给 用户 找图)
-from . import service_start        # noqa: E402,F401  ( K stage 2c++ · wish-8d6b76a6 · 启长跑后台服务 detached)
-from . import service_list         # noqa: E402,F401  ( K stage 2c++ · wish-8d6b76a6 · 列所有 service)
-from . import service_status       # noqa: E402,F401  ( K stage 2c++ · wish-8d6b76a6 · 查单个 service 活+资源)
-from . import service_stop         # noqa: E402,F401  ( K stage 2c++ · wish-8d6b76a6 · 停 service)
-from . import monthly_review       # noqa: E402,F401  ( II · wish-bf190d9c · 月度复盘)
-from . import read_scenario        # noqa: E402,F401  ( II · wish-af1245d7 · 按需读场景铁律)
-from . import session_search       # noqa: E402,F401  ( II · wish-2a92774d · session 聚合搜索)
-from . import request_restart      # noqa: E402,F401  ( III · wish-ed5553d5 · daemon 重启工具)
-from . import verify_daemon_endpoints  # noqa: E402,F401  ( III · wish-ed5553d5 · daemon 路由冒烟)
-from . import look_at              # noqa: E402,F401  ( III · wish-4a6331b2 · OPUS 的"眼睛")
-from . import update_core          # noqa: E402,F401  (选择性内核升级 · 只覆盖白名单·不碰灵魂)
-from . import manage_app_asset     # noqa: E402,F401  (app 资产登记表 · 用户个性沉淀单一事实源)
-from . import run_app              # noqa: E402,F401  (主对话直接执行工坊 app · 先查再搓)
-from . import run_flow             # noqa: E402,F401  (沿 steps 工作流执行 · 状态落盘断点续跑)
-from . import app_versions         # noqa: E402,F401  (app 历史版本 list/show/diff/rollback)
-from . import list_apps            # noqa: E402,F401  (列工坊 app · 补 glob 看不到的盲区)
-from . import list_flows           # noqa: E402,F401  (列工坊 flow · 补 glob 看不到的盲区)
-from . import trust_flow           # noqa: E402,F401  (0.2.0 · 信任账本手动控制 · 用户一句话信任)
-from . import rerun_flow_step      # noqa: E402,F401  (0.2.0 · 单步重跑 · 用户主动要求)
-from . import discover_skill       # noqa: E402,F401  (能力发现引擎 · 画像驱动找外部 AI 能力)
+# ── 工具自动发现 (drop-in 即注册 · 替代手写 from . import X 长列表) ──
+# 扫描本包内所有工具模块·import 触发各自的 register_tool。
+#   - 加新工具: 丢个 .py 进来即生效·不用再来这里加一行 (update_core 下发即激活)
+#   - 剥离工具: 物理删 .py 即可·扫不到就不注册 (两库这段逐字一致·不靠注释 import 分叉)
+#   - _OPT_OUT: 文件保留但故意不激活的工具 (唯一需显式排除的)
+import importlib as _importlib
+import pkgutil as _pkgutil
+
+_OPT_OUT = {
+    "set_model",  # 停用 LLM 自主切模型 (防"切到当前 key 跑不了的模型 -> 自锁死"; 用户仍可手动 /model 切)
+}
+
+_discovery_failures = []
+for _mod in _pkgutil.iter_modules(__path__):
+    _name = _mod.name
+    if _name.startswith("_") or _name in _OPT_OUT:
+        continue  # 下划线=辅助模块(无 SPEC) · _OPT_OUT=故意停用
+    try:
+        _importlib.import_module(f"{__name__}.{_name}")
+    except Exception as _e:  # 单模块失败不拖垮整包(某工具缺依赖->跳过·其余照常注册)
+        _discovery_failures.append((_name, f"{type(_e).__name__}: {_e}"))
+
+if _discovery_failures:
+    import sys as _sys
+    for _n, _err in _discovery_failures:
+        print(f"[agent_tools] WARN · 工具模块 {_n} 加载失败 (跳过·不影响其余): {_err}",
+              file=_sys.stderr, flush=True)

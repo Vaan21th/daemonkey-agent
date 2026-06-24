@@ -240,9 +240,10 @@ def _batch_translate(client, model: str, batch: list[dict]) -> dict[int, dict]:
     started = time.time()
     raw = ""
     try:
+        from daemon_runtime import bg_max_tokens
         resp = client.chat.completions.create(
             model=model,
-            max_tokens=8000,
+            max_tokens=bg_max_tokens(),
             temperature=0.3,
             messages=[
                 {"role": "system", "content": "你是专业的中英翻译 · 输出严格的 JSON。"},

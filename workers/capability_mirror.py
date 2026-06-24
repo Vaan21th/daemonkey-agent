@@ -259,11 +259,13 @@ def generate_snapshot() -> dict:
     usage: dict = {}
 
     try:
+        from daemon_runtime import bg_max_tokens
         provider = RUNTIME.provider
+        _bg_mt = bg_max_tokens()
         if provider == "anthropic":
             resp = RUNTIME.client.messages.create(
                 model=RUNTIME.model,
-                max_tokens=10000,
+                max_tokens=_bg_mt,
                 system=_localize(SYSTEM_PROMPT),
                 messages=[{"role": "user", "content": _localize(user_prompt)}],
             )
@@ -280,7 +282,7 @@ def generate_snapshot() -> dict:
         else:
             resp = RUNTIME.client.chat.completions.create(
                 model=RUNTIME.model,
-                max_tokens=10000,
+                max_tokens=_bg_mt,
                 messages=[
                     {"role": "system", "content": _localize(SYSTEM_PROMPT)},
                     {"role": "user", "content": _localize(user_prompt)},

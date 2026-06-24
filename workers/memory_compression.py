@@ -337,8 +337,8 @@ def _generate_summary(
     from identity import localize_narration as _ln
     prompt = f"{_ln(SUMMARY_MODEL_HINT)}\n\n--- 待压缩的对话 ---\n\n{text_to_summarize}"
 
-    from provider_presets import safe_max_tokens as _smt
-    _mt = _smt(4000, model)
+    from daemon_runtime import bg_max_tokens
+    _mt = bg_max_tokens(default=4000)
     if provider == "anthropic":
         resp = client.messages.create(
             model=model,

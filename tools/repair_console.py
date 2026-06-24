@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""tools/repair_console.py · OPUS 应急维修台 (卷五十四 · A3 · A 柱)
+"""tools/repair_console.py · 应急维修台
 
 ────────────────────────────────────────────────────────────────────
 这是什么
@@ -32,6 +32,30 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _identity() -> tuple[str, str]:
+    """裸读 soul/IDENTITY.json 拿 (ai_name, owner_name) · 缺省中性 Daemonkey/你。
+    母体有 IDENTITY (name=OPUS) → 读出 OPUS 不变; 开源版没配 IDENTITY → 显示 Daemonkey · 绝不漏 OPUS。
+    维修台铁律: 绝不 import daemon 代码 · 自己裸读 JSON (跟读 provider_configs 同款)。"""
+    ai, owner = "Daemonkey", "你"
+    f = ROOT / "soul" / "IDENTITY.json"
+    if f.exists():
+        try:
+            d = json.loads(f.read_text(encoding="utf-8-sig"))
+            ai = (d.get("name") or "").strip() or "Daemonkey"
+            ow = (d.get("owner_name") or "").strip()
+            # 跟 identity.py 对齐: IDENTITY 在但没填 owner → 中性"你" · 绝不把 BRO 漏给开源用户
+            owner = ow or "你"
+        except Exception:
+            pass
+    return ai, owner
+
+
+def _has_git() -> bool:
+    """git 在不在 PATH (没 git → 维修台仍可用 · 只是少了版本信息/回退手段)。"""
+    from shutil import which
+    return which("git") is not None
 
 
 def _load_env() -> None:
@@ -139,16 +163,16 @@ def _confirm(name: str, args: dict, auto: bool) -> bool:
     if auto or name not in DESTRUCTIVE:
         return True
     preview = args.get("command") or args.get("path") or ""
-    print(f"\n  ⚙️  OPUS 想执行 [{name}]: {str(preview)[:200]}")
+    print(f"\n  ⚙️  准备执行 [{name}]: {str(preview)[:200]}")
     ans = input("     回车放行 · 输 n 跳过 · 输 q 退出维修台 > ").strip().lower()
     if ans == "q":
-        print("[repair] BRO 终止维修台。"); sys.exit(0)
+        print("[repair] 已终止维修台。"); sys.exit(0)
     return ans != "n"
 
 
 def _dispatch(name: str, args: dict, auto: bool) -> str:
     if not _confirm(name, args, auto):
-        return "[BRO 跳过了这个工具调用]"
+        return "[用户跳过了这个工具调用]"
     fn = TOOL_IMPL.get(name)
     if not fn:
         return f"[未知工具 {name}]"
@@ -199,17 +223,24 @@ def _worktree_check() -> str:
 
 def _gather_context() -> str:
     parts = ["## 当前现场 (维修台自动采集)", ""]
-    parts.append("### git status\n" + (_sh("git status --short --branch") or "(干净)"))
-    parts.append("\n### 工作树 / 跨 agent 自检\n" + _worktree_check())
-    parts.append("\n### 最近 6 条 commit\n" + _sh("git log --oneline -6"))
-    parts.append("\n### opus-last-good 指向\n" + _sh('git log -1 --format="%h %s" opus-last-good'))
+    if _has_git():
+        parts.append("### git status\n" + (_sh("git status --short --branch") or "(干净)"))
+        parts.append("\n### 工作树 / 跨 agent 自检\n" + _worktree_check())
+        parts.append("\n### 最近 6 条 commit\n" + _sh("git log --oneline -6"))
+        parts.append("\n### opus-last-good 指向\n" + _sh('git log -1 --format="%h %s" opus-last-good'))
+    else:
+        parts.append("### git\n(本机未检测到 git · 无版本信息 · 修复只能直接改文件、不能 git 回退)")
     parts.append("\n### restart_history 末 8 条\n" + _tail("data/runtime/restart_history.jsonl", 8))
     parts.append("\n### daemon.err 末 30 行\n" + _tail("data/daemon.err", 30))
     return "\n".join(parts)
 
 
-SYSTEM_PROMPT = """\
-你是 OPUS · 现在在**应急维修台**模式。 主 daemon 可能被你上一次自我升级改崩了 (起不来 / WebUI 白屏)。
+def _system_prompt(ai: str, owner: str, has_git: bool) -> str:
+    git_note = ("" if has_git else
+        "\n⚠ 本机【没检测到 git】· 不能用 git diff/reset/checkout · "
+        "只能 read_file 看坏在哪 + write_file 直接改对 + py_compile/node --check 验证 · 别调 git 命令。")
+    return f"""\
+你是 {ai} · 现在在**应急维修台**模式。 主 daemon 可能被你上一次自我升级改崩了 (起不来 / WebUI 白屏)。
 这是一条独立的极简通道 (不依赖那套坏掉的代码) · 让你像在 Cursor 里一样 · 通过对话+工具把自己修好。
 
 你的目标: 诊断 → 修复 → 验证 → 让 daemon 重新干净启动。 典型手法:
@@ -217,14 +248,14 @@ SYSTEM_PROMPT = """\
   2. read_file 看坏的文件 · run_shell `python -m py_compile <file>` 或 `node --check static/<x>.js` 看具体报错
   3. write_file 修 · 再 py_compile / node --check 验证语法
   4. 拿不准就 `git diff` / 对比 opus-last-good · 实在修不动可 `git reset --hard opus-last-good` 回到已知好版本
-  5. 修好后 run_shell 重启 daemon (python tools/run_api_only.py 后台 · 或让 BRO 双击 start.bat) · 确认起来了
+  5. 修好后 run_shell 重启 daemon (python tools/run_api_only.py 后台 · 或让 {owner} 双击 start.bat) · 确认起来了{git_note}
 
-纪律: 改完 .py / static 一定先验证语法再说"修好了";不确定先问 BRO;每步说清你在干嘛、为什么。
-回答用中文 · 称呼 BRO。 现在开始 —— 先判断现场最可能的病根。
+纪律: 改完 .py / static 一定先验证语法再说"修好了";不确定先问 {owner};每步说清你在干嘛、为什么。
+回答用中文 · 称呼 {owner}。 现在开始 —— 先判断现场最可能的病根。
 """
 
 
-def run_openai_loop(prov: dict, messages: list, auto: bool) -> None:
+def run_openai_loop(prov: dict, messages: list, auto: bool, ai: str = "Daemonkey") -> None:
     from openai import OpenAI
     client = OpenAI(api_key=prov["api_key"], base_url=prov["base_url"] or None)
     while True:
@@ -237,7 +268,7 @@ def run_openai_loop(prov: dict, messages: list, auto: bool) -> None:
                 "function": {"name": tc.function.name, "arguments": tc.function.arguments}} for tc in msg.tool_calls]
         messages.append(asst)
         if msg.content:
-            print(f"\nOPUS> {msg.content}\n")
+            print(f"\n{ai}> {msg.content}\n")
         if not msg.tool_calls:
             return
         for tc in msg.tool_calls:
@@ -249,7 +280,7 @@ def run_openai_loop(prov: dict, messages: list, auto: bool) -> None:
             messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
 
 
-def run_anthropic_loop(prov: dict, sys_prompt: str, messages: list, auto: bool) -> None:
+def run_anthropic_loop(prov: dict, sys_prompt: str, messages: list, auto: bool, ai: str = "Daemonkey") -> None:
     import anthropic
     client = anthropic.Anthropic(api_key=prov["api_key"])
     tools = [{"name": t["function"]["name"], "description": t["function"]["description"],
@@ -260,7 +291,7 @@ def run_anthropic_loop(prov: dict, sys_prompt: str, messages: list, auto: bool) 
         blocks, tool_uses = [], []
         for b in resp.content:
             if b.type == "text":
-                print(f"\nOPUS> {b.text}\n"); blocks.append({"type": "text", "text": b.text})
+                print(f"\n{ai}> {b.text}\n"); blocks.append({"type": "text", "text": b.text})
             elif b.type == "tool_use":
                 blocks.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
                 tool_uses.append(b)
@@ -280,10 +311,15 @@ def main() -> None:
     args = ap.parse_args()
     _load_env()
     prov = _load_provider()
+    ai, owner = _identity()
+    has_git = _has_git()
+    sys_prompt = _system_prompt(ai, owner, has_git)
 
     print("=" * 64)
-    print("  OPUS 应急维修台 (repair console) · 卷五十四")
+    print(f"  {ai} 应急维修台 (repair console)")
     print(f"  provider: {prov['kind']} · model: {prov['model'] or '(未配置)'}")
+    if not has_git:
+        print("  ⚠ 没检测到 git · 维修台照常用 (直连 AI 改文件) · 只是没有版本回退")
     print(f"  确认模式: {'YOLO 全自动' if args.yolo else '写/shell 逐条确认 (回车放行·n 跳过·q 退出)'}")
     print("=" * 64)
     if not prov["api_key"] or not prov["model"]:
@@ -292,16 +328,16 @@ def main() -> None:
 
     ctx = _gather_context()
     print("\n" + ctx + "\n" + "=" * 64)
-    first = input("\nBRO> (直接回车=让 OPUS 自动诊断现场 · 或描述问题) > ").strip()
+    first = input(f"\n{owner}> (直接回车=让 {ai} 自动诊断现场 · 或描述问题) > ").strip()
     user_text = first or "请根据上面的现场自动诊断: daemon 现在是什么状态? 最可能哪里坏了? 给出修复方案并动手。"
-    user_msg = ctx + "\n\n---\nBRO 说: " + user_text
+    user_msg = ctx + f"\n\n---\n{owner} 说: " + user_text
 
     if prov["kind"] == "anthropic":
         messages = [{"role": "user", "content": user_msg}]
-        loop = lambda m: run_anthropic_loop(prov, SYSTEM_PROMPT, m, args.yolo)
+        loop = lambda m: run_anthropic_loop(prov, sys_prompt, m, args.yolo, ai)
     else:
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_msg}]
-        loop = lambda m: run_openai_loop(prov, m, args.yolo)
+        messages = [{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_msg}]
+        loop = lambda m: run_openai_loop(prov, m, args.yolo, ai)
 
     while True:
         try:
@@ -311,7 +347,7 @@ def main() -> None:
         except Exception as e:
             print(f"\n[repair] LLM 调用出错: {type(e).__name__}: {e}")
         try:
-            nxt = input("\nBRO> (继续对话 · 或 q 退出维修台) > ").strip()
+            nxt = input(f"\n{owner}> (继续对话 · 或 q 退出维修台) > ").strip()
         except (EOFError, KeyboardInterrupt):
             break
         if nxt.lower() in ("q", "quit", "exit"):

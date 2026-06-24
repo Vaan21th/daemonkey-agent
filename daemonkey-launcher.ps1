@@ -67,7 +67,63 @@ try {
     }
 } catch {}
 $script:StartText   = '启动'
+
+# ───── 品牌资源 · 签名保护 (卷七十五防篡改) ─────
+# 真相源 = assets/brand.json (作者私钥签发, brand.sig)。 官方公钥内置于此。
+# 盗用者改链接/换二维码 → 验签失败 → 启动器显著弹窗"非官方版"。
+# 想绕过只能改源码删校验 → 触发 AGPL + 商标风险, 且没私钥重签不了。
+$script:BrandPubKey = '<RSAKeyValue><Modulus>1nhbXj/DB/DO945mQ6+HJKQsR2AY5LIa9qPZJQalGJbaRji2dYCYPUGaW6nJ/ePexMkvpuBW9T6nYz6dCazc0yGirybzFj12iRva4hy0No7s4RcJJ0qsEe9psJs+4DU7iDaDWuQkjkT2NeR+/Pjv7twuTVjdyye77wJ8MGD4coAjHBa/TOEvrPadYR3ycOakKXc8Vlr2fL22o/HE9KjUT3EC/0u9xckxGq4crJ9LKRrHP23V4JD+8S9aHnQ5KaKlttGLxDL1USo878t7eLW9LfqznxU9WqQHAjJxC9ZDQXDt7T0p2h5UZv1SxGj/x0WNaE6fGtLKzlz41EQoOFFGiQ==</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>'
+# 下面两条是 fallback (没 brand.json 的精简包/旧包用)。 正常运行时会被 brand.json 覆盖。
 $script:BiliUrl     = 'https://space.bilibili.com/4060618'
+$script:DouyinUrl   = 'https://www.douyin.com/user/MS4wLjABAAAA7v1uJzBaC1f5l52k6bf9ytDz9Gk-WGReDD_2c6cs4XGTuW6-sGaVDrFIGgNZ3Ul3'
+$script:BrandVerified = $true
+$script:BrandWarn     = ''
+
+function New-RsaSha256Pub {
+    param([string]$xml)
+    $imp = New-Object System.Security.Cryptography.RSACryptoServiceProvider
+    $imp.FromXmlString($xml)
+    $p = $imp.ExportParameters($false)
+    $imp.Dispose()
+    $csp = New-Object System.Security.Cryptography.CspParameters
+    $csp.ProviderType = 24   # PROV_RSA_AES -> 支持 SHA256
+    $rsa = New-Object System.Security.Cryptography.RSACryptoServiceProvider($csp)
+    $rsa.PersistKeyInCsp = $false
+    $rsa.ImportParameters($p)
+    return $rsa
+}
+
+# 缺文件=容忍(旧包/精简包/用户自建)·只有"明确被篡改"才报警·验签出错不阻断
+function Test-BrandIntegrity {
+    $brandPath = Join-Path $script:Root 'assets\brand.json'
+    $sigPath   = Join-Path $script:Root 'assets\brand.sig'
+    $qrPath    = Join-Path $script:Root 'assets\community-qr.png'
+    if (-not (Test-Path $brandPath) -or -not (Test-Path $sigPath)) { return @{ ok = $true; warn = '' } }
+    try {
+        $bytes = [IO.File]::ReadAllBytes($brandPath)
+        $sig   = [Convert]::FromBase64String(([IO.File]::ReadAllText($sigPath)).Trim())
+        $rsa   = New-RsaSha256Pub $script:BrandPubKey
+        $ok    = $rsa.VerifyData($bytes, 'SHA256', $sig)
+        $rsa.Dispose()
+        if (-not $ok) {
+            return @{ ok = $false; warn = "品牌资源签名校验失败 — 这不是官方版。`r`n链接 / 二维码可能已被第三方篡改。`r`n官方发布唯一在 B站 / 抖音, 请以官方频道为准。" }
+        }
+        $brand = [Text.Encoding]::UTF8.GetString($bytes) | ConvertFrom-Json
+        if ($brand.official.bilibili) { $script:BiliUrl   = [string]$brand.official.bilibili }
+        if ($brand.official.douyin)   { $script:DouyinUrl = [string]$brand.official.douyin }
+        if ((Test-Path $qrPath) -and $brand.community_qr_sha256) {
+            $h = (Get-FileHash $qrPath -Algorithm SHA256).Hash.ToLower()
+            if ($h -ne ([string]$brand.community_qr_sha256).ToLower()) {
+                return @{ ok = $false; warn = "社群二维码与官方清单不符 — 可能已被替换。`r`n请通过官方 B站 / 抖音核对真正的入群方式。" }
+            }
+        }
+        return @{ ok = $true; warn = '' }
+    } catch { return @{ ok = $true; warn = '' } }
+}
+
+$script:__brandChk    = Test-BrandIntegrity
+$script:BrandVerified = $script:__brandChk.ok
+$script:BrandWarn     = $script:__brandChk.warn
 
 # ───── 配色 (深色 · 现代扁平 · 一体化) ─────
 $cTitleBar = [System.Drawing.Color]::FromArgb(16, 17, 26)
@@ -199,7 +255,31 @@ function Show-RestartChoice {
     }
 }
 
-# 用户版无 git 自检 —— 那是开发者调代码用的, 对下载用户是吓人的噪声
+# 用户版: 静默确保 git 仓库 + 官方升级源 (卷七十五续)
+# 不弹"要不要 git init"那种吓人窗(那是开发者调代码用的噪声);改成开机静默把更新链路铺好——
+# ZIP 包用户没 .git → 静默 init + baseline;没 remote → 静默配官方 gitee 源。
+# 之后「检查更新 / 升级内核」开箱即用。 更新走 fetch+checkout 白名单(非 merge)·无关历史不影响。
+function Ensure-RepoAndSource {
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $git) { return }
+    Push-Location $script:Root
+    try {
+        if (-not (Test-Path (Join-Path $script:Root '.git'))) {
+            & git init 2>&1 | Out-Null
+            & git config user.email 'daemon@daemonkey.local' 2>&1 | Out-Null
+            & git config user.name 'Daemonkey' 2>&1 | Out-Null
+            & git add -A 2>&1 | Out-Null
+            & git commit -m 'baseline' 2>&1 | Out-Null
+        }
+        if ("$(& git rev-parse --is-inside-work-tree 2>$null)".Trim() -ne 'true') { return }
+        if (@(& git remote 2>$null) -contains 'gitee') { return }   # 已有官方源 · 不动用户配置
+        $url = ''
+        try { $url = [string]((Get-Content (Join-Path $script:Root 'core_manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json).sources.remotes.gitee) } catch {}
+        if ($url) { & git remote add gitee $url 2>&1 | Out-Null }
+    } catch {} finally { Pop-Location }
+}
+
+Ensure-RepoAndSource
 
 # ═══════════════════════════════════════════════════
 #  主窗口 · 无边框圆角 + 自绘标题栏 + 三栏
@@ -238,6 +318,12 @@ $form.Add_Shown({
     $form.ClientSize = New-Object System.Drawing.Size(1000, 620)
     $form.Region = New-Object System.Drawing.Region((Get-RoundPath $form.Width $form.Height $script:WinRadius))
     $form.Invalidate()
+})
+# 品牌验签失败 → 显著弹窗 (只警告·不阻断运行 · 卷七十五防篡改)
+$form.Add_Shown({
+    if (-not $script:BrandVerified -and $script:BrandWarn) {
+        [System.Windows.Forms.MessageBox]::Show($form, $script:BrandWarn, 'Daemonkey · 非官方版警告', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
+    }
 })
 
 # ── 顶部: 自绘标题栏 (一体化 · 可拖动) ──
@@ -974,9 +1060,9 @@ foreach ($p in $providers) {
 # ═══════════════════════════════════════════════════
 #  页面 4 · 急救
 # ═══════════════════════════════════════════════════
-$pgRescue = New-Page 'rescue' '急救 · 改崩了点这里'
+$pgRescue = New-Page 'rescue' '急救 · 改崩了点这里 (先试维修台 · 修不好再回档)'
 
-$cardRoll = New-Card $pgRescue 24 64 532 108 '紧急回档' '停 daemon · 未提交改动 stash 收好 (不丢) · 回到 master 上次良好状态 · 重启。 输出看右栏。'
+$cardRoll = New-Card $pgRescue 24 188 532 108 '紧急回档 · 修不好再用' '维修台也救不回来时才用。 一刀切回到 master 上次良好版本 (这段改动会回退 · 未提交改动 stash 收好不丢)。 需要 git。 输出看右栏。'
 $btnRoll = New-ActionButton $cardRoll '回档' 372 34 142 44 $cDanger $cText
 $btnRoll.Add_Click({
     $confirm = [System.Windows.Forms.MessageBox]::Show(
@@ -988,7 +1074,7 @@ $btnRoll.Add_Click({
     Term-Run 'powershell.exe' "-NoProfile -ExecutionPolicy Bypass -File `"$rb`""
 })
 
-$cardRepair = New-Card $pgRescue 24 188 532 108 '应急维修台 (交互式)' 'daemon 起不来 / 白屏时 · 开一个直连 LLM 的终端 · 让 AI 像在 Cursor 里一样对话+用工具自己修自己。 交互式 · 在独立窗口打开。'
+$cardRepair = New-Card $pgRescue 24 64 532 108 '应急维修台 · 推荐先用' 'daemon 起不来 / 白屏先点这个。 直连 LLM 的终端 · 让 AI 像在 Cursor 里一样对话+用工具自己查自己修——精准修复、保留你的进展。 不需要 git · 独立窗口打开。'
 $btnRepair = New-ActionButton $cardRepair '开维修台' 372 34 142 44 $cBtn $cText
 $btnRepair.Add_Click({
     Add-Log '打开应急维修台 (repair.bat · 独立交互窗口)' 'info'
@@ -1040,8 +1126,24 @@ function Invoke-CheckUpdate {
             [System.Windows.Forms.MessageBox]::Show("还没配置升级源。`r`n去 WebUI 对 OPUS 说「配置升级源」· 或手动: git remote add gitee <中心库URL>", $title) | Out-Null
             return
         }
-        $remote = if ($remotes -contains 'gitee') { 'gitee' } elseif ($remotes -contains 'github') { 'github' } else { $remotes[0] }
-        git fetch $remote --prune 2>&1 | Out-Null
+        # 多源 failover (卷七十五续): 按 gitee > github > 其他 优先级【实际试拉】· 谁先成功用谁。
+        # 带速度超时 (20s 内速度 < 1KB/s 即放弃) + 系统 TCP connect 超时兜底 · 防断网/源抽风冻死 UI。
+        # 现状: 下游只配了 gitee · 实际只试它; 等 github 转公开 + 下游配上 · 自动 failover 激活。
+        $ordered = @()
+        if ($remotes -contains 'gitee')  { $ordered += 'gitee' }
+        if ($remotes -contains 'github') { $ordered += 'github' }
+        $ordered += @($remotes | Where-Object { $_ -ne 'gitee' -and $_ -ne 'github' })
+        $remote = $null
+        $tried = @()
+        foreach ($r in $ordered) {
+            git -c http.lowSpeedLimit=1024 -c http.lowSpeedTime=20 fetch $r --prune 2>&1 | Out-Null
+            $tried += $r
+            if ($LASTEXITCODE -eq 0) { $remote = $r; break }
+        }
+        if (-not $remote) {
+            [System.Windows.Forms.MessageBox]::Show("升级源都连不上 (试过: $($tried -join ', '))。`r`n可能网络不通或源临时抽风 · 稍后再试。`r`n本地内核版本: v$localVer", $title) | Out-Null
+            return
+        }
         $remoteVer = ''
         try { $remoteVer = (git show "$remote/master:core_manifest.json" 2>$null | ConvertFrom-Json).core_version } catch {}
         if ($localVer -and $remoteVer -and ($localVer -ne $remoteVer)) {
@@ -1187,10 +1289,12 @@ $ossText.Font = F 9
 $ossText.ForeColor = $cDim
 $cardOss.Controls.Add($ossText)
 
-# 发布 / 视频 / 教程 = 作者的 B 站主页 (从首页挪过来)
-$cardBili = New-Card $aboutInner 24 384 532 92 '发布 · 视频 · 教程' '唯一发布地点 + 全部视频 / 教程都在这 · 后续更新与教程也只在这里发。'
-$btnBili = New-ActionButton $cardBili '作者的 B 站主页 →' 372 26 142 40 ([System.Drawing.Color]::FromArgb(60, 120, 220)) $cText
+# 发布 / 视频 / 教程 = 作者的 B 站 + 抖音主页 (框内双按钮 · 胶囊 · 品牌色 · 链接来自验签后的 brand.json)
+$cardBili = New-Card $aboutInner 24 384 532 92 '发布 · 视频 · 教程' '全部视频 / 教程都在这 · 后续更新也只在这两个号发。'
+$btnBili = New-ActionButton $cardBili '▶  B 站主页' 358 13 154 32 ([System.Drawing.Color]::FromArgb(0, 174, 236)) $cText 15
 $btnBili.Add_Click({ Open-Url $script:BiliUrl })
+$btnDouyin = New-ActionButton $cardBili '♪  抖音主页' 358 51 154 32 ([System.Drawing.Color]::FromArgb(254, 44, 85)) $cText 15
+$btnDouyin.Add_Click({ Open-Url $script:DouyinUrl })
 
 # 社群 (二维码 / 微信号留口)
 $cardComm = New-Card $aboutInner 24 486 532 176 '社群' ''

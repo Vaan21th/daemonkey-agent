@@ -181,6 +181,19 @@ def _maybe_start_proactive():
         print(f"[opus-api] proactive scheduler 起不来（不影响 API）: {e}")
 
 
+def _maybe_start_scheduled_tasks():
+    """0.5.0 · NLP 定时任务调度 · 总开关 OPUS_SCHEDULED_TASKS (默认开)"""
+    try:
+        from workers.task_scheduler import start_task_scheduler_in_background
+        thread = start_task_scheduler_in_background()
+        if thread is not None and thread.is_alive():
+            print("[opus-api] task scheduler 已起 · 每 60s 查一次到点的定时任务 (OPUS_SCHEDULED_TASKS=0 禁用)")
+        else:
+            print("[opus-api] task scheduler 禁用 (OPUS_SCHEDULED_TASKS=0)")
+    except Exception as e:
+        print(f"[opus-api] task scheduler 起不来（不影响 API）: {e}")
+
+
 def _maybe_start_wechat():
     """卷六十一 · iLink 微信收消息监听 · 扫过码 (有 ilink_token.json) 且 OPUS_WECHAT_ILINK!=0 才起"""
     try:
@@ -314,6 +327,7 @@ def main():
         _maybe_start_scheduler()
         _maybe_start_capability_mirror()
         _maybe_start_proactive()
+        _maybe_start_scheduled_tasks()
         _maybe_start_wechat()
     elif safe_mode:
         print("[opus-api] SAFE MODE · 跳过后台调度启动")

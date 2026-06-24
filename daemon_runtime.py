@@ -55,6 +55,35 @@ class DaemonRuntime:
 RUNTIME = DaemonRuntime()
 
 
+def bg_max_tokens(default: Optional[int] = None) -> int:
+    """后台任务 (proactive / scheduled / 各 worker) 的 max_tokens 真相源。
+
+    病根: 用户在 WebUI 设的 max_tokens 只接进了主聊天 (_resolve_max_tokens)·后台 worker
+      各写死小常量 (2000 / 2048 / 8000 …) → 用户设了大值·后台任务仍被截断。
+    根治: 后台也读同一个真相源 (active config.max_tokens)·用户调一次全局生效。
+
+    优先级: active config.max_tokens (用户全局设置) > default (调用方建议下限) >
+            模型推荐 (default_max_tokens_for) > safe_max_tokens 兜底 floor。
+    末尾过 safe_max_tokens: thinking 保底 + 按模型 max_output 封顶 (防超上限被 API 拒)。
+
+    实时读 active config (不缓存 / 不依赖字段注入)·切配置下一次调用即生效。 best-effort:
+    任何异常都回落到 safe_max_tokens·绝不让额度解析把后台任务搞崩。
+    """
+    from provider_presets import safe_max_tokens, default_max_tokens_for
+    model = RUNTIME.model or ""
+    req = 0
+    try:
+        from workers.provider_configs import get_active_config
+        cfg = get_active_config(include_key=False)
+        if cfg and cfg.get("max_tokens"):
+            req = int(cfg["max_tokens"])
+    except Exception:
+        pass
+    if req <= 0:
+        req = int(default or 0) or default_max_tokens_for(model)
+    return safe_max_tokens(req, model)
+
+
 def reload_soul_into_runtime() -> Optional[int]:
     """卷五十四 · 同会话热重载灵魂 (Hermes '建立对你的深度模型' 那一环)。
 

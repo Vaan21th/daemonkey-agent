@@ -355,11 +355,13 @@ def recommended_max_tokens(model_id: str) -> int:
 
 
 # ── thinking 模型 max_tokens 兜底 · 单一真相源 (卷七十四续 · 2026-06-23 · BRO 全扫拍板) ──
-# 病根: thinking 模型 (GLM-5.x / DeepSeek-R1 / o 系列 / *-think) 把 max_tokens 当成
+# 病根: thinking 模型 (GLM-5.x / DeepSeek-V4 / R1 / o 系列 / *-think) 把 max_tokens 当成
 #   『reasoning + 可见输出』的总预算·reasoning 先吃。 worker 里写死的小 max_tokens
 #   (如 onboarding 2000 / wechat 2048) 会被 reasoning 吃光 → 回复空白/截断。
 # 根治: 所有写死 max_tokens 的调用点都过 safe_max_tokens()·别再裸传小常量。
-THINKING_MAX_TOKENS_FLOOR = 8192
+# 值参考业界 (卷七十四续三十 · 2026-06-24): Claude Code 默认 MAX_OUTPUT=32K·且 thinking
+#   预算默认就吃几万 token·8192 对 reasoning 模型偏保守 → 抬到 16384 (reasoning 吃一半仍剩 8K)。
+THINKING_MAX_TOKENS_FLOOR = 16384
 
 
 def is_thinking_model(model_id: str) -> bool:
@@ -369,7 +371,7 @@ def is_thinking_model(model_id: str) -> bool:
         return False
     if "glm-5" in m or "glm-4.7" in m or "coding-glm" in m:   # GLM 5.x / 4.7 全系带 thinking
         return True
-    if "deepseek-r" in m or "reasoner" in m:                   # DeepSeek R1 / reasoner
+    if "deepseek-r" in m or "reasoner" in m or "deepseek-v4" in m:  # R1/reasoner · V4 起带 thinking(V3 非)
         return True
     if "think" in m or "qwq" in m or "reasoning" in m:         # claude *-think / *-Think / qwq
         return True
@@ -382,6 +384,7 @@ def safe_max_tokens(requested, model_id: str) -> int:
     """写死/请求的 max_tokens 兜底:thinking 模型抬到安全下限·普通模型保持原值不浪费。
 
     **所有写死 max_tokens 的调用点都该过这个**·别再裸传小常量 (卷七十四续 · 2026-06-23)。
+    抬升后再按模型 max_output 封顶 (卷七十四续三十)·防 floor 顶穿小输出模型 (如 glm-5v-turbo 上限 8192)。
     """
     try:
         req = int(requested) if requested else 0
@@ -390,7 +393,10 @@ def safe_max_tokens(requested, model_id: str) -> int:
     if req <= 0:
         req = THINKING_MAX_TOKENS_FLOOR
     if is_thinking_model(model_id) and req < THINKING_MAX_TOKENS_FLOOR:
-        return THINKING_MAX_TOKENS_FLOOR
+        req = THINKING_MAX_TOKENS_FLOOR
+    cap = max_output_for(model_id)
+    if cap and req > cap:
+        req = cap
     return req
 
 
@@ -415,6 +421,22 @@ def max_output_for(model_id: str) -> int:
         for m in preset.recommended_models:
             if m.get("id", "").lower() == model_lower:
                 return int(m.get("max_output") or 0)
+    return 0
+
+
+def default_max_tokens_for(model_id: str) -> int:
+    """按 model_id 查"正常一轮"的推荐输出额度 (max_tokens_default) · 找不到返 0。
+
+    后台 turn (定时任务/未来需长输出的自驱任务) 该用这个·而不是后台搭话的小常量——
+    搭话一句话 2048 够·但生成完整文档/报告 2048 会被截断。
+    """
+    if not model_id:
+        return 0
+    model_lower = model_id.lower()
+    for preset in PRESETS:
+        for m in preset.recommended_models:
+            if m.get("id", "").lower() == model_lower:
+                return int(m.get("max_tokens_default") or 0)
     return 0
 
 
