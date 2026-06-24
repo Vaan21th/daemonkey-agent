@@ -581,9 +581,19 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
         "（\"当他问你'你记得吗'\"）的诚实协议回答。"
     )
 
+    # 产品宪法注入 (0.5.0): 通用三条(内核地基·随 update_core 同步) + 实例 soul/CONSTITUTION.md
+    # (私有·从使用沉淀)。 紧邻工程铁律 · 优先级最高。 模块/文件缺失 fallback 空 · 不阻断启动。
+    constitution_block = ""
+    try:
+        from product_constitution import build_constitution_block
+        constitution_block = build_constitution_block(soul_dir)
+    except Exception:
+        constitution_block = ""
+
     system_prompt = (
         preamble
         + daemon_rules_block
+        + constitution_block
         + skill_block_header
         + skill_text
         + middle
