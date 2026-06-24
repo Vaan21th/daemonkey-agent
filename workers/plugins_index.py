@@ -416,7 +416,7 @@ _CATEGORY_RULES = [
         "summarize_session", "set_model",
     }),
     ("external", lambda n, s: n in {
-        "wechat_send", "client_handoff", "summon_cursor", "mcp_call",
+        "wechat_send", "summon_cursor", "mcp_call",
     }),
 ]
 

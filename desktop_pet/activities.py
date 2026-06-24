@@ -54,7 +54,6 @@ TOOL_DESC_TEMPLATES: dict[str, str] = {
     "wechat_send":      "发微信",
     "summon_cursor":    "召唤 Cursor",
     "ssh_remote":       "远程诊断",
-    "client_handoff":   "查客户档案",
     "manage_info_source": "管理信源",
     "generate_report":  "生成报告",
     "draft_studio":     "工作室出品",

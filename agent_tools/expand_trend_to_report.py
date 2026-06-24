@@ -326,7 +326,7 @@ SPEC = ToolSpec(
             },
             "theme": {
                 "type": "string",
-                "description": "docx 主题: opus_studio (默认) / manju",
+                "description": "docx 主题: opus_studio (默认) / midnight",
             },
         },
         "required": ["trend_index"],

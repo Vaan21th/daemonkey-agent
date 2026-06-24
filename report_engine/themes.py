@@ -12,7 +12,7 @@ report_engine/themes.py
   - 主要色板（封面强调色 / 列表 bullet 色等）
 
 默认版（opus_studio）色板基于 chat.css 的 #9F7AEA 紫色生态
-另有一套深蓝版（manju）备选
+另有一套深蓝版（midnight）备选
 """
 from __future__ import annotations
 
@@ -58,8 +58,8 @@ class Theme:
 
 
 # ─── 深蓝主题 ────────────────────────────────────────────────────
-THEME_MANJU = Theme(
-    name="manju",
+THEME_MIDNIGHT = Theme(
+    name="midnight",
     description="深蓝主题 · 深蓝标题 + 蓝头白字表 + 隔行灰底",
     font_cjk="微软雅黑",
     font_en="Consolas",
@@ -126,7 +126,7 @@ THEME_DARK_PURPLE = Theme(
 
 
 THEMES: Dict[str, Theme] = {
-    "manju": THEME_MANJU,
+    "midnight": THEME_MIDNIGHT,
     "opus_studio": THEME_OPUS_STUDIO,
     # dark_purple 暂不暴露 · 等远期实测
 }

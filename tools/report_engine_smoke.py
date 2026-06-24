@@ -13,7 +13,7 @@ tools/report_engine_smoke.py
   3. /dashboard/reports endpoint · list 模式
   4. /reports/<file> endpoint · download 模式 (Bearer + ?token=)
   5. /reports/../etc/passwd 等越权尝试 · 必须被拒
-  6. 主题切换 (opus_studio / manju) · 都能生成
+  6. 主题切换 (opus_studio / midnight) · 都能生成
 
 不调 LLM。不需要真 token——本测试自己用 os.environ 设一个临时 token。
 """
@@ -107,15 +107,15 @@ class ReportEngineTests(unittest.TestCase):
         self.assertGreater(size, 3000, f"docx 文件过小 ({size} bytes) · 可能渲染失败")
         self.assertLess(size, 200000, f"docx 异常大 ({size} bytes)")
 
-    def test_render_with_manju_theme(self):
+    def test_render_with_midnight_theme(self):
         from report_engine import render_report
 
-        out = self.tmpdir / "smoke-manju.docx"
+        out = self.tmpdir / "smoke-midnight.docx"
         final = render_report(
             md_text=SAMPLE_MD,
             output_path=out,
             cover={"title": "深蓝主题验证", "audience": "BRO"},
-            theme="manju",
+            theme="midnight",
         )
         self.assertTrue(final.exists())
         self.assertGreater(final.stat().st_size, 3000)
@@ -180,7 +180,8 @@ class GenerateReportToolTests(unittest.TestCase):
         schema = self.tool.input_schema
         self.assertIn("title", schema["properties"])
         self.assertIn("body", schema["properties"])
-        self.assertEqual(schema["required"], ["title", "body"])
+        # body 可选:不传时 _run 自动抓本条回复正文当报告主体(见 SPEC body 描述)·故 required 只含 title
+        self.assertEqual(schema["required"], ["title"])
 
     def test_summarize(self):
         s = self.tool.summarize({"title": "测试报告", "body": "x" * 100})
@@ -213,14 +214,14 @@ class GenerateReportToolTests(unittest.TestCase):
         for m in matches:
             self.assertGreater(m.stat().st_size, 3000)
 
-    def test_happy_path_manju_theme(self):
+    def test_happy_path_midnight_theme(self):
         r = self.tool.run({
             "title": "Smoke-深蓝主题",
             "body": "## 段落\n\n正文。",
-            "theme": "manju",
+            "theme": "midnight",
         })
         self.assertTrue(r.ok)
-        self.assertIn("manju", r.output)
+        self.assertIn("midnight", r.output)
 
 
 class ApiReportEndpointTests(unittest.TestCase):

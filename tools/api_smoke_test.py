@@ -79,9 +79,11 @@ def main() -> int:
     # 1b) /ui 不验证 → 200 + HTML
     r = client.get("/ui")
     _step("GET /ui  (no auth)  → 200", r.status_code == 200, f"status={r.status_code}")
+    # /ui 按相遇状态分流:未相遇→index.html(相遇页)·已相遇→chat.html。两页共同标志=<title>Daemonkey。
+    # smoke 只验证"返回了有效前端页"·不绑定具体哪页(否则纯净版默认未相遇会误报)。
     _step(
-        "GET /ui  body looks like the chat HTML",
-        "<title>OPUS" in r.text and "OPUS_API_TOKEN" in r.text,
+        "GET /ui  serves a valid page (onboarding or chat)",
+        "<title>Daemonkey" in r.text,
         f"len={len(r.text)}",
     )
 
@@ -195,18 +197,12 @@ def main() -> int:
     print(" 卷十八扩展检查 · 工具注册 + 防爬约束")
     print("-" * 60)
 
-    from agent_tools import REGISTRY, TIER_AUTO, TIER_CONFIRM
+    from agent_tools import REGISTRY, TIER_CONFIRM
     _step("agent_tools REGISTRY 含 ssh_remote", "ssh_remote" in REGISTRY)
-    _step("agent_tools REGISTRY 含 client_handoff", "client_handoff" in REGISTRY)
     _step(
         "ssh_remote 档位是 CONFIRM",
         REGISTRY["ssh_remote"].tier == TIER_CONFIRM,
         f"tier={REGISTRY['ssh_remote'].tier}",
-    )
-    _step(
-        "client_handoff 档位是 AUTO",
-        REGISTRY["client_handoff"].tier == TIER_AUTO,
-        f"tier={REGISTRY['client_handoff'].tier}",
     )
 
     from tool_loop import DEFAULT_MAX_ITERATIONS, _validate_args
@@ -226,14 +222,16 @@ def main() -> int:
     # ssh_remote args 校验测试
     from agent_tools.ssh_remote import _validate_host, _validate_command
 
-    ok, _ = _validate_host("starway")
-    _step("ssh_remote · starway 是合法 host", ok)
+    # 临时配白名单·测试自包含(纯净版默认 OPUS_SSH_HOST_WHITELIST 为空·不依赖外部环境)
+    os.environ["OPUS_SSH_HOST_WHITELIST"] = "test-allowed-host"
+    ok, _ = _validate_host("test-allowed-host")
+    _step("ssh_remote · 白名单内 host 合法", ok)
     ok, _ = _validate_host("evil-host-not-allowed")
-    _step("ssh_remote · 未知 host 被拒", not ok)
+    _step("ssh_remote · 白名单外 host 被拒", not ok)
 
     ok, _ = _validate_command("tail -100 /var/log/nginx/error.log")
     _step("ssh_remote · 'tail -100 /var/log/...' 合法", ok)
-    ok, _ = _validate_command("docker logs manju-backend --tail 200")
+    ok, _ = _validate_command("docker logs web-backend --tail 200")
     _step("ssh_remote · 'docker logs' 合法", ok)
     ok, _ = _validate_command("systemctl status docker")
     _step("ssh_remote · 'systemctl status' 合法", ok)
@@ -244,7 +242,7 @@ def main() -> int:
     _step("ssh_remote · 'rm -rf' 拒绝", not ok, reason[:80] if not ok else "")
     ok, _ = _validate_command("systemctl restart docker")
     _step("ssh_remote · 'systemctl restart' 拒绝", not ok)
-    ok, _ = _validate_command("docker exec manju-backend bash")
+    ok, _ = _validate_command("docker exec web-backend bash")
     _step("ssh_remote · 'docker exec' 拒绝", not ok)
     ok, _ = _validate_command("docker compose up -d")
     _step("ssh_remote · 'docker compose up' 拒绝", not ok)

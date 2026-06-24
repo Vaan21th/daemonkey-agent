@@ -8,7 +8,7 @@ report_engine · 文档生产引擎
 设计原则：
   - 不引入额外依赖：python-docx 已是本工程依赖
   - 自包含：copy + adapt · 不依赖外部代码
-  - 主题可换：深蓝（manju 主题）+ 工作室紫（OPUS 主题）+ 未来可扩
+  - 主题可换：深蓝（midnight 主题）+ 工作室紫（OPUS 主题）+ 未来可扩
   - 失败可观察：docx 被 Word 占用时自动换名 · 错误信息清晰
 
 公共 API:

@@ -552,7 +552,7 @@ def render_report(
         cover           封面信息 dict · 字段： title / subtitle / note /
                                               audience / footer / date
                                               · None → 不渲染封面页（直接正文）
-        theme           主题名（'opus_studio' / 'manju'）或 Theme 对象
+        theme           主题名（'opus_studio' / 'midnight'）或 Theme 对象
         here_dir        解析 markdown 中相对图片路径的基准目录
                         · 默认 output_path.parent
         strip_h1_prefix 如果 markdown 顶部一级标题已在 cover 体现 · 用此字符串去掉
@@ -618,7 +618,7 @@ def render_report(
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print("用法: python -m report_engine.markdown_to_docx <src.md> <out.docx> [theme]")
-        print("可选 theme: opus_studio (默认) / manju")
+        print("可选 theme: opus_studio (默认) / midnight")
         sys.exit(1)
     src = Path(sys.argv[1])
     out = Path(sys.argv[2])

@@ -26,7 +26,7 @@ NLP 触发场景（OPUS 自己决定调这个工具的时机）：
   audience      - 面向 · 例 '用户 自看' / '面向：投资人'
   note          - 封面备注 · 一行短句说明文档背景
   footer        - 封面页脚 · 默认 'Daemonkey · 工作室出品'
-  theme         - 'opus_studio' (默认 · 紫色) / 'manju' (深蓝)
+  theme         - 'opus_studio' (默认 · 紫色) / 'midnight' (深蓝)
   include_cover - bool (默认 True) · 不要封面就传 false · 纯正文 docx
   embed_image_dir - 字符串 · 解析 body 中相对图片路径的基准目录
                     默认 data/reports/_assets/<safe_title>/
@@ -265,8 +265,8 @@ SPEC = ToolSpec(
             },
             "theme": {
                 "type": "string",
-                "enum": ["opus_studio", "manju"],
-                "description": "视觉主题 · 默认 opus_studio (紫色) · manju 是深蓝",
+                "enum": ["opus_studio", "midnight"],
+                "description": "视觉主题 · 默认 opus_studio (紫色) · midnight 是深蓝",
             },
             "include_cover": {
                 "type": "boolean",
