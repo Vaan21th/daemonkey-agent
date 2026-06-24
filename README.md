@@ -230,24 +230,38 @@ On first launch it's a "seed": no name, doesn't know you yet. Your first convers
 - 🏠 **Local-first · data stays home** — the daemon runs on your machine; conversations, profile and memory never leave it.
 - 🔧 **Seventy-two transformations** — five paths to give it new abilities: Playbooks / Studio Apps / MCP servers / hand-written `agent_tool`s / importing external SKILLs. It can even **go find abilities online itself** (capability discovery engine).
 - 🩹 **Self-healing + self-upgrading** — broke itself? Double-click the repair console and it diagnoses & fixes itself, or roll back in one click. The kernel upgrades incrementally from the official source, and **the features you grew yourself are never overwritten**.
-- 📜 **Product constitution** — Closed-Loop / NLP-First / Traceability: three root principles baked into its "genes," constraining every judgment ([closed-loop diagram](docs/img/05-closed-loop.png)).
+- 📜 **Product constitution** — Closed-Loop / NLP-First / Traceability: three root principles baked into its "genes," constraining every judgment.
 - 🌐 **Multi-carrier** — Web UI (now) → terminal → WeChat / IM → desktop robot (roadmap). New shell, same soul.
 
 ### Architecture
 
-See the [architecture overview](docs/img/01-architecture.png). The core engine is a local daemon: `soul_loader` (loads profile + memory + constitution into context), `tool_loop` (model calls tools with a 3-tier trust gate), `daemon_api` (FastAPI backend), `session` (per-turn `.jsonl` persistence), `memory_index` (FTS5 full-text recall).
+![Architecture](docs/img/01-architecture-en.png)
+
+The core engine is a local daemon: `soul_loader` (loads profile + memory + constitution into context), `tool_loop` (model calls tools with a 3-tier trust gate), `daemon_api` (FastAPI backend), `session` (per-turn `.jsonl` persistence), `memory_index` (FTS5 full-text recall).
 
 ### 6-layer memory
 
-See the [memory diagram](docs/img/02-memory-layers.png). L1 model weights → L2 soul loading → L3 session context → L4 auto-compaction → FTS5 retrieval → L5 cross-session transfer → L6 cross-container sync. **Iron rule: code and data are fully separated — the kernel self-upgrades (code only), your memory is never touched.**
+![6-layer memory](docs/img/02-memory-layers-en.png)
+
+L1 model weights → L2 soul loading → L3 session context → L4 auto-compaction → FTS5 retrieval → L5 cross-session transfer → L6 cross-container sync. **Iron rule: code and data are fully separated — the kernel self-upgrades (code only), your memory is never touched.**
 
 ### Daemonkey vs Hermes
 
-See the [comparison](docs/img/03-vs-hermes.png). Daemonkey's FTS5 retrieval borrows from solid engineering like Hermes — but we keep the **soul layer (readable / inheritable / it grows too)**, the most fundamental difference from a general-purpose agent framework.
+![Daemonkey vs Hermes](docs/img/03-vs-hermes-en.png)
+
+Daemonkey's FTS5 retrieval borrows from solid engineering like Hermes — but we keep the **soul layer (readable / inheritable / it grows too)**, the most fundamental difference from a general-purpose agent framework.
 
 ### Extending it
 
-See the [SKILL & extension diagram](docs/img/04-skill-system.png). `SKILL.md` is a **role entry point**, not "a skill." Five ways to add abilities (easy → hard): Playbook → Studio App → MCP server → write an `agent_tool` → let it discover abilities itself. Since 0.5.2 you can also **import external SKILL docs** — feed it a skill doc and it normalizes it into its own indexed, on-demand Playbook.
+![SKILL & extension](docs/img/04-skill-system-en.png)
+
+`SKILL.md` is a **role entry point**, not "a skill." Five ways to add abilities (easy → hard): Playbook → Studio App → MCP server → write an `agent_tool` → let it discover abilities itself. Since 0.5.2 you can also **import external SKILL docs** — feed it a skill doc and it normalizes it into its own indexed, on-demand Playbook.
+
+### Closed-loop (product constitution)
+
+![Closed-loop](docs/img/05-closed-loop-en.png)
+
+Every AI → you output must have a you → AI feedback channel that truly feeds the **next LLM call**. What you decline ranks first next time; what you did becomes its experience — so it understands you more over time instead of starting from zero.
 
 ### Quick start (Windows)
 
@@ -259,7 +273,9 @@ See the [SKILL & extension diagram](docs/img/04-skill-system.png). `SKILL.md` is
 
 ### Self-healing & upgrades
 
-`repair.bat` (repair console — preferred, it self-diagnoses and fixes only what's broken) · `ROLLBACK.bat` (one-click rollback) · `verify.bat` (smoke test). Upgrades separate kernel (L1) / user features (L2) / runtime data (L3): `update_core` only ships official kernel improvements; **your own tools, memory, and grown features are left untouched** ([layered upgrade diagram](docs/img/06-upgrade-layers.png)). ZIP users get update sources (Gitee primary + GitHub backup, auto-failover) configured silently on first launch.
+![Layered upgrade](docs/img/06-upgrade-layers-en.png)
+
+`repair.bat` (repair console — preferred, it self-diagnoses and fixes only what's broken) · `ROLLBACK.bat` (one-click rollback) · `verify.bat` (smoke test). Upgrades separate kernel (L1) / user features (L2) / runtime data (L3): `update_core` only ships official kernel improvements; **your own tools, memory, and grown features are left untouched**. ZIP users get update sources (Gitee primary + GitHub backup, auto-failover) configured silently on first launch.
 
 ### Roadmap & Changelog
 
