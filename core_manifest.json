@@ -10,7 +10,7 @@
     "note": "支持多源(gitee+github)。真相源唯一=母体 master;只单向往外 push,下游只拉不推。update_core 可指定从哪个 remote 拉。github 当前为作者私有备份源(下游需授权方可匿名拉·转公开后即可当 gitee 的海外/抽风兜底源)。",
     "remotes": {
       "gitee": "https://gitee.com/vaan21th/dae-monkey.git",
-      "github": "https://github.com/Vaan21th/daemonkey.git"
+      "github": "https://github.com/Vaan21th/daemonkey-agent.git"
     }
   },
   "kernel": {
