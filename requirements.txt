@@ -36,6 +36,10 @@ requests>=2.31.0
 qrcode>=7.4.2
 cryptography>=42.0.0
 
+# 浏览器的"手/眼"（browser_act / browser_fetch）· 用 Playwright 驱动系统 Edge
+# 走 connect_over_cdp / channel="msedge" 接管系统已装的 Edge·无需 `playwright install` 下载浏览器内核
+playwright>=1.40.0
+
 # 桌宠（可选）· 桌面上游走的像素小猫·反映 daemon 实时活动
 # 没装也不影响主程序·只是启动器里的"召唤桌宠"按钮点了会提示装 PyQt6
 PyQt6>=6.6.0

@@ -7,6 +7,24 @@
 
 ---
 
+## [0.5.5] — 2026-06-29
+
+**浏览器的手 —— 真的能操作网页（点/填/上传/收图），不只是「看」**
+
+### 新增 Added
+- **`browser_act` 浏览器的"手"** —— 在 daemon **专属 Edge** 上真的操作网页：`goto` / `click` / `fill`（含 contenteditable 富文本框）/ `upload`（传本地参考图）/ `press` / `wait` / `read` / `download` / `harvest`（读 src 直接收页面已渲染的图/视频）/ `screenshot` / `inspect`（把页面可交互控件 dump 成纯文字，纯文本模型据此挑选择器、不靠视觉）。多步动作**不关标签页**，状态留在专属 Edge，能跨多次调用接力（开站 → 上传参考图 → 填提示词 → 点生成 → 等 → 收图）。找不到元素**绝不假装成功**：自动截图 + 如实报卡在哪一步。
+- **专属 Edge（独立 profile + 独立端口 9333）** —— daemon 自己拥有一个与你日常浏览器**物理隔离**的 Edge，需要时自动拉起、跨调用复用，**绝不碰、绝不杀你的主浏览器**。需登录的站点（豆包/知乎/微信…）在这个专属窗口里登一次，登录态持久化在专属 profile。`browser_fetch`（眼）与 `browser_act`（手）共用同一实例，杜绝"眼手连到不同浏览器"。
+
+### 变更 Changed
+- **`browser_fetch` 改走专属 Edge** —— 不再依赖手动开 `Edge --remote-debugging-port=9222`；`cdp` 模式自动拉起 daemon 专属 Edge，`auto` 模式专属 Edge 在就 attach、不在走轻量 standalone。
+- **`playwright` 进 `requirements.txt`** —— 浏览器三件套靠 Playwright 驱动系统 Edge（`connect_over_cdp` / `channel="msedge"`），**无需** `playwright install` 下载浏览器内核。此前未列依赖，新用户 pip 完直接缺包。
+
+> Added `browser_act` — the browser "hand": click / fill / upload / press / wait / read / download / harvest / screenshot / inspect, on a **dedicated** Edge (own profile + port 9333, physically isolated from your daily browser, never touched/killed). Multi-step state persists across calls; never fakes success (auto screenshot + honest stuck-point on failure). `browser_fetch` now auto-launches & shares that same dedicated Edge. Added `playwright` to requirements (drives system Edge via CDP — no `playwright install` needed).
+
+> **升级说明**：浏览三件套是 `agent_tools/` 下的 L2 能力工具（同 `web_fetch`，**不在 `update_core` 白名单**）。老用户点启动器「检查更新」只同步白名单内的内核文件、**不含此能力** —— 请**下载本 Release 的 ZIP / exe** 即得（或自行 `pip install playwright` 后把 `agent_tools/_browser.py` / `_browser_actions.py` / `browser_act.py` 拷进去 + 用本版 `browser_fetch.py`）。
+
+---
+
 ## [0.5.2b] — 2026-06-29
 
 **用户报修三连（vision 404 / 填 URL 卡死 / env 暴露内部代号）**

@@ -5,7 +5,7 @@
 
 ---
 
-## 当前状态 · Where we are（0.5.2b）
+## 当前状态 · Where we are（0.5.5）
 
 ✅ **Windows 桌面 · 完整本地 daemon**
 
@@ -14,6 +14,7 @@
 - 出品工坊（App + 工作流）/ BI 看板 / 信息雷达
 - NLP 定时任务（自然语言设周期任务，到点自动跑）
 - 技能系统：Playbook / 工坊 App / MCP / agent_tool / 能力发现 / **SKILL 导入闭环**
+- **浏览器的手**（`browser_act`）—— 在专属 Edge 上真的点/填/上传/收图/探路，配合只读的 `browser_fetch`「眼睛」，多步接力、绝不假装成功
 - 产品宪法两层注入 + 急救体系（维修台 / 回档 / 自测）
 - 内核自助升级（Gitee 主 + GitHub 备份，用户自增功能不被覆盖）
 

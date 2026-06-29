@@ -4,6 +4,9 @@
 .venv/
 sessions/
 onboarding/data/
+# daemon 专属 CDP Edge profile（登录态/缓存）—— 运行时二进制·永不入库
+# （sessions/ 已整体忽略·此行显式留痕：浏览器的手新增的专属 profile）
+sessions/edge_cdp_profile/
 
 # 相遇产生的用户身份（开源仓库只带空模板，不带某个用户填充后的内容）
 soul/IDENTITY.json

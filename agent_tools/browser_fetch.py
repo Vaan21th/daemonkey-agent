@@ -35,20 +35,14 @@ OPUS 用浏览器抓需要 JS 渲染 / 需要登录才能看的网页。
 from __future__ import annotations
 
 import re
-import socket
 from html.parser import HTMLParser
 from pathlib import Path
 
-import httpx
-
 from . import TIER_CONFIRM, ToolResult, ToolSpec, register_tool
+from ._browser import CDP_URL, cdp_available, ensure_cdp
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-CDP_HOST = "127.0.0.1"
-CDP_PORT = 9222
-CDP_URL = f"http://{CDP_HOST}:{CDP_PORT}"
 
 PW_PROFILE = PROJECT_ROOT / "sessions" / "browser_profile_standalone"
 
@@ -97,20 +91,6 @@ class _TextExtractor(HTMLParser):
         raw = re.sub(r"\n[ \t]+", "\n", raw)
         raw = re.sub(r"\n{3,}", "\n\n", raw)
         return raw.strip()
-
-
-def _check_cdp_available() -> bool:
-    """快速 TCP 探测 9222 端口——避免每次跑 httpx 等 30s timeout。"""
-    try:
-        with socket.create_connection((CDP_HOST, CDP_PORT), timeout=0.5):
-            pass
-    except (OSError, ConnectionError):
-        return False
-    try:
-        resp = httpx.get(f"{CDP_URL}/json/version", timeout=2.0)
-        return resp.status_code == 200
-    except httpx.HTTPError:
-        return False
 
 
 def _fetch_via_cdp(url: str, wait_seconds: int) -> tuple[bool, str, str, str]:
@@ -205,25 +185,23 @@ def _run(args: dict) -> ToolResult:
     visible = bool(args.get("visible", False))
     mode = (args.get("mode") or "auto").lower()
 
-    cdp_ok = _check_cdp_available()
-
     chosen_mode = ""
     if mode == "cdp":
-        if not cdp_ok:
-            from identity import localize_narration as _ln
+        # 显式要 cdp → 自动拉起 daemon 专属 Edge（独立 profile，不碰用户主浏览器）
+        if not ensure_cdp(launch=True):
             return ToolResult(
                 ok=False, output="",
-                error=_ln(
-                    f"CDP requested but no Edge listening on {CDP_URL}. "
-                    f"BRO needs to start Edge with: msedge.exe --remote-debugging-port=9222 "
-                    f"(can add to taskbar shortcut target)"
+                error=(
+                    f"CDP requested but daemon Edge not up on {CDP_URL}. "
+                    f"通常是没装 Edge / 装在非标准路径；或先触发一次 browser_act 让它拉起专属 Edge。"
                 ),
             )
         chosen_mode = "cdp"
     elif mode == "standalone":
         chosen_mode = "standalone"
     else:
-        chosen_mode = "cdp" if cdp_ok else "standalone"
+        # auto：专属 Edge 已在就 attach（眼手共用同一实例），否则走轻量 standalone
+        chosen_mode = "cdp" if cdp_available() else "standalone"
 
     if chosen_mode == "cdp":
         ok, payload, title, final_url = _fetch_via_cdp(url, wait_seconds)
@@ -249,7 +227,7 @@ def _run(args: dict) -> ToolResult:
     out_lines = [
         f"browser_fetch · {final_url}",
         # 只本地化这条 meta 行(BRO→主人名)·正文 text 是透传网页内容·不动
-        _ln(f"mode: {chosen_mode}{' (BRO Edge cookies shared)' if chosen_mode == 'cdp' else ' (no login state)'}"),
+        _ln(f"mode: {chosen_mode}{' (dedicated Edge · its own login)' if chosen_mode == 'cdp' else ' (no login state)'}"),
     ]
     if title:
         out_lines.append(f"title: {title}")
@@ -266,10 +244,10 @@ SPEC = ToolSpec(
     name="browser_fetch",
     description=(
         "Fetch a URL using a real browser (Edge via Playwright). Two modes:\n"
-        "  - 'cdp' (preferred): attach to BRO's running Edge instance, share cookies/login. "
-        "Requires BRO started Edge with --remote-debugging-port=9222.\n"
-        "  - 'standalone': launch independent Edge instance, no login state but full JS rendering.\n"
-        "  - 'auto' (default): use cdp if available, else standalone.\n"
+        "  - 'cdp' (preferred): auto-launch & attach the daemon's DEDICATED Edge (own profile, "
+        "isolated from the user's daily browser). Login once per site in that window; persists.\n"
+        "  - 'standalone': launch independent headless Edge, no login state but full JS rendering.\n"
+        "  - 'auto' (default): attach the dedicated Edge if it's already up, else standalone.\n"
         "Use this for: pages requiring login, JS-heavy SPAs, anywhere web_fetch returned a wall. "
         "Slower than web_fetch (1-5s) — prefer web_fetch for static content."
     ),
