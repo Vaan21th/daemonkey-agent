@@ -136,6 +136,20 @@
 - **Python 3.10+**（没装的话，启动器会提示你去 [python.org](https://www.python.org/downloads/) 下，安装时务必勾选 *Add Python to PATH*）。
 - **一个 LLM API key**（OpenRouter / PPIO / AiHubMix 等任意 OpenAI 兼容中转，或 Anthropic / DeepSeek / 智谱 GLM 等官方）。在网页里填即可，自动存进本机 `.env`。
 
+### macOS / Linux（实验性）
+
+没有 Windows 启动器，用 POSIX 启动脚本一条命令起：
+
+```bash
+chmod +x start.sh && ./start.sh
+```
+
+它会自动建 Python 虚拟环境、装依赖、起本地服务并打开浏览器（首次约 1 分钟）。需要 **Python 3.10+**（macOS `brew install python`；Ubuntu `sudo apt install -y python3 python3-venv python3-pip`）。
+
+> 已在 Linux POSIX 实测启动通过——WebUI / 对话 / 记忆 / 工坊等核心功能可用。桌宠、剪贴板、打开本地应用等 **Windows 专属能力暂未适配**，不影响核心使用。
+>
+> 详细启动步骤 / 故障排查见 **[START-macOS.md](START-macOS.md)**。
+
 ---
 
 ## 🩹 自愈与自升级
@@ -165,6 +179,7 @@ Daemonkey/
 ├── ROLLBACK.bat               一键回档
 ├── verify.bat                 自测
 ├── run.ps1                    环境准备（建 venv / 装依赖）
+├── start.sh                   macOS / Linux 启动（建 venv + 装依赖 + 起服务）
 ├── opus_daemon.py             主程序（启动 daemon + 各后台 worker）
 ├── daemon_api.py              网页后端（FastAPI）
 ├── soul_loader.py             灵魂装载器
@@ -270,6 +285,20 @@ Every AI → you output must have a you → AI feedback channel that truly feeds
 3. **Encounter**: in the web UI, paste an **LLM API key** (saved to local `.env`), then it greets you — name it, tell it how to address you, what you're working on. It records this into a profile; next time it's the same companion.
 
 **You'll need**: Python 3.10+ (tick *Add Python to PATH* when installing) and one LLM API key (any OpenAI-compatible relay — OpenRouter / PPIO / AiHubMix — or Anthropic / DeepSeek / Zhipu GLM).
+
+### macOS / Linux (experimental)
+
+No Windows launcher — one command via the POSIX start script:
+
+```bash
+chmod +x start.sh && ./start.sh
+```
+
+It builds a Python venv, installs deps, starts the local service and opens your browser (~1 min first time). Needs **Python 3.10+** (macOS `brew install python`; Ubuntu `sudo apt install -y python3 python3-venv python3-pip`).
+
+> Startup verified on Linux POSIX — WebUI / chat / memory / studio core features work. Windows-only abilities (desktop pet, clipboard, open local apps) are **not yet ported** but don't affect core use.
+>
+> Full guide & troubleshooting: **[START-macOS.md](START-macOS.md)**.
 
 ### Self-healing & upgrades
 
