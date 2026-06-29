@@ -1,10 +1,10 @@
 {
   "manifest_version": 1,
-  "core_version": "0.5.2",
+  "core_version": "0.5.2a",
   "core_version_note": "内核语义版本 · 版本号唯一真相源。内核有实质更新就在这里 bump · launcher/WebUI 动态读它显示 · update_core check 拿它和远程对比报「有新版」。manifest_version 是清单结构版本(很少变) · core_version 才是用户感知的内核版本。",
   "description": "Daemonkey 内核(L1)白名单 — update_core 只同步这里列出的文件;清单外的一律物理不碰(用户的功能/应用/灵魂永不被覆盖)。人类可读版见 docs/CORE-MANIFEST.md。",
-  "updated": "2026-06-24",
-  "log_ref": "卷六十四续五 · 卷七十四续十八(核心前端) · 卷七十四续二十(core_version 版本号体系) · 卷七十四续二十一(github 备份源接通) · 卷七十四续二十二(记忆系统纳入内核:自动注入+两段式recall+缓存稳定化·0.3.2 大更) · 卷七十四续二十五(能力发现引擎 discover_skill + 每周一节律 + 看板入口·0.4.0) · 0.5.0(NLP 定时任务 task_scheduler + scheduled_tasks 工具组 + 侧边栏定时任务维度 + 宪法两层注入 product_constitution + 急救体系周全 ensure_git_repo首启兜底/维修台优先) · 0.5.2(技能闭环第②环「接住」打通: extract_playbook 加 import 动作 + workers/playbook_import.py 把外部 skill MD 经 LLM 归一成 playbook 入库·memory_index 自动索引·closure_check 按需召回; 启动器关于页双发布入口 B站+抖音; playbook 技能系统(discover发现/import接住/extract沉淀/playbooks存储)整体纳入内核白名单 L1·官方可增量下发改进·写入侧与召回侧不再割裂)",
+  "updated": "2026-06-29",
+  "log_ref": "卷六十四续五 · 卷七十四续十八(核心前端) · 卷七十四续二十(core_version 版本号体系) · 卷七十四续二十一(github 备份源接通) · 卷七十四续二十二(记忆系统纳入内核:自动注入+两段式recall+缓存稳定化·0.3.2 大更) · 卷七十四续二十五(能力发现引擎 discover_skill + 每周一节律 + 看板入口·0.4.0) · 0.5.0(NLP 定时任务 task_scheduler + scheduled_tasks 工具组 + 侧边栏定时任务维度 + 宪法两层注入 product_constitution + 急救体系周全 ensure_git_repo首启兜底/维修台优先) · 0.5.2(技能闭环第②环「接住」打通: extract_playbook 加 import 动作 + workers/playbook_import.py 把外部 skill MD 经 LLM 归一成 playbook 入库·memory_index 自动索引·closure_check 按需召回; 启动器关于页双发布入口 B站+抖音; playbook 技能系统(discover发现/import接住/extract沉淀/playbooks存储)整体纳入内核白名单 L1·官方可增量下发改进·写入侧与召回侧不再割裂) · 0.5.2a(发布物 hotfix·主要惠及新下载用户: ① .gitattributes 钉死 assets/brand.json -text —— git 的 CRLF↔LF 转换曾让正规 clone/Download ZIP 包字节漂移→品牌签名验签失败→启动器误弹「非官方版」·固化成签名对应的 CRLF 字节后所有人验签通过; ② chat.css 大屏(≥1680/≥2200)对话栏默认加宽 540/640px·修 1080p+ 上对话栏过窄·仅改没拖过用户的默认值·不碰 localStorage 也不进 static 白名单)",
   "sources": {
     "primary": "gitee",
     "note": "支持多源(gitee+github)。真相源唯一=母体 master;只单向往外 push,下游只拉不推。update_core 可指定从哪个 remote 拉。github 当前为作者私有备份源(下游需授权方可匿名拉·转公开后即可当 gitee 的海外/抽风兜底源)。",

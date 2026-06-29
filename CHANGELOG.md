@@ -7,6 +7,18 @@
 
 ---
 
+## [0.5.2a] — 2026-06-29
+
+**首个公开发布的发布物修复（hotfix）· 主要惠及新下载用户**
+
+### 修复 Fixed
+- **品牌签名校验误杀正规包** —— `.gitattributes` 把 `assets/brand.json` 标记 `-text`，钉死换行符。此前 git 的 CRLF↔LF 自动转换会让正规 `clone` / GitHub「Download ZIP」拿到的字节与作者签名时不一致，导致验签失败、启动器误弹「这不是官方版」。固化成签名对应的字节后，所有人验签通过。（作者本机因 `autocrlf` 恰好转成一致而未触发，故仅用户侧暴露。）
+- **大屏对话栏过窄** —— `chat.css` 新增大屏断点：≥1680px 默认对话栏 540px、≥2200px 640px。此前默认值 400px 只为中屏调，1080p+ 上对话区显窄。仅调整「从未拖动过」用户的默认值（JS 只在 `localStorage` 有值时才覆盖），拖动习惯零影响，仍可在 280–800px 自由拖拽。
+
+> First public hotfix. Fixes brand-signature false-positive on `clone`/ZIP downloads (CRLF normalization) and a too-narrow chat pane on 1080p+ screens. Affects newly downloaded copies; existing installs were unaffected.
+
+---
+
 ## [0.5.2] — 2026-06-24
 
 **技能闭环打通 + 开源门面 + 品牌防护**
@@ -94,6 +106,7 @@
 
 ---
 
+[0.5.2a]: https://gitee.com/vaan21th/dae-monkey
 [0.5.2]: https://gitee.com/vaan21th/dae-monkey
 [0.5.0]: https://gitee.com/vaan21th/dae-monkey
 [0.4.0]: https://gitee.com/vaan21th/dae-monkey

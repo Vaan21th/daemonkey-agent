@@ -6,3 +6,9 @@ tools/git-hooks/pre-commit text eol=lf
 *.exe binary
 *.ico binary
 *.png binary
+
+# 品牌签名校验对 brand.json 的【原始字节】做 RSA-SHA256（卷七十五防篡改）。
+# git 默认会对文本做 CRLF↔LF 转换 → 字节漂移 → 验签失败 → 正规 clone / Download ZIP
+# 的包被误判成"非官方版"（0.5.2a 修复）。标 -text 钉死换行符，让所有人拿到的字节
+# 与作者签名时完全一致。改 brand.json 后必须用私钥重签 brand.sig。
+assets/brand.json -text

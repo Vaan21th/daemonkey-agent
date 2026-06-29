@@ -3358,6 +3358,16 @@ header {
 .wk-dl { color: var(--dim2); }
 
 /* ── 响应式 ─────────────────────────────────── */
+/* 大屏：对话栏默认更宽 · 修复 1080p+ 上对话栏过窄（base 400 只够中屏 · 0.5.2a）
+   只动【没拖过的用户】默认值：JS 仅在 localStorage 有值时才 inline 覆盖 --chat-w，
+   所以拖过的用户零影响；min-width 与下方 max-width 互斥不冲突。CHAT_MAX=800 仍可拖。 */
+@media (min-width: 1680px) {
+  :root { --chat-w: 540px; }
+}
+@media (min-width: 2200px) {
+  :root { --chat-w: 640px; }
+}
+
 /* 中屏：导航 + 对话窄一点 · 卷三十：用 CSS var 让 BRO 拖完仍然生效 */
 @media (max-width: 1280px) {
   :root { --nav-w: 190px; --chat-w: 360px; }
