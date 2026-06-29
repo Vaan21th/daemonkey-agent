@@ -28,10 +28,10 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(
             ok=False, output="",
             error=(
-                "起不来 daemon 专属 Edge（独立 profile 那个）。\n"
-                "通常是没装 Microsoft Edge，或装在非标准路径。\n"
-                "→ 确认这台机器装了 Edge；非标准路径可设环境变量 DAEMONKEY_EDGE_PROFILE / "
-                "DAEMONKEY_EDGE_CDP_PORT 后重启 daemon。"
+                "起不来 daemon 专属浏览器（独立 profile 那个）。\n"
+                "通常是没装 Edge / Chrome（任一 Chromium 内核浏览器），或装在非标准路径。\n"
+                "→ 装个 Edge 或 Chrome 即可；绿色版/非标准路径可设环境变量 DAEMONKEY_BROWSER_PATH "
+                "指向浏览器 exe 后重启 daemon。"
             ),
         )
     try:

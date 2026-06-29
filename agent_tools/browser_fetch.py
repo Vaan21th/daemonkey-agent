@@ -187,13 +187,13 @@ def _run(args: dict) -> ToolResult:
 
     chosen_mode = ""
     if mode == "cdp":
-        # 显式要 cdp → 自动拉起 daemon 专属 Edge（独立 profile，不碰用户主浏览器）
+        # 显式要 cdp → 自动拉起 daemon 专属浏览器（独立 profile，不碰用户主浏览器）
         if not ensure_cdp(launch=True):
             return ToolResult(
                 ok=False, output="",
                 error=(
-                    f"CDP requested but daemon Edge not up on {CDP_URL}. "
-                    f"通常是没装 Edge / 装在非标准路径；或先触发一次 browser_act 让它拉起专属 Edge。"
+                    f"CDP requested but daemon browser not up on {CDP_URL}. "
+                    f"通常是没装 Edge/Chrome / 装在非标准路径；或先触发一次 browser_act 让它拉起专属浏览器。"
                 ),
             )
         chosen_mode = "cdp"

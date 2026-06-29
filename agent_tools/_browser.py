@@ -4,9 +4,12 @@ agent_tools/_browser.py
 
 浏览器基建共享层——daemon **专属 Edge** 的 CDP 探测 / 自启 / 标签页选择。
 
-设计取向：daemon 不碰用户日常 Edge，而是自己拥有一个**独立 profile 的 Edge 实例**
+设计取向：daemon 不碰用户日常浏览器，而是自己拥有一个**独立 profile 的浏览器实例**
 （专属 user-data-dir + 专属调试端口）。需要时自动拉起、跨调用复用。因为用的是独立
 profile + 独立端口，所以**哪怕用户主浏览器开着也不冲突、绝不杀它**。
+
+内核浏览器：Edge 优先（Win 出厂自带），没装则自动退到 Chrome（同为 Chromium，CDP 一致）；
+都没有时用户可设 DAEMONKEY_BROWSER_PATH 指定任意 Chromium 内核浏览器。
 
 browser_fetch（眼）和 browser_act（手）共用这同一个实例 —— 杜绝"眼手连到不同浏览器"。
 
@@ -36,21 +39,35 @@ EDGE_PROFILE = Path(
     os.environ.get("DAEMONKEY_EDGE_PROFILE") or (PROJECT_ROOT / "sessions" / "edge_cdp_profile")
 )
 
-_EDGE_CANDIDATES = (
+# 候选浏览器——都是 Chromium 内核，CDP 完全一样。Edge 优先（Win 出厂自带、几乎人人有），
+# 没有再退 Chrome。用户也可用 DAEMONKEY_BROWSER_PATH 显式指定（绿色版 / 其他 Chromium 内核）。
+_BROWSER_CANDIDATES = (
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+)
+
+_LOCAL_CANDIDATES = (
+    Path("Microsoft") / "Edge" / "Application" / "msedge.exe",
+    Path("Google") / "Chrome" / "Application" / "chrome.exe",
 )
 
 
-def _find_edge() -> str | None:
-    for p in _EDGE_CANDIDATES:
+def _find_browser() -> str | None:
+    """找一个 Chromium 内核浏览器：用户指定 > Edge > Chrome。找不到返回 None。"""
+    override = os.environ.get("DAEMONKEY_BROWSER_PATH")
+    if override and Path(override).exists():
+        return override
+    for p in _BROWSER_CANDIDATES:
         if Path(p).exists():
             return p
     local = os.environ.get("LOCALAPPDATA")
     if local:
-        cand = Path(local) / "Microsoft" / "Edge" / "Application" / "msedge.exe"
-        if cand.exists():
-            return str(cand)
+        for sub in _LOCAL_CANDIDATES:
+            cand = Path(local) / sub
+            if cand.exists():
+                return str(cand)
     return None
 
 
@@ -70,14 +87,14 @@ def cdp_available() -> bool:
 def ensure_cdp(launch: bool = True, wait_secs: int = 25) -> bool:
     """确保 daemon 专属 CDP Edge 在跑。
 
-    已在 → True；没在且 launch → 用独立 profile + 独立端口起一个 Edge（不碰用户主 Edge）。
-    起不来（没装 Edge / 端口没拉起）→ False，由调用方给出可读错误。
+    已在 → True；没在且 launch → 用独立 profile + 独立端口起一个浏览器（不碰用户主浏览器）。
+    起不来（没装 Edge/Chrome / 端口没拉起）→ False，由调用方给出可读错误。
     """
     if cdp_available():
         return True
     if not launch:
         return False
-    exe = _find_edge()
+    exe = _find_browser()
     if not exe:
         return False
     EDGE_PROFILE.mkdir(parents=True, exist_ok=True)

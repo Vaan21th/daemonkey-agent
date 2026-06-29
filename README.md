@@ -8,7 +8,7 @@
 *A local-first AI companion that remembers you, grows with you, and has seventy-two transformations*
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.5-9b59ff.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.5a-9b59ff.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078d6.svg)](#-快速开始)
 [![Python](https://img.shields.io/badge/python-3.10+-3776ab.svg)](https://www.python.org/downloads/)
 

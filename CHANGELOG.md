@@ -7,6 +7,17 @@
 
 ---
 
+## [0.5.5a] — 2026-06-29
+
+**浏览器的手 Chrome 兜底（hotfix）—— 不再只认 Edge**
+
+### 修复 Fixed
+- **没装 Edge 的机器用不了浏览器的手** —— 专属浏览器从 Edge-only 改为 **Edge → Chrome → 用户指定** 的择优查找：找不到 Edge 自动退 Chrome（同为 Chromium 内核，CDP 路径完全一致）；两者都没有时可设环境变量 `DAEMONKEY_BROWSER_PATH` 指向任意 Chromium 内核浏览器 exe（绿色版/非标准路径）。`_find_edge` → `_find_browser`，相关报错文案同步成「Edge / Chrome」。纯兜底增强，无新依赖。
+
+> Hotfix: the dedicated browser is no longer Edge-only. Now resolves Edge → Chrome → user-specified (`DAEMONKEY_BROWSER_PATH`). Machines without Edge fall back to Chrome (same Chromium core, identical CDP). No new dependency.
+
+---
+
 ## [0.5.5] — 2026-06-29
 
 **浏览器的手 —— 真的能操作网页（点/填/上传/收图），不只是「看」**
