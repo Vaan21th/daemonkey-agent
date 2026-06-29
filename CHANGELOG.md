@@ -7,6 +7,19 @@
 
 ---
 
+## [0.5.2b] — 2026-06-29
+
+**用户报修三连（vision 404 / 填 URL 卡死 / env 暴露内部代号）**
+
+### 修复 Fixed
+- **视觉模型配置报 404（Not Found）** —— `/vision-config` 接口代码本就存在，但主程序 `daemon_api.py` 漏了一行 `include_router` 注册，前端配置视觉模型时找不到路由。已补注册。（`daemon_api.py` 不在升级白名单，此修复随新下载的 ZIP / exe 下发。）
+- **初见 / 换 key 填 URL 失败且改不了** —— `save-key` 改为**先试连再落盘**：连不通就不写 `.env`，把人话错误（含「在结尾加 / 去掉 `/v1`」的具体可粘贴地址）抛回前端，配置卡片保留、当场改，根治「填错一次只能去手改 `.env`」的卡死。新增 `clean_base_url` 自动去掉用户误贴的 `/chat/completions` 尾巴（贴完整端点会被 SDK 重复拼接 → 404）。
+- **环境变量名暴露内部代号** —— 写进用户 `.env` 的配置名由 `OPUS_*` 改为 `DAEMONKEY_*`（社区有人截图露出 `OPUS_BASE_URL`）。新增 `workers/env_aliases.py` 双向别名垫片：内核数百处 `os.environ["OPUS_*"]` 读取**一行不改**也能拿到值，老用户旧 `OPUS_*` 的 `.env` 完全兼容、不破坏。
+
+> Three user-reported fixes: vision-config 404 (missing router registration), onboarding API-URL save now probes before persisting (with `/v1` hint + `/chat/completions` trim, no more stuck-on-bad-config), and the public-facing `.env` keys are renamed `OPUS_*` → `DAEMONKEY_*` with a backward-compatible alias shim (existing `.env` files keep working).
+
+---
+
 ## [0.5.2a] — 2026-06-29
 
 **首个公开发布的发布物修复（hotfix）· 主要惠及新下载用户**

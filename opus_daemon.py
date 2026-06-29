@@ -46,7 +46,7 @@ from daemon_session import (
     append_turn,
     new_session_id,
 )
-from daemon_provider import detect_provider, setup_client, write_env_kv
+from daemon_provider import detect_provider, setup_client, write_public_env
 from daemon_commands import CommandContext, dispatch_command
 from daemon_api import is_api_alive, start_api_in_background
 
@@ -240,6 +240,12 @@ def _maybe_start_wechat(console: Console) -> None:
 
 def run() -> int:
     load_dotenv(ROOT / ".env")
+    # 品牌前缀别名:让 .env 的 DAEMONKEY_* 镜像出内核要读的 OPUS_*(新旧 .env 兼容)
+    try:
+        from workers.env_aliases import normalize_env_aliases
+        normalize_env_aliases()
+    except Exception:
+        pass
 
     provider = detect_provider()
     try:
@@ -257,7 +263,7 @@ def run() -> int:
     # 注入运行时单例。set_model 工具 + summarize_session 工具 + /model 命令都靠它读写。
     RUNTIME.model = model
     RUNTIME.base_url = base_url
-    RUNTIME.persist_callback = lambda new_model: write_env_kv("OPUS_MODEL", new_model)
+    RUNTIME.persist_callback = lambda new_model: write_public_env("OPUS_MODEL", new_model)
     RUNTIME.client = client
     RUNTIME.provider = provider
     RUNTIME.system_prompt = soul.system_prompt

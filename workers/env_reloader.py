@@ -210,6 +210,15 @@ def _do_reload(new_env: dict[str, str], current_env_snapshot: dict[str, str]) ->
 
         changes.append(change_record)
 
+    # 热切写完 os.environ 后再补一次前缀别名:用户手改 .env 的 DAEMONKEY_* 字段
+    # 也镜像到内核读取的 OPUS_*(反之亦然)·不然热切只写了一半内核读不到。
+    if changes:
+        try:
+            from workers.env_aliases import normalize_env_aliases
+            normalize_env_aliases()
+        except Exception:
+            pass
+
     return changes
 
 

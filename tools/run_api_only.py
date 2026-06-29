@@ -91,6 +91,13 @@ def _load_env():
             continue
         k, v = line.split("=", 1)
         os.environ.setdefault(k.strip(), v.strip())
+    # 品牌前缀别名:DAEMONKEY_* ↔ OPUS_* 双向补齐·让内核 os.environ["OPUS_*"] 读取
+    # 在用户 .env 用新 DAEMONKEY_ 前缀时仍拿到值(新旧 .env 都兼容)。
+    try:
+        from workers.env_aliases import normalize_env_aliases
+        normalize_env_aliases()
+    except Exception:
+        pass
 
 
 def _init_runtime():
@@ -101,7 +108,7 @@ def _init_runtime():
     (workers/provider_configs._migrate_from_env 自动建第一条 cfg)·让多 config UI 直接可用。
     """
     from daemon_runtime import RUNTIME
-    from daemon_provider import detect_provider, setup_client, write_env_kv
+    from daemon_provider import detect_provider, setup_client, write_public_env
     from soul_loader import load_soul
     from workers.provider_configs import get_active_config, apply_config_to_env
 
@@ -114,7 +121,7 @@ def _init_runtime():
 
     soul = load_soul()
     RUNTIME.system_prompt = soul.system_prompt
-    RUNTIME.persist_callback = lambda new_model: write_env_kv("OPUS_MODEL", new_model)
+    RUNTIME.persist_callback = lambda new_model: write_public_env("OPUS_MODEL", new_model)
 
     provider = detect_provider()
 
@@ -226,13 +233,12 @@ def main():
     if not (os.environ.get("OPUS_API_TOKEN") or "").strip():
         try:
             import secrets
-            from daemon_provider import write_env_kv
+            from daemon_provider import write_public_env
             _tok = secrets.token_urlsafe(32)
-            write_env_kv("OPUS_API_TOKEN", _tok)
-            os.environ["OPUS_API_TOKEN"] = _tok
-            print("[opus-api] 自动生成 OPUS_API_TOKEN · 本机 loopback 免手填")
+            write_public_env("OPUS_API_TOKEN", _tok)  # 落 .env 为 DAEMONKEY_API_TOKEN
+            print("[opus-api] 自动生成 API token · 本机 loopback 免手填")
         except Exception as e:
-            print(f"[opus-api] WARN · 自动生成 OPUS_API_TOKEN 失败: {type(e).__name__}: {e}")
+            print(f"[opus-api] WARN · 自动生成 API token 失败: {type(e).__name__}: {e}")
 
     # 卷四十六 III 补丁 5 · R1 · 统一 logging (RotatingFile + trace_id)
     # daemon 全生命周期前装好 · 让后续所有 logger.info 都落到 data/runtime/daemon.log

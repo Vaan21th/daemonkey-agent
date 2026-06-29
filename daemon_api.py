@@ -1156,6 +1156,7 @@ def build_app():
     from api_routes import models as _routes_models
     from api_routes import providers as _routes_providers
     from api_routes import dashboard as _routes_dashboard
+    from api_routes import vision as _routes_vision
     app.include_router(_routes_core.router)
     app.include_router(_routes_lifecycle.router)
     app.include_router(_routes_governance.router)
@@ -1168,6 +1169,7 @@ def build_app():
     app.include_router(_routes_models.router)
     app.include_router(_routes_providers.router)
     app.include_router(_routes_dashboard.router)
+    app.include_router(_routes_vision.router)  # wish-4a6331b2 · /vision-config (曾漏注册→404)
 
     # 形态 Z · 相遇初始化路由 (开源版 Daemonkey 有·母体 OPUS 无此模块 → 守卫跳过)
     try:

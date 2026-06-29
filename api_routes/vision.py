@@ -74,7 +74,8 @@ async def set_vision_config(
         try:
             from openai import OpenAI
             # 测试连接 · 给慢视觉/thinking 模型 buffer · 比主超时短让 key 错时快失败
-            client = OpenAI(api_key=api_key, base_url=base_url, timeout=60)
+            # 用去尾后的 _clean_url(否则贴了完整端点时·测试会拼成 .../chat/completions/chat/completions → 404)
+            client = OpenAI(api_key=api_key, base_url=_clean_url, timeout=60)
             resp = client.chat.completions.create(
                 model=model,
                 max_tokens=30,
@@ -94,7 +95,7 @@ async def set_vision_config(
     return {
         "saved": True,
         "model": model,
-        "base_url": base_url,
+        "base_url": _clean_url,
         "api_key_masked": _mask(api_key),
         "test": test_result,
     }

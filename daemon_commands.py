@@ -22,7 +22,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from daemon_runtime import RUNTIME
-from daemon_provider import write_env_kv
+from daemon_provider import write_public_env
 from daemon_session import (
     list_sessions,
     load_session,
@@ -130,8 +130,8 @@ def cmd_model(console: Console, arg: str) -> None:
 
     if persist:
         try:
-            write_env_kv("OPUS_MODEL", real)
-            console.print(f"  [green]✓[/] [dim]OPUS_MODEL 已写入 .env[/]")
+            write_public_env("OPUS_MODEL", real)
+            console.print(f"  [green]✓[/] [dim]模型已写入 .env[/]")
         except Exception as e:
             console.print(f"  [red]✗ 写 .env 失败:[/] {e}")
 

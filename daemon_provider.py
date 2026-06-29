@@ -159,3 +159,115 @@ def write_env_kv(key: str, value: str) -> None:
             lines.append("")
         lines.append(f"{key}={value}")
     ENV_PATH.write_bytes("\n".join(lines).encode("utf-8"))
+
+
+def _remove_env_kv(key: str) -> None:
+    """从 .env 删掉某个 key= 行(找不到就什么都不做)。
+
+    用于品牌前缀迁移:写新的 DAEMONKEY_xxx 时顺手清掉历史残留的 OPUS_xxx 行·
+    避免 .env 里同一项两个前缀并存(并存时虽有 env_aliases 兜底·但行多了脏)。
+    """
+    if not ENV_PATH.exists():
+        return
+    raw = ENV_PATH.read_bytes()
+    text = raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    lines = text.split("\n")
+    pat = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    kept = [ln for ln in lines if not pat.match(ln)]
+    if len(kept) != len(lines):
+        ENV_PATH.write_bytes("\n".join(kept).encode("utf-8"))
+
+
+# 对外可见的 env 前缀 · 用 DAEMONKEY_ 取代历史内部前缀(避免内部代号泄漏到用户 .env)。
+PUBLIC_ENV_PREFIX = "DAEMONKEY_"
+
+
+def write_public_env(key: str, value: str) -> None:
+    """写"用户可见"配置到 .env——OPUS_ 前缀的一律落成 DAEMONKEY_(品牌干净)。
+
+    - 内核几百处仍读 `os.environ["OPUS_*"]`·这里同时把内部 OPUS_ 名写进 os.environ·
+      让运行中的 daemon 立刻拿到新值(不必重启)。
+    - .env 文件里只留 DAEMONKEY_ 那一行·并清掉历史残留的 OPUS_ 行(老用户迁移)。
+    - 非 OPUS_ 前缀(如 ANTHROPIC_API_KEY)原样写·不动。
+    """
+    if not key.startswith("OPUS_"):
+        write_env_kv(key, value)
+        os.environ[key] = value
+        return
+    suffix = key[len("OPUS_"):]
+    pub = PUBLIC_ENV_PREFIX + suffix
+    write_env_kv(pub, value)
+    if pub != key:
+        _remove_env_kv(key)  # 清掉旧前缀残留行
+    os.environ[pub] = value
+    os.environ[key] = value  # 内部恒读 OPUS_* · 即时生效
+
+
+def clean_base_url(url: str) -> str:
+    """去掉用户误贴的完整端点尾巴。
+
+    OpenAI 兼容 SDK 只要 base(通常到 /v1)·会自己拼 /chat/completions。
+    用户贴成 https://x/v1/chat/completions 时·SDK 会拼成 .../chat/completions/chat/completions
+    → 404。这里把尾部的 /chat/completions(或 /completions)去掉·让初见/换 key 直接能连。
+    """
+    u = (url or "").strip().rstrip("/")
+    for tail in ("/chat/completions", "/completions"):
+        if u.endswith(tail):
+            u = u[: -len(tail)].rstrip("/")
+            break
+    return u
+
+
+def _friendly_provider_error(exc: Exception, base_url: str) -> str:
+    """把 OpenAI SDK 异常翻成给用户看的中文提示。
+
+    重点是 base_url 的 /v1 纠偏:很多 OpenAI 兼容中转的 base_url 该不该带 /v1
+    因家而异(DeepSeek 要 /v1·有的根路径就够)·系统无法一刀切。 错配时 SDK 报 404 ·
+    这里据此给出"加 /v1 / 去 /v1"的具体可粘贴地址·让用户在初见页当场试·不必去翻 .env。
+    """
+    name = type(exc).__name__
+    msg = str(exc)
+    low = f"{name} {msg}".lower()
+    u = (base_url or "").rstrip("/")
+    if "model" in low and ("not" in low or "exist" in low or "invalid" in low or "不存在" in msg):
+        return "模型名可能不对。换成该 provider 实际支持的模型名再试。"
+    if "notfound" in low or "404" in low or "not found" in low:
+        if u.endswith("/v1"):
+            alt = u[: -len("/v1")].rstrip("/")
+            return f"接口地址 404(路径不对)。试试去掉结尾的 /v1 → {alt}"
+        alt = f"{u}/v1"
+        return f"接口地址 404(路径不对)。试试在结尾加上 /v1 → {alt}"
+    if "authentication" in low or "401" in low or "api key" in low or "apikey" in low or "unauthorized" in low:
+        return "API Key 不对或无权限(接口地址看起来是对的)。检查 Key 后重填。"
+    if "permission" in low or "403" in low:
+        return "无访问权限(403)。确认这个 Key 是否开通了所填模型。"
+    if "timeout" in low or "timed out" in low:
+        return "连接超时。检查网络 / 接口地址是否可达(国外服务可能需要代理)。"
+    if "connection" in low or "connect" in low or "getaddrinfo" in low or "name resolution" in low:
+        return f"连不上接口地址。确认 {u} 拼写正确、可访问。"
+    return f"连接失败:{name}: {msg[:200]}"
+
+
+def probe_openai(api_key: str, base_url: str, model: str = "", timeout: float = 30.0) -> tuple[bool, str]:
+    """初见 / 换 key 时先试连一个 OpenAI 兼容端点。
+
+    返回 (ok, error):ok=True 表示 key 有效且端点可达;ok=False 时 error 是给
+    用户看的中文提示(含 /v1 纠偏建议)。 调用方应在 ok=False 时【不落盘】并把
+    error 抛回前端·避免坏配置写进 .env 后把初见页卡死(只能手改 .env 的老坑)。
+    """
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return False, "openai 包未安装·请先装依赖。"
+    try:
+        from provider_presets import safe_max_tokens
+        test_model = (model or "").strip() or "gpt-4o-mini"
+        client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
+        client.chat.completions.create(
+            model=test_model,
+            max_tokens=safe_max_tokens(16, test_model),
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        return True, ""
+    except Exception as e:  # noqa: BLE001 — 任何失败都翻成提示·不让异常冒泡
+        return False, _friendly_provider_error(e, base_url)

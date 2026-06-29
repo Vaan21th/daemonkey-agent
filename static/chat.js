@@ -337,7 +337,7 @@ function scanThemeBlocks(container) {
 // 页面加载时初始化主题
 initTheme();
 let token = localStorage.getItem(STORAGE.token) || '';
-// Daemonkey · 本机 loopback 自动信任：daemon 启动会自动生成 .env 里的 OPUS_API_TOKEN·
+// Daemonkey · 本机 loopback 自动信任：daemon 启动会自动生成 .env 里的 DAEMONKEY_API_TOKEN·
 // 后端 loopback 中间件给同机 127.0.0.1 请求覆盖注入它·所以本机用户无需手填 token。
 // 这里设个非空哨兵让前端所有 if(!token) 通过·真正鉴权由后端 loopback 豁免兜底
 // (远程/跨网访问 hostname 不是 loopback·仍走原逻辑要求手填 token·安全)。
@@ -2144,8 +2144,8 @@ function renderSettingsAccess() {
       <div class="llm-section-head"><h3>🔑 API Token · 决定 WebUI 能否连 daemon</h3></div>
       <div class="field">
         <label>API Token (Bearer)</label>
-        <input id="accTokenIn" type="password" value="${escHtml(token || '')}" placeholder="OPUS_API_TOKEN">
-        <div class="field-hint">来自 .env 里的 OPUS_API_TOKEN · 浏览器记住</div>
+        <input id="accTokenIn" type="password" value="${escHtml(token || '')}" placeholder="DAEMONKEY_API_TOKEN">
+        <div class="field-hint">来自 .env 里的 DAEMONKEY_API_TOKEN · 浏览器记住</div>
       </div>
 
       <div class="llm-section-head" style="margin-top:18px"><h3>📂 当前 Session</h3></div>
@@ -2454,7 +2454,7 @@ function wechatRenderFreq(currentId) {
   const cur = _wechatFreqPresets.find(p => p.id === currentId);
   if (desc) {
     desc.innerHTML = currentId === 'custom'
-      ? '当前是<b>自定义</b>档 (你手改过 .env 的 OPUS_PROACTIVE_* )·点任意档位归一'
+      ? '当前是<b>自定义</b>档 (你手改过 .env 的 DAEMONKEY_PROACTIVE_* )·点任意档位归一'
       : (cur ? `当前:${cur.emoji} <b>${escHtml(cur.label)}</b> · ${escHtml(cur.desc)}` : '');
   }
 }

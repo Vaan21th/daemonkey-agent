@@ -63,6 +63,13 @@ def _load_env() -> dict:
             continue
         k, v = line.split("=", 1)
         env[k.strip()] = v.strip().strip('"').strip("'")
+    # 品牌前缀别名:新用户 .env 用 DAEMONKEY_API_KEY·下面 _has_key/_get_client 仍按
+    # OPUS_API_KEY 读·这里把 dict 也镜像一遍(新旧 .env 都能识别)。
+    try:
+        from workers.env_aliases import normalize_env_aliases
+        normalize_env_aliases(env)
+    except Exception:
+        pass
     return env
 
 
@@ -221,24 +228,32 @@ async def save_key(request: Request, payload: dict = Body(...)):
     if not api_key or not base_url:
         raise HTTPException(400, "api_key 和 base_url 不能为空")
 
-    from daemon_provider import write_env_kv, setup_client
+    from daemon_provider import probe_openai, write_public_env, setup_client, clean_base_url
 
-    # 1. 写 .env + os.environ（让运行中 daemon 立刻拿到 · 不必重启）
-    write_env_kv("OPUS_PROVIDER", "openai")
-    write_env_kv("OPUS_BASE_URL", base_url)
-    write_env_kv("OPUS_API_KEY", api_key)
-    os.environ["OPUS_PROVIDER"] = "openai"
-    os.environ["OPUS_BASE_URL"] = base_url
-    os.environ["OPUS_API_KEY"] = api_key
+    # base_url 去尾:用户常把完整端点(.../v1/chat/completions)整段贴进来·
+    # OpenAI SDK 还会再拼 /chat/completions → 404。先归一成 base(通常到 /v1)。
+    base_url = clean_base_url(base_url)
+
+    # 0. 先试连·连不通就别落盘。坏配置写进 .env 会让初见页卡死:
+    #    save-key 原来不校验直接返回 ok → keyCard 消失 → /open 才真失败 →
+    #    用户没处改·重载又因 has_key=true 直奔 /open 再失败 → 只能手改 .env。
+    #    现在把失败原因(含 base_url 的 /v1 纠偏提示)抛回前端·keyCard 保留·当场改。
+    ok, err = probe_openai(api_key, base_url, model)
+    if not ok:
+        raise HTTPException(400, err)
+
+    # 1. 写 .env(对外 DAEMONKEY_ 前缀·去 OPUS 品牌泄漏) + os.environ(内核仍读 OPUS_*)·
+    #    write_public_env 两边都写·运行中 daemon 立刻拿到·不必重启。
+    write_public_env("OPUS_PROVIDER", "openai")
+    write_public_env("OPUS_BASE_URL", base_url)
+    write_public_env("OPUS_API_KEY", api_key)
     if model:
-        write_env_kv("OPUS_MODEL", model)
-        os.environ["OPUS_MODEL"] = model
+        write_public_env("OPUS_MODEL", model)
 
     # 2. 确保有 API token（loopback 中间件 + chat 鉴权要它在 os.environ）
     if not (os.environ.get("OPUS_API_TOKEN") or "").strip():
         tok = secrets.token_urlsafe(32)
-        write_env_kv("OPUS_API_TOKEN", tok)
-        os.environ["OPUS_API_TOKEN"] = tok
+        write_public_env("OPUS_API_TOKEN", tok)
 
     # 3. 同步成一条 provider_config（让 chat 设置页 LLM 模型栏能看到这把 key · 修图6）
     #    相遇填 key 走的是 .env·而设置页 LLM 栏读的是 data/provider_configs.json·

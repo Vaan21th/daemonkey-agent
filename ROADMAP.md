@@ -5,7 +5,7 @@
 
 ---
 
-## 当前状态 · Where we are（0.5.2a）
+## 当前状态 · Where we are（0.5.2b）
 
 ✅ **Windows 桌面 · 完整本地 daemon**
 

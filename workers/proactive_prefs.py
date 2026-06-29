@@ -73,15 +73,15 @@ def set_preset(preset_id: str) -> dict:
     preset = next((p for p in PRESETS if p["id"] == preset_id), None)
     if preset is None:
         raise ValueError(f"unknown preset: {preset_id}")
-    from daemon_provider import write_env_kv
+    from daemon_provider import write_public_env
 
     applied = {}
     for k, v in preset["env"].items():
-        os.environ[k] = v
         try:
-            write_env_kv(k, v)
+            # 写 .env 对外落 DAEMONKEY_ 前缀(去 OPUS 泄漏)·同时同步 os.environ 内核 OPUS_ 名
+            write_public_env(k, v)
         except Exception:
-            pass
+            os.environ[k] = v  # 写 .env 失败也至少让本进程即时生效
         applied[k] = v
     return applied
 
