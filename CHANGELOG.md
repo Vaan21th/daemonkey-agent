@@ -7,6 +7,17 @@
 
 ---
 
+## [0.5.5b] — 2026-07-10
+
+**对话滚动位置修复（UI hotfix）—— 切换会话标签不再回顶部**
+
+### 修复 Fixed
+- **多对话标签切换时对话栏弹回顶部、丢失滚动位置** —— 整个对话区共用一个滚动容器（`#messages`），切回已打开的会话标签时只切了可见性、没存/还原滚动位置，导致每次切回都跳回顶部。现在离开会话时记录其滚动位置，切回时按上次位置还原；离开时在底部则回到底部并继续跟随流式输出（同步粘底标志）。仅动会话切换分支，不碰发送 / 流式 / 首次加载滚到底逻辑。
+
+> Fixed: switching between open conversation tabs no longer resets scroll to the top. Per-session scroll position is now saved on leave and restored on return (bottom-stick preserved). Since `static/chat.js` is in the `update_core` whitelist, existing users get this fix via the launcher's "检查更新" — no ZIP re-download needed.
+
+---
+
 ## [0.5.5a] — 2026-06-29
 
 **浏览器的手 Chrome 兜底（hotfix）—— 不再只认 Edge**

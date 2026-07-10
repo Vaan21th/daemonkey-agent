@@ -3060,6 +3060,13 @@ async function switchToSession(sid) {
     sessionId = sid;
     localStorage.setItem(STORAGE.session, sid);
     _setActiveContainer(sid);  // hide 旧 · show 这个 · DOM 直接拿现成的
+    // 切回已有标签 · 还原该会话上次滚动位置 (不再每次回顶部)
+    requestAnimationFrame(() => {
+      if ($messagesPanel && typeof existing.scrollTop === 'number') {
+        $messagesPanel.scrollTop = existing.scrollTop;
+        _stickToBottom = isNearBottom($messagesPanel);
+      }
+    });
     // 切回有"未读完成"标记的 · 清掉
     existing.hasUnreadCompletion = false;
     _loadActiveStateFromCurrentSession();
@@ -3152,6 +3159,7 @@ function _saveActiveStateToCurrentSession() {
   s.currentTurnId = currentTurnId;
   s.currentAbortController = currentAbortController;
   if ($input) s.inputDraft = $input.value;
+  if ($messagesPanel) s.scrollTop = $messagesPanel.scrollTop;
 }
 
 function _loadActiveStateFromCurrentSession() {
