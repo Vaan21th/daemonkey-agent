@@ -7,6 +7,26 @@
 
 ---
 
+## [0.6.0] — 2026-07-10
+
+**派分身 —— 主对话可以一次派出多个「分身」并行干活，跑完自动汇总回来**
+
+### 新增 Added
+- **`dispatch_subagent` 派分身工具** —— 主对话里可以一次派出 1~N 个隔离的「分身」并行完成子任务：每个分身**独立上下文** + **收紧的工具白名单**，跑完自动把结论**汇总回本轮对话**。适合「同时查 A / B / C 三个方向再对比」这类天然可拆分、并行更省时的请求，也能把一段查证隔离出去、不让中间过程占满主对话上下文。
+- **`workers/subagent_runner.py` 通用子执行器内核** —— 把「临时 messages → 一次工具循环 → 结构化记账」这段通用中段从 app 执行器里抽出来，成为可复用件。它是「派分身」和后续「工作流每步隔离化」共同的地基。
+
+### 安全边界 Safety
+- 分身**默认只拿只读/研究工具**（读文件 / grep / 联网搜索 / 查证…），要写文件才需显式授权。
+- 硬性剔除 `dispatch_subagent` 自身（**防无限递归**，本版限一层）以及 `request_restart` / `update_core` / `service_*` 等系统控制 / 破坏性工具，即便显式点名也不下放。
+- **并发上限 2** + 每个分身独立迭代预算 + 汇总时按长度截断，防 token 失控、防撑爆主对话上下文。
+- 每个分身跑完落 `sessions/sub-*.jsonl`，事后可回看它到底查了什么（可追溯）。
+
+> `workers/subagent_runner.py` 与 `agent_tools/dispatch_subagent.py` 已纳入 `update_core` 白名单，老用户点「检查更新」即得（工具随下发自动激活，无需重下 ZIP）。
+
+> Added: `dispatch_subagent` lets the main chat fan out 1~N isolated sub-agents in parallel — each with its own context and a tightened tool whitelist — then auto-aggregates their conclusions back into the current turn. Great for "research A, B and C at once, then compare". Backed by a new reusable core `workers/subagent_runner.py`. Safety: sub-agents get a read-only/research whitelist by default; `dispatch_subagent` itself (no recursion) plus system-control/destructive tools are always stripped; concurrency capped at 2 with per-sub-agent iteration budgets and output clipping; every sub-agent is persisted to `sessions/sub-*.jsonl`. Both files are in the `update_core` whitelist — existing users get it via "检查更新".
+
+---
+
 ## [0.5.5b] — 2026-07-10
 
 **对话滚动位置修复（UI hotfix）—— 切换会话标签不再回顶部**

@@ -58,7 +58,7 @@ _NARRATION_TOOLS = frozenset({
     "intent_to_wish", "wish_add", "wish_update", "add_iron_rule", "list_iron_rules",
     "monthly_review", "mine_opportunities", "expand_trend_to_report", "draft_studio",
     "auto_pipeline", "update_self_evolution", "recall_memory", "extract_playbook",
-    "verify_claim", "service_stop",
+    "verify_claim", "service_stop", "dispatch_subagent",
 })
 
 
