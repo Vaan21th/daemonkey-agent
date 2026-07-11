@@ -95,7 +95,7 @@ def _run_background_turn(message: str, session_id: str) -> dict:
       必须手动 F5 才能看到 final reply)
     """
     import threading
-    from daemon_api import _chat_impl, _ACTIVE_TURNS, _TURN_TO_SID, _TURNS_LOCK
+    from daemon_api import _chat_impl, _ACTIVE_TURNS, _TURN_TO_SID, _TURNS_LOCK, _TURN_PROGRESS
 
     turn_id = "resume-" + (session_id[-8:] if session_id else "x")
     cancel_event = threading.Event()
@@ -116,6 +116,7 @@ def _run_background_turn(message: str, session_id: str) -> dict:
         with _TURNS_LOCK:
             _ACTIVE_TURNS.pop(turn_id, None)
             _TURN_TO_SID.pop(turn_id, None)
+            _TURN_PROGRESS.pop(turn_id, None)  # ② 进度快照跟 turn 同生命周期
 
 
 def schedule_resume_turn(restart_req: Optional[dict]) -> bool:

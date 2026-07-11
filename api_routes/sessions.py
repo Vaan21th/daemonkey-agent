@@ -217,15 +217,18 @@ async def session_active_turn(sid: str, authorization: Optional[str] = Header(No
     """
     check_auth(authorization)
     # 从 daemon_api 模块取共享 state (build_app 时 daemon_api 已 load)
-    from daemon_api import _TURNS_LOCK, _TURN_TO_SID
+    from daemon_api import _TURNS_LOCK, _TURN_TO_SID, get_turn_progress
 
+    found = None
     with _TURNS_LOCK:
         for tid, t_sid in _TURN_TO_SID.items():
             if t_sid == sid:
-                return {"session_id": sid, "turn_id": tid}
-    return {"session_id": sid, "turn_id": None}
-
-    return {"session_id": sid, "turn_id": None}
+                found = tid
+                break
+    if not found:
+        return {"session_id": sid, "turn_id": None}
+    # ② 自主巡航进度 · 带上最新一步 (get_turn_progress 自己拿锁 · 必须在 with 外调 · 防重入死锁)
+    return {"session_id": sid, "turn_id": found, "progress": get_turn_progress(found)}
 
 
 @router.get("/sessions/{sid}/background_turn_status")

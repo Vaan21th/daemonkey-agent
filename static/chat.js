@@ -334,8 +334,94 @@ function scanThemeBlocks(container) {
   });
 }
 
+// ═══ 换肤按钮 UI(接现成 applyTheme)+ 简洁版切换 ═══
+// 换肤色板:每个 swatch 带对应主题 class · dots 用 var(--bg)/var(--opus) 取真实色(不硬编码·防漂移);
+// 默认(暗紫·无 class)用 inline 兜底 · 因为它继承不到自身的默认变量。
+function buildThemeGrid() {
+  var grid = document.getElementById('themeGrid');
+  if (!grid) return;
+  var cur = localStorage.getItem(THEME_KEY) || 'dark';
+  if (cur === 'dark') cur = '';
+  grid.innerHTML = THEME_PRESETS.map(function (t) {
+    var styleAttr = t.cls ? '' : ' style="--bg:#16131f;--opus:#b794f6"';
+    var active = (t.cls === cur) ? ' active' : '';
+    return '<button type="button" class="theme-swatch ' + t.cls + active + '" data-cls="' + t.cls + '"' + styleAttr + '>' +
+             '<span class="swatch-dots"><span class="sw-bg"></span><span class="sw-op"></span></span>' +
+             t.label +
+           '</button>';
+  }).join('');
+  grid.querySelectorAll('.theme-swatch').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var cls = btn.dataset.cls || '';
+      var p = THEME_PRESETS.find(function (x) { return x.cls === cls; });
+      applyTheme(cls, p ? p.label : '深色');
+      grid.querySelectorAll('.theme-swatch').forEach(function (s) {
+        s.classList.toggle('active', s.dataset.cls === cls);
+      });
+    });
+  });
+}
+function toggleThemePop(e) {
+  if (e) e.stopPropagation();
+  var pop = document.getElementById('themePop');
+  if (!pop) return;
+  if (pop.hidden) { buildThemeGrid(); pop.hidden = false; }
+  else { pop.hidden = true; }
+}
+function toggleCompact(force, animate) {
+  var on = (typeof force === 'boolean') ? force : !document.body.classList.contains('compact');
+  // 切换那一下才挂过渡类(管左/中淡出淡入)· 动画结束移除 · 平时不影响拖 resizer
+  if (animate !== false) {
+    var layout = document.querySelector('.main-layout');
+    if (layout) {
+      layout.classList.add('layout-animating');
+      clearTimeout(window._compactAnimT);
+      window._compactAnimT = setTimeout(function () { layout.classList.remove('layout-animating'); }, 420);
+    }
+  }
+  document.body.classList.toggle('compact', on);
+  // 进入简洁版时给对话栏一个上浮淡入(掩盖布局瞬切·加载恢复态不放[animate=false])
+  if (animate !== false && on) {
+    var cp = document.querySelector('.chat-pane');
+    if (cp) {
+      cp.classList.remove('compact-enter');
+      void cp.offsetWidth;               // 强制重排 · 让动画能重新触发
+      cp.classList.add('compact-enter');
+      clearTimeout(window._cpEnterT);
+      window._cpEnterT = setTimeout(function () { cp.classList.remove('compact-enter'); }, 420);
+    }
+  }
+  var icon = document.getElementById('compactIcon');
+  var label = document.getElementById('compactLabel');
+  var btn = document.getElementById('compactBtn');
+  if (icon) icon.className = on ? 'ri-layout-masonry-line' : 'ri-focus-3-line';
+  if (label) label.textContent = on ? '工作台' : '简洁版';
+  if (btn) btn.title = on ? '回工作台 (Alt+Z)' : '简洁版 · 只留对话框 (Alt+Z)';
+  localStorage.setItem('opus_ui_compact', on ? '1' : '');
+}
+// 点面板外 → 关换肤弹层
+document.addEventListener('click', function (e) {
+  if (!e.target.closest('.theme-menu')) {
+    var pop = document.getElementById('themePop');
+    if (pop && !pop.hidden) pop.hidden = true;
+  }
+});
+// Alt+Z → 简洁版切换(Alt+B 已被左导航占用·此处不冲突)
+document.addEventListener('keydown', function (e) {
+  if (e.altKey && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); toggleCompact(); }
+});
+
 // 页面加载时初始化主题
 initTheme();
+// 换肤色板预建 + 恢复上次的简洁版状态
+(function initCompactAndThemeUI() {
+  function _go() {
+    buildThemeGrid();
+    if (localStorage.getItem('opus_ui_compact') === '1') toggleCompact(true, false);
+  }
+  if (document.getElementById('compactBtn')) _go();
+  else document.addEventListener('DOMContentLoaded', _go, { once: true });
+})();
 let token = localStorage.getItem(STORAGE.token) || '';
 // Daemonkey · 本机 loopback 自动信任：daemon 启动会自动生成 .env 里的 DAEMONKEY_API_TOKEN·
 // 后端 loopback 中间件给同机 127.0.0.1 请求覆盖注入它·所以本机用户无需手填 token。
@@ -553,14 +639,47 @@ function escAttr(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+const _FLOW_STEP_ICONS = { running: '◐', done: '✓', failed: '×', pending: '○', skipped: '·' };
+
 function renderFlowRunStep(step) {
   const status = step.status || 'pending';
-  const iconMap = { running: '◐', done: '✓', failed: '×', pending: '○', skipped: '·' };
-  const icon = iconMap[status] || '○';
+  const icon = _FLOW_STEP_ICONS[status] || '○';
+  const goal = step.goal || '';
+
+  // ⚡ 并行组步 (v0.6.0) · 展开显示组内每路 + 各自状态图标
+  if (Array.isArray(step.branches) && step.branches.length) {
+    const branches = step.branches.map(b => {
+      const bst = b.status || 'pending';
+      const bicon = _FLOW_STEP_ICONS[bst] || '○';
+      const meta = (window._opusWorkshopApps || []).find(a => a.id === (b.app || ''));
+      const bname = b.app_name || (meta && meta.name) || b.app || '';
+      const bgoal = b.goal || '';
+      const berr = b.error || '';
+      return `
+        <div class="flow-run-branch ${bst}">
+          <span class="flow-run-step-status" title="${escHtml(bst)}">${bicon}</span>
+          <span class="flow-run-branch-app">∥ ${escHtml(bname)}</span>
+          ${bgoal ? `<span class="flow-run-branch-goal">${escHtml(bgoal)}</span>` : ''}
+          ${berr ? `<div class="flow-run-step-err">${escHtml(berr)}</div>` : ''}
+        </div>`;
+    }).join('');
+    return `
+      <div class="flow-run-step ${status} is-parallel">
+        <span class="flow-run-step-status" title="${escHtml(status)}">${icon}</span>
+        <span class="flow-run-step-num">#${step.idx || ''}</span>
+        <div class="flow-run-step-body">
+          <div class="flow-run-step-app">⚡ 并行组 · ${step.branches.length} 路同时</div>
+          ${goal ? `<div class="flow-run-step-goal">${escHtml(goal)}</div>` : ''}
+          <div class="flow-run-branches">${branches}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ── 单 app 串行步 (原逻辑) ──
   const appRef = step.app || '';
   const meta = (window._opusWorkshopApps || []).find(a => a.id === appRef);
   const appName = (meta && meta.name) ? meta.name : appRef;
-  const goal = step.goal || '';
   const err = step.error || '';
   return `
     <div class="flow-run-step ${status}">
@@ -959,70 +1078,394 @@ if ($attachBtn && $attachFile) {
   }
 }
 
-// wish-41ed72ef · 语音输入 · 浏览器 SpeechRecognition API
-const $micBtn = document.getElementById('micBtn');
-if ($micBtn) {
+// 语音输入 → 三模式语音 (听写 / 语音对话 / 会议纪要)
+//   · 语音输入 (dictation): 说完填输入框·手动发 (最初功能·不变);
+//   · 语音对话 (transcribe): 持续听麦克风·你说完停约 1 秒自动发给 AI·
+//       AI 回完继续听 —— hands-free 语音对话·给未来桌面版对话模式留的扣·UI 比会议纪要轻;
+//   · 会议纪要 (meeting) = 【录制文本】: 持续把麦克风转成文字累积·点【停止录制】后
+//       把整段交给 AI 拆分整理 (议题/结论/待办/风险)。
+// 边界: 浏览器 SpeechRecognition 只认默认麦克风·线上会议对方声音要转文字得等后端 ASR·
+//   本轮不纠结系统音频 (getDisplayMedia 那套已移除)。
+(function initVoice() {
+  const $micBtn = document.getElementById('micBtn');
+  if (!$micBtn) return;
+  const $micMode = document.getElementById('micMode');
+  const $micMenu = document.getElementById('micMenu');
+  const $panel = document.getElementById('voicePanel');
+  const $script = document.getElementById('voiceTranscript');
+  const $timer = document.getElementById('voiceTimer');
+  const $panelMode = document.getElementById('voicePanelMode');
+  const $recNote = document.getElementById('voiceRecNote');
+  const $close = document.getElementById('voiceClose');
+
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    $micBtn.classList.add('unsupported');
-    $micBtn.title = '语音输入不可用 · 需要 Chrome/Edge 浏览器';
-  } else {
-    let _rec = null;
-    let _finalText = '';
-    $micBtn.addEventListener('click', () => {
-      if (_rec) {
-        // 正在听 → 停止
-        _rec.stop();
-        return;
-      }
-      // 开始听
-      _rec = new SR();
-      _rec.lang = 'zh-CN';
-      _rec.interimResults = true;
-      _rec.continuous = true;
-      _rec.maxAlternatives = 1;
-      _finalText = '';
+  const SILENCE_MS = 1000;      // 语音对话: 停顿约 1 秒自动发给 AI (给桌面版对话模式留扣)
+  const MODES = {
+    dictation:  { label: '语音输入', panel: false, icon: 'ri-mic-line' },
+    transcribe: { label: '语音对话', panel: true,  icon: 'ri-chat-voice-line' },   // 持续听 · 停约 1 秒自动发
+    meeting:    { label: '会议纪要', panel: true,  icon: 'ri-group-line' },         // = 持续录成文本 · 停止后整理
+  };
+  let mode = localStorage.getItem('opus_voice_mode') || 'dictation';
+  if (!MODES[mode]) mode = 'dictation';
+  if (!SR) { $micBtn.classList.add('unsupported'); $micBtn.title = '语音功能需 Chrome / Edge 浏览器'; }
 
-      _rec.onresult = (e) => {
-        let interim = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const r = e.results[i];
-          if (r.isFinal) {
-            _finalText += r[0].transcript;
-          } else {
-            interim += r[0].transcript;
-          }
-        }
-        // 实时更新输入框: 已确认的文字 + 正在识别的文字 (灰色标记)
-        $input.value = _finalText + interim;
-        $input.style.height = 'auto';
-        $input.style.height = Math.min($input.scrollHeight, 160) + 'px';
-      };
+  let _rec = null;              // SpeechRecognition 实例
+  let _listening = false;
+  let _manualStop = false;      // true = 用户主动停 · 阻止 onend 自动重启
+  let _finalText = '';          // 会议纪要累积的确认文字
+  let _dictBase = '';           // 语音输入: 开录前输入框已有内容
+  let _pendingBuf = '';         // 语音对话: 已确认待发的一段
+  let _silenceTimer = null;     // 语音对话: 停顿检测 timer
+  let _voicePaused = false;     // 语音对话: AI 回复中 → 暂停收音 (轮流说话·别录进杂音/AI 的话)
+  let _replyWatcher = null;     // 语音对话: 盯 pending·AI 回完自动恢复收音
+  let _sawPending = false;      // 语音对话: 确认这轮 turn 真起来了·防提前恢复
+  let _pauseTicks = 0;          // 语音对话: 兜底·久等没起 turn 也恢复
+  let _srGen = 0;               // SR 代号·暂停/停止/重启时 +1·让旧实例延迟触发的 onend 作废 (防并发双识别)
+  let _timerId = null;
+  let _startTs = 0;
 
-      _rec.onend = () => {
-        $micBtn.classList.remove('listening');
-        _rec = null;
-        // 把最终结果留在输入框
-        if (_finalText) $input.value = _finalText;
-        $input.focus();
-      };
-
-      _rec.onerror = (e) => {
-        $micBtn.classList.remove('listening');
-        _rec = null;
-        if (e.error === 'not-allowed') {
-          alert('麦克风权限被拒 · 请在浏览器设置中允许访问麦克风');
-        } else if (e.error !== 'aborted') {
-          // aborted 是正常停止 · 不提示
-          console.warn('语音识别出错:', e.error);
-        }
-      };
-
-      _rec.start();
-      $micBtn.classList.add('listening');
+  function _autosize() {
+    $input.style.height = 'auto';
+    $input.style.height = Math.min($input.scrollHeight, 160) + 'px';
+  }
+  function _setListening(on) {
+    _listening = on;
+    $micBtn.classList.toggle('listening', on);
+    _updateActions();
+  }
+  // 面板按钮按 模式 + 是否在听 显隐:
+  //   听着时 → 只显示【停止】(语音对话:停止对话 · 会议纪要:停止录制);
+  //   会议纪要停下后 → 显示【整理成纪要/插入/清空】让用户处理文本。
+  function _updateActions() {
+    if (!$panel) return;
+    const meetingStopped = (mode === 'meeting' && !_listening);
+    $panel.querySelectorAll('.voice-act').forEach((b) => {
+      const a = b.dataset.act;
+      if (a === 'stop') b.hidden = !_listening;
+      else b.hidden = !meetingStopped;
+    });
+    const $stop = $panel.querySelector('[data-act="stop"]');
+    if ($stop) {
+      $stop.innerHTML = (mode === 'meeting')
+        ? '<i class="ri-stop-circle-line"></i> 停止录制'
+        : '<i class="ri-stop-circle-line"></i> 停止对话';
+    }
+  }
+  function _applyModeMeta() {
+    const m = MODES[mode];
+    $micBtn.title = m.panel ? `${m.label} · 点一下开始` : '语音输入 · 点一下开始说';
+    const $ic = $micBtn.querySelector('i');   // 左侧麦克风图标跟着当前模式变 · 一眼看出在哪个模式
+    if ($ic) $ic.className = m.icon;
+    $micMenu && $micMenu.querySelectorAll('.mic-menu-item').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === mode);
     });
   }
+  _applyModeMeta();
+
+  // ── 模式菜单 ──
+  function _closeMenu() { if ($micMenu) $micMenu.hidden = true; }
+  function _openMenu() { if ($micMenu) $micMenu.hidden = false; }
+  if ($micMode) {
+    $micMode.addEventListener('click', (e) => {
+      e.stopPropagation();
+      $micMenu.hidden ? _openMenu() : _closeMenu();
+    });
+  }
+  document.addEventListener('click', (e) => {
+    if ($micMenu && !$micMenu.hidden && !e.target.closest('.mic-group')) _closeMenu();
+  });
+  $micMenu && $micMenu.querySelectorAll('.mic-menu-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!SR) { alert('语音功能需要 Chrome / Edge 浏览器'); return; }
+      mode = btn.dataset.mode;
+      localStorage.setItem('opus_voice_mode', mode);
+      _applyModeMeta();
+      _closeMenu();
+    });
+  });
+
+  // ── 计时器 ──
+  function _startTimer() {
+    _startTs = Date.now();
+    const tick = () => {
+      const s = Math.floor((Date.now() - _startTs) / 1000);
+      if ($timer) $timer.textContent = String((s / 60) | 0).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+    };
+    tick();
+    _timerId = setInterval(tick, 1000);
+  }
+  function _stopTimer() { if (_timerId) { clearInterval(_timerId); _timerId = null; } }
+
+  // ── 转写面板 ──
+  function _openPanel() {
+    if (!$panel) return;
+    const isChat = (mode === 'transcribe');
+    $panel.classList.toggle('is-chat', isChat);
+    $panel.classList.toggle('is-meeting', !isChat);
+    if ($panelMode) $panelMode.textContent = isChat ? '语音对话 · 通话中' : '会议纪要 · 录制中';
+    $panel.hidden = false;
+    if ($recNote) { $recNote.hidden = true; $recNote.className = 'voice-rec-note'; }
+  }
+  function _renderTranscript(interim) {
+    if (!$script) return;
+    $script.innerHTML = escHtml(_finalText) + (interim ? '<span class="voice-interim">' + escHtml(interim) + '</span>' : '');
+    $script.scrollTop = $script.scrollHeight;
+  }
+  function _setRecNote(html, cls) {
+    if (!$recNote) return;
+    $recNote.hidden = false;
+    $recNote.className = 'voice-rec-note ' + (cls || '');
+    $recNote.innerHTML = html;
+  }
+
+  // ── SpeechRecognition ──
+  function _makeSR() {
+    const r = new SR();
+    r.lang = 'zh-CN'; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
+    return r;
+  }
+  function _startDictation() {
+    _rec = _makeSR();
+    _dictBase = $input.value ? $input.value.replace(/\s+$/, '') + ' ' : '';
+    let finalText = '';
+    _rec.onresult = (e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript;
+      }
+      $input.value = _dictBase + finalText + interim;
+      _autosize();
+    };
+    _rec.onend = () => {
+      _rec = null; _setListening(false);
+      if (finalText) { $input.value = _dictBase + finalText; _autosize(); }
+      $input.focus();
+    };
+    _rec.onerror = _srError;
+    _rec.start();
+    _setListening(true);
+  }
+  // 绑一个 SR 实例并启动。 onend 里【建新实例】重启 (不是复用旧实例 .start()):
+  //   Chromium 复用旧实例重启会把上一段 final 再 replay 一次 onresult → 没说话也被当新话发出去
+  //   (曾出现"第一句后自动又发个'查'"的重复 bug)。 新实例 e.results 从零·根治重复。
+  function _bindSR(onResult) {
+    const r = _makeSR();
+    const gen = _srGen;   // 绑死本代号·换代后这个实例的 onend 一律作废
+    r.onresult = onResult;
+    r.onerror = _srError;
+    r.onend = () => {
+      if (gen !== _srGen) { return; }   // 已被暂停/停止/换代 → 旧实例的收尾不再重启·防并发双识别
+      if (!_manualStop && _listening && !_voicePaused) {
+        try { _rec = _bindSR(onResult); }
+        catch (_) { setTimeout(() => { if (gen === _srGen && !_manualStop && _listening && !_voicePaused) { try { _rec = _bindSR(onResult); } catch (__) {} } }, 300); }
+      } else {
+        _rec = null;
+      }
+    };
+    r.start();
+    return r;
+  }
+  function _renderChat(interim) {
+    if (!$script) return;
+    $script.innerHTML = escHtml(_pendingBuf) + (interim ? '<span class="voice-interim">' + escHtml(interim) + '</span>' : '');
+    $script.scrollTop = $script.scrollHeight;
+  }
+  // ── 语音对话 · 停顿约 1 秒把这段自动发给 AI ──
+  function _startVoiceChat() {
+    _pendingBuf = '';
+    _rec = _bindSR((e) => {
+      let interim = '', gotFinal = false;
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) { _pendingBuf += r[0].transcript; gotFinal = true; } else interim += r[0].transcript;
+      }
+      _renderChat(interim);
+      if (gotFinal) _scheduleFlush();
+    });
+  }
+  function _scheduleFlush() {
+    if (_silenceTimer) clearTimeout(_silenceTimer);
+    _silenceTimer = setTimeout(_tryFlush, SILENCE_MS);
+  }
+  function _tryFlush() {
+    _silenceTimer = null;
+    if (_voicePaused) return;                    // AI 回复中 · 收音已停 · 不该有可发内容
+    const txt = (_pendingBuf || '').trim();
+    if (!txt) return;
+    if (pending) { _silenceTimer = setTimeout(_tryFlush, 600); return; }  // AI 还在回 → 稍后再发
+    _pendingBuf = '';
+    _renderChat('');
+    $input.value = txt;
+    _autosize();
+    if (typeof send === 'function') send();
+    _pauseForReply();                            // 发完就停收音 · 轮到 OPUS 说 · 回完自动接着听
+  }
+  // AI 回复期间暂停麦克风 (语音对话该轮流说·回消息时别录音) · 盯 pending·回完自动恢复
+  function _pauseForReply() {
+    if (mode !== 'transcribe') return;
+    _voicePaused = true; _sawPending = false; _pauseTicks = 0;
+    _srGen++;                                    // 作废当前实例·停了别自动重启
+    if (_rec) { try { _rec.stop(); } catch (_) {} }
+    $micBtn.classList.remove('listening');
+    _renderChat('');
+    _setRecNote('<i class="ri-pause-circle-line"></i> OPUS 回复中 · 已暂停收音 · 回完自动继续听', 'wait');
+    if (_replyWatcher) clearInterval(_replyWatcher);
+    _replyWatcher = setInterval(() => {
+      _pauseTicks++;
+      if (pending) { _sawPending = true; return; }
+      if (_sawPending || _pauseTicks > 12) _resumeAfterReply();   // 见过 turn 又结束·或 ~5s 没起 turn 兜底
+    }, 400);
+  }
+  function _resumeAfterReply() {
+    if (_replyWatcher) { clearInterval(_replyWatcher); _replyWatcher = null; }
+    if (!_voicePaused) return;
+    _voicePaused = false;
+    if (_manualStop || !_listening || mode !== 'transcribe') return;  // 期间用户点了停 → 不恢复
+    $micBtn.classList.add('listening');
+    _setRecNote('<i class="ri-mic-fill"></i> 在听 · 你说完停约 1 秒会自动发给 OPUS', 'rec');
+    _startVoiceChat();                           // 建新 SR 实例·继续听下一句
+  }
+  // ── 会议纪要 = 持续把麦克风转成文本累积 · 停止后交给 AI 拆分 ──
+  function _startMeetingTranscribe() {
+    _rec = _bindSR((e) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) _finalText += r[0].transcript; else interim += r[0].transcript;
+      }
+      _renderTranscript(interim);
+      _setRecNote('<i class="ri-record-circle-fill"></i> 录制中 · 已记录 ' + _finalText.trim().length + ' 字', 'rec');
+    });
+  }
+  function _srError(e) {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      _manualStop = true;
+      alert('麦克风权限被拒 · 请在浏览器设置中允许访问麦克风');
+      _stopVoice(true);
+    } else if (e.error !== 'aborted' && e.error !== 'no-speech') {
+      console.warn('语音识别出错:', e.error);
+    }
+  }
+
+  // (系统音频 getDisplayMedia/MediaRecorder 那套已移除:会议纪要=纯麦克风
+  //  录成文本·停止后交给 AI 拆分;线上会议对方声音等后端 ASR 落地再补·不在此纠结。)
+
+  // ── 启停总入口 ──
+  function _startVoice() {
+    if (!SR) { alert('语音功能需要 Chrome / Edge 浏览器'); return; }
+    _manualStop = false;
+    _voicePaused = false;
+    _srGen++;                                    // 新一轮·作废上一轮任何残留实例
+    if (_replyWatcher) { clearInterval(_replyWatcher); _replyWatcher = null; }
+    if (mode === 'dictation') { _startDictation(); return; }
+    _finalText = '';
+    _pendingBuf = '';
+    if ($script) $script.innerHTML = '';
+    _openPanel();
+    _startTimer();
+    _setListening(true);
+    if (mode === 'transcribe') {
+      _setRecNote('<i class="ri-mic-fill"></i> 在听 · 你说完停约 1 秒会自动发给 OPUS', 'rec');
+      _startVoiceChat();
+    } else {
+      _setRecNote('<i class="ri-record-circle-fill"></i> 录制中 · 边说边记 · 完了点【停止录制】', 'rec');
+      _startMeetingTranscribe();
+    }
+  }
+  function _stopVoice(manual) {
+    _manualStop = !!manual;
+    _voicePaused = false;
+    _srGen++;                                    // 换代·让在途 onend 全部失效
+    if (_replyWatcher) { clearInterval(_replyWatcher); _replyWatcher = null; }
+    if (_silenceTimer) { clearTimeout(_silenceTimer); _silenceTimer = null; }
+    if (_rec) { try { _rec.stop(); } catch (_) {} }
+    _stopTimer();
+    _setListening(false);
+    _afterStop();
+  }
+  // 停下后收尾:语音对话 → 关面板(没后续动作);会议纪要 → 留文本·亮出整理/插入/清空。
+  function _afterStop() {
+    if (mode === 'transcribe') {
+      if ($panel) $panel.hidden = true;
+    } else if (mode === 'meeting') {
+      if ($panelMode) $panelMode.textContent = '会议纪要 · 已停止';
+      const n = (_finalText || '').trim().length;
+      if (n > 0) _setRecNote('<i class="ri-stop-circle-fill"></i> 已停止 · 记录 ' + n + ' 字 · 点【整理成纪要】交给 OPUS 拆分', 'done');
+      else _setRecNote('<i class="ri-information-line"></i> 没记到文字 · 检查麦克风权限后重录', 'warn');
+    }
+  }
+
+  $micBtn.addEventListener('click', () => {
+    if (_listening) { _stopVoice(true); return; }
+    _startVoice();
+  });
+
+  // ── 面板动作 ──
+  $panel && $panel.querySelectorAll('.voice-act').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const act = btn.dataset.act;
+      if (act === 'stop') { _stopVoice(true); return; }
+      if (act === 'clear') {
+        _finalText = ''; _renderTranscript('');
+        _setRecNote('<i class="ri-eraser-line"></i> 已清空 · 点麦克风可重新录制', 'done');
+        return;
+      }
+      const txt = (_finalText || '').trim();
+      if (!txt) { return; }
+      if (act === 'insert') {
+        $input.value = ($input.value ? $input.value.trimEnd() + '\n' : '') + txt;
+        _autosize();
+        $panel.hidden = true;
+        $input.focus();
+      } else if (act === 'minutes') {
+        $input.value = '【整理会议纪要】下面是会议的语音转写文字，帮我拆分整理成结构化会议纪要：\n'
+          + '1) 议题概述  2) 关键结论/决议  3) 待办事项(含负责人与时间)  4) 风险/待确认。\n'
+          + '保留关键人名、数字、日期，语言精炼;转写可能有同音错别字，按语境修正。\n\n---\n' + txt;
+        $panel.hidden = true;
+        if (typeof send === 'function') send();
+      }
+    });
+  });
+  $close && $close.addEventListener('click', () => {
+    _stopVoice(true);
+    $panel.hidden = true;
+  });
+})();
+
+// 卷七十五续五 · 模型行为 (思考/推理强度/输出上限) · 本地记住 · 每次 chat 请求带上
+// 缺省全空 = 后端老行为(零回归)。 后端只对支持的模型下发·别的静默忽略·不报错。
+function modelBehaviorPayload() {
+  const out = {};
+  try {
+    const think = localStorage.getItem('opus_mb_thinking') || 'auto';
+    const effort = localStorage.getItem('opus_mb_effort') || '';
+    const mt = localStorage.getItem('opus_mb_max_tokens') || '';
+    if (think && think !== 'auto') out.thinking = think;
+    if (effort) out.reasoning_effort = effort;
+    const n = parseInt(mt, 10);
+    if (n > 0) out.max_tokens = n;
+  } catch (_) {}
+  return out;
 }
+(function initModelBehavior() {
+  const $think = document.getElementById('mbThinking');
+  const $effort = document.getElementById('mbEffort');
+  const $mt = document.getElementById('mbMaxTokens');
+  if (!$think && !$effort && !$mt) return;
+  try {
+    if ($think) $think.value = localStorage.getItem('opus_mb_thinking') || 'auto';
+    if ($effort) $effort.value = localStorage.getItem('opus_mb_effort') || '';
+    if ($mt) $mt.value = localStorage.getItem('opus_mb_max_tokens') || '';
+  } catch (_) {}
+  $think && $think.addEventListener('change', () => localStorage.setItem('opus_mb_thinking', $think.value));
+  $effort && $effort.addEventListener('change', () => localStorage.setItem('opus_mb_effort', $effort.value));
+  $mt && $mt.addEventListener('change', () => {
+    const n = parseInt($mt.value, 10);
+    if (n > 0) localStorage.setItem('opus_mb_max_tokens', String(n));
+    else { localStorage.removeItem('opus_mb_max_tokens'); $mt.value = ''; }
+  });
+})();
 
 const $modal = document.getElementById('settings');
 // 卷三十六 · 当前 turn 的 id · 用来发 abort 请求
@@ -1137,6 +1580,18 @@ function setToolProgressText(text) {
   if (!el) return;
   const t = el.querySelector('.tool-progress-text');
   if (t) t.textContent = text;
+}
+
+// ② 自主巡航进度 · 把 active_turn 端点回的 progress 快照格式化成进度条文案
+// progress = {label, tool, iteration, elapsed_s, stale_s} · 可能为 null (老 daemon / 刚起没记上)
+function _fmtBgProgress(progress) {
+  if (!progress) return 'OPUS 后台仍在跑这个对话 · 自动刷新中…';
+  const label = (progress.label || '').trim() || '跑动中';
+  const it = progress.iteration ? ` · 第${progress.iteration}轮` : '';
+  const el = (progress.elapsed_s != null) ? ` · 已${progress.elapsed_s}s` : '';
+  // 距上次进度更新 >25s · 多半在等模型出字 (长上下文/深度思考) · 给个明确提示而非"像卡住"
+  const stale = (progress.stale_s != null && progress.stale_s >= 25) ? ' · ⏳等模型响应' : '';
+  return `OPUS 后台跑动中 · ${label}${it}${el}${stale}`;
 }
 
 // 卷四十六续 9 · 工具进度条「已 X 秒」实时 ticker
@@ -3392,6 +3847,7 @@ async function _pollSession(state) {
   // 1) 查 daemon 还有这个 session 的 active turn 没
   let hasActive = false;
   let activeTurnId = null;
+  let progress = null;
   try {
     const r = await fetch(`/sessions/${encodeURIComponent(state.sessionId)}/active_turn`, {
       headers: { 'Authorization': 'Bearer ' + token },
@@ -3400,12 +3856,18 @@ async function _pollSession(state) {
       const j = await r.json();
       hasActive = !!(j && j.turn_id);
       activeTurnId = (j && j.turn_id) || null;
+      progress = (j && j.progress) || null;
     }
   } catch {}
   // turn_id 可能在 polling 期间变了 (旧的被 stop · 新的开起来 — 极小概率) · 同步一下
   if (activeTurnId && state.currentTurnId !== activeTurnId) {
     state.currentTurnId = activeTurnId;
     if (sessionId === state.sessionId) currentTurnId = activeTurnId;
+  }
+  // ② 自主巡航进度 (卷七十五续四) · 后台 turn 没 SSE · 把 daemon 记的最新一步写进进度条 ·
+  // 不再干巴巴"仍在后台跑" · 而是"正在: xxx · 第N轮 · 已Xs" · 长任务也看得出没卡死
+  if (hasActive && sessionId === state.sessionId) {
+    setToolProgressText(_fmtBgProgress(progress));
   }
   // 2) 拉历史 · 看 turn count 变了没
   try {
@@ -3439,7 +3901,7 @@ async function _pollSession(state) {
       }
       state.lastTurnCount = newCount;
       const tail = hasActive
-        ? '⏳ OPUS 仍在后台跑 · 自动刷新中…'
+        ? `⏳ ${_fmtBgProgress(progress)}`
         : `(已加载 ${newCount} 条历史 turn · OPUS 这轮跑完了 · 输入新消息可继续)`;
       addSys(tail, state.$container);
     }
@@ -4432,6 +4894,7 @@ async function send() {
         session_id: reqSid,
         auto_confirm: autoConfirm,
         attachments: _attachments.length > 0 ? _attachments.map(a => ({name: a.name, data_url: a.data_url})) : undefined,
+        ...modelBehaviorPayload(),
       }),
     });
     // wish-4a6331b2 · payload 已读 _attachments · 现在可以清了

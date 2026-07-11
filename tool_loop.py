@@ -523,6 +523,8 @@ def run_tool_loop(
     cancel_check: Callable[[], bool] | None = None,
     on_message_commit: Callable[[dict], None] | None = None,
     system_suffix: str = "",
+    thinking: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[str, list[dict], UsageStats]:
     """
     多轮 tool use 循环。返回 (最终 OPUS 文本回复, 更新后的 messages, UsageStats)。
@@ -588,6 +590,7 @@ def run_tool_loop(
             progress=progress, cancel_check=cancel_check,
             on_message_commit=on_message_commit,
             system_suffix=system_suffix,
+            thinking=thinking, reasoning_effort=reasoning_effort,
         )
     elif provider == "anthropic":
         return _loop_anthropic(
@@ -598,6 +601,7 @@ def run_tool_loop(
             progress=progress, cancel_check=cancel_check,
             on_message_commit=on_message_commit,
             system_suffix=system_suffix,
+            thinking=thinking, reasoning_effort=reasoning_effort,
         )
     else:
         raise RuntimeError(f"unknown provider: {provider}")
@@ -639,12 +643,46 @@ def _extract_openai_cache_usage(usage: Any) -> tuple[int, int]:
     return 0, 0
 
 
+def _apply_openai_reasoning(kwargs: dict, model: str, base_url: str | None,
+                            thinking: str | None, reasoning_effort: str | None) -> None:
+    """卷七十五续五 · 把 UI 的「思考模式 / 推理强度」落到 openai 协议请求参数上。
+
+    默认 (thinking=None/'auto' · effort=None) == 老行为(DeepSeek 开 thinking · 其余不动)·
+    保证零回归。 只对【已知接受该参数】的家族/厂商下发·别的静默跳过 → 防未知参数 400:
+      - thinking → DeepSeek / GLM(智谱) 认 extra_body.thinking.{enabled|disabled};
+      - reasoning_effort → GPT-5 / o 系列 / grok 认顶层 reasoning_effort。
+    """
+    base = (base_url or "").lower()
+    ml = (model or "").lower()
+    is_deepseek = "deepseek.com" in base or ml.startswith("deepseek")
+    is_glm = "bigmodel.cn" in base or ml.startswith("glm")
+    tv = (thinking or "auto").lower()
+    thinking_off = False
+    if is_deepseek or is_glm:
+        if tv == "off":
+            kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
+            thinking_off = True
+        elif tv == "on" or (tv == "auto" and is_deepseek):
+            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+        # auto + glm → 不设 · 用厂商默认
+    # reasoning_effort · 只发给【实测接受该参数】的家族 · 且思考没被关掉时才发:
+    #   GPT-5 / o 系 / grok / DeepSeek-V4 (2026-07 实测 low/high 均不报 400·V4 把 low/medium 映射成 high)。
+    #   GLM 只有 5.2+ 认·老 GLM 发了会 400·保守不发 (思考开关已够用)。
+    eff = (reasoning_effort or "").lower()
+    if eff in ("low", "medium", "high") and not thinking_off:
+        fam0 = ml.split("-")[0]
+        if "gpt-5" in ml or ml.startswith("grok") or fam0 in ("o1", "o3", "o4") or is_deepseek:
+            kwargs["reasoning_effort"] = eff
+
+
 def _loop_openai(
     *, client, model, max_tokens, system, messages,
     confirm, observe, max_iterations, base_url,
     progress=None, cancel_check=None,
     on_message_commit=None,
     system_suffix: str = "",
+    thinking: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[str, list[dict], UsageStats]:
     def _commit(entry: dict) -> None:
         if on_message_commit is None:
@@ -661,8 +699,8 @@ def _loop_openai(
     total = UsageStats()
     final_text = ""
 
-    # 卷三十七 · 流式输出 · DeepSeek thinking mode 推荐 stream=True · 让 reasoning 一字一字吐
-    is_deepseek = base_url and "deepseek.com" in (base_url or "").lower()
+    # 卷三十七 · 流式输出 · thinking 模型推荐 stream=True · 让 reasoning 一字一字吐
+    # (thinking / reasoning_effort 的开关下沉到 _apply_openai_reasoning · 每轮 kwargs 里应用)
 
     # 卷三十八 · finish_reason='length' 自动续接计数 · BRO 反馈"撞了 max_tokens 就停了 · 任务没结果"
     # 策略: 检测到 length · 自动注入一条 user 继续指令 · 接着 LLM 把没说完的写完
@@ -694,10 +732,9 @@ def _loop_openai(
         if tools_param:
             kwargs["tools"] = tools_param
             kwargs["tool_choice"] = "auto"
-        # 卷三十七 · DeepSeek thinking mode 强度控制 · 只对 deepseek 加
-        # 默认 enabled · 这里 effort=high 让推理更深 · 普通对话 medium 已经够
-        if is_deepseek:
-            kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
+        # 卷三十七 → 卷七十五续五 · thinking / reasoning_effort 由 UI 控 (默认 auto == 老行为:
+        # DeepSeek 开 thinking · 其余不动)。 helper 只对已知支持的厂商/家族下发 · 防未知参数 400。
+        _apply_openai_reasoning(kwargs, model, base_url, thinking, reasoning_effort)
 
         resp = client.chat.completions.create(**kwargs)
 
@@ -1090,6 +1127,8 @@ def _loop_anthropic(
     progress=None, cancel_check=None,
     on_message_commit=None,
     system_suffix: str = "",
+    thinking: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[str, list[dict], UsageStats]:
     def _commit(entry: dict) -> None:
         if on_message_commit is None:
@@ -1130,6 +1169,12 @@ def _loop_anthropic(
         )
         if tools_param:
             kwargs["tools"] = tools_param
+        # 卷七十五续五 · Claude extended thinking · 仅当 UI 显式开 (thinking='on')。
+        # budget_tokens 必须 ≥1024 且 < max_tokens · 取一半但留够可见输出。 auto/off = 老行为(不开)。
+        if (thinking or "").lower() == "on":
+            _budget = max(1024, min(max_tokens - 1024, max_tokens // 2))
+            if _budget >= 1024:
+                kwargs["thinking"] = {"type": "enabled", "budget_tokens": _budget}
 
         resp = client.messages.create(**kwargs)
         usage = resp.usage

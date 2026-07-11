@@ -148,6 +148,81 @@ _TURNS_LOCK = threading.Lock()
 # turn_id → sid · 跟 _ACTIVE_TURNS 同步生命周期 (worker 启动注册 · 退出删)
 _TURN_TO_SID: dict[str, str] = {}
 
+# 卷七十五续四 · ② 自主巡航进度 · turn_id → 最新一步进度快照
+# 病根: 后台/轮询模式的 turn 没有 SSE 接收方 · tool_loop 的 tool_progress 事件全丢 →
+#   前端只能显示"仍在后台跑·自动刷新中" · 长任务跑工具时看着像卡死。
+# 修法: 无论 SSE 连没连 · _chat_impl 都把最新一步 (工具名/步骤/轮次) 记进这里 ·
+#   /sessions/{sid}/active_turn 端点带出去 · 前端轮询显示"正在: xxx · 第N轮 · 已Xs"。
+# 生命周期跟 _TURN_TO_SID 对齐 (chat.py / resume_runner 的 finally 里一起 pop) · 共用 _TURNS_LOCK。
+_TURN_PROGRESS: dict[str, dict] = {}
+
+
+def get_turn_progress(turn_id: str) -> Optional[dict]:
+    """② · 查 turn 最新进度快照 (含服务端算好的 elapsed_s / stale_s) · 供 active_turn 端点。"""
+    if not turn_id:
+        return None
+    with _TURNS_LOCK:
+        slot = _TURN_PROGRESS.get(turn_id)
+        if not slot:
+            return None
+        now = time.time()
+        return {
+            "label": slot.get("label") or "",
+            "tool": slot.get("tool") or "",
+            "iteration": slot.get("iteration") or 0,
+            "elapsed_s": int(now - slot.get("started_at", now)),
+            "stale_s": int(now - slot.get("updated_at", now)),
+        }
+
+
+def _make_progress_recorder(turn_id: str, inner: Optional[Callable[[str, dict], None]]):
+    """② · 包一层 progress 回调 · 无论有没有 SSE 接收方 (inner) 都把最新一步记进 _TURN_PROGRESS。
+
+    inner 存在 → 照常转发 (SSE 主对话行为一字不变);inner=None (后台/resume turn) → 只记录 ·
+    让轮询也能看到进度。 turn_id 为空 → 没法记 · 原样返回 inner (不改行为)。
+    """
+    if not turn_id:
+        return inner
+    _now = time.time()
+    with _TURNS_LOCK:
+        _TURN_PROGRESS[turn_id] = {
+            "started_at": _now, "updated_at": _now, "iteration": 0, "label": "启动中…", "tool": "",
+        }
+
+    def _rec(event_type: str, data: dict) -> None:
+        try:
+            now = time.time()
+            d = data if isinstance(data, dict) else {}
+            with _TURNS_LOCK:
+                slot = _TURN_PROGRESS.get(turn_id)
+                if slot is not None:
+                    slot["updated_at"] = now
+                    if d.get("iteration"):
+                        slot["iteration"] = d["iteration"]
+                    if event_type == "tool_call":
+                        slot["tool"] = d.get("name") or ""
+                        _s = d.get("summary")
+                        slot["label"] = f"调用 {slot['tool']}" + (f" · {_s}" if _s else "")
+                    elif event_type == "tool_progress":
+                        _step = (d.get("step") or "").strip()
+                        _msg = (d.get("msg") or "").strip()
+                        _lbl = (_step + (" " + _msg if _msg else "")).strip()
+                        if _lbl:
+                            slot["label"] = _lbl
+                    elif event_type == "tool_result":
+                        _nm = d.get("name") or slot.get("tool") or ""
+                        slot["label"] = f"{_nm} 完成 · 继续推理…"
+                    elif event_type in ("assistant_finish", "auto_resume"):
+                        slot["label"] = "思考中…"
+                    elif event_type == "reasoning_delta":
+                        slot["label"] = "推理中…"
+        except Exception:
+            pass
+        if inner is not None:
+            inner(event_type, data)
+
+    return _rec
+
 
 # ---------- confirm policy ----------
 
@@ -859,6 +934,8 @@ def _chat_impl(
     cancel_event: Optional[threading.Event] = None,
     turn_id: str = "",
     user_meta: Optional[dict] = None,
+    thinking: Optional[str] = None,
+    reasoning_effort: Optional[str] = None,
 ) -> dict:
     """跑一次 API 端的 tool_loop，返回 reply payload。
 
@@ -890,6 +967,11 @@ def _chat_impl(
         _trace_token = None
 
     policy = auto_confirm or os.environ.get("OPUS_API_DEFAULT_CONFIRM", "").strip() or "confirm"
+
+    # ② 自主巡航进度 (卷七十五续四) · 包一层进度记录器 · 无论 SSE 连没连都记最新一步 ·
+    # 让轮询/后台 turn 也能显示进度 (SSE 主对话照常转发 · 行为不变)。 turn_id 空则原样。
+    progress = _make_progress_recorder(turn_id, progress)
+
     confirm = _make_remote_confirm(
         policy,
         cancel_event=cancel_event,
@@ -1015,6 +1097,8 @@ def _chat_impl(
                 progress=progress,
                 cancel_check=(cancel_event.is_set if cancel_event is not None else None),
                 on_message_commit=_persist_entry,
+                thinking=thinking,
+                reasoning_effort=reasoning_effort,
             )
         except Exception as e:
             # 失败时回滚那条 user msg（不让 stale 状态污染下次）

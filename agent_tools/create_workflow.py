@@ -125,12 +125,23 @@ SPEC = ToolSpec(
         "  - `substeps` (可选) list[str] 站内清单 · 比如分镜稿可以列『1-1 图片收集 · 1-2 图片生成 · 1-3 标题』·\n"
         "     作用是进度可见 + 站内断点 · 子步骤常常运行时由蓝图动态展开 · 模板里能写多确定就写多确定\n"
         "  - `on_fail` (可选) `stop` (默认) 或 `goto:N` 回跳第 N 步 · 字段留着 · runner 当前只 stop\n\n"
-        "  示例 (做条带 IP 的科普视频):\n"
+        "**⚡ 并行组步 (v0.6.0 · 一步里几路同时跑)**:\n"
+        "  某一步的活能拆成【互不依赖】的几路时 · 把这步写成并行组 · 用 `parallel` 代替 `app`:\n"
+        "  该步 = `{parallel: [{app, goal, substeps?}, ...], goal?, on_fail?}` (parallel 和 app 二选一)。\n"
+        "  组内 2~4 个分支【并发跑】· 各拿同一份上游 · 全跑完输出自动合并喂下一步。 覆盖两种诉求:\n"
+        "  - 多个不同 app 并行: parallel=[{app:出图app,goal:'按分镜生图'},{app:搜索app,goal:'搜B-roll素材'}]\n"
+        "  - 同一 app 并行(不同输入): parallel=[{app:浏览器app,goal:'搜素材A的图'},{app:浏览器app,goal:'搜素材B的图'}]\n"
+        "  什么时候用: 几路活谁也不等谁 (并行省时) · 不要把有先后依赖的硬塞进一个组。\n"
+        "  合并后下游怎么读: 上游 key 会带 `<app名>#<序号>.` 前缀区分各路 (同 app 也不撞)。\n\n"
+        "  示例 (做条带 IP 的科普视频 · 第 2 步生图与搜素材并行):\n"
         "  ```json\n"
         '  [\n'
-        '    {"app": "app-66ac4190", "goal": "出导演蓝图: 800-1500 字口播文案 + 分镜表 + IP 槽位",\n'
-        '     "substeps": ["1-1 选题敲死", "1-2 文案口播", "1-3 分镜表", "1-4 IP 槽位标注"]},\n'
-        '    {"app": "app-b08ffda6", "goal": "按分镜表收/生图", "substeps": ["2-1 图片收集", "2-2 图片生成", "2-3 过渡页"]},\n'
+        '    {"app": "app-66ac4190", "goal": "出导演蓝图: 口播文案 + 分镜表 + IP 槽位",\n'
+        '     "substeps": ["1-1 选题敲死", "1-2 文案口播", "1-3 分镜表"]},\n'
+        '    {"parallel": [\n'
+        '        {"app": "app-b08ffda6", "goal": "按分镜表里标了 AI 生图 的镜头生图"},\n'
+        '        {"app": "app-searchmat", "goal": "按分镜表里标了 搜素材 的镜头并行搜 B-roll"}\n'
+        '      ], "goal": "生图与搜素材同时干 (互不依赖)"},\n'
         '    {"app": "app-6f439831", "goal": "用 active voice 配音 (TTS)"},\n'
         '    {"app": "app-render", "goal": "FFmpeg 合成"}\n'
         '  ]\n'
@@ -174,17 +185,30 @@ SPEC = ToolSpec(
                 "type": "array",
                 "description": (
                     "**推荐** · 线性步骤清单 (沉淀闭环 v2 刀②本体格式) · 画布视图由这个自动投影 · "
-                    "run_flow 沿这个执行带状态落盘"
+                    "run_flow 沿这个执行带状态落盘。 每一步要么是【单 app 步】(给 app + goal) · "
+                    "要么是【并行组步】(给 parallel 数组 · 组内 2~4 个分支并发跑 · app 和 parallel 二选一)。"
                 ),
                 "items": {
                     "type": "object",
                     "properties": {
-                        "app": {"type": "string", "description": "app-xxxxxxxx (推荐) 或 app 名字 (唯一命中)"},
-                        "goal": {"type": "string", "description": "这一步要达成什么 · 像导演给演员的一句话剧本"},
+                        "app": {"type": "string", "description": "单 app 步: app-xxxxxxxx (推荐) 或 app 名字 (唯一命中) · 与 parallel 二选一"},
+                        "goal": {"type": "string", "description": "单 app 步必填: 这一步要达成什么 · 像导演给演员的一句话剧本。 并行组步这里可选 · 写组级说明"},
                         "substeps": {"type": "array", "items": {"type": "string"}, "description": "站内清单 · 进度可见用"},
+                        "parallel": {
+                            "type": "array",
+                            "description": "并行组步: 2~4 个分支 · 组内并发跑 · 各拿同一份上游 · 跑完合并喂下一步。 与 app 二选一。 同一 app 可出现多次 (同 app 并行不同输入)",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "app": {"type": "string", "description": "这个分支跑哪个 app · app-xxxxxxxx 或名字"},
+                                    "goal": {"type": "string", "description": "这个分支要达成什么"},
+                                    "substeps": {"type": "array", "items": {"type": "string"}},
+                                },
+                                "required": ["app", "goal"],
+                            },
+                        },
                         "on_fail": {"type": "string", "description": "stop (默认) 或 goto:N"},
                     },
-                    "required": ["app", "goal"],
                 },
             },
             "litegraph_json": {

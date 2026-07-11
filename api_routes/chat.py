@@ -44,6 +44,8 @@ async def chat(
     auto_confirm = payload.get("auto_confirm")
     max_tokens = _resolve_max_tokens(payload.get("max_tokens"))
     attachments = payload.get("attachments")  # wish-4a6331b2 · WebUI 图片上传
+    _thinking = payload.get("thinking") or None            # 卷七十五续五 · 模型行为
+    _reasoning_effort = payload.get("reasoning_effort") or None
 
     # 卷四十六 III 补丁 5 · Y7 · audit log
     _audit_start = time.monotonic()
@@ -59,6 +61,8 @@ async def chat(
             auto_confirm=auto_confirm,
             max_tokens=max_tokens,
             attachments=attachments,
+            thinking=_thinking,
+            reasoning_effort=_reasoning_effort,
         )
         _audit_result_sid = result.get("session_id", "") if isinstance(result, dict) else ""
     except ValueError as e:
@@ -101,6 +105,7 @@ async def chat_stream(
         _TURNS_LOCK,
         _ACTIVE_TURNS,
         _TURN_TO_SID,
+        _TURN_PROGRESS,
     )
 
     message = payload.get("message", "")
@@ -108,6 +113,8 @@ async def chat_stream(
     auto_confirm = payload.get("auto_confirm")
     max_tokens = _resolve_max_tokens(payload.get("max_tokens"))
     attachments = payload.get("attachments")  # wish-4a6331b2
+    _thinking = payload.get("thinking") or None            # 卷七十五续五 · 模型行为
+    _reasoning_effort = payload.get("reasoning_effort") or None
 
     if not message or not message.strip():
         raise HTTPException(400, "message is required and cannot be empty")
@@ -141,6 +148,8 @@ async def chat_stream(
                 progress=push_event,
                 cancel_event=cancel_event,
                 turn_id=turn_id,
+                thinking=_thinking,
+                reasoning_effort=_reasoning_effort,
             )
             push_event("done", result)
         except ValueError as e:
@@ -151,6 +160,7 @@ async def chat_stream(
             with _TURNS_LOCK:
                 _ACTIVE_TURNS.pop(turn_id, None)
                 _TURN_TO_SID.pop(turn_id, None)
+                _TURN_PROGRESS.pop(turn_id, None)  # ② 进度快照跟 turn 同生命周期
 
     threading.Thread(target=worker, daemon=True).start()
 

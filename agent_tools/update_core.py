@@ -139,6 +139,11 @@ def _run(args: dict) -> ToolResult:
                 lines.append(f"  覆盖 {len(up)} 个: " + ", ".join(up))
             if add:
                 lines.append(f"  新增 {len(add)} 个: " + ", ".join(add))
+            if res.get("passes", 1) >= 2:
+                lines.append("  (清单本身有更新 · 已自动按新清单补拉了一轮新增内核文件)")
+            elif "core_manifest.json" in (up + add):
+                # 本地跑的是旧版 apply(无自动补轮):新清单已就位但新增文件这轮没进来
+                lines.append("  ⚠ 本次更新了内核清单本身 · 请【再执行一次升级】把新增内核文件补齐。")
             if res["skipped_deleted"]:
                 lines.append(f"  跳过(中心库已删·没动你的): " + ", ".join(res["skipped_deleted"]))
             lines.append(f"\n  落袋: {res['checkpoint']}")

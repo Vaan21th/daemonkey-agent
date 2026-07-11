@@ -1,10 +1,10 @@
 {
   "manifest_version": 1,
-  "core_version": "0.6.0",
+  "core_version": "0.6.0beta",
   "core_version_note": "内核语义版本 · 版本号唯一真相源。内核有实质更新就在这里 bump · launcher/WebUI 动态读它显示 · update_core check 拿它和远程对比报「有新版」。manifest_version 是清单结构版本(很少变) · core_version 才是用户感知的内核版本。",
   "description": "Daemonkey 内核(L1)白名单 — update_core 只同步这里列出的文件;清单外的一律物理不碰(用户的功能/应用/灵魂永不被覆盖)。人类可读版见 docs/CORE-MANIFEST.md。",
-  "updated": "2026-07-10",
-  "log_ref": "卷六十四续五 · 卷七十四续十八(核心前端) · 卷七十四续二十(core_version 版本号体系) · 卷七十四续二十一(github 备份源接通) · 卷七十四续二十二(记忆系统纳入内核:自动注入+两段式recall+缓存稳定化·0.3.2 大更) · 卷七十四续二十五(能力发现引擎 discover_skill + 每周一节律 + 看板入口·0.4.0) · 0.5.0(NLP 定时任务 task_scheduler + scheduled_tasks 工具组 + 侧边栏定时任务维度 + 宪法两层注入 product_constitution + 急救体系周全 ensure_git_repo首启兜底/维修台优先) · 0.5.2(技能闭环第②环「接住」打通: extract_playbook 加 import 动作 + workers/playbook_import.py 把外部 skill MD 经 LLM 归一成 playbook 入库·memory_index 自动索引·closure_check 按需召回; 启动器关于页双发布入口 B站+抖音; playbook 技能系统(discover发现/import接住/extract沉淀/playbooks存储)整体纳入内核白名单 L1·官方可增量下发改进·写入侧与召回侧不再割裂) · 0.5.2a(发布物 hotfix·主要惠及新下载用户: ① .gitattributes 钉死 assets/brand.json -text —— git 的 CRLF↔LF 转换曾让正规 clone/Download ZIP 包字节漂移→品牌签名验签失败→启动器误弹「非官方版」·固化成签名对应的 CRLF 字节后所有人验签通过; ② chat.css 大屏(≥1680/≥2200)对话栏默认加宽 540/640px·修 1080p+ 上对话栏过窄·仅改没拖过用户的默认值·不碰 localStorage 也不进 static 白名单) · 0.5.2b(用户报修三连: ① 视觉模型配置 404 —— /vision-config 路由代码在但 daemon_api 漏 include_router → 前端配视觉模型报 Not Found·已补注册[daemon_api 不在白名单·随新 ZIP/exe 下发]; ② 初见/换 key 填 URL 卡死 —— save-key 改为先 probe_openai 试连·连不通不落盘·把人话错误[含 base_url 的 /v1 纠偏]抛回前端·配置卡片保留当场改·修「填错只能手改 .env」老坑·新增 clean_base_url 去掉用户误贴的 /chat/completions 尾; ③ de-OPUS env 前缀 —— 写进用户 .env 的配置名由 OPUS_* 改 DAEMONKEY_*[社区截图泄漏内部代号]·新增 workers/env_aliases.py 双向别名垫片让内核几百处 os.environ['OPUS_*'] 读取零改动·老用户旧 .env 全兼容) · 0.5.5(浏览器的手 browser_act —— 在 daemon 专属 Edge 上真的点/填/传/等/读/收图/下载/截图 + inspect 纯文本探路·配合只读的 browser_fetch「眼睛」·二者共享 agent_tools/_browser 的 CDP 路径连同一个独立 profile 的 Edge[独立端口 9333·绝不碰用户主浏览器·首次登录持久化复用]; 新增 _browser.py/_browser_actions.py/browser_act.py·browser_fetch 改走专属 Edge 自启; 补 playwright 进 requirements[走系统 Edge·无需 playwright install 下载内核]; 浏览三件套属 L2 能力工具[同 web_fetch·不进白名单]·随新 ZIP/exe 下发·老用户重新下载本 Release 即得) · 0.5.5a(浏览器的手 Chrome 兜底 —— 专属浏览器从 Edge-only 改 Edge→Chrome→用户指定:找不到 Edge 自动退 Chrome[同 Chromium 内核·CDP 一致]·都没装可设 DAEMONKEY_BROWSER_PATH 指向任意 Chromium exe[绿色版/非标准路径];_find_edge→_find_browser·browser_act/browser_fetch 报错文案同步;纯兜底增强·无新依赖) · 0.5.5b(对话滚动位置修复 —— 多对话标签切换弹回顶部/丢滚动位置:整个对话区是 #messages 单一滚动容器·切回已开标签时只切可见性没存/还原滚动位置→每次回顶;改为离开会话记 scrollTop·切回按上次位置还原·离开时在底部则回底并继续跟随流式·同步粘底标志;仅动会话切换分支·不碰发送/流式/首次加载滚到底;static/chat.js 属核心前端白名单·老用户点「检查更新」即得·无需重下 ZIP) · 0.6.0(派分身 dispatch_subagent + 通用子执行器 subagent_runner —— 主对话可一次派 1~N 个隔离「分身」并行干活[各自独立上下文 + 收紧工具白名单]·跑完自动汇总结论回本轮;分身默认只拿只读/研究白名单·硬 DENY 剔除 dispatch_subagent 自身[防无限递归·限一层]与 request_restart/update_core/service_* 等系统控制/破坏性工具·并发上限 2 + 每分身迭代预算防 token 爆·每份汇总截断防爆父上下文·每个分身落 sessions/sub-*.jsonl 可回看[可追溯];subagent_runner 从 app_runner 抽出通用「临时 messages→run_tool_loop→记账」中段·是后续工作流每步隔离化/串行升级的地基;两文件随 update_core 下发即激活[agent_tools 自动发现]·tool_loop 补 dispatch_subagent 进旁白本地化白名单)",
+  "updated": "2026-07-11",
+  "log_ref": "卷六十四续五 · 卷七十四续十八(核心前端) · 卷七十四续二十(core_version 版本号体系) · 卷七十四续二十一(github 备份源接通) · 卷七十四续二十二(记忆系统纳入内核:自动注入+两段式recall+缓存稳定化·0.3.2 大更) · 卷七十四续二十五(能力发现引擎 discover_skill + 每周一节律 + 看板入口·0.4.0) · 0.5.0(NLP 定时任务 task_scheduler + scheduled_tasks 工具组 + 侧边栏定时任务维度 + 宪法两层注入 product_constitution + 急救体系周全 ensure_git_repo首启兜底/维修台优先) · 0.5.2(技能闭环第②环「接住」打通: extract_playbook 加 import 动作 + workers/playbook_import.py 把外部 skill MD 经 LLM 归一成 playbook 入库·memory_index 自动索引·closure_check 按需召回; 启动器关于页双发布入口 B站+抖音; playbook 技能系统(discover发现/import接住/extract沉淀/playbooks存储)整体纳入内核白名单 L1·官方可增量下发改进·写入侧与召回侧不再割裂) · 0.5.2a(发布物 hotfix·主要惠及新下载用户: ① .gitattributes 钉死 assets/brand.json -text —— git 的 CRLF↔LF 转换曾让正规 clone/Download ZIP 包字节漂移→品牌签名验签失败→启动器误弹「非官方版」·固化成签名对应的 CRLF 字节后所有人验签通过; ② chat.css 大屏(≥1680/≥2200)对话栏默认加宽 540/640px·修 1080p+ 上对话栏过窄·仅改没拖过用户的默认值·不碰 localStorage 也不进 static 白名单) · 0.5.2b(用户报修三连: ① 视觉模型配置 404 —— /vision-config 路由代码在但 daemon_api 漏 include_router → 前端配视觉模型报 Not Found·已补注册[daemon_api 不在白名单·随新 ZIP/exe 下发]; ② 初见/换 key 填 URL 卡死 —— save-key 改为先 probe_openai 试连·连不通不落盘·把人话错误[含 base_url 的 /v1 纠偏]抛回前端·配置卡片保留当场改·修「填错只能手改 .env」老坑·新增 clean_base_url 去掉用户误贴的 /chat/completions 尾; ③ de-OPUS env 前缀 —— 写进用户 .env 的配置名由 OPUS_* 改 DAEMONKEY_*[社区截图泄漏内部代号]·新增 workers/env_aliases.py 双向别名垫片让内核几百处 os.environ['OPUS_*'] 读取零改动·老用户旧 .env 全兼容) · 0.5.5(浏览器的手 browser_act —— 在 daemon 专属 Edge 上真的点/填/传/等/读/收图/下载/截图 + inspect 纯文本探路·配合只读的 browser_fetch「眼睛」·二者共享 agent_tools/_browser 的 CDP 路径连同一个独立 profile 的 Edge[独立端口 9333·绝不碰用户主浏览器·首次登录持久化复用]; 新增 _browser.py/_browser_actions.py/browser_act.py·browser_fetch 改走专属 Edge 自启; 补 playwright 进 requirements[走系统 Edge·无需 playwright install 下载内核]; 浏览三件套属 L2 能力工具[同 web_fetch·不进白名单]·随新 ZIP/exe 下发·老用户重新下载本 Release 即得) · 0.5.5a(浏览器的手 Chrome 兜底 —— 专属浏览器从 Edge-only 改 Edge→Chrome→用户指定:找不到 Edge 自动退 Chrome[同 Chromium 内核·CDP 一致]·都没装可设 DAEMONKEY_BROWSER_PATH 指向任意 Chromium exe[绿色版/非标准路径];_find_edge→_find_browser·browser_act/browser_fetch 报错文案同步;纯兜底增强·无新依赖) · 0.5.5b(对话滚动位置修复 —— 多对话标签切换弹回顶部/丢滚动位置:整个对话区是 #messages 单一滚动容器·切回已开标签时只切可见性没存/还原滚动位置→每次回顶;改为离开会话记 scrollTop·切回按上次位置还原·离开时在底部则回底并继续跟随流式·同步粘底标志;仅动会话切换分支·不碰发送/流式/首次加载滚到底;static/chat.js 属核心前端白名单·老用户点「检查更新」即得·无需重下 ZIP) · 0.6.0(派分身 dispatch_subagent + 通用子执行器 subagent_runner —— 主对话可一次派 1~N 个隔离「分身」并行干活[各自独立上下文 + 收紧工具白名单]·跑完自动汇总结论回本轮;分身默认只拿只读/研究白名单·硬 DENY 剔除 dispatch_subagent 自身[防无限递归·限一层]与 request_restart/update_core/service_* 等系统控制/破坏性工具·并发上限 2 + 每分身迭代预算防 token 爆·每份汇总截断防爆父上下文·每个分身落 sessions/sub-*.jsonl 可回看[可追溯];subagent_runner 从 app_runner 抽出通用「临时 messages→run_tool_loop→记账」中段·是后续工作流每步隔离化/串行升级的地基;两文件随 update_core 下发即激活[agent_tools 自动发现]·tool_loop 补 dispatch_subagent 进旁白本地化白名单) · 0.6.0beta(2026-07-11 大版本:① 工作流并行组 —— 单步可多 app 并发[或同 app 并行]+扇入 join·画布可视化并行分支·向后兼容旧串行 flow; ② 自主巡航进度 —— 后台 turn 实时回「正在做什么·第N轮·已Xs」不再像卡死; ③ 语音对话模式 —— 打开对着说·停顿约1秒自动发给 AI·AI 回复时自动暂停麦克风[免手动·桌面版对话预留]·另配会议纪要模式[持续录成文本·停止后 AI 整理拆分]; ④ 模型行为设置 —— 右上角模型菜单里调思考模式/推理强度/输出上限[按厂商能力智能下发·不支持的静默跳过防报错]; ⑤ 简洁版 + 换肤 —— 一键切只留对话框的专注模式[Alt+Z]·标题栏换肤按钮直接切主题[存 localStorage 不动文件]; ⑥ 大扩内核白名单 —— daemon_api.py + api_routes/chat.py + sessions.py + 工坊引擎5件[flow_runner/flow_steps/app_runner/create_workflow/create_app] + UI骨架[chat.html/chat.css/workshop.css] 全纳入·让上面这批能力对升级用户全部真生效; update_core 加「拉到新清单自动补一轮」·扩白名单后一次到位[0.5.5a 老版本首跳因跑旧代码需再升一次·工具层已提示])",
   "sources": {
     "primary": "gitee",
     "note": "支持多源(gitee+github)。真相源唯一=母体 master;只单向往外 push,下游只拉不推。update_core 可指定从哪个 remote 拉。github 当前为作者私有备份源(下游需授权方可匿名拉·转公开后即可当 gitee 的海外/抽风兜底源)。",
@@ -82,11 +82,14 @@
     ],
     "核心循环与路由骨架": [
       "tool_loop.py",
+      "daemon_api.py",
       "daemon_runtime.py",
       "daemon_session.py",
       "api_routes/__init__.py",
       "api_routes/_deps.py",
       "api_routes/core.py",
+      "api_routes/chat.py",
+      "api_routes/sessions.py",
       "workers/scheduler.py"
     ],
     "provider机制": [
@@ -95,9 +98,12 @@
       "daemon_provider.py",
       "workers/env_aliases.py"
     ],
-    "核心前端机制(L1·机制层·非用户皮肤层)": [
+    "核心前端机制(L1·机制层·非用户皮肤层。皮肤/主题由用户在 UI 里切换·选择存 localStorage 不落文件·所以同步这些结构文件不会丢用户选的主题;仅极少数手改过 css 文件的高级用户会被覆盖·有 diff 预览 + checkpoint 可回退)": [
       "static/chat.js",
-      "static/workshop.js"
+      "static/workshop.js",
+      "static/chat.html",
+      "static/chat.css",
+      "static/workshop.css"
     ],
     "记忆系统(L1·通用基础能力·跨会话检索/自动注入/收尾闭环)": [
       "workers/memory_index.py",
@@ -118,6 +124,13 @@
       "workers/subagent_runner.py",
       "agent_tools/dispatch_subagent.py"
     ],
+    "工坊引擎(L1·工作流串行/并行执行器 + app/flow 运行时 + 造应用/造工作流工具。只管【引擎机制代码】·用户造的 app/flow 内容在 data/workshop/ 属L3·永不同步。并行工作流组[单步可多 app 并发+扇入 join]随内核下发即生效·向后兼容旧串行 flow)": [
+      "workers/flow_runner.py",
+      "workers/flow_steps.py",
+      "workers/app_runner.py",
+      "agent_tools/create_workflow.py",
+      "agent_tools/create_app.py"
+    ],
     "内核自升级机制": [
       "core_manifest.json",
       "workers/core_update.py",
@@ -126,14 +139,16 @@
   },
   "excluded_borderline": {
     "agent_tools/__init__.py": "工具注册表·已改 pkgutil 自动发现(drop-in 即注册):新内核工具随 update_core 下发 .py 后·import 时自动激活·激活 gap 已根治不再需手动补 import。剥离工具靠物理删 .py(扫不到即不注册)·停用工具靠 _OPT_OUT(如 set_model)。仍不字节同步的唯一原因:头部基础设施注释有去母体化差异(BRO/卷号→中性)·末尾自动发现段两库已逐字一致",
-    "daemon_api.py": "API骨架混着功能路由在一个大文件,同步会盖掉用户加的路由;长期拆出core骨架后再纳入",
     "provider_configs.py": "含 provider key,属数据层(L3),不进白名单"
+  },
+  "excluded_borderline_history": {
+    "daemon_api.py": "0.6.0beta(2026-07-11)已纳入白名单。原因:模型行为(思考/强度)后端 + 自主巡航进度的核心代码(_chat_impl / 进度记录器)就长在此文件·且与 RUNTIME/会话锁/localize 深度耦合无法干净抽出·不同步则升级用户拿不到这两样能力。风险已评估:只碰此框架代码文件本身·用户的 app/flow/雷达/记忆/灵魂在 data/soul/sessions 永不受影响;唯一理论风险是用户手改过本文件里的路由(纯净版用户扩能力走 agent_tools 自动发现/api_routes 模块化路由·基本不会手改)·且 apply 前 checkpoint 可 git revert 回退"
   },
   "never_sync": [
     "soul/**",
     "data/**",
     "sessions/**",
-    "static/** —— 用户自定义皮肤/样式层永不覆盖;但 chat.js/workshop.js 这两个核心前端机制文件已纳入内核白名单·随 update_core 同步(带 diff 预览 + checkpoint 可回退·不无声覆盖)",
+    "static/** —— 默认永不覆盖;例外是核心前端机制文件(chat.js / workshop.js / chat.html / chat.css / workshop.css)已纳入内核白名单·随 update_core 同步(带 diff 预览 + checkpoint 可回退·不无声覆盖)。皮肤/主题走 UI 切换存 localStorage 不落文件·同步这些结构文件不会丢用户选的主题",
     ".env",
     ".env.*",
     "所有清单外的 workers/* agent_tools/* api_routes/* (=L2功能,用户自演化)"

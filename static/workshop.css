@@ -2051,6 +2051,42 @@ dialog.ws-asset-modal::backdrop {
   margin-top: 1px;
 }
 
+/* ⚡ 并行组步 (v0.6.0) · 组内几路同时跑 · 每路一行 · 跑时逐路染色 */
+.workshop-view .ws-step-card.is-parallel { border-left: 3px solid rgba(159, 122, 234, 0.6); }
+.workshop-view .ws-par-branches {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-left: 4px;
+  border-left: 1px dashed rgba(159, 122, 234, 0.3);
+}
+.workshop-view .ws-par-branch {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: #c8c8d0;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: #1f1f24;
+  border: 1px solid transparent;
+  transition: background 0.2s, border-color 0.15s;
+}
+.workshop-view .ws-par-mark { color: #b89ff0; font-weight: 700; flex: 0 0 auto; }
+.workshop-view .ws-par-app { display: flex; align-items: center; gap: 5px; font-weight: 600; color: #e2e2e8; }
+.workshop-view .ws-par-app i { color: #b89ff0; font-size: 13px; }
+.workshop-view .ws-par-goal { color: #9a9aa4; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 逐分支染色 (跟步骤卡状态色同板) */
+.workshop-view .ws-par-branch.is-running {
+  background: rgba(199, 153, 49, 0.16);
+  border-color: rgba(199, 153, 49, 0.5);
+  animation: ws-step-pulse 1.6s ease-in-out infinite;
+}
+.workshop-view .ws-par-branch.is-done { background: rgba(58, 125, 68, 0.14); border-color: rgba(58, 125, 68, 0.45); }
+.workshop-view .ws-par-branch.is-failed { background: rgba(161, 61, 45, 0.18); border-color: rgba(161, 61, 45, 0.55); }
+.workshop-view .ws-par-branch.is-skipped { opacity: 0.5; }
+
 /* ─── LiteGraph 自带的 contextmenu / dialogs 样式覆盖 ─── */
 /* (LiteGraph 的菜单是 fixed 渲染到 body 里·不在 .workshop-view 下) */
 .litecontextmenu {

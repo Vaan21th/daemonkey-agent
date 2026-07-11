@@ -47,6 +47,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNS_DIR = ROOT / "data" / "workshop" / "runs"
 
 _UPSTREAM_TEXT_MAX = 2000
+_PARALLEL_CONCURRENCY = 3   # 并行组同时最多几个分支在跑 (即使组里 4 个也排队 · 防 token 爆)
 
 
 def _iso_now() -> str:
@@ -118,12 +119,51 @@ def _resolve_app(ref: str) -> Optional[dict]:
     return None
 
 
-def _step_inputs(step: dict) -> dict:
-    inputs = {"step_goal": step.get("goal") or ""}
-    subs = step.get("substeps") or []
+def _task_inputs(goal: str, substeps: list | None, label: str) -> dict:
+    """给 run_app 拼 step_goal / step_substeps · 单 app 步和并行分支共用"""
+    inputs = {"step_goal": goal or ""}
+    subs = substeps or []
     if subs:
-        inputs["step_substeps"] = " / ".join(f"{step['idx']}-{j} {s}" for j, s in enumerate(subs, 1))
+        inputs["step_substeps"] = " / ".join(f"{label}-{j} {s}" for j, s in enumerate(subs, 1))
     return inputs
+
+
+def _step_inputs(step: dict) -> dict:
+    return _task_inputs(step.get("goal") or "", step.get("substeps"), str(step.get("idx") or ""))
+
+
+def _init_entry(st: dict, from_step: int) -> dict:
+    """建单步的初始 state entry · 单 app 步 / 并行组步分别成形"""
+    base = "skipped" if st["idx"] < from_step else "pending"
+    if st.get("parallel"):
+        return {
+            "idx": st["idx"],
+            "parallel": True,
+            "goal": st.get("goal") or "",
+            "branches": [
+                {
+                    "app": b["app"],
+                    "goal": b["goal"],
+                    "substeps": b.get("substeps") or [],
+                    "status": base,
+                    "summary": "",
+                    "error": None,
+                }
+                for b in st["parallel"]
+            ],
+            "status": base,
+            "summary": "",
+            "error": None,
+        }
+    return {
+        "idx": st["idx"],
+        "app": st["app"],
+        "goal": st["goal"],
+        "substeps": st.get("substeps") or [],
+        "status": base,
+        "summary": "",
+        "error": None,
+    }
 
 
 def _trim_outputs(outputs: dict) -> dict:
@@ -154,18 +194,7 @@ def _init_state(flow: dict, *, from_step: int = 1) -> tuple[dict, list[dict]]:
         "current_step": from_step,
         "total_steps": len(steps),
         "started_at": _iso_now(),
-        "steps": [
-            {
-                "idx": st["idx"],
-                "app": st["app"],
-                "goal": st["goal"],
-                "substeps": st.get("substeps") or [],
-                "status": "skipped" if st["idx"] < from_step else "pending",
-                "summary": "",
-                "error": None,
-            }
-            for st in steps
-        ],
+        "steps": [_init_entry(st, from_step) for st in steps],
     }
     _save_state(state)
     return state, steps
@@ -259,6 +288,9 @@ def _prep_resume(run_id: str, *, from_step: Optional[int]) -> tuple[dict, list[d
         if entry["idx"] >= target:
             entry["status"] = "pending"
             entry["error"] = None
+            for be in entry.get("branches") or []:
+                be["status"] = "pending"
+                be["error"] = None
     state["status"] = "running"
     state["current_step"] = target
     _save_state(state)
@@ -336,6 +368,120 @@ def _execute(
         _settle_trust(state)
 
 
+def _run_single_app(
+    app_ref: str,
+    goal: str,
+    substeps: list | None,
+    label: str,
+    *,
+    runtime: Any,
+    progress: Optional[Callable[[str, dict], None]],
+    cancel_check: Optional[Callable[[], bool]],
+    upstream: Optional[dict],
+) -> dict:
+    """解析并跑一个 app · 返回 run_app 的 result (补 app_id / app_name)
+
+    单 app 步和并行分支共用。 app 解析失败 → 返回 ok=False 的 result (不抛)。
+    """
+    from .app_runner import run_app
+
+    app = _resolve_app(app_ref)
+    if app is None:
+        return {
+            "ok": False, "text": "", "outputs": {},
+            "error": f"app 解析失败: {app_ref!r} (不存在或名字命中多个 · 用 app-id 引用)",
+            "app_id": None, "app_name": None,
+        }
+    result = dict(run_app(
+        app=app,
+        inputs=_task_inputs(goal, substeps, label),
+        runtime=runtime,
+        progress=progress,
+        cancel_check=cancel_check,
+        upstream_outputs=upstream,
+    ))
+    result["app_id"] = app.get("id")
+    result["app_name"] = app.get("name")
+    return result
+
+
+def _run_parallel_group(
+    st: dict,
+    entry: dict,
+    *,
+    runtime: Any,
+    cancel_check: Optional[Callable[[], bool]],
+    upstream: Optional[dict],
+    state: dict,
+) -> tuple[bool, dict]:
+    """并发跑一个并行组 · 各分支拿同一份 upstream · 返回 (all_ok, merged_outputs)
+
+    - 并发上限 _PARALLEL_CONCURRENCY · 组里超了排队 (token 安全)
+    - 每个分支跑完即时更新 state (前端 2.5s 轮询能看到逐分支色态)
+    - merged 按分支去重命名 <app_name>#<序号>.<key> · 同 app 并行也不撞 key
+    - 任一分支失败 → all_ok=False · 整组算失败 (on_fail=stop 收场)
+    - 分支内不回灌 SSE progress (并发会串) · 状态靠 state 落盘 + 轮询
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    branches = st["parallel"]
+    br_entries = entry["branches"]
+    for be in br_entries:
+        be["status"] = "running"
+    _save_state(state)
+
+    results: list[Optional[dict]] = [None] * len(branches)
+
+    def _work(j: int) -> dict:
+        br = branches[j]
+        return _run_single_app(
+            br["app"], br["goal"], br.get("substeps"),
+            f"{st['idx']}.{j + 1}",
+            runtime=runtime, progress=None, cancel_check=cancel_check, upstream=upstream,
+        )
+
+    workers = min(len(branches), _PARALLEL_CONCURRENCY)
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix=f"flow-par-{st['idx']}") as pool:
+        futs = {pool.submit(_work, j): j for j in range(len(branches))}
+        for fut in futs:
+            j = futs[fut]
+            try:
+                res = fut.result()
+            except Exception as e:
+                res = {"ok": False, "text": "", "outputs": {},
+                       "error": f"{type(e).__name__}: {e}", "app_id": None, "app_name": None}
+            results[j] = res
+            be = br_entries[j]
+            be["app_id"] = res.get("app_id")
+            be["app_name"] = res.get("app_name")
+            if res.get("ok"):
+                t = res.get("text") or ""
+                be["status"] = "done"
+                be["summary"] = t[:200] + ("…" if len(t) > 200 else "")
+                be["finished_at"] = _iso_now()
+            else:
+                be["status"] = "failed"
+                be["error"] = res.get("error") or "(未知错误)"
+            _save_state(state)
+
+    all_ok = all(r is not None and r.get("ok") for r in results)
+    if not all_ok:
+        fails = [
+            f"[{br_entries[j].get('app_name') or br_entries[j]['app']}] {br_entries[j].get('error')}"
+            for j, r in enumerate(results) if not (r and r.get("ok"))
+        ]
+        entry["error"] = "并行组有分支失败: " + "; ".join(fails)
+        return False, {}
+
+    merged: dict = {}
+    for j, res in enumerate(results):
+        name = br_entries[j].get("app_name") or br_entries[j]["app"]
+        label = f"{name}#{j + 1}"  # 同 app 并行时靠 #序号 保证 key 不撞
+        for k, v in (res.get("outputs") or {}).items():
+            merged[f"{label}.{k}"] = v
+    return True, merged
+
+
 def _execute_body(
     state: dict,
     steps: list[dict],
@@ -344,8 +490,6 @@ def _execute_body(
     progress: Optional[Callable[[str, dict], None]],
     cancel_check: Optional[Callable[[], bool]],
 ) -> dict:
-    from .app_runner import run_app
-
     upstream: Optional[dict] = None
     by_idx = {e["idx"]: e for e in state["steps"]}
 
@@ -366,27 +510,40 @@ def _execute_body(
         _save_state(state)
         if progress:
             try:
-                progress("flow_step_start", {"run_id": state["run_id"], "step": st["idx"], "app": st["app"]})
+                _label = "∥并行组" if st.get("parallel") else st.get("app")
+                progress("flow_step_start", {"run_id": state["run_id"], "step": st["idx"], "app": _label})
             except Exception:
                 pass
 
-        app = _resolve_app(st["app"])
-        if app is None:
-            entry["status"] = "failed"
-            entry["error"] = f"app 解析失败: {st['app']!r} (不存在或名字命中多个 · 用 app-id 引用)"
-            state["status"] = "failed"
+        # ── 并行组步 ──
+        if st.get("parallel"):
+            ok, merged = _run_parallel_group(
+                st, entry, runtime=runtime, cancel_check=cancel_check,
+                upstream=upstream, state=state,
+            )
+            if not ok:
+                entry["status"] = "failed"
+                state["status"] = "failed"
+                _save_state(state)
+                return state
+            entry["status"] = "done"
+            entry["summary"] = f"并行 {len(st['parallel'])} 路完成"
+            entry["finished_at"] = _iso_now()
+            upstream = _trim_outputs(merged)
             _save_state(state)
-            return state
+            if progress:
+                try:
+                    progress("flow_step_done", {"run_id": state["run_id"], "step": st["idx"]})
+                except Exception:
+                    pass
+            continue
 
-        entry["app_id"] = app.get("id")
-        result = run_app(
-            app=app,
-            inputs=_step_inputs(st),
-            runtime=runtime,
-            progress=progress,
-            cancel_check=cancel_check,
-            upstream_outputs=upstream,
+        # ── 单 app 串行步 ──
+        result = _run_single_app(
+            st["app"], st["goal"], st.get("substeps"), str(st["idx"]),
+            runtime=runtime, progress=progress, cancel_check=cancel_check, upstream=upstream,
         )
+        entry["app_id"] = result.get("app_id")
 
         if not result.get("ok"):
             entry["status"] = "failed"
@@ -456,15 +613,31 @@ def format_run(state: dict) -> str:
     """run 状态 → 人话 (工具回显 / 上下文注入共用)"""
     from .flow_steps import format_steps
     statuses = {e["idx"]: e["status"] for e in state.get("steps") or []}
-    steps_view = [
-        {"idx": e["idx"], "app": e["app"], "goal": e["goal"], "substeps": e.get("substeps") or []}
-        for e in state.get("steps") or []
-    ]
+    steps_view: list[dict] = []
+    branch_statuses: dict = {}
+    for e in state.get("steps") or []:
+        if e.get("parallel"):
+            branches = e.get("branches") or []
+            steps_view.append({
+                "idx": e["idx"],
+                "parallel": [{"app": b.get("app"), "goal": b.get("goal")} for b in branches],
+                "goal": e.get("goal") or "",
+            })
+            for j, b in enumerate(branches):
+                branch_statuses[(e["idx"], j)] = b.get("status")
+        else:
+            steps_view.append({
+                "idx": e["idx"], "app": e.get("app"), "goal": e.get("goal"),
+                "substeps": e.get("substeps") or [],
+            })
     head = (
         f"run `{state.get('run_id')}` · flow 「{state.get('flow_name')}」({state.get('flow_id')}) · "
         f"状态 {state.get('status')} · 第 {state.get('current_step')}/{state.get('total_steps')} 步"
     )
-    body = format_steps(steps_view, current=int(state.get("current_step") or 0), statuses=statuses)
+    body = format_steps(
+        steps_view, current=int(state.get("current_step") or 0),
+        statuses=statuses, branch_statuses=branch_statuses,
+    )
     fails = [e for e in state.get("steps") or [] if e.get("status") == "failed"]
     tail = ""
     if fails:

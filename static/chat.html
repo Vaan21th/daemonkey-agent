@@ -107,6 +107,15 @@
   <button class="restart-btn" id="restartBtn" onclick="restartDaemon()" title="重启 daemon 进程 · 装载新代码后用"><i class="ri-restart-line"></i></button>
   <button class="restart-btn rollback-btn" id="rollbackBtn" onclick="rollbackDaemon()" title="回档 · 代码改崩了 · 一键回到上一个良好 commit"><i class="ri-rewind-fill"></i></button>
   <button class="restart-btn shutdown-btn" id="shutdownBtn" onclick="shutdownDaemon()" title="关闭 daemon · 不起新进程 · 之后去 GUI 启动器手动起"><i class="ri-shut-down-fill"></i></button>
+  <!-- 换肤按钮(接现成 applyTheme) + 简洁版切换(只留对话框·Alt+Z) -->
+  <div class="theme-menu" id="themeMenu">
+    <button class="restart-btn theme-menu-btn" onclick="toggleThemePop(event)" title="换皮肤 / 主题"><i class="ri-palette-line"></i></button>
+    <div class="theme-pop" id="themePop" hidden>
+      <div class="theme-pop-head">皮肤 / 主题</div>
+      <div class="theme-grid" id="themeGrid"></div>
+    </div>
+  </div>
+  <button class="compact-toggle" id="compactBtn" onclick="toggleCompact()" title="简洁版 · 只留对话框 (Alt+Z)"><i class="ri-focus-3-line" id="compactIcon"></i><span class="lab" id="compactLabel">简洁版</span></button>
   <div class="model-switch" id="modelSwitch">
     <button class="model-btn" onclick="toggleModelMenu()" title="切换模型">
       <span class="model-dot">●</span>
@@ -117,6 +126,31 @@
       <div class="model-menu-head">切换模型</div>
       <div id="modelMenuList">
         <div class="model-menu-empty">加载中…</div>
+      </div>
+      <div class="mm-behavior">
+        <div class="model-menu-head">模型行为 <span class="mb-tag">本机记住 · 每次对话生效</span></div>
+        <label class="mmb-row">
+          <span class="mmb-label"><i class="ri-brain-line"></i> 思考模式</span>
+          <select id="mbThinking">
+            <option value="auto" selected>自动(推荐)</option>
+            <option value="on">开 · 强制深度思考</option>
+            <option value="off">关 · 直接答(更快)</option>
+          </select>
+        </label>
+        <label class="mmb-row">
+          <span class="mmb-label"><i class="ri-flashlight-line"></i> 推理强度</span>
+          <select id="mbEffort">
+            <option value="" selected>默认</option>
+            <option value="low">低 · 快</option>
+            <option value="medium">中</option>
+            <option value="high">高 · 更深</option>
+          </select>
+        </label>
+        <label class="mmb-row">
+          <span class="mmb-label"><i class="ri-text-spacing"></i> 输出上限</span>
+          <input id="mbMaxTokens" type="number" min="0" step="1024" placeholder="留空 = 模型推荐">
+        </label>
+        <div class="mmb-hint">思考仅 DeepSeek·GLM·Claude 生效 · 强度仅 GPT-5·o 系·grok 生效 · 其他自动忽略不报错。<br>输出上限<b>留空最稳</b>(用模型推荐值)· 填小了易提前截断(有自动续写兜底·但更慢)。</div>
       </div>
     </div>
   </div>
@@ -227,11 +261,41 @@
       </div>
       <div id="toolProgressDetail" class="tool-progress-detail-list" hidden></div>
     </div>
+    <div id="voicePanel" class="voice-panel" hidden>
+      <div class="voice-panel-head">
+        <span class="voice-panel-title"><i class="ri-mic-fill"></i> <span id="voicePanelMode">语音对话</span></span>
+        <span class="voice-timer" id="voiceTimer">00:00</span>
+        <span class="voice-panel-spacer"></span>
+        <button type="button" class="voice-close" id="voiceClose" title="关闭"><i class="ri-close-line"></i></button>
+      </div>
+      <div class="voice-transcript" id="voiceTranscript" placeholder="开始说话 · 文字会实时出现在这里…"></div>
+      <div class="voice-rec-note" id="voiceRecNote" hidden></div>
+      <div class="voice-panel-actions">
+        <button type="button" class="voice-act primary" data-act="minutes"><i class="ri-file-list-3-line"></i> 整理成纪要</button>
+        <button type="button" class="voice-act" data-act="insert"><i class="ri-corner-down-left-line"></i> 插入输入框</button>
+        <button type="button" class="voice-act" data-act="clear"><i class="ri-eraser-line"></i> 清空</button>
+        <button type="button" class="voice-act stop" data-act="stop" hidden><i class="ri-stop-circle-line"></i> 停止</button>
+      </div>
+    </div>
     <div class="input-bar">
       <div id="attachmentPreviews" class="attachment-previews" hidden></div>
       <div class="input-row">
         <button id="attachBtn" type="button" title="添加图片或文件 (支持拖拽 / Ctrl+V 粘贴)"><i class="ri-attachment-2"></i></button>
-        <button id="micBtn" type="button" title="语音输入 · 点一下开始说"><i class="ri-mic-line"></i></button>
+        <div class="mic-group">
+          <button id="micBtn" type="button" title="语音输入 · 点一下开始说"><i class="ri-mic-line"></i></button>
+          <button id="micMode" type="button" title="选择语音模式" aria-label="选择语音模式"><i class="ri-arrow-down-s-line"></i></button>
+          <div id="micMenu" class="mic-menu" hidden>
+            <button type="button" class="mic-menu-item" data-mode="dictation">
+              <i class="ri-mic-line"></i><span><b>语音输入</b><small>说完自动填进输入框</small></span>
+            </button>
+            <button type="button" class="mic-menu-item" data-mode="transcribe">
+              <i class="ri-chat-voice-line"></i><span><b>语音对话</b><small>打开就能对着说 · 停约 1 秒自动发</small></span>
+            </button>
+            <button type="button" class="mic-menu-item" data-mode="meeting">
+              <i class="ri-group-line"></i><span><b>会议纪要</b><small>持续录成文本 · 停止后整理拆分</small></span>
+            </button>
+          </div>
+        </div>
         <textarea id="input" rows="1"
                   placeholder="说点什么…  (Shift+回车换行)"
                   autocomplete="off" autocapitalize="off"></textarea>

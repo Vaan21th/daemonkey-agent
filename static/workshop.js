@@ -245,8 +245,28 @@
   //   - output_schema  → output ports (能接下游 inputs · 没声明默认单端口 'output')
   //   - 每次 _apps 更新都调一次 (idempotent · 已注册的同 type 跳过)
   const _registeredAppTypes = new Set();
+  let _joinRegistered = false;
+  function _registerJoinNode() {
+    // 并行组汇合节点 (卷七十五续三) · 构造器不加槽 · 槽全靠 configure 从后端序列化数据填
+    // (后端 flow_join 节点自带 N 个 in + 1 out · 见 flow_steps._mk_join)
+    if (_joinRegistered || typeof LiteGraph === 'undefined') return;
+    function JoinNode() {
+      this.title = '⋔ 汇合';
+      this.color = '#7B5DC4';
+      this.bgcolor = '#2a2440';
+      this.boxcolor = '#b89ff0';
+      this.properties = { _kind: 'flow_join' };
+    }
+    JoinNode.title = '⋔ 汇合';
+    JoinNode.desc = '并行组汇合点 · 各分支产出在此合并后喂下一步';
+    JoinNode.prototype.onExecute = function () { /* 只读投影 · 不本地执行 */ };
+    try { LiteGraph.registerNodeType('opus/flow_join', JoinNode); _joinRegistered = true; }
+    catch (e) { /* 已注册 · 静默 */ }
+  }
+
   function _registerAppNodes() {
     if (typeof LiteGraph === 'undefined') return;
+    _registerJoinNode();
     for (const app of _apps) {
       if (!app || !app.id) continue;
       if (app.kind === 'builtin') continue;
@@ -2592,17 +2612,16 @@ function _askOpusInChat(kind) {
     list.innerHTML = steps.map((step, idx) => _renderStepCard(step, idx)).join('');
   }
 
+  function _appMeta(ref) {
+    const meta = _apps.find(a => a.id === ref || a.name === ref);
+    return {
+      icon: meta && meta.icon ? meta.icon : '<i class="ri-puzzle-fill"></i>',
+      name: meta && meta.name ? meta.name : ref,
+    };
+  }
+
   function _renderStepCard(step, idx) {
-    const appRef = step.app || step.app_id || step.app_name || '(?)';
-    const meta = _apps.find(a => a.id === appRef || a.name === appRef);
-    const icon = meta && meta.icon ? meta.icon : '<i class="ri-puzzle-fill"></i>';
-    const name = meta && meta.name ? meta.name : appRef;
     const goal = _escapeHtml(step.goal || step.step_goal || '');
-    // 卷六六 BRO 提的"STEPS1 2-1 2-2 STEPS3 STEPS4"二层结构 = substeps (内部 checklist · 不分裂执行)
-    const substeps = Array.isArray(step.substeps) ? step.substeps : [];
-    const subList = substeps.length
-      ? `<ul class="ws-step-substeps">${substeps.map((s, i) => `<li><span class="ws-step-subnum">${idx + 1}-${i + 1}</span>${_escapeHtml(s)}</li>`).join('')}</ul>`
-      : '';
     // on_fail 默认值是 "stop" (失败就停 · 这是预期行为) · 只在非默认时才显示 tag
     const onFail = step.on_fail || step.continue_on_error;
     const failTag = (() => {
@@ -2613,11 +2632,44 @@ function _askOpusInChat(kind) {
       }
       return `<span class="ws-step-tag warn">${_escapeHtml(String(onFail))}</span>`;
     })();
+
+    // ⚡ 并行组步 (v0.6.0 · 组内几路同时跑) — 每路一行 · 跑时逐路染色
+    if (Array.isArray(step.parallel) && step.parallel.length) {
+      const branches = step.parallel.map((br, j) => {
+        const m = _appMeta(br.app || br.app_id || br.app_name || '(?)');
+        const bgoal = _escapeHtml(br.goal || '');
+        return `
+          <div class="ws-par-branch" data-branch-idx="${j}">
+            <span class="ws-par-mark">∥</span>
+            <span class="ws-par-app">${m.icon}<span>${_escapeHtml(m.name)}</span></span>
+            ${bgoal ? `<span class="ws-par-goal">${bgoal}</span>` : ''}
+          </div>`;
+      }).join('');
+      return `
+        <div class="ws-step-card is-parallel" data-step-idx="${idx}">
+          <div class="ws-step-num">#${idx + 1}</div>
+          <div class="ws-step-body">
+            <div class="ws-step-app"><i class="ri-git-branch-line"></i><span>⚡ 并行组 · ${step.parallel.length} 路同时</span>${failTag}</div>
+            ${goal ? `<div class="ws-step-goal">${goal}</div>` : ''}
+            <div class="ws-par-branches">${branches}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ── 单 app 串行步 (原逻辑) ──
+    const appRef = step.app || step.app_id || step.app_name || '(?)';
+    const m = _appMeta(appRef);
+    // "STEPS1 2-1 2-2 STEPS3 STEPS4" 二层结构 = substeps (内部 checklist · 不分裂执行)
+    const substeps = Array.isArray(step.substeps) ? step.substeps : [];
+    const subList = substeps.length
+      ? `<ul class="ws-step-substeps">${substeps.map((s, i) => `<li><span class="ws-step-subnum">${idx + 1}-${i + 1}</span>${_escapeHtml(s)}</li>`).join('')}</ul>`
+      : '';
     return `
       <div class="ws-step-card" data-step-idx="${idx}">
         <div class="ws-step-num">#${idx + 1}</div>
         <div class="ws-step-body">
-          <div class="ws-step-app">${icon}<span>${_escapeHtml(name)}</span><span class="ws-step-appid">${_escapeHtml(appRef)}</span>${failTag}</div>
+          <div class="ws-step-app">${m.icon}<span>${_escapeHtml(m.name)}</span><span class="ws-step-appid">${_escapeHtml(appRef)}</span>${failTag}</div>
           ${goal ? `<div class="ws-step-goal">${goal}</div>` : ''}
           ${subList}
         </div>
@@ -2717,13 +2769,21 @@ function _askOpusInChat(kind) {
     // 1. 染 LiteGraph 节点 bgcolor
     if (_graph && _graph._nodes) {
       _graph._nodes.forEach(n => {
-        const idx = n.id;  // steps_to_litegraph 让 id = step.idx (1-based)
+        // v0.6.0: 并行步一步多节点 · node id 不再等于步序号 · 用 properties.step_idx 映射
+        // (老 flow 没这属性 · 退回 n.id · 纯串行时 node id == step idx 依旧成立)
+        const props = n.properties || {};
+        const sIdx = (typeof props.step_idx === 'number') ? props.step_idx : n.id;
         if (!stepsState) {
           n.bgcolor = STEP_COLORS.pending;
           n.boxcolor = null;
         } else {
-          const st = stepsState.find(s => s.idx === idx);
-          const status = (st && st.status) || 'pending';
+          const st = stepsState.find(s => s.idx === sIdx);
+          let status = (st && st.status) || 'pending';
+          // 并行分支节点 · 染这一路自己的状态 (不用整组聚合)
+          if (st && Array.isArray(st.branches) && typeof props.branch_idx === 'number') {
+            const b = st.branches[props.branch_idx];
+            if (b && b.status) status = b.status;
+          }
           n.bgcolor = STEP_COLORS[status] || STEP_COLORS.pending;
           // boxcolor 让 LiteGraph 在节点左上角小灯亮起
           n.boxcolor = status === 'running' ? '#ffd76b' :
@@ -2746,6 +2806,14 @@ function _askOpusInChat(kind) {
         const st = stepsState.find(s => s.idx === idx);
         const status = (st && st.status) || 'pending';
         card.classList.add('is-' + status);
+        // 并行组卡片 · 组内每路各自染色 (哪路在跑/完成一眼看到)
+        if (st && Array.isArray(st.branches)) {
+          card.querySelectorAll('.ws-par-branch').forEach((bel, j) => {
+            bel.classList.remove('is-pending', 'is-running', 'is-done', 'is-failed', 'is-skipped');
+            const b = st.branches[j];
+            bel.classList.add('is-' + ((b && b.status) || 'pending'));
+          });
+        }
         // 错误提示 · 失败时露 error string
         const existing = card.querySelector('.ws-step-error');
         if (status === 'failed' && st && st.error) {
@@ -3090,6 +3158,7 @@ function _askOpusInChat(kind) {
     _canvasWrap = container.querySelector('#wsCanvasWrap');
 
     if (!_graph) _graph = new LGraph();
+    _registerJoinNode();  // 确保汇合节点类型在任何 flow configure 之前就绪 (否则 createNode 返 null 丢节点)
     _graph.onNodeAdded = _updateEmpty;
     _graph.onNodeRemoved = _updateEmpty;
     _canvas = new LGraphCanvas(_canvasEl, _graph);
@@ -3097,6 +3166,9 @@ function _askOpusInChat(kind) {
     _canvas.render_canvas_border = false;
     _canvas.render_connections_shadows = false;
     _canvas.render_connection_arrows = true;
+    // litegraph 默认 render_curved_connections=false → 箭头角度只按"目标在上/下"算·忽略左右
+    // (水平线箭头朝上·斜线纯上/下)。 开成 true 让箭头跟着 SPLINE 切线·指向真实流向。
+    _canvas.render_curved_connections = true;
     _canvas.clear_background_color = 'transparent';
     _canvas.default_link_color = '#7B5DC4';
     _canvas.node_title_color = '#e8e8e8';

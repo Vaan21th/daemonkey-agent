@@ -184,12 +184,20 @@ def apply_update(remote: str, branch: str = "master", base: str = "HEAD",
                  do_commit: bool = True) -> dict:
     """外科手术: 只把【有差异的白名单文件】覆盖成中心库版本 · 其他物理不碰。
 
-    流程: ①先 checkpoint_commit 落袋(自己拿放锁) → ②抢锁 fetch+diff+checkout+commit。
+    流程: ①先 checkpoint_commit 落袋(自己拿放锁) → ②抢锁 fetch → 拉一轮 →
+    ③若本轮拉到了 core_manifest.json(白名单本身更新了) · 用新清单自动再补一轮。
+
+    为什么要补第二轮 (卷七十五续八): update_core 是照【本地那份清单】的白名单拉的。
+    当中心库"扩了白名单"(新增内核文件)时 · 用户第一轮只能先把新 core_manifest.json
+    拉下来 · 新增文件不在旧清单里这轮进不来。 补一轮让本地清单已更新后立刻把新增文件
+    补齐 —— 跨版本"扩白名单"升级免得让用户手动升两次。 (老版本用户第一次跳过来跑的是
+    旧代码没这层 · 仍需两轮 · 故工具层会在第一轮后提示"再升一次"。)
+
     返 {"ok":bool, "updated":[...], "added":[...], "skipped_deleted":[...],
-        "checkpoint": str, "commit_sha": str|None, "note": str}
+        "checkpoint": str, "commit_sha": str|None, "note": str, "passes": int}
     """
     out: dict = {"ok": False, "updated": [], "added": [], "skipped_deleted": [],
-                 "checkpoint": "", "commit_sha": None, "note": ""}
+                 "checkpoint": "", "commit_sha": None, "note": "", "passes": 0}
     if not _has_git():
         out["note"] = "git 未 init · 无法更新"
         return out
@@ -199,40 +207,41 @@ def apply_update(remote: str, branch: str = "master", base: str = "HEAD",
     cp = checkpoint_commit(f"update_core 前存档 · 拉 {remote}/{branch} 内核")
     out["checkpoint"] = cp.get("note", "")
 
-    # ② 抢一次锁 · 做 fetch → diff → checkout → commit (不嵌套 checkpoint · 锁不可重入)
+    # ② 抢一次锁 · fetch → 拉第一轮 →(必要时)拉第二轮 (不嵌套 checkpoint · 锁不可重入)
     with _lock("core_update:apply"):
         _ensure_identity()  # 工作区本来干净时 checkpoint 提前返回没设身份 · 这里兜底
         ok, msg = _fetch_locked(remote)
         if not ok:
             out["note"] = f"fetch 失败 · {msg}"
             return out
-        d = _diff_locked(remote, branch, base)
-        if d.get("error"):
-            out["note"] = f"diff 失败 · {d['error']}"
+
+        p1 = _pull_pass_locked(remote, branch, base, do_commit)
+        if not p1["ok"]:
+            out["note"] = p1["note"]
             return out
-        to_pull = list(d["changed"]) + list(d["added"])
-        out["skipped_deleted"] = d["deleted"]
-        if not to_pull:
-            out["ok"] = True
+        out["updated"] = list(p1["updated"])
+        out["added"] = list(p1["added"])
+        out["skipped_deleted"] = list(p1["deleted"])
+        out["commit_sha"] = p1["commit_sha"]
+        out["note"] = p1["note"]
+        out["passes"] = 1
+
+        # ③ 本轮拉到了 core_manifest.json → 白名单可能新增文件 · 用新清单从 HEAD 再补一轮。
+        #    跑了第二轮就代表"新清单已完整生效"· passes=2 · 无论第二轮有没有捞到新文件。
+        if p1["pulled_manifest"]:
+            p2 = _pull_pass_locked(remote, branch, "HEAD", do_commit)
+            out["passes"] = 2
+            if p2["ok"] and (p2["updated"] or p2["added"]):
+                out["updated"] += [f for f in p2["updated"] if f not in out["updated"]]
+                out["added"] += [f for f in p2["added"] if f not in out["added"]]
+                out["skipped_deleted"] += [f for f in p2["deleted"]
+                                           if f not in out["skipped_deleted"]]
+                if p2["commit_sha"]:
+                    out["commit_sha"] = p2["commit_sha"]
+                out["note"] = "清单更新后自动补拉了一轮新增内核文件"
+
+        if not out["updated"] and not out["added"]:
             out["note"] = "内核已是最新 · 没有白名单文件需要更新"
-            return out
-        ref = f"{remote}/{branch}"
-        co_rc, _, co_err = _run_git(["checkout", ref, "--"] + to_pull, timeout=30)
-        if co_rc != 0:
-            out["note"] = f"checkout 覆盖失败 · {co_err.strip()[:200]} · 没有任何文件被改"
-            return out
-        out["updated"] = d["changed"]
-        out["added"] = d["added"]
-        if do_commit:
-            _run_git(["add", "--"] + to_pull, timeout=20)
-            msg2 = f"[update_core] 同步内核 {len(to_pull)} 文件 from {ref}"
-            c_rc, c_out, c_err = _run_git(["commit", "-m", msg2], timeout=30)
-            if c_rc == 0:
-                s_rc, s_out, _ = _run_git(["rev-parse", "--short", "HEAD"], timeout=5)
-                out["commit_sha"] = s_out.strip() if s_rc == 0 else None
-            else:
-                # 没东西可提交(覆盖后内容与 HEAD 相同)也算成功 · 只是不留新 commit
-                out["note"] = f"(已覆盖工作区 · commit 跳过: {(c_err or c_out).strip()[:120]})"
         out["ok"] = True
     return out
 
@@ -270,4 +279,44 @@ def _diff_locked(remote: str, branch: str, base: str) -> dict:
             res["deleted"].append(path)
     s_rc, s_out, _ = _run_git(["diff", "--stat", f"{base}..{ref}", "--"] + files, timeout=20)
     res["stat"] = s_out.strip() if s_rc == 0 else ""
+    return res
+
+
+def _pull_pass_locked(remote: str, branch: str, base: str, do_commit: bool) -> dict:
+    """一轮拉取: diff(照【当前磁盘上】的白名单) → checkout 差异文件 → (可选)commit。
+
+    调用方必须已持锁且已 fetch。 每轮都重新读磁盘上的 core_manifest.json (_diff_locked →
+    kernel_files() 现读现算) · 所以第一轮把新清单 checkout 下来后 · 第二轮自然按新清单跑。
+    返 {"ok","updated","added","deleted","commit_sha","note","pulled_manifest"}。
+    """
+    res: dict = {"ok": False, "updated": [], "added": [], "deleted": [],
+                 "commit_sha": None, "note": "", "pulled_manifest": False}
+    d = _diff_locked(remote, branch, base)
+    if d.get("error"):
+        res["note"] = f"diff 失败 · {d['error']}"
+        return res
+    to_pull = list(d["changed"]) + list(d["added"])
+    res["deleted"] = d["deleted"]
+    if not to_pull:
+        res["ok"] = True
+        return res
+    ref = f"{remote}/{branch}"
+    co_rc, _, co_err = _run_git(["checkout", ref, "--"] + to_pull, timeout=30)
+    if co_rc != 0:
+        res["note"] = f"checkout 覆盖失败 · {co_err.strip()[:200]} · 没有任何文件被改"
+        return res
+    res["updated"] = d["changed"]
+    res["added"] = d["added"]
+    res["pulled_manifest"] = "core_manifest.json" in to_pull
+    if do_commit:
+        _run_git(["add", "--"] + to_pull, timeout=20)
+        msg2 = f"[update_core] 同步内核 {len(to_pull)} 文件 from {ref}"
+        c_rc, c_out, c_err = _run_git(["commit", "-m", msg2], timeout=30)
+        if c_rc == 0:
+            s_rc, s_out, _ = _run_git(["rev-parse", "--short", "HEAD"], timeout=5)
+            res["commit_sha"] = s_out.strip() if s_rc == 0 else None
+        else:
+            # 覆盖后内容与 HEAD 相同也算成功 · 只是不留新 commit
+            res["note"] = f"(已覆盖工作区 · commit 跳过: {(c_err or c_out).strip()[:120]})"
+    res["ok"] = True
     return res

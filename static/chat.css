@@ -1468,6 +1468,109 @@ header {
   100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
 }
 
+/* 卷七十五续五 · 三模式语音 (对话/转写/会议纪要) */
+.mic-group { position: relative; display: inline-flex; align-items: stretch; flex: 0 0 auto; }
+.mic-group #micBtn { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+#micMode {
+  padding: 10px 4px; margin-left: -1px;
+  background: var(--bg3); color: var(--dim);
+  border: 1px solid var(--border); border-left: none;
+  border-top-right-radius: 10px; border-bottom-right-radius: 10px;
+  cursor: pointer; font-size: 12px; line-height: 1;
+  display: flex; align-items: center;
+  transition: color 0.15s, background 0.15s;
+}
+#micMode:hover { color: var(--text); background: var(--bg); }
+.mic-menu {
+  position: absolute; bottom: calc(100% + 6px); left: 0;
+  min-width: 230px; z-index: 60;
+  background: var(--bg2, var(--bg)); border: 1px solid var(--border);
+  border-radius: 12px; padding: 6px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+.mic-menu-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 10px; border: none; border-radius: 8px;
+  background: transparent; color: var(--text); cursor: pointer; text-align: left;
+}
+.mic-menu-item i { font-size: 17px; color: var(--dim); flex: 0 0 auto; }
+.mic-menu-item span { display: flex; flex-direction: column; line-height: 1.25; }
+.mic-menu-item b { font-size: 13px; font-weight: 600; }
+.mic-menu-item small { font-size: 11px; color: var(--dim2); }
+.mic-menu-item:hover { background: var(--bg3); }
+.mic-menu-item.active { background: var(--bg3); }
+.mic-menu-item.active i, .mic-menu-item.active b { color: var(--accent, #a78bfa); }
+
+.voice-panel {
+  margin: 0 0 8px; padding: 10px 12px;
+  background: var(--bg2, var(--bg)); border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.voice-panel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.voice-panel-title { font-size: 12px; font-weight: 600; color: var(--accent, #a78bfa); display: inline-flex; align-items: center; gap: 5px; }
+.voice-timer { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.voice-panel-spacer { flex: 1 1 auto; }
+.voice-close { background: transparent; border: none; color: var(--dim); cursor: pointer; font-size: 16px; padding: 2px 4px; border-radius: 6px; }
+.voice-close:hover { color: var(--text); background: var(--bg3); }
+.voice-transcript {
+  min-height: 44px; max-height: 160px; overflow-y: auto;
+  padding: 8px 10px; border-radius: 8px;
+  background: var(--bg3); color: var(--text);
+  font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+.voice-transcript:empty::before { content: attr(placeholder); color: var(--dim2); }
+.voice-interim { color: var(--dim2); }
+.voice-rec-note {
+  margin-top: 6px; font-size: 12px; color: var(--dim);
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+}
+.voice-rec-note a { color: var(--accent, #a78bfa); text-decoration: underline; }
+.voice-rec-note.rec { color: #dc3545; }
+.voice-rec-note.warn { color: #d69e2e; }
+.voice-rec-note.done { color: var(--text); }
+.voice-rec-note.wait { color: #a78bfa; }
+.voice-panel-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.voice-act {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 10px; font-size: 12px; cursor: pointer;
+  background: var(--bg3); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.voice-act:hover { background: var(--bg); border-color: var(--accent, #a78bfa); }
+.voice-act.primary { background: var(--accent, #a78bfa); color: #fff; border-color: var(--accent, #a78bfa); }
+.voice-act.primary:hover { filter: brightness(1.08); }
+.voice-act.stop { color: #dc3545; }
+/* 关键: .voice-act 有显式 display · 会盖掉 [hidden] 的 display:none → 补回 · 否则按钮全露 */
+.voice-act[hidden] { display: none !important; }
+
+/* 语音对话模式 · 比会议纪要更轻(别长得像会议纪要) —— 矮识别条 + 通话感 · 只留【停止对话】 */
+.voice-panel.is-chat .voice-transcript {
+  min-height: 30px; max-height: 72px;
+  background: transparent; border: 1px dashed var(--border);
+  color: var(--dim); font-size: 13px;
+}
+.voice-panel.is-chat .voice-transcript:empty::before { content: '在听… 你说的话会实时出现在这里'; }
+.voice-panel.is-chat .voice-panel-title { color: #2ecc71; }
+.voice-panel.is-chat .voice-panel-title i { animation: micPulse 1.4s ease-in-out infinite; border-radius: 50%; }
+
+/* 卷七十五续五 · 模型行为设置 (思考/强度/输出上限) */
+.mb-tag { font-size: 11px; font-weight: 400; color: var(--dim2); margin-left: 6px; text-transform: none; letter-spacing: 0; }
+
+/* 模型行为 · 挂在右上角模型下拉里 (放右上角·像 Cursor 那个模型菜单) */
+.mm-behavior { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
+.mm-behavior .model-menu-head { border-bottom: none; margin-bottom: 4px; padding-bottom: 4px; }
+.mmb-row { display: flex; align-items: center; gap: 10px; padding: 4px 8px; }
+.mmb-label { flex: 0 0 92px; font-size: 12px; color: var(--dim); display: inline-flex; align-items: center; gap: 5px; }
+.mmb-label i { font-size: 14px; opacity: 0.85; }
+.mmb-row select, .mmb-row input {
+  flex: 1 1 auto; min-width: 0; padding: 6px 8px; font-size: 12.5px;
+  background: var(--bg3); color: var(--text);
+  border: 1px solid var(--border); border-radius: 7px;
+  font-family: inherit;
+}
+.mmb-hint { font-size: 10.5px; line-height: 1.5; color: var(--dim2); padding: 6px 8px 2px; }
+.mmb-hint b { color: var(--dim); font-weight: 600; }
+
 
 /* wish-41ed72ef · 文档附件卡片 */
 .attach-doc-card {
@@ -6528,21 +6631,29 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   display: none;
 }
 
-/* tab bar */
+/* ═══════════════════════════════════════════════════════════════
+   卷七十五续十 · 会话标签栏重做 —— 胶囊式 · 工作台 + 简洁版通用
+   旧版是"文件夹式" tab(顶部圆角 + 底边线)· 标签栏还单独铺一条深色背景(var(--bg))
+   + border-bottom · 只有 1~2 个 tab 时右边留一长条空横线 · 很怪(那条"诡异横线")。
+   新版:标签栏透明·融进 chat-pane(bg2) · 去掉底边线 · 圆角胶囊 tab ·
+   当前态用主色淡填充(color-mix 跟随皮肤·换肤自动变色) · hover 柔和 · 关闭键悬浮才显眼。
+   ═══════════════════════════════════════════════════════════════ */
 .chat-tab-bar {
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px 6px;
+  background: transparent;      /* 去掉单独深色条 · 融进对话栏 */
+  border-bottom: none;          /* ← 干掉那条诡异横线 */
+  flex: 0 0 auto;
   overflow-x: auto;
   overflow-y: hidden;
-  gap: 4px;
-  padding: 4px 8px;
-  background: var(--bg);
-  border-bottom: 1px solid var(--bg3);
-  flex: 0 0 auto;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
+  scrollbar-width: none;        /* 隐掉横向滚动条 · 靠滚轮/触控板横滑 */
 }
+.chat-tab-bar::-webkit-scrollbar { height: 0; background: transparent; }
 .chat-tab-bar[hidden] {
   display: none;
 }
@@ -6551,50 +6662,53 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  background: var(--bg2);
+  gap: 7px;
+  padding: 6px 12px;
+  max-width: 220px;
+  background: transparent;
   color: var(--dim);
   border: 1px solid transparent;
-  border-radius: 8px 8px 0 0;
+  border-radius: 999px;         /* 胶囊 */
   font-size: 12px;
+  line-height: 1.1;
   cursor: pointer;
   user-select: none;
-  max-width: 220px;
   position: relative;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, transform 0.1s ease;
 }
 .chat-tab:hover {
   background: var(--bg3);
   color: var(--text);
 }
+.chat-tab:active { transform: translateY(0.5px); }
 .chat-tab.active {
-  background: var(--bg3);
+  background: color-mix(in srgb, var(--opus) 16%, transparent);
   color: var(--opus);
-  border-color: var(--opus);
-  border-bottom-color: var(--bg3);
+  border-color: color-mix(in srgb, var(--opus) 42%, transparent);
+  font-weight: 500;
 }
-.chat-tab.running {
-  border-left: 2px solid #ff9800;
+.chat-tab.running {   /* 去掉刺眼左竖线 · 改淡琥珀描边 · 配合已有 spinner */
+  border-color: color-mix(in srgb, #ff9800 45%, transparent);
 }
 .chat-tab.unread::after {
   content: '';
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 3px;
+  right: 7px;
   width: 6px;
   height: 6px;
   background: #ff5252;
   border-radius: 50%;
-  box-shadow: 0 0 4px rgba(255,82,82,0.6);
+  box-shadow: 0 0 5px rgba(255, 82, 82, 0.7);
 }
 .chat-tab .tab-title {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 160px;
+  max-width: 148px;
 }
 .chat-tab .tab-spinner {
-  display: inline-block;
+  display: inline-flex;
   font-size: 11px;
   color: #ff9800;
   animation: tabSpin 1.4s linear infinite;
@@ -6603,18 +6717,29 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   to { transform: rotate(360deg); }
 }
 .chat-tab .tab-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
   background: transparent;
   border: none;
+  border-radius: 50%;
   color: var(--dim2);
   font-size: 14px;
   line-height: 1;
-  padding: 0 4px;
   cursor: pointer;
-  border-radius: 4px;
+  opacity: 0.5;
+  transition: background 0.14s ease, color 0.14s ease, opacity 0.14s ease;
 }
+.chat-tab:hover .tab-close,
+.chat-tab.active .tab-close { opacity: 1; }
 .chat-tab .tab-close:hover {
-  background: rgba(255,82,82,0.18);
+  background: rgba(255, 82, 82, 0.18);
   color: #ff5252;
+  opacity: 1;
 }
 
 /* completion toast */
@@ -6836,6 +6961,76 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   --dim: #a08090; --dim2: #7a606a;
   --opus: #e87fb8; --opus-dim: #c96b9e;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   卷七十五续九 · 换肤按钮(接现成 applyTheme) + 简洁版(只留对话框)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── 换肤按钮 + 色板弹层 ── */
+.theme-menu { position: relative; display: inline-flex; }
+.theme-pop {
+  position: absolute; top: calc(100% + 8px); right: 0;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4); z-index: 200; width: 236px;
+}
+.theme-pop[hidden] { display: none; }
+.theme-pop-head {
+  font-size: 11px; color: var(--dim2); text-transform: uppercase;
+  letter-spacing: 1px; margin-bottom: 10px;
+}
+.theme-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.theme-swatch {
+  border: 1px solid var(--border); border-radius: 9px; padding: 8px 4px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  background: transparent; color: var(--dim); font-size: 11px; font-family: inherit;
+  transition: border-color 0.15s, color 0.15s, transform 0.1s;
+}
+.theme-swatch:hover { border-color: var(--opus); color: var(--text); transform: translateY(-1px); }
+.theme-swatch.active { border-color: var(--opus); background: rgba(159, 122, 234, 0.12); color: var(--text); }
+.swatch-dots { display: flex; gap: 3px; }
+.swatch-dots span { width: 13px; height: 13px; border-radius: 50%; border: 1px solid rgba(128, 128, 128, 0.25); }
+.swatch-dots .sw-bg { background: var(--bg); }
+.swatch-dots .sw-op { background: var(--opus); }
+
+/* ── 简洁版切换按钮 ── */
+.compact-toggle {
+  height: 32px; padding: 0 12px; border-radius: 8px; gap: 6px;
+  background: var(--bg3); border: 1px solid var(--border); color: var(--dim);
+  cursor: pointer; font-size: 13px; display: inline-flex; align-items: center;
+  font-family: inherit; white-space: nowrap; transition: all 0.18s;
+}
+.compact-toggle:hover { color: var(--opus); border-color: var(--opus); }
+.compact-toggle .lab { font-weight: 500; }
+body.compact .compact-toggle { background: var(--opus); color: #fff; border-color: var(--opus); }
+
+/* ── 简洁版布局:折叠 nav + detail + resizer · 只留居中对话栏 ──
+   丝滑做法(卷七十五续十·改): 逐帧改 grid 列宽会 layout thrash(detail 里有重内容·仪表盘/雷达)·
+   → 卡顿 + 中途露出 detail 深色背景(留空)。 改成:布局【瞬间】切(只一次 reflow·不卡)·
+   detail 列显式设 0(不靠 1fr·彻底不留空) · 动效交给合成器友好属性:
+   ① 左/中/resizer 用 opacity 淡出淡入 ② 对话栏进入时轻微上浮淡入(compact-enter)。
+   过渡只在点击那一下挂(.layout-animating)· 平时不影响拖 resizer。 */
+body.compact .main-layout { grid-template-columns: 0 0 0 0 1fr; }
+.main-layout.layout-animating .nav-rail,
+.main-layout.layout-animating .detail-pane,
+.main-layout.layout-animating .col-resizer { transition: opacity 0.26s ease; }
+body.compact .nav-rail,
+body.compact .detail-pane,
+body.compact .col-resizer { opacity: 0; pointer-events: none; }
+body.compact .nav-rail,
+body.compact .detail-pane { overflow: hidden; }
+body.compact .nav-rail { border-right: none; }
+body.compact .chat-pane { border-left: none; align-items: center; }
+body.compact .chat-pane > * { width: 100%; max-width: 900px; }
+/* 对话栏进入简洁版的柔化入场(只点击进入时 JS 加 compact-enter·加载恢复态不触发·免闪) */
+.chat-pane.compact-enter { animation: compactChatIn 0.36s cubic-bezier(0.4, 0, 0.2, 1); }
+@keyframes compactChatIn {
+  from { opacity: 0.5; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* 简洁版隐藏 daemon 系统按钮(精确按 id·不误伤换肤按钮)·保留简洁版/换肤/模型切换 */
+body.compact #restartBtn,
+body.compact #rollbackBtn,
+body.compact #shutdownBtn { display: none; }
 
 
 /* ──────────────────────────────────────────────────────────────
@@ -7732,6 +7927,31 @@ a.bi-sig-title:hover { color: var(--opus); text-decoration: underline; }
 .flow-run-step-goal { color: #888; font-size: 10px; margin-top: 2px; line-height: 1.5; word-break: break-word; }
 .flow-run-step-err  { color: #f87171; font-size: 10px; margin-top: 2px; font-family: ui-monospace, monospace; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* ⚡ 并行组步 (v0.6.0) · banner 详情里展开组内每路 + 各自状态图标 */
+.flow-run-step.is-parallel .flow-run-step-app { color: #c7adff; font-weight: 600; }
+.flow-run-branches {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-left: 6px;
+  border-left: 1px dashed rgba(159, 122, 234, 0.35);
+}
+.flow-run-branch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: #b8b8c0;
+}
+.flow-run-branch .flow-run-step-status { width: 14px; }
+.flow-run-branch.running .flow-run-step-status { color: #c7adff; animation: spin 1.4s linear infinite; }
+.flow-run-branch.done    .flow-run-step-status { color: #4ade80; }
+.flow-run-branch.failed  .flow-run-step-status { color: #f87171; }
+.flow-run-branch.pending .flow-run-step-status { color: #555; }
+.flow-run-branch-app  { color: #d0d0d8; flex: 0 0 auto; }
+.flow-run-branch-goal { color: #7f7f88; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 0.2.0 同步 · sub-agent (run_app) 边界事件条 */
 /* ─────────────────────────────────────────────────────────
