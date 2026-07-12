@@ -31,6 +31,31 @@ _SCOPE_LABELS = {
 }
 
 
+def _label_for(source: str) -> str:
+    """源标签 · 知识库文档 (doc:<id>) / 客户档案 (client:<id>) 特判成带标题的可读标签。"""
+    if source and source.startswith("doc:"):
+        try:
+            from workers.knowledge_base import get_document
+
+            meta = get_document(source[len("doc:"):])
+            if meta:
+                return f"📄 知识库 · {meta.get('title', source)}"
+        except Exception:
+            pass
+        return "📄 知识库文档"
+    if source and source.startswith("client:"):
+        try:
+            from workers.clients import get_client
+
+            meta = get_client(source[len("client:"):])
+            if meta:
+                return f"👤 客户档案 · {meta.get('name', source)}"
+        except Exception:
+            pass
+        return "👤 客户档案"
+    return _SCOPE_LABELS.get(source, source)
+
+
 def _snippet(text: str, limit: int = 140) -> str:
     """把一块内容压成单行摘要 · 给 list 阶段省 token。"""
     one_line = " ".join((text or "").split())
@@ -66,7 +91,7 @@ def _run(args: dict) -> ToolResult:
             return ToolResult(ok=True, output=f"没找到 id={ids} 对应的记忆块（可能已过期，重新 mode=list 搜一次）。")
         lines = [f"取到 {len(chunks)} 条全文：\n"]
         for chunk in chunks:
-            label = _SCOPE_LABELS.get(chunk.source, chunk.source)
+            label = _label_for(chunk.source)
             section_info = f" · {chunk.section}" if chunk.section else ""
             lines.append(f"### [id={chunk.id}] [{label}{section_info}]")
             if chunk.updated_at:
@@ -86,10 +111,10 @@ def _run(args: dict) -> ToolResult:
     scope = (args.get("scope") or "all").strip().lower()
     context_window = args.get("context_window", 8000)
 
-    if scope not in ("all", "bro", "self", "sessions", "skill"):
+    if scope not in ("all", "bro", "self", "sessions", "skill", "docs", "clients"):
         return ToolResult(
             ok=False, output="",
-            error=f"无效 scope: {scope!r}; 合法值: all, bro, self, sessions, skill",
+            error=f"无效 scope: {scope!r}; 合法值: all, bro, self, sessions, skill, docs, clients",
         )
 
     results = search(query, top_k=top_k, scope=scope, context_window=context_window)
@@ -104,7 +129,7 @@ def _run(args: dict) -> ToolResult:
     if mode == "full":
         lines = [f"找到 {len(results)} 条与 '{query}' 相关的记忆片段 (scope={scope}):\n"]
         for chunk in results:
-            label = _SCOPE_LABELS.get(chunk.source, chunk.source)
+            label = _label_for(chunk.source)
             section_info = f" · {chunk.section}" if chunk.section else ""
             lines.append(f"### [id={chunk.id}] [{label}{section_info}]")
             if chunk.updated_at:
@@ -121,7 +146,7 @@ def _run(args: dict) -> ToolResult:
         "**想看哪条全文 → recall_memory(mode='full', ids=[挑中的 id])**；摘要够答就别取全文（省 token）：\n",
     ]
     for i, chunk in enumerate(results, 1):
-        label = _SCOPE_LABELS.get(chunk.source, chunk.source)
+        label = _label_for(chunk.source)
         section_info = f" · {chunk.section}" if chunk.section else ""
         when = f"  ({chunk.updated_at})" if chunk.updated_at else ""
         lines.append(f"{i}. [id={chunk.id}] [{label}{section_info}]{when}")
@@ -147,7 +172,7 @@ SPEC = ToolSpec(
         "- 你需要查自己的演化历史（SELF-EVOLUTION）时\n"
         "- 任何不确定'这个信息是不是在灵魂层里'的时候——搜一下比猜更靠谱\n"
         "\n"
-        "**scope**: all(全部) / bro(只看用户画像) / self(OPUS自传+日记) / sessions(历史对话+蒸馏摘要) / skill(playbook ·  II)\n"
+        "**scope**: all(全部) / bro(只看用户画像) / self(OPUS自传+日记) / sessions(历史对话+蒸馏摘要) / skill(playbook ·  II) / docs(私有文档知识库) / clients(客户档案备注)\n"
         "**查询语法**: FTS5 原生语法，支持 AND/OR/NOT、短语\"双引号\"、前缀* 等。"
     ),
     tier=TIER_AUTO,
@@ -181,10 +206,11 @@ SPEC = ToolSpec(
             },
             "scope": {
                 "type": "string",
-                "enum": ["all", "bro", "self", "sessions", "skill"],
+                "enum": ["all", "bro", "self", "sessions", "skill", "docs", "clients"],
                 "description": (
                     "搜索范围: all(全部) / bro(用户画像) / self(OPUS自传+日记+SKILL) / "
-                    "sessions(历史对话) / skill(playbook ·  II wish-1c229865)。默认 all。"
+                    "sessions(历史对话) / skill(playbook ·  II wish-1c229865) / "
+                    "docs(私有文档知识库 · 用户灌进来的资料/合同/PDF) / clients(客户档案备注)。默认 all。"
                 ),
                 "default": "all",
             },

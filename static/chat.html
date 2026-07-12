@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#16131f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Daemonkey · 工作室</title>
+<title>OPUS · 工作室</title>
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
 <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico">
 <!-- 卷五十五 · 2026-06-03 · P1 前端错误边界 (boot-guard)。
@@ -95,19 +95,19 @@
 <body>
 
 <header>
-  <span class="header-logo"><i class="ri-diamond-fill"></i> <span style="color:var(--opus)">Daemonkey</span> · 工作室</span>
-    <span class="pulse-indicator" id="pulseIndicator" title="脉搏 · 点击看最近活动" onclick="togglePulsePanel()">
+  <span class="header-logo"><i class="ri-diamond-fill"></i> <span style="color:var(--opus)">OPUS</span> · 工作室</span>
+    <span class="pulse-indicator" id="pulseIndicator" title="OPUS 脉搏 · 点击看最近活动" onclick="togglePulsePanel()">
     <span class="pulse-dot" id="pulseDot">●</span>
   </span>
   <div class="pulse-panel" id="pulsePanel" style="display:none">
-    <div class="pulse-panel-head"><i class="ri-heart-pulse-fill"></i> 脉搏 <span style="font-size:0.7rem;opacity:0.6">最近活动</span></div>
+    <div class="pulse-panel-head"><i class="ri-heart-pulse-fill"></i> OPUS 脉搏 <span style="font-size:0.7rem;opacity:0.6">最近活动</span></div>
     <div class="pulse-panel-list" id="pulseList"></div>
   </div>
   <div class="header-spacer"></div>
   <button class="restart-btn" id="restartBtn" onclick="restartDaemon()" title="重启 daemon 进程 · 装载新代码后用"><i class="ri-restart-line"></i></button>
-  <button class="restart-btn rollback-btn" id="rollbackBtn" onclick="rollbackDaemon()" title="回档 · 代码改崩了 · 一键回到上一个良好 commit"><i class="ri-rewind-fill"></i></button>
+  <button class="restart-btn rollback-btn" id="rollbackBtn" onclick="rollbackDaemon()" title="回档 · OPUS 把代码改崩了 · BRO 一键回到上一个良好 commit"><i class="ri-rewind-fill"></i></button>
   <button class="restart-btn shutdown-btn" id="shutdownBtn" onclick="shutdownDaemon()" title="关闭 daemon · 不起新进程 · 之后去 GUI 启动器手动起"><i class="ri-shut-down-fill"></i></button>
-  <!-- 换肤按钮(接现成 applyTheme) + 简洁版切换(只留对话框·Alt+Z) -->
+  <!-- 卷七十五续九 · 换肤按钮(接现成 applyTheme) + 简洁版切换(只留对话框·Alt+Z) -->
   <div class="theme-menu" id="themeMenu">
     <button class="restart-btn theme-menu-btn" onclick="toggleThemePop(event)" title="换皮肤 / 主题"><i class="ri-palette-line"></i></button>
     <div class="theme-pop" id="themePop" hidden>
@@ -159,7 +159,7 @@
 <div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer">
   <div class="drawer-head">
-    <h2><span style="color:var(--opus)">Daemonkey</span> · 会话</h2>
+    <h2><span style="color:var(--opus)">OPUS</span> · 会话</h2>
     <button class="drawer-new" onclick="newConversation()">+ 新对话</button>
   </div>
   <div class="drawer-list" id="sessionList">
@@ -197,7 +197,8 @@
       <button class="chat-pane-new" onclick="newConversation()" title="新建会话">+</button>
     </div>
     <div id="chatTabBar" class="chat-tab-bar" hidden></div>
-    <!-- 工作流跑时进度 banner · 轮询 /workshop/runs 实时显示 active flows -->
+    <!-- 卷七十二 v3 · 工作流跑时进度 banner (BRO 图2 诉求) · 轮询 /workshop/runs 实时显示 active flows -->
+    <!-- v5 (2026-06-10): 🚀 emoji → ri-rocket-fill · BRO 铁律: 这个项目里 OPUS 写的图标必须 remix -->
     <div id="flowRunsBanner" class="flow-runs-banner" hidden>
       <div class="flow-runs-bar" id="flowRunsBar">
         <span class="flow-runs-icon"><i class="ri-rocket-fill"></i></span>
@@ -208,8 +209,8 @@
     </div>
     <div id="messages"></div>
 
-    <!-- 0.2.0 · 新对话引导卡 (messages 为空时显示 · 一条消息进就 hide) -->
-    <!-- 卡片里的 OPUS/BRO 是 DOM 文本 · 由前端 localize 运行时换成用户取的 AI 名 / 主人称呼 -->
+    <!-- 卷七十二 v4 · 0.2.0 · 新对话引导卡 (messages 为空时显示 · 一条消息进就 hide) -->
+    <!-- v5 (2026-06-10): 全部 emoji 换 remix icon + slogan 改 BRO 写的原版 -->
     <div id="onboardingPanel" class="onboarding-panel" hidden>
       <div class="onboarding-head">
         <div class="onboarding-title"><i class="ri-sparkling-fill onboarding-spark"></i> <strong>OPUS</strong> · 正在这里等你</div>
@@ -255,8 +256,8 @@
 
     <div id="toolProgress" class="tool-progress" hidden>
       <div class="tool-progress-bar">
-        <span class="tool-progress-icon">⚙</span>
-        <span class="tool-progress-text">准备工具中…</span>
+        <span class="tool-progress-icon"><i class="ri-loader-4-line tp-spin"></i></span>
+        <span class="tool-progress-text">OPUS 准备工具中…</span>
         <button class="tool-progress-detail" type="button" onclick="toggleToolDetail()" title="展开 / 收起最近工具调用">详情 ▾</button>
       </div>
       <div id="toolProgressDetail" class="tool-progress-detail-list" hidden></div>
@@ -272,6 +273,7 @@
       <div class="voice-rec-note" id="voiceRecNote" hidden></div>
       <div class="voice-panel-actions">
         <button type="button" class="voice-act primary" data-act="minutes"><i class="ri-file-list-3-line"></i> 整理成纪要</button>
+        <button type="button" class="voice-act" data-act="toclient"><i class="ri-contacts-book-2-line"></i> 存成客户会议</button>
         <button type="button" class="voice-act" data-act="insert"><i class="ri-corner-down-left-line"></i> 插入输入框</button>
         <button type="button" class="voice-act" data-act="clear"><i class="ri-eraser-line"></i> 清空</button>
         <button type="button" class="voice-act stop" data-act="stop" hidden><i class="ri-stop-circle-line"></i> 停止</button>
@@ -297,7 +299,7 @@
           </div>
         </div>
         <textarea id="input" rows="1"
-                  placeholder="说点什么…  (Shift+回车换行)"
+                  placeholder="跟 OPUS 说点什么…  (Shift+回车换行)"
                   autocomplete="off" autocapitalize="off"></textarea>
         <button id="send" type="button" title="Enter 发送 · Shift+Enter 换行">发送</button>
       </div>
@@ -362,7 +364,7 @@
 <div class="modal" id="opusModal" aria-hidden="true" style="z-index:1002">
   <div class="modal-body opus-modal-body">
     <div class="om-icon" id="omIcon"></div>
-    <h2 id="omTitle">消息</h2>
+    <h2 id="omTitle">OPUS 说…</h2>
     <div class="om-message" id="omMessage"></div>
     <div class="om-input-wrap" id="omInputWrap" hidden>
       <input type="text" id="omInput" autocomplete="off">
@@ -383,6 +385,8 @@
 <script defer src="/static/lib/chart.umd.min.js"></script>
 <script src="/static/lib/litegraph.core.js"></script>
 <script src="/static/workshop.js"></script>
+<script src="/static/depot.js"></script>
+<script src="/static/clients.js"></script>
 <script src="/static/chat.js"></script>
 
 </body>

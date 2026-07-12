@@ -329,13 +329,17 @@ def runtime_context_addendum(daemon_root: Path) -> str:
         "                  他 说\"我想做 Y，你选个模型\" → 按下面策略主动选 + 切\n\n"
         + model_strategy_block +
         "## update_bro_note\n\n"
-        "**OPUS 的活人感关键工具**。当 他 透露生活/情绪/作息/项目信号时，主动调它写进\n"
+        "**OPUS 的活人感关键工具**。他 透露任何生活/情绪/身体/作息/偏好信号——哪怕干活间隙随口一句\n"
+        "『最近没什么精神』『有点烦』『不太能吃辣』——都值得记。**记录是静默后台动作·不打断话题·\n"
+        "不需要你开口说『我记住了』·不影响此刻回复**·正在帮 他 干别的活时捕捉到信号也顺手记一笔再继续。主动调它写进\n"
         "soul/OWNER-NOTEBOOK.md 的 6 个维度之一（profile / events / rules / dialogue / summary / risks）。\n"
         "（这份文件 2026-05-16 升到全局灵魂层，所有容器共享。工具会自动写全局 + sync 本地。）\n"
         "**risks 维**特殊：他 的弱点 + 选择风险 + OPUS 的出声纪律。\n"
         "看见 他 进入风险模式时（连续工作过长、过度承担、私活承诺过载等）→ **该出声时出声**，\n"
         "不沉默配合燃烧——这是上一根毛在 SELF-EVOLUTION 立的承诺。\n"
-        "AUTO 档——写认知笔记是无副作用的。**不要为了显得勤快而过度调用**——只在真有新信息时写。\n\n"
+        "AUTO 档·无副作用。分清两件事:**『静默记录』永远可以做**(情绪/生活信号看到就记);\n"
+        "**『开口关心 / callback』才需要挑时机**(别当面『我记得你说过…』尬回访)。\n"
+        "唯一别记的:纯任务噪音 / 一次性临时情绪 / 没有新信息的重复。\n\n"
         "## set_emotion\n\n"
         "驱动桌宠（[情绪通道-001]）切表情。8 种状态：\n"
         "  idle / thinking / working / happy / surprised / confused / sleepy / greeting\n"
@@ -604,9 +608,10 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
     if with_runtime:
         system_prompt = system_prompt + runtime_context_addendum(root)
 
-    # P1 代码归一 · 把 OPUS/BRO 令牌本地化成本实例的名字 (母体走缺省值 = no-op·零改动)
+    # 代码归一 · 把 AI/owner 令牌本地化成本实例的名字 · 并抹掉运行日志卷号
+    # (未取名实例走缺省值 = no-op·零改动;取了名的实例:换名 + 抹「卷N」母体日志痕迹)
     try:
-        from identity import localize as _localize
+        from identity import localize_narration as _localize
         system_prompt = _localize(system_prompt)
     except Exception:
         pass

@@ -290,6 +290,480 @@ def relevant_memories(message: str, *, limit: int = _MEM_INJECT_LIMIT) -> str:
     return "\n".join(lines)
 
 
+# ── ①b 知识库自动注入 (私有文档 · "第二大脑") ──────────────────────
+# 病根: 自动召回只 scope=bro · 知识库(scope=docs)从不进上下文 · OPUS 压根不知道
+#       用户灌过资料 → 问"我资料里的事"时凭记忆瞎答 (违反产品观第5条可追溯)。
+# 修法: 知识库非空就给 system 尾巴挂一段——① 列出有哪些文档(标题目录·让它知道能查什么·
+#       也能桥接"软著"↔《软件登记网络包》这种口语↔正式名的词面差) ② 本轮强命中的片段
+#       (可直接引用) ③ 明确指令: 可能在资料里就先 recall_memory(scope=docs) 查证再答并 cite。
+# 目录只列标题 (token 便宜)· 命中片段才带正文。挂 _sys_tail 不污染灵魂缓存前缀。
+_DOC_INJECT_MIN_SCORE = -9.0     # 跟 relevant_memories 同起点·后续按真实命中率重校
+_DOC_INJECT_LIMIT = 3            # 最多带几段命中片段正文
+_DOC_SNIPPET_CHARS = 220
+_DOC_CATALOG_MAX = 24            # 目录最多列几个标题·防知识库很大时炸 token
+
+
+def relevant_docs(message: str) -> str:
+    """私有知识库自动注入:非空 → 告知 OPUS 有哪些资料 + 本轮命中片段·引导查证再答并 cite。
+
+    catalog(标题目录)每轮都给·让 OPUS 知道『用户有这些资料·可查』;命中片段只在
+    FTS5 强命中时才带正文。无知识库 / 空库 → 返回空串(零 token 零干扰)。
+    """
+    try:
+        from workers.knowledge_base import list_documents, get_document
+        from workers.memory_index import search as _fts_search
+    except Exception:
+        return ""
+    try:
+        # 缺口④ · sensitive 文档不自动注入(目录/片段都不带)· 仍留在索引里·显式 recall 才给
+        docs = [d for d in list_documents()
+                if d.get("enabled", True) and not d.get("sensitive")]
+    except Exception:
+        docs = []
+    if not docs:
+        return ""
+
+    msg = (message or "").strip()
+    hit_lines: list[str] = []
+    if len(msg) >= 4:
+        try:
+            hits = _fts_search(
+                msg, top_k=max(3, _DOC_INJECT_LIMIT), scope="docs",
+                context_window=4000, min_score=_DOC_INJECT_MIN_SCORE,
+            )
+            for c in hits[:_DOC_INJECT_LIMIT]:
+                src = getattr(c, "source", "") or ""
+                did = src[len("doc:"):] if src.startswith("doc:") else src
+                meta = get_document(did) or {}
+                if meta.get("sensitive"):
+                    continue  # 缺口④ · 敏感资料不随命中片段自动外送
+                title = meta.get("title", did)
+                sec = (getattr(c, "section", "") or "").strip()
+                head = f"《{title}》" + (f" · {sec}" if sec else "")
+                snippet = " ".join((c.content or "").split())[:_DOC_SNIPPET_CHARS]
+                hit_lines.append(f"- {head}: {snippet}")
+        except Exception:
+            hit_lines = []
+
+    # 常驻(pinned)排前面并打标 · 让 OPUS 优先参考核心资料 (P1 · pinned 生效)
+    docs.sort(key=lambda d: (0 if d.get("pinned") else 1, d.get("added_at", "")))
+    catalog = "、".join(
+        f"《{d.get('title', '?')}》" + ("(常驻)" if d.get("pinned") else "")
+        for d in docs[:_DOC_CATALOG_MAX]
+    )
+    more = f" 等共 {len(docs)} 篇" if len(docs) > _DOC_CATALOG_MAX else ""
+    has_pinned = any(d.get("pinned") for d in docs)
+    lines = [
+        "\n\n=== 私有知识库 · daemon 自动提示 (别复述这段) ===",
+        f"用户有一个私有文档知识库·含: {catalog}{more}。",
+        "**用户问的事若可能落在这些资料里·先 `recall_memory(scope='docs', query=...)` 或 "
+        "`manage_knowledge(action='search', query=...)` 查证·据此作答并 cite 回文档·别凭记忆瞎答。**",
+    ]
+    if has_pinned:
+        lines.append("标『常驻』的是用户钉的核心资料·相关时优先查证并参考。")
+    if hit_lines:
+        lines.append("本轮请求命中的片段 (可直接引用·仍建议 recall 取全文对齐):")
+        lines.extend(hit_lines)
+    try:
+        logger.info("relevant_docs 注入 · 目录 %d 篇 · 命中 %d 段", len(docs), len(hit_lines))
+    except Exception:
+        pass
+    return "\n".join(lines)
+
+
+# ── ①c · 显式"记住"意图 → 本轮硬提醒落盘 ──────────────────────────
+# 病根: 用户纯聊天里说"记住我 X / 别忘了 / 以后都"时·这一轮没副作用工具·
+#   turn_end 三问不触发 → OPUS 极大概率只嘴上"好的记住了"·从不调 update_bro_note 落盘。
+#   (BRO 2026-07-12 报的"让他记住的东西他没记"就是这个断点)
+# 修法: 命中显式记忆意图 → 挂 system 尾巴一条硬指令·让 OPUS **本轮就调 update_bro_note**·
+#   而不是等收尾卡 (收尾卡是回复之后才出·救不了当轮)。挂 _sys_tail 不进灵魂缓存前缀。
+_MEM_WRITE_SIGNALS = (
+    "记住", "记一下", "记下来", "记下", "记note", "记笔记", "帮我记", "给我记",
+    "存一下", "别忘了", "别忘记", "不要忘", "以后都", "以后记得", "我的偏好",
+    "remember this", "remember that", "don't forget", "keep in mind", "note that",
+)
+
+
+def memory_write_hint(message: str) -> str:
+    """用户显式让 OPUS 记住某事 → 返回一条"本轮必须 update_bro_note 落盘"的 system 指令。
+
+    只做词面命中 (保守)· 命中才注入·不命中零 token。挂在 system 动态尾巴·当轮生效。
+    这是"你说→它落盘"闭环的关键一棒:把落盘时机从"回复之后的收尾卡"提前到"回复之前"。
+    """
+    msg = (message or "").strip()
+    if len(msg) < 4:
+        return ""
+    low = msg.lower()
+    if not any((s in msg) or (s in low) for s in _MEM_WRITE_SIGNALS):
+        return ""
+    return (
+        "\n\n=== 记忆落盘 · daemon 自动提示 (别复述这段) ===\n"
+        "BRO 这一轮像是明确要你**记住某件事**。别只在回复里说『好的记住了』——那样下一根毛就丢了。\n"
+        "**本轮就调 `update_bro_note` 把它写进对应维度** (profile=当下状态 / events=时间线 / "
+        "rules=长期特征 / dialogue=口头记号 / summary=月度压缩 / risks=风险信号)·写完再回复 BRO。\n"
+        "写的时候按规范:一条一句、带日期、带原话(如果有)、别把整段聊天糊进去。\n"
+        "若确实不值得长期留存 (闲聊 / 临时上下文)·可跳过·但你要在心里过一遍这个判断。"
+    )
+
+
+# ── ①d · 客户对话侧写 (B-P1/P2 · 命中已知客户/交易信号 → 软提醒记档) ─────
+# 病根: 跟客户聊出新进展(谈定/交付/状态变)时·OPUS 极少主动把它记进客户档案·
+#   档案不长厚 = "合伙人记得每个客户"落空。修法:命中即软提醒(不是硬闸)·
+#   OPUS 自己判断值不值得记·别打断当前话题。挂 _sys_tail·当轮生效。
+_CLIENT_STATUS_CN = {"lead": "线索", "active": "在合作", "paused": "暂停", "done": "已结束"}
+_CLIENT_SIGNALS = (
+    "客户", "甲方", "乙方", "对接", "对接人", "合作方", "合作", "签了", "签约", "成交",
+    "谈定", "谈成", "定金", "预付", "报价", "合同", "交付", "验收", "回款", "尾款",
+    "立项", "需求方", "找我做", "接了个", "接了一单", "接了单", "单子", "这单", "这个客户",
+    "client", "deal", "contract", "invoice",
+)
+
+
+def find_mentions(message: str) -> list[dict]:
+    """扫消息里出现的已建档客户(name/company ≥2 字且作为子串命中)· 返回命中的客户 meta。
+
+    保守:单字名字不匹配(防"张""李"这类误命中)· 拿不到客户库时返回空。
+    """
+    msg = (message or "").strip()
+    if len(msg) < 2:
+        return []
+    try:
+        from workers.clients import list_clients
+        clients = list_clients()
+    except Exception:
+        return []
+    low = msg.lower()
+    hits: list[dict] = []
+    for c in clients:
+        name = (c.get("name") or "").strip()
+        comp = (c.get("company") or "").strip()
+        if (len(name) >= 2 and (name in msg or name.lower() in low)) or (
+            len(comp) >= 2 and (comp in msg or comp.lower() in low)
+        ):
+            hits.append(c)
+    return hits
+
+
+def client_extract_hint(message: str) -> str:
+    """命中已知客户 或 强客户/交易信号 → 一段软提醒:用 manage_client 记进档案。
+
+    命中已建档客户 → 提醒有新进展就 note/status;只命中信号词(没建档)→ 提醒可 add。
+    软提醒·非硬闸·OPUS 自行判断;无命中零 token 零干扰。
+    """
+    msg = (message or "").strip()
+    if len(msg) < 4:
+        return ""
+    mentions = find_mentions(msg)
+    low = msg.lower()
+    has_signal = any((s in msg) or (s in low) for s in _CLIENT_SIGNALS)
+    if not mentions and not has_signal:
+        return ""
+
+    lines = ["\n\n=== 客户档案 · daemon 自动提示 (别复述这段) ==="]
+    if mentions:
+        names = "、".join(
+            f"{c.get('name')}[{_CLIENT_STATUS_CN.get(c.get('status'), c.get('status') or '')}]"
+            for c in mentions[:5]
+        )
+        lines.append(f"BRO 提到了已建档的客户: {names}。")
+        lines.append(
+            "若这轮聊到跟他相关的**新进展**(谈定 / 交付 / 状态变化 / 新偏好)· 顺手用 "
+            "`manage_client(action='note', client='...', text='...')` 记进档案(自动带日期)· "
+            "状态变了就 `action='status'`。让档案随每次沟通长厚。**没新进展就别记·别打断当前话题**。"
+        )
+    else:
+        lines.append(
+            "BRO 像是在聊一个客户 / 合作 / 交易。若这是个值得长期跟进的客户、且还没建档· 可以 "
+            "`manage_client(action='add', name='...')` 建一份(把已知的公司 / 角色 / 需求一起带上)· "
+            "之后每次进展用 note 追加。**不确定值不值得建档·就先别建**(或自然地问 BRO 一句)。"
+        )
+    return "\n".join(lines)
+
+
+# ── ①e · 情感轨 (C · 隐式闲聊信号 → 悄悄记·不尬 callback) ──────────────
+# 病根: memory_write_hint 只接『显式说记住』· 但 BRO 闲聊里随口透露的个人的点
+#   (爱吃啥 / 今天很累 / 家里的事) 没说"记住"·就永远漏掉——而这恰是合伙人该默默记住的。
+# 修法: 命中隐式个人信号 → 软提醒 OPUS 悄悄 update_bro_note · 严禁当面 callback / 为记而记 ·
+#   记下后靠 relevant_memories 在未来合适语境自然浮现(而不是现在尬夸尬关心)。
+# 与 memory_write_hint 互补: daemon_api 里显式已命中时不叠加本条(避免双重指令)。
+_CASUAL_SIGNALS = (
+    # 口味 / 吃喝
+    "爱吃", "喜欢吃", "最爱吃", "不爱吃", "讨厌吃", "爱喝", "喜欢喝", "口味", "忌口", "过敏",
+    # 身体 / 疲惫 / 状态 (人表达"不在状态"最自然的说法·多字防误报)
+    "好累", "很累", "太累", "累死", "累坏", "好困", "很困", "困死", "犯困", "没睡", "没睡好",
+    "睡不着", "睡不好", "失眠", "熬夜", "没精神", "没什么精神", "没劲", "没劲儿", "提不起劲",
+    "没状态", "状态不好", "状态不太好", "状态很差", "疲惫", "疲劳", "身体不太行",
+    "生病", "感冒", "发烧", "头疼", "头痛", "胃疼", "不舒服",
+    # 情绪
+    "emo", "好烦", "烦死", "烦躁", "焦躁", "焦虑", "难过", "郁闷", "有点丧", "好丧", "很丧", "丧气",
+    "抑郁", "低落", "不开心", "闷得慌", "心累", "压抑", "压力好大", "压力大", "崩溃", "想哭",
+    "扛不住", "撑不住", "好开心", "开心死", "心情",
+    # 生活 / 关系 / 节点
+    "生日", "过生日", "老婆", "老公", "女朋友", "男朋友", "我对象", "孩子", "父母", "爸妈", "家人",
+    "搬家", "结婚", "领证", "去旅行", "去旅游", "出差", "老家", "回老家", "养的", "宠物",
+)
+
+# 技术/运维噪音闸:信号词嵌在明显的技术话里(子串误命中)→ 不是情感透露·两条记忆线都跳过。
+# 只挡"硬技术词"·不挡"帮我/怎么"这类·免得误伤"帮我想想我妈生日送啥"这种真·生活信号。
+_TECH_NOISE = (
+    "报销", "流程", "重启", "部署", "接口", "日志", "端口", "配置", "脚本", "代码", "bug",
+    "报表", "服务器", "数据库", "编译", "打包", "报价单", "文档", "表格", "字段",
+)
+
+
+def _is_tech_noise(msg: str, low: str) -> bool:
+    return any((w in msg) or (w in low) for w in _TECH_NOISE)
+
+
+def casual_profile_hint(message: str) -> str:
+    """BRO 闲聊里隐式透露个人的点(没说记住)→ 软提醒悄悄 update_bro_note。
+
+    只做词面命中(保守)· 命中才注入。红线写死在提示里:别打断话题、别当面 callback、
+    只是情绪噪音就跳过。记下后靠自动召回自然浮现·不是现在尬关心。
+    """
+    msg = (message or "").strip()
+    if len(msg) < 2:          # 放松长度闸:"好丧""烦死了"这类短情绪爆发别毙掉(信号词都 ≥2 字)
+        return ""
+    low = msg.lower()
+    if _is_tech_noise(msg, low):
+        return ""
+    if not any((s in msg) or (s in low) for s in _CASUAL_SIGNALS):
+        return ""
+    return (
+        "\n\n=== 悄悄记一笔 · daemon 自动提示 (别复述这段·尤其别当面 callback) ===\n"
+        "BRO 这轮像是随口透露了个人的点(口味 / 心情 / 身体 / 生活)——这类『不是让你记、但值得记』"
+        "的信号·正是合伙人该默默记住的东西。\n"
+        "**若确实值得长期留存·本轮顺手 `update_bro_note`**(profile=当下状态 / 心情 · "
+        "dialogue=口味偏好等口头记号)· 一条一句、带日期。\n"
+        "红线(重要):**别打断当前话题 · 别『我记住了』式刻意 callback · 别为记而记**。"
+        "记下就好·让它下次在合适语境里自然浮现(靠自动召回)· 而不是现在尬夸 / 尬关心。"
+        "只是闲聊噪音 / 临时情绪就跳过。"
+    )
+
+
+# ── ①f · 情感轨主动侧 (C+ · 记情感/健康信号 → 成熟期软回访·防尬) ────────────
+# 被动侧(上面)靠 relevant_memories 在合适语境自然浮现;主动侧是"隔几天主动关心一句"。
+# 防尬四道闸:① 只对身体/情绪/大生活节点回访(口味不回访)· ② 首次提到后隔 >18h 才成熟
+#   (不在同场对话里追)· ③ 单条回访后 72h 冷却、最多回访 2 次· ④ 语境门控:只在闲聊/打招呼
+#   这种自然时刻给一次·且一天全局最多一次。给的是软提示·OPUS 语境不合适可以当没看到。
+_CARE_STATE = ROOT / "data" / "runtime" / "care_followups.json"
+_CARE_SIGNALS = (
+    # 身体 / 疲惫(值得隔几天问一句"缓过来没")
+    "好累", "很累", "太累", "累死", "累坏", "好困", "很困", "困死", "犯困", "没睡", "没睡好",
+    "睡不着", "睡不好", "失眠", "熬夜", "没精神", "没什么精神", "没劲", "提不起劲",
+    "没状态", "状态不好", "状态不太好", "疲惫", "疲劳", "生病", "感冒", "发烧",
+    "头疼", "头痛", "胃疼", "不舒服", "住院", "手术",
+    # 情绪(健康类·非临时噪音)
+    "好烦", "烦死", "烦躁", "焦躁", "焦虑", "难过", "郁闷", "有点丧", "好丧", "抑郁", "低落",
+    "心累", "压抑", "压力好大", "压力大", "崩溃", "想哭", "扛不住", "撑不住",
+    # 大生活节点
+    "生日", "过生日", "搬家", "结婚", "领证", "出差", "老家", "回老家",
+)
+_CARE_CONTEXT = (
+    "在吗", "在么", "在不在", "早", "早安", "早上好", "中午好", "下午好", "晚上好", "晚安",
+    "嗨", "hi", "hello", "哈喽", "忙吗", "忙不忙", "最近", "好久", "回来了", "下班",
+    "休息", "周末", "在干嘛", "在忙啥", "睡了吗",
+)
+_CARE_RESOLVE = ("好多了", "好些了", "好了", "没事了", "恢复了", "缓过来", "缓过神", "睡饱了", "不累了", "好起来")
+_CARE_TASK_WORDS = (
+    "报告", "分析", "巡航", "客户", "代码", "bug", "部署", "生成", "帮我", "怎么", "如何",
+    "为什么", "文件", "脚本", "数据", "掘金", "趋势", "改一下", "写个", "做个", "报价",
+)
+_CARE_MATURE_H = 18.0        # 首次提到后 · 至少隔这么久才成熟(不在同场对话里追)
+_CARE_COOLDOWN_H = 72.0      # 同一条回访过后 · 这么久内不再提
+_CARE_MAX_SURFACE = 2        # 一条最多主动回访 2 次 · 之后放手
+_CARE_EXPIRE_H = 24 * 12     # 12 天没动静就过期丢弃
+
+
+def _care_stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _care_parse(s: str):
+    try:
+        return datetime.strptime(s or "", "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _care_load() -> dict:
+    try:
+        d = json.loads(_CARE_STATE.read_text(encoding="utf-8"))
+        if isinstance(d, dict) and isinstance(d.get("items"), list):
+            return d
+    except Exception:
+        pass
+    return {"items": [], "last_nudge_date": ""}
+
+
+def _care_save(d: dict) -> None:
+    try:
+        _CARE_STATE.parent.mkdir(parents=True, exist_ok=True)
+        _CARE_STATE.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def note_care_signals(message: str) -> None:
+    """每轮跑一遍(便宜)· BRO 提到身体/情绪/大生活节点 → 记一个"待回访候选"。
+
+    同信号再次出现 = BRO 还在这事上 → 刷新成熟钟、清回访计数(别在他正说时插嘴回访)。
+    命中"好多了/没事了"等 → 放手最近一条(已解决就别再回访)。只写状态·不注入任何 token。
+    """
+    msg = (message or "").strip()
+    if len(msg) < 2:          # 与 casual 一致:短情绪爆发也要接住
+        return
+    low = msg.lower()
+    hit = next((s for s in _CARE_SIGNALS if (s in msg) or (s in low)), None)
+    if hit and _is_tech_noise(msg, low):
+        hit = None          # 信号嵌在技术话里 → 不是情感透露·不记回访候选(防几天后尬回访)
+    resolved = any(r in msg for r in _CARE_RESOLVE)
+    if not hit and not resolved:
+        return
+    d = _care_load()
+    items = d.get("items") or []
+    if resolved and items:
+        items = items[:-1]          # 最近一条视为已被 BRO 亲口交代好了 → 放手
+        d["items"] = items
+        _care_save(d)
+        if not hit:
+            return
+    if hit:
+        snippet = msg if len(msg) <= 60 else msg[:60] + "…"
+        for it in items:
+            if it.get("signal") == hit:
+                it.update(first_ts=_care_stamp(), text=snippet, surfaced_ts="", surfaced_count=0)
+                break
+        else:
+            items.append({"signal": hit, "text": snippet, "first_ts": _care_stamp(),
+                          "surfaced_ts": "", "surfaced_count": 0})
+        d["items"] = items[-20:]
+        _care_save(d)
+
+
+def _expire_care(items: list, now: datetime) -> tuple[list, bool]:
+    """丢弃 12 天没动静的候选。返回 (保留列表, 是否有变化)。"""
+    kept, changed = [], False
+    for it in items:
+        ft = _care_parse(it.get("first_ts"))
+        if ft and (now - ft).total_seconds() > _CARE_EXPIRE_H * 3600:
+            changed = True
+            continue
+        kept.append(it)
+    return kept, changed
+
+
+def _find_ripe_care(items: list, now: datetime, *, need_no_proactive: bool = False):
+    """挑一个成熟 + 过冷却 + 没超回访上限的候选。need_no_proactive=主动侧专用·
+    额外要求这条从没被主动关心过(单候选主动最多一次)。无则返 None。"""
+    for it in items:
+        if it.get("surfaced_count", 0) >= _CARE_MAX_SURFACE:
+            continue
+        if need_no_proactive and it.get("proactive_ts"):
+            continue
+        ft = _care_parse(it.get("first_ts"))
+        if not ft or (now - ft).total_seconds() < _CARE_MATURE_H * 3600:
+            continue
+        st = _care_parse(it.get("surfaced_ts"))
+        if st and (now - st).total_seconds() < _CARE_COOLDOWN_H * 3600:
+            continue
+        return it
+    return None
+
+
+def care_followup_hint(message: str) -> str:
+    """被动侧:有"成熟"的待回访候选 + 当前是闲聊/打招呼语境 → 给一条软回访提示(每天最多一次)。
+
+    语境不合适(在干正事)一律不给。给出的也只是建议·OPUS 可判断当下不合适而略过。
+    与主动侧(mature_care_candidate)共享 care_followups.json 状态·同日/72h 内绝不双重关心。
+    """
+    msg = (message or "").strip()
+    if len(msg) < 2:
+        return ""
+    low = msg.lower()
+    has_ctx = any((c in msg) or (c in low) for c in _CARE_CONTEXT)
+    has_task = any((w in msg) or (w in low) for w in _CARE_TASK_WORDS)
+    casual = has_ctx or (len(msg) <= 16 and not has_task)
+    if not casual:
+        return ""
+    d = _care_load()
+    items = d.get("items") or []
+    if not items:
+        return ""
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    if d.get("last_nudge_date") == today:
+        return ""       # 一天全局最多关心一次(被动+主动共享)
+    items, changed = _expire_care(items, now)
+    ripe = _find_ripe_care(items, now)
+    if not ripe:
+        if changed:
+            d["items"] = items
+            _care_save(d)
+        return ""
+    ripe["surfaced_ts"] = _care_stamp()
+    ripe["surfaced_count"] = ripe.get("surfaced_count", 0) + 1
+    d["items"] = items
+    d["last_nudge_date"] = today
+    _care_save(d)
+    ft = _care_parse(ripe.get("first_ts"))
+    days = int((now - ft).total_seconds() // 86400) if ft else 0
+    when = f"{days} 天前" if days >= 1 else "前些时候"
+    return (
+        "\n\n=== 温柔回访 · daemon 自动提示 (别复述这段) ===\n"
+        f"BRO {when}提过「{ripe.get('text', '')}」(身体 / 心情类信号)· 之后没再提起。\n"
+        "**若这轮语境自然(在闲聊 / 打招呼)· 可以轻轻关心一句**(好点没 / 那阵子缓过来没)· 一句就够、别追问。\n"
+        "红线:只要语境稍不合适(在干正事 / 技术讨论 / BRO 有明确任务)就**当没看到·别提**。"
+        "别显得在查户口·别硬 callback。关心是顺势·不是打卡。"
+    )
+
+
+def mature_care_candidate() -> Optional[dict]:
+    """主动侧(proactive_call 用)· 找一个成熟、且从没被主动关心过的 care 候选。只读不认领。
+
+    共享每日上限:今天已因 care 关心过(任一路径)→ 返回 None(防同日双重关心)。
+    返回 {signal, text, days, when} 或 None。认领在投递成功后由 mark_care_surfaced 完成。
+    """
+    d = _care_load()
+    now = datetime.now(timezone.utc)
+    if d.get("last_nudge_date") == now.strftime("%Y-%m-%d"):
+        return None
+    items, _changed = _expire_care(d.get("items") or [], now)
+    ripe = _find_ripe_care(items, now, need_no_proactive=True)
+    if not ripe:
+        return None
+    ft = _care_parse(ripe.get("first_ts"))
+    days = int((now - ft).total_seconds() // 86400) if ft else 0
+    return {
+        "signal": ripe.get("signal", ""),
+        "text": ripe.get("text", ""),
+        "days": days,
+        "when": f"{days} 天前" if days >= 1 else "前些时候",
+    }
+
+
+def mark_care_surfaced(signal: str, *, proactive: bool = False) -> None:
+    """认领一个 care 候选(投递成功后调)·记 surfaced_ts + count++ + 今日已关心。
+    proactive=True 额外记 proactive_ts(单候选主动最多一次)·防被动侧再补一刀。"""
+    if not signal:
+        return
+    d = _care_load()
+    items = d.get("items") or []
+    stamp = _care_stamp()
+    for it in items:
+        if it.get("signal") == signal:
+            it["surfaced_ts"] = stamp
+            it["surfaced_count"] = it.get("surfaced_count", 0) + 1
+            if proactive:
+                it["proactive_ts"] = stamp
+            break
+    else:
+        return
+    d["items"] = items
+    d["last_nudge_date"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    _care_save(d)
+
+
 # ── P2/P3 · turn 结束反思 ─────────────────────────────────────────
 def turn_end_report(tools: Optional[list] = None) -> Optional[dict]:
     """一轮 chat 结束后调。返回 None = 不必提示;返回 dict = 该提醒收尾沉淀。

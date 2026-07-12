@@ -198,6 +198,37 @@ def get_last_user_turn_ts(session_id: str) -> Optional[str]:
 
 
 
+def derive_label_from_first_turn(session_id: str, max_chars: int = 24) -> Optional[str]:
+    """从 session 第一条真人 user turn 抽个标签(前 ~24 字)· 给没 label 的老会话补名用。
+
+    只扫前 ~40 行找第一条 role=user 且非 proactive(系统唤醒不算)的 · 规则跟
+    daemon_api 新会话即时命名完全一致。找不到(空会话 / 全是系统唤醒)返回 None。
+    """
+    path = session_path(session_id)
+    if not path.exists():
+        return None
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                if i >= 40:
+                    break
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if rec.get("role") != "user":
+                    continue
+                if (rec.get("meta") or {}).get("src") == "proactive":
+                    continue
+                txt = " ".join((rec.get("content") or "").split())
+                if not txt:
+                    continue
+                return txt[:max_chars] + ("…" if len(txt) > max_chars else "")
+    except OSError:
+        return None
+    return None
+
+
 def resolve_session_id(arg: str) -> str:
     """latest / 完整 id / 后缀模糊匹配。"""
     arg = (arg or "").strip()

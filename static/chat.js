@@ -17,23 +17,29 @@
 // === AI 名字本地化 (Daemonkey 分家) ===
 // 用户在『相遇』里给这只 Daemonkey 起的名字·由后端注成 window.__AI_NAME__。
 // 界面里历史遗留写死的 "OPUS" 全部换成它——一个集中机制·不必逐处改 100+ 串。
-// 正则 /OPUS(?![\w-])/ 只换"OPUS"作为称呼出现的地方·跳过 OPUS_API_TOKEN 这类技术标识。
+// 正则 /OPUS(?![\w-])/ 只换"OPUS"作为称呼出现的地方·跳过 DAEMONKEY_API_TOKEN 这类技术标识。
 (function () {
   var NAME = (window.__AI_NAME__ || '').trim();
   var OWNER = (window.__OWNER_NAME__ || '').trim();
   var doAI = NAME && NAME !== 'OPUS';           // AI 自己的名字
-  var doOwner = OWNER && OWNER !== 'BRO';        // 主人的称呼 (卷六十四续十一 · UI 里的 BRO 也换掉)
-  if (!doAI && !doOwner) return;                // 两者都默认 → 保持原样
-  // 正则跳过 OPUS_API_TOKEN 这类技术标识·只换作为称呼出现的词
+  var doOwner = OWNER && OWNER !== 'BRO';        // 主人的称呼 (UI 里的 BRO 也换掉)
+  if (!doAI && !doOwner) return;                // 母体两者都默认 → 保持原样
+  // 正则跳过 DAEMONKEY_API_TOKEN / OWNER-NOTEBOOK 这类技术标识·只换作为称呼出现的词
   var RE_AI = /OPUS(?![\w-])/g;
   var RE_OWNER = /\bBRO(?![\w-])/g;
+  // Daemonkey 分家: 取了自己名字的实例·把母体私有叙事词中性成「<名字> 的家」。
+  // 前端 localizer 原本只换 OPUS/BRO·这类叙事词得单独抹·否则界面会漏出来。
+  // (叙事词用 \u 转义存·避免源码里留可读的母体字面)
+  var HOME = NAME ? (NAME + ' 的家') : '';
+  var _LORE_HOME = '\u82b1\u679c\u5c71';
   function fix(s) {
     if (!s) return s;
     if (doAI && s.indexOf('OPUS') >= 0) s = s.replace(RE_AI, NAME);
     if (doOwner && s.indexOf('BRO') >= 0) s = s.replace(RE_OWNER, OWNER);
+    if (doAI && HOME && s.indexOf(_LORE_HOME) >= 0) s = s.split(_LORE_HOME).join(HOME);
     return s;
   }
-  function _hit(v) { return v && ((doAI && v.indexOf('OPUS') >= 0) || (doOwner && v.indexOf('BRO') >= 0)); }
+  function _hit(v) { return v && ((doAI && (v.indexOf('OPUS') >= 0 || v.indexOf(_LORE_HOME) >= 0)) || (doOwner && v.indexOf('BRO') >= 0)); }
   function walk(root) {
     if (!root) return;
     try {
@@ -70,149 +76,6 @@
   window.AI_NAME = NAME;                        // 给后续代码直接用 (拼新串时优先用它)
 })();
 
-// ── 0.2.0 · 新对话引导卡 onboarding panel ──
-// messages 容器空 (新对话 / 切到没消息的会话) → 显示 panel · 一旦有消息 → hide
-// 点卡 → 把模板填入输入框 + focus + 不直接发 (可改完再发)
-// 模板可自定义 · 存 localStorage 'opus.onboarding.templates'
-// 注意: 模板文本是 prefill 进输入框的·不走前端 localize·所以这里不能写死 OPUS·要中性
-const _ONBOARD_DEFAULT_TEMPLATES = {
-  create_app: '我想造一个应用 · 用来 [描述用途 · 例如「自动抓 B 站热门评论」]\n输入是: [列字段]\n输出是: [列字段]\n你帮我设计 system_prompt + 工具白名单 + ui_form_schema · 然后落到工坊。',
-  create_flow: '我想搭一条工作流 · 名字叫 [起一个]\n流程是:\n  1. [第一步用什么 app · 干啥]\n  2. [第二步用什么 app · 干啥]\n  3. ...\n你帮我用 create_workflow 落档 · 我看了再说跑不跑。',
-  chat_about: '聊聊吧 · 你是谁 · 你能做什么 · 你跟其他 AI 有什么不一样\n你为什么叫这个名字 · 你平时最擅长帮我做什么\n说人话 · 不要列表式答 · 像跟朋友吹水',
-  list_capability: '把工坊里所有应用 (list_apps detailed=true) 和工作流 (list_flows detailed=true) 都列给我看看\n按用途分类 · 我想知道哪些能直接跑 · 哪些是给工作流当零件用的',
-  // 换皮肤卡 · 模板里"换成 X 主题"会触发前端 matchThemePreset 直接切主题
-  change_theme: '把界面主题换成 [暗紫 / 经典灰 / 白天 / 护眼暖黄 / 海洋蓝 / 森林绿 / 日落橙 / 粉色 / 粉白] 主题\n或者 · 你帮我设计一套 [描述风格 · 例如「赛博蓝紫·像 dune 沙漠」] 的配色 · 输出 ```theme JSON``` 代码块',
-  // 第 6 张卡 · 能力发现 (入口 A · 主动去外面找 SKILL/开源项目升级自己)
-  discover_skill: '帮我找点能升级你自己的新能力 (调 discover_skill 工具) · 去 GitHub / 开源社区找 SKILL / 工具 / 开源项目\n方向: [可留空让你按我画像定 · 或填: 比如 视频口播 / figma 插件 / 调试工作流]\n按我的画像评估 · 靠谱的出一份发现报告 + 落地建议 (playbook / app / 心愿)',
-};
-
-function _loadOnboardingTemplates() {
-  try {
-    const raw = localStorage.getItem('opus.onboarding.templates');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return Object.assign({}, _ONBOARD_DEFAULT_TEMPLATES, parsed);
-    }
-  } catch (e) {}
-  return _ONBOARD_DEFAULT_TEMPLATES;
-}
-
-function _saveOnboardingTemplates(custom) {
-  try {
-    localStorage.setItem('opus.onboarding.templates', JSON.stringify(custom));
-  } catch (e) {}
-}
-
-// 判断: visible .session-msgs 里有没有实质的 .msg.bro / .msg.opus (排除 sys / thinking 兜底)
-function refreshOnboardingPanel() {
-  const panel = document.getElementById('onboardingPanel');
-  const messages = document.getElementById('messages');
-  if (!panel || !messages) return;
-  let scope = messages.querySelector(':scope > .session-msgs:not([hidden])');
-  if (!scope) scope = messages;
-  const hasRealMsg = !!scope.querySelector('.msg.bro, .msg.opus:not(.thinking)');
-  panel.hidden = hasRealMsg;
-}
-window.refreshOnboardingPanel = refreshOnboardingPanel;
-
-function _initOnboardingPanel() {
-  const panel = document.getElementById('onboardingPanel');
-  if (!panel) return;
-  panel.addEventListener('click', (ev) => {
-    const card = ev.target.closest('[data-template]');
-    if (!card) return;
-    const key = card.dataset.template;
-    const tmpls = _loadOnboardingTemplates();
-    const text = tmpls[key] || '';
-    if (!text) return;
-    const input = document.getElementById('input');
-    if (!input) return;
-    input.value = text;
-    input.focus();
-    const placeholderIdx = text.indexOf('[');
-    if (placeholderIdx >= 0) {
-      const endIdx = text.indexOf(']', placeholderIdx);
-      if (endIdx > placeholderIdx) input.setSelectionRange(placeholderIdx + 1, endIdx);
-    }
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  });
-  const customizeBtn = document.getElementById('onboardingCustomize');
-  if (customizeBtn) customizeBtn.addEventListener('click', _openOnboardingCustomizer);
-  // 监听 messages 变化 (有消息 → hide · 清空 → show) · subtree + hidden 属性都要看
-  const messages = document.getElementById('messages');
-  if (messages && 'MutationObserver' in window) {
-    new MutationObserver(refreshOnboardingPanel).observe(messages, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['hidden'],
-    });
-  }
-  refreshOnboardingPanel();
-}
-
-function _openOnboardingCustomizer() {
-  const tmpls = _loadOnboardingTemplates();
-  const labels = {
-    create_app: '<i class="ri-puzzle-fill"></i> 创建一个应用',
-    create_flow: '<i class="ri-flow-chart"></i> 搭建一个工作流',
-    chat_about: '<i class="ri-chat-3-fill"></i> 聊聊日常 · 认识我',
-    list_capability: '<i class="ri-book-shelf-fill"></i> 看看我能做什么',
-    change_theme: '<i class="ri-palette-fill"></i> 换个皮肤',
-    discover_skill: '<i class="ri-search-eye-line"></i> 找新能力升级自己',
-  };
-  let modal = document.getElementById('onboardingCustomizerModal');
-  if (modal) modal.remove();
-  modal = document.createElement('div');
-  modal.id = 'onboardingCustomizerModal';
-  modal.className = 'onboarding-modal-mask';
-  const rows = Object.keys(labels).map(k => `
-    <div class="onboarding-tmpl-row">
-      <label>${labels[k]}</label>
-      <textarea data-tmpl-key="${k}" rows="4">${String(tmpls[k] || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
-    </div>
-  `).join('');
-  modal.innerHTML = `
-    <div class="onboarding-modal">
-      <div class="onboarding-modal-head">
-        <span><i class="ri-settings-3-line"></i> 改新对话引导卡模板</span>
-        <button type="button" class="onboarding-modal-x">×</button>
-      </div>
-      <div class="onboarding-modal-body">
-        ${rows}
-        <div class="onboarding-modal-hint">改完点保存 · 存在浏览器本地 (localStorage) · 不上传 daemon</div>
-      </div>
-      <div class="onboarding-modal-foot">
-        <button type="button" class="onboarding-modal-reset">恢复默认</button>
-        <button type="button" class="onboarding-modal-save">保存</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(modal);
-  modal.querySelector('.onboarding-modal-x').addEventListener('click', () => modal.remove());
-  modal.querySelector('.onboarding-modal-reset').addEventListener('click', () => {
-    Object.keys(_ONBOARD_DEFAULT_TEMPLATES).forEach(k => {
-      const ta = modal.querySelector(`[data-tmpl-key="${k}"]`);
-      if (ta) ta.value = _ONBOARD_DEFAULT_TEMPLATES[k];
-    });
-  });
-  modal.querySelector('.onboarding-modal-save').addEventListener('click', () => {
-    const custom = {};
-    modal.querySelectorAll('[data-tmpl-key]').forEach(ta => {
-      custom[ta.dataset.tmplKey] = ta.value.trim();
-    });
-    _saveOnboardingTemplates(custom);
-    modal.remove();
-  });
-  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
-}
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', _initOnboardingPanel);
-} else {
-  _initOnboardingPanel();
-}
-
 const STORAGE = {
   token: 'opus_ui_token',
   session: 'opus_ui_session',
@@ -225,25 +88,62 @@ const STORAGE = {
 const THEME_KEY = 'opus_ui_theme';
 const THEME_CUSTOM_KEY = 'opus_ui_theme_custom';
 
+// 卷七十二 v5 · 2026-06-10 · BRO bug 报告: 「BRO 让 OPUS 写代码时只要提到「默认」俩字 ·
+//   就会直接换主题 · 而不是执行全句的需求」
+// 病根: 「默认」是「暗紫」的 alias · matchThemePreset 看到「用默认值」就误命中
+//      (`用` 满足 intent 模糊 regex · `默认` 命中 alias · 整句被 send 吞掉不发给 OPUS)
+// 修法: ① 把「默认」「原来的」「恢复默认」「回到原来」这类语义太模糊的词从 alias 删掉
+//       (BRO 想恢复要说「换回暗紫主题」/「切回深色主题」)
+//       ② intent regex 收紧 · 必须 (换/切/改/变/设/应用) + (主题/皮肤/外观/配色/界面) 两段配对
+//       ③ 加 exact-match 兜底: 整句就是 alias 时直接命中 (短指令体验保留)
 const THEME_PRESETS = [
-  { cls: '',              label: '暗紫',   aliases: ['暗紫','深色','暗色','夜间','暗黑','默认','原来的','恢复默认','回到原来','紫色','紫'] },
-  { cls: 'theme-classic', label: '经典灰', aliases: ['经典','经典灰','旧版','老版','灰色','原来的灰'] },
-  { cls: 'theme-light',   label: '白天',   aliases: ['白天','浅色','日间','明亮','亮色'] },
-  { cls: 'theme-sepia',   label: '护眼暖黄', aliases: ['暖色','护眼','暖黄','sepia','米黄'] },
-  { cls: 'theme-ocean',   label: '海洋蓝',   aliases: ['蓝色','海洋','海蓝','ocean'] },
-  { cls: 'theme-forest',  label: '森林绿',   aliases: ['绿色','森林','forest'] },
-  { cls: 'theme-sunset',  label: '日落橙',   aliases: ['橙色','日落','sunset','橘色'] },
-  { cls: 'theme-pink',        label: '粉色',   aliases: ['粉色','粉红','pink','樱花'] },
-  { cls: 'theme-pink-white',  label: '粉白',   aliases: ['粉白','樱花白','粉白主题'] },
+  { cls: '',              label: '暗紫',   aliases: ['暗紫','暗紫主题','深色主题','深紫','夜间主题','暗黑主题'] },
+  { cls: 'theme-classic', label: '经典灰', aliases: ['经典灰','经典主题','旧版主题','灰色主题'] },
+  { cls: 'theme-light',   label: '白天',   aliases: ['白天主题','浅色主题','日间主题','明亮主题','亮色主题','白色主题'] },
+  { cls: 'theme-sepia',   label: '护眼暖黄', aliases: ['护眼主题','暖黄主题','sepia','米黄主题','暖色主题'] },
+  { cls: 'theme-ocean',   label: '海洋蓝',   aliases: ['海洋蓝','海蓝主题','蓝色主题','ocean','海洋主题'] },
+  { cls: 'theme-forest',  label: '森林绿',   aliases: ['森林绿','绿色主题','森林主题','forest'] },
+  { cls: 'theme-sunset',  label: '日落橙',   aliases: ['日落橙','橙色主题','日落主题','sunset','橘色主题'] },
+  { cls: 'theme-pink',        label: '粉色',   aliases: ['粉色主题','粉红主题','pink 主题','樱花主题'] },
+  { cls: 'theme-pink-white',  label: '粉白',   aliases: ['粉白','粉白主题','樱花白'] },
 ];
 
+// "XX 模式" 短语 → 主题 label 映射 (BRO 习惯说法 · 不进 alias 防误判)
+const THEME_MODE_PHRASES = {
+  '暗色': '暗紫', '深色': '暗紫', '夜间': '暗紫', '暗黑': '暗紫',
+  '亮色': '白天', '浅色': '白天', '日间': '白天', '明亮': '白天', '白天': '白天',
+  '护眼': '护眼暖黄',
+};
+
 function matchThemePreset(text) {
-  // 必须有换主题意图才匹配 · 避免日常对话中的颜色词/常用词误触发
-  const t = text.toLowerCase();
-  const hasIntent = /(换|切|改成|变成|设为|用|主题|皮肤|颜色|模式)/.test(t) || t.length <= 4;
-  if (!hasIntent) return null;
+  const t = String(text || '').trim().toLowerCase();
+  if (!t) return null;
+  // ① 整句 exact match · trim 后 === alias 才命中 (而非 includes) · "暗紫" 这种纯短指令直接生效
   for (const p of THEME_PRESETS) {
-    for (const a of p.aliases) { if (t.includes(a)) return p; }
+    for (const a of p.aliases) { if (t === a.toLowerCase()) return p; }
+  }
+  // ② "XX 模式" 短语 → 主题 (BRO 习惯 "用深色模式" / "白天模式" / "亮色模式")
+  const modeMatch = t.match(/(暗色|深色|夜间|暗黑|亮色|浅色|日间|明亮|白天|护眼)\s*模式/);
+  if (modeMatch) {
+    const targetLabel = THEME_MODE_PHRASES[modeMatch[1]];
+    const found = THEME_PRESETS.find(p => p.label === targetLabel);
+    if (found) return found;
+  }
+  // ③ 短句兜底: ≤8 字 + 包含 alias · 给 "切海洋蓝" / "换暗紫主题" 这种短命令留口子
+  //   这里安全是因为 alias 全是 ≥2 字的有色彩义词 ("暗紫" / "海洋蓝" / "粉白") · 不含 "默认" 这种模糊词
+  if (t.length <= 8) {
+    for (const p of THEME_PRESETS) {
+      for (const a of p.aliases) { if (t.includes(a.toLowerCase())) return p; }
+    }
+  }
+  // ④ 长句 · 必须有"切主题"强意图 (动词+名词配对) · 才允许 includes 匹配
+  //   动词列表用 "用上" 而非 "用" 单字 · 否则 "用 X" 全部命中 (= BRO bug)
+  const hasStrongIntent =
+    /(换|切|改|改成|变|变成|设|设为|应用|启用|用上)\s*(成|个|到|为|了)?\s*[^。.,，]{0,8}\s*(主题|皮肤|外观|配色|界面|ui)/i.test(t)
+    || /(theme|skin)\s*(=|:|to|为)/i.test(t);
+  if (!hasStrongIntent) return null;
+  for (const p of THEME_PRESETS) {
+    for (const a of p.aliases) { if (t.includes(a.toLowerCase())) return p; }
   }
   return null;
 }
@@ -334,7 +234,7 @@ function scanThemeBlocks(container) {
   });
 }
 
-// ═══ 换肤按钮 UI(接现成 applyTheme)+ 简洁版切换 ═══
+// ═══ 卷七十五续九 · 换肤按钮 UI(接现成 applyTheme)+ 简洁版切换 ═══
 // 换肤色板:每个 swatch 带对应主题 class · dots 用 var(--bg)/var(--opus) 取真实色(不硬编码·防漂移);
 // 默认(暗紫·无 class)用 inline 兜底 · 因为它继承不到自身的默认变量。
 function buildThemeGrid() {
@@ -423,14 +323,6 @@ initTheme();
   else document.addEventListener('DOMContentLoaded', _go, { once: true });
 })();
 let token = localStorage.getItem(STORAGE.token) || '';
-// Daemonkey · 本机 loopback 自动信任：daemon 启动会自动生成 .env 里的 DAEMONKEY_API_TOKEN·
-// 后端 loopback 中间件给同机 127.0.0.1 请求覆盖注入它·所以本机用户无需手填 token。
-// 这里设个非空哨兵让前端所有 if(!token) 通过·真正鉴权由后端 loopback 豁免兜底
-// (远程/跨网访问 hostname 不是 loopback·仍走原逻辑要求手填 token·安全)。
-if (!token && ['127.0.0.1', '::1', 'localhost'].includes(location.hostname)) {
-  token = 'loopback';
-  try { localStorage.setItem(STORAGE.token, token); } catch (_) {}
-}
 // sessionId = 当前 visible 的 session id (UI 焦点)
 // 后台跑的对话仍然有 state 在 _sessions[sid] 里·不被这一变量影响
 let sessionId = localStorage.getItem(STORAGE.session) || '';
@@ -440,288 +332,6 @@ let _proactiveLastSeen = new Date().toISOString();
 // pending = 当前 visible session 的状态·切换 session 时从对应 state 里读
 // (是 _sessions[sessionId].pending 的 visible mirror)
 let pending = false;
-
-// 0.2.0 · 工作流跑时进度 banner (进度可视化诉求)
-// 轮询 /workshop/runs · 有 active flow / 最近完成都显示 banner · 点击展开看每 step 进度
-// 异步化后 banner 必须显示 done/failed 通知 · 否则用户等不到回声
-const _FLOW_RUNS_POLL_MS = 3000;
-const _FLOW_RECENT_TERMINAL_MS = 90 * 1000;  // 90s 内的 done/failed 也显示 (用户看到结果再消失)
-let _flowRunsTimer = null;
-let _flowRunsActive = [];       // 当前展示集合 (running + 最近 90s 内 done/failed)
-let _flowRunsDetailOpen = false;
-let _flowRunsDetailCache = {};  // run_id → 完整 state (展开时 fetch · 折叠时也保留供下次秒开)
-let _flowRunsDismissed = {};    // run_id → true · 用户点 "知道了" 后不再 banner
-
-function _flowRunsToken() {
-  try { return localStorage.getItem(STORAGE.token) || ''; } catch (e) { return ''; }
-}
-
-function _isRecentTerminal(run) {
-  const st = run.status || '';
-  if (st !== 'done' && st !== 'failed') return false;
-  const ts = run.updated_at || '';
-  if (!ts) return false;
-  const t = Date.parse(ts);  // ISO 不带时区 · 当本地时间 parse (跟 daemon 同主机)
-  if (isNaN(t)) return false;
-  return (Date.now() - t) < _FLOW_RECENT_TERMINAL_MS;
-}
-
-// 跨 tab 提醒 (用户切走 tab 也能感知 flow 跑完)
-let _flowRunsPrevStatuses = {};       // run_id → 上次 poll 看到的 status · 用来 diff "running → done/failed"
-let _flowRunsTitleTimer = null;
-const _ORIGINAL_TITLE = document.title;
-
-function _flashTitle(prefix) {
-  if (_flowRunsTitleTimer) { clearInterval(_flowRunsTitleTimer); _flowRunsTitleTimer = null; }
-  let on = true;
-  document.title = prefix + ' ' + _ORIGINAL_TITLE;
-  _flowRunsTitleTimer = setInterval(() => {
-    on = !on;
-    document.title = on ? (prefix + ' ' + _ORIGINAL_TITLE) : _ORIGINAL_TITLE;
-  }, 1100);
-}
-
-function _stopTitleFlash() {
-  if (_flowRunsTitleTimer) { clearInterval(_flowRunsTitleTimer); _flowRunsTitleTimer = null; }
-  document.title = _ORIGINAL_TITLE;
-}
-
-// 用户切回 tab 自动停闪 (有把 tab 切走的场景才需要闪 · 看了就不闪)
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) _stopTitleFlash();
-});
-
-async function pollFlowRuns() {
-  const token = _flowRunsToken();
-  if (!token) return;
-  try {
-    // 拉最近 12 条 (不过滤 status) · 客户端筛 running + 最近 terminal
-    const r = await fetch('/workshop/runs?limit=12', {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) return;
-    const data = await r.json();
-    const all = data.runs || [];
-
-    // diff: 上轮 running 这轮 done/failed → 触发 title 闪烁通知 (跨 tab 感知 · 切走也能看到)
-    let flashKind = null;  // 'done' / 'failed' / null
-    for (const r of all) {
-      const prev = _flowRunsPrevStatuses[r.run_id];
-      if (prev === 'running' && (r.status === 'done' || r.status === 'failed')) {
-        // failed 优先级高 (覆盖 done · 一组 run 任意一个失败先报失败)
-        if (r.status === 'failed') { flashKind = 'failed'; break; }
-        if (!flashKind) flashKind = 'done';
-      }
-      _flowRunsPrevStatuses[r.run_id] = r.status;
-    }
-    // tab 不在前台时才闪 (前台直接看 banner 即可 · 不打扰)
-    if (flashKind && document.hidden) {
-      _flashTitle(flashKind === 'done' ? '[✓ 跑完]' : '[✗ 失败]');
-    }
-
-    _flowRunsActive = all.filter(r => {
-      if (_flowRunsDismissed[r.run_id]) return false;
-      if (r.status === 'running') return true;
-      return _isRecentTerminal(r);
-    });
-    renderFlowRunsBanner();
-    if (_flowRunsDetailOpen) await refreshFlowRunsDetail();
-  } catch (e) { /* 静默 · 下次 poll 再试 */ }
-}
-
-function renderFlowRunsBanner() {
-  const banner = document.getElementById('flowRunsBanner');
-  const text = document.getElementById('flowRunsText');
-  if (!banner || !text) return;
-  if (_flowRunsActive.length === 0) {
-    banner.hidden = true;
-    _flowRunsDetailOpen = false;
-    const detail = document.getElementById('flowRunsDetail');
-    if (detail) detail.hidden = true;
-    // 状态色复位
-    banner.classList.remove('is-done', 'is-failed', 'is-mixed');
-    return;
-  }
-  banner.hidden = false;
-
-  // 计算混合状态着色: 任意 running → running (紫); 全 done → done (绿); 任意 failed → failed (红)
-  const hasRunning = _flowRunsActive.some(r => r.status === 'running');
-  const hasFailed  = _flowRunsActive.some(r => r.status === 'failed');
-  const allDone    = !hasRunning && !hasFailed && _flowRunsActive.every(r => r.status === 'done');
-  banner.classList.toggle('is-done',   allDone);
-  banner.classList.toggle('is-failed', hasFailed && !hasRunning);
-  banner.classList.toggle('is-mixed',  hasRunning && (hasFailed || _flowRunsActive.some(r => r.status === 'done')));
-
-  // 主文案: 优先报 running · 没 running 就报 done/failed 通知
-  let primary;
-  if (hasRunning) {
-    const r = _flowRunsActive.find(x => x.status === 'running');
-    const prog = `${r.current_step || 0}/${r.total_steps || 0}`;
-    primary = `${r.flow_name || r.flow_id || '(?)'} · 跑中 (${prog})`;
-  } else if (hasFailed) {
-    const r = _flowRunsActive.find(x => x.status === 'failed');
-    primary = `${r.flow_name || r.flow_id || '(?)'} · ✗ 失败在第 ${r.current_step}/${r.total_steps} 步`;
-  } else {
-    const r = _flowRunsActive[0];
-    primary = `${r.flow_name || r.flow_id || '(?)'} · ✓ 跑完 (${r.total_steps} 步)`;
-  }
-  const more = _flowRunsActive.length > 1 ? ` · +${_flowRunsActive.length - 1} 条` : '';
-  text.textContent = primary + more;
-}
-
-// 用户点"知道了" 把已完成 run 从 banner 撤掉 (running 不许撤 · 还得看进度)
-function dismissFlowRun(runId) {
-  if (!runId) return;
-  _flowRunsDismissed[runId] = true;
-  // 立刻刷一次 · 别等下个 poll tick
-  _flowRunsActive = _flowRunsActive.filter(r => r.run_id !== runId);
-  renderFlowRunsBanner();
-  if (_flowRunsDetailOpen) {
-    const detail = document.getElementById('flowRunsDetail');
-    if (detail) {
-      const cards = detail.querySelectorAll('.flow-run-card');
-      cards.forEach(c => { if (c.dataset.runId === runId) c.remove(); });
-    }
-  }
-}
-window.dismissFlowRun = dismissFlowRun;
-
-async function refreshFlowRunsDetail() {
-  const detail = document.getElementById('flowRunsDetail');
-  if (!detail) return;
-  const token = _flowRunsToken();
-  if (!token) return;
-  // 为每条 active run 拉详情 (并发)
-  const promises = _flowRunsActive.map(async (summary) => {
-    try {
-      const r = await fetch('/workshop/runs/' + encodeURIComponent(summary.run_id), {
-        headers: { 'Authorization': 'Bearer ' + token },
-      });
-      if (!r.ok) return null;
-      const full = await r.json();
-      _flowRunsDetailCache[summary.run_id] = full;
-      return full;
-    } catch (e) { return _flowRunsDetailCache[summary.run_id] || null; }
-  });
-  const fulls = (await Promise.all(promises)).filter(Boolean);
-  if (fulls.length === 0) {
-    detail.innerHTML = '<div style="color:#888;font-size:11px;padding:6px 0">拉详情失败 · 下次 poll 再试</div>';
-    return;
-  }
-  detail.innerHTML = fulls.map(renderFlowRunCard).join('');
-}
-
-function renderFlowRunCard(state) {
-  const status = state.status || 'running';
-  const cur = state.current_step || 0;
-  const total = state.total_steps || (state.steps || []).length || 0;
-  const stepsHtml = (state.steps || []).map(s => renderFlowRunStep(s)).join('');
-  const fname = state.flow_name || state.flow_id || '(?)';
-  const runId = state.run_id || '';
-  // done/failed 给一个"知道了"按钮 · 用户看完撤掉 banner (running 不给)
-  const dismissBtn = (status === 'done' || status === 'failed')
-    ? `<button class="flow-run-dismiss" type="button" onclick="dismissFlowRun('${escAttr(runId)}')" title="收到 · 撤掉这条 banner 通知">知道了</button>`
-    : '';
-  return `
-    <div class="flow-run-card" data-run-id="${escAttr(runId)}">
-      <div class="flow-run-head">
-        <span class="flow-run-name">${escHtml(fname)}</span>
-        <span class="flow-run-status ${status}">${escHtml(status)}</span>
-        <span class="flow-run-progress">${cur}/${total}</span>
-        ${dismissBtn}
-      </div>
-      <div class="flow-run-steps">${stepsHtml}</div>
-    </div>
-  `;
-}
-
-function escAttr(s) {
-  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-const _FLOW_STEP_ICONS = { running: '◐', done: '✓', failed: '×', pending: '○', skipped: '·' };
-
-function renderFlowRunStep(step) {
-  const status = step.status || 'pending';
-  const icon = _FLOW_STEP_ICONS[status] || '○';
-  const goal = step.goal || '';
-
-  // ⚡ 并行组步 (v0.6.0) · 展开显示组内每路 + 各自状态图标
-  if (Array.isArray(step.branches) && step.branches.length) {
-    const branches = step.branches.map(b => {
-      const bst = b.status || 'pending';
-      const bicon = _FLOW_STEP_ICONS[bst] || '○';
-      const meta = (window._opusWorkshopApps || []).find(a => a.id === (b.app || ''));
-      const bname = b.app_name || (meta && meta.name) || b.app || '';
-      const bgoal = b.goal || '';
-      const berr = b.error || '';
-      return `
-        <div class="flow-run-branch ${bst}">
-          <span class="flow-run-step-status" title="${escHtml(bst)}">${bicon}</span>
-          <span class="flow-run-branch-app">∥ ${escHtml(bname)}</span>
-          ${bgoal ? `<span class="flow-run-branch-goal">${escHtml(bgoal)}</span>` : ''}
-          ${berr ? `<div class="flow-run-step-err">${escHtml(berr)}</div>` : ''}
-        </div>`;
-    }).join('');
-    return `
-      <div class="flow-run-step ${status} is-parallel">
-        <span class="flow-run-step-status" title="${escHtml(status)}">${icon}</span>
-        <span class="flow-run-step-num">#${step.idx || ''}</span>
-        <div class="flow-run-step-body">
-          <div class="flow-run-step-app">⚡ 并行组 · ${step.branches.length} 路同时</div>
-          ${goal ? `<div class="flow-run-step-goal">${escHtml(goal)}</div>` : ''}
-          <div class="flow-run-branches">${branches}</div>
-        </div>
-      </div>
-    `;
-  }
-
-  // ── 单 app 串行步 (原逻辑) ──
-  const appRef = step.app || '';
-  const meta = (window._opusWorkshopApps || []).find(a => a.id === appRef);
-  const appName = (meta && meta.name) ? meta.name : appRef;
-  const err = step.error || '';
-  return `
-    <div class="flow-run-step ${status}">
-      <span class="flow-run-step-status" title="${escHtml(status)}">${icon}</span>
-      <span class="flow-run-step-num">#${step.idx || ''}</span>
-      <div class="flow-run-step-body">
-        <div class="flow-run-step-app">${escHtml(appName)}</div>
-        ${goal ? `<div class="flow-run-step-goal">${escHtml(goal)}</div>` : ''}
-        ${err ? `<div class="flow-run-step-err">${escHtml(err)}</div>` : ''}
-      </div>
-    </div>
-  `;
-}
-
-async function toggleFlowRunsDetail() {
-  const detail = document.getElementById('flowRunsDetail');
-  const btn = document.querySelector('.flow-runs-toggle');
-  if (!detail) return;
-  if (detail.hidden) {
-    detail.hidden = false;
-    _flowRunsDetailOpen = true;
-    if (btn) btn.textContent = '收起 ▴';
-    await refreshFlowRunsDetail();
-  } else {
-    detail.hidden = true;
-    _flowRunsDetailOpen = false;
-    if (btn) btn.textContent = '详情 ▾';
-  }
-}
-window.toggleFlowRunsDetail = toggleFlowRunsDetail;
-
-// 启动轮询 · 立即 fire 一次 + 之后每 3 秒一次 (DOMContentLoaded 后 + 别在没 token 时空跑)
-function _startFlowRunsPoll() {
-  if (_flowRunsTimer) return;
-  pollFlowRuns();
-  _flowRunsTimer = setInterval(pollFlowRuns, _FLOW_RUNS_POLL_MS);
-}
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', _startFlowRunsPoll);
-} else {
-  _startFlowRunsPoll();
-}
 
 // === wish-3fef4bc7 · 真并行多对话 UI ===
 //
@@ -827,6 +437,8 @@ function saveAliases() {
 let sessionMetaCache = {};
 let showArchivedSessions = false;
 let archivedCount = 0;
+// 拉过一次服务端 label 的 sid · 防没 label 的老会话每次渲染重复请求 (断死循环)
+const _metaTried = new Set();
 
 function aliasFor(sid) {
   if (!sid) return '新对话';
@@ -882,7 +494,7 @@ function _setActiveContainer(sid) {
 }
 const $input = document.getElementById('input');
 const $send = document.getElementById('send');
-// 卷三十八 · stop 已合并进 send · 用户 反馈"两个按钮丑" · 一个按钮两种状态
+// 卷三十八 · stop 已合并进 send · BRO 反馈"两个按钮丑" · 一个按钮两种状态
 const $stop = null;
 // wish-4a6331b2 · 图片附件
 const $attachBtn = document.getElementById('attachBtn');
@@ -1078,7 +690,7 @@ if ($attachBtn && $attachFile) {
   }
 }
 
-// 语音输入 → 三模式语音 (听写 / 语音对话 / 会议纪要)
+// wish-41ed72ef · 语音输入 → 卷七十五续六 · 三模式语音 (BRO 2026-07-11 校准语义)
 //   · 语音输入 (dictation): 说完填输入框·手动发 (最初功能·不变);
 //   · 语音对话 (transcribe): 持续听麦克风·你说完停约 1 秒自动发给 AI·
 //       AI 回完继续听 —— hands-free 语音对话·给未来桌面版对话模式留的扣·UI 比会议纪要轻;
@@ -1099,7 +711,7 @@ if ($attachBtn && $attachFile) {
   const $close = document.getElementById('voiceClose');
 
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const SILENCE_MS = 1000;      // 语音对话: 停顿约 1 秒自动发给 AI (给桌面版对话模式留扣)
+  const SILENCE_MS = 1000;      // 语音对话: 停顿约 1 秒自动发给 AI (BRO 定 · 给桌面版对话模式留扣)
   const MODES = {
     dictation:  { label: '语音输入', panel: false, icon: 'ri-mic-line' },
     transcribe: { label: '语音对话', panel: true,  icon: 'ri-chat-voice-line' },   // 持续听 · 停约 1 秒自动发
@@ -1135,7 +747,7 @@ if ($attachBtn && $attachFile) {
   }
   // 面板按钮按 模式 + 是否在听 显隐:
   //   听着时 → 只显示【停止】(语音对话:停止对话 · 会议纪要:停止录制);
-  //   会议纪要停下后 → 显示【整理成纪要/插入/清空】让用户处理文本。
+  //   会议纪要停下后 → 显示【整理成纪要/插入/清空】让 BRO 处理文本。
   function _updateActions() {
     if (!$panel) return;
     const meetingStopped = (mode === 'meeting' && !_listening);
@@ -1248,7 +860,7 @@ if ($attachBtn && $attachFile) {
   }
   // 绑一个 SR 实例并启动。 onend 里【建新实例】重启 (不是复用旧实例 .start()):
   //   Chromium 复用旧实例重启会把上一段 final 再 replay 一次 onresult → 没说话也被当新话发出去
-  //   (曾出现"第一句后自动又发个'查'"的重复 bug)。 新实例 e.results 从零·根治重复。
+  //   (BRO 撞到的"第一句后自动又发个'查'")。 新实例 e.results 从零·根治重复。
   function _bindSR(onResult) {
     const r = _makeSR();
     const gen = _srGen;   // 绑死本代号·换代后这个实例的 onend 一律作废
@@ -1301,7 +913,7 @@ if ($attachBtn && $attachFile) {
     if (typeof send === 'function') send();
     _pauseForReply();                            // 发完就停收音 · 轮到 OPUS 说 · 回完自动接着听
   }
-  // AI 回复期间暂停麦克风 (语音对话该轮流说·回消息时别录音) · 盯 pending·回完自动恢复
+  // AI 回复期间暂停麦克风 (BRO: 语音对话该轮流说·回消息时别录音) · 盯 pending·回完自动恢复
   function _pauseForReply() {
     if (mode !== 'transcribe') return;
     _voicePaused = true; _sawPending = false; _pauseTicks = 0;
@@ -1348,7 +960,7 @@ if ($attachBtn && $attachFile) {
     }
   }
 
-  // (系统音频 getDisplayMedia/MediaRecorder 那套已移除:会议纪要=纯麦克风
+  // (卷七十五续六 · 系统音频 getDisplayMedia/MediaRecorder 那套已移除:BRO 定会议纪要=纯麦克风
   //  录成文本·停止后交给 AI 拆分;线上会议对方声音等后端 ASR 落地再补·不在此纠结。)
 
   // ── 启停总入口 ──
@@ -1418,10 +1030,24 @@ if ($attachBtn && $attachFile) {
         _autosize();
         $panel.hidden = true;
         $input.focus();
+      } else if (act === 'toclient') {
+        // 会议纪要 ↔ 客户时间线打通 · 转写文字一键存成某客户 kind=meeting 条
+        if (typeof pickClient !== 'function') { alert('客户档案模块未加载'); return; }
+        pickClient((cid, name) => {
+          fetch('/dashboard/clients/note', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ client_id: cid, text: txt, kind: 'meeting' }),
+          }).then(r => {
+            if (r.ok) _setRecNote('<i class="ri-check-line"></i> 已存进「' + name + '」的会议记录 · 想要结构化纪要可再点【整理成纪要】', 'done');
+            else alert('存失败 [' + r.status + ']');
+          }).catch(e => alert('网络出错: ' + e.message));
+        });
       } else if (act === 'minutes') {
         $input.value = '【整理会议纪要】下面是会议的语音转写文字，帮我拆分整理成结构化会议纪要：\n'
           + '1) 议题概述  2) 关键结论/决议  3) 待办事项(含负责人与时间)  4) 风险/待确认。\n'
-          + '保留关键人名、数字、日期，语言精炼;转写可能有同音错别字，按语境修正。\n\n---\n' + txt;
+          + '保留关键人名、数字、日期，语言精炼;转写可能有同音错别字，按语境修正。\n'
+          + '整理完若这场会议对应某个已知客户，主动问我要不要用 manage_client 把纪要存成他的会议记录(kind=meeting)。\n\n---\n' + txt;
         $panel.hidden = true;
         if (typeof send === 'function') send();
       }
@@ -1487,13 +1113,13 @@ const MUTATING_TOOLS = new Set([
   'toggle_favorite', 'generate_report', 'expand_trend_to_report',
   'auto_pipeline', 'update_bro_note', 'refresh_radar', 'generate_trends',
   'opus_diary',
-  // 卷五十四 · 工坊产出类补全 (之前漏了·OPUS 造完 app/草稿 看板不自动刷·用户 得手动 F5)
+  // 卷五十四 · 工坊产出类补全 (之前漏了·OPUS 造完 app/草稿 看板不自动刷·BRO 得手动 F5)
   'create_app', 'update_app', 'create_workflow', 'draft_studio',
   'update_self_evolution',
 ]);
 
 // 卷四十六续 10 · dashboard list 通用搜索框 (event delegation · 一次绑全 view 共用)
-// 用户 反馈 (候选 B): "心愿/报告/机会/趋势 加搜索框 · 16 条不算多 · N 大了就刚需"
+// BRO 反馈 (候选 B): "心愿/报告/机会/趋势 加搜索框 · 16 条不算多 · N 大了就刚需"
 // 用法 (在 render*View 函数内 · 在 list 容器上面插入):
 //   renderListFilter({targetSelector: '.wish-card', placeholder: '搜心愿标题或动机...'})
 // 数据驱动: input.value 变化 → 隐藏 textContent 不含 query 的 item · 更新 stats
@@ -1502,7 +1128,7 @@ function renderListFilter(opts) {
   const ph = (opts && opts.placeholder) || '搜索…';
   return `
     <div class="list-filter">
-      <span class="list-filter-icon">🔎</span>
+      <span class="list-filter-icon"><i class="ri-search-line"></i></span>
       <input type="search" class="list-filter-input" data-filter-target="${escHtml(sel)}" placeholder="${escHtml(ph)}" autocomplete="off">
       <span class="list-filter-stats" data-filter-stats></span>
       <button class="list-filter-clear" type="button" data-filter-clear hidden>✕</button>
@@ -1573,29 +1199,77 @@ function showToolProgress(visible) {
     if (btn) btn.textContent = '详情 ▾';
     // 卷四十六续 9 · 隐藏进度条时清掉 ticker (防泄漏)
     _stopToolProgressTicker();
+    _stopBgProgressTicker();
   }
+}
+// 进度条只用 RemixIcon · 把后端进度文案里的 emoji(📡🌀⏳…)映射成内置图标 (BRO 要求统一)
+const _PROGRESS_EMOJI_ICON = {
+  '📡': 'ri-radar-line', '🌐': 'ri-global-line', '🧠': 'ri-brain-line',
+  '🔍': 'ri-search-line', '🌀': 'ri-loader-4-line', '✨': 'ri-sparkling-line',
+  '📊': 'ri-bar-chart-line', '⏳': 'ri-time-line', '📚': 'ri-book-2-line',
+  '💡': 'ri-lightbulb-line', '⚙️': 'ri-settings-3-line', '⚙': 'ri-settings-3-line',
+  '📝': 'ri-file-edit-line', '✅': 'ri-check-line', '🔧': 'ri-tools-line',
+  '🚀': 'ri-rocket-line', '💬': 'ri-chat-3-line', '📥': 'ri-download-line',
+  '🔎': 'ri-search-line', '📶': 'ri-radar-line', '🗂️': 'ri-folder-3-line',
+  '💎': 'ri-vip-diamond-line', '🌊': 'ri-line-chart-line', '🛰️': 'ri-broadcast-line',
+  '🛰': 'ri-broadcast-line', '🌟': 'ri-star-line', '⭐': 'ri-star-line',
+};
+function _iconifyProgress(text) {
+  let html = escHtml(text || '');
+  for (const emo in _PROGRESS_EMOJI_ICON) {
+    if (html.indexOf(emo) !== -1) {
+      html = html.split(emo).join(`<i class="${_PROGRESS_EMOJI_ICON[emo]}"></i>`);
+    }
+  }
+  return html;
 }
 function setToolProgressText(text) {
   const el = document.getElementById('toolProgress');
   if (!el) return;
   const t = el.querySelector('.tool-progress-text');
-  if (t) t.textContent = text;
+  if (t) t.innerHTML = _iconifyProgress(text);
 }
 
-// ② 自主巡航进度 · 把 active_turn 端点回的 progress 快照格式化成进度条文案
+// ② 自主巡航进度 (卷七十五续四) · 把 active_turn 端点回的 progress 快照格式化成进度条文案
 // progress = {label, tool, iteration, elapsed_s, stale_s} · 可能为 null (老 daemon / 刚起没记上)
-function _fmtBgProgress(progress) {
+function _fmtBgProgress(progress, elapsedOverride, staleOverride) {
   if (!progress) return 'OPUS 后台仍在跑这个对话 · 自动刷新中…';
   const label = (progress.label || '').trim() || '跑动中';
   const it = progress.iteration ? ` · 第${progress.iteration}轮` : '';
-  const el = (progress.elapsed_s != null) ? ` · 已${progress.elapsed_s}s` : '';
+  const elapsedS = (elapsedOverride != null) ? elapsedOverride : progress.elapsed_s;
+  const el = (elapsedS != null) ? ` · 已${elapsedS}s` : '';
   // 距上次进度更新 >25s · 多半在等模型出字 (长上下文/深度思考) · 给个明确提示而非"像卡住"
-  const stale = (progress.stale_s != null && progress.stale_s >= 25) ? ' · ⏳等模型响应' : '';
+  const staleS = (staleOverride != null) ? staleOverride : progress.stale_s;
+  const stale = (staleS != null && staleS >= 25) ? ' · ⏳等模型响应' : '';
   return `OPUS 后台跑动中 · ${label}${it}${el}${stale}`;
 }
 
+// 自主巡航读秒本地插值 · 后台 turn 无 SSE·只有每 3s 的 poll 快照·靠这个 1s ticker 让
+// "已Xs"每秒跳(而非 3 秒一跳)。poll 回来时 _startBgProgressTicker 重设快照+基准时间·校准漂移。
+let _bgProgressTickerId = null;
+let _bgProgressState = null; // {sessionId, snapshot, receivedAt}
+function _stopBgProgressTicker() {
+  if (_bgProgressTickerId) { clearInterval(_bgProgressTickerId); _bgProgressTickerId = null; }
+  _bgProgressState = null;
+}
+function _refreshBgProgressTick() {
+  const st = _bgProgressState;
+  if (!st || st.sessionId !== sessionId) return;
+  const p = st.snapshot;
+  if (!p) { setToolProgressText(_fmtBgProgress(null)); return; }
+  const delta = Math.floor((Date.now() - st.receivedAt) / 1000);
+  const elapsed = (p.elapsed_s != null) ? p.elapsed_s + delta : null;
+  const stale = (p.stale_s != null) ? p.stale_s + delta : null;
+  setToolProgressText(_fmtBgProgress(p, elapsed, stale));
+}
+function _startBgProgressTicker(sid, snapshot) {
+  _bgProgressState = { sessionId: sid, snapshot: snapshot, receivedAt: Date.now() };
+  _refreshBgProgressTick();               // 立即刷一次·不等 1s
+  if (!_bgProgressTickerId) _bgProgressTickerId = setInterval(_refreshBgProgressTick, 1000);
+}
+
 // 卷四十六续 9 · 工具进度条「已 X 秒」实时 ticker
-// 用户 反馈: tool_call 触发后 "已 2s" 卡在那不动·应该每秒读秒·新工具开始时清零
+// BRO 反馈: tool_call 触发后 "已 2s" 卡在那不动·应该每秒读秒·新工具开始时清零
 // 实现: state._lastToolMeta 存当前 tool · ticker setInterval(1000) 重算 elapsed
 // tool_result 时 frozen=true 锁定显示总耗时·下个 tool_call 重置
 let _toolProgressTickerId = null;
@@ -1692,6 +1366,449 @@ function toggleToolDetail() {
 }
 window.toggleToolDetail = toggleToolDetail;
 
+// 卷七十二 v3 · 工作流跑时进度 banner (BRO 图2 诉求)
+// 轮询 /workshop/runs · 有 active flow / 最近完成都显示 banner · 点击展开看每 step 进度
+// 卷七十三 P0 (2026-06-10): 异步化后 banner 必须显示 done/failed 通知 · 否则 BRO 等不到回声
+const _FLOW_RUNS_POLL_MS = 3000;
+const _FLOW_RECENT_TERMINAL_MS = 90 * 1000;  // 90s 内的 done/failed 也显示 (BRO 看到结果再消失)
+let _flowRunsTimer = null;
+let _flowRunsActive = [];       // 当前展示集合 (running + 最近 90s 内 done/failed)
+let _flowRunsDetailOpen = false;
+let _flowRunsDetailCache = {};  // run_id → 完整 state (展开时 fetch · 折叠时也保留供下次秒开)
+let _flowRunsDismissed = {};    // run_id → true · BRO 点 "知道了" 后不再 banner
+
+function _flowRunsToken() {
+  try { return localStorage.getItem('opus_token') || ''; } catch (e) { return ''; }
+}
+
+function _isRecentTerminal(run) {
+  const st = run.status || '';
+  if (st !== 'done' && st !== 'failed') return false;
+  const ts = run.updated_at || '';
+  if (!ts) return false;
+  const t = Date.parse(ts);  // ISO 不带时区 · 当本地时间 parse (跟 daemon 同主机)
+  if (isNaN(t)) return false;
+  return (Date.now() - t) < _FLOW_RECENT_TERMINAL_MS;
+}
+
+// 卷七十三 P2 (2026-06-10) · 跨 tab 提醒 (BRO 切走 tab 也能感知 flow 跑完)
+let _flowRunsPrevStatuses = {};       // run_id → 上次 poll 看到的 status · 用来 diff "running → done/failed"
+let _flowRunsTitleTimer = null;
+const _ORIGINAL_TITLE = document.title;
+
+function _flashTitle(prefix) {
+  if (_flowRunsTitleTimer) { clearInterval(_flowRunsTitleTimer); _flowRunsTitleTimer = null; }
+  let on = true;
+  document.title = prefix + ' ' + _ORIGINAL_TITLE;
+  _flowRunsTitleTimer = setInterval(() => {
+    on = !on;
+    document.title = on ? (prefix + ' ' + _ORIGINAL_TITLE) : _ORIGINAL_TITLE;
+  }, 1100);
+}
+
+function _stopTitleFlash() {
+  if (_flowRunsTitleTimer) { clearInterval(_flowRunsTitleTimer); _flowRunsTitleTimer = null; }
+  document.title = _ORIGINAL_TITLE;
+}
+
+// BRO 切回 tab 自动停闪 (有把 tab 切走的场景才需要闪 · 看了就不闪)
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) _stopTitleFlash();
+});
+
+async function pollFlowRuns() {
+  const token = _flowRunsToken();
+  if (!token) return;
+  try {
+    // 拉最近 12 条 (不过滤 status) · 客户端筛 running + 最近 terminal
+    const r = await fetch('/workshop/runs?limit=12', {
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    const all = data.runs || [];
+
+    // diff: 上轮 running 这轮 done/failed → 触发 title 闪烁通知 (跨 tab 感知 · BRO 切走也能看到)
+    let flashKind = null;  // 'done' / 'failed' / null
+    for (const r of all) {
+      const prev = _flowRunsPrevStatuses[r.run_id];
+      if (prev === 'running' && (r.status === 'done' || r.status === 'failed')) {
+        // failed 优先级高 (覆盖 done · 一组 run 任意一个失败先报失败)
+        if (r.status === 'failed') { flashKind = 'failed'; break; }
+        if (!flashKind) flashKind = 'done';
+      }
+      _flowRunsPrevStatuses[r.run_id] = r.status;
+    }
+    // tab 不在前台时才闪 (前台直接看 banner 即可 · 不打扰)
+    if (flashKind && document.hidden) {
+      _flashTitle(flashKind === 'done' ? '[✓ 跑完]' : '[✗ 失败]');
+    }
+
+    _flowRunsActive = all.filter(r => {
+      if (_flowRunsDismissed[r.run_id]) return false;
+      if (r.status === 'running') return true;
+      return _isRecentTerminal(r);
+    });
+    renderFlowRunsBanner();
+    if (_flowRunsDetailOpen) await refreshFlowRunsDetail();
+  } catch (e) { /* 静默 · 下次 poll 再试 */ }
+}
+
+function renderFlowRunsBanner() {
+  const banner = document.getElementById('flowRunsBanner');
+  const text = document.getElementById('flowRunsText');
+  if (!banner || !text) return;
+  if (_flowRunsActive.length === 0) {
+    banner.hidden = true;
+    _flowRunsDetailOpen = false;
+    const detail = document.getElementById('flowRunsDetail');
+    if (detail) detail.hidden = true;
+    // 状态色复位
+    banner.classList.remove('is-done', 'is-failed', 'is-mixed');
+    return;
+  }
+  banner.hidden = false;
+
+  // 计算混合状态着色: 任意 running → running (紫); 全 done → done (绿); 任意 failed → failed (红)
+  const hasRunning = _flowRunsActive.some(r => r.status === 'running');
+  const hasFailed  = _flowRunsActive.some(r => r.status === 'failed');
+  const allDone    = !hasRunning && !hasFailed && _flowRunsActive.every(r => r.status === 'done');
+  banner.classList.toggle('is-done',   allDone);
+  banner.classList.toggle('is-failed', hasFailed && !hasRunning);
+  banner.classList.toggle('is-mixed',  hasRunning && (hasFailed || _flowRunsActive.some(r => r.status === 'done')));
+
+  // 主文案: 优先报 running · 没 running 就报 done/failed 通知
+  let primary;
+  if (hasRunning) {
+    const r = _flowRunsActive.find(x => x.status === 'running');
+    const prog = `${r.current_step || 0}/${r.total_steps || 0}`;
+    primary = `${r.flow_name || r.flow_id || '(?)'} · 跑中 (${prog})`;
+  } else if (hasFailed) {
+    const r = _flowRunsActive.find(x => x.status === 'failed');
+    primary = `${r.flow_name || r.flow_id || '(?)'} · ✗ 失败在第 ${r.current_step}/${r.total_steps} 步`;
+  } else {
+    const r = _flowRunsActive[0];
+    primary = `${r.flow_name || r.flow_id || '(?)'} · ✓ 跑完 (${r.total_steps} 步)`;
+  }
+  const more = _flowRunsActive.length > 1 ? ` · +${_flowRunsActive.length - 1} 条` : '';
+  text.textContent = primary + more;
+}
+
+// BRO 点"知道了" 把已完成 run 从 banner 撤掉 (running 不许撤 · 还得看进度)
+function dismissFlowRun(runId) {
+  if (!runId) return;
+  _flowRunsDismissed[runId] = true;
+  // 立刻刷一次 · 别等下个 poll tick
+  _flowRunsActive = _flowRunsActive.filter(r => r.run_id !== runId);
+  renderFlowRunsBanner();
+  if (_flowRunsDetailOpen) {
+    const detail = document.getElementById('flowRunsDetail');
+    if (detail) {
+      const cards = detail.querySelectorAll('.flow-run-card');
+      cards.forEach(c => { if (c.dataset.runId === runId) c.remove(); });
+    }
+  }
+}
+window.dismissFlowRun = dismissFlowRun;
+
+async function refreshFlowRunsDetail() {
+  const detail = document.getElementById('flowRunsDetail');
+  if (!detail) return;
+  const token = _flowRunsToken();
+  if (!token) return;
+  // 为每条 active run 拉详情 (并发)
+  const promises = _flowRunsActive.map(async (summary) => {
+    try {
+      const r = await fetch('/workshop/runs/' + encodeURIComponent(summary.run_id), {
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+      if (!r.ok) return null;
+      const full = await r.json();
+      _flowRunsDetailCache[summary.run_id] = full;
+      return full;
+    } catch (e) { return _flowRunsDetailCache[summary.run_id] || null; }
+  });
+  const fulls = (await Promise.all(promises)).filter(Boolean);
+  if (fulls.length === 0) {
+    detail.innerHTML = '<div style="color:#888;font-size:11px;padding:6px 0">拉详情失败 · 下次 poll 再试</div>';
+    return;
+  }
+  detail.innerHTML = fulls.map(renderFlowRunCard).join('');
+}
+
+function renderFlowRunCard(state) {
+  const status = state.status || 'running';
+  const cur = state.current_step || 0;
+  const total = state.total_steps || (state.steps || []).length || 0;
+  const stepsHtml = (state.steps || []).map(s => renderFlowRunStep(s)).join('');
+  const fname = state.flow_name || state.flow_id || '(?)';
+  const runId = state.run_id || '';
+  // 卷七十三 P0 · done/failed 给一个"知道了"按钮 · BRO 看完撤掉 banner (running 不给)
+  const dismissBtn = (status === 'done' || status === 'failed')
+    ? `<button class="flow-run-dismiss" type="button" onclick="dismissFlowRun('${escAttr(runId)}')" title="收到 · 撤掉这条 banner 通知">知道了</button>`
+    : '';
+  return `
+    <div class="flow-run-card" data-run-id="${escAttr(runId)}">
+      <div class="flow-run-head">
+        <span class="flow-run-name">${escHtml(fname)}</span>
+        <span class="flow-run-status ${status}">${escHtml(status)}</span>
+        <span class="flow-run-progress">${cur}/${total}</span>
+        ${dismissBtn}
+      </div>
+      <div class="flow-run-steps">${stepsHtml}</div>
+    </div>
+  `;
+}
+
+function escAttr(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+const _FLOW_STEP_ICONS = { running: '◐', done: '✓', failed: '×', pending: '○', skipped: '·' };
+
+function renderFlowRunStep(step) {
+  const status = step.status || 'pending';
+  const icon = _FLOW_STEP_ICONS[status] || '○';
+  const goal = step.goal || '';
+
+  // ⚡ 并行组步 (v0.6.0) · 展开显示组内每路 + 各自状态图标
+  if (Array.isArray(step.branches) && step.branches.length) {
+    const branches = step.branches.map(b => {
+      const bst = b.status || 'pending';
+      const bicon = _FLOW_STEP_ICONS[bst] || '○';
+      const meta = (window._opusWorkshopApps || []).find(a => a.id === (b.app || ''));
+      const bname = b.app_name || (meta && meta.name) || b.app || '';
+      const bgoal = b.goal || '';
+      const berr = b.error || '';
+      return `
+        <div class="flow-run-branch ${bst}">
+          <span class="flow-run-step-status" title="${escHtml(bst)}">${bicon}</span>
+          <span class="flow-run-branch-app">∥ ${escHtml(bname)}</span>
+          ${bgoal ? `<span class="flow-run-branch-goal">${escHtml(bgoal)}</span>` : ''}
+          ${berr ? `<div class="flow-run-step-err">${escHtml(berr)}</div>` : ''}
+        </div>`;
+    }).join('');
+    return `
+      <div class="flow-run-step ${status} is-parallel">
+        <span class="flow-run-step-status" title="${escHtml(status)}">${icon}</span>
+        <span class="flow-run-step-num">#${step.idx || ''}</span>
+        <div class="flow-run-step-body">
+          <div class="flow-run-step-app">⚡ 并行组 · ${step.branches.length} 路同时</div>
+          ${goal ? `<div class="flow-run-step-goal">${escHtml(goal)}</div>` : ''}
+          <div class="flow-run-branches">${branches}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ── 单 app 串行步 (原逻辑) ──
+  const appRef = step.app || '';
+  const meta = (window._opusWorkshopApps || []).find(a => a.id === appRef);
+  const appName = (meta && meta.name) ? meta.name : appRef;
+  const err = step.error || '';
+  return `
+    <div class="flow-run-step ${status}">
+      <span class="flow-run-step-status" title="${escHtml(status)}">${icon}</span>
+      <span class="flow-run-step-num">#${step.idx || ''}</span>
+      <div class="flow-run-step-body">
+        <div class="flow-run-step-app">${escHtml(appName)}</div>
+        ${goal ? `<div class="flow-run-step-goal">${escHtml(goal)}</div>` : ''}
+        ${err ? `<div class="flow-run-step-err">${escHtml(err)}</div>` : ''}
+      </div>
+    </div>
+  `;
+}
+
+async function toggleFlowRunsDetail() {
+  const detail = document.getElementById('flowRunsDetail');
+  const btn = document.querySelector('.flow-runs-toggle');
+  if (!detail) return;
+  if (detail.hidden) {
+    detail.hidden = false;
+    _flowRunsDetailOpen = true;
+    if (btn) btn.textContent = '收起 ▴';
+    await refreshFlowRunsDetail();
+  } else {
+    detail.hidden = true;
+    _flowRunsDetailOpen = false;
+    if (btn) btn.textContent = '详情 ▾';
+  }
+}
+window.toggleFlowRunsDetail = toggleFlowRunsDetail;
+
+// 启动轮询 · 立即 fire 一次 + 之后每 3 秒一次 (DOMContentLoaded 后 + 别在没 token 时空跑)
+function _startFlowRunsPoll() {
+  if (_flowRunsTimer) return;
+  pollFlowRuns();
+  _flowRunsTimer = setInterval(pollFlowRuns, _FLOW_RUNS_POLL_MS);
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _startFlowRunsPoll);
+} else {
+  _startFlowRunsPoll();
+}
+
+// ── 卷七十二 v4 · 0.2.0 · 新对话引导卡 onboarding panel ──
+// 设计:
+//   messages 容器空 (新对话 / 切到没消息的会话) → 显示 panel · 一旦有消息 → hide
+//   点卡 → 把模板填入输入框 + focus + 不直接发 (BRO 可改完再发)
+//   模板可自定义 · 存 localStorage 'opus.onboarding.templates' (P2-8)
+const _ONBOARD_DEFAULT_TEMPLATES = {
+  create_app: '我想造一个应用 · 用来 [描述用途 · 例如「自动抓 B 站热门评论」]\n输入是: [列字段]\n输出是: [列字段]\n你帮我设计 system_prompt + 工具白名单 + ui_form_schema · 然后落到工坊。',
+  create_flow: '我想搭一条工作流 · 名字叫 [起一个]\n流程是:\n  1. [第一步用什么 app · 干啥]\n  2. [第二步用什么 app · 干啥]\n  3. ...\n你帮我用 create_workflow 落档 · 我看了再说跑不跑。',
+  chat_about: '聊聊吧 · 你是谁 · 你能做什么 · 你跟其他 AI 有什么不一样\n你的名字有什么来历 · 沉淀闭环是什么\n说人话 · 不要列表式答 · 像跟朋友吹水',
+  list_capability: '把工坊里所有应用 (list_apps detailed=true) 和工作流 (list_flows detailed=true) 都列给我看看\n按用途分类 · 我想知道哪些能直接跑 · 哪些是给工作流当零件用的',
+  // 卷七十二 v5 · 2026-06-10 · 第 5 张卡 · 换皮肤 (BRO 想让用户知道有这个功能)
+  // 模板里"换成 X 主题"会触发前端 matchThemePreset 强意图判断 · 直接切主题不发给 LLM
+  // 想要 LLM 帮造自定义配色就明确说 "你帮我设计一套 ... 输出 ```theme JSON```"
+  change_theme: '把界面主题换成 [暗紫 / 经典灰 / 白天 / 护眼暖黄 / 海洋蓝 / 森林绿 / 日落橙 / 粉色 / 粉白] 主题\n或者 · 你帮我设计一套 [描述风格 · 例如「赛博蓝紫·像 dune 沙漠」] 的配色 · 输出 ```theme JSON``` 代码块',
+  // 卷七十四续二十五 · 第 6 张卡 · 能力发现 (入口 A · 主动去外面找 SKILL/开源项目升级自己)
+  discover_skill: '帮我找点能升级你自己的新能力 (调 discover_skill 工具) · 去 GitHub / 开源社区找 SKILL / 工具 / 开源项目\n方向: [可留空让你按我画像定 · 或填: 比如 视频口播 / figma 插件 / 调试工作流]\n按我的画像评估 · 靠谱的出一份发现报告 + 落地建议 (playbook / app / 心愿)',
+};
+
+function _loadOnboardingTemplates() {
+  try {
+    const raw = localStorage.getItem('opus.onboarding.templates');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return Object.assign({}, _ONBOARD_DEFAULT_TEMPLATES, parsed);
+    }
+  } catch (e) {}
+  return _ONBOARD_DEFAULT_TEMPLATES;
+}
+
+function _saveOnboardingTemplates(custom) {
+  try {
+    localStorage.setItem('opus.onboarding.templates', JSON.stringify(custom));
+  } catch (e) {}
+}
+
+// 卷七十二 v5 · 2026-06-10 · BRO bug: 「新对话没显示快捷卡」
+// 病根: #messages 容器里包的是多个 .session-msgs[data-sid="..."] 子容器 (每 session 一个 · hidden 切换)
+//      不是消息本身。 messages.children.length === 0 几乎永远 false →  panel 永远 hidden
+//      雪上加霜: newConversation 调 addSys('新对话开始 ...') 把 sys 消息加到 visible .session-msgs · 雪上加霜
+// 修法: ① 判断改成 "visible .session-msgs 里有没有实质的 .msg.bro/.msg.opus" (排除 sys/thinking 的兜底文案)
+//      ② observer subtree:true · 因消息加到子容器 · #messages 直接 childList 不触发
+//      ③ observer 也监听 'hidden' 属性 · 因为切 session 是改 hidden 不是 childList
+function refreshOnboardingPanel() {
+  const panel = document.getElementById('onboardingPanel');
+  const messages = document.getElementById('messages');
+  if (!panel || !messages) return;
+  // 看 visible 的 .session-msgs · 没有就 fallback 看整个 #messages 直接子里有没有真实消息
+  let scope = messages.querySelector(':scope > .session-msgs:not([hidden])');
+  if (!scope) scope = messages;
+  // 实质消息 = bro / opus (排除 thinking 占位 / sys 兜底文案 / err / 工具卡)
+  const hasRealMsg = !!scope.querySelector('.msg.bro, .msg.opus:not(.thinking)');
+  panel.hidden = hasRealMsg;
+}
+window.refreshOnboardingPanel = refreshOnboardingPanel;
+
+function _initOnboardingPanel() {
+  const panel = document.getElementById('onboardingPanel');
+  if (!panel) return;
+  // 点卡 → 模板入输入框
+  panel.addEventListener('click', (ev) => {
+    const card = ev.target.closest('[data-template]');
+    if (!card) return;
+    const key = card.dataset.template;
+    const tmpls = _loadOnboardingTemplates();
+    const text = tmpls[key] || '';
+    if (!text) return;
+    const input = document.getElementById('input');
+    if (!input) return;
+    input.value = text;
+    input.focus();
+    // 把 cursor 放到 [ ] 占位符的第一个 · 方便 BRO 直接改
+    const placeholderIdx = text.indexOf('[');
+    if (placeholderIdx >= 0) {
+      const endIdx = text.indexOf(']', placeholderIdx);
+      if (endIdx > placeholderIdx) input.setSelectionRange(placeholderIdx + 1, endIdx);
+    }
+    // 触发自动 resize (input.addEventListener 'input' 通常已绑)
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  // 改模板按钮
+  const customizeBtn = document.getElementById('onboardingCustomize');
+  if (customizeBtn) customizeBtn.addEventListener('click', _openOnboardingCustomizer);
+  // 监听 messages 变化 (有消息 → hide · 清空 → show)
+  // 必须 subtree:true · 消息加到 .session-msgs 子容器里
+  // 必须 attributes:'hidden' · 切 session 是改 hidden 不是 childList
+  const messages = document.getElementById('messages');
+  if (messages && 'MutationObserver' in window) {
+    new MutationObserver(refreshOnboardingPanel).observe(messages, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['hidden'],
+    });
+  }
+  refreshOnboardingPanel();
+}
+
+function _openOnboardingCustomizer() {
+  const tmpls = _loadOnboardingTemplates();
+  // v5 · 2026-06-10 · emoji → remix icon · BRO 铁律
+  const labels = {
+    create_app: '<i class="ri-puzzle-fill"></i> 创建一个应用',
+    create_flow: '<i class="ri-flow-chart"></i> 搭建一个工作流',
+    chat_about: '<i class="ri-chat-3-fill"></i> 聊聊日常 · 认识 OPUS',
+    list_capability: '<i class="ri-book-shelf-fill"></i> 看看我能做什么',
+    change_theme: '<i class="ri-palette-fill"></i> 换个皮肤',
+    discover_skill: '<i class="ri-search-eye-line"></i> 找新能力升级自己',
+  };
+  // 简单的 modal 弹窗 · 不引第三方库
+  let modal = document.getElementById('onboardingCustomizerModal');
+  if (modal) modal.remove();
+  modal = document.createElement('div');
+  modal.id = 'onboardingCustomizerModal';
+  modal.className = 'onboarding-modal-mask';
+  const rows = Object.keys(labels).map(k => `
+    <div class="onboarding-tmpl-row">
+      <label>${labels[k]}</label>
+      <textarea data-tmpl-key="${k}" rows="4">${String(tmpls[k] || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>
+    </div>
+  `).join('');
+  modal.innerHTML = `
+    <div class="onboarding-modal">
+      <div class="onboarding-modal-head">
+        <span><i class="ri-settings-3-line"></i> 改新对话引导卡模板</span>
+        <button type="button" class="onboarding-modal-x">×</button>
+      </div>
+      <div class="onboarding-modal-body">
+        ${rows}
+        <div class="onboarding-modal-hint">改完点保存 · 存在浏览器本地 (localStorage) · 不上传 daemon</div>
+      </div>
+      <div class="onboarding-modal-foot">
+        <button type="button" class="onboarding-modal-reset">恢复默认</button>
+        <button type="button" class="onboarding-modal-save">保存</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('.onboarding-modal-x').addEventListener('click', () => modal.remove());
+  modal.querySelector('.onboarding-modal-reset').addEventListener('click', () => {
+    Object.keys(_ONBOARD_DEFAULT_TEMPLATES).forEach(k => {
+      const ta = modal.querySelector(`[data-tmpl-key="${k}"]`);
+      if (ta) ta.value = _ONBOARD_DEFAULT_TEMPLATES[k];
+    });
+  });
+  modal.querySelector('.onboarding-modal-save').addEventListener('click', () => {
+    const custom = {};
+    modal.querySelectorAll('[data-tmpl-key]').forEach(ta => {
+      custom[ta.dataset.tmplKey] = ta.value.trim();
+    });
+    _saveOnboardingTemplates(custom);
+    modal.remove();
+  });
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initOnboardingPanel);
+} else {
+  _initOnboardingPanel();
+}
+
 // escHtml 兜底 · 万一前面没定义 (实际上后面定义了 · 这里防御一下)
 if (typeof escHtml === 'undefined') {
   window.escHtml = function(s) {
@@ -1738,13 +1855,13 @@ function openSettingsModal() {
 }
 function closeSettings() { $modal.classList.remove('open'); }
 
-// 卷三十七 · 中栏 settings view (用户 截图反馈 · 弹窗装不下 · 改 tabs)
+// 卷三十七 · 中栏 settings view (BRO 截图反馈 · 弹窗装不下 · 改 tabs)
 let _settingsTab = 'llm';  // 'llm' | 'access' | 'data'
 function openSettingsView() {
   currentView = 'settings';
   // 清左 nav 高亮 · settings 不属于任何 dashboard 维度
   document.querySelectorAll('.nav-item.active').forEach(b => b.classList.remove('active'));
-  // 给底部 ⚙ 按钮加个高亮 · 让 用户 知道当前在设置里
+  // 给底部 ⚙ 按钮加个高亮 · 让 BRO 知道当前在设置里
   document.querySelectorAll('.nav-settings-btn').forEach(b => b.classList.add('active'));
   renderSettingsView();
 }
@@ -2107,13 +2224,13 @@ function renderLlmConfigCard(c) {
   `;
 }
 
-// 卷三十八 · 一键导入过去用过的 AiHubMix 模型 · 用户 反馈"以后还会用·默认放进来"
-// 弹一个对话框让 用户 填一次 AiHub key · 然后批量加 4-5 条 config (pinned=false 默认)
+// 卷三十八 · 一键导入过去用过的 AiHubMix 模型 · BRO 反馈"以后还会用·默认放进来"
+// 弹一个对话框让 BRO 填一次 AiHub key · 然后批量加 4-5 条 config (pinned=false 默认)
 async function quickImportAihubMix() {
-  // 让 用户 输入 AiHub key (一次 · 公用)
+  // 让 BRO 输入 AiHub key (一次 · 公用)
   const key = await opusPrompt({
     title: '一键导入 AiHubMix 常用模型',
-    message: '会自动加入: Sonnet 4.6 / Opus 4.7 / Kimi K2.6 / GLM 5.1 / GPT-5.5\n这些都是 用户 过去用过的 · 加进来默认不勾右上角 · 编辑里可以单独激活。\n\n填一次 AiHub key · 这些 configs 共用 (你也可以加完单独改 key):',
+    message: '会自动加入: Sonnet 4.6 / Opus 4.7 / Kimi K2.6 / GLM 5.1 / GPT-5.5\n这些都是 BRO 过去用过的 · 加进来默认不勾右上角 · 编辑里可以单独激活。\n\n填一次 AiHub key · 这些 configs 共用 (你也可以加完单独改 key):',
     placeholder: 'sk-xxx · AiHubMix 平台 key · 留空 = 只加占位不设 key',
     okText: '一键加',
     cancelText: '取消',
@@ -2138,7 +2255,7 @@ async function quickImportAihubMix() {
           provider_kind: 'openai',
           base_url: 'https://aihubmix.com/v1',
           model: p.model,
-          api_key: apiKey || '___placeholder___',  // 后端要求 key 非空 · 占位让 用户 之后改
+          api_key: apiKey || '___placeholder___',  // 后端要求 key 非空 · 占位让 BRO 之后改
           preset_id: 'aihubmix',
           pinned: false,
           set_active: false,
@@ -2620,7 +2737,7 @@ function renderSettingsAccess() {
         <div class="field-hint">默认 confirm 档下·GUARD 工具会在 WebUI 弹卡片等你点；这个 guard 预设连 GUARD 也自动放行·只在没人能点(无人值守)时才用</div>
       </div>
 
-      <!-- wish-f563a56d · trusted commands · 用户 临时给 OPUS 30min/24h/永久 信任窗口 -->
+      <!-- wish-f563a56d · trusted commands · BRO 临时给 OPUS 30min/24h/永久 信任窗口 -->
       <div class="llm-section-head" style="margin-top:18px"><h3>🔓 Trusted Commands · 信任清单</h3></div>
       <div class="field-hint" style="margin-bottom:8px">
         当 auto_confirm=auto 时·CONFIRM 档命令 (例如 <code>pip install</code>) 会被 skip。
@@ -2643,7 +2760,7 @@ function renderSettingsAccess() {
         </div>
         <div style="flex:2;min-width:180px">
           <label style="font-size:11px">理由 (审计用 · 可选)</label>
-          <input id="accTrustReason" type="text" placeholder="例如: 用户 让 OPUS 装 duckduckgo_search">
+          <input id="accTrustReason" type="text" placeholder="例如: BRO 让 OPUS 装 duckduckgo_search">
         </div>
         <button class="btn-primary" onclick="addTrustedCommand()">➕ 加入</button>
       </div>
@@ -2841,10 +2958,6 @@ async function wechatGenQr() {
     });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
-    if (!d || !d.qr_data_uri) {
-      box.innerHTML = '<div class="field-hint">' + escHtml((d && d.note) || '微信二维码暂时不可用 · 这是可选的高级功能') + '</div>';
-      return;
-    }
     box.innerHTML = `
       <img src="${d.qr_data_uri}" alt="微信扫码" style="width:220px;height:220px;border-radius:10px;background:#fff;padding:8px"/>
       <div class="field-hint" style="margin-top:6px">用<b>手机微信</b>扫这个码 → 授权。约 3-4 分钟有效。</div>
@@ -3492,7 +3605,7 @@ async function _loadSessionHistory(sid) {
       addSys(`(已加载 ${data.count} 条历史 turn · 这条对话已结束 · 输入新消息可继续)`, s.$container);
     }
     // 卷四十六续 3 · batch 渲染期间 addMsg 走软滚 · scrollTop 一直在 0 · isNearBottom 一直 false
-    // 加载完后必须 force 一次 · 否则 用户 看到的是最旧的消息(顶部) · 不是最新(底部)
+    // 加载完后必须 force 一次 · 否则 BRO 看到的是最旧的消息(顶部) · 不是最新(底部)
     scrollToBottom(s.$container, { force: true });
   } catch (e) {
     s.$container.innerHTML = '';
@@ -3643,8 +3756,8 @@ function _loadActiveStateFromCurrentSession() {
 }
 
 // wish-3fef4bc7 · tab bar 渲染 · ≥2 个有内容的 session 时显示
-// 有内容的标准: container 里有 children (用户 至少发过一条 / load 过历史 / 正在跑)
-// 空的临时 cid 不计入 (用户 点 + 但还没发消息时不该立刻冒出 tab)
+// 有内容的标准: container 里有 children (BRO 至少发过一条 / load 过历史 / 正在跑)
+// 空的临时 cid 不计入 (BRO 点 + 但还没发消息时不该立刻冒出 tab)
 function _renderTabBar() {
   const $bar = document.getElementById('chatTabBar');
   if (!$bar) return;
@@ -3679,6 +3792,14 @@ function _renderTabBar() {
     titleSpan.className = 'tab-title';
     titleSpan.textContent = sid.startsWith('tmp-') ? '新对话' : aliasFor(sid);
     tab.appendChild(titleSpan);
+    // 没名字的真会话 (F5 后恢复 / 后台跑的 spawn / 微信来的) · 拉一次服务端 label
+    // 把裸 api-xxxx 换成对话名 · _metaTried 保证只拉一次 (断"拉不到→反复拉"死循环)
+    if (!sid.startsWith('tmp-') && !sessionAliases[sid]
+        && !(sessionMetaCache[sid] && sessionMetaCache[sid].label)
+        && !_metaTried.has(sid)) {
+      _metaTried.add(sid);
+      _ensureSessionMeta(sid);
+    }
     if (s.pending) {
       const spin = document.createElement('span');
       spin.className = 'tab-spinner';
@@ -3702,7 +3823,7 @@ function _renderTabBar() {
 }
 
 // 关闭一个 tab · 不删 server 历史 · 只清前端 state + DOM container
-// 跑着的不让关 (用户 应该先 ⏹ 停 · 再关)
+// 跑着的不让关 (BRO 应该先 ⏹ 停 · 再关)
 function _closeTabSession(sid) {
   if (!sid) return;
   const s = _sessions[sid];
@@ -3748,7 +3869,7 @@ async function _maybeStartPoll(state) {
 // 卷五十六 · 2026-06-03 · 重启重连专用 · 带重试探测 active_turn (治本"重启后假死/输入没锁")。
 // 病根: 续写 turn 可能比 daemon "alive" 晚几百 ms 才注册 active_turn · 旧的单次探测(_maybeStartPoll)
 // 一查没有就放弃 + 解锁 · 之后 turn 才起来 · 前端却定格 idle 不再查 → 卡假死直到手动刷新。
-// 这里在 windowMs 窗口内每 1s 重试一次 · 期间始终保持输入锁定(用户 要求: 重启后默认不让发消息 · 先证明
+// 这里在 windowMs 窗口内每 1s 重试一次 · 期间始终保持输入锁定(BRO 要求: 重启后默认不让发消息 · 先证明
 // 任务在跑)。 一旦发现 active turn 就 _startSessionPoll(锁定 + 起 3s 轮询)·返 true; 窗口内始终没有 → 返 false
 // (调用方据此才解锁)。 跟 _maybeStartPoll(稳态切对话用·单次)分开 · 不污染普通切换。
 async function _probeAndStartPoll(state, windowMs = 8000) {
@@ -3788,7 +3909,7 @@ function _startSessionPoll(state, turnId) {
   state.currentTurnId = turnId || null;
   state.pending = true;
   state.currentAbortController = null;  // polling 没 fetch · triggerStop 走 daemon abort
-  // 同步 visible UI · 让 用户 看到 ⏹ + lock
+  // 同步 visible UI · 让 BRO 看到 ⏹ + lock
   if (sessionId === state.sessionId) {
     pending = true;
     currentTurnId = turnId || null;
@@ -3828,7 +3949,7 @@ function _stopSessionPoll(state) {
     setInputLocked(false);
     showToolProgress(false);
   } else if (wasPending) {
-    // 后台 polling 完成 + 用户 不在看 · 弹 toast + tab 红点 (跟 send finally 后台完成对齐)
+    // 后台 polling 完成 + BRO 不在看 · 弹 toast + tab 红点 (跟 send finally 后台完成对齐)
     state.hasUnreadCompletion = true;
     if (typeof _showCompletionToast === 'function') {
       try { _showCompletionToast(state); } catch {}
@@ -3867,7 +3988,7 @@ async function _pollSession(state) {
   // ② 自主巡航进度 (卷七十五续四) · 后台 turn 没 SSE · 把 daemon 记的最新一步写进进度条 ·
   // 不再干巴巴"仍在后台跑" · 而是"正在: xxx · 第N轮 · 已Xs" · 长任务也看得出没卡死
   if (hasActive && sessionId === state.sessionId) {
-    setToolProgressText(_fmtBgProgress(progress));
+    _startBgProgressTicker(state.sessionId, progress); // 本地 1s 读秒·每 3s poll 校准
   }
   // 2) 拉历史 · 看 turn count 变了没
   try {
@@ -3908,6 +4029,7 @@ async function _pollSession(state) {
   } catch {}
   // 3) 没 active turn 了 · 停 polling (这是收尾 · _pollSession 不再触发)
   if (!hasActive) {
+    _stopBgProgressTicker();
     _stopSessionPoll(state);
   }
 }
@@ -4430,13 +4552,13 @@ try { window.opusMdRender = mdRender; } catch (e) { /* 顶层环境异常 · 跳
 
 // wish-3fef4bc7 · helpers 接受可选 target container · 不传 = 操作 active session ($msgs)
 // 这样 78 处现存调用不动 · send 内的调用传 state.$container 即可路由到正确 session
-// 卷四十六续 3 · opts.forceScroll · 默认软滚 (用户 拖滚动条看历史时 LLM 输出不强行刷回底)
+// 卷四十六续 3 · opts.forceScroll · 默认软滚 (BRO 拖滚动条看历史时 LLM 输出不强行刷回底)
 //   用户发消息 / 错误 / 必须看到的卡片 → 调方显式传 { forceScroll: true }
 function addMsg(role, text, className, ts, target, opts) {
   const div = document.createElement('div');
   div.className = 'msg ' + (className || role);
   const cls = className || role;
-  // 卷三十：OPUS 输出走 markdown 渲染（用户 输入 / sys / err / 工具卡保持原样）
+  // 卷三十：OPUS 输出走 markdown 渲染（BRO 输入 / sys / err / 工具卡保持原样）
   const useMd = cls.includes('opus') && !cls.includes('thinking');
   if (useMd) {
     const body = document.createElement('div');
@@ -4467,7 +4589,7 @@ function addMsg(role, text, className, ts, target, opts) {
 }
 function addSys(text, target) { return addMsg('sys', text, null, null, target); }
 
-// 卷四十六 续 3 · "粘性底部"滚动 · 用户 拖滚动条看历史时不强行刷回底部
+// 卷四十六 续 3 · "粘性底部"滚动 · BRO 拖滚动条看历史时不强行刷回底部
 //
 // 第一版坑 (kill 重写): 错以为 state.$container (.session-msgs) 是滚动元素
 //   实际上 .session-msgs 没 overflow · #messages 才是 overflow-y:auto · 真正滚动的是 #messages
@@ -4561,8 +4683,8 @@ function appendReasoningDelta(state, textPiece) {
   const body = state.currentStreamingReasoning.body;
   body.appendChild(document.createTextNode(textPiece));
   // reasoning-body 自身有 max-height + overflow-y · 必须把它自己也滚到底
-  // 否则外层 $msgs 滚到底 · 但 reasoning 窗口内仍卡在原位 用户 看不到新字
-  // 卷四十六续 3 · body 跟外层都走软滚 · 用户 拖到上面看历史时不打扰
+  // 否则外层 $msgs 滚到底 · 但 reasoning 窗口内仍卡在原位 BRO 看不到新字
+  // 卷四十六续 3 · body 跟外层都走软滚 · BRO 拖到上面看历史时不打扰
   if (isNearBottom(body)) {
     requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
   }
@@ -4572,7 +4694,7 @@ function appendReasoningDelta(state, textPiece) {
 function finalizeStreamingReasoning(state) {
   if (!state || !state.currentStreamingReasoning) return;
   state.currentStreamingReasoning.div.classList.remove('streaming');
-  // 完成后默认收起 · 减视觉噪音 · 用户 想看再展开
+  // 完成后默认收起 · 减视觉噪音 · BRO 想看再展开
   const body = state.currentStreamingReasoning.body;
   const header = state.currentStreamingReasoning.div.querySelector('.reasoning-header');
   if (body && header) {
@@ -4586,7 +4708,7 @@ function finalizeStreamingReasoning(state) {
 }
 
 // 卷四十六续 4 · 流式 markdown 实时渲染 · "streaming-safe close"
-// 老版本 appendAssistantDelta 用 textContent · 等 finalize 才 mdRender · 流式期间 用户 看到的是裸字面 (丑)
+// 老版本 appendAssistantDelta 用 textContent · 等 finalize 才 mdRender · 流式期间 BRO 看到的是裸字面 (丑)
 // 新版本 streaming 期间每帧也 mdRender · 但末尾未闭合的 ``` / ` / ** / __ 临时补尾
 // 让中途 markdown 也能渲染成正常 HTML · 不补尾会让 ```python\nprint( 半截字面飘
 //
@@ -4623,7 +4745,7 @@ function _streamingSafeClose(text) {
 //
 // 卷五十四 · WebUI 卡死优化: 老版每个 rAF (~16ms) 就对**全文** mdRender + innerHTML 重建一次。
 // 长回复 (几千~几万字) 时·这是 O(n) 的全量重解析·每秒 ~60 次·主线程被吃满 → 页面卡顿/卡死。
-// 改成按当前长度自适应时间节流: 越长间隔越大 · 用户 看不出 100~350ms 的 markdown 延迟·
+// 改成按当前长度自适应时间节流: 越长间隔越大 · BRO 看不出 100~350ms 的 markdown 延迟·
 // 但主线程压力降一个数量级。 finalize 时仍走完整渲染·不丢内容。
 function _scheduleAssistantRerender(state) {
   if (!state || state._assistantRerenderScheduled) return;
@@ -4689,7 +4811,7 @@ function finalizeStreamingAssistant(state, finalText) {
 }
 
 // 卷三十六 · DeepSeek thinking mode · 渲染一条 reasoning 气泡
-// 折叠式 · 默认展开 · 用户 可点收起；样式偏淡灰 + 斜体 · 跟正文区分
+// 折叠式 · 默认展开 · BRO 可点收起；样式偏淡灰 + 斜体 · 跟正文区分
 function renderReasoningBubble(text, options = {}, target) {
   if (!text) return null;
   const div = document.createElement('div');
@@ -4752,7 +4874,7 @@ function parseSseStream(buffer) {
 
 // wish-3fef4bc7 · 真并行多对话 UI · send 函数核心改造
 // 旧: 闭包局部变量 (assistantBubbles / sawAssistantText / 等) + 全局 currentAbortController
-// 新: 全部进 _sessions[mySid] · send 闭包绑定 state · 用户 切对话不影响 send 跑·send 后台继续写自己的 state
+// 新: 全部进 _sessions[mySid] · send 闭包绑定 state · BRO 切对话不影响 send 跑·send 后台继续写自己的 state
 async function send() {
   const text = $input.value.trim();
   if (!text && _attachments.length === 0) return;  // wish-4a6331b2 · 有附件时允许空文字
@@ -4777,22 +4899,22 @@ async function send() {
   }
   const state = _getOrCreateSession(mySid);
   if (state.pending) return;  // 这个 session 已经在跑 · 不能再发
-  // wish-3fef4bc7 follow-up · 用户 自己开始发新消息 · 停 polling 让 SSE 接管 (polling 落后 SSE)
+  // wish-3fef4bc7 follow-up · BRO 自己开始发新消息 · 停 polling 让 SSE 接管 (polling 落后 SSE)
   if (typeof _stopSessionPoll === 'function') _stopSessionPoll(state);
 
-  // visible 检查·会因为 用户 切对话而变。 注意 hello 后 state.sessionId 会从 cid 变真 sid · 同步会改 sessionId · 这俩仍同步
+  // visible 检查·会因为 BRO 切对话而变。 注意 hello 后 state.sessionId 会从 cid 变真 sid · 同步会改 sessionId · 这俩仍同步
   const _isVisible = () => sessionId === state.sessionId;
 
-  // user msg push 到这个 session 的 container (无论 visible · 因为 用户 切回时要看到自己的输入)
-  // 卷四十六续 3 · 用户 主动发消息 = 强制贴底 (期望看到自己刚发的话 · 且 reset"粘性底部")
-  // wish-4a6331b2 · 图片附件显示在 用户 气泡里（直接插 img 不用 markdown——base64 太长会撑爆 md parser）
+  // user msg push 到这个 session 的 container (无论 visible · 因为 BRO 切回时要看到自己的输入)
+  // 卷四十六续 3 · BRO 主动发消息 = 强制贴底 (期望看到自己刚发的话 · 且 reset"粘性底部")
+  // wish-4a6331b2 · 图片附件显示在 BRO 气泡里（直接插 img 不用 markdown——base64 太长会撑爆 md parser）
   // wish-4a6331b2 · 等所有附件异步读完再发
   if (_attachmentPromises.length > 0) await Promise.all(_attachmentPromises);
   _attachmentPromises.length = 0;
   const _hasImgs = _attachments.length > 0;
   addMsg('bro', text || '（图片）', null, new Date(), state.$container, { forceScroll: true });
   if (_hasImgs) {
-    // wish-41ed72ef · 用户 气泡附件渲染：图片缩略图 + 文档卡片
+    // wish-41ed72ef · BRO 气泡附件渲染：图片缩略图 + 文档卡片
     const _broBubble = state.$container ? state.$container.lastElementChild : null;
     if (_broBubble && _broBubble.classList.contains('bro')) {
       const _attWrap = document.createElement('div');
@@ -4870,7 +4992,7 @@ async function send() {
     scrollToBottom(state.$container);
   };
 
-  // 用户主动 abort 标记 · 用户 按 ⏹ 设置成 true · catch 块据此判别"主动中断"vs"网络错"
+  // 用户主动 abort 标记 · BRO 按 ⏹ 设置成 true · catch 块据此判别"主动中断"vs"网络错"
   let userAbortedSelf = false;
 
   try {
@@ -4933,7 +5055,7 @@ async function send() {
       addMsg('opus', '(OPUS 没说话)', null, null, state.$container);
     }
   } catch (e) {
-    // 用户 主动 stop = userAbortedSelf · catch 不算错
+    // BRO 主动 stop = userAbortedSelf · catch 不算错
     // AbortError + !userAbortedSelf 也可能是关页面之类·按"主动取消"对待
     if (e.name === 'AbortError' || userAbortedSelf) {
       // 不算错 · 正常路径 (包括 OPUS 调 request_restart 时 tool_call 主动 abort 的)
@@ -4980,7 +5102,7 @@ async function send() {
       $input.focus();
       showToolProgress(false);
     } else {
-      // 后台跑完 + 用户 不在看 = 标记 unread + toast 提示
+      // 后台跑完 + BRO 不在看 = 标记 unread + toast 提示
       state.hasUnreadCompletion = true;
       if (typeof _showCompletionToast === 'function') {
         try { _showCompletionToast(state); } catch {}
@@ -5168,7 +5290,7 @@ async function send() {
         goBtn.innerHTML = '<i class="ri-quill-pen-line"></i> 过收尾三问';
         goBtn.onclick = () => {
           const prompt = '回头看刚才这轮 — 过一遍收尾三问，该沉淀的沉淀：\n'
-            + '① 我这次有没有透露/出现新信号该记进 OWNER-NOTEBOOK？(update_bro_note)\n'
+            + '① 我这次有没有透露/出现新信号该记进 BRO-NOTEBOOK？(update_bro_note)\n'
             + '② 这次的操作流程/踩坑值得抽成 playbook 吗？(extract_playbook)\n'
             + '③ 有没有暴露我的能力缺口该记心愿？(wish_add)\n'
             + '确实啥也不用沉淀就说一句为什么。';
@@ -5211,8 +5333,8 @@ async function send() {
         scrollToBottom(state.$container, { force: false });
 
         // 卷四十六 续 14 补丁 III + V · OPUS 调 request_restart 工具 = daemon ~2 秒后自爆 ·
-        // SSE 必断 · 红框是预期不是 bug。 用户 看到红框容易再按 UI 重启按钮 · 第二次
-        // 重启会打断 follow_up turn (用户 实测 2026-05-26 15:20-21 撞过这个坑)。
+        // SSE 必断 · 红框是预期不是 bug。 BRO 看到红框容易再按 UI 重启按钮 · 第二次
+        // 重启会打断 follow_up turn (BRO 实测 2026-05-26 15:20-21 撞过这个坑)。
         // 修法 (续 14 补丁 V · 2026-05-26 15:45):
         //   - 检测到 request_restart tool_call (非 dry_run) → 设 flag · disable 按钮 · 提示
         //   - **立刻 fire-and-forget waitForDaemonAfterRestartTool(state)** ·
@@ -5270,9 +5392,9 @@ async function send() {
         break;
       }
 
-      // sub-agent (run_app) 边界事件 · 用户痛点:
+      // 卷七十三 P0-3 (2026-06-10) · sub-agent (run_app) 边界事件 · BRO 痛点:
       // 之前 run_app 跑 6-8 轮 sub-agent 内部 LLM · 主对话 ticker 文字一直变 (各种 read_file/write_file)
-      // 但没人告诉用户 "这是 sub-agent 在内部跑" · 用户看着混乱 = 怀疑死了 / 跑偏了
+      // 但没人告诉 BRO "啊这是 sub-agent 在内部跑" · BRO 看着混乱 = 怀疑死了 / 跑偏了
       // 修: 在消息流插一条清晰的"▶ 子任务启动 / ✓ 子任务完成" 边界条 · 含 app 名 / 耗时 / token / warning
       case 'app_run_start': {
         if (!state.$container) break;
@@ -5451,7 +5573,7 @@ function setSendButtonState(state) {
   }
 }
 
-// 卷三十八 · 流式期间锁输入 · 用户 反馈"按说他完成后我才能发新消息 (像 cursor 这样)"
+// 卷三十八 · 流式期间锁输入 · BRO 反馈"按说他完成后我才能发新消息 (像 cursor 这样)"
 function setInputLocked(locked) {
   $input.readOnly = !!locked;
   $input.classList.toggle('is-locked', !!locked);
@@ -5463,7 +5585,7 @@ function setInputLocked(locked) {
 }
 
 // 卷三十八 · 停止两段式 (跟之前 $stop 的逻辑一样 · 抽出来)
-// wish-3fef4bc7 · 改成走 active session 的 state · 停的是 用户 当前看的这个对话
+// wish-3fef4bc7 · 改成走 active session 的 state · 停的是 BRO 当前看的这个对话
 // 切到另一个 session 后 ⏹ 停的是新 active · 不动后台 session
 // follow-up: polling 模式下 (浏览器 F5 后没 SSE 但 daemon 有 active turn) · 走 daemon abort + 立刻 force poll
 async function triggerStop() {
@@ -5551,8 +5673,8 @@ $input.addEventListener('keydown', e => {
 //   - 砍掉 cockpit · 信息雷达/趋势/报告这些"全部 →"不再切换全屏
 //   - 左导航 nav-rail · 8+1 个维度纵向按钮
 //   - 中详情 detail-pane · 点导航 → 这里显示该维度完整列表
-//   - 右对话 chat-pane · 永远显示 · 用户 边看左边内容边右边打字
-//   - "<i class="ri-brain-fill"></i> 成长日记" 新维度（cognition）· 读 OWNER-NOTEBOOK
+//   - 右对话 chat-pane · 永远显示 · BRO 边看左边内容边右边打字
+//   - "<i class="ri-brain-fill"></i> OPUS 日记" 新维度（cognition）· 读 BRO-NOTEBOOK
 // ──────────────────────────────────────────────────────────────
 
 const $detailPane = document.getElementById('detailPane');
@@ -5563,57 +5685,67 @@ const $navGroups = document.getElementById('navGroups');
 // 维度元信息 · 这是唯一真相 · 改这里就够
 // 卷二十九 · 五分组架构（市场咨询面 → 内部决策面 → 产品生产层 → 用户运营层 → 能力扩展层）
 const NAV_GROUPS = [
-  // 卷三十三补丁 · 用户 让重排：执行落地排到运营后 · 因为它是"已开干 + 自我观察"
-  // 这个最贴近 用户 本人的事·应该在外部信息 → 决策 → 生产 → 用户之后·作为收束。
+  // 卷三十三补丁 · BRO 让重排：执行落地排到运营后 · 因为它是"已开干 + 自我观察"
+  // 这个最贴近 BRO 本人的事·应该在外部信息 → 决策 → 生产 → 用户之后·作为收束。
   { id: 'market',    label: '市场信息' },
   { id: 'ability',   label: '能力对照' },
   { id: 'studio',    label: '出品工坊' },
   { id: 'ops',       label: '用户运营' },
-  { id: 'execution', label: '执行落地' },  // 已开干 + 成长日记 + 收藏
+  { id: 'execution', label: '执行落地' },  // 已开干 + OPUS 日记 + 收藏
   { id: 'plugins',   label: '插件库' },
 ];
 
 const DOMAIN_META = {
-  // 市场信息 · 外部信号 · 本工程看世界的眼睛 · 不含 OPUS 自己的观察
+  // 市场信息 · 外部信号 · Daemonkey 看世界的眼睛 · 不含它自己的观察
   radar:         { icon: '<i class="ri-radar-fill"></i>', label: '信息雷达', section: 'market', stub: false },
   trends:        { icon: '<i class="ri-line-chart-fill"></i>', label: '今日趋势', section: 'market', stub: false },
   reports:       { icon: '<i class="ri-article-fill"></i>', label: '报告库',   section: 'market', stub: false },
   calendar:      { icon: '<i class="ri-calendar-fill"></i>', label: '信息日历', section: 'market', stub: false },
-  // 能力对照 · 内部决策 · 市场 × 用户 能力的交叉
+  // 能力对照 · 内部决策 · 市场 × BRO 能力的交叉
   opportunities: { icon: '<i class="ri-diamond-fill"></i>', label: '掘金机会', section: 'ability', stub: false },
   feasibility:   { icon: '<i class="ri-bar-chart-fill"></i>', label: '可行性分析', section: 'ability', stub: false },
+  // 私有文档知识库 · 第二大脑 · 灌进来的资料喂掘金脑/可行性 · 与掘金同组让"资料→决策"这条线可见
+  knowledge:     { icon: '<i class="ri-book-2-fill"></i>', label: '知识库', section: 'ability', stub: false },
   // 出品工坊 · 产品生产
   // 卷四十四 K stage 2a · 4 老维度 (content/design/dev/docs) 收进工坊主页"<i class="ri-archive-fill"></i> 应用"tab
   // 它们的 dashboard 端点 GET /dashboard/<id> 仍然有效 (workshop 内部 fetch 直拉)
-  // 但 NAV_GROUPS 没 'apps' 组 · 所以从左导航 hidden · 跟 用户 当前需求一致
+  // 但 NAV_GROUPS 没 'apps' 组 · 所以从左导航 hidden · 跟 BRO 当前需求一致
   workshop:  { icon: '<i class="ri-magic-fill"></i>', label: '出品工坊', section: 'studio', stub: false },
   content:   { icon: '<i class="ri-film-fill"></i>', label: '内容制作', section: 'apps', stub: false },
   design:    { icon: '<i class="ri-palette-fill"></i>', label: '产品设计', section: 'apps', stub: false },
   dev:       { icon: '<i class="ri-terminal-box-fill"></i>', label: '产品开发', section: 'apps', stub: false },
   docs:      { icon: '<i class="ri-file-text-fill"></i>', label: '文档撰写', section: 'apps', stub: false },
-  // 用户运营 · 等先有产品
+  // 用户运营 · 客户档案(合伙人记得每个客户 · notes 进记忆 · 资料可挂到客户名下)
+  clients:   { icon: '<i class="ri-contacts-book-2-fill"></i>', label: '客户档案', section: 'ops', stub: false },
   service:   { icon: '<i class="ri-team-fill"></i>', label: '用户运营', section: 'ops', stub: true,
                note: '等先有产品再做用户运营' },
-  // 执行落地 · 卷三十三 · 闭环反馈独立维度 · 卷三十三补丁 · 成长日记搬这里
-  //   因为"OPUS 对 用户 的观察"跟"用户 真正在跑的项目"是同一码事——
+  // 执行落地 · 卷三十三 · 闭环反馈独立维度 · 卷三十三补丁 · OPUS 日记搬这里
+  //   因为"OPUS 对 BRO 的观察"跟"BRO 真正在跑的项目"是同一码事——
   //   都是「自我视角」·跟外部信号（radar/trends/reports）分开
   execution:     { icon: '<i class="ri-refresh-fill"></i>', label: '执行反馈', section: 'execution', stub: false },
   scheduled_tasks: { icon: '<i class="ri-timer-2-fill"></i>', label: '定时任务', section: 'execution', stub: false },
-  cognition:     { icon: '<i class="ri-brain-fill"></i>', label: '成长日记', section: 'execution', stub: false },
   favorites:     { icon: '<i class="ri-star-fill"></i>', label: '收藏夹',   section: 'execution', stub: false },
+  // ── 成长档案 (depot hub) · 把 日记/心愿/沉淀位/技能库 并成一个入口 · 内部标签切换 ──
+  // 这 4 个本就是「OPUS 自己积累/沉淀的东西」· 并成一栏减少侧边栏拥挤 (BRO 2026-07-11)
+  // 子维度 navHidden · 不单独占导航位 · 但 DOMAIN_META 条目保留 · loadDepot 仍复用它们的 render fn
+  depot:         { icon: '<i class="ri-seedling-fill"></i>', label: '成长档案', section: 'execution', stub: false },
+  cognition:     { icon: '<i class="ri-brain-fill"></i>', label: 'OPUS 日记', section: 'execution', stub: false, navHidden: true },
   // 卷三十五 · OPUS 自我演化心愿单 · "我想装这个能力"
-  // 跟 cognition 同组 · 因为都是「OPUS 自己的视角」
-  wishlist:      { icon: '<i class="ri-lightbulb-fill"></i>', label: '心愿单', section: 'execution', stub: false },
-  sinks:         { icon: '<i class="ri-archive-drawer-fill"></i>', label: '沉淀位',   section: 'execution', stub: false },
+  wishlist:      { icon: '<i class="ri-lightbulb-fill"></i>', label: 'OPUS 心愿', section: 'execution', stub: false, navHidden: true },
+  sinks:         { icon: '<i class="ri-archive-drawer-fill"></i>', label: '沉淀位',   section: 'execution', stub: false, navHidden: true },
+  // 技能库 · playbook 沉淀查看器 · 灌/召回仍走 NLP·这里只读+可删
+  playbooks:     { icon: '<i class="ri-tools-fill"></i>', label: '技能库', section: 'execution', stub: false, navHidden: true },
   // 插件库 · 能力扩展 · OPUS 自己用产品开发能写新插件回填这里
   plugins:   { icon: '<i class="ri-puzzle-fill"></i>', label: '插件库', section: 'plugins', stub: false },
 };
 
-// 雷达 / 机会的领域元信息（与 workers/info_radar.DOMAIN_META 保持对齐）
-// 只内置 self-evolve·其余领域都是用户在相遇 / 对话里挖出来后动态新建的·
-// 渲染时未命中这里就走 `|| {fallback}`（用服务端返回的 label/icon/color）。
+// 卷二十八 · 雷达 / 机会的领域元信息（与 workers/info_radar.DOMAIN_META 保持对齐）
 const RADAR_DOMAINS_META = {
-  // self-evolve · 看 GitHub 同类工程的镜子（唯一内置）
+  'ai':              { icon: '<i class="ri-robot-fill"></i>', label: 'AI / 大模型',  color: '#9f7aea' },
+  'super-individual':{ icon: '<i class="ri-rocket-fill"></i>', label: '超个体 / 创业', color: '#4fd1c5' },
+  'game-money':      { icon: '🎮', label: '游戏掘金',     color: '#ed8936' },
+  'wildcard':        { icon: '✨', label: '杂项观察',     color: '#fc8181' },
+  // 卷三十四 · self-evolve · OPUS 看 GitHub 同类工程的镜子
   'self-evolve':     { icon: '<i class="ri-tools-fill"></i>', label: '自我演化',     color: '#63b3ed' },
 };
 
@@ -5640,6 +5772,7 @@ function renderNav() {
     let hasItems = false;
     for (const [id, m] of Object.entries(DOMAIN_META)) {
       if (m.section !== grp.id) continue;
+      if (m.navHidden) continue;  // 合并进 depot hub 的子维度 · 不单独占导航位
       hasItems = true;
       const btn = document.createElement('button');
       btn.className = 'nav-item' + (id === currentView ? ' active' : '')
@@ -5788,7 +5921,7 @@ document.addEventListener('keydown', (e) => {
 // 卷四十六 续 3 · wish-2a4d8c1e · inline confirm UI
 // LLM 撞 CONFIRM 级 tool 时 · daemon push 'confirm_request' SSE event
 // 这里渲染 inline 卡片 (含风险/规避两块 + 4 按钮 + 拒绝备注框)
-// 用户 点按钮 → POST /turns/{turn_id}/confirm → 卡片折叠 + daemon 继续 turn
+// BRO 点按钮 → POST /turns/{turn_id}/confirm → 卡片折叠 + daemon 继续 turn
 // ─────────────────────────────────────────────────────────
 
 function _confirmEl(tag, cls, html) {
@@ -5802,7 +5935,9 @@ function renderConfirmCard(data, state) {
   if (!state || !state.$container) return null;
   if (!data || !data.tool_call_id) return null;
 
-  // 对话流内联 · 用户钉死: 不要弹窗/全屏遮罩 (遮罩在 daemon 重启 / turn 中断时收不到 confirm_resolved → 残留 fixed 层锁死整页) · 卡片直接进消息流
+  // 卷七十四 (2026-06-12) · BRO 钉死: 改回对话流内联 · 不要弹窗/全屏遮罩
+  // 卷七十三 P0-2 的满屏遮罩在 daemon 重启 / turn 中断时收不到 confirm_resolved → backdrop 残留 fixed 层锁死整页
+  // 保留: risk / mitigation / 4-5 按钮 / 拒绝备注框 (BRO 12:05 钉死的)
   const wrap = document.createElement('div');
   wrap.className = 'msg confirm-card';
   wrap.dataset.toolCallId = data.tool_call_id;
@@ -5815,7 +5950,7 @@ function renderConfirmCard(data, state) {
   head.querySelector('.confirm-tool').textContent = data.tool_name || '?';
   wrap.appendChild(head);
 
-  // tier 原因 (例 "CONFIRM tier · 默认需要 用户 确认")
+  // tier 原因 (例 "CONFIRM tier · 默认需要 BRO 确认")
   if (data.tier_reason) {
     const tr = _confirmEl('div', 'confirm-tier');
     tr.textContent = data.tier_reason;
@@ -5839,7 +5974,7 @@ function renderConfirmCard(data, state) {
     wrap.appendChild(det);
   }
 
-  // 风险说明 (用户 12:05 反馈钉死必须有这块)
+  // 风险说明 (BRO 12:05 反馈钉死必须有这块)
   const risk = (data.risk_explanation || '').trim();
   const riskBlock = _confirmEl('div', risk ? 'confirm-block confirm-risk' : 'confirm-block confirm-risk confirm-block-empty');
   const riskLabel = _confirmEl('div', 'confirm-block-label');
@@ -5850,7 +5985,7 @@ function renderConfirmCard(data, state) {
   riskBlock.appendChild(riskBody);
   wrap.appendChild(riskBlock);
 
-  // 规避策略 (用户 12:05 反馈钉死必须有这块)
+  // 规避策略 (BRO 12:05 反馈钉死必须有这块)
   const mit = (data.mitigation || '').trim();
   const mitBlock = _confirmEl('div', mit ? 'confirm-block confirm-mit' : 'confirm-block confirm-mit confirm-block-empty');
   const mitLabel = _confirmEl('div', 'confirm-block-label');
@@ -5927,10 +6062,10 @@ function renderConfirmCard(data, state) {
 
   // 状态行
   const status = _confirmEl('div', 'confirm-status');
-  status.textContent = '等待决议 · 30min 后自动拒绝';
+  status.textContent = '等待 BRO 决议 · 30min 后自动拒绝';
   wrap.appendChild(status);
 
-  // 直接进消息流末尾 · 无遮罩 (不会锁死页面) · 滚到视野确保看得到
+  // 直接进消息流末尾 · 无遮罩 (不会锁死页面) · 滚到视野确保 BRO 看得到
   state.$container.appendChild(wrap);
   scrollToBottom(state.$container);
   try { wrap.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* noop */ }
@@ -5992,7 +6127,7 @@ function collapseConfirmCard(card, decision, reason, autoTimeout, result) {
   card.classList.remove('confirm-card-submitting');
   card.classList.add('confirm-card-resolved');
 
-  // 关闭中央模态 + 移除遮罩 + 把 inline 占位转成"已决议"记录条
+  // 卷七十三 P0-2 · 关闭中央模态 + 移除遮罩 + 把 inline 占位转成"已决议"记录条
   if (card.classList.contains('confirm-modal')) {
     if (card._backdrop && card._backdrop.parentNode) {
       card._backdrop.classList.remove('confirm-modal-backdrop-show');
@@ -6000,31 +6135,34 @@ function collapseConfirmCard(card, decision, reason, autoTimeout, result) {
       setTimeout(() => { if (card._backdrop && card._backdrop.parentNode) card._backdrop.remove(); }, 200);
     }
     card.classList.remove('confirm-modal-show');
-    // 模态本体延迟 remove · 让淡出动画跑完 · 同时把"已决议摘要"渲染到 inline 占位上
+    // 模态本体延迟 remove · 让淡出动画跑完 · 同时把"已决议摘要" 渲染到 inline 占位上
     setTimeout(() => { if (card.parentNode === document.body) card.remove(); }, 200);
-    // 把渲染目标切到占位行 (用户滚消息流时这里留痕)
+    // 把渲染目标切到占位行 (BRO 滚消息流时这里留痕)
     if (card._placeholder) {
       const ph = card._placeholder;
       ph.innerHTML = '';  // 清空 "等待 + 重新打开" 内容
       ph.classList.add('confirm-placeholder-resolved');
+      // 后续 collapseConfirmCard 剩余的渲染逻辑 (label / reason / trust note) 都 append 到 ph
+      // 让 card 变成一个临时容器 · 渲染完 transfer 到 ph
       card.__renderInto = ph;
     }
   }
 
   const labelMap = {
-    approve_once: '<i class="ri-check-fill"></i> 批准 (只这次)',
-    trust_30min: '⏰ 批准 + 信任 30min',
-    trust_24h: '<i class="ri-calendar-fill"></i> 批准 + 信任 24h',
-    trust_permanent: '♾ 永久信任 ⚠',
-    deny: '<i class="ri-close-fill"></i> 拒绝',
+    approve_once: '<i class="ri-check-fill"></i> BRO 批准 (只这次)',
+    trust_30min: '⏰ BRO 批准 + 信任 30min',
+    trust_24h: '<i class="ri-calendar-fill"></i> BRO 批准 + 信任 24h',
+    trust_permanent: '♾ BRO 永久信任 ⚠',
+    deny: '<i class="ri-close-fill"></i> BRO 拒绝',
   };
   let label = labelMap[decision] || decision;
   if (autoTimeout) label = '⏱ 超时 auto-deny (30min 未响应)';
 
   const toolName = (card.querySelector('.confirm-tool') || {}).textContent || '';
-  // 模态版本: 渲染目标改成 inline 占位 (不再渲染到将要 remove 的 modal card)
+  // 卷七十三 P0-2 · 模态版本: 渲染目标改成 inline 占位 (不再渲染到将要 remove 的 modal card)
   const renderHost = card.__renderInto || card;
   if (renderHost !== card) {
+    // 模态模式: renderHost 已经在占位上 · card 不再展示内容
     card = renderHost;
   } else {
     card.innerHTML = '';
@@ -6187,7 +6325,7 @@ function collapseConfirmCard(card, decision, reason, autoTimeout, result) {
 //   1. _loadSessionHistory reload 当前 session (拿到 inject 的 system notice +
 //      follow_up turn 已落档的内容)
 //   2. _maybeStartPoll → 每 3s reload 看 background turn 跑完没 · 跑完自动停
-//      (复用 wish-3fef4bc7 现成机制 · 用户 不用 F5)
+//      (复用 wish-3fef4bc7 现成机制 · BRO 不用 F5)
 // 内部 timeline (跟 request_restart 工具 _trigger_shutdown_async 对齐):
 //   T+0    工具 return · 这函数 fire
 //   T+0-2  老 daemon 还活着 (delay_sec=2 给 tool result → LLM → session 落档窗口)
@@ -6218,7 +6356,7 @@ async function _waitForBackgroundTurn(sid, timeoutSec = 60) {
 
 async function waitForDaemonAfterRestartTool(state) {
   if (!token) return;
-  // 这期间锁住输入 · 防止 用户 发新 message 打到 dead daemon
+  // 这期间锁住输入 · 防止 BRO 发新 message 打到 dead daemon
   // (finally 块会先 reset pending=false · 但 daemon 还没起 · 必须重锁)
   const sidGuard = (state && state.sessionId) || sessionId;
   if (sidGuard === sessionId) {
@@ -6255,7 +6393,7 @@ async function waitForDaemonAfterRestartTool(state) {
     const sid = (state && state.sessionId) || sessionId;
     if (sid) {
       if (sid === sessionId) {
-        // 重启确认 alive · 但续写可能还在跑 → 保持锁定 · 别让 用户 这时发消息打进半截 turn
+        // 重启确认 alive · 但续写可能还在跑 → 保持锁定 · 别让 BRO 这时发消息打进半截 turn
         setInputLocked(true);
         showToolProgress(true);
         setToolProgressText('OPUS 重启完成 · 正在续写之前的任务…');
@@ -6291,9 +6429,9 @@ async function waitForDaemonAfterRestartTool(state) {
 
 async function restartDaemon() {
   if (!token) { addSys('⚠ 还没设 token · 不能重启 daemon'); return; }
-  // 卷四十六 IV (2026-05-26): 重启对话框加 follow_up_message · 用户 痛点根治
+  // 卷四十六 IV (2026-05-26): 重启对话框加 follow_up_message · BRO 痛点根治
   //   原来 confirm 只能 yes/no · 重启完只 inject system notice · OPUS 不会自动续场
-  //   现在 opusPrompt 让 用户 一并填"重启完想让我做啥" · 串到 /restart-daemon body
+  //   现在 opusPrompt 让 BRO 一并填"重启完想让我做啥" · 串到 /restart-daemon body
   //   留空 = 跟老逻辑一样 · 只重启 · 不跑 background turn
   const followUp = await opusPrompt({
     title: '重启 daemon 进程?',
@@ -6395,7 +6533,7 @@ async function shutdownDaemon() {
 
 // ─────────────────────────────────────────────────────────
 // 卷四十四 G · wish-196213df · UI 回档按钮
-// OPUS 改崩了 daemon · 用户 一键 git reset --hard <prev_commit> + 重启
+// OPUS 改崩了 daemon · BRO 一键 git reset --hard <prev_commit> + 重启
 // ─────────────────────────────────────────────────────────
 async function rollbackDaemon() {
   if (!token) { addSys('⚠ 还没设 token · 不能回档'); return; }
@@ -6428,7 +6566,7 @@ async function rollbackDaemon() {
     return `  ${i + 1}. ${c.short} · ${dateShort}${tag}\n     ${c.msg}`;
   }).join('\n');
   const dirtyHint = info.dirty
-    ? '\n\n⚠ 当前有未 commit 改动 · 回档前会自动 stash (用户 后悔可 git stash pop 恢复)'
+    ? '\n\n⚠ 当前有未 commit 改动 · 回档前会自动 stash (BRO 后悔可 git stash pop 恢复)'
     : '';
   const promptMsg =
     `当前分支: ${info.current_branch}\n最近 5 个 commits:\n\n${lines}` +
@@ -6483,7 +6621,7 @@ async function rollbackDaemon() {
     const body = {
       target_commit: target.sha,
       confirm: true,
-      reason: '用户 clicked UI rollback',
+      reason: 'BRO clicked UI rollback',
     };
     if (followUpMessage) body.follow_up_message = followUpMessage;
     if (sessionId) body.session_id = sessionId;
@@ -6561,7 +6699,7 @@ async function loadCurrentModel() {
     const current = data.current || {};
     _modelOptions = data.options || [];
     // 卷三十八 · 顶栏显示用 cfg.name (友好名) 优先 · fallback model id
-    // 之前是 alias=cfg-xxx · 用户 反馈"丑·要显示模型名"
+    // 之前是 alias=cfg-xxx · BRO 反馈"丑·要显示模型名"
     let display = current.model || '?';
     const matched = _modelOptions.find(o => o.config_id === current.config_id || o.alias === current.config_id);
     if (matched && matched.name) display = matched.name;
@@ -6671,7 +6809,7 @@ function backToChat() {
   renderDetailWelcome();
 }
 
-// nav 徽章数字紧凑显示 · 防止位数膨胀 (用户 2026-06-03)
+// nav 徽章数字紧凑显示 · 防止位数膨胀 (BRO 2026-06-03)
 //   <1000 原样 · 1k~9.9k → 1.2k · ≥1万 → 1.2w
 function fmtBadge(n) {
   n = Number(n) || 0;
@@ -6680,7 +6818,7 @@ function fmtBadge(n) {
   return (Math.round(n / 1000) / 10).toString().replace(/\.0$/, '') + 'w';
 }
 
-// 左侧每个维度的小 badge 数字（刷新）· 显示今日新增 (用户 2026-06-03 · 不要总数)
+// 左侧每个维度的小 badge 数字（刷新）· 显示今日新增 (BRO 2026-06-03 · 不要总数)
 async function refreshNavBadges() {
   if (!token) return;
   try {
@@ -6698,7 +6836,7 @@ async function refreshNavBadges() {
         badge.style.display = '';
         continue;
       }
-      // 徽章只显示「今日新增」· 今天没新增就隐藏 (用户 2026-06-03) · 总数进 hover title
+      // 徽章只显示「今日新增」· 今天没新增就隐藏 (BRO 2026-06-03) · 总数进 hover title
       const tn = Number(d.today_new || 0);
       const tot = Number(d.total || 0);
       if (tn > 0) {
@@ -6711,7 +6849,7 @@ async function refreshNavBadges() {
       }
     }
     // 兜底：不在 cockpit domains 里的 nav item（calendar/workshop/favorites/sinks 等）
-    // renderNav 给它们初始值 · —— 没被上面循环碰过 → 隐藏 (用户 2026-06-03)
+    // renderNav 给它们初始值 · —— 没被上面循环碰过 → 隐藏 (BRO 2026-06-03)
     for (const el of document.querySelectorAll('[id^="navBadge_"]')) {
       if (el.textContent === '·' && el.style.display !== 'none') {
         el.style.display = 'none';
@@ -6726,10 +6864,9 @@ async function refreshNavBadges() {
 // 包含：领域热力图（雷达条目按 domain 分布）+ 掘金机会卡（top 3）+ 维度速览
 function renderDetailWelcome() {
   $detailPane.innerHTML = `
-    <div class="bi-loading bi-init">
-      <div class="bi-init-spin"><i class="ri-loader-4-line"></i></div>
-      <div class="bi-init-title">工作台初始化中…</div>
-      <div class="bi-init-sub">第一次启动要去各个信源抓一圈、热一下数据，通常 <b>1~2 分钟</b>（之后就秒开了）。<br>不用干等——<b>现在就能在右边直接跟我说话</b>，看板会自己填上。</div>
+    <div class="bi-loading">
+      <div style="font-size:18px;margin-bottom:8px"><i class="ri-diamond-fill"></i> 工作室 BI 看板</div>
+      <div style="font-size:12px;color:var(--dim2)">加载中…</div>
     </div>`;
   loadBIDashboard();
 }
@@ -6861,10 +6998,10 @@ function renderBIDashboard(data) {
         </div>
       </div>
 
-      <!-- 元行 (卷五十八续 VIII)：运行状态 + 节律时间线 -->
+      <!-- 元行 (卷五十八续 VIII)：OPUS 自况 + 节律时间线 -->
       <div class="bi-grid-2">
         <div class="bi-card">
-          <div class="bi-card-head"><h3><i class="ri-pulse-fill" style="color:#4FD1C5"></i> 运行状态</h3></div>
+          <div class="bi-card-head"><h3><i class="ri-pulse-fill" style="color:#4FD1C5"></i> OPUS 自况</h3></div>
           <div class="bi-self-grid" id="biSelfBody"><div class="bi-v3-empty">加载中…</div></div>
         </div>
         <div class="bi-card">
@@ -6892,7 +7029,7 @@ function fillBIV3Blocks(data) {
     { id:'radar',   icon:'ri-radar-fill',     color:'var(--opus)',  label:'雷达信号' },
     { id:'trends',  icon:'ri-line-chart-fill', color:'#4FD1C5',     label:'今日趋势' },
     { id:'reports', icon:'ri-article-fill',    color:'#63B3ED',     label:'报告产出' },
-    { id:'wishlist',icon:'ri-lightbulb-fill',  color:'#F6AD55',     label:'心愿单' },
+    { id:'wishlist',icon:'ri-lightbulb-fill',  color:'#F6AD55',     label:'OPUS 心愿' },
     { id:'plugins', icon:'ri-puzzle-fill',     color:'var(--dim)',   label:'已装插件' },
   ];
   const kpiHtml = picks.map(p => {
@@ -6953,7 +7090,7 @@ async function loadBIV3Async() {
     // 卷五十八续 VIII · 新增卡 (各自独立·互不阻塞)
     loadBIMirror();   // A·OPUS 眼里的你
     loadBIClosure();  // B·闭环温度计
-    loadBISelf();     // C·运行状态
+    loadBISelf();     // C·OPUS 自况
   } catch (e) {
     console.error('BI V3 async load error:', e);
   }
@@ -6983,7 +7120,7 @@ async function loadBIMirror() {
   } catch (e) { body.innerHTML = '<div class="bi-v3-empty">网络出错</div>'; }
 }
 
-// B·闭环温度计 · 哪些 OPUS 输出还在等 用户 反应
+// B·闭环温度计 · 哪些 OPUS 输出还在等 BRO 反应
 async function loadBIClosure() {
   const body = document.getElementById('biClosureBody');
   const rateEl = document.getElementById('biClosureRate');
@@ -7007,7 +7144,7 @@ async function loadBIClosure() {
   } catch (e) { body.innerHTML = '<div class="bi-v3-empty">网络出错</div>'; }
 }
 
-// C·运行状态 · token / 会话 / 在线 (拉现有端点·不加后端)
+// C·OPUS 自况 · token / 会话 / 在线 (拉现有端点·不加后端)
 function _biFmtNum(n) {
   n = +n || 0;
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
@@ -7074,7 +7211,7 @@ async function biHeatLoad() {
   biBriefLoad();  // 研判卡片跟着同月同领域 (读缓存·不烧 token)
 }
 
-// 0-100 价值分 → 1-5 星等级 (用户 2026-06-03 · 几百几千没法读·星级一眼懂热度等级)
+// 0-100 价值分 → 1-5 星等级 (BRO 2026-06-03 · 几百几千没法读·星级一眼懂热度等级)
 // 阈值按 info_value 真实分布标定: BASE10 + 源6~22 + 新鲜0~20 + 反馈±·没反馈的新鲜好文 ~50。
 // 若按 85/65 切·几乎全挤在 2-3★、5★ 永不出现 → 星级失效。 这里压低让内容铺满 1-5★:
 //   5★(≥70)=⭐/👍 加持的真精品  4★(≥48)=顶级源新鲜文  3★(≥34)=新鲜常规
@@ -7474,7 +7611,7 @@ function biBriefRender(data) {
 }
 
 // ── 信号流 ──
-// 信号流状态 · 存原始数据 + 领域筛选 + 今日开关 (用户 2026-06-03 · 纯前端过滤·不重新 fetch)
+// 信号流状态 · 存原始数据 + 领域筛选 + 今日开关 (BRO 2026-06-03 · 纯前端过滤·不重新 fetch)
 const _biSig = { trends: [], radar: [], domain: 'all', todayOnly: false };
 
 function fillBISignals(radar, trends) {
@@ -7507,7 +7644,7 @@ function _biSigRenderDomains() {
   if (!box) return;
   const pool = _biSigRadarPool();
   const counts = {};
-  pool.forEach(r => { const d = r.domain || 'self-evolve'; counts[d] = (counts[d] || 0) + 1; });
+  pool.forEach(r => { const d = r.domain || 'ai'; counts[d] = (counts[d] || 0) + 1; });
   const total = pool.length + _biSig.trends.length;
   let html = `<button class="bi-heat-dom${_biSig.domain === 'all' ? ' active' : ''}" onclick="biSigSetDomain('all')"><i class="ri-stack-line"></i> 全部 <i>${total}</i></button>`;
   // 领域按数量从多到少排
@@ -7545,7 +7682,7 @@ function _biSigRender() {
     _biSig.trends.forEach(t => items.push({ dotClass: 'trend', title: t.title || '(趋势)', meta: (t.summary || '').slice(0, 60), url: '' }));
   }
   _biSigRadarPool()
-    .filter(r => _biSig.domain === 'all' || (r.domain || 'self-evolve') === _biSig.domain)
+    .filter(r => _biSig.domain === 'all' || (r.domain || 'ai') === _biSig.domain)
     .forEach(r => items.push({ dotClass: 'radar', title: r.title_zh || r.title || r.title_en || '(信号)', meta: r.source_display || r.source || '', url: r.url || '' }));
 
   if (cnt) cnt.textContent = items.length + ' 条';
@@ -7555,7 +7692,7 @@ function _biSigRender() {
     return;
   }
 
-  // 显示足够多条·让信号流内容超过热力卡高度 → 内部滚动填满·不在卡底留空 (用户 2026-06-03)
+  // 显示足够多条·让信号流内容超过热力卡高度 → 内部滚动填满·不在卡底留空 (BRO 2026-06-03)
   list.innerHTML = items.slice(0, 120).map(it => {
     const u = it.url || '';
     const clk = u ? ` data-url="${escHtml(u)}" onclick="biSignalOpen(this)"` : '';
@@ -7571,13 +7708,13 @@ function _biSigRender() {
   _biBindSignalSync();
 }
 
-// 点信号流条目 → 新标签打开原文 (radar 条目带 url·trend 无原文不可点) ·用户 2026-06-03
+// 点信号流条目 → 新标签打开原文 (radar 条目带 url·trend 无原文不可点) ·BRO 2026-06-03
 function biSignalOpen(el) {
   const u = el && el.dataset ? el.dataset.url : '';
   if (u) window.open(u, '_blank', 'noopener');
 }
 
-// ── 信号流高度跟随热力卡 (用户 2026-06-03 · 正方形格子 + 完美对齐的关键) ──
+// ── 信号流高度跟随热力卡 (BRO 2026-06-03 · 正方形格子 + 完美对齐的关键) ──
 //   热力图格子保持正方形·高度随卡片宽度等比变 (分辨率/对话栏宽度都会变)。
 //   纯 CSS 没法让"另一张卡跟随这张卡的高度"·所以用 ResizeObserver 盯热力卡·
 //   把信号流卡的 height 实时设成跟它一样·信号流内部滚动 → 两卡严格等高·底部对齐·谁都不留空。
@@ -7603,7 +7740,7 @@ function _biBindSignalSync() {
 
 // ── chart.js (defer 本地加载) 就绪等待器 ──
 // 卷五十六 · 2026-06-03 修: chart.umd.min.js 改 defer 后 · BI 首次渲染可能早于 Chart 就绪。
-//   旧逻辑"没就绪就静默 return" → 之后无人重渲 → 雷达/环形图永久空白 (用户 实测撞到)。
+//   旧逻辑"没就绪就静默 return" → 之后无人重渲 → 雷达/环形图永久空白 (BRO 实测撞到)。
 //   改成: 没就绪就挂起 · 轮询等 Chart 到位 (最多 ~6s) · 一到位补渲一次。空白根治。
 function _whenChartReady(cb, _tries) {
   if (typeof Chart !== 'undefined') { cb(); return; }
@@ -7708,7 +7845,7 @@ function fillBITimeline(data) {
   }).join('');
 }
 
-// 卷四十六续 10 · BI 看板"今日动态" digest 卡 (用户 候选 E)
+// 卷四十六续 10 · BI 看板"今日动态" digest 卡 (BRO 候选 E)
 async function loadBIDigest() {
   if (!token) return;
   const slot = document.getElementById('biDigestSlot');
@@ -7743,7 +7880,7 @@ function renderBIDigest(data) {
           <span class="bi-digest-meta">所有维度都安静 · 没有新数据</span>
         </div>
         <div class="bi-digest-empty-inner">
-          用户 · 24h 内 7 个维度都没新增。要不要 ${renderAutopilotInlineBtn()}?
+          BRO · 24h 内 7 个维度都没新增。要不要 ${renderAutopilotInlineBtn()}?
         </div>
       </div>`;
     return;
@@ -7817,7 +7954,7 @@ function renderOppCard(o) {
         <span class="bi-opp-rec">${stars}</span>
       </div>
       <div class="bi-opp-meta">
-        <span title="适配度">${fitIcon} ${o.fit || '?'}</span>
+        <span title="BRO 适配度">${fitIcon} ${o.fit || '?'}</span>
         <span title="投入预估">⏱️ ${effortLabel}</span>
         <span title="收益级别">📈 ${upsideLabel}</span>
       </div>
@@ -7839,7 +7976,7 @@ function injectAndSend(text) {
   }
 }
 
-// 卷四十六续 12 · wish-165ea1f6 phase A · 工坊 form 提交后只填不发 · 用户 自己点 Send
+// 卷四十六续 12 · wish-165ea1f6 phase A · 工坊 form 提交后只填不发 · BRO 自己点 Send
 //   autosend=true → 等价 injectAndSend · autosend=false (默认) → 只塞 input
 function injectChat(text, opts) {
   const autosend = !!(opts && opts.autosend);
@@ -7870,11 +8007,27 @@ function filterRadarByDomain(domain) {
 // 全屏 dashboard view 数据拉取 + 渲染（点"全部 →"时使用）
 // ──────────────────────────────────────────────────────────────
 
+// 拆分安全网 (2026-07-12 · 成长档案→depot.js · 客户档案→clients.js):
+//   升级瞬窗里 (拉到新 chat.html 但 depot.js/clients.js 还没到位·或 core.py 未重启)·
+//   这些跨文件全局可能暂时未定义。用 typeof 兜底 → 优雅提示"重启后刷新"·而不是抛错卡死。
+//   正常情况(两文件先于 chat.js 加载)完全不触发。
+function _splitMissing(name) {
+  if (typeof $dashView === 'undefined' || !$dashView) return;
+  $dashView.innerHTML = `<div class="dash-head"><h2>${name}</h2></div>`
+    + `<div class="dash-empty">这个维度的前端模块正在升级到位<br>重启 daemon 后刷新页面 (F5) 即可恢复。</div>`;
+}
+function _depotTabs(domain) { if (typeof _maybeDepotTabs === 'function') _maybeDepotTabs(domain); }
+
 async function loadDashboard(domain, opts = {}) {
   // 卷五十七 · 2026-06-06 · settings 是伪视图 (进 $detailPane · renderSettingsView 渲染 · 不走 /dashboard/{domain})。
   //   对话里跑工具后的静默刷新 (scheduleDashboardRefresh / stream finally) 会拿 currentView='settings' 调进来
-  //   → fetch /dashboard/settings → 后端没这个域 → 404 → 把 用户 正看的设置页冲成"加载失败 [404]"。 这里直接短路。
+  //   → fetch /dashboard/settings → 后端没这个域 → 404 → 把 BRO 正看的设置页冲成"加载失败 [404]"。 这里直接短路。
   if (!domain || domain === 'settings') return;
+  // 成长档案 hub · 是个"虚拟维度" · 委派给当前激活的子标签 · 顶部补一条标签条
+  if (domain === 'depot') {
+    if (typeof loadDepot === 'function') return loadDepot(typeof _depotActive === 'string' ? _depotActive : 'cognition', opts);
+    return _splitMissing('成长档案');
+  }
   // 卷四十四 K · 切到非 workshop 前·先 unmount 工坊 (释放 ResizeObserver / events)
   if (domain !== 'workshop' && window.OPUS_WORKSHOP_VIEW && window.OPUS_WORKSHOP_VIEW.isMounted()) {
     window.OPUS_WORKSHOP_VIEW.unmount();
@@ -7906,6 +8059,20 @@ async function loadDashboard(domain, opts = {}) {
       if (!r.ok) { $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`; return; }
       const data = await r.json();
       renderSinks(data);
+      _depotTabs('sinks');
+    } catch (e) { $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`; }
+    return;
+  }
+  // OPUS 日记 tab · 没独立端点 · 复用 /dashboard/cognition 数据 · 只渲染日记那块
+  if (domain === 'diary') {
+    try {
+      const r = await fetch(`/dashboard/cognition${opts.refresh ? '?refresh=true' : ''}`, {
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+      if (!r.ok) { $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`; return; }
+      const data = await r.json();
+      if (typeof renderDiary === 'function') renderDiary(data); else return _splitMissing('OPUS 日记');
+      _depotTabs('diary');
     } catch (e) { $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`; }
     return;
   }
@@ -7923,8 +8090,11 @@ async function loadDashboard(domain, opts = {}) {
     else if (domain === 'trends') renderTrends(data);
     else if (domain === 'reports') renderReports(data);
     else if (domain === 'opportunities') renderOpportunities(data);
-    else if (domain === 'cognition') renderCognition(data);
+    else if (domain === 'cognition') { if (typeof renderCognition === 'function') renderCognition(data); else _splitMissing('画像'); }
     else if (domain === 'feasibility') renderFeasibility(data);
+    else if (domain === 'knowledge') renderKnowledge(data);
+    else if (domain === 'clients') { if (typeof renderClients === 'function') renderClients(data); else _splitMissing('客户档案'); }
+    else if (domain === 'playbooks') { if (typeof renderPlaybooks === 'function') renderPlaybooks(data); else _splitMissing('技能库'); }
     else if (domain === 'execution') renderExecution(data);
     else if (domain === 'favorites') renderFavorites(data);
     else if (domain === 'calendar') renderCalendar(data);
@@ -7933,6 +8103,7 @@ async function loadDashboard(domain, opts = {}) {
     else if (domain === 'scheduled_tasks') renderScheduledTasks(data);
     else if (['content', 'design', 'dev', 'docs'].includes(domain)) renderWorkshop(domain, data);
     else renderDashboardStub(domain, data);
+    _depotTabs(domain);
   } catch (e) {
     $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`;
   }
@@ -8053,120 +8224,6 @@ function renderScheduledTasks(data) {
       _schedAction('/dashboard/scheduled_tasks/delete', { task_id: btn.getAttribute('data-id') });
     };
   });
-}
-
-// ── 卷二十六 · <i class="ri-brain-fill"></i> 成长日记 + 我的画像 + 开放问题 ──
-function renderCognition(data) {
-  if (data && data.error) {
-    $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-brain-fill"></i> 成长日记</h2></div>
-      <div class="dash-empty">${escHtml(data.error)}</div>`;
-    return;
-  }
-  const bro = data.bro_profile || {};
-  const diary = data.opus_diary || {};
-  const openQs = data.open_questions || [];
-
-  let html = `
-    <div class="dash-head">
-      <h2><i class="ri-brain-fill"></i> 成长日记 · 我的画像</h2>
-      <span class="meta">${diary.total || (diary.entries || []).length} 条日记 · ${(bro.sections || []).length} 节画像</span>
-      <button onclick="backToChat()">✕ 收起</button>
-      <button onclick="loadDashboard('cognition')">刷新</button>
-    </div>`;
-
-  // 卷四十四 F · wish-bcce1139 · 把 entries 按 type 拆开
-  // iron_rule entries 单独成"工艺铁律"区块·放最顶 (比开放问题还高)
-  // 其余 entries 仍走原"成长日记"区块
-  const allEntries = diary.entries || [];
-  const ironRules = allEntries.filter(e => (e.type || 'reflection') === 'iron_rule');
-  const regularEntries = allEntries.filter(e => (e.type || 'reflection') !== 'iron_rule');
-
-  // 工艺铁律区块 (橙红 · OPUS 给自己立的纪律 · 公开承诺)
-  if (ironRules.length > 0) {
-    html += `
-      <div class="cognition-block cognition-ironrule">
-        <div class="cog-head"><i class="ri-flash-fill"></i> OPUS 的工艺铁律 · ${ironRules.length} 条
-          <span class="cog-source">OPUS 用失败换来的纪律 · 公开承诺</span>
-        </div>
-        <div class="cog-body">`;
-    for (const e of ironRules) {
-      const body = e.body || '';
-      const bodyExcerpt = body.length > 400 ? body.slice(0, 400) + '…' : body;
-      html += `
-        <details class="cog-entry cog-entry-ironrule">
-          <summary>
-            <span class="cog-e-date">${escHtml(e.date || '')}</span>
-            <span class="cog-e-title">${escHtml(e.title || '')}</span>
-          </summary>
-          <div class="cog-e-body">${escHtml(bodyExcerpt)}</div>
-        </details>`;
-    }
-    html += `</div></div>`;
-  }
-
-  // 开放问题（OPUS 当下关注的方向）
-  if (openQs.length > 0) {
-    html += `
-      <div class="cognition-block cognition-open">
-        <div class="cog-head">🚨 OPUS 当下关注 (${openQs.length} 条)</div>
-        <div class="cog-body">`;
-    for (const q of openQs) {
-      html += `
-        <div class="cog-question">
-          <div class="cog-q-section">[${escHtml(q.section || '')}]</div>
-          <div class="cog-q-text">${escHtml(q.text || '')}</div>
-        </div>`;
-    }
-    html += `</div></div>`;
-  }
-
-  // 成长日记 (普通 reflection / learning / idea / mood entries)
-  html += `
-    <div class="cognition-block cognition-diary">
-      <div class="cog-head">📖 成长日记 · 最近 ${regularEntries.length} 条
-        <span class="cog-source">data/cognition/opus-diary.md</span>
-      </div>
-      <div class="cog-body">`;
-  if (regularEntries.length === 0) {
-    html += `<div class="dash-empty">${escHtml(diary.note || '还没写过 · 跟 OPUS 说「记一笔今天的观察」')}</div>`;
-  } else {
-    for (const e of regularEntries) {
-      const body = e.body || '';
-      const bodyExcerpt = body.length > 400 ? body.slice(0, 400) + '…' : body;
-      html += `
-        <details class="cog-entry">
-          <summary>
-            <span class="cog-e-date">${escHtml(e.date || '')}</span>
-            <span class="cog-e-title">${escHtml(e.title || '')}</span>
-          </summary>
-          <div class="cog-e-body">${escHtml(bodyExcerpt)}</div>
-        </details>`;
-    }
-  }
-  html += `</div></div>`;
-
-  // 我的画像 sections
-  html += `
-    <div class="cognition-block cognition-profile">
-      <div class="cog-head">👤 我的画像 · ${(bro.sections || []).length} 节
-        <span class="cog-source">soul/OWNER-NOTEBOOK.md</span>
-      </div>
-      <div class="cog-body">`;
-  if (!bro.exists) {
-    html += `<div class="dash-empty">${escHtml(bro.note || '画像还没同步进来 · 跑 sync-soul.ps1')}</div>`;
-  } else {
-    for (const sec of bro.sections || []) {
-      html += `
-        <details class="cog-section">
-          <summary>${escHtml(sec.heading || '')}</summary>
-          <div class="cog-s-body">${escHtml(sec.body_excerpt || '')}</div>
-        </details>`;
-    }
-  }
-  html += `</div></div>`;
-
-  $dashView.innerHTML = html;
 }
 
 // ── 卷二十六 · 工坊维度 · content / design / dev / docs ──
@@ -8455,21 +8512,21 @@ function renderFeasibility(data) {
 }
 
 async function runFeasibilityFromOpp(opp_id, idx) {
-  // 卷四十六续 9 · 用户 反馈"可行性分析也是不通过 LLM 来跑·我想他和信息雷达今日趋势对齐·都是 LLM 开始呈现思考过程·最后刷新结果"
+  // 卷四十六续 9 · BRO 反馈"可行性分析也是不通过 LLM 来跑·我想他和信息雷达今日趋势对齐·都是 LLM 开始呈现思考过程·最后刷新结果"
   // 旧路径: 直接 fetch /dashboard/feasibility?refresh=true (HTTP 黑盒 · 整个面板空白等 5-15s)
-  // 新路径: injectAndSend → LLM 调 analyze_feasibility 工具 · 用户 看分析过程 · 完成后 MUTATING_TOOLS 自动 reload feasibility view
+  // 新路径: injectAndSend → LLM 调 analyze_feasibility 工具 · BRO 看分析过程 · 完成后 MUTATING_TOOLS 自动 reload feasibility view
   if (opp_id) {
     spawnTask(
       `分析机会 ${opp_id} (第 ${idx} 个) 的可行性 · ` +
       `调 analyze_feasibility 工具 · 参数 action=analyze, opp_id="${opp_id}" · ` +
-      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 用户 真动手`,
+      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 BRO 真动手`,
       `可行性分析 · 机会#${idx}`
     );
   } else {
     spawnTask(
       `分析第 ${idx} 个机会的可行性 · ` +
       `调 analyze_feasibility 工具 · 参数 action=analyze, opp_index=${idx} · ` +
-      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 用户 真动手`,
+      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 BRO 真动手`,
       `可行性分析 · 机会#${idx}`
     );
   }
@@ -8542,15 +8599,16 @@ async function renderFeasibilityDetail(d) {
       </div>`;
 
   // ───────── 卷三十二补丁 · 信源（宪法第 5 条 · 人机认知对齐）─────────
-  // 放在最前面——用户 先看到"这次分析基于什么"·再读 OPUS 的判断
+  // 放在最前面——BRO 先看到"这次分析基于什么"·再读 OPUS 的判断
   const sources = d.sources || {};
   const radarItems = sources.radar_items || [];
   const reportItems = sources.reports || [];
-  const hasSources = radarItems.length > 0 || reportItems.length > 0;
+  const docItems = sources.docs || [];
+  const hasSources = radarItems.length > 0 || reportItems.length > 0 || docItems.length > 0;
   if (hasSources) {
     html += `<div class="feas-block feas-sources">
       <h3>📚 信源 · 这次分析基于的原始信息
-        <span class="feas-sources-hint">点击直达原文 · 用户 可顺着同一根线对齐认知</span>
+        <span class="feas-sources-hint">点击直达原文 · BRO 可顺着同一根线对齐认知</span>
       </h3>`;
     if (radarItems.length) {
       html += `<div class="feas-src-section">
@@ -8589,14 +8647,28 @@ async function renderFeasibilityDetail(d) {
       }
       html += `</div></div>`;
     }
+    if (docItems.length) {
+      html += `<div class="feas-src-section">
+        <div class="feas-src-section-label"><i class="ri-book-2-fill"></i> 私有知识库 (${docItems.length})</div>
+        <div class="feas-src-list">`;
+      for (const dc of docItems) {
+        html += `
+          <div class="feas-src-item feas-src-doc" title="${escHtml(dc.snippet || '')}">
+            <span class="feas-src-ref">[${escHtml(dc.ref_id || '?')}]</span>
+            <span class="feas-src-source">资料</span>
+            <a class="feas-src-link" href="javascript:void(0)" onclick="_kbPreview('${escHtml(dc.doc_id || '')}')">${escHtml((dc.title || '?').slice(0, 80))}</a>
+          </div>`;
+      }
+      html += `</div></div>`;
+    }
     html += `</div>`;
   } else if (sources.collected_at !== undefined) {
-    // 收集了 sources 但什么都没找到——明确告诉 用户·别藏
+    // 收集了 sources 但什么都没找到——明确告诉 BRO·别藏
     html += `<div class="feas-block feas-sources feas-sources-empty">
       <h3>📚 信源</h3>
       <div class="feas-sources-empty-msg">
-        <strong>没找到相关雷达条目 / 报告</strong> · 这次分析信源不足。<br>
-        建议：先让 OPUS 跑一份相关报告 · 或扩大雷达源 · 再重新分析。
+        <strong>没找到相关雷达条目 / 报告 / 私有资料</strong> · 这次分析信源不足。<br>
+        建议：先让 OPUS 跑一份相关报告 · 存点相关资料进知识库 · 或扩大雷达源 · 再重新分析。
       </div>
     </div>`;
   }
@@ -8682,7 +8754,7 @@ async function renderFeasibilityDetail(d) {
   // ───────── 卷三十一 · 未来预期时间轴 ─────────
   const outlook = d.future_outlook || {};
   if (outlook.three_months || outlook.six_months || outlook.one_year) {
-    html += `<div class="feas-block"><h3>🔭 未来预期 · 按 用户 现实节奏</h3>
+    html += `<div class="feas-block"><h3>🔭 未来预期 · 按 BRO 现实节奏</h3>
              <div class="feas-outlook">`;
     const slots = [
       { k: 'three_months', label: '3 个月', dot: '●' },
@@ -8743,7 +8815,7 @@ async function renderFeasibilityDetail(d) {
   if ((d.resources_have && d.resources_have.length) || (d.resources_need && d.resources_need.length)) {
     html += `<div class="feas-block"><h3><i class="ri-archive-fill"></i> 资源</h3>`;
     if (d.resources_have && d.resources_have.length) {
-      html += `<div class="feas-res feas-res-have"><b><i class="ri-checkbox-circle-fill"></i> 已有：</b><ul>`;
+      html += `<div class="feas-res feas-res-have"><b><i class="ri-checkbox-circle-fill"></i> BRO 已有：</b><ul>`;
       for (const x of d.resources_have) html += `<li>${escHtml(x)}</li>`;
       html += `</ul></div>`;
     }
@@ -8819,7 +8891,7 @@ async function renderFeasibilityDetail(d) {
   }
 
   // ───────── 卷三十一 · 闭环反馈区 ─────────
-  // 用户 在这里直接更新决策 / 实际产出 / 经验·下次 LLM 跑会读到这些
+  // BRO 在这里直接更新决策 / 实际产出 / 经验·下次 LLM 跑会读到这些
   const outcome = d.outcome || {};
   const curStatus = outcome.status || 'not_started';
   const _STATUS_BTN = [
@@ -8829,7 +8901,7 @@ async function renderFeasibilityDetail(d) {
     { v: 'not_started', label: '⟲ 重置', cls: 'fb-reset' },
   ];
   html += `<div class="feas-block feas-feedback">
-    <h3><i class="ri-refresh-fill"></i> 闭环反馈 · 用户 的真实决策（卷三十一）</h3>
+    <h3><i class="ri-refresh-fill"></i> 闭环反馈 · BRO 的真实决策（卷三十一）</h3>
     <div class="feas-fb-intro">
       你在这里更新的所有信息·都会被下次 OPUS 跑掘金 / 可行性时读到——
       让 OPUS 越用越懂你 · 不再推已经拒过的机会。
@@ -9499,7 +9571,7 @@ function renderCalendar(data) {
     if (d.trends > 0)   dots.push(`<span class="cal-dot cal-dot-trends"   title="趋势 ${d.trends}">${d.trends}</span>`);
     if (d.reports > 0)  dots.push(`<span class="cal-dot cal-dot-reports"  title="报告 ${d.reports}">${d.reports}</span>`);
     if (d.outcomes > 0) dots.push(`<span class="cal-dot cal-dot-outcomes" title="执行 ${d.outcomes}">${d.outcomes}</span>`);
-    // 卷五十八续 X · 对话(sessions)拆成单独淡色小标记·不混进"信息"圆点行 (用户 拍板·别让 251 淹没真信息)
+    // 卷五十八续 X · 对话(sessions)拆成单独淡色小标记·不混进"信息"圆点行 (BRO 拍板·别让 251 淹没真信息)
     const sessionMark = d.sessions > 0
       ? `<span class="cal-session-mark" title="当天跟 OPUS 对话 ${d.sessions} 条 · 不计入信息总数">💬${d.sessions}</span>`
       : '';
@@ -9695,7 +9767,7 @@ function renderCalendarDay(d) {
   } else {
     html += `<div class="day-radar-list">`;
     for (const it of radar.items) {
-      const dom = it.domain || 'self-evolve';
+      const dom = it.domain || 'ai';
       const dMeta = RADAR_DOMAINS_META[dom] || { icon: '·', color: '#888' };
       html += `
         <div class="day-radar-item" style="border-left-color:${dMeta.color}">
@@ -9810,547 +9882,6 @@ function _formatTimeAgo(iso) {
     if (diff < 86400*30) return Math.floor(diff/86400) + ' 天前';
     return d.toLocaleDateString();
   } catch (e) { return iso; }
-}
-
-// ─────────────────────────────────────────────────────────
-// 卷三十五 · <i class="ri-lightbulb-fill"></i> 心愿单
-// "OPUS 自己想装的能力"——从 self-evolve 域看到好东西时·OPUS 自己写心愿·批准 / 推给 DAEMON 或 Cursor 装
-// ─────────────────────────────────────────────────────────
-// 卷五十三 · 四态精简 (用户: 复杂冗长·一并优化掉)
-const _WISH_STATUS_META = {
-  pending:  { icon: '<i class="ri-lightbulb-line"></i>', label: '待定 · 等批',    color: '#9f7aea' },
-  active:   { icon: '<i class="ri-hammer-fill"></i>',    label: 'OPUS 进行中',   color: '#4fd1c5' },
-  review:   { icon: '<i class="ri-search-eye-line"></i>', label: '等待验收',  color: '#ed8936' },
-  live:     { icon: '<i class="ri-rocket-2-fill"></i>',  label: '已上线',         color: '#38a169' },
-  rejected: { icon: '<i class="ri-close-circle-fill"></i>', label: '已弃',        color: '#a0aec0' },
-};
-const _WISH_PATH_META = {
-  daemon: { icon: '<i class="ri-robot-fill"></i>', label: 'DAEMON 自装' },
-  cursor: { icon: '<i class="ri-focus-3-fill"></i>', label: 'Cursor 路径' },
-  undecided: { icon: '·', label: '未决定' },
-};
-let _wishStatusFilter = '';  // '' = 全部
-let _wishPage = 1;               // 分页 · 当前页
-let _wishPageSize = 10;          // 分页 · 每页条数
-let _wishAllData = null;         // 分页 · 上次 API 返回的全量数据
-
-function renderWishlist(data) {
-  if (data && data.error) {
-    $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-lightbulb-fill"></i> 心愿单</h2></div>
-      <div class="dash-empty">${escHtml(data.error)}</div>`;
-    return;
-  }
-  const wishes = (data && data.wishes) || [];
-  const summary = (data && data.summary) || {};
-
-  // 状态过滤器 (卷五十三 · 四态)
-  const statusChips = ['', 'pending', 'active', 'review', 'live', 'rejected'].map(st => {
-    const isActive = _wishStatusFilter === st;
-    const m = _WISH_STATUS_META[st];
-    const lbl = st ? `${m.icon} ${m.label}` : '<i class="ri-global-fill"></i> 全部';
-    const n = st ? (summary.by_status?.[st] || 0) : (summary.total || 0);
-    return `<button class="rdc ${isActive ? 'active' : ''}"
-              onclick="setWishStatusFilter('${st}')"
-              ${isActive && st ? `style="border-color:${m.color};color:${m.color}"` : ''}>
-              ${lbl} <span class="rdc-n">${n}</span>
-            </button>`;
-  }).join('');
-
-  // 顶部 banner · 引导 OPUS 自己写心愿
-  const inspireHtml = `
-    <div class="wish-banner">
-      <div class="wish-banner-icon"><i class="ri-lightbulb-fill"></i></div>
-      <div class="wish-banner-body">
-        <div class="wish-banner-title">这是 OPUS 自己的心愿单</div>
-        <div class="wish-banner-sub">
-          OPUS 在 self-evolve 域看到好东西·或做对照分析时·会写一份「我想装这个」放这里。
-          批准 → OPUS 先勘察出方案 → 用户 review 后让 daemon 真改代码。
-          <span style="opacity:0.6">勘察阶段不改任何代码·用户 全程有 review 权。需要 Cursor 介入时直接对 OPUS 说「用 cursor 改这个」即可。</span>
-        </div>
-      </div>
-      <button class="wish-banner-btn" onclick="askOpusForWish()">让 OPUS 想想还要装啥</button>
-    </div>`;
-
-  // 卷五十三 · git 测谎仪横幅 · 只报"谎报上线" (status=live 但代码没合进 master)。
-  // 这是真·暗账·治本今早 用户 的痛点 (修好 B 发现 A 变回去)。 active/review 阶段代码在分支上是正常的·不报警。
-  const lieWishes = wishes.filter(w => w.git_lie);
-  const debtBannerHtml = lieWishes.length ? `
-    <div class="wish-debt-banner">
-      <div class="wish-debt-head">
-        <i class="ri-error-warning-fill"></i>
-        <b>🔴 测谎仪: ${lieWishes.length} 个 wish 标了"已上线"·但代码没真合进主干 (master)</b>
-      </div>
-      <div class="wish-debt-sub">它们的活儿还躺在各自的 git 分支上·<b>没真正上线</b>·一旦 daemon 切分支/回退就"看起来消失"。点对应卡片里的 <b>「修复·重新合并主干」</b> 让它真合进去。</div>
-      <ul class="wish-debt-list">
-        ${lieWishes.map(w => `<li><span class="wish-debt-tag">${w.git_unmerged_commits || '?'} commit 没合</span> ${escHtml(w.title)} <span class="wish-debt-id">${escHtml(w.id)}</span></li>`).join('')}
-      </ul>
-    </div>` : '';
-
-  // 没有心愿时的引导
-  if (wishes.length === 0 && !_wishStatusFilter) {
-    $dashView.innerHTML = `
-      <div class="dash-head">
-        <h2><i class="ri-lightbulb-fill"></i> 心愿单</h2>
-        <div class="dash-head-sub">${summary.total || 0} 条 · OPUS 想装的能力</div>
-      </div>
-      ${inspireHtml}
-      <div class="dash-empty" style="padding:32px 16px">
-        OPUS 还没写过心愿 · 让它去 <a href="javascript:loadDashboard('radar')">信息雷达 · 自我演化</a> 看看同类工程
-      </div>`;
-    return;
-  }
-
-  // 列表
-  const cardsHtml = wishes.map((w, idx) => renderWishCard(w, idx)).join('');
-
-  $dashView.innerHTML = `
-    <div class="dash-head">
-      <h2><i class="ri-lightbulb-fill"></i> 心愿单</h2>
-      <div class="dash-head-sub">${summary.total || 0} 条 · ${(summary.pending || 0) + (summary.active || 0) + (summary.review || 0)} 在办 · ${summary.live || 0} 已上线</div>
-    </div>
-    ${debtBannerHtml}
-    ${inspireHtml}
-    <div class="wish-status-chips">${statusChips}</div>
-    ${wishes.length > 3 ? renderListFilter({targetSelector: '.wish-card', placeholder: '搜心愿标题 / 动机 / 反思...'}) : ''}
-    <div class="wish-list">${cardsHtml || '<div class="dash-empty">这个状态下没有心愿</div>'}</div>
-    ${(data && data.has_more) ? renderWishLoadMore(data.total, data.page, data.page_size) : ''}
-`;
-  if (wishes.length > 3) _applyListFilter($dashView.querySelector('.list-filter-input'));
-}
-
-function renderWishLoadMore(total, page, pageSize) {
-  const shown = page * pageSize;
-  const remaining = total - shown;
-  if (remaining <= 0) return '';
-  const nextLabel = remaining <= pageSize ? '再看最后 ' + remaining + ' 条' : '加载更多 (已显示 ' + shown + '/' + total + ' · 还有 ' + remaining + ' 条)';
-  return '<div class="wish-load-more"><button class="wb" onclick="loadMoreWishes()"><i class="ri-arrow-down-double-fill"></i> ' + nextLabel + '</button></div>';
-}
-
-// ── wish-149eab3f phase B · 沉淀位面板 ────────────────────────
-const SINK_LAYER_META = {
-  memory:  { icon: '<i class="ri-database-2-fill"></i>',  label: '记忆库', color: '#8affd6' },
-  soul:    { icon: '<i class="ri-heart-pulse-fill"></i>', label: '灵魂层', color: '#ff8acc' },
-  meta:    { icon: '<i class="ri-compass-3-fill"></i>',   label: '元文档', color: '#8acbff' },
-  route:   { icon: '<i class="ri-signpost-fill"></i>',    label: '路线图', color: '#ffd28a' },
-  docs:    { icon: '<i class="ri-file-text-fill"></i>',   label: '说明文档', color: '#bdffba' },
-  history: { icon: '<i class="ri-history-fill"></i>',     label: '工程史', color: '#d6b8ff' },
-  entry:   { icon: '<i class="ri-door-open-fill"></i>',   label: '入口', color: '#ffe28a' },
-};
-
-function renderSinks(data) {
-  if (data.error) {
-    $dashView.innerHTML = `<div class="dash-head"><h2><i class="ri-archive-drawer-fill"></i> 沉淀位</h2></div>
-      <div class="dash-empty">${escHtml(data.error)}</div>`;
-    return;
-  }
-  const items = data.items || [];
-  const layers = data.layers || [];
-  const grouped = {};
-  for (const it of items) { const l = it.layer || 'docs'; if (!grouped[l]) grouped[l] = []; grouped[l].push(it); }
-
-  let sectionsHtml = '';
-  for (const layer of layers) {
-    const layerItems = grouped[layer] || [];
-    if (!layerItems.length) continue;
-    const lm = SINK_LAYER_META[layer] || SINK_LAYER_META.docs;
-    sectionsHtml += `
-      <details class="sink-layer" open>
-        <summary style="border-left:3px solid ${lm.color}; padding-left:10px">
-          ${lm.icon} ${lm.label}
-          <span class="sink-layer-count">${layerItems.length}</span>
-        </summary>
-        <div class="sink-layer-cards">${layerItems.map(it => renderSinkCard(it)).join('')}</div>
-      </details>`;
-  }
-
-  $dashView.innerHTML = `
-    <div class="dash-head">
-      <h2><i class="ri-archive-drawer-fill"></i> 沉淀位</h2>
-      <div class="dash-head-sub">${items.length} 个文档 · 点卡片预览或本机打开</div>
-    </div>
-    <div class="sink-panel">${sectionsHtml}</div>`;
-}
-
-function renderSinkCard(it) {
-  const lm = SINK_LAYER_META[it.layer] || SINK_LAYER_META.docs;
-  const sizeStr = it.size_bytes > 102400 ? (it.size_bytes / 1024).toFixed(0) + ' KB' : (it.size_bytes / 1024).toFixed(1) + ' KB';
-  const existsClass = it.exists ? '' : ' sink-card-missing';
-  return `
-    <div class="sink-card${existsClass}">
-      <span class="sink-card-label">${escHtml(it.label)}</span>
-      ${it.role ? `<span class="sink-card-role">${escHtml(it.role)}</span>` : ''}
-      <span class="sink-card-meta">${it.lines ? escHtml(String(it.lines)) + ' lines' : ''}${it.lines && it.size_bytes ? ' · ' : ''}${sizeStr}</span>
-      <span class="sink-card-actions">
-        <button class="wb" onclick="sinkPreview('${escHtml(it.slug)}')"><i class="ri-eye-fill"></i> 预览</button>
-        <button class="wb" onclick="sinkReveal('${escHtml(it.slug)}')"><i class="ri-external-link-fill"></i> 打开</button>
-      </span>
-    </div>`;
-}
-
-let _spmEl = null;
-
-function sinkPreview(slug) {
-  if (!_spmEl) {
-    _spmEl = document.createElement('div'); _spmEl.id = 'sinkPreviewModal'; _spmEl.hidden = true;
-    _spmEl.innerHTML = `<div class="spm-box"><div class="spm-head"><span class="spm-title"></span><div class="spm-head-actions"></div></div><div class="spm-body md"></div></div>`;
-    _spmEl.addEventListener('click', e => { if (e.target === _spmEl) _spmEl.hidden = true; });
-    document.body.appendChild(_spmEl);
-  }
-  const box = _spmEl.querySelector('.spm-box');
-  const titleEl = box.querySelector('.spm-title');
-  const actionsEl = box.querySelector('.spm-head-actions');
-  const bodyEl = box.querySelector('.spm-body');
-  // Remove old truncated banner
-  const oldBanner = box.querySelector('.spm-truncated'); if (oldBanner) oldBanner.remove();
-
-  titleEl.textContent = '加载中…';
-  actionsEl.innerHTML = '';
-  bodyEl.innerHTML = '<div class="dash-empty">加载中…</div>';
-  _spmEl.hidden = false;
-
-  fetch(`/sinks/preview/${encodeURIComponent(slug)}`, { headers: { 'Authorization': 'Bearer ' + token } })
-    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .then(data => {
-      titleEl.innerHTML = escHtml(data.label) + '<span class="spm-path">' + escHtml(data.path) + '</span>';
-      actionsEl.innerHTML = `<button class="wb" onclick="sinkReveal('${escHtml(slug)}')"><i class="ri-external-link-fill"></i> 本机打开</button><button class="wb" onclick="_spmEl.hidden=true"><i class="ri-close-fill"></i></button>`;
-      if (data.truncated) {
-        const banner = document.createElement('div'); banner.className = 'spm-truncated';
-        banner.innerHTML = `<i class="ri-error-warning-fill"></i> 文件超过 200KB · 仅显示前 200KB<button class="wb" onclick="sinkReveal('${escHtml(slug)}')">本机打开完整文件</button>`;
-        box.insertBefore(banner, bodyEl);
-      }
-      bodyEl.innerHTML = mdRender(data.markdown || '*(空文件)*');
-    })
-    .catch(e => { bodyEl.innerHTML = '<div class="dash-empty">加载失败: ' + escHtml(e.message) + '</div>'; });
-}
-
-async function sinkReveal(slug) {
-  try {
-    const r = await fetch(`/sinks/reveal/${encodeURIComponent(slug)}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
-    const data = await r.json();
-    if (!data.ok) alert('本机打开失败 · ' + (data.error || 'unknown'));
-  } catch (e) { alert('网络出错: ' + e.message); }
-}
-
-// ESC 关闭预览
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && _spmEl && !_spmEl.hidden) { _spmEl.hidden = true; } });
-
-
-function loadMoreWishes() {
-  _wishPage++;
-  _loadWishlistFiltered(_wishStatusFilter, _wishPage);
-}
-
-function renderWishCard(w, idx) {
-  const stMeta = _WISH_STATUS_META[w.status] || _WISH_STATUS_META.pending;
-  const pathMeta = _WISH_PATH_META[w.integration_path] || _WISH_PATH_META.undecided;
-  const stars = '<i class="ri-star-fill"></i>'.repeat(w.priority || 1);
-
-  const sourceHtml = (() => {
-    const src = w.source || {};
-    if (!src.ref) return '';
-    const refHtml = src.url
-      ? `<a href="${escHtml(src.url)}" target="_blank" rel="noreferrer">${escHtml(src.ref)} ↗</a>`
-      : escHtml(src.ref);
-    return `<div class="wish-source">来源 · ${escHtml(src.kind)} · ${refHtml}</div>`;
-  })();
-
-  const designHtml = w.design_sketch
-    ? `<details class="wish-design"><summary>📐 设计草图</summary><div class="wish-design-body">${mdRender(w.design_sketch)}</div></details>`
-    : '';
-
-  const whyHtml = w.why
-    ? `<div class="wish-why">${mdRender(w.why)}</div>`
-    : '';
-
-  // 操作区 · 卷五十三 · 按新四态 (pending/active/review/live) + 子标记 (plan_pending/blocked) 给动作
-  const actions = [];
-  const sub = w.daemon_phase;  // null | plan_pending | blocked
-  const isDaemon = w.integration_path === 'daemon';
-  const hasBranch = !!(w.dev_branch && !w.dev_branch.includes(' ') && w.dev_branch !== 'master');
-
-  if (w.status === 'pending') {
-    actions.push(`<button class="wb wb-ok" onclick="wishAction('${w.id}', 'approve_daemon')" title="OPUS 先勘察出方案·你批方案了才写码"><i class="ri-checkbox-circle-fill"></i> 批准 · 让 OPUS 装</button>`);
-    actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'approve_cursor')" title="你去 Cursor 里让 Claude 装"><i class="ri-focus-3-fill"></i> 我去 Cursor 装</button>`);
-    actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
-    actions.push(`<button class="wb wb-deep" onclick="wishAction('${w.id}', 'deep_dive')"><i class="ri-search-fill"></i> 让 OPUS 深挖</button>`);
-  } else if (w.status === 'active') {
-    if (sub === 'plan_pending') {
-      actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'approve_plan')" title="关卡1 · 按 OPUS 方案开干·自动从 master 切分支写码"><i class="ri-rocket-fill"></i> 批方案 → 开干</button>`);
-      actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'replan')" title="对方案不满意·让 OPUS 重新勘察"><i class="ri-refresh-fill"></i> 重新勘察</button>`);
-      actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
-    } else if (sub === 'blocked') {
-      actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'view_log')" title="看 OPUS 撞墙过程"><i class="ri-clipboard-fill"></i> 看撞墙日志</button>`);
-      actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'retry_impl')"><i class="ri-refresh-fill"></i> 重新实施</button>`);
-      actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
-    } else {
-      if (isDaemon) {
-        actions.push(`<button class="wb wb-go" disabled title="OPUS 在自己分支上写码·完工自动进待验收">⏳ OPUS 进行中…</button>`);
-        actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'abort_impl')">⏹ 紧急叫停</button>`);
-      } else {
-        actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'mark_review')" title="装完了·提交验收">📬 装完了 → 提交验收</button>`);
-        actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
-      }
-      if (hasBranch) actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'view_diff')"><i class="ri-search-fill"></i> 看 diff</button>`);
-    }
-    actions.push(`<button class="wb wb-deep" onclick="wishAction('${w.id}', 'deep_dive')"><i class="ri-search-fill"></i> 让 OPUS 深挖</button>`);
-  } else if (w.status === 'review') {
-    if (hasBranch) actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'view_diff')" title="看 OPUS 改了啥"><i class="ri-search-fill"></i> 查看 diff</button>`);
-    actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'verify_live')" title="关卡2 · 验收通过·自动合进 master 主干上线"><i class="ri-checkbox-circle-fill"></i> 验收通过 → 合主干上线</button>`);
-    actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject_to_active')" title="有问题·打回让 OPUS 继续改"><i class="ri-arrow-go-back-fill"></i> 有问题 → 打回</button>`);
-    if (!w.reflection) actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'add_reflection')">✏️ 补反思</button>`);
-  } else if (w.status === 'live') {
-    if (w.git_lie) {
-      actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'remerge')" title="status=live 但 git 没合进 master·重新触发真合并"><i class="ri-error-warning-fill"></i> 修复 · 重新合并主干</button>`);
-    }
-    if (!w.reflection) actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'add_reflection')">✏️ 补反思</button>`);
-  }
-
-  const reflectionHtml = w.reflection
-    ? `<div class="wish-reflection"><div class="wr-title"><i class="ri-lightbulb-fill"></i> 反思</div>${mdRender(w.reflection)}</div>`
-    : '';
-
-  // 卷五十三 · 子标记指示条 + plan/log/diff 折叠区
-  let phaseBlock = '';
-  if (w.integration_path === 'daemon' && (sub || w.implementation_plan || w.implementation_log)) {
-    const phMeta = _WISH_DAEMON_PHASE_META[sub] || _WISH_DAEMON_PHASE_META.unknown;
-    const phaseChip = sub ? `<span class="wish-phase wish-phase-${sub}" title="${phMeta.tip}">${phMeta.icon} ${phMeta.label}</span>` : '';
-    const branchChip = w.dev_branch ? `<span class="wish-branch" title="OPUS 改代码用的 git 分支">🌿 ${escHtml(w.dev_branch)}</span>` : '';
-    const planSection = w.implementation_plan
-      ? `<details class="wish-design" open><summary><i class="ri-clipboard-fill"></i> 执行计划 (OPUS 勘察输出)</summary><div class="wish-design-body">${mdRender(w.implementation_plan)}</div></details>`
-      : '';
-    const logSection = w.implementation_log
-      ? `<details class="wish-design"><summary>📜 实施日志</summary><div class="wish-design-body">${mdRender(w.implementation_log)}</div></details>`
-      : '';
-    const diffSection = w.diff_summary
-      ? `<details class="wish-design" open><summary><i class="ri-search-fill"></i> git diff 摘要 (待看)</summary><div class="wish-design-body"><pre>${escHtml(w.diff_summary)}</pre></div></details>`
-      : '';
-    phaseBlock = `
-      <div class="wish-phase-row">${phaseChip} ${branchChip}</div>
-      ${planSection}
-      ${logSection}
-      ${diffSection}`;
-  }
-
-  // 卷四十六续 8 · 默认折叠·只把"等 用户 做决定的"默认展开 (卷五十三新态):
-  //   pending (等批) / review (等验收) / 子标记 plan_pending (等批方案) / blocked (撞墙)
-  const isOpen = (
-    w.status === 'pending' ||
-    w.status === 'review' ||
-    (w.daemon_phase && ['plan_pending', 'blocked'].includes(w.daemon_phase))
-  );
-  const whyExcerpt = (() => {
-    if (!w.why) return '';
-    const firstLine = w.why.split('\n').map(s => s.trim()).find(s => s && !s.startsWith('#') && !s.startsWith('-')) || '';
-    return firstLine.slice(0, 120);
-  })();
-  const phaseChipInSummary = (w.integration_path === 'daemon' && w.daemon_phase)
-    ? (() => {
-        const phMeta = _WISH_DAEMON_PHASE_META[w.daemon_phase] || _WISH_DAEMON_PHASE_META.unknown;
-        return `<span class="wish-phase wish-phase-${w.daemon_phase}" title="${phMeta.tip}">${phMeta.icon} ${phMeta.label}</span>`;
-      })()
-    : '';
-
-  return `
-    <details class="wish-card wish-status-${w.status}" data-wid="${w.id}"${isOpen ? ' open' : ''}>
-      <summary class="wish-card-head">
-        <div class="wish-card-title">
-          <span class="wish-stars">${stars}</span>
-          <span class="wish-title-text">${escHtml(w.title)}</span>
-        </div>
-        <div class="wish-card-badges">
-          <span class="wish-badge wish-badge-status" style="background:${stMeta.color}22;color:${stMeta.color}">${stMeta.icon} ${stMeta.label}</span>
-          ${w.git_lie
-            ? `<span class="wish-badge wish-badge-unmerged" title="测谎仪: status=live 但代码没合进 master·谎报上线·一回退就丢。点卡片里「修复·重新合并主干」"><i class="ri-error-warning-fill"></i> 🔴 谎报上线 · ${w.git_unmerged_commits || '?'} commit 没合</span>`
-            : (w.git_merge_state === 'unmerged'
-              ? `<span class="wish-badge wish-badge-branch" title="代码在自己分支上·还没合主干 (active/review 阶段正常)·验收标 live 后会自动合"><i class="ri-git-branch-line"></i> 分支上 · ${w.git_unmerged_commits || '?'} commit</span>`
-              : '')}
-          ${w.origin === 'opus' ? '<span class="wish-badge wish-badge-origin" title="OPUS 主动嗅探到的愿望"><i class="ri-radar-fill"></i> OPUS 主动发现</span>' : ''}
-          ${phaseChipInSummary}
-          <span class="wish-badge wish-badge-path">${pathMeta.icon} ${escHtml(pathMeta.label)}</span>
-          <span class="wish-badge wish-badge-cx">${escHtml(w.complexity || 'medium')} · ~${w.estimated_hours || 4}h · ~$${(w.estimated_token_cost_usd || 1).toFixed(2)}</span>
-        </div>
-        ${whyExcerpt ? `<div class="wish-why-excerpt">${escHtml(whyExcerpt)}</div>` : ''}
-      </summary>
-      <div class="wish-card-body">
-        ${sourceHtml}
-        ${whyHtml}
-        ${designHtml}
-        ${phaseBlock}
-        ${reflectionHtml}
-        <div class="wish-actions">${actions.join('')}</div>
-        <div class="wish-meta">
-          <span class="wish-id">${escHtml(w.id)}</span>
-          <span class="wish-time">写于 ${(w.created_at || '').replace('T', ' ').slice(0, 16)}</span>
-        </div>
-      </div>
-    </details>`;
-}
-
-// 卷五十三 · 子标记 meta (仅 active 时挂·plan_pending=等批方案 / blocked=撞墙)
-const _WISH_DAEMON_PHASE_META = {
-  plan_pending: { icon: '<i class="ri-pause-circle-fill"></i>', label: '等待批方案', tip: 'OPUS 出完方案·停下等 用户 批 (关卡1)·批了才从 master 切分支写码' },
-  blocked:      { icon: '⚠️', label: '撞墙了', tip: 'OPUS 中途遇阻主动停 · 看撞墙日志找原因·或重新实施' },
-  unknown:      { icon: '·',  label: '', tip: '' },
-};
-
-function setWishStatusFilter(st) {
-  _wishStatusFilter = st;
-  _wishPage = 1;  // 切换过滤器时回到第一页
-  _wishAllData = null;
-  _loadWishlistFiltered(st);
-}
-
-async function wishAction(wid, action) {
-  // 卷五十三 · 四态流程 · 提示词对齐新状态机 (pending/active/review/live + plan_pending/blocked)
-  const map = {
-    approve_daemon: (
-      `已批准心愿 ${wid} · 让你自己动手装。\n\n` +
-      `**进入勘察模式** —— 这一步只调研·不改任何代码。\n\n` +
-      `步骤：\n` +
-      `1. 用 wish_update 把 status 改成 active · integration_path 改成 daemon\n` +
-      `2. 用 read_dashboard("wishlist") 把这条 wish 完整内容拉出来 (尤其 design_sketch / why / source)\n` +
-      `3. **勘察现状**：\n` +
-      `   - 用 grep_files / read_file 找相关模块的现有代码 (这条 wish 涉及哪些文件?)\n` +
-      `   - 需要参考资料·用 web_search / web_fetch 查·不清楚的概念先想清楚\n` +
-      `4. **产出执行计划** (markdown · 严格结构):\n` +
-      `   ## 改动范围 (文件·干啥·为啥)\n` +
-      `   ## 关键设计决定\n` +
-      `   ## 步骤拆解\n` +
-      `   ## 验证策略 (smoke / ReadLints)\n` +
-      `   ## 风险 / 不确定性\n` +
-      `5. 用 wish_update 把计划存进 implementation_plan · **daemon_phase 改成 plan_pending** (停下等待批方案 · 关卡1)\n` +
-      `6. 一句话告诉 用户：「方案好了·要不要按这个干？」\n\n` +
-      `**红线**：勘察阶段绝对不能 write_file / shell_exec 写操作 · 只能读 + 搜 · 用户 批方案再开干。`
-    ),
-    approve_cursor:  `把心愿 ${wid} 批准了·integration_path=cursor · status=active · 用 wish_update 改 · 告诉 用户 现在可以去 Cursor 里复制 design_sketch 让 Claude 装·装完回来点「装完了→提交验收」`,
-    reject:          `把心愿 ${wid} 弃了·status=rejected · 用 wish_update 改 · 简单说一句为啥弃`,
-    switch_daemon:   `心愿 ${wid} 改成 DAEMON 路径·integration_path=daemon · 用 wish_update 改`,
-    switch_cursor:   `心愿 ${wid} 改成 Cursor 路径·integration_path=cursor · 用 wish_update 改`,
-    // 关卡1 · 用户 批方案 → OPUS 开始写码 (status 已 active · 清 plan_pending 会自动从 master 切分支)
-    approve_plan: (
-      `用户 批了心愿 ${wid} 的方案 (关卡1) · 批准你 (OPUS) 真改代码。\n\n` +
-      `**进入实施模式** —— 现在可以 write_file / shell_exec 了·但守红线。\n\n` +
-      `步骤：\n` +
-      `1. 用 wish_update 把 **daemon_phase 改成 null** (清空 plan_pending) · status 保持 active\n` +
-      `   → 工具会**自动从 master 切出 wish-${wid}/<slug> 分支**并写进 dev_branch (你不用手动 git checkout)\n` +
-      `2. **按 implementation_plan 的步骤在该分支上执行**:\n` +
-      `   - 改代码后立即 ReadLints (Python 文件) · 关键步骤跑 smoke\n` +
-      `   - 每完成一步·wish_update 往 implementation_log 追加一行\n` +
-      `3. **遇阻就停** —— 撞墙后: 写进 implementation_log · wish_update daemon_phase=blocked · 告诉 用户 · 不要硬撑\n` +
-      `4. **写完自测**: ReadLints 全部改过的 py · 跑 smoke · git diff --stat 存进 diff_summary\n` +
-      `5. 用 wish_update 把 **status 改成 review** (完工待验收) · 一句话告诉 用户 可以看 diff 了\n\n` +
-      `**红线**: 不许 push · 不许 rm -rf · 不许动 soul/ / .env · 不确定先问 用户。\n` +
-      `(commit 由系统在你的分支上管理·你专注写对代码·用户 验收通过点 live 会自动 merge 回 master)`
-    ),
-    // 关卡2 · 用户 验收通过 → status=live (wish_update 会自动 merge 分支回 master·合不进会拒绝)
-    verify_live: (
-      `心愿 ${wid} · 用户 验收通过！→ 上线 (关卡2)。\n\n` +
-      `请你：\n` +
-      `1. 用 wish_update 把 status 改成 **live**\n` +
-      `   → 有独立分支时·工具会**自动 merge 分支回 master** (先让分支吃下最新 master·冲突会 abort 并报错)\n` +
-      `   → 万一报"merge 失败/冲突"·别硬来·把冲突情况告诉 用户·先解决再标 live\n` +
-      `2. 成功后写一句简短 reflection 总结这次交付`
-    ),
-    reject_to_active: (
-      `心愿 ${wid} · 用户 验收不通过 · 打回让 OPUS 继续改。\n\n` +
-      `请你：\n` +
-      `1. 用 wish_update 把 status 改回 active (回到写码态·分支还在·接着改)\n` +
-      `2. 在 implementation_log 末尾追加 "用户 验收不通过 · 原因：[用户 说的]" · 等 用户 告诉你具体哪不行`
-    ),
-    mark_review: (
-      `心愿 ${wid} · 装完了 · 提交验收。\n\n` +
-      `请你：\n` +
-      `1. 用 wish_update 把 status 改成 review\n` +
-      `2. 若是 daemon 路径有 dev_branch · 先 git diff --stat 存进 diff_summary 让 用户 一眼能看\n` +
-      `3. 没写 reflection 的话补一句·告诉 用户 可以验收了`
-    ),
-    remerge: (
-      `心愿 ${wid} · 测谎仪报警: status=live 但代码没真合进 master (谎报上线)。\n\n` +
-      `请你：\n` +
-      `1. 用 read_dashboard 确认 dev_branch · shell_exec("git cherry master <dev_branch>") 看到底差几个提交\n` +
-      `2. 如果分支有真没合的活儿 → 用 wish_update status=live 重新触发自动 merge (合不进会报冲突·按提示解决)\n` +
-      `3. 如果分支其实是空的/已废 → 把 dev_branch 字段清成正确备注·消除误报\n` +
-      `4. 修完告诉 用户 测谎仪应该不报了`
-    ),
-    add_reflection:  `给心愿 ${wid} 补一段 reflection · 用 wish_update 改`,
-    deep_dive:       `深挖心愿 ${wid}：用 read_dashboard 拉它的设计草图·然后给我一份评估——这事要不要做·什么时候做·怎么拆任务·有什么风险`,
-    replan: (
-      `心愿 ${wid} · 用户 对方案不满意·让你重新勘察。\n\n` +
-      `请你：\n` +
-      `1. 用 read_dashboard 把之前的 implementation_plan 看一遍·想想哪里不对\n` +
-      `2. 问 用户 哪里不满意 (如果他没说) · 等他回答\n` +
-      `3. 用新理解重做一份计划 → wish_update 更新 implementation_plan · daemon_phase 保持 plan_pending (再等 用户 批)`
-    ),
-    abort_impl: (
-      `**紧急叫停** · 心愿 ${wid} 的实施·用户 让你立刻停手。\n\n` +
-      `请你：\n` +
-      `1. 不要再继续写代码\n` +
-      `2. 用 wish_update 把 daemon_phase 改成 blocked · 在 implementation_log 末尾追加"用户 中途叫停 (时间)"\n` +
-      `3. shell_exec("git status") 看当前分支状态·告诉 用户 现在改了哪些文件\n` +
-      `4. **不要** git checkout / reset·让 用户 决定怎么处理`
-    ),
-    view_diff: (
-      `用户 想看心愿 ${wid} 的 git diff 详情。请你：\n` +
-      `1. 用 read_dashboard 拉 wish 看 dev_branch 字段\n` +
-      `2. shell_exec("git diff master..." + dev_branch) (注意是 master..分支)\n` +
-      `3. 把 diff 完整粘贴给 用户·重点改动用 markdown 突出`
-    ),
-    view_log: (
-      `用户 想看心愿 ${wid} 的实施日志。用 read_dashboard 拉这个 wish 的 implementation_log · 完整复盘给 用户·并解释撞墙的根本原因。`
-    ),
-    retry_impl: (
-      `心愿 ${wid} 上次撞墙了 (daemon_phase=blocked) · 用户 让你重新试。\n\n` +
-      `请你：\n` +
-      `1. 先看 implementation_log 想清楚上次为啥失败\n` +
-      `2. 用 wish_update 把 daemon_phase 清成 null (回到正常写码态) · status 保持 active\n` +
-      `3. 在 log 里明说"第 N 次尝试"·别覆盖前面日志·然后接着按计划改`
-    ),
-  };
-  const msg = map[action];
-  if (!msg) return;
-
-  // 重操作开新会话执行 · 不污染当前聊天上下文
-  const spawnLabels = {
-    approve_daemon: `勘察方案 · ${wid}`,
-    approve_plan: `实施计划 · ${wid}`,
-    replan: `重新勘察 · ${wid}`,
-    retry_impl: `重新实施 · ${wid}`,
-    verify_live: `验收上线 · ${wid}`,
-    remerge: `修复合并 · ${wid}`,
-    deep_dive: `深挖心愿 · ${wid}`,
-  };
-  spawnTask(msg, spawnLabels[action] || `${action} · ${wid}`);
-}
-
-function askOpusForWish() {
-  spawnTask(
-    '看一眼 self-evolve 域 (信息雷达里) 现在抓到的 GitHub 同类工程·' +
-    '挑 1-3 个 OPUS 自己应该学的能力·调 wish_add 写成心愿 · 每条都要有 why + design_sketch + 优先级 · ' +
-    '不要一次塞太多·挑你最有把握的',
-    '勘察心愿'
-  );
-}
-
-// 接 setWishStatusFilter 那个带 ? 的路由
-async function _loadWishlistFiltered(filter, page = 1) {
-  try {
-    const params = new URLSearchParams();
-    if (filter) params.set('domain_filter', filter);
-    params.set('page', page);
-    params.set('page_size', _wishPageSize);
-    const url = `/dashboard/wishlist?${params.toString()}`;
-    const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) {
-      $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`;
-      return;
-    }
-    const data = await r.json();
-    _wishAllData = data;
-    renderWishlist(data);
-  } catch (e) {
-    $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`;
-  }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -10537,7 +10068,7 @@ function toggleSourceHistogram(btn) {
 
 function renderSourceHistogram(meta, scopeLabel) {
   const scoped = scopeLabel ? ` · ${escHtml(scopeLabel)}` : '';
-  // 选了具体领域但该领域没源 → 引导加源 (用户 2026-06-03 · 信源跟领域走·add_source 后端已支持 domain)
+  // 选了具体领域但该领域没源 → 引导加源 (BRO 2026-06-03 · 信源跟领域走·add_source 后端已支持 domain)
   const emptyHint = scopeLabel
     ? `<div class="radar-histogram"><div class="rh-title">信源贡献${scoped}</div><div class="sh-empty">这个领域还没有专属信源 · 跟 OPUS 说「给「${escHtml(scopeLabel)}」加个信息源」</div></div>`
     : '';
@@ -10621,7 +10152,7 @@ function renderRadar(data) {
   // 卷二十八 · 顶部领域 chip 过滤器
   const allCount = allItems.length;
   const filteredItems = (radarDomainFilter && radarDomainFilter !== 'all')
-    ? allItems.filter(it => (it.domain || 'self-evolve') === radarDomainFilter)
+    ? allItems.filter(it => (it.domain || 'ai') === radarDomainFilter)
     : allItems;
 
   let domainChips = `
@@ -10656,7 +10187,7 @@ function renderRadar(data) {
   const translatedN = trMeta.translated || items.filter(it => it.title_zh).length;
   const rstats = data.stats || {};
   const isFiltered = (radarDomainFilter && radarDomainFilter !== 'all');
-  // 今日新增跟着 tab 走: 选了领域=该领域今天首见·全部=全领域总和 (用户 2026-06-06·别两个口径混一格)
+  // 今日新增跟着 tab 走: 选了领域=该领域今天首见·全部=全领域总和 (BRO 2026-06-06·别两个口径混一格)
   const newTodayByDom = rstats.new_today_by_domain || {};
   const newToday = isFiltered
     ? Number(newTodayByDom[radarDomainFilter] || 0)
@@ -10694,12 +10225,12 @@ function renderRadar(data) {
       <span class="meta">原料层 · 多源抓取 · 多领域</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="spawnQuickly('帮我跑一遍信息雷达 · 调 auto_pipeline 工具 · 参数 refresh_radar=true, regen_trends=false, mine_opps=false · 只抓取雷达不动趋势机会 · 跑完告诉我新增了哪些条目·特别是 self-evolve 域的', '重新抓取雷达')">重新抓取</button>
-      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 用户 · 为什么', '生成今日趋势')">让 OPUS 总结趋势 →</button>
+      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 BRO · 为什么', '生成今日趋势')">让 OPUS 总结趋势 →</button>
     </div>
     ${domainChips}
     ${statsCards}
     ${renderSourceHistogram(
-      (radarDomainFilter && radarDomainFilter !== 'all') ? meta.filter(m => (m.domain || 'self-evolve') === radarDomainFilter) : meta,
+      (radarDomainFilter && radarDomainFilter !== 'all') ? meta.filter(m => (m.domain || 'ai') === radarDomainFilter) : meta,
       (radarDomainFilter && radarDomainFilter !== 'all') ? ((overview.find(o => o.id === radarDomainFilter) || {}).label || radarDomainFilter) : ''
     )}`;
 
@@ -10845,7 +10376,7 @@ async function confirmRemoveDomain(slug, label, itemsCount, sourcesCount) {
     message: {
       html: `确认删除领域 <b>「${escHtml(label)}」</b> 吗？
         <span class="om-hint">${sourcesCount} 个信源 · ${itemsCount} 条历史条目<br>
-        信源会自动 reassign 到 self-evolve (或其他可用域)·不会丢失。<br>
+        信源会自动 reassign 到 wildcard (或其他可用域)·不会丢失。<br>
         删除会持久化·重启浏览器或 daemon 都不会复活。</span>`
     },
     okText: '直接删',
@@ -10967,7 +10498,7 @@ function renderTrends(data) {
   const trends = (data && data.trends) || [];
   const generatedAt = data && data.generated_at;
   const generatedTxt = generatedAt ? formatRadarTime(generatedAt) : '未知';
-  // 卷三十四 · 取整天日期（用户 想看的是绝对日期·不是相对时间）
+  // 卷三十四 · 取整天日期（BRO 想看的是绝对日期·不是相对时间）
   const generatedDay = generatedAt ? (generatedAt.slice(0, 10)) : '?';
   const itemsScanned = data && data.items_scanned ? data.items_scanned : '?';
   const isArchive = data && data._source === 'archive';
@@ -10980,7 +10511,7 @@ function renderTrends(data) {
       <span class="meta"><i class="ri-calendar-fill"></i> <b>${escHtml(isArchive ? archiveDay : generatedDay)}</b> · ${trends.length} 个方向 · 扫了 ${itemsScanned} 条 · ${generatedTxt}${isArchive ? ' <span class="badge-archive">归档</span>' : ''}</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('radar')">← 看原料</button>
-      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 用户 · 为什么', '重新生成趋势')">让 OPUS 重新看一遍</button>
+      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 BRO · 为什么', '重新生成趋势')">让 OPUS 重新看一遍</button>
     </div>
     <div class="trends-intro">
       不是「今日新闻总结」· 是 OPUS 看完雷达 ${itemsScanned} 条后给出的
@@ -11036,6 +10567,219 @@ function renderTrends(data) {
 }
 
 // 报告库（卷二十四 · generate_report 工具产物 · data/reports/ 落盘）
+// 私有文档知识库 · 第二大脑 · 文档清单 + 参考开关 + 删除(灌文档走对话 NLP)
+// 复用 report-card / rc-* 样式 · 不另起 CSS
+// 单篇知识库文档卡片 HTML · 文件夹分组和平铺共用
+function _kbCardHtml(d, typeIcon) {
+  const icon = (typeIcon && typeIcon[d.type]) || '<i class="ri-file-fill"></i>';
+  const off = d.enabled === false;
+  const tagBadges = (d.tags || []).map(t => `<span class="rc-src-badge">#${escHtml(t)}</span>`).join(' ');
+  const flagBadges = [];
+  if (d.pinned) flagBadges.push('<span class="rc-src-badge kb-flag-badge"><i class="ri-pushpin-2-fill"></i> 常驻</span>');
+  if (d.sensitive) flagBadges.push('<span class="rc-src-badge kb-flag-badge kb-flag-sensitive"><i class="ri-shield-keyhole-fill"></i> 敏感</span>');
+  const pinCls = d.pinned ? ' on' : '';
+  const senCls = d.sensitive ? ' on' : '';
+  return `
+    <div class="report-card${off ? ' kb-off' : ''}">
+      <div class="rc-head">
+        <span class="rc-name kb-open" data-id="${escHtml(d.id)}" title="点击查看内容">${icon} ${escHtml(d.title)}</span>
+        ${off ? '<span class="rc-src-badge rc-src-extract">已静音</span>' : ''}
+        ${flagBadges.join('')}
+      </div>
+      <div class="rc-meta">
+        <span class="rc-size">${d.chunks || 0} 块</span>
+        <span class="rc-time">${d.chars || 0} 字 · ${escHtml((d.added_at || '').slice(0, 10))}</span>
+        ${tagBadges}
+        <button class="rc-preview-btn kb-toggle" data-id="${escHtml(d.id)}" data-enabled="${off ? '0' : '1'}">${off ? '恢复参考' : '停止参考'}</button>
+        <button class="kb-flag kb-flag-pin${pinCls}" data-id="${escHtml(d.id)}" data-flag="pinned" data-on="${d.pinned ? '1' : '0'}" title="常驻:命中优先靠前"><i class="ri-pushpin-2-line"></i></button>
+        <button class="kb-flag kb-flag-sen${senCls}" data-id="${escHtml(d.id)}" data-flag="sensitive" data-on="${d.sensitive ? '1' : '0'}" title="敏感:不自动注入·仅显式召回可见"><i class="ri-shield-keyhole-line"></i></button>
+        <a class="rc-dl kb-del" href="javascript:void(0)" data-id="${escHtml(d.id)}" data-title="${escHtml(d.title)}">删除 ✕</a>
+      </div>
+    </div>`;
+}
+
+function renderKnowledge(data) {
+  if (data && data.error) {
+    $dashView.innerHTML = `
+      <div class="dash-head"><h2><i class="ri-book-2-fill"></i> 知识库</h2></div>
+      <div class="dash-empty">${escHtml(data.error)}</div>`;
+    return;
+  }
+  const items = (data && data.items) || [];
+  const st = (data && data.stats) || {};
+  const typeIcon = {
+    pdf:  '<i class="ri-file-pdf-2-fill"></i>',
+    docx: '<i class="ri-file-word-2-fill"></i>',
+    pptx: '<i class="ri-file-ppt-2-fill"></i>',
+    md:   '<i class="ri-markdown-fill"></i>',
+    txt:  '<i class="ri-file-text-fill"></i>',
+  };
+
+  let html = `
+    <div class="dash-head">
+      <h2><i class="ri-book-2-fill"></i> 知识库 · 第二大脑</h2>
+      <span class="meta">${items.length} 篇 · ${st.enabled || 0} 参考中 · ${st.disabled || 0} 静音</span>
+      <button onclick="backToChat()">✕ 收起</button>
+      <button onclick="loadDashboard('knowledge')">刷新列表</button>
+    </div>`;
+
+  if (items.length === 0) {
+    html += `
+      <div class="dash-stub">
+        <h3>知识库还是空的</h3>
+        <div>在底部输入框跟 OPUS 说：「把 <code>D:\\资料\\合同.pdf</code> 加进知识库」<br>
+             支持 md / txt / docx / pptx / pdf(文本型)。灌进来后能被召回并 cite 回原文。</div>
+      </div>`;
+  } else {
+    if (items.length > 3) {
+      html += renderListFilter({ targetSelector: '.report-card', placeholder: '搜文档标题 / 标签...' });
+    }
+    // 按文件夹分组显示 · folder 字段优先 · 无则退回第一个标签 · 都没有 → 未分类
+    const folderOf = (d) => (d.folder && String(d.folder).trim())
+      || ((d.tags && d.tags.length) ? String(d.tags[0]) : '未分类');
+    const groups = {};
+    for (const d of items) { const f = folderOf(d); (groups[f] = groups[f] || []).push(d); }
+    const names = Object.keys(groups).sort((a, b) => {
+      if (a === '未分类') return 1;
+      if (b === '未分类') return -1;
+      return a.localeCompare(b, 'zh');
+    });
+    html += `<div class="kb-folders">`;
+    for (const f of names) {
+      const cards = groups[f].map(d => _kbCardHtml(d, typeIcon)).join('');
+      html += `
+        <div class="kb-folder">
+          <div class="kb-folder-head">
+            <i class="ri-folder-3-fill kb-folder-ico"></i>
+            <span class="kb-folder-name">${escHtml(f)}</span>
+            <span class="kb-folder-count">${groups[f].length}</span>
+            <i class="ri-arrow-down-s-line kb-folder-caret"></i>
+          </div>
+          <div class="kb-folder-body">${cards}</div>
+        </div>`;
+    }
+    html += `</div>`;
+  }
+  $dashView.innerHTML = html;
+
+  $dashView.querySelectorAll('.kb-folder-head').forEach(h => {
+    h.onclick = () => h.parentElement.classList.toggle('collapsed');
+  });
+  $dashView.querySelectorAll('.kb-toggle').forEach(btn => {
+    btn.onclick = () => _kbAction('/dashboard/knowledge/toggle', {
+      doc_id: btn.getAttribute('data-id'),
+      enabled: btn.getAttribute('data-enabled') !== '1',
+    });
+  });
+  $dashView.querySelectorAll('.kb-flag').forEach(btn => {
+    btn.onclick = () => {
+      const body = { doc_id: btn.getAttribute('data-id') };
+      body[btn.getAttribute('data-flag')] = btn.getAttribute('data-on') !== '1';
+      _kbAction('/dashboard/knowledge/flag', body);
+    };
+  });
+  $dashView.querySelectorAll('.kb-del').forEach(btn => {
+    btn.onclick = () => {
+      const t = btn.getAttribute('data-title') || '这篇';
+      if (confirm(`删除「${t}」？原文和索引都会清掉(不影响你磁盘上的原始文件)。`)) {
+        _kbAction('/dashboard/knowledge/delete', { doc_id: btn.getAttribute('data-id') });
+      }
+    };
+  });
+  $dashView.querySelectorAll('.kb-open').forEach(el => {
+    el.onclick = () => _kbPreview(el.getAttribute('data-id'));
+  });
+  if (items.length > 3) _applyListFilter($dashView.querySelector('.list-filter-input'));
+}
+
+// 报告库 → 一键存入知识库 (灌 md 源优先·归「报告」文件夹·已灌过不重复)
+async function _importReportToKb(name, btn) {
+  if (!token || !name) return;
+  const old = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '存入中…'; }
+  try {
+    const r = await fetch('/dashboard/knowledge/import-report', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { alert('存入失败 [' + r.status + ']' + (data.detail ? ' · ' + data.detail : '')); return; }
+    if (btn) {
+      btn.innerHTML = data.existed ? '已在库中' : '✓ 已存入';
+      setTimeout(() => { btn.disabled = false; btn.innerHTML = old; }, 2200);
+    }
+    if (typeof showChatToast === 'function') {
+      showChatToast(data.existed ? '这份报告已经在知识库里了' : '已存入知识库 · 「报告」文件夹 · 之后能被召回并 cite');
+    }
+  } catch (e) {
+    alert('网络出错: ' + e.message);
+    if (btn) { btn.disabled = false; btn.innerHTML = old; }
+  }
+}
+
+// 点知识库卡片标题 → 拉正文 → 弹窗预览 (markdown 渲染)
+async function _kbPreview(docId) {
+  if (!token || !docId) return;
+  try {
+    const r = await fetch('/dashboard/knowledge/doc?doc_id=' + encodeURIComponent(docId), {
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    if (!r.ok) { alert('打开失败 [' + r.status + ']'); return; }
+    _showKbModal(await r.json());
+  } catch (e) { alert('网络出错: ' + e.message); }
+}
+
+function _showKbModal(data) {
+  const meta = (data && data.meta) || {};
+  const text = (data && data.text) || '';
+  let host = document.getElementById('kbModalHost');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'kbModalHost';
+    host.className = 'kb-modal-host';
+    document.body.appendChild(host);
+  }
+  const tags = (meta.tags || []).map(t => `<span class="rc-src-badge">#${escHtml(t)}</span>`).join(' ');
+  const bodyHtml = (typeof mdRender === 'function')
+    ? mdRender(text) : ('<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>');
+  const metaLine = [meta.type, (meta.chars || 0) + ' 字', (meta.chunks || 0) + ' 块',
+    data && data.truncated ? '预览已截断' : ''].filter(Boolean).join(' · ');
+  host.innerHTML = `
+    <div class="kb-modal-mask"></div>
+    <div class="kb-modal" role="dialog" aria-modal="true">
+      <div class="kb-modal-head">
+        <span class="kb-modal-title">${escHtml(meta.title || '文档')}</span>
+        <span class="kb-modal-meta">${escHtml(metaLine)}</span>
+        <button class="kb-modal-close" title="关闭 (Esc)">✕</button>
+      </div>
+      ${tags ? `<div class="kb-modal-tags">${tags}</div>` : ''}
+      <div class="kb-modal-body markdown-body">${bodyHtml}</div>
+    </div>`;
+  host.classList.add('show');
+  const close = () => {
+    host.classList.remove('show');
+    document.removeEventListener('keydown', onKey);
+  };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  host.querySelector('.kb-modal-close').onclick = close;
+  host.querySelector('.kb-modal-mask').onclick = close;
+}
+
+async function _kbAction(url, body) {
+  if (!token) return;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) { alert('操作失败 [' + r.status + ']'); return; }
+    loadDashboard('knowledge', { silent: true });
+  } catch (e) { alert('网络出错: ' + e.message); }
+}
+
 function renderReports(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
@@ -11087,6 +10831,7 @@ function renderReports(data) {
             <span class="rc-size">${it.size_kb} KB</span>
             <span class="rc-time">${escHtml(it.created_at)}</span>
             ${previewable ? `<button class="rc-preview-btn" data-name="${escHtml(it.name)}">📖 预览</button>` : ''}
+            <button class="rc-preview-btn rp-kb" data-name="${escHtml(it.name)}" title="把这份报告灌进知识库 · 之后能被召回并 cite"><i class="ri-book-2-line"></i> 存入知识库</button>
             <a class="rc-dl" href="${escHtml(dlUrl)}" download="${escHtml(it.name)}">下载 ↓</a>
           </div>
         </div>`;
@@ -11096,12 +10841,19 @@ function renderReports(data) {
   $dashView.innerHTML = html;
 
   // 卷三十三补丁 · 预览按钮绑定
-  $dashView.querySelectorAll('.rc-preview-btn, .rc-name[data-preview]').forEach(el => {
+  $dashView.querySelectorAll('.rc-preview-btn:not(.rp-kb), .rc-name[data-preview]').forEach(el => {
     el.onclick = (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
       const name = el.getAttribute('data-name');
       if (name) loadReportPreview(name);
+    };
+  });
+  $dashView.querySelectorAll('.rp-kb').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      _importReportToKb(btn.getAttribute('data-name'), btn);
     };
   });
 
@@ -11189,7 +10941,7 @@ async function renderOpportunities(data) {
   let html = `
     <div class="dash-head">
       <h2><i class="ri-diamond-fill"></i> 掘金机会</h2>
-      <span class="meta">${opps.length} 个机会 · 市场 × 用户 能力</span>
+      <span class="meta">${opps.length} 个机会 · 市场 × BRO 能力</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="spawnQuickly('基于今日趋势 · 调 mine_opportunities 工具 · 参数 action=mine · 重新挖一遍掘金机会 · 形态要多样(内容账号 / 实体产品 / 服务咨询 / 信息差套利 / 软件产品 / 投资副业 · 不要全是 SaaS · 卷三十三第 6 条铁律) · 跑完告诉我最推哪 1-2 个 + 为什么', '重新挖掘机会')" title="派发到新会话 · OPUS 跑 mine_opportunities · 完成后切过去看结果">
         <i class="ri-refresh-fill"></i> 重新挖掘
@@ -11200,7 +10952,7 @@ async function renderOpportunities(data) {
     html += `
       <div class="dash-stub">
         <h3>还没挖过掘金机会</h3>
-        <div>${escHtml(note || '点上方"重新挖掘"按钮 · 会基于最新趋势 + 你的画像 LLM 跑一次')}</div>
+        <div>${escHtml(note || '点上方"重新挖掘"按钮 · OPUS 会基于最新趋势 + BRO 画像 LLM 跑一次')}</div>
         <div style="margin-top:12px;font-size:11px;color:var(--dim2)">
           需要先有趋势 · 没趋势的话先去 <i class="ri-line-chart-fill"></i> 今日趋势 跑一次
         </div>
@@ -11210,7 +10962,7 @@ async function renderOpportunities(data) {
       <div class="opp-intro">
         生成于 ${formatTimeShort(generated)} · 扫描了 ${trendsScanned || 0} 条趋势 · 耗时 ${elapsedS}s<br>
         <span style="font-size:11px;color:var(--dim2)">
-          每个机会都基于你的画像评估了适配度 · 点机会卡可展开成完整方案
+          每个机会都基于 BRO 画像评估了适配度 · 点机会卡可让 OPUS 展开成完整方案
         </span>
       </div>
       ${opps.length > 3 ? renderListFilter({targetSelector: '.opp-card', placeholder: '搜机会标题 / 领域 / 适配理由...'}) : ''}
@@ -11292,12 +11044,12 @@ function renderOppFullCard(o, idx) {
         </button>
       </div>
       <div class="opp-metas">
-        <span class="opp-meta-pill" title="适配度">${fitIcon} ${fitLabel}</span>
+        <span class="opp-meta-pill" title="BRO 适配度">${fitIcon} ${fitLabel}</span>
         <span class="opp-meta-pill" title="投入预估">⏱️ ${effortLabel}</span>
         <span class="opp-meta-pill" title="收益级别">📈 ${upsideLabel}</span>
       </div>
       <div class="opp-summary">${escHtml(o.summary || '')}</div>
-      ${o.fit_reason ? `<div class="opp-fit-reason"><b>为什么 用户 ${o.fit === 'no' ? '不' : ''}适合:</b> ${escHtml(o.fit_reason)}</div>` : ''}
+      ${o.fit_reason ? `<div class="opp-fit-reason"><b>为什么 BRO ${o.fit === 'no' ? '不' : ''}适合:</b> ${escHtml(o.fit_reason)}</div>` : ''}
       ${renderOppStats(o)}
       ${stepsHtml}
       ${refsHtml}
@@ -11481,14 +11233,17 @@ if (!sessionId) {
 updateCurrentLabel();
 renderDetailWelcome();
 if (!token) {
-  addSys('远程访问需要填 API Token（本机访问无需配置）');
+  addSys('欢迎回来 · 第一次进来需要填 token');
   setTimeout(openSettings, 400);
 } else {
   if (sessionId && !sessionId.startsWith('tmp-')) {
-    // 浏览器刷新页面 · 已有 sessionId · load 历史进 container 然后才显示"OPUS 在线"
+    // 浏览器刷新页面 · 已有 sessionId · 先拉服务端 label 把顶部标题从裸 api-xxxx 换成对话名
+    _metaTried.add(sessionId);
+    _ensureSessionMeta(sessionId);
+    // load 历史进 container 然后才显示"OPUS 在线"
     _loadSessionHistory(sessionId).then(async () => {
       // 卷五十七 II · 2026-06-06 · 重启后页面(重)加载的续场感知
-      //   用户 复盘: 重启完桌宠还在跑·对话框却掉回 idle·不自动继续 (他以前以为是"两次重启")。
+      //   BRO 复盘: 重启完桌宠还在跑·对话框却掉回 idle·不自动继续 (他以前以为是"两次重启")。
       //   病根: 页面在 daemon 刚重启后(重)加载时·后台 resume turn 还卡在 scheduled/刚 running·active_turn 尚未注册·
       //         老的单次 _maybeStartPoll 一查没有就放弃解锁 → UI 定格 idle·resume turn 随后跑完只落 jsonl·不手刷看不到。
       //   时序保证: _init_runtime + schedule_resume_turn(同步置 scheduled) 都在 uvicorn 服务前跑完·
@@ -11552,7 +11307,7 @@ if (!token) {
     if (restart_event) {
       const req = restart_event.request || {};
       // 卷五十七 · 重启是某个具体 session 触发的 (req.session_id)。 只在那个 session 正好可见时才贴 banner ·
-      //   否则会把 B 的重启理由串进可见的 A (用户 复盘"A 带过来 B 的内容")。 B 自己 jsonl 已被 server 注过续场 notice·切过去看得到。
+      //   否则会把 B 的重启理由串进可见的 A (BRO 复盘"A 带过来 B 的内容")。 B 自己 jsonl 已被 server 注过续场 notice·切过去看得到。
       const evSid = (req.session_id || '').trim();
       if (!evSid || evSid === sessionId) {
         addSys('<i class="ri-refresh-fill"></i> daemon 刚才按你要求重启过了 · 理由: ' + (req.reason || '(no reason)') + ' · 新代码已装载 · 继续就好');
@@ -11748,6 +11503,10 @@ async function _ensureSessionMeta(sid) {
     if (data && data.meta) {
       sessionMetaCache[sid] = data.meta;
       if (sid === sessionId) updateCurrentLabel();
+      // 服务端 label 到手 → 刷新标签栏·把裸 api-xxxx 就地换成对话名
+      if (data.meta.label && typeof _renderTabBar === 'function') {
+        try { _renderTabBar(); } catch {}
+      }
     }
   } catch (e) {
     // 静默失败 · 拉不到就用 alias fallback

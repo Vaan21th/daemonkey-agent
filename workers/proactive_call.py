@@ -165,6 +165,23 @@ def collect_triggers() -> list[dict]:
     except Exception as e:
         logger.debug("collect ritual triggers failed: %s", e)
 
+    # care · 情感轨主动侧 · 有成熟的待回访候选(身体/情绪/大节点) → 主动关心一句
+    #   排在 silence 前 = 优先级 ritual > care > silence(关心比"单纯好久没聊"更有意义)。
+    #   与被动侧共享 care_followups.json 状态·同日/72h 内绝不双重关心·单候选主动最多一次。
+    try:
+        from workers import closure_check as _cc
+        cand = _cc.mature_care_candidate()
+        if cand and cand.get("text"):
+            out.append({
+                "kind": "care",
+                "signal": cand.get("signal", ""),
+                "care_text": cand.get("text", ""),
+                "care_when": cand.get("when", "前些时候"),
+                "reason": f"{cand.get('when', '前些时候')}提过的状态 · 主动关心",
+            })
+    except Exception as e:
+        logger.debug("collect care trigger failed: %s", e)
+
     try:
         from workers.dynamic_telemetry import _format_gap
         gap_h, summary = _global_silence()
@@ -213,11 +230,21 @@ def should_call() -> Optional[dict]:
 
 def _build_injection(trigger: dict) -> str:
     kind = trigger.get("kind")
-    lines = ["【系统 · 主动 CALL 时机】这不是用户发的消息——是节律把你叫醒了。"]
+    lines = ["【系统 · 主动 CALL 时机】这不是用户发的消息——是到点的节律把你叫醒了。"]
     if kind == "silence":
         lines.append(f"用户已经 {trigger.get('gap_text', '好一阵')} 没跟你说话了，现在适合主动找他一下。")
     elif kind == "ritual":
         lines.append(f"到点了：{trigger.get('detail', '有件周期性的事该做了')}。")
+    elif kind == "care":
+        lines.append(
+            f"BRO {trigger.get('care_when', '前些时候')}提过「{trigger.get('care_text', '')}」"
+            "（身体 / 心情类信号）· 之后没再提起。现在主动、轻轻关心他一句。"
+        )
+        lines.append(
+            "红线（重要）：**只关心、不追问**——一句就够（『那阵子缓过来没』这种），"
+            "别连环问、别列清单、别显得在查户口或监控他。他要是没接这个话头，就自然带过，"
+            "别反复戳；他也许早就好了，别把它当伤疤。语气是老友顺口一问，不是打卡回访。"
+        )
     if trigger.get("last_summary"):
         lines.append(f"你们上次聊的是：{trigger['last_summary']}")
     lines.append(
@@ -288,8 +315,11 @@ def run_proactive_call(trigger: dict, *, force: bool = False) -> dict:
                  "reason": trigger.get("reason"), "error": "runtime_not_ready"})
         return {"delivered": False, "error": "runtime_not_ready"}
 
+    from identity import localize_narration as _ln
     sid = _proactive_session()
-    injection = _build_injection(trigger)
+    # 注入文案作 message 传进 _chat_impl · 走不到 system/suffix 那道 _localize ·
+    # 所以在这里显式过 localize_narration:母体 no-op 保留 BRO·纯净版 BRO→实例名+抹卷号 (去母体化命门)。
+    injection = _ln(_build_injection(trigger))
     reason = trigger.get("reason") or trigger.get("kind") or "主动问候"
     try:
         result = _run_bg_turn(injection, sid, reason)
@@ -303,6 +333,13 @@ def run_proactive_call(trigger: dict, *, force: bool = False) -> dict:
                 wechat = ilink_client.proactive_deliver(full_reply)
             except Exception as e:
                 logger.debug("wechat proactive deliver failed: %s", e)
+        # care 主动关心真发出去了 → 认领这条候选(记 proactive_ts · 防被动侧同一条再补一刀)
+        if full_reply and trigger.get("kind") == "care" and trigger.get("signal"):
+            try:
+                from workers import closure_check as _cc
+                _cc.mark_care_surfaced(trigger["signal"], proactive=True)
+            except Exception as e:
+                logger.debug("mark care surfaced failed: %s", e)
         _record({
             "delivered": True,
             "kind": trigger.get("kind"),

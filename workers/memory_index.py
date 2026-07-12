@@ -98,6 +98,13 @@ DB_PATH = DATA_DIR / "memory_index.db"
 SOUL_DIR = ROOT / "soul"
 SESSIONS_DIR = ROOT / "sessions"
 PLAYBOOKS_DIR = ROOT / "data" / "playbooks"
+# 私有文档知识库 (workers/knowledge_base.py 写入)· 直接读盘避免与 knowledge_base 循环导入
+KNOWLEDGE_DIR = ROOT / "data" / "knowledge"
+KNOWLEDGE_DOCS_DIR = KNOWLEDGE_DIR / "docs"
+KNOWLEDGE_MANIFEST = KNOWLEDGE_DIR / "manifest.json"
+
+# 客户档案 notes (workers/clients.py 写入)· source = client:<id> · 让"客户档案=记忆延伸"
+CLIENTS_MANIFEST = ROOT / "data" / "clients" / "manifest.json"
 
 # ---- 切块参数 ----
 MAX_CHUNK_CHARS = 2000       # 单块上限（超出按段落边界切）
@@ -122,6 +129,60 @@ def _summary_entry_text(entry: dict) -> str:
     if isinstance(facts, list) and facts:
         parts.append("关键事实: " + " · ".join(str(f) for f in facts if f))
     return "\n".join(parts).strip()
+
+
+def _enabled_knowledge_docs() -> list[tuple[str, str]]:
+    """读知识库 manifest · 返回 [(doc_id, 正文文本)] 只含 enabled 的文档。
+
+    直接读盘 (不 import knowledge_base) · 避免与其循环导入。全只读 · 失败返 []。
+    """
+    if not KNOWLEDGE_MANIFEST.exists():
+        return []
+    try:
+        manifest = json.loads(KNOWLEDGE_MANIFEST.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return []
+    docs = manifest.get("docs")
+    if not isinstance(docs, dict):
+        return []
+    out: list[tuple[str, str]] = []
+    for doc_id, meta in docs.items():
+        if not isinstance(meta, dict) or not meta.get("enabled", True):
+            continue
+        md = KNOWLEDGE_DOCS_DIR / f"{doc_id}.md"
+        if not md.exists():
+            continue
+        try:
+            out.append((doc_id, md.read_text(encoding="utf-8")))
+        except OSError:
+            continue
+    return out
+
+
+def _client_notes() -> list[tuple[str, str]]:
+    """读客户档案 manifest · 返回 [(client_id, name+notes 文本)] · 只含有 notes 的。
+
+    直接读盘(不 import clients)· 避免循环导入。全只读 · 失败返 []。
+    """
+    if not CLIENTS_MANIFEST.exists():
+        return []
+    try:
+        manifest = json.loads(CLIENTS_MANIFEST.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return []
+    clients = manifest.get("clients")
+    if not isinstance(clients, dict):
+        return []
+    out: list[tuple[str, str]] = []
+    for cid, meta in clients.items():
+        if not isinstance(meta, dict):
+            continue
+        notes = (meta.get("notes") or "").strip()
+        if not notes:
+            continue
+        body = f"客户档案 · {meta.get('name', '')}\n\n{notes}".strip()
+        out.append((cid, body))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -428,6 +489,44 @@ def rebuild() -> int:
             except Exception as e:
                 logger.warning("索引 summary 文件 %s 时出错: %s", sf.name, e)
 
+    # ---- 索引私有文档知识库 (data/knowledge · 只索引 enabled 的) ----
+    # source = doc:<id> · recall_memory(scope='docs') 靠 LIKE 'doc:%' 召回
+    for doc_id, text in _enabled_knowledge_docs():
+        try:
+            chunks = _chunk_markdown(text, f"doc:{doc_id}", now)
+            for c in chunks:
+                _insert_chunk_with_fts(
+                    conn,
+                    source=c["source"],
+                    section=c["section"],
+                    chunk_index=c["chunk_index"],
+                    content=c["content"],
+                    token_count=c["token_count"],
+                    updated_at=c["updated_at"],
+                )
+            total += len(chunks)
+        except Exception as e:
+            logger.warning("索引知识库文档 %s 失败: %s", doc_id, e)
+
+    # ---- 索引客户档案 notes (data/clients) · source = client:<id> ----
+    # recall_memory(scope='clients'/'all') 靠 LIKE 'client:%' 召回·让客户档案长在记忆里
+    for cid, text in _client_notes():
+        try:
+            chunks = _chunk_markdown(text, f"client:{cid}", now)
+            for c in chunks:
+                _insert_chunk_with_fts(
+                    conn,
+                    source=c["source"],
+                    section=c["section"],
+                    chunk_index=c["chunk_index"],
+                    content=c["content"],
+                    token_count=c["token_count"],
+                    updated_at=c["updated_at"],
+                )
+            total += len(chunks)
+        except Exception as e:
+            logger.warning("索引客户档案 %s 失败: %s", cid, e)
+
     conn.commit()
     conn.close()
 
@@ -636,6 +735,21 @@ def check_stale() -> bool:
                 logger.info("索引过期: playbooks/%s 有新修改", pb.name)
                 return True
 
+    # 知识库 manifest / 文档变动 (灌档 / 参考开关切换) 也算过期
+    if KNOWLEDGE_MANIFEST.exists() and KNOWLEDGE_MANIFEST.stat().st_mtime > db_mtime:
+        logger.info("索引过期: 知识库 manifest 有更新")
+        return True
+    if KNOWLEDGE_DOCS_DIR.exists():
+        for md in KNOWLEDGE_DOCS_DIR.glob("*.md"):
+            if md.stat().st_mtime > db_mtime:
+                logger.info("索引过期: 知识库文档 %s 有更新", md.name)
+                return True
+
+    # 客户档案 notes 变动也算过期(建档/追加备注会刷新 manifest)
+    if CLIENTS_MANIFEST.exists() and CLIENTS_MANIFEST.stat().st_mtime > db_mtime:
+        logger.info("索引过期: 客户档案 manifest 有更新")
+        return True
+
     return False
 
 
@@ -687,6 +801,12 @@ def search(
         scope_filter_c = "AND c.source IN ('session', 'session_summary')"
     elif scope == "skill":
         scope_filter_c = "AND c.source = 'skill'"
+    elif scope == "docs":
+        # 私有文档知识库 · 每篇 source = doc:<id>
+        scope_filter_c = "AND c.source LIKE 'doc:%'"
+    elif scope == "clients":
+        # 客户档案 notes · 每个 source = client:<id>
+        scope_filter_c = "AND c.source LIKE 'client:%'"
 
     has_score = True
     try:

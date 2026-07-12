@@ -106,10 +106,22 @@ async def get_session_meta_endpoint(
         raise HTTPException(404, f"session not found: {sid}")
 
     meta = get_session_meta(sid)
+    label = meta.get("label")
+    # 老会话补名 · 内核加即时命名之前建的 session 没 label · 前端标签栏就一直是裸 api-xxxx。
+    # 这里按需从第一句用户话补一个并落盘(只补一次)· 让标签栏/历史列表就地改名·治本。
+    if not label:
+        try:
+            from daemon_session import derive_label_from_first_turn
+            derived = derive_label_from_first_turn(sid)
+            if derived:
+                set_session_meta(sid, label=derived)
+                label = derived
+        except Exception:
+            pass
     return {
         "session_id": sid,
         "meta": {
-            "label": meta.get("label"),
+            "label": label,
             "pinned_at": meta.get("pinned_at"),
             "archived_at": meta.get("archived_at"),
         },

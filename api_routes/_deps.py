@@ -123,3 +123,18 @@ def check_rate_limit(request: "Request", authorization: Optional[str]) -> None:
         raise
     except Exception:
         pass
+
+
+async def safe_json_body(request: "Request") -> dict:
+    """解析 POST body 为 JSON dict · 畸形/空/非对象 → 干净 400 (而非 500 + ASGI traceback)。
+
+    前端 fetch 发的都是合法 JSON·这层只兜底畸形请求 (手工 curl 参数吃掉引号 / 探针 /
+    坏客户端)·让端点少一堆 uvicorn traceback 噪音·给调用方明确的 400。始终返回 dict。
+    """
+    try:
+        data = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="请求体不是合法 JSON") from e
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
+    return data

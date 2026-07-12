@@ -336,16 +336,68 @@ def _find_relevant_report_items(opp: dict, *, top_n: int = 3) -> list[dict]:
     return out
 
 
+def _find_relevant_docs(opp: dict, *, top_n: int = 3, snippet_chars: int = 220) -> list[dict]:
+    """缺口① · 私有知识库反查 · 把 BRO 存量资料当客观背景喂进可行性分析。
+
+    - 只搜 FTS5 里的 doc:<id>(索引里天然只有 enabled 文档·静音的已被 deindex)
+    - **跳过 sensitive**:敏感资料不自动外送 LLM(要引用得显式 recall)
+    - 同一文档多块命中 → 按 doc 去重·保留最相关那块的片段
+    掘金脑因此能引用 BRO 私藏的合同/行业资料·而不只是公开报告/雷达。
+    """
+    keywords = _extract_keywords(opp)
+    if not keywords:
+        return []
+    query = " ".join(sorted(keywords))
+    try:
+        from workers import memory_index
+        from workers import knowledge_base as kb
+    except Exception:
+        return []
+    try:
+        chunks = memory_index.search(query, top_k=top_n * 3, scope="docs")
+    except Exception:
+        return []
+    seen: set[str] = set()
+    out: list[dict] = []
+    for ch in chunks:
+        src = getattr(ch, "source", "") or ""
+        if not src.startswith("doc:"):
+            continue
+        doc_id = src[len("doc:"):]
+        if doc_id in seen:
+            continue
+        meta = kb.get_document(doc_id) or {}
+        if meta.get("sensitive"):
+            continue
+        seen.add(doc_id)
+        snippet = (getattr(ch, "content", "") or "").strip().replace("\n", " ")
+        if len(snippet) > snippet_chars:
+            snippet = snippet[:snippet_chars] + "…"
+        out.append({
+            "idx": len(out) + 1,
+            "ref_id": f"k{len(out) + 1}",
+            "doc_id": doc_id,
+            "title": meta.get("title") or doc_id,
+            "snippet": snippet,
+        })
+        if len(out) >= top_n:
+            break
+    return out
+
+
 def _collect_sources(opp: dict) -> dict:
     """
     卷三十二补丁 · 一次性收齐"这次分析基于哪些原始信源"
     给 LLM prompt 看 + 落盘存档 + UI 渲染都用同一份。
+    卷七十六 · 缺口① · 加私有知识库反查(docs)·掘金脑吃第二大脑。
     """
     radar_items = _find_relevant_radar_items(opp, top_n=6)
     report_items = _find_relevant_report_items(opp, top_n=3)
+    doc_items = _find_relevant_docs(opp, top_n=3)
     return {
         "radar_items": radar_items,
         "reports": report_items,
+        "docs": doc_items,
         "collected_at": datetime.now(timezone.utc).isoformat(),
         "keyword_count": len(_extract_keywords(opp)),
     }
@@ -355,19 +407,24 @@ def _render_sources_prompt(sources: dict, opp: dict) -> str:
     """把 _collect_sources 的结构化数据渲染成 LLM prompt 文本块"""
     radar_items = sources.get("radar_items") or []
     reports = sources.get("reports") or []
+    docs = sources.get("docs") or []
     title = opp.get("title") or "?"
 
-    if not radar_items and not reports:
+    if not radar_items and not reports and not docs:
         return (
-            f"（这次分析没找到「{title[:40]}」相关的雷达条目 / 报告。**信源不足**——"
+            f"（这次分析没找到「{title[:40]}」相关的雷达条目 / 报告 / 私有资料。**信源不足**——"
             "你应该在 verdict_reason 里直接说「建议先做 X 再回来分析」·不要硬编结论。）"
         )
 
     lines: list[str] = []
     lines.append(f"机会标题：{title}")
-    lines.append(f"找到 {len(radar_items)} 条相关雷达条目 + {len(reports)} 份相关报告。")
+    lines.append(
+        f"找到 {len(radar_items)} 条相关雷达条目 + {len(reports)} 份相关报告 + "
+        f"{len(docs)} 篇私有知识库资料。"
+    )
     lines.append("**在 verdict_reason / swot.opportunities / swot.threats 引用编号**·"
-                 "比如 'OpenAI 已发布 Cowork（参考 [r2]）' 或 '可参考报告 [d1]'。")
+                 "比如 'OpenAI 已发布 Cowork（参考 [r2]）'、'可参考报告 [d1]'、"
+                 "'据你存的资料 [k1]'。")
     lines.append("")
 
     if radar_items:
@@ -386,6 +443,14 @@ def _render_sources_prompt(sources: dict, opp: dict) -> str:
             lines.append(
                 f"- **[{rp['ref_id']}]** {rp.get('name','?')} · `{rp.get('relpath','?')}`"
             )
+        lines.append("")
+
+    if docs:
+        lines.append("### 私有知识库（你的存量资料 · 引用 [k1] / [k2] ...）")
+        for dc in docs:
+            lines.append(f"- **[{dc['ref_id']}]** {dc.get('title','?')}")
+            if dc.get("snippet"):
+                lines.append(f"    > {dc['snippet']}")
         lines.append("")
 
     return "\n".join(lines)

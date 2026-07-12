@@ -26,6 +26,9 @@ python-docx>=1.0.0
 # wish-41ed72ef · 文档上传 · PPTX 文本提取
 python-pptx>=1.0.0
 
+# 客户档案 Excel 导入 (parse_table · .xlsx) · 缺则 CSV 仍可用·xlsx 会给"pip install"提示
+openpyxl>=3.1.0
+
 # 卷五十八续 · lint_check 工具 · 抓"语法对逻辑错"的 bug (未定义名/未用导入/重定义)
 ruff>=0.6.0
 

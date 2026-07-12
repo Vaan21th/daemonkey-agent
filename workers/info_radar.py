@@ -822,35 +822,53 @@ def refresh_radar(progress=None, translate: bool = True) -> dict:
             except Exception:
                 pass
 
-    for i, src in enumerate(sources, 1):
-        _p(f"📡 巡信源 {i}/{n_src}", src.get("display", src["id"]))
+    # 卷七十六 · 并行巡源 · 各源抓取是纯 I/O 且互相独立 → 线程池并发
+    #   墙钟从"所有源相加"降到"最慢那个源"。用 ThreadPoolExecutor(_fetch_source 是同步
+    #   httpx·网络等待时释放 GIL)· 并发度限 8(可 OPUS_RADAR_CONCURRENCY 调)· 别拿
+    #   dispatch_subagent 那套 LLM 级并行来干这活(贵且慢)。结果按原序回填·保持 UI 稳定。
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    try:
+        max_workers = int(os.environ.get("OPUS_RADAR_CONCURRENCY", "8"))
+    except ValueError:
+        max_workers = 8
+    max_workers = min(max(1, max_workers), max(1, n_src))
+
+    def _fetch_one(idx: int, src: dict) -> tuple[int, list, dict]:
         t0 = time.time()
+        base = {
+            "source": src["id"],
+            "display": src.get("display", src["id"]),
+            "domain": src.get("domain", _default_domain()),
+        }
         try:
             items = _fetch_source(src)
-            sources_meta.append(
-                {
-                    "source": src["id"],
-                    "display": src.get("display", src["id"]),
-                    "domain": src.get("domain", _default_domain()),
-                    "fetched": len(items),
-                    "ok": bool(items),
-                    "elapsed_ms": int((time.time() - t0) * 1000),
-                }
-            )
-            all_items.extend(items)
+            base.update(fetched=len(items), ok=bool(items),
+                        elapsed_ms=int((time.time() - t0) * 1000))
+            return idx, items, base
         except Exception as e:
             logger.exception("source %s crashed: %s", src["id"], e)
-            sources_meta.append(
-                {
-                    "source": src["id"],
-                    "display": src.get("display", src["id"]),
-                    "domain": src.get("domain", _default_domain()),
-                    "fetched": 0,
-                    "ok": False,
-                    "error": str(e),
-                    "elapsed_ms": int((time.time() - t0) * 1000),
-                }
-            )
+            base.update(fetched=0, ok=False, error=str(e),
+                        elapsed_ms=int((time.time() - t0) * 1000))
+            return idx, [], base
+
+    results: dict[int, tuple[list, dict]] = {}
+    done = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futs = [ex.submit(_fetch_one, i, src) for i, src in enumerate(sources)]
+        for fut in as_completed(futs):
+            idx, items, meta = fut.result()
+            results[idx] = (items, meta)
+            done += 1
+            _p(f"📡 已巡 {done}/{n_src}", meta.get("display", ""))
+
+    for i in range(n_src):
+        got = results.get(i)
+        if not got:
+            continue
+        items, meta = got
+        sources_meta.append(meta)
+        all_items.extend(items)
 
     # 卷五十六 信源审计 · 跨源去重 (实测 Cyera/Uber 等被多源抓到重复·价值密度会虚高)
     # 按 url 精确去重 (同 url = 必然同一条) · 保留先到的那条

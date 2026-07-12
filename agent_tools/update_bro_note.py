@@ -74,14 +74,32 @@ def _find_section(text: str, header: str) -> tuple[int, int]:
     return start, end
 
 
-def _append_to_flow(text: str, section_key: str, operation: str) -> str:
-    """在'近期更新流水'表格末尾追加一行。如果找不到流水段，原样返回。"""
+def _flow_preview(content: str, limit: int = 46) -> str:
+    """把写入内容压成流水表能看懂的一行预览 (去 markdown 噪音·转义竖线·截断)。"""
+    s = " ".join((content or "").split())          # 折叠换行/多空格
+    s = s.replace("**", "").replace("`", "")        # 去掉加粗/代码记号
+    s = s.lstrip("#-*>| ").strip()                  # 去掉行首 markdown 记号
+    s = s.replace("|", "/")                          # 竖线会破表格·换成斜杠
+    if len(s) > limit:
+        s = s[:limit].rstrip() + "…"
+    return s or "(空)"
+
+
+def _append_to_flow(text: str, section_key: str, operation: str, preview: str = "") -> str:
+    """在'近期更新流水'表格末尾追加一行。如果找不到流水段，原样返回。
+
+    行里带一段内容预览·让 BRO / 下一根毛扫一眼就知道"这次记了啥"·
+    而不是只看到 section=events (append) 这种看不懂的记录。
+    """
     flow_start, flow_end = _find_section(text, FLOW_HEADER)
     if flow_start < 0:
         return text
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    new_row = f"| {timestamp} | OPUS · update_bro_note | section={section_key} ({operation}) |"
+    detail = f"{section_key} ({operation})"
+    if preview:
+        detail += f"：{preview}"
+    new_row = f"| {timestamp} | OPUS · update_bro_note | {detail} |"
 
     # find the last line that starts with "|" inside this section
     flow_body = text[flow_start:flow_end]
@@ -140,7 +158,7 @@ def _run(args: dict) -> ToolResult:
         new_section_body = section_body.rstrip() + f"\n\n{content}\n\n"
 
     new_text = text[:sec_start] + new_section_body + text[sec_end:]
-    new_text = _append_to_flow(new_text, section_key, operation)
+    new_text = _append_to_flow(new_text, section_key, operation, _flow_preview(content))
 
     try:
         global_path, local_path = write_global_then_sync(
@@ -201,7 +219,16 @@ SPEC = ToolSpec(
         "risks (用户's structural weaknesses + forward-looking risks—OPUS's early warning radar). "
         "The notebook is auto-injected into every container's runtime context (Cursor / daemon / wechat bridge), "
         "so writing here builds long-term continuity AND multi-container shared cognition. "
-        "Default operation=append; use replace_section sparingly."
+        "Default operation=append; use replace_section sparingly.\n\n"
+        "WRITE STANDARD (keep the notebook clean for every future session — follow this):\n"
+        "  1. One idea per entry — do NOT dump a whole chat transcript in.\n"
+        "  2. Lead with the date (YYYY-MM-DD), then the fact, then the person's own words in quotes if you have them.\n"
+        "  3. 'events' entries should fit the existing table shape: a dated one-liner + importance "
+        "(critical/high/medium/low).\n"
+        "  4. Be concise but self-contained — a future 'you' with zero chat history must understand it standalone.\n"
+        "  5. Pick the RIGHT section (profile=current state that changes / events=timeline / rules=durable traits / "
+        "dialogue=signature phrases / summary=monthly compression / risks=warning signals). If unsure, prefer events.\n"
+        "  6. Never invent facts — only write what the person actually revealed."
     ),
     tier=TIER_AUTO,
     input_schema={

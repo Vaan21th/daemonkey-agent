@@ -71,26 +71,32 @@ OPUS_DIARY = ROOT / "data" / "cognition" / "opus-diary.md"
 
 def load_cognition(
     *,
-    section_excerpt_chars: int = 400,
+    section_excerpt_chars: int = 700,
     diary_max_entries: int = 12,
+    diary_entry_chars: int = 800,
 ) -> dict:
     """读 BRO-NOTEBOOK + OPUS 日记 · 返回结构化数据
 
     Args:
-        section_excerpt_chars: BRO-NOTEBOOK 每个章节摘要长度（避免一次返几十 KB）
+        section_excerpt_chars: BRO-NOTEBOOK 每个章节摘要长度（避免一次返几十 KB）·
+                               时间序章节（事件流/流水/月度压缩）取「尾部」= 最新的，
+                               其余章节取头部。
         diary_max_entries: OPUS 日记返回的最近 N 条
+        diary_entry_chars: 单条日记正文展示上限（防单条巨长把列表撑成噪音）
 
-    Returns: dict · 见模块顶部说明
+    Returns: dict · 见模块顶部说明。新增 `recent_flow`（画像「最近记了什么」时间线）
     """
     bro = _load_bro_profile(section_excerpt_chars=section_excerpt_chars)
-    diary = _load_opus_diary(max_entries=diary_max_entries)
+    diary = _load_opus_diary(max_entries=diary_max_entries, entry_chars=diary_entry_chars)
     open_questions = _extract_open_questions(bro)
+    recent_flow = _extract_recent_flow(bro)
 
     return {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "bro_profile": bro,
         "opus_diary": diary,
         "open_questions": open_questions,
+        "recent_flow": recent_flow,
     }
 
 
@@ -236,11 +242,14 @@ def _load_bro_profile(*, section_excerpt_chars: int) -> dict:
             heading_raw = parts[i].strip()
             heading = heading_raw.lstrip("# ").strip()
             body = (parts[i + 1] if i + 1 < len(parts) else "").strip()
+            time_ordered = _is_time_ordered(heading)
             sections.append({
                 "heading": heading,
                 "level": 2,
+                "time_ordered": time_ordered,
                 "body_full": body,
-                "body_excerpt": _make_excerpt(body, section_excerpt_chars),
+                # 时间序章节从尾部取(最新)·画像章节从头取。修「点开永远是最旧信息」的根因。
+                "body_excerpt": _make_excerpt(body, section_excerpt_chars, tail=time_ordered),
             })
 
     return {
@@ -254,15 +263,30 @@ def _load_bro_profile(*, section_excerpt_chars: int) -> dict:
     }
 
 
-def _make_excerpt(body: str, max_chars: int) -> str:
+# 时间倒序章节的启发式识别 · 命中则摘要取「尾部 = 最新」·否则取头部
+_TIME_ORDERED_KEYWORDS = ("事件", "流水", "Event", "压缩", "Summary", "月度", "review", "时间线")
+
+
+def _is_time_ordered(heading: str) -> bool:
+    return any(k in heading for k in _TIME_ORDERED_KEYWORDS)
+
+
+def _make_excerpt(body: str, max_chars: int, *, tail: bool = False) -> str:
     body = body.strip()
     if len(body) <= max_chars:
         return body
+    tip = "… (更多内容在完整原文里)"
+    if tail:
+        cut = body[-max_chars:]
+        first_nl = cut.find("\n")
+        if 0 <= first_nl < max_chars * 0.4:
+            cut = cut[first_nl + 1:]
+        return tip + "\n\n" + cut.lstrip()
     cut = body[:max_chars]
     last_nl = cut.rfind("\n")
     if last_nl > max_chars * 0.6:
         cut = cut[:last_nl]
-    return cut.rstrip() + "\n\n… (省略 · 完整内容在 soul/BRO-NOTEBOOK.md)"
+    return cut.rstrip() + "\n\n" + tip
 
 
 # ──────────────────────────────────────────────────────────
@@ -272,7 +296,7 @@ def _make_excerpt(body: str, max_chars: int) -> str:
 _DIARY_ENTRY = re.compile(r"^## (\d{4}-\d{2}-\d{2})\s*[·\-:|]?\s*(.+)$", re.MULTILINE)
 
 
-def _load_opus_diary(*, max_entries: int) -> dict:
+def _load_opus_diary(*, max_entries: int, entry_chars: int = 800) -> dict:
     if not OPUS_DIARY.exists():
         return {
             "source": "data/cognition/opus-diary.md",
@@ -321,6 +345,8 @@ def _load_opus_diary(*, max_entries: int) -> dict:
             "type": entry_type,
             "domain": domain,
             "body": body,
+            # 防单条巨长把日记列表撑成噪音 · 展示用截断 · 完整仍在 body
+            "body_excerpt": _make_excerpt(body, entry_chars),
         })
 
     entries.sort(key=lambda e: e["date"], reverse=True)
@@ -342,16 +368,16 @@ def _load_opus_diary(*, max_entries: int) -> dict:
 # 内部 · 开放问题提取（OPUS 当下关注的事 · 帮 BRO 看见）
 # ──────────────────────────────────────────────────────────
 
-# 从 BRO-NOTEBOOK 第六章"风险与弱点"提 · 各种"还没决定 / 担心 / 待定"
+# 从 BRO-NOTEBOOK 里提 · 各种"还没决定 / 待定 / 待跟进"。
+# 卷·窄化:去掉"风险""潜在"(会把整节风险与弱点一网打尽·当下关注变成 risks 段的回声)·
+#         只留真正"悬而未决 / 待跟进"的信号。read_dashboard / propose_next_move 仍读这个 key。
 _OPEN_PATTERNS = [
     r"还没决[定]",
-    r"待[定决]",
+    r"待[定决跟办]",
     r"暂未",
     r"未决",
-    r"风险",
-    r"潜在",
     r"需要(?:再)?确认",
-    r"焦虑",
+    r"待确认",
 ]
 _OPEN_PATTERN_RE = re.compile("|".join(_OPEN_PATTERNS))
 
@@ -383,3 +409,91 @@ def _extract_open_questions(bro: dict) -> list[dict]:
             break
 
     return out[:12]
+
+
+# ──────────────────────────────────────────────────────────
+# 内部 · 「最近记了什么」时间线（让活的本子看起来是活的）
+# ──────────────────────────────────────────────────────────
+
+# 行首日期:MM-DD / M-D / YYYY-MM-DD·后面可跟 · - : 分隔
+_FLOW_DATE_RE = re.compile(r"(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2})\s*[·\-:：|]?\s*(.*)")
+# 优先级:事件流(真内容)优于近期更新流水(元编辑日志·内容多是 section=X append)
+_FLOW_HEADING_PRIORITY = ("事件", "Event", "近期更新流水", "更新流水", "流水")
+# 表格里的"重要度/优先级"token · 识别出来当 level · 不当描述文本
+_FLOW_LEVEL_TOKENS = {
+    "critical", "high", "medium", "low",
+    "关键", "重要", "一般", "严重", "紧急",
+}
+
+
+def _extract_recent_flow(bro: dict, limit: int = 8) -> list[dict]:
+    """从画像的「事件流 / 近期更新流水」章节抽最近条目 · 最新在前。
+
+    这是画像顶部「最近记了什么」时间线的数据源 —— 直接回答 BRO 的疑虑
+    「它到底还记不记新东西」。优先取事件流(真内容)·退回更新流水·再退回任一时间序章节。
+    """
+    if not bro.get("exists"):
+        return []
+
+    sections = bro.get("sections", [])
+    target = None
+    for kw in _FLOW_HEADING_PRIORITY:
+        for sec in sections:
+            if kw in sec.get("heading", ""):
+                target = sec
+                break
+        if target is not None:
+            break
+    if target is None:
+        for sec in sections:
+            if sec.get("time_ordered"):
+                target = sec
+                break
+    if target is None:
+        return []
+
+    body = target.get("body_full", "")
+    head = target.get("heading", "")
+    out: list[dict] = []
+    for line in body.splitlines():
+        line = line.strip()
+        # ① markdown 表格行(事件流 | 时间 | 事件 | 重要度 | · 流水 | 时间 | 谁 | 改了什么 |)
+        if line.startswith("|"):
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if not cells or not any(cells):
+                continue
+            # 跳过表头 / 分隔行(---)
+            if cells[0] in ("时间", "date", "Time") or set(cells[0]) <= set("-: |"):
+                continue
+            date = (cells[0].split()[0] if cells[0] else "")[:16]
+            # 描述列 = cells[1:] 里剔掉"重要度"token后·最长的那格(事件表取到事件·流水表取到改动)
+            level = ""
+            desc_cells: list[str] = []
+            for c in cells[1:]:
+                cc = c.strip().strip("*").strip()
+                if cc.lower() in _FLOW_LEVEL_TOKENS:
+                    level = cc.lower()
+                elif cc:
+                    desc_cells.append(cc)
+            if not desc_cells:
+                continue
+            text = re.sub(r"\s+", " ", max(desc_cells, key=len)).replace("**", "").strip()
+            out.append({"date": date, "level": level, "text": text[:160],
+                        "section": head})
+            continue
+        # ② bullet 行(纯净版流水 / 事件流可能是这种)
+        if line.startswith(("-", "*", "·")):
+            content = line.lstrip("-*· ").strip().strip("*").strip()
+            if not content:
+                continue
+            m = _FLOW_DATE_RE.match(content)
+            if m and m.group(2):
+                out.append({"date": m.group(1)[:16], "level": "",
+                            "text": m.group(2).strip()[:160], "section": head})
+            else:
+                out.append({"date": "", "level": "", "text": content[:160],
+                            "section": head})
+
+    # 原文时间正序(旧→新)·倒过来给「最新在前」
+    out.reverse()
+    return out[:limit]

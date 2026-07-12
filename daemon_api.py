@@ -848,6 +848,7 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
     """
     import base64 as _b64
     import re as _re
+    import time as _time
     from pathlib import Path as _Path
 
     if not attachments:
@@ -855,6 +856,19 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
 
     _ATTACH_DIR = _Path("data/runtime/attachments")
     _ATTACH_DIR.mkdir(parents=True, exist_ok=True)
+
+    # 粘贴/上传的图按会话留存(不再看完即删)· 让 OPUS 之后能换个问法再 look_at 同一张。
+    # 顺手清掉 7 天前的旧图 · 防目录无限堆积 (best-effort · 失败不影响主流程)。
+    try:
+        _cutoff = _time.time() - 7 * 86400
+        for _old in _ATTACH_DIR.glob("*"):
+            try:
+                if _old.is_file() and _old.stat().st_mtime < _cutoff:
+                    _old.unlink()
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     descriptions = []
     for i, att in enumerate(attachments):
@@ -876,36 +890,37 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
         if ext == "jpeg":
             ext = "jpg"
 
-        # 写到临时文件
-        tmp_path = _ATTACH_DIR / f"{session_id}_{i}_{name}"
+        # 存到附件目录(按会话留存·不看完即删)· 文件名做基本清洗防路径穿越
+        _safe = _re.sub(r"[^\w.\-]", "_", (name or f"image_{i+1}").rsplit("/", 1)[-1].rsplit("\\", 1)[-1])[:60] or f"image_{i+1}"
+        if not _re.search(r"\.\w{2,5}$", _safe):
+            _safe += f".{ext}"
+        keep_path = _ATTACH_DIR / f"{session_id}_{int(_time.time())}_{i}_{_safe}"
         try:
-            tmp_path.write_bytes(_b64.b64decode(b64_str))
+            keep_path.write_bytes(_b64.b64decode(b64_str))
         except Exception as e:
             descriptions.append(f"图{i+1} ({name}): [base64 解码失败: {e}]")
             continue
 
-        # 调 look_at 看图
+        # 调 look_at 看图 · 描述里带上留存路径 · 让 OPUS 想再细看/换问法时复用同一张
+        rel_path = str(keep_path).replace("\\", "/")
         try:
             from agent_tools.look_at import _run as _look_at_run
-            result = _look_at_run({"path": str(tmp_path), "question": "请描述这张图片的内容。如果有文字，逐字抄出来。"})
+            result = _look_at_run({"path": str(keep_path), "question": "请描述这张图片的内容。如果有文字，逐字抄出来。"})
             if result.ok:
-                desc = result.output
-                descriptions.append(f"图{i+1} ({name}):\n{desc}")
+                descriptions.append(f"图{i+1} ({name}) · 已存: {rel_path}\n{result.output}")
             else:
-                descriptions.append(f"图{i+1} ({name}): [看图失败: {result.error}]")
+                descriptions.append(f"图{i+1} ({name}) · 已存: {rel_path} · [首次看图失败: {result.error}]")
         except Exception as e:
-            descriptions.append(f"图{i+1} ({name}): [look_at 调用异常: {type(e).__name__}: {e}]")
-        finally:
-            # 清理临时文件
-            try:
-                tmp_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            descriptions.append(f"图{i+1} ({name}) · 已存: {rel_path} · [look_at 调用异常: {type(e).__name__}: {e}]")
 
     if not descriptions:
         return ""
 
-    header = f"[用户上传了 {len(attachments)} 张图片]\n"
+    header = (
+        f"[用户上传了 {len(attachments)} 张图片 · 下面每张都给了『已存』路径]\n"
+        "想再仔细看某张 / 换个角度问(数数量、抄全部文字、盯某个细节)→ "
+        "直接 look_at(path=对应『已存』路径, question=...) 再看一次·别自己编路径。\n"
+    )
     return header + "\n".join(descriptions) + "\n---\n"
 
 
@@ -992,6 +1007,11 @@ def _chat_impl(
                 messages = []
             _API_SESSIONS[sid] = messages
 
+        # 新会话即时命名的判据 · 落盘前先记「这是不是这个 session 的第一句」+ 原始用户文本
+        # (在附件描述拼进 message 之前抓·标签用干净的用户原话)
+        _is_first_turn = not messages
+        _first_turn_text = (message or "").strip()
+
         # 写入新 user turn
         # wish-58af621e · 让压缩层知道当前 session id，摘要落盘用
         from workers.memory_compression import set_session_id
@@ -1015,6 +1035,20 @@ def _chat_impl(
         if user_meta:
             _user_meta.update(user_meta)
         append_turn(sid, "user", message, meta=_user_meta)
+
+        # 新会话即时命名 · 用第一句话前 ~24 字当 session label · 让标签栏/历史列表不显示
+        # 裸 api-xxxx (跟 spawn-task 同款·服务端落盘·刷新/换端/后台跑的会话都带名字)。
+        # 只在从没命过名时写·绝不覆盖用户手动改的名 (renameSession) 或已有 label。
+        if _is_first_turn and _first_turn_text:
+            try:
+                from daemon_session import get_session_meta, set_session_meta
+                if not (get_session_meta(sid).get("label") or "").strip():
+                    _lbl_src = " ".join(_first_turn_text.split())
+                    _lbl = _lbl_src[:24] + ("…" if len(_lbl_src) > 24 else "")
+                    if _lbl:
+                        set_session_meta(sid, label=_lbl)
+            except Exception:
+                pass
 
         # 卷四十六 III 补丁 5 · Y2 · token budget 入口检查
         # default 全部禁用 (env=0)·用户 调高才生效·超阈值直接抛 RuntimeError·UI 看得到
@@ -1052,6 +1086,11 @@ def _chat_impl(
         _closure_observe = _no_observe
         _pb_hint = ""
         _mem_hint = ""
+        _docs_hint = ""
+        _memwrite_hint = ""
+        _client_hint = ""
+        _casual_hint = ""
+        _care_hint = ""
         try:
             from workers import closure_check as _cc
             _cc.begin_turn()
@@ -1059,6 +1098,17 @@ def _chat_impl(
             _pb_hint = _cc.relevant_playbooks(message)
             # ① 记忆自动注入 (保守版) · 相关画像命中即递到 OPUS 手边
             _mem_hint = _cc.relevant_memories(message)
+            # ①b 知识库自动注入 · 私有文档目录/命中片段递到 OPUS 手边 (产品观第5条可追溯)
+            _docs_hint = _cc.relevant_docs(message)
+            # ①c 显式"记住"意图 → 本轮硬提醒 update_bro_note 落盘 (堵"嘴上记住了·实际没记")
+            _memwrite_hint = _cc.memory_write_hint(message)
+            # ①d 客户对话侧写 (B-P1/P2) · 命中已知客户/交易信号 → 软提醒记进客户档案
+            _client_hint = _cc.client_extract_hint(message)
+            # ①e 情感轨 (C) · 隐式闲聊信号 → 悄悄 update_bro_note (显式已命中则不叠加·避免双重指令)
+            _casual_hint = _cc.casual_profile_hint(message) if not _memwrite_hint else ""
+            # ①f 情感轨主动侧 (C+) · 记情感/健康信号 + 成熟期在闲聊语境软回访 (每天最多一次·防尬)
+            _cc.note_care_signals(message)
+            _care_hint = _cc.care_followup_hint(message)
         except Exception:
             pass
 
@@ -1079,7 +1129,7 @@ def _chat_impl(
         #   走 system_suffix 留在缓存断点之外 → 尾巴变也不冲掉灵魂缓存 (省钱关键)。
         #   localize 对两段分别做 (纯 token 替换·分段等价)。
         _sys_stable = _build_remote_system(RUNTIME.system_prompt)
-        _sys_tail = _build_remote_tail(sid) + _pb_hint + _mem_hint + _workshop_hint
+        _sys_tail = _build_remote_tail(sid) + _pb_hint + _mem_hint + _workshop_hint + _docs_hint + _memwrite_hint + _client_hint + _casual_hint + _care_hint
         if _user_meta.get("src") == "wechat":
             _sys_tail = _sys_tail + _WECHAT_CHANNEL_NOTE
         try:
@@ -1240,6 +1290,9 @@ def build_app():
     from api_routes import models as _routes_models
     from api_routes import providers as _routes_providers
     from api_routes import dashboard as _routes_dashboard
+    from api_routes import knowledge as _routes_knowledge
+    from api_routes import playbooks as _routes_playbooks
+    from api_routes import clients as _routes_clients
     from api_routes import vision as _routes_vision
     app.include_router(_routes_core.router)
     app.include_router(_routes_lifecycle.router)
@@ -1252,6 +1305,10 @@ def build_app():
     app.include_router(_routes_chat.router)
     app.include_router(_routes_models.router)
     app.include_router(_routes_providers.router)
+    # 知识库/技能库/客户档案路由必须在 dashboard 之前 · /dashboard/knowledge* /dashboard/playbooks* /dashboard/clients* 才不会被 /dashboard/{domain} 吞掉
+    app.include_router(_routes_knowledge.router)
+    app.include_router(_routes_playbooks.router)
+    app.include_router(_routes_clients.router)
     app.include_router(_routes_dashboard.router)
     app.include_router(_routes_vision.router)  # wish-4a6331b2 · /vision-config (曾漏注册→404)
 

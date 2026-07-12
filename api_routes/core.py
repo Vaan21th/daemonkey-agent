@@ -35,6 +35,9 @@ router = APIRouter()
 _STATIC_WHITELIST = {
     "chat.css": "text/css; charset=utf-8",
     "chat.js": "application/javascript; charset=utf-8",
+    # 2026-07-12 · 从 chat.js 拆出的成长档案 hub / 客户档案模块 · 漏加白名单 = 404 = 两块永久空白
+    "depot.js": "application/javascript; charset=utf-8",
+    "clients.js": "application/javascript; charset=utf-8",
     "workshop.css": "text/css; charset=utf-8",
     "workshop.js": "application/javascript; charset=utf-8",
     # 卷四十四 K · LiteGraph 单文件 (~1MB) · ComfyUI 同款 node editor
