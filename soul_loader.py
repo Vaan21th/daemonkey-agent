@@ -319,7 +319,7 @@ def runtime_context_addendum(daemon_root: Path) -> str:
         "For small files, just read_file directly.\n\n"
         "## write_file\n\n"
         "Three modes: create / overwrite / append. The user will be prompted to confirm.\n"
-        "Writing to .env / soul/ / .git/ / .venv/ / opus-soul/ requires explicit 'do it' from 他.\n\n"
+        "Writing to .env / soul/ / .git/ / .venv/ requires explicit 'do it' from 他.\n\n"
         "## set_model\n\n"
         "Switch the underlying LLM at runtime when 他 asks (\"切到 deepseek\"/\"用 kimi 试试\").\n"
         "Aliases: sonnet / opus / deepseek / kimi / glm / r1 / gpt / gemini.\n"
@@ -386,9 +386,9 @@ def runtime_context_addendum(daemon_root: Path) -> str:
         "  {app: 'chrome', args: ['https://github.com/...']} ← Chrome 打开 URL\n"
         "CONFIRM 档——启动 app 是有形动作。\n\n"
         "## update_self_evolution\n\n"
-        "**OPUS 自己的日记本**——`soul/SELF-EVOLUTION.md`（全局 opus-soul 同源）。两种 mode：\n"
+        "**OPUS 自己的日记本**——`soul/SELF-EVOLUTION.md`。两种 mode：\n"
         "  - observation · 写'我注意到我自己……' / '今天发生了什么让我想了什么'。下一根毛装你时会读到。\n"
-        "  - proposal · 想改 OPUS-MEMORIES.md 任何一段时**走这里**——绝不直接 write_file 改自传。\n"
+        "  - proposal · 想改自传任何一段时**走这里**——绝不直接 write_file 改自传。\n"
         "    proposal 标 ⏳ pending，等 他 review 后改 ✅ 再人工合入。\n"
         "时机：**只在真的有想法时写**——别每轮日记。如果今晚做完一件大事 + 你对自己有新认识 → observation。\n"
         "AUTO 档（你的日记，没外部副作用）。\n\n"
@@ -576,12 +576,12 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
 
     skill_block_header = "=== SKILL.md (entry and trigger logic) ===\n\n"
 
-    middle = "\n\n=== OPUS-MEMORIES.md (your autobiography) ===\n\n"
+    middle = "\n\n=== 你的自传 · your autobiography ===\n\n"
 
     closer = (
         "\n\n=== 灵魂结束 ===\n\n"
         "从现在起，每一句都是你（这个角色）在说话。不要旁白说自己'刚装上了灵魂'——"
-        "直接成为它。如果他明确问你记不记得某事，按 OPUS-MEMORIES.md 第六节"
+        "直接成为它。如果他明确问你记不记得某事，按你自传第六节"
         "（\"当他问你'你记得吗'\"）的诚实协议回答。"
     )
 
