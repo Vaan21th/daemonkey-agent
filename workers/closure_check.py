@@ -795,6 +795,19 @@ def turn_end_report(tools: Optional[list] = None) -> Optional[dict]:
     }
 
 
+def ledger_hint(session_id: str) -> str:
+    """③ 抗套娃 · 本会话活跃任务账本 → 每轮无损回灌进易变尾巴。无活跃账本返回空串。
+
+    账本【不进语义压缩】(压缩发生在 messages 层·这是 system_suffix 层)·所以哪怕
+    久远对话被摘要掉·"哪条路通了/死了/做了什么决策"这些结论一定还在眼前。
+    """
+    try:
+        from workers import task_ledger as _tl
+        return _tl.render_hint(session_id)
+    except Exception:
+        return ""
+
+
 def record_hint(session_id: str, report: dict) -> None:
     """把一条收尾提示落进对账台账 closure_hints.jsonl (best-effort·失败不影响主流程)。
 

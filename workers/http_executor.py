@@ -36,6 +36,7 @@ from __future__ import annotations
 import base64
 import json
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -113,8 +114,30 @@ def _save_binary(content: bytes, save_dir: str, filename: str) -> tuple[str, str
     
     dir_path = ROOT / save_dir
     dir_path.mkdir(parents=True, exist_ok=True)
-    file_path = dir_path / safe_filename
-    file_path.write_bytes(content)
+
+    # 并发防覆盖:批量走同一 app 时·app 模板多用 {ts} 秒级命名·同秒完成的并发跑重名 →
+    # 旧版直接 write_bytes 互相覆盖 → 应用产出页少图。
+    # 修法:同名已存在时追加短唯一后缀 · 用 'xb' 原子创建避免 TOCTOU 竞态 · 单次跑无碰撞则保持原名不变。
+    if "." in safe_filename:
+        stem, _, ext = safe_filename.rpartition(".")
+    else:
+        stem, ext = safe_filename, ""
+    candidate = safe_filename
+    file_path = dir_path / candidate
+    for _ in range(50):
+        file_path = dir_path / candidate
+        try:
+            with open(file_path, "xb") as fh:
+                fh.write(content)
+            break
+        except FileExistsError:
+            suffix = uuid.uuid4().hex[:6]
+            candidate = f"{stem}-{suffix}.{ext}" if ext else f"{stem}-{suffix}"
+    else:
+        # 兜底:50 次都撞(几乎不可能)· 用全 uuid 名保证唯一
+        candidate = f"{stem or 'output'}-{uuid.uuid4().hex}" + (f".{ext}" if ext else "")
+        file_path = dir_path / candidate
+        file_path.write_bytes(content)
 
     rel = str(file_path.relative_to(ROOT)).replace("\\", "/")
     OUTPUTS_PREFIX = "data/workshop/outputs/"

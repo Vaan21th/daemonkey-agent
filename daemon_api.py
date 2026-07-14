@@ -1091,6 +1091,7 @@ def _chat_impl(
         _client_hint = ""
         _casual_hint = ""
         _care_hint = ""
+        _ledger_hint = ""
         try:
             from workers import closure_check as _cc
             _cc.begin_turn()
@@ -1109,6 +1110,8 @@ def _chat_impl(
             # ①f 情感轨主动侧 (C+) · 记情感/健康信号 + 成熟期在闲聊语境软回访 (每天最多一次·防尬)
             _cc.note_care_signals(message)
             _care_hint = _cc.care_followup_hint(message)
+            # ③抗套娃 · 本会话活跃任务账本(已验证✓/已排除✗/决策)每轮无损回灌 · 压缩压不掉
+            _ledger_hint = _cc.ledger_hint(sid)
         except Exception:
             pass
 
@@ -1129,7 +1132,7 @@ def _chat_impl(
         #   走 system_suffix 留在缓存断点之外 → 尾巴变也不冲掉灵魂缓存 (省钱关键)。
         #   localize 对两段分别做 (纯 token 替换·分段等价)。
         _sys_stable = _build_remote_system(RUNTIME.system_prompt)
-        _sys_tail = _build_remote_tail(sid) + _pb_hint + _mem_hint + _workshop_hint + _docs_hint + _memwrite_hint + _client_hint + _casual_hint + _care_hint
+        _sys_tail = _build_remote_tail(sid) + _pb_hint + _mem_hint + _workshop_hint + _docs_hint + _memwrite_hint + _client_hint + _casual_hint + _care_hint + _ledger_hint
         if _user_meta.get("src") == "wechat":
             _sys_tail = _sys_tail + _WECHAT_CHANNEL_NOTE
         try:

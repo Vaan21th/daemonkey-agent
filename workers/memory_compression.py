@@ -36,7 +36,7 @@ MIN_MESSAGES_TO_COMPRESS = 12    # 总数少于此不压缩（工具手动触发
 AUTO_COMPRESS_THRESHOLD = 30     # 自动压缩触发阈值（消息数 · 模型窗口未知时 fallback）
 COOLDOWN_TURNS = 5               # 两次自动压缩之间至少隔 N 轮
 MAX_RENDER_CHARS = 60000         # 摘要 LLM 输入上限
-DEFAULT_WINDOW_RATIO = 0.6       # 默认在模型窗口占比多少时触发压缩
+DEFAULT_WINDOW_RATIO = 0.7       # 默认在模型窗口占比多少时触发压缩 (调优 0.6→0.7:配合工具瘦身+任务账本·减少重复摘要造成的"漂移/失忆"·仍偏保守)
 
 SUMMARY_MODEL_HINT = (
     "把以下对话压缩成一段简洁的中文摘要（300-600 字），保留：\n"
@@ -251,7 +251,7 @@ def _get_context_window(model_id: Optional[str]) -> int:
 
 
 def _get_ratio() -> float:
-    """读 OPUS_AUTO_COMPACT_RATIO · 默认 0.6 · 非法值退化。"""
+    """读 OPUS_AUTO_COMPACT_RATIO · 默认 0.7 · 非法值退化 (想省 token 想更狠→设 0.6·想留更多原文→0.8)。"""
     raw = (os.environ.get("OPUS_AUTO_COMPACT_RATIO") or "").strip()
     if not raw:
         return DEFAULT_WINDOW_RATIO

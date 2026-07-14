@@ -245,6 +245,37 @@ async def serve_workshop_output(filename: str):
     )
 
 
+@router.get("/presentations/{filename:path}")
+async def serve_presentation_asset(filename: str):
+    """serve data/presentations/ 下的配图(generate_image 默认落这里)· 只给图片/媒体 mime ·
+    路径穿越防护 · 让聊天能内联显示批量生图结果。"""
+    if ".." in filename or filename.startswith("/") or filename.startswith("\\"):
+        raise HTTPException(400, "invalid filename")
+    if "\x00" in filename:
+        raise HTTPException(400, "null byte in filename")
+
+    from pathlib import PurePosixPath
+    suffix = PurePosixPath(filename).suffix.lower()
+    if suffix not in _OUTPUT_MIME:
+        raise HTTPException(415, f"unsupported file type: {suffix}")
+
+    full = (ROOT / "data" / "presentations" / filename).resolve()
+    base = (ROOT / "data" / "presentations").resolve()
+    try:
+        full.relative_to(base)
+    except ValueError:
+        raise HTTPException(400, "path escape blocked")
+
+    if not full.exists() or not full.is_file():
+        raise HTTPException(404, f"presentation asset not found: {filename}")
+
+    return FileResponse(
+        path=str(full),
+        media_type=_OUTPUT_MIME[suffix],
+        headers={"Cache-Control": "public, max-age=60"},
+    )
+
+
 @router.get("/api/logs/tail")
 async def logs_tail(
     lines: int = 200,
@@ -350,3 +381,67 @@ async def screen_record(
             "error": "FFmpeg 完成但输出文件无效",
             "stderr": result.stderr[-500:] if result.stderr else "",
         }
+
+
+# ─── 产物"用本机软件打开" · 通用 reveal ───
+# 前端拿到 tool_result.open_path → 打这个接口 → daemon 用系统关联应用打开
+# (PPT→PowerPoint/WPS · docx→Word · pdf→阅读器)。 仅 daemon 跟用户同机时有意义。
+# 只允许 data/ 下这几个产物目录 · 防路径穿越乱开系统文件。
+_REVEAL_DIRS = [
+    ROOT / "data" / "presentations",
+    ROOT / "data" / "reports",
+    ROOT / "data" / "workshop",
+    ROOT / "data" / "knowledge",
+    ROOT / "data" / "reviews",
+]
+
+
+def _within(target: Path, base: Path) -> bool:
+    try:
+        target.relative_to(base.resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+@router.post("/reveal-file")
+async def reveal_file(
+    request: Request,
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+):
+    """用本机关联软件打开一个产物文件 · body {path: 相对工程根的路径}。"""
+    if token and not authorization:
+        authorization = f"Bearer {token}"
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not authorization and body.get("token"):
+        authorization = f"Bearer {body['token']}"
+    check_auth(authorization)
+
+    rel = str(body.get("path") or "").strip().replace("\\", "/")
+    if not rel:
+        raise HTTPException(400, "missing path")
+    target = (ROOT / rel).resolve()
+    if not any(_within(target, d) for d in _REVEAL_DIRS):
+        raise HTTPException(403, "path not in an allowed output directory")
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, "file not found")
+
+    import os as _os
+    import sys as _sys
+    import subprocess as _sub
+    try:
+        if _os.name == "nt":
+            _os.startfile(str(target))  # type: ignore[attr-defined]
+        elif _sys.platform == "darwin":
+            _sub.Popen(["open", str(target)])
+        else:
+            _sub.Popen(["xdg-open", str(target)])
+        return {"ok": True, "path": rel, "method": _os.name}
+    except Exception as e:
+        return {"ok": False, "path": rel,
+                "error": f"{type(e).__name__}: {e}",
+                "hint": "daemon 与你不在同一台机器时无法本机打开 · 可改用下载"}

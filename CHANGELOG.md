@@ -7,6 +7,52 @@
 
 ---
 
+## [0.7.0beta] — 2026-07-14
+
+**演示稿引擎（PPT）+ 生图工具 + 抗套娃任务账本 + 卡顿/token 修复**
+
+### 新增 Added
+- **演示稿引擎 `slides_engine` + `generate_presentation`** —— 自建薄引擎直接生成 `.pptx`：3 档设计风格 + 可用自然语言微调风格 token（配色/质感），支持图表、流程图、图标、系统字体检测、封面满版大图。对话内「两步法」生成（先出施工单再落稿），产物可一键「用对应软件打开」进 PowerPoint / WPS / Keynote。
+- **`generate_image` 文生图工具** —— 配图优先级链：优先走你自建的「生图应用」→ 其次 `DAEMONKEY_IMAGE_MODEL`（OpenAI 兼容）→ 再退浏览器豆包网页版 → 都不行留占位提示卡。支持一次并发生成多张不同图；浏览器型（agentic）生图应用加进程级串行锁，多路生图不抢同一个浏览器。
+- **任务账本 `track_task` + 卡住解套 `replan`（抗套娃）** —— 多步任务（debug / 搭建 / 长 review）的确定性工作记忆：把「哪条路通了✓、哪条死了✗、定了啥决策」从过程里蒸出来，每轮无损回灌，语义压缩也压不掉；试了多条路都失败时 `replan` 起一个干净上下文的顾问重新规划，治「原地套娃最后放弃」。并行 vs 串行的判断准则写进系统提示（默认偏串行，黄金搭配＝并行收集→串行合成）。
+
+### 修复 / 优化 Fixed
+- **长会话卡顿 / 打字变慢** —— 前端对话区 DOM 窗口化：单会话最多保留最近 N 条消息节点、更早的折叠成顶部「加载全部」入口（内容真源在 jsonl 永不丢），重开长会话也只回放最近若干 turn。
+- **token 消耗偏高** —— `tool_loop` 发送时对「旧的、超大的」工具输出做确定性瘦身（截头尾留提示，不破坏前缀缓存、不动落盘真源）；记忆压缩触发点 0.6 → 0.7，配合任务账本减少重复摘要造成的漂移。
+- **产物打开 / 配图显示 / 进度条** —— 报告/演示稿产物统一「用对应软件打开」；批量生图在对话里内联成可点放大的图廊；并发落盘用原子创建 + 唯一后缀防互相覆盖；进度条整轮读秒，不再卡在 0s。
+
+> 上述能力已纳入 `update_core` 内核白名单（`slides_engine/*`、`generate_presentation`/`generate_image`、`track_task`/`replan`/`task_ledger`、`http_executor`/`memory_compression` 等），老用户点「检查更新」即得；新增引擎**无新增 pip 依赖**（`python-pptx` / `Pillow` / `requests` 已在 requirements）。演示稿/生图产物落 `data/presentations`，升级永不覆盖用户资料。
+
+> Added a self-built PPTX engine (`slides_engine` + `generate_presentation`: styles/charts/flowcharts/icons/font-detection/cover images, two-step outline-first generation, one-click open in PowerPoint/WPS/Keynote), a `generate_image` text-to-image tool (user image-apps first → `DAEMONKEY_IMAGE_MODEL` → browser Doubao → placeholder; concurrent multi-image with an agentic-serialize lock), and an anti-loop toolkit: `track_task` (deterministic working memory that survives compression) + `replan` (a clean-context advisor when stuck). Fixed long-session lag (DOM windowing), high token usage (send-time tool-output slimming + compression trigger 0.6→0.7), plus "open with app"/inline image gallery/collision-safe saving/turn-level timer. All shipped via `update_core`, no new pip deps.
+
+---
+
+## [0.6.8beta] — 2026-07-12
+
+**私有知识库（第二大脑）+ 客户档案 CRM + 双轨情感记忆 + 主动关怀**
+
+### 新增 Added
+- **私有知识库 / 第二大脑** —— 把资料（PDF / Word / PPT / MD）灌进来抽文本进 FTS5，可召回、可 cite 回原文；文件夹分组 + 报告一键存入 + `pinned` 常驻优先 + `sensitive` 敏感隔离（不自动注入、只显式召回）。
+- **客户档案 CRM** —— 每个客户是会长厚的档案（需求 / 会议 / 交付 / pipeline 阶段），时间线 + 会议纪要打通（语音转写一键存成客户会议），CSV / Excel 导入，notes 进 FTS5 可召回，知识库文档可挂到客户名下。
+- **双轨记忆·情感优先** —— 闲聊里自然捕捉情绪 / 生活 / 健康信号（静默记录不打断），成熟后在闲聊语境软回访（防尬，每天最多一次），可选经微信主动慰问（配了才发）。
+- **成长档案 hub + 技能库查看器**，掘金脑吃知识库当客观背景（cite 原文），信息雷达并行抓取（墙钟从串行相加降到最慢源）。
+
+> 知识库 / 客户 / 报告 / 雷达数据全在 `data/**`，升级绝不覆盖用户资料。
+
+---
+
+## [0.6.0beta] — 2026-07-11
+
+**工作流并行组 + 自主巡航进度 + 语音对话/会议纪要 + 模型行为设置 + 简洁版/换肤**
+
+### 新增 Added
+- **工作流并行组** —— 单步可多 app 并发（或同 app 并行）+ 扇入 join，画布可视化并行分支，向后兼容旧串行 flow。
+- **自主巡航进度** —— 后台 turn 实时回「正在做什么·第 N 轮·已 Xs」，不再像卡死。
+- **语音对话 / 会议纪要模式**，**模型行为设置**（右上角模型菜单调思考模式 / 推理强度 / 输出上限，按厂商能力智能下发），**简洁版**（`Alt+Z` 只留对话框）+ **标题栏换肤**（存 localStorage 不动文件）。
+- **大扩内核白名单** —— `daemon_api.py` + 工坊引擎 + UI 骨架全纳入，让上述能力对升级用户全部真生效。
+
+---
+
 ## [0.6.0] — 2026-07-10
 
 **派分身 —— 主对话可以一次派出多个「分身」并行干活，跑完自动汇总回来**

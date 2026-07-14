@@ -1208,6 +1208,70 @@ header {
 }
 .msg.tool-call .tool-name { color: var(--opus); font-weight: 600; }
 .msg.tool-result .tool-name { color: var(--opus); font-weight: 600; }
+.tr-open {
+  margin-left: 8px;
+  padding: 3px 10px;
+  border: 1px solid var(--opus);
+  border-radius: 999px;
+  background: rgba(155, 89, 182, 0.14);
+  color: var(--opus);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  vertical-align: middle;
+  transition: background .15s, transform .1s;
+}
+.tr-open:hover { background: rgba(155, 89, 182, 0.28); }
+.tr-open:active { transform: scale(0.96); }
+.tr-open:disabled { opacity: .7; cursor: default; }
+.tr-open i { font-size: 12px; vertical-align: -1px; margin-right: 2px; }
+
+/* 产物"打开"动作条 · turn 底部 */
+.open-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 12px;
+  padding: 8px 12px;
+  border-left: 2px solid rgba(155, 89, 182, 0.4);
+}
+.open-actions-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.open-actions-name {
+  font-size: 11px;
+  color: var(--muted, #8a8f98);
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.open-actions-name i { margin-right: 3px; vertical-align: -1px; }
+.open-actions .tr-open { margin-left: 0; }
+
+/* 生图产物图廊 · turn 底部 · 批量生图内联显示 */
+.dk-img-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 10px;
+  padding: 8px 12px;
+  border-left: 2px solid rgba(155, 89, 182, 0.4);
+}
+.dk-img-gallery .md-img {
+  display: block;
+  width: 200px;
+  max-width: 46%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.12));
+  background: var(--bg);
+  cursor: zoom-in;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.dk-img-gallery .md-img:hover {
+  border-color: var(--opus);
+  transform: translateY(-1px);
+}
 .msg.opus.streaming {
   border-left-color: rgba(155, 89, 182, 0.5);
 }

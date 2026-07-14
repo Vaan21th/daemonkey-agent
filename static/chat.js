@@ -1213,15 +1213,22 @@ const _PROGRESS_EMOJI_ICON = {
   '🔎': 'ri-search-line', '📶': 'ri-radar-line', '🗂️': 'ri-folder-3-line',
   '💎': 'ri-vip-diamond-line', '🌊': 'ri-line-chart-line', '🛰️': 'ri-broadcast-line',
   '🛰': 'ri-broadcast-line', '🌟': 'ri-star-line', '⭐': 'ri-star-line',
+  '🖼️': 'ri-image-line', '🖼': 'ri-image-line', '🎨': 'ri-palette-line',
 };
 function _iconifyProgress(text) {
-  let html = escHtml(text || '');
+  // 先把已内联的 RemixIcon 标签(<i class="ri-xxx"></i>)抽出占位·别被 escHtml 转义成字面量
+  const icons = [];
+  const stashed = (text || '').replace(/<i class="ri-[a-z0-9-]+"><\/i>/g, (m) => {
+    icons.push(m);
+    return `\u0000IC${icons.length - 1}\u0000`;
+  });
+  let html = escHtml(stashed);
   for (const emo in _PROGRESS_EMOJI_ICON) {
     if (html.indexOf(emo) !== -1) {
       html = html.split(emo).join(`<i class="${_PROGRESS_EMOJI_ICON[emo]}"></i>`);
     }
   }
-  return html;
+  return html.replace(/\u0000IC(\d+)\u0000/g, (_m, i) => icons[+i] || '');
 }
 function setToolProgressText(text) {
   const el = document.getElementById('toolProgress');
@@ -1285,18 +1292,25 @@ function _refreshToolProgressTick() {
   const st = _toolProgressActiveState;
   if (!st || st.sessionId !== sessionId) return;
   const m = st._lastToolMeta;
-  if (!m || !m.startedAt) return;
-  if (m.frozen) return; // tool_result 后停在总耗时不再跑
-  const elapsed = Math.floor((Date.now() - m.startedAt) / 1000);
-  const briefArgs = (m.summary || '').slice(0, 40);
-  // 卷五十八 · wish-f30d571d · 有 tool_progress 步骤信息时优先显示步骤
-  if (m.progressStep) {
-    const stepText = m.progressStep + (m.progressMsg ? ' ' + m.progressMsg : '');
-    setToolProgressText(`${stepText} · 已 ${elapsed}s`);
-  } else {
-    setToolProgressText(
-      `OPUS 正在跑第 ${m.count} 个工具 · ${m.name || '?'}${briefArgs ? ' · ' + briefArgs : ''} · 已 ${elapsed}s`
-    );
+  // 有正在跑的工具(未冻结)→ 显示该工具已用时
+  if (m && m.startedAt && !m.frozen) {
+    const elapsed = Math.floor((Date.now() - m.startedAt) / 1000);
+    const briefArgs = (m.summary || '').slice(0, 40);
+    // 卷五十八 · wish-f30d571d · 有 tool_progress 步骤信息时优先显示步骤
+    if (m.progressStep) {
+      const stepText = m.progressStep + (m.progressMsg ? ' ' + m.progressMsg : '');
+      setToolProgressText(`${stepText} · 已 ${elapsed}s`);
+    } else {
+      setToolProgressText(
+        `OPUS 正在跑第 ${m.count} 个工具 · ${m.name || '?'}${briefArgs ? ' · ' + briefArgs : ''} · 已 ${elapsed}s`
+      );
+    }
+    return;
+  }
+  // 没有活跃工具但这一轮还在跑(思考/写字/等模型)→ 整轮读秒·别卡在上一个工具的冻结文案
+  if (st._turnStartedAt) {
+    const el = Math.floor((Date.now() - st._turnStartedAt) / 1000);
+    setToolProgressText(`OPUS 思考中 · 已 ${el}s`);
   }
 }
 function _startToolProgressTicker(state) {
@@ -3558,7 +3572,7 @@ async function renameSession(sid) {
 
 // wish-3fef4bc7 · 历史 load 抽成 helper · 给 init / switchToSession 复用
 // 历史 load 不动 state.pending 等 · 因为这个 session 没在跑
-async function _loadSessionHistory(sid) {
+async function _loadSessionHistory(sid, opts) {
   if (!sid) return;
   const s = _getOrCreateSession(sid);
   _getOrCreateContainer(sid);  // 确保 container 已建
@@ -3578,8 +3592,17 @@ async function _loadSessionHistory(sid) {
     if (!data.turns || data.turns.length === 0) {
       addSys('（这个对话还是空的）', s.$container);
     } else {
+      // 长会话重开只回放最近 N 个 turn · 更早的折叠成顶部"加载全部"入口 · 防重开即卡
+      const _full = !!(opts && opts.full);
+      let _turns = data.turns;
+      let _hidden = 0;
+      if (!_full && isFinite(HISTORY_RENDER_WINDOW) && _turns.length > HISTORY_RENDER_WINDOW) {
+        _hidden = _turns.length - HISTORY_RENDER_WINDOW;
+        _turns = _turns.slice(-HISTORY_RENDER_WINDOW);
+      }
+      if (_hidden > 0) _ensureLoadEarlierSentinel(s.$container);
       // 卷三十六 · 历史回放 · 跟实时 SSE 那一套对齐 · reasoning / tool_call / tool_result 全渲染
-      for (const t of data.turns) {
+      for (const t of _turns) {
         if (t.role === 'user') {
           if (t.src === 'proactive') {
             addSys('OPUS 主动醒来' + (t.proactive_reason ? ' · ' + t.proactive_reason : ''), s.$container);
@@ -3602,7 +3625,10 @@ async function _loadSessionHistory(sid) {
           renderHistoryToolResult(t.content, s.$container);
         }
       }
-      addSys(`(已加载 ${data.count} 条历史 turn · 这条对话已结束 · 输入新消息可继续)`, s.$container);
+      const _tail = _hidden > 0
+        ? `(仅显示最近 ${_turns.length} / 共 ${data.count} 条 · 点顶部『加载全部』 · 输入新消息可继续)`
+        : `(已加载 ${data.count} 条历史 turn · 这条对话已结束 · 输入新消息可继续)`;
+      addSys(_tail, s.$container);
     }
     // 卷四十六续 3 · batch 渲染期间 addMsg 走软滚 · scrollTop 一直在 0 · isNearBottom 一直 false
     // 加载完后必须 force 一次 · 否则 BRO 看到的是最旧的消息(顶部) · 不是最新(底部)
@@ -4001,7 +4027,15 @@ async function _pollSession(state) {
     if (newCount > (state.lastTurnCount || 0) || (!hasActive && state.pollIntervalId)) {
       // 有新 turn · 或 active turn 刚结束 · 重画 container
       state.$container.innerHTML = '';
-      for (const t of data.turns || []) {
+      // 同 _loadSessionHistory · 长会话只回放最近 N 个 turn · 更早折叠成"加载全部"入口
+      let _pturns = data.turns || [];
+      let _phidden = 0;
+      if (isFinite(HISTORY_RENDER_WINDOW) && _pturns.length > HISTORY_RENDER_WINDOW) {
+        _phidden = _pturns.length - HISTORY_RENDER_WINDOW;
+        _pturns = _pturns.slice(-HISTORY_RENDER_WINDOW);
+      }
+      if (_phidden > 0) _ensureLoadEarlierSentinel(state.$container);
+      for (const t of _pturns) {
         if (t.role === 'user') {
           addMsg('bro', t.content, null, t.ts, state.$container);
         } else if (t.role === 'assistant') {
@@ -4232,7 +4266,8 @@ function mdRender(text, opts) {
   // 才出真播放器·整段只建一次·最终结果跟以前完全一致。
   const _streaming = opts === true || (opts && opts.streaming === true);
   function _mediaPending(kind, url) {
-    const icon = kind === 'video' ? '🎬' : (kind === 'audio' ? '🎵' : '🖼');
+    const icon = kind === 'video' ? '<i class="ri-film-line"></i>'
+      : (kind === 'audio' ? '<i class="ri-music-2-line"></i>' : '<i class="ri-image-line"></i>');
     const label = kind === 'video' ? '视频' : (kind === 'audio' ? '音频' : '图片');
     let name = String(url || '').split(/[?#]/)[0].split(/[\\/]/).pop() || '';
     name = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -4584,6 +4619,7 @@ function addMsg(role, text, className, ts, target, opts) {
   if (dst) {
     dst.appendChild(div);
     scrollToBottom(dst, { force: !!(opts && opts.forceScroll) });
+    _trimRenderedMessages(dst);
   }
   return div;
 }
@@ -4604,6 +4640,12 @@ function addSys(text, target) { return addMsg('sys', text, null, null, target); 
 //      关键: appendChild 不触发 scroll · 所以 append 时 flag 不会被错误清掉
 
 const STICK_THRESHOLD_PX = 64;
+
+// 长会话 DOM 无上限增长 → 页面卡 / 打字慢 修复
+// 单会话容器最多保留的消息节点数 · 超出裁最旧(仅贴底时) · 想彻底关掉把它设成 Infinity 即退回老行为
+const MAX_RENDERED_MSGS = 220;
+// 重开历史会话时只回放最近 N 个 turn · 更早折叠成顶部"加载全部"入口 · Infinity = 全量回放(老行为)
+const HISTORY_RENDER_WINDOW = 90;
 
 function isNearBottom(el, threshold) {
   if (!el) return false;
@@ -4652,6 +4694,43 @@ function scrollToBottom(target, opts) {
     _stickToBottom = true;
   }
   requestAnimationFrame(() => { dst.scrollTop = dst.scrollHeight; });
+}
+
+// 把某个 session 容器的消息节点压到 MAX_RENDERED_MSGS 以内 · 防长会话 DOM 撑爆导致卡顿/打字慢
+// 安全约束: ① 只裁 visible 容器(后台 session 不动) ② 只在用户贴着底部时裁(不打断往上翻历史·不跳动)
+//           ③ 遇到正在流式的节点就停(绝不裁 streaming) ④ MAX_RENDERED_MSGS=Infinity 时整条禁用
+function _trimRenderedMessages(container) {
+  if (!container || !isFinite(MAX_RENDERED_MSGS)) return;
+  if (container.hidden) return;
+  if (!_stickToBottom) return;
+  const msgs = container.querySelectorAll(':scope > .msg:not(.load-earlier)');
+  const overflow = msgs.length - MAX_RENDERED_MSGS;
+  if (overflow <= 0) return;
+  let removed = 0;
+  for (let i = 0; i < msgs.length && removed < overflow; i++) {
+    const el = msgs[i];
+    if (el.classList.contains('streaming')) break;   // 到流式节点为止 · 不裁
+    el.remove();
+    removed++;
+  }
+  if (removed > 0) _ensureLoadEarlierSentinel(container);
+}
+
+// 顶部"更早的消息已折叠 · 点此加载全部"入口 · 点了全量重渲(内容真源在 jsonl · 永不丢)
+function _ensureLoadEarlierSentinel(container) {
+  if (!container) return;
+  let s = container.querySelector(':scope > .msg.load-earlier');
+  if (!s) {
+    s = document.createElement('div');
+    s.className = 'msg sys load-earlier';
+    s.style.cursor = 'pointer';
+    s.textContent = '⬆ 更早的消息已折叠 · 点此加载全部';
+    s.addEventListener('click', () => {
+      const sid = container.dataset && container.dataset.sid;
+      if (sid) _loadSessionHistory(sid, { full: true });
+    });
+  }
+  if (container.firstChild !== s) container.insertBefore(s, container.firstChild);
 }
 
 // 卷三十七 · 流式拼接 · 当前正在 stream 的 DOM 引用
@@ -4805,9 +4884,11 @@ function finalizeStreamingAssistant(state, finalText) {
     span.textContent = t;
     state.currentStreamingAssistant.appendChild(span);
   }
+  const _finCont = state.$container;
   state.currentStreamingAssistant = null;
   state.streamingAssistantRaw = '';
   state._assistantRerenderScheduled = false;
+  _trimRenderedMessages(_finCont);
 }
 
 // 卷三十六 · DeepSeek thinking mode · 渲染一条 reasoning 气泡
@@ -4976,7 +5057,12 @@ async function send() {
   state.toolCallCount = 0;
   state.lastDashboardRefreshAt = 0;
   state.toolStartedAt = Date.now();
+  state._turnStartedAt = Date.now();   // 整轮起点·"思考中·已Ns"读秒用
+  state._lastToolMeta = null;          // 清上一轮的冻结工具·否则"思考中"分支被跳过
   state._expectingDaemonRestart = false;
+
+  // 整轮读秒 ticker(没工具在跑时显示"思考中·已Ns"·别卡 0s)· 仅 visible 起·后台 turn 不动进度条
+  if (_isVisible()) _startToolProgressTicker(state);
 
   if (typeof _renderTabBar === 'function') {
     try { _renderTabBar(); } catch {}
@@ -5472,6 +5558,16 @@ async function send() {
           tail.textContent = '· ' + (data.error || 'failed');
         }
         div.appendChild(tail);
+        if (data.ok && data.open_path) {
+          // 不再挂在 tool-result 卡上(那在回复正文之前)· 攒起来·turn 结束时统一渲到对话底部(符合阅读习惯)
+          state._pendingOpens = state._pendingOpens || [];
+          state._pendingOpens.push({ path: data.open_path });
+        }
+        if (data.ok && Array.isArray(data.images) && data.images.length) {
+          // 生图工具产出的可服务图 URL · 攒起来 · turn 末渲成可点放大的图廊
+          state._pendingImages = state._pendingImages || [];
+          data.images.forEach((u) => { if (u) state._pendingImages.push(u); });
+        }
         if (state.$container) state.$container.appendChild(div);
         scrollToBottom(state.$container, { force: false });
 
@@ -5533,6 +5629,8 @@ async function send() {
           }
           addMsg('opus', data.reply, null, new Date(), state.$container);
         }
+        flushImages(state);               // 生图产物图廊·先渲图·再渲打开按钮
+        flushOpenActions(state);          // 产物「用对应软件打开」按钮·统一落在这一 turn 的最底部
         break;
 
       case 'error': {
@@ -5542,6 +5640,8 @@ async function send() {
           ph.remove();
           state.assistantBubbles.shift();
         }
+        if (state._pendingOpens) state._pendingOpens.length = 0;
+        if (state._pendingImages) state._pendingImages.length = 0;
         break;
       }
 
@@ -8284,8 +8384,8 @@ function renderWorkshop(domain, data) {
           <div class="wk-meta">
             <span>${escHtml(it.created_at || '')}</span>
             <span class="wk-path">${escHtml(it.path || '')}</span>
-            <button class="wk-btn wk-preview" data-domain="${escHtml(domain)}" data-name="${escHtml(it.name || '')}" title="在 webui 中预览 markdown">📖 预览</button>
-            <button class="wk-btn wk-reveal" data-domain="${escHtml(domain)}" data-name="${escHtml(it.name || '')}" title="本机用默认应用打开 (Typora / VSCode / 记事本)">📂 外部打开</button>
+            <button class="wk-btn wk-preview" data-domain="${escHtml(domain)}" data-name="${escHtml(it.name || '')}" title="在 webui 中预览 markdown"><i class="ri-eye-line"></i> 预览</button>
+            <button class="wk-btn wk-reveal" data-domain="${escHtml(domain)}" data-name="${escHtml(it.name || '')}" title="本机用默认应用打开 (Typora / VSCode / 记事本)"><i class="ri-external-link-line"></i> 外部打开</button>
             <a class="wk-btn wk-dl" href="${escHtml(dlUrl)}" download="${escHtml(it.name || '')}" title="下载 .md 文件">下载 ↓</a>
           </div>
           ${it.excerpt ? `<div class="wk-excerpt">${escHtml(it.excerpt)}</div>` : ''}
@@ -8379,7 +8479,7 @@ function renderWorkshopPreview(domain, d) {
     <div class="dash-head">
       <h2>📖 ${escHtml(meta.title || name)}</h2>
       <button onclick="loadDashboard('${escHtml(domain)}')">← 返回 ${escHtml(m.label || domain)}</button>
-      <button onclick="revealWorkshopFile('${escHtml(domain)}', '${escHtml(name)}')" title="本机用默认应用打开">📂 外部打开</button>
+      <button onclick="revealWorkshopFile('${escHtml(domain)}', '${escHtml(name)}')" title="本机用默认应用打开"><i class="ri-external-link-line"></i> 外部打开</button>
       <a class="rp-dl-btn" href="${escHtml(dlUrl)}" download="${escHtml(name)}">下载 .md ↓</a>
     </div>
     <div class="rp-meta-strip">
@@ -8406,6 +8506,92 @@ async function revealWorkshopFile(domain, name) {
     }
   } catch (e) {
     alert(`外部打开网络出错: ${e.message}`);
+  }
+}
+
+// 通用产物"用本机软件打开"(generate_presentation / generate_report 等的 open_path)
+// turn 结束时把本轮生成的产物渲成"打开"动作条·放对话底部(符合阅读习惯)
+function flushOpenActions(state) {
+  const list = state && state._pendingOpens;
+  if (!list || !list.length) { if (list) list.length = 0; return; }
+  if (!state.$container) { list.length = 0; return; }
+  const bar = document.createElement('div');
+  bar.className = 'open-actions';
+  const seen = new Set();
+  list.forEach(({ path }) => {
+    if (!path || seen.has(path)) return;
+    seen.add(path);
+    const name = String(path).split(/[\\/]/).pop() || path;
+    const row = document.createElement('div');
+    row.className = 'open-actions-row';
+    const label = document.createElement('span');
+    label.className = 'open-actions-name';
+    label.innerHTML = '<i class="ri-file-line"></i> ';
+    label.appendChild(document.createTextNode(name));
+    const btn = document.createElement('button');
+    btn.className = 'tr-open';
+    btn.innerHTML = '<i class="ri-external-link-line"></i> 用对应软件打开';
+    btn.title = path;
+    btn.onclick = () => revealFile(path, btn);
+    row.appendChild(label);
+    row.appendChild(btn);
+    bar.appendChild(row);
+  });
+  state.$container.appendChild(bar);
+  try { scrollToBottom(state.$container, { force: false }); } catch (e) { /* noop */ }
+  list.length = 0;
+}
+
+// 生图工具产出的图 · turn 末渲成对话内可点放大的图廊 · 批量生图内联显示
+// URL 已是 daemon 可服务路径(/presentations/... 或 /workshop/outputs/...)· 点图走全局 .md-img 灯箱
+function flushImages(state) {
+  const list = state && state._pendingImages;
+  if (!list || !list.length) { if (list) list.length = 0; return; }
+  if (!state.$container) { list.length = 0; return; }
+  const gal = document.createElement('div');
+  gal.className = 'dk-img-gallery';
+  const seen = new Set();
+  list.forEach((u) => {
+    if (!u || seen.has(u)) return;
+    seen.add(u);
+    const im = document.createElement('img');
+    im.className = 'md-img';
+    im.loading = 'lazy';
+    im.src = u;
+    im.alt = '';
+    im.dataset.full = u;
+    gal.appendChild(im);
+  });
+  if (gal.children.length) {
+    state.$container.appendChild(gal);
+    try { scrollToBottom(state.$container, { force: false }); } catch (e) { /* noop */ }
+  }
+  list.length = 0;
+}
+
+async function revealFile(path, btn) {
+  if (!path) return;
+  const old = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line"></i> 打开中…'; }
+  try {
+    const r = await fetch('/reveal-file', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      const msg = (j && (j.error || j.detail || j.hint)) || ('HTTP ' + r.status);
+      if (btn) { btn.innerHTML = '<i class="ri-error-warning-line"></i> 打不开'; btn.title = msg; btn.disabled = false; }
+      else alert('打开失败: ' + msg);
+      return;
+    }
+    if (btn) {
+      btn.innerHTML = '<i class="ri-check-line"></i> 已打开';
+      setTimeout(() => { btn.disabled = false; btn.innerHTML = old; }, 1800);
+    }
+  } catch (e) {
+    if (btn) { btn.innerHTML = '<i class="ri-error-warning-line"></i> 打不开'; btn.title = String(e); btn.disabled = false; }
   }
 }
 

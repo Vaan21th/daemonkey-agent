@@ -34,6 +34,8 @@ OPUS 的"手"——tool use 多轮循环。
 from __future__ import annotations
 
 import json
+import os
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -229,6 +231,136 @@ def _result_preview(result: ToolResult, max_chars: int = 300) -> str:
     if len(out) > max_chars:
         out = out[:max_chars] + f" … (+{len(result.output) - max_chars} chars)"
     return out
+
+
+# ── 可打开产物 marker ─────────────────────────────────────────────
+# 产文件的工具(generate_presentation / generate_report …)在输出里塞一行
+#   [[DK-OPEN]]相对路径
+# tool_loop 抽成 tool_result 事件的 open_path 字段 → 前端渲"用本机软件打开"按钮 ·
+# 并把 marker 从 output 里剥掉(不污染喂给 LLM 的内容和 preview)。
+_OPEN_MARK_RE = re.compile(r"[ \t]*\[\[DK-OPEN\]\](.+?)[ \t]*(?:\n|$)")
+
+
+def _take_open_path(result: ToolResult) -> str:
+    """抽出并剥掉 [[DK-OPEN]] marker · 返回相对路径(没有则空串)。 就地清理 result.output。"""
+    if not (result.ok and result.output):
+        return ""
+    m = _OPEN_MARK_RE.search(result.output)
+    if not m:
+        return ""
+    result.output = _OPEN_MARK_RE.sub("", result.output).rstrip() + "\n"
+    return m.group(1).strip()
+
+
+# ── 可内联显示的配图 marker ───────────────────────────────────────
+# 生图工具(generate_image …)每张成功的图在输出里塞一行
+#   [[DK-IMG]]daemon 可服务的 URL(/presentations/... 或 /workshop/outputs/...)
+# tool_loop 抽成 tool_result 事件的 images 列表 → 前端在对话底部渲可点放大的图廊 ·
+# 并把 marker 从 output 里剥掉(不污染喂给 LLM 的内容和 preview · LLM 仍能用它下面的文件路径清单)。
+_IMG_MARK_RE = re.compile(r"[ \t]*\[\[DK-IMG\]\](.+?)[ \t]*(?:\n|$)")
+
+
+def _take_image_urls(result: ToolResult) -> list:
+    """抽出并剥掉 [[DK-IMG]] marker · 返回去重保序的 URL 列表(上限 12)。 就地清理 result.output。"""
+    if not (result.ok and result.output):
+        return []
+    raw = [m.group(1).strip() for m in _IMG_MARK_RE.finditer(result.output)]
+    if not raw:
+        return []
+    result.output = _IMG_MARK_RE.sub("", result.output).rstrip() + "\n"
+    seen: set[str] = set()
+    out: list[str] = []
+    for u in raw:
+        if u and u not in seen:
+            seen.add(u)
+            out.append(u)
+        if len(out) >= 12:
+            break
+    return out
+
+
+# ---------- 发送时工具输出瘦身 (省 token · 非破坏) ----------
+# 问题: 一个大 read_file / browser_fetch / 报告的完整 output 全量入历史 · 之后【每一轮】
+#       都跟着重发 · 直到压缩层 (窗口占比阈值) 才收拾 · 窗口前这段是纯烧钱。
+# 修法: 只在【发给 API 的那一份 payload】上 · 把"旧的、超大的"工具输出截成 head + 省略提示。
+#       - 落盘的 session jsonl / 返回给 daemon 的 messages / UI 显示 · 全部不动 (真源完整)。
+#       - 当轮刚产出的工具输出必须全量 (LLM 要用) → 保留最近 KEEP_TAIL 条不瘦身。
+#       - 截断是确定性的 → 同一条旧输出每轮截成同样结果 → 不破坏 prefix cache 命中。
+#       - OPUS_TOOL_HISTORY_CAP=0 关闭整条 · 退回老行为。
+def _tool_hist_cap() -> int:
+    raw = (os.environ.get("OPUS_TOOL_HISTORY_CAP") or "").strip()
+    if raw:
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            pass
+    return 8000
+
+
+_TOOL_HIST_KEEP_TAIL = 8  # 最近这么多条消息不瘦身 · 保当轮 + 最近几轮工具输出全量
+
+
+def _diet_tool_text(text: Any, cap: int) -> tuple[Any, bool]:
+    if not isinstance(text, str) or cap <= 0 or len(text) <= cap:
+        return text, False
+    # 头 + 尾都保留(尾部常是结论/报错/汇总·只留头易丢关键信息)·只省中间·比一刀切头更稳。
+    # 注意: 这只是"超大原始 dump"的安全网 · 久远对话的【语义压缩】由 memory_compression 负责。
+    head_n = (cap * 2) // 3
+    tail_n = cap - head_n
+    omitted = len(text) - cap
+    head = text[:head_n]
+    tail = text[-tail_n:] if tail_n > 0 else ""
+    return (
+        head
+        + f"\n\n…[中间 {omitted} 字符已省略 · 头尾保留 · 需完整内容请重新调用该工具]…\n\n"
+        + tail,
+        True,
+    )
+
+
+def _diet_messages_for_send(msgs: list) -> list:
+    """返回一份"旧大工具输出已截断"的 messages 副本(无改动则原样返回同一对象)。"""
+    cap = _tool_hist_cap()
+    if cap <= 0:
+        return msgs
+    cutoff = len(msgs) - _TOOL_HIST_KEEP_TAIL
+    if cutoff <= 0:
+        return msgs
+    any_change = False
+    out: list = []
+    for i, m in enumerate(msgs):
+        if i >= cutoff or not isinstance(m, dict):
+            out.append(m)
+            continue
+        role = m.get("role")
+        if role == "tool":
+            c2, ch = _diet_tool_text(m.get("content"), cap)
+            if ch:
+                nm = dict(m)
+                nm["content"] = c2
+                out.append(nm)
+                any_change = True
+                continue
+        elif role == "user" and isinstance(m.get("content"), list):
+            blocks = m["content"]
+            new_blocks = None
+            for j, b in enumerate(blocks):
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    c2, ch = _diet_tool_text(b.get("content"), cap)
+                    if ch:
+                        if new_blocks is None:
+                            new_blocks = list(blocks)
+                        nb = dict(b)
+                        nb["content"] = c2
+                        new_blocks[j] = nb
+            if new_blocks is not None:
+                nm = dict(m)
+                nm["content"] = new_blocks
+                out.append(nm)
+                any_change = True
+                continue
+        out.append(m)
+    return out if any_change else msgs
 
 
 # 卷十八加：LLM args 客户端 JSON schema 校验
@@ -725,7 +857,7 @@ def _loop_openai(
         kwargs: dict[str, Any] = dict(
             model=model,
             max_tokens=max_tokens,
-            messages=oai_messages,
+            messages=_diet_messages_for_send(oai_messages),
             stream=True,
             stream_options={"include_usage": True},
         )
@@ -1024,11 +1156,15 @@ def _loop_openai(
                         except Exception:
                             pass
 
+            _imgs = _take_image_urls(result)
+            _open_path = _take_open_path(result)
             _push(progress, "tool_result", {
                 "name": name,
                 "ok": result.ok,
                 "error": result.error or "",
                 "preview": _result_preview(result),
+                "open_path": _open_path,
+                "images": _imgs,
             })
 
             if observe and spec is not None:
@@ -1165,7 +1301,7 @@ def _loop_anthropic(
             model=model,
             max_tokens=max_tokens,
             system=system_blocks,
-            messages=ant_messages,
+            messages=_diet_messages_for_send(ant_messages),
         )
         if tools_param:
             kwargs["tools"] = tools_param
@@ -1276,11 +1412,15 @@ def _loop_anthropic(
                         except Exception:
                             pass
 
+            _imgs = _take_image_urls(result)
+            _open_path = _take_open_path(result)
             _push(progress, "tool_result", {
                 "name": tu.name,
                 "ok": result.ok,
                 "error": result.error or "",
                 "preview": _result_preview(result),
+                "open_path": _open_path,
+                "images": _imgs,
             })
 
             if observe and spec is not None:
