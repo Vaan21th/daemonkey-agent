@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "core_version": "0.7.0beta",
+  "core_version": "0.7.1beta",
   "core_version_note": "内核语义版本 · 版本号唯一真相源。内核有实质更新就在这里 bump · launcher/WebUI 动态读它显示 · update_core check 拿它和远程对比报「有新版」。manifest_version 是清单结构版本(很少变) · core_version 才是用户感知的内核版本。",
   "description": "Daemonkey 内核(L1)白名单 — update_core 只同步这里列出的文件;清单外的一律物理不碰(用户的功能/应用/灵魂永不被覆盖)。人类可读版见 docs/CORE-MANIFEST.md。",
   "updated": "2026-07-14",

@@ -51,6 +51,19 @@ class DaemonRuntime:
     started_at: float = 0.0
     """daemon 进程启动时刻 (time.time())。wish-1d286099 · dynamic_telemetry 用。"""
 
+    vision_override: Optional[bool] = None
+    """视觉能力全局覆盖 (None=自动 · True=多模态 · False=纯文本)。
+    wish-4a6331b2 引入 · 2026-06-03 曾在重构中丢失字段定义 (靠动态属性+except 硬撑) ·
+    wish-00ed11c2 补回正式字段。 启动 / 激活 provider 配置时从 active config.vision 同步。
+    注意: 这是"当前激活配置"的全局快照 · 按模型精确判断走 model_aliases.supports_vision L1。"""
+
+    pending_images: Optional[dict] = None
+    """当前 user 轮待注入的多模态图片旁路 · wish-00ed11c2。
+    形状: {"sid": session_id, "images": [(mime, b64), ...]}。
+    _process_attachments 判定当前模型原生视觉时注册 · tool_loop._diet_messages_for_send
+    发送前临时组装成 content list (内存/持久化里的 user message 永远保持 str · 零影响
+    压缩层/token 计数/前端渲染)。 每个新 user 轮进 chat handler 时重置。"""
+
 
 RUNTIME = DaemonRuntime()
 

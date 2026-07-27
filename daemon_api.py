@@ -78,6 +78,11 @@ from daemon_session import (
 )
 from tool_loop import UsageStats, run_tool_loop
 
+# 供本文件遗留辅助函数 (_activate_provider_config / _test_provider_inner) 的
+# raise HTTPException 使用 · 路由拆分重构时全局 import 被清掉 → F821 潜伏 bug
+# (正常路径不触发 raise 所以没炸过 · 错误路径会 NameError 掩盖真实错误)。
+from fastapi import HTTPException
+
 
 ROOT = Path(__file__).resolve().parent
 
@@ -766,6 +771,10 @@ def _activate_provider_config(cfg_id: str) -> None:
         RUNTIME.provider = pkind
         RUNTIME.model = cfg["model"]
         RUNTIME.base_url = resolved_base
+        # wish-00ed11c2 · 补回 2026-06-03 丢失的同步行:
+        # 激活配置时把该配置的 vision 标注同步进全局 override (L2 兼容层 ·
+        # 按模型精确判断在 model_aliases.supports_vision L1 · 这里是双保险)
+        RUNTIME.vision_override = cfg.get("vision")
 
 
 async def _test_provider_inner(
@@ -871,6 +880,17 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
         pass
 
     descriptions = []
+    # wish-00ed11c2 · 多模态直看分支: 当前模型原生视觉 → 图不走 look_at 转文字 ·
+    # 注册到 RUNTIME.pending_images · 发送前由 tool_loop._diet_messages_for_send
+    # 临时组装成 content list 直接进主对话 (BRO: "你不要用 look_at · 直接自己看")。
+    _native_vision = False
+    try:
+        from model_aliases import supports_vision as _sv
+        from daemon_runtime import RUNTIME as _RT
+        _native_vision = bool(_sv(_RT.model or ""))
+    except Exception:
+        _native_vision = False
+    _native_images: list[tuple[str, str]] = []
     for i, att in enumerate(attachments):
         name = att.get("name", f"image_{i+1}")
         data_url = att.get("data_url", "")
@@ -901,8 +921,15 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
             descriptions.append(f"图{i+1} ({name}): [base64 解码失败: {e}]")
             continue
 
-        # 调 look_at 看图 · 描述里带上留存路径 · 让 OPUS 想再细看/换问法时复用同一张
         rel_path = str(keep_path).replace("\\", "/")
+
+        # 多模态直看: 只注册 pending + 轻量占位 · 图本身直接进主对话视野
+        if _native_vision:
+            _native_images.append((mime, b64_str))
+            descriptions.append(f"图{i+1} ({name}) · 已存: {rel_path}")
+            continue
+
+        # 纯文本模型 · 调 look_at 借视觉模型看图 · 描述里带上留存路径 · 让 OPUS 想再细看/换问法时复用同一张
         try:
             from agent_tools.look_at import _run as _look_at_run
             result = _look_at_run({"path": str(keep_path), "question": "请描述这张图片的内容。如果有文字，逐字抄出来。"})
@@ -916,11 +943,24 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
     if not descriptions:
         return ""
 
-    header = (
-        f"[用户上传了 {len(attachments)} 张图片 · 下面每张都给了『已存』路径]\n"
-        "想再仔细看某张 / 换个角度问(数数量、抄全部文字、盯某个细节)→ "
-        "直接 look_at(path=对应『已存』路径, question=...) 再看一次·别自己编路径。\n"
-    )
+    # 注册 pending 图 (本轮有效 · 下个 user 轮进 chat handler 时会被重置)
+    if _native_vision and _native_images:
+        try:
+            from daemon_runtime import RUNTIME as _RT2
+            _RT2.pending_images = {"sid": session_id, "images": _native_images}
+        except Exception:
+            pass
+        header = (
+            f"[用户上传了 {len(_native_images)} 张图片 · 原图已直接进你的视野 · 逐张仔细看]\n"
+            "每张都给了『已存』路径 · 对话推进后想再看某张 / 换个角度问 → "
+            "直接 look_at(path=对应『已存』路径, question=...) · 别自己编路径。\n"
+        )
+    else:
+        header = (
+            f"[用户上传了 {len(attachments)} 张图片 · 下面每张都给了『已存』路径]\n"
+            "想再仔细看某张 / 换个角度问(数数量、抄全部文字、盯某个细节)→ "
+            "直接 look_at(path=对应『已存』路径, question=...) 再看一次·别自己编路径。\n"
+        )
     return header + "\n".join(descriptions) + "\n---\n"
 
 
@@ -1026,6 +1066,12 @@ def _chat_impl(
             pass
 
         # wish-4a6331b2 · 处理图片附件 → 调 look_at → 拼描述到 message 头部
+        # wish-00ed11c2 · 多模态时改为注册 pending_images (图直进主对话) ·
+        # 每个新 user 轮先重置 pending · 保证"图只活在它被上传的那一轮"
+        try:
+            RUNTIME.pending_images = None
+        except Exception:
+            pass
         if attachments:
             att_desc = _process_attachments(attachments, sid)
             if att_desc:

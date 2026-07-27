@@ -122,28 +122,77 @@ def supports_anthropic_cache(model: str) -> bool:
     return family_of(model) == "claude"
 
 
+# ── per-model 视觉标注缓存 (wish-00ed11c2) ─────────────────
+# BRO 在设置面板给每条 provider 配置标「多模态/纯文本/自动检测」→ 落 provider_configs.json
+# 的 vision 字段。 supports_vision 的 L1 直接按模型查这张表 —— 用户标注跟着模型走 ·
+# 不依赖"切换动作记得同步某个全局变量" (那条链路 2026-06-03 修过一次 · 后来在重构里丢了)。
+_VISION_CFG_CACHE: dict = {"mtime": 0.0, "map": {}}
+
+
+def _vision_from_provider_configs(model: str) -> "bool | None":
+    """L1 · 按模型查 provider_configs.json 的 vision 标注。
+
+    返回 True/False = BRO 显式标过 (最高优先 · 显式 false 连白名单都短路)；
+    返回 None = 没配这条模型 / 没标 vision / 读失败 → 继续走下层判断。
+    带 mtime 缓存 · 配置文件没变不重复读盘。 任何异常都吞掉返 None (不拖累主判断)。
+    """
+    m = (model or "").strip().lower()
+    if not m:
+        return None
+    try:
+        from pathlib import Path
+        cfg_path = Path(__file__).parent / "data" / "provider_configs.json"
+        mtime = cfg_path.stat().st_mtime
+        if mtime != _VISION_CFG_CACHE["mtime"]:
+            import json
+            data = json.loads(cfg_path.read_text(encoding="utf-8"))
+            vmap: dict[str, bool] = {}
+            for cfg in (data.get("configs") or []):
+                v = cfg.get("vision")
+                cm = (cfg.get("model") or "").strip().lower()
+                if cm and v is not None:
+                    vmap[cm] = bool(v)
+            _VISION_CFG_CACHE["map"] = vmap
+            _VISION_CFG_CACHE["mtime"] = mtime
+        return _VISION_CFG_CACHE["map"].get(m)
+    except Exception:
+        return None
+
+
 def supports_vision(model: str) -> bool:
     """这个模型是否支持多模态视觉输入（image_url 块）。
 
-    三层判断（wish-4a6331b2）：
-      1. RUNTIME.vision_override 显式设了？→ 用 BRO 的值（信任用户覆盖）
-      2. family_of() 自动检测 → claude/gpt/gemini/qwen → True / deepseek/kimi/glm → False
-      3. unknown → False（保守）
+    判断链（wish-4a6331b2 三层 → wish-00ed11c2 五层）：
+      L1. per-model provider 配置标注（BRO 设置面板 · 按模型精确覆盖 · 显式 false 短路白名单）
+      L2. RUNTIME.vision_override 全局覆盖（兼容老路径 · 启动/激活时从 active config 同步）
+      L3. kimi K3+ 特判 → True（K3 起 Moonshot 原生多模态 · K2/0905 仍纯文本）
+      L4. GLM V 系列特判 → True（glm-4v/5v/5v-turbo 实测能看图 · glm family 默认纯文本）
+      L5. family 白名单 → claude/gpt/gemini/qwen True · 其余 False（unknown 保守）
 
-    用于 look_at 工具的双路径分发：
+    用于 look_at 工具的双路径分发 + tool_loop 发送前的图片注入：
       多模态模型 → 图直接进当前模型 user message
       纯文本模型 → 走独立视觉模型 fallback 看图再回文字
     """
+    # L1 · per-model 配置标注 (BRO 在设置面板的标记 · 跟着模型走)
+    v = _vision_from_provider_configs(model)
+    if v is not None:
+        return v
+    # L2 · 全局 override (2026-06-03 引入 · 启动/激活 provider 时同步)
     try:
         from daemon_runtime import RUNTIME
         if RUNTIME.vision_override is not None:
             return RUNTIME.vision_override
     except Exception:
         pass
-    # GLM 的 V 系列 (glm-4v / glm-5v / glm-5v-turbo) 是多模态·虽然 glm family 整体默认判纯文本。
-    # 实测 glm-5v-turbo 走智谱官方能直接看图·所以按型号名特判·让 auto 档不必手动勾也对。
-    if re.search(r"glm-\d[\d.]*v", (model or "").lower()):
+    m = (model or "").lower()
+    # L3 · kimi K3+ 原生多模态 (k2 / k2-0905 等老型号不匹配 · 保持纯文本)
+    if re.search(r"kimi[-_]?k(?:[3-9]|\d{2,})", m):
         return True
+    # L4 · GLM 的 V 系列 (glm-4v / glm-5v / glm-5v-turbo) 是多模态·虽然 glm family 整体默认判纯文本。
+    # 实测 glm-5v-turbo 走智谱官方能直接看图·所以按型号名特判·让 auto 档不必手动勾也对。
+    if re.search(r"glm-\d[\d.]*v", m):
+        return True
+    # L5 · family 白名单
     return family_of(model) in VISION_CAPABLE_FAMILIES
 
 

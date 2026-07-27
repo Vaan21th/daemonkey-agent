@@ -322,10 +322,10 @@ def _diet_messages_for_send(msgs: list) -> list:
     """返回一份"旧大工具输出已截断"的 messages 副本(无改动则原样返回同一对象)。"""
     cap = _tool_hist_cap()
     if cap <= 0:
-        return msgs
+        return _inject_pending_images(msgs)
     cutoff = len(msgs) - _TOOL_HIST_KEEP_TAIL
     if cutoff <= 0:
-        return msgs
+        return _inject_pending_images(msgs)
     any_change = False
     out: list = []
     for i, m in enumerate(msgs):
@@ -360,7 +360,50 @@ def _diet_messages_for_send(msgs: list) -> list:
                 any_change = True
                 continue
         out.append(m)
-    return out if any_change else msgs
+    return _inject_pending_images(out if any_change else msgs)
+
+
+def _inject_pending_images(msgs: list) -> list:
+    """wish-00ed11c2 · 多模态图片注入 · 发送前最后一刻把图组装进末尾 user 消息。
+
+    背景: _process_attachments 判定当前模型原生视觉时·把图注册到 RUNTIME.pending_images
+    (内存/持久化里的 user message 永远保持 str · 压缩层/token 计数/前端渲染零感知)。
+    这里在发送前临时把最后一条 str user 消息升级成 OpenAI content list
+    (image_url blocks + text) · 让多模态模型"直接看到图"而不是看 look_at 的文字转述。
+
+    安全约束:
+      - pending.sid 必须等于当前 RUNTIME.session_id (防 background turn 串台)
+      - supports_vision(当前模型) 必须为 True (模型切回纯文本就不再注入)
+      - 只改返回的副本 · 原 messages 数组绝不动 (tool 循环每轮重复注入同一组图)
+      - 任何异常都吞掉返回原 msgs (注入失败不该把主对话搞崩)
+    """
+    try:
+        from daemon_runtime import RUNTIME
+        pend = getattr(RUNTIME, "pending_images", None)
+        if not pend or not pend.get("images"):
+            return msgs
+        if pend.get("sid") != getattr(RUNTIME, "session_id", ""):
+            return msgs
+        from model_aliases import supports_vision
+        if not supports_vision(RUNTIME.model or ""):
+            return msgs
+        # 找最后一条 role=user 且 content 还是 str 的消息 · 升级成 content list
+        for i in range(len(msgs) - 1, -1, -1):
+            m = msgs[i]
+            if isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("content"), str):
+                blocks = [
+                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
+                    for mime, b64 in pend["images"]
+                ]
+                blocks.append({"type": "text", "text": m["content"]})
+                out = list(msgs)
+                nm = dict(m)
+                nm["content"] = blocks
+                out[i] = nm
+                return out
+        return msgs
+    except Exception:
+        return msgs
 
 
 # 卷十八加：LLM args 客户端 JSON schema 校验
