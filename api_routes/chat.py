@@ -44,10 +44,11 @@ async def chat(
     auto_confirm = payload.get("auto_confirm")
     max_tokens = _resolve_max_tokens(payload.get("max_tokens"))
     attachments = payload.get("attachments")  # wish-4a6331b2 · WebUI 图片上传
-    _thinking = payload.get("thinking") or None            # 卷七十五续五 · 模型行为
+    _thinking = payload.get("thinking") or None            #五 · 模型行为
     _reasoning_effort = payload.get("reasoning_effort") or None
+    _advisor_coop = bool(payload.get("advisor_coop"))      # wish-0e749752 · 顾问协同模式
 
-    # 卷四十六 III 补丁 5 · Y7 · audit log
+    # III 补丁 5 · Y7 · audit log
     _audit_start = time.monotonic()
     _audit_ip = (request.client.host if request and request.client else None) or "unknown"
     _audit_sid_from_request = session_id or ""
@@ -63,6 +64,7 @@ async def chat(
             attachments=attachments,
             thinking=_thinking,
             reasoning_effort=_reasoning_effort,
+            advisor_coop=_advisor_coop,
         )
         _audit_result_sid = result.get("session_id", "") if isinstance(result, dict) else ""
     except ValueError as e:
@@ -93,7 +95,7 @@ async def chat_stream(
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """SSE 流式版 (卷十七加 · 解决 524 + 让 BRO 看 OPUS 思考过程)"""
+    """SSE 流式版 (加 · 解决 524 + 让 用户 看 Daemonkey 思考过程)"""
     check_auth(authorization)
     if not isinstance(payload, dict):
         raise HTTPException(400, "request body must be a JSON object")
@@ -113,8 +115,9 @@ async def chat_stream(
     auto_confirm = payload.get("auto_confirm")
     max_tokens = _resolve_max_tokens(payload.get("max_tokens"))
     attachments = payload.get("attachments")  # wish-4a6331b2
-    _thinking = payload.get("thinking") or None            # 卷七十五续五 · 模型行为
+    _thinking = payload.get("thinking") or None            #五 · 模型行为
     _reasoning_effort = payload.get("reasoning_effort") or None
+    _advisor_coop = bool(payload.get("advisor_coop"))      # wish-0e749752 · 顾问协同模式
 
     if not message or not message.strip():
         raise HTTPException(400, "message is required and cannot be empty")
@@ -124,6 +127,16 @@ async def chat_stream(
         sid = _resolve_session_id(session_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+    # 会话记住模型 · 记下这一笔用的 active config · 切标签时恢复 (用户 诉求)
+    try:
+        from workers.provider_configs import list_configs as _lpc
+        from daemon_session import get_session_meta as _gsm, set_session_meta as _ssm
+        _aid = (_lpc(include_keys=False) or {}).get("active_id")
+        if _aid and (_gsm(sid) or {}).get("last_model_cfg") != _aid:  # 没变就不写盘
+            _ssm(sid, last_model_cfg=_aid)
+    except Exception:
+        pass
 
     turn_id = "turn-" + uuid.uuid4().hex[:12]
     cancel_event = threading.Event()
@@ -150,6 +163,7 @@ async def chat_stream(
                 turn_id=turn_id,
                 thinking=_thinking,
                 reasoning_effort=_reasoning_effort,
+                advisor_coop=_advisor_coop,
             )
             push_event("done", result)
         except ValueError as e:
@@ -206,7 +220,7 @@ async def abort_turn(
     turn_id: str,
     authorization: Optional[str] = Header(None),
 ):
-    """卷三十六 · BRO 点停止按钮 · 中断正在跑的 turn"""
+    """ · 用户 点停止按钮 · 中断正在跑的 turn"""
     check_auth(authorization)
     from daemon_api import _TURNS_LOCK, _ACTIVE_TURNS
     with _TURNS_LOCK:
@@ -223,7 +237,7 @@ async def confirm_tool_call(
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """wish-2a4d8c1e · BRO 在 chat 卡片点 4 按钮 (approve/trust_*/deny)"""
+    """wish-2a4d8c1e · 用户 在 chat 卡片点 4 按钮 (approve/trust_*/deny)"""
     check_auth(authorization)
     if not isinstance(payload, dict):
         raise HTTPException(400, "request body must be a JSON object")
@@ -359,13 +373,13 @@ async def spawn_task(
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """派发后台任务到新会话 · 不污染当前对话 (打捞自 wish-94bf05eb · 卷五十一)
+    """派发后台任务到新会话 · 不污染当前对话 (打捞自 wish-94bf05eb)
 
     前端按钮 (雷达/趋势/机会/心愿/工坊) 点"执行"时 · 走此端点创建新 session ·
     后台跑 LLM turn · 原会话不受污染 · 前端拿到 session_id 后自动切到新标签。
 
     入参:
-      - prompt (必填): 发给 OPUS 的任务指令
+      - prompt (必填): 发给 Daemonkey 的任务指令
       - task_label (可选): 任务名 · 空则取 prompt 前 40 字符
 
     返回 {ok, session_id, task_label, message}

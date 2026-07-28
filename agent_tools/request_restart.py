@@ -2,27 +2,25 @@
 agent_tools/request_restart.py
 ==============================
 
-OPUS 让 daemon 重启的『正确姿势』( III · 2026-05-26 · wish-ed5553d5)
+Daemonkey 让 daemon 重启的『正确姿势』( III · 2026-05-26 · wish-ed5553d5)
 
 ----------------------------------------------------------------------
 为什么有这个工具
-----------------------------------------------------------------------
-
- II 反面: session api-...063247_e404f8 出过事 ——
-  OPUS 想"装上新代码" · 调 `shell_exec Stop-Process python`
+---------------------------------------------------------------------- II 反面: session api-...063247_e404f8 出过事 ——
+  Daemonkey 想"装上新代码" · 调 `shell_exec Stop-Process python`
   → daemon 进程被杀
   → 当前 tool_call 没 result
   → session jsonl 残一条 dangling assistant.tool_calls
   → 下次加载该 session 直接 HTTP 500
 
-这工具是『官方重启路径』·让 OPUS 想重启时:
+这工具是『官方重启路径』·让 Daemonkey 想重启时:
   1. 调 request_restart(reason="...") — TIER_CONFIRM · 用户 'y' 才走
   2. daemon 立刻写 data/runtime/restart_request.json
   3. 当前 tool 立刻同步返 result · session 状态机干净
   4. 然后 daemon 自己做 graceful shutdown
   5. 用户 / launcher 重启 daemon
   6. 新 daemon 启动时 consume restart_request · 自动给 session 注 system message
-     告诉 OPUS『刚才申请的重启完成 · 继续上次的任务』
+     告诉 Daemonkey『刚才申请的重启完成 · 继续上次的任务』
 
 ----------------------------------------------------------------------
 工具是怎么真重启的 ( IV · 2026-05-26 改自原版『只自爆不自救』)
@@ -39,7 +37,7 @@ OPUS 让 daemon 重启的『正确姿势』( III · 2026-05-26 · wish-ed5553d5)
 
 **为什么改**: 原版 (2026-05-26 早 06:00 写) 假设有 launcher 监听 restart_request.json
 自动重启 · 当时还没 takeover 模式 · 怕 spawn 撞 pid_lock chicken-and-egg。 但实际
-launcher 没有这个 watcher · OPUS 调 request_restart → daemon 真死 → 没人接 ·
+launcher 没有这个 watcher · Daemonkey 调 request_restart → daemon 真死 → 没人接 ·
 用户 必须手动 start.bat (用户 2026-05-26 14:56 实测踩坑)。
 
 takeover 模式已经 ready · /restart-daemon endpoint 跑通过 N 次·复制过来即可。
@@ -70,13 +68,9 @@ def _summarize(args: dict) -> str:
 
 
 def _trigger_shutdown_async(delay_sec: float = 2.0, reason: str = "request_restart_tool") -> None:
-    """延迟几秒后让 daemon 自杀·**并 spawn 替代子进程接管端口** ( IV · wish-后续 · 2026-05-26)
-
-     III 补丁 · 自杀前显式 mark_graceful_shutdown · 否则下次启动会误判 crash
-
-     IV · 2026-05-26 用户 测真实场景发现 GAP:
+    """延迟几秒后让 daemon 自杀·**并 spawn 替代子进程接管端口** ( IV · wish-后续 · 2026-05-26) III 补丁 · 自杀前显式 mark_graceful_shutdown · 否则下次启动会误判 crash IV · 2026-05-26 用户 测真实场景发现 GAP:
       原版只 mark_graceful + os._exit(0) · 假设有 launcher 监听 restart_request.json
-      自动重启 (源码注释 line 31-41)。 但实际 launcher 没有这个 watcher · OPUS 调
+      自动重启 (源码注释 line 31-41)。 但实际 launcher 没有这个 watcher · Daemonkey 调
       request_restart → daemon 真死 → 没人 spawn 子进程 → restart_request.json 没人
       consume → follow_up turn 也跑不了 → 用户 端到端断链 12 min·必须手动 start.bat。
 
@@ -144,7 +138,7 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(ok=False, output="", error="reason too long (max 500 chars)")
 
     session_id = (args.get("session_id") or "").strip() or None
-    #  III hookup · 没显式传 session_id 就从 RUNTIME 拿当前 session
+    # III hookup · 没显式传 session_id 就从 RUNTIME 拿当前 session
     if not session_id:
         try:
             from daemon_runtime import RUNTIME
@@ -156,8 +150,17 @@ def _run(args: dict) -> ToolResult:
     if style not in ("graceful", "dry_run"):
         return ToolResult(ok=False, output="", error="style must be 'graceful' or 'dry_run'")
 
-    #  III 补丁 3 · 自动续场任务 (用户 反馈: 重启后不要让我手动发消息触发 OPUS 继续)
+    # III 补丁 3 · 自动续场任务 (用户 反馈: 重启后不要让我手动发消息触发 Daemonkey 继续)
     follow_up_message = (args.get("follow_up_message") or "").strip() or None
+    # · 防呆 (2026-07-28 用户 实测: DeepSeek 调 request_restart 不填 follow_up →
+    # 重启其实成功了但没续场消息 · 用户 以为没重启成 → 手动按 WebUI 重启按钮)
+    # 空了就按 reason 拼默认续场任务 · 保证新 daemon 起来后 Daemonkey 自动继续干活 · 不等 用户 手动触发
+    # (dry_run 也拼 · 预演就该看到真跑的完整行为 · 否则防呆没法低成本验证)
+    if not follow_up_message:
+        follow_up_message = (
+            f"你之前调 request_restart 重启了 daemon (原因: {reason[:200]})。"
+            "请验证相关改动已生效 (端点 / 行为 / 日志任选其一以上), 然后用一两句话告诉 用户 结果。"
+        )
     if follow_up_message and len(follow_up_message) > 1000:
         return ToolResult(ok=False, output="", error="follow_up_message too long (max 1000 chars)")
 
@@ -190,12 +193,12 @@ def _run(args: dict) -> ToolResult:
             ),
         )
 
-    #  · 重启前『前端 JS 语法闸』(2026-06-03 事故根治)
-    # 病根: OPUS 用 python_exec 字符串切片改 chat.js · 边界算错把尾部 1660 行吞了 ·
+    # · 重启前『前端 JS 语法闸』(2026-06-03 事故根治)
+    # 病根: Daemonkey 用 python_exec 字符串切片改 chat.js · 边界算错把尾部 1660 行吞了 ·
     #   文件停在 `function loadMoreWishes() {` → JS 语法错 → 浏览器整个白屏。 而
     #   verify_daemon_endpoints 只验 Python 路由 · 坏前端顶着"82/82 全绿"被 commit + 重启 ·
     #   用户 打开 WebUI 全死。 这里在 checkpoint + 自爆之前先验前端: 语法坏就拒绝重启 ·
-    #   连 checkpoint 都不做 · 逼 OPUS 先把 JS 修好。 (node 缺失会降级成启发式·绝不硬崩)
+    #   连 checkpoint 都不做 · 逼 Daemonkey 先把 JS 修好。 (node 缺失会降级成启发式·绝不硬崩)
     try:
         from workers.frontend_check import check_static_js, format_report
         fe = check_static_js()
@@ -214,15 +217,25 @@ def _run(args: dict) -> ToolResult:
     except ImportError:
         pass  # 校验器本身缺失不阻塞重启 · 降级放行
 
-    #  · ①号机制 · 重启前自动 checkpoint commit
+    # · ①号机制 · 重启前自动 checkpoint commit
     # 病根 (): 写完代码 request_restart · 改动是裸的工作区改动 · 一旦后续
     # crash → rollback (stash) 就灰飞烟灭 (日历功能就是这么没的)。 这里在自爆前先把
     # 工作区落成一个 commit · 物理上保证"写完的活儿不会被任何重启/回退抹掉"。
     checkpoint_note = ""
     try:
         from workers.git_ops import checkpoint_commit
-        cp = checkpoint_commit(f"request_restart · {reason[:80]}")
+        # wish-e19edb92 · 传 owner=本会话 → checkpoint 精准 add:
+        # 别的活跃会话的裸奔改动留在工作区不卷走 · 卷了的标注并通知对方 (治三实例虚惊)
+        cp = checkpoint_commit(f"request_restart · {reason[:80]}", owner=session_id or None)
         checkpoint_note = f"\n  checkpoint: {cp.get('note', '')}"
+        _sk = cp.get("skipped") or []
+        _sw = cp.get("swept") or []
+        if _sk:
+            checkpoint_note += (f"\n    · 跳过 {len(_sk)} 个其他活跃会话文件 (留在工作区·已通知对方): "
+                                + ", ".join(_sk[:5]) + (" ..." if len(_sk) > 5 else ""))
+        if _sw:
+            checkpoint_note += (f"\n    · [卷入] {len(_sw)} 个非本会话文件已一并收录·commit message 有标注: "
+                                + ", ".join(i["path"] for i in _sw[:5]) + (" ..." if len(_sw) > 5 else ""))
     except Exception as e:
         checkpoint_note = f"\n  checkpoint: 跳过 (异常 {type(e).__name__}: {e})"
 
@@ -282,7 +295,7 @@ SPEC = ToolSpec(
         "  - You'll see '[SYSTEM · 重启续场]' on next message and know to continue\n\n"
         "**重要 · 重启后你怎么判断成功 ( III 反面教材 2026-05-26)**:\n"
         "  - 上根毛在端到端测试时 · daemon 真重启了 · 用户 看到了续场 system message · "
-        "但 OPUS 复盘说『但你现在还能跟我说话 · 说明 daemon 没炸』 — **诊断完全反了**。\n"
+        "但 Daemonkey 复盘说『但你现在还能跟我说话 · 说明 daemon 没炸』 — **诊断完全反了**。\n"
         "  - 真相: 你能继续对话 · **恰恰是因为旧 daemon 真自爆 · 新 daemon 起来接力**。 session "
         "jsonl 持久化 · 新 daemon 读它 · 你的 context 看起来连续 · 但物理 daemon 已经换底座。\n"
         "  - 判断成功的硬证据 (任选其一):\n"
@@ -333,7 +346,7 @@ SPEC = ToolSpec(
                     "**自动续场任务** ( III 补丁 3 · 2026-05-26 用户 反馈加的)。 "
                     "重启完成后 · 新 daemon 自动以这条作为 user message 触发 background LLM turn。 "
                     "用于『重启完成后请你帮我验证 X / 跑一遍 Y / 检查 Z 是否生效』这种场景。 "
-                    "用户 不用手动发消息触发 · 进 WebUI 直接看你的验证结果。\n\n"
+                    "BRO 不用手动发消息触发 · 进 WebUI 直接看你的验证结果。\n\n"
                     "**注意**: \n"
                     "  - 后台 turn auto_confirm='confirm' (跟主对话 WebUI 同级) · AUTO + CONFIRM 自动 go·\n"
                     "    能跑 read_file / grep / curl / python_exec / write_file / git commit 等 (够你验证自己刚写的代码)\n"

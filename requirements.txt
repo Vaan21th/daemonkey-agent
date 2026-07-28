@@ -5,9 +5,6 @@ rich>=13.7.0
 fastapi>=0.115.0
 uvicorn>=0.30.0
 
-# 工坊资产上传端点（图片/IP 形象）走 FastAPI 表单·需要 multipart 解析
-python-multipart>=0.0.9
-
 # 卷四十四 K stage 2c++ · wish-8d6b76a6 · service_start 跨平台进程检测
 psutil>=5.9.0
 
@@ -26,23 +23,18 @@ python-docx>=1.0.0
 # wish-41ed72ef · 文档上传 · PPTX 文本提取
 python-pptx>=1.0.0
 
-# 客户档案 Excel 导入 (parse_table · .xlsx) · 缺则 CSV 仍可用·xlsx 会给"pip install"提示
-openpyxl>=3.1.0
-
 # 卷五十八续 · lint_check 工具 · 抓"语法对逻辑错"的 bug (未定义名/未用导入/重定义)
 ruff>=0.6.0
 
-# 微信渠道（官方 ClawBot / iLink）· 扫码连微信 + 二维码生成 + 主动消息
-# 走腾讯官方 ilinkai.weixin.qq.com·零私有服务器·每个用户扫码连自己的微信
-# cryptography: 发图片/视频/文件走 CDN 时的 AES-128-ECB 加密 (漏它=发文件报『缺依赖』·会退而编本地链接)
-requests>=2.31.0
-qrcode>=7.4.2
+# 卷六十四续八 · 微信发媒体 (ilink_media · AES-128-ECB CDN 加密上传)
+# 漏列 = 全新环境发图片/视频/文件报『缺依赖』·AI 会退而编本地链接 (127.0.0.1·手机打不开)
 cryptography>=42.0.0
 
-# 浏览器的"手/眼"（browser_act / browser_fetch）· 用 Playwright 驱动系统 Edge
-# 走 connect_over_cdp / channel="msedge" 接管系统已装的 Edge·无需 `playwright install` 下载浏览器内核
-playwright>=1.40.0
+# 卷 · 客户档案 Excel 导入 (parse_table · .xlsx) · 缺则 CSV 仍可用·xlsx 会给"pip install"提示
+openpyxl>=3.1.0
 
-# 桌宠（可选）· 桌面上游走的像素小猫·反映 daemon 实时活动
-# 没装也不影响主程序·只是启动器里的"召唤桌宠"按钮点了会提示装 PyQt6
-PyQt6>=6.6.0
+# 卷 · 客户档案上传端点 (FastAPI UploadFile/File 依赖) · 缺则 /import-preview 起不来
+python-multipart>=0.0.9
+
+# wish-fb6b7427 · 事项 B · Windows toast 系统通知 (纯 ctypes · 零传递依赖)
+winotify>=1.1.0; sys_platform == "win32"

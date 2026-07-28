@@ -19,7 +19,7 @@ agent_tools/browser_act.py
 from __future__ import annotations
 
 from . import TIER_AUTO, TIER_CONFIRM, ToolResult, ToolSpec, register_tool
-from ._browser import CDP_URL, ensure_cdp
+from ._browser import CDP_URL, ensure_cdp, restart_browser
 from ._browser_actions import READONLY_ACTIONS, dispatch
 
 
@@ -44,7 +44,16 @@ def _run(args: dict) -> ToolResult:
             browser = p.chromium.connect_over_cdp(CDP_URL)
             return dispatch(browser, args)
     except Exception as e:
-        return ToolResult(ok=False, output="", error=f"CDP 操作失败: {type(e).__name__}: {e}")
+        if restart_browser():
+            try:
+                with sync_playwright() as p:
+                    browser = p.chromium.connect_over_cdp(CDP_URL)
+                    return dispatch(browser, args)
+            except Exception:
+                pass
+        return ToolResult(ok=False, output="", error=(
+            f"CDP 操作失败: {type(e).__name__}: {e}\n"
+            "已自动尝试重拉专属浏览器仍失败 → 可在启动器点【浏览器急救】或重启 daemon。"))
 
 
 def _classify(args: dict) -> str:

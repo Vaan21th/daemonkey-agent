@@ -6,9 +6,9 @@ daemon_session.py
 
 为什么不用数据库：
   - 文件本身可以 cat / less / tail 直接看
-  - 同步到 git 只是 .gitignore 拦着，BRO 想看哪个就 vim 哪个
+  - 同步到 git 只是 .gitignore 拦着，用户 想看哪个就 vim 哪个
   - 跨机器迁移 = 复制目录
-  - 后期想分析 OPUS 的对话风格直接用 grep + jq
+  - 后期想分析 Daemonkey 的对话风格直接用 grep + jq
 
 功能：
   - new_session_id() · 时间戳 + 随机 6 位 hex
@@ -16,9 +16,7 @@ daemon_session.py
   - append_turn(id, role, content, meta=None) · 写一行
   - resolve_session_id(arg) · 模糊匹配，支持 'latest' / 后缀 / 完整 id
   - load_session(id) · 把 jsonl 重放成 messages 数组（只保留 user / assistant）
-  - list_sessions() · 时间倒序 + 行数
-
-卷三十四补丁 · session 元数据（label / pinned / archived）：
+  - list_sessions() · 时间倒序 + 行数丁 · session 元数据（label / pinned / archived）：
   - 集中存在 sessions/_index.json
   - 一份 dict {sid: {label, pinned_at, archived_at, updated_at}}
   - 不存到 jsonl 里·避免污染对话主体
@@ -39,7 +37,7 @@ ROOT = Path(__file__).resolve().parent
 SESSIONS_DIR = ROOT / "sessions"
 SESSIONS_DIR.mkdir(exist_ok=True)
 
-# 卷三十四补丁 · session 元数据集中存
+#丁 · session 元数据集中存
 _META_PATH = SESSIONS_DIR / "_index.json"
 
 
@@ -82,6 +80,7 @@ def set_session_meta(
     label: Optional[str] = None,
     pinned: Optional[bool] = None,
     archived: Optional[bool] = None,
+    last_model_cfg: Optional[str] = None,
 ) -> dict:
     """更新一个 session 的 metadata · None 表示不改
 
@@ -109,6 +108,13 @@ def set_session_meta(
             cur["archived_at"] = now
         else:
             cur.pop("archived_at", None)
+
+    if last_model_cfg is not None:
+        s = (last_model_cfg or "").strip()
+        if s:
+            cur["last_model_cfg"] = s
+        else:
+            cur.pop("last_model_cfg", None)
 
     cur["updated_at"] = now
     idx[session_id] = cur
@@ -160,7 +166,7 @@ def append_turn(session_id: str, role: str, content, meta: dict | None = None) -
     with session_path(session_id).open("a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    # 卷五十四 · 对话 turn 即时进 FTS5 (断链 G 修复 · best-effort · 不阻塞写盘)
+    # · 对话 turn 即时进 FTS5 (断链 G 修复 · best-effort · 不阻塞写盘)
     if role in ("user", "assistant"):
         try:
             from workers.memory_index import index_session_turn
@@ -171,8 +177,8 @@ def append_turn(session_id: str, role: str, content, meta: dict | None = None) -
 def get_last_user_turn_ts(session_id: str) -> Optional[str]:
     """读 session jsonl 反向找最近一条 user turn 的 ts · 返回 ISO 格式字符串。
 
-    wish-1d286099 · dynamic_telemetry 用 —— 让 daemon OPUS 知道 BRO 上一条消息
-    是多久以前发的，支撑自然的在场感（"6 小时没消息了 BRO 刚回来"）。
+    wish-1d286099 · dynamic_telemetry 用 —— 让 daemon Daemonkey 知道 用户 上一条消息
+    是多久以前发的，支撑自然的在场感（"6 小时没消息了 用户 刚回来"）。
     
     只看末尾 20 行 · O(1) · 无性能压力。
     """
@@ -185,8 +191,8 @@ def get_last_user_turn_ts(session_id: str) -> Optional[str]:
     except OSError:
         return None
     # 从末尾往前扫，找最近一条 role=user
-    # 卷六十 · 跳过主动 CALL 的系统唤醒 (role=user · src=proactive) · 那不是 BRO 说的话 ·
-    # 否则 OPUS 一主动开口就把"BRO 沉默"时钟清零 · 沉默触发语义错位
+    # · 跳过主动 CALL 的系统唤醒 (role=user · src=proactive) · 那不是 用户 说的话 ·
+    # 否则 Daemonkey 一主动开口就把"BRO 沉默"时钟清零 · 沉默触发语义错位
     for line in reversed(lines[-20:]):
         try:
             rec = json.loads(line)
@@ -250,9 +256,7 @@ def resolve_session_id(arg: str) -> str:
 
 
 def load_session(session_id: str) -> list[dict]:
-    """把磁盘 jsonl 重放成 messages 数组.
-
-    卷三十六 · 关键升级：
+    """把磁盘 jsonl 重放成 messages 数组. · 关键升级：
     - 保留 assistant 的 tool_calls (在 meta 里) → 拼进 OpenAI 格式
     - 保留 assistant 的 reasoning_content (DeepSeek thinking mode 必须)
     - 保留 tool role 的 tool_call_id (OpenAI 格式必须)
@@ -271,10 +275,18 @@ def load_session(session_id: str) -> list[dict]:
             if role == "user":
                 msgs.append({"role": "user", "content": content})
             elif role == "assistant":
-                entry: dict = {"role": "assistant", "content": content}
                 tcs = meta.get("tool_calls") or []
+                if not (content or "").strip() and not tcs:
+                    # · 空 content 且无 tool_calls 的 assistant → Kimi/OpenAI 都 400
+                    # (must not be empty) · 剔除。无 tool_calls 即无配对 tool 消息 · 不会 dangling
+                    continue
+                entry: dict = {"role": "assistant", "content": content}
                 if tcs:
                     entry["tool_calls"] = tcs
+                    if not (content or "").strip():
+                        # · DeepSeek 存的 "" 空串 → null (2026-07-28 跨模型切换 500 根治:
+                        # Kimi 严格校验只认 null · "" 报 400 must not be empty · 换模型续旧 session 必炸)
+                        entry["content"] = None
                 # DeepSeek thinking mode · 多轮里 reasoning_content 要回传
                 reasoning = meta.get("reasoning_content")
                 if reasoning and tcs:
@@ -291,8 +303,8 @@ def load_session(session_id: str) -> list[dict]:
     return msgs
 
 
-# 卷四十四 I · UI 历史 turn 截断阈值 · 默认 50K 覆盖 99% 真实对话
-# 上根毛 5164 字回答曾被截到 2000 → BRO 心理上"OPUS 忘了" · 即使 LLM 那边是完整的
+# I · UI 历史 turn 截断阈值 · 默认 50K 覆盖 99% 真实对话
+# 上根毛 5164 字回答曾被截到 2000 → 用户 心理上"OPUS 忘了" · 即使 LLM 那边是完整的
 # 真要看完整内容超 50K · session 文件 (sessions/<sid>.jsonl) 是 single source of truth
 UI_CONTENT_TRUNCATE_THRESHOLD = 50000
 UI_REASONING_TRUNCATE_THRESHOLD = 50000
@@ -306,13 +318,13 @@ def load_session_for_ui(session_id: str) -> list[dict]:
       content: 文本内容 (> 50K 字才截 · 超长 tool result 才会触发)
       ts: 时间戳
       truncated: 是否被截
-      reasoning_content: assistant 有 DeepSeek thinking 链时带 (卷三十六)
-      tool_calls: assistant 调了工具时·结构化列表 [{name, arguments}] (卷三十六)
-      tool_call_id: tool role 的 id · 用来跟 assistant 那条配对 (卷三十六)
+      reasoning_content: assistant 有 DeepSeek thinking 链时带 ()
+      tool_calls: assistant 调了工具时·结构化列表 [{name, arguments}] ()
+      tool_call_id: tool role 的 id · 用来跟 assistant 那条配对 ()
       src: api / terminal · 标识这条 turn 是哪种入口
 
-    截断阈值演化 (卷四十四 I · 2026-05-25): 2000/4000 → 50000/50000
-    原 2K 阈值会把人类 5K 字回答砍掉 60% · BRO 体验上『OPUS 忘了』
+    截断阈值演化 ( I · 2026-05-25): 2000/4000 → 50000/50000
+    原 2K 阈值会把人类 5K 字回答砍掉 60% · 用户 体验上『Daemonkey 忘了』
     50K 覆盖 99% 真实对话 · 真要拉完整内容看 sessions/<sid>.jsonl
     """
     path = session_path(session_id)
@@ -341,7 +353,7 @@ def load_session_for_ui(session_id: str) -> list[dict]:
                 "truncated": truncated,
             }
             meta = rec.get("meta") or {}
-            # 卷三十六 · assistant 的工具调用结构化展开 · 不只是名字
+            # · assistant 的工具调用结构化展开 · 不只是名字
             tcs = meta.get("tool_calls") or []
             if tcs:
                 turn["has_tool_calls"] = True
@@ -358,7 +370,7 @@ def load_session_for_ui(session_id: str) -> list[dict]:
                     }
                     for tc in tcs
                 ]
-            # 卷三十六 · thinking mode reasoning 也带回去 · UI 可折叠显示
+            # · thinking mode reasoning 也带回去 · UI 可折叠显示
             if meta.get("reasoning_content"):
                 rc = meta["reasoning_content"]
                 if isinstance(rc, str) and len(rc) > UI_REASONING_TRUNCATE_THRESHOLD:
@@ -367,14 +379,23 @@ def load_session_for_ui(session_id: str) -> list[dict]:
                         + f"\n\n... [+{len(meta['reasoning_content']) - UI_REASONING_TRUNCATE_THRESHOLD} chars · session 文件里有完整版]"
                     )
                 turn["reasoning_content"] = rc
-            # 卷三十六 · tool role 的 id · 让前端能跟 assistant 那条 tool_call 配对
+            # · tool role 的 id · 让前端能跟 assistant 那条 tool_call 配对
             if rec.get("role") == "tool" and meta.get("tool_call_id"):
                 turn["tool_call_id"] = meta["tool_call_id"]
             if meta.get("src"):
                 turn["src"] = meta["src"]
-            # 卷六十 · 主动 CALL · 注入的 user turn 带 reason · 前端渲染成系统提示
+            # wish-7c579a20 · 附件 meta 透传 · WebUI 历史重建图片/文档卡片
+            if meta.get("attachments"):
+                turn["attachments"] = meta["attachments"]
+            # · 主动 CALL · 注入的 user turn 带 reason · 前端渲染成系统提示
             if meta.get("proactive_reason"):
                 turn["proactive_reason"] = meta["proactive_reason"]
+            # 用户 2026-07-28 · 顾问协同卡持久化 · 历史渲染重建金卡用
+            if meta.get("advisor_blueprint"):
+                turn["advisor_blueprint"] = meta["advisor_blueprint"]
+            # 用户 2026-07-28 方案 B · 协同自动验收结果 (append-only system 记录) · 历史渲染重建验收卡
+            if meta.get("kind") == "advisor_review" and meta.get("advisor_review"):
+                turn["advisor_review"] = meta["advisor_review"]
             turns.append(turn)
     return turns
 
@@ -396,7 +417,7 @@ def list_sessions() -> list[tuple[str, datetime, int]]:
 
 
 def list_sessions_with_meta() -> list[dict]:
-    """卷三十四补丁 · 返回带 metadata 的 session 列表
+    """丁 · 返回带 metadata 的 session 列表
 
     每条:
       session_id / mtime (datetime) / turns / label / pinned_at / archived_at
@@ -421,6 +442,7 @@ def list_sessions_with_meta() -> list[dict]:
             "label": meta.get("label"),
             "pinned_at": meta.get("pinned_at"),
             "archived_at": meta.get("archived_at"),
+            "last_model_cfg": meta.get("last_model_cfg"),
         })
 
     def _sort_key(r):

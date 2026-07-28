@@ -1,10 +1,10 @@
 {
   "manifest_version": 1,
-  "core_version": "0.7.1beta",
+  "core_version": "0.8.0beta",
   "core_version_note": "内核语义版本 · 版本号唯一真相源。内核有实质更新就在这里 bump · launcher/WebUI 动态读它显示 · update_core check 拿它和远程对比报「有新版」。manifest_version 是清单结构版本(很少变) · core_version 才是用户感知的内核版本。",
   "description": "Daemonkey 内核(L1)白名单 — update_core 只同步这里列出的文件;清单外的一律物理不碰(用户的功能/应用/灵魂永不被覆盖)。人类可读版见 docs/CORE-MANIFEST.md。",
-  "updated": "2026-07-14",
-  "log_ref": "卷六十四续五 · 卷七十四续十八(核心前端) · 卷七十四续二十(core_version 版本号体系) · 卷七十四续二十一(github 备份源接通) · 卷七十四续二十二(记忆系统纳入内核:自动注入+两段式recall+缓存稳定化·0.3.2 大更) · 卷七十四续二十五(能力发现引擎 discover_skill + 每周一节律 + 看板入口·0.4.0) · 0.5.0(NLP 定时任务 task_scheduler + scheduled_tasks 工具组 + 侧边栏定时任务维度 + 宪法两层注入 product_constitution + 急救体系周全 ensure_git_repo首启兜底/维修台优先) · 0.5.2(技能闭环第②环「接住」打通: extract_playbook 加 import 动作 + workers/playbook_import.py 把外部 skill MD 经 LLM 归一成 playbook 入库·memory_index 自动索引·closure_check 按需召回; 启动器关于页双发布入口 B站+抖音; playbook 技能系统(discover发现/import接住/extract沉淀/playbooks存储)整体纳入内核白名单 L1·官方可增量下发改进·写入侧与召回侧不再割裂) · 0.5.2a(发布物 hotfix·主要惠及新下载用户: ① .gitattributes 钉死 assets/brand.json -text —— git 的 CRLF↔LF 转换曾让正规 clone/Download ZIP 包字节漂移→品牌签名验签失败→启动器误弹「非官方版」·固化成签名对应的 CRLF 字节后所有人验签通过; ② chat.css 大屏(≥1680/≥2200)对话栏默认加宽 540/640px·修 1080p+ 上对话栏过窄·仅改没拖过用户的默认值·不碰 localStorage 也不进 static 白名单) · 0.5.2b(用户报修三连: ① 视觉模型配置 404 —— /vision-config 路由代码在但 daemon_api 漏 include_router → 前端配视觉模型报 Not Found·已补注册[daemon_api 不在白名单·随新 ZIP/exe 下发]; ② 初见/换 key 填 URL 卡死 —— save-key 改为先 probe_openai 试连·连不通不落盘·把人话错误[含 base_url 的 /v1 纠偏]抛回前端·配置卡片保留当场改·修「填错只能手改 .env」老坑·新增 clean_base_url 去掉用户误贴的 /chat/completions 尾; ③ de-OPUS env 前缀 —— 写进用户 .env 的配置名由 OPUS_* 改 DAEMONKEY_*[社区截图泄漏内部代号]·新增 workers/env_aliases.py 双向别名垫片让内核几百处 os.environ['OPUS_*'] 读取零改动·老用户旧 .env 全兼容) · 0.5.5(浏览器的手 browser_act —— 在 daemon 专属 Edge 上真的点/填/传/等/读/收图/下载/截图 + inspect 纯文本探路·配合只读的 browser_fetch「眼睛」·二者共享 agent_tools/_browser 的 CDP 路径连同一个独立 profile 的 Edge[独立端口 9333·绝不碰用户主浏览器·首次登录持久化复用]; 新增 _browser.py/_browser_actions.py/browser_act.py·browser_fetch 改走专属 Edge 自启; 补 playwright 进 requirements[走系统 Edge·无需 playwright install 下载内核]; 浏览三件套属 L2 能力工具[同 web_fetch·不进白名单]·随新 ZIP/exe 下发·老用户重新下载本 Release 即得) · 0.5.5a(浏览器的手 Chrome 兜底 —— 专属浏览器从 Edge-only 改 Edge→Chrome→用户指定:找不到 Edge 自动退 Chrome[同 Chromium 内核·CDP 一致]·都没装可设 DAEMONKEY_BROWSER_PATH 指向任意 Chromium exe[绿色版/非标准路径];_find_edge→_find_browser·browser_act/browser_fetch 报错文案同步;纯兜底增强·无新依赖) · 0.5.5b(对话滚动位置修复 —— 多对话标签切换弹回顶部/丢滚动位置:整个对话区是 #messages 单一滚动容器·切回已开标签时只切可见性没存/还原滚动位置→每次回顶;改为离开会话记 scrollTop·切回按上次位置还原·离开时在底部则回底并继续跟随流式·同步粘底标志;仅动会话切换分支·不碰发送/流式/首次加载滚到底;static/chat.js 属核心前端白名单·老用户点「检查更新」即得·无需重下 ZIP) · 0.6.0(派分身 dispatch_subagent + 通用子执行器 subagent_runner —— 主对话可一次派 1~N 个隔离「分身」并行干活[各自独立上下文 + 收紧工具白名单]·跑完自动汇总结论回本轮;分身默认只拿只读/研究白名单·硬 DENY 剔除 dispatch_subagent 自身[防无限递归·限一层]与 request_restart/update_core/service_* 等系统控制/破坏性工具·并发上限 2 + 每分身迭代预算防 token 爆·每份汇总截断防爆父上下文·每个分身落 sessions/sub-*.jsonl 可回看[可追溯];subagent_runner 从 app_runner 抽出通用「临时 messages→run_tool_loop→记账」中段·是后续工作流每步隔离化/串行升级的地基;两文件随 update_core 下发即激活[agent_tools 自动发现]·tool_loop 补 dispatch_subagent 进旁白本地化白名单) · 0.6.0beta(2026-07-11 大版本:① 工作流并行组 —— 单步可多 app 并发[或同 app 并行]+扇入 join·画布可视化并行分支·向后兼容旧串行 flow; ② 自主巡航进度 —— 后台 turn 实时回「正在做什么·第N轮·已Xs」不再像卡死; ③ 语音对话模式 —— 打开对着说·停顿约1秒自动发给 AI·AI 回复时自动暂停麦克风[免手动·桌面版对话预留]·另配会议纪要模式[持续录成文本·停止后 AI 整理拆分]; ④ 模型行为设置 —— 右上角模型菜单里调思考模式/推理强度/输出上限[按厂商能力智能下发·不支持的静默跳过防报错]; ⑤ 简洁版 + 换肤 —— 一键切只留对话框的专注模式[Alt+Z]·标题栏换肤按钮直接切主题[存 localStorage 不动文件]; ⑥ 大扩内核白名单 —— daemon_api.py + api_routes/chat.py + sessions.py + 工坊引擎5件[flow_runner/flow_steps/app_runner/create_workflow/create_app] + UI骨架[chat.html/chat.css/workshop.css] 全纳入·让上面这批能力对升级用户全部真生效; update_core 加「拉到新清单自动补一轮」·扩白名单后一次到位[0.5.5a 老版本首跳因跑旧代码需再升一次·工具层已提示]) · 0.6.8beta(2026-07-12 大版本:① 私有知识库[第二大脑] —— 把资料[PDF/Word/PPT/MD]灌进来抽文本进 FTS5·可召回可 cite 回原文·文件夹分组 + 报告一键存入 + pinned 常驻优先 + sensitive 敏感隔离[不自动注入只显式召回];② 客户档案 CRM —— 每个客户是会长厚的档案[需求/会议/交付/pipeline 阶段]·时间线 + 会议纪要打通[语音转写一键存成客户会议]·CSV/Excel 导入·notes 进 FTS5 可召回·知识库文档可挂到客户名下;③ 双轨记忆·情感优先 —— 闲聊里自然捕捉情绪/生活/健康信号[静默记录不打断]·成熟后在闲聊语境软回访[防尬·每天最多一次]·可选经微信主动慰问[配了才发·没配 no-op];④ 技能库查看器 —— playbook 经验以维度视角查看; ⑤ 成长档案 hub —— 画像/日记/技能库/心愿/沉淀位聚合·前端拆 depot.js[成长档案] + clients.js[客户档案]·chat.js 之前加载零构建全局共享; ⑥ 掘金脑吃知识库[可行性分析把私有资料当客观背景·cite 原文] + 雷达并行抓取[ThreadPoolExecutor·墙钟从串行相加降到最慢源]; ⑦ notebook 写入标准 + 画像查看器重构[时间序取最新 + 最近记了什么时间线]; ⑧ API 加固[safe_json_body 畸形请求 400 不 500] + 上传端点缺 python-multipart 优雅降级 503 不崩路由。知识库/客户/报告/雷达数据全在 data/**[never_sync]·升级绝不覆盖用户资料) · 0.7.0beta(2026-07-14 大版本:① 演示稿引擎 slides_engine —— 自建薄引擎生 .pptx[3 档设计风格 + 可 NLP 微调风格 token·图表/流程图/图标/系统字体检测/封面满版大图]·generate_presentation 工具[对话内两步法生成·产物「用对应软件打开」]·generate_image 工具[文生图·优先走用户自建生图 app→ENV 模型→浏览器 Doubao→占位卡·一次并发出多张不同图·agentic 浏览器 app 串行锁防抢]; ② 抗套娃全家桶[用户反馈三连]—— track_task 任务账本[多步任务确定性工作记忆·✓通了/✗死了/决策每轮无损回灌·语义压缩压不掉]+ replan 解套[试 2+ 条路失败→起干净上下文顾问重规划·治原地套娃最后放弃]+ 总监两幕[并行 vs 串行判断写进系统提示·默认偏串行·黄金搭配=并行收集→串行合成]; ③ 卡顿/token 双修 —— 前端长会话 DOM 窗口化[MAX_RENDERED_MSGS 裁最旧 + HISTORY_RENDER_WINDOW 折叠·治打字慢]+ tool_loop 发送时工具输出瘦身[旧大 dump 截头尾省 token·确定性不破前缀缓存]+ 压缩触发 0.6→0.7[配合账本减少重复摘要漂移]; ④ 产物「用对应软件打开」通用 reveal[PPT/报告→本机关联应用]+ 批量生图聊天内联图廊[可点放大]+ 并发落盘防覆盖[xb 原子创建+uuid 后缀]+ 进度条整轮读秒不再卡 0s。演示稿/生图产物在 data/presentations[never_sync]·升级绝不覆盖用户资料;新增引擎无新增 pip 依赖[python-pptx/Pillow/requests 已在 requirements])",
+  "updated": "2026-07-29",
+  "log_ref": "五十八(核心前端)二十(core_version 版本号体系)二十一(github 备份源接通)二十二(记忆系统纳入内核:自动注入+两段式recall+缓存稳定化·0.3.2 大更)二十五(能力发现引擎 discover_skill + 每周一节律 + 看板入口·0.4.0) · 0.5.0(NLP 定时任务 task_scheduler + scheduled_tasks 工具组 + 侧边栏定时任务维度 + 宪法两层注入 product_constitution + 急救体系周全 ensure_git_repo首启兜底/维修台优先) · 0.5.2(技能闭环第②环「接住」打通: extract_playbook 加 import 动作 + workers/playbook_import.py 把外部 skill MD 经 LLM 归一成 playbook 入库·memory_index 自动索引·closure_check 按需召回; 启动器关于页双发布入口 B站+抖音; playbook 技能系统(discover发现/import接住/extract沉淀/playbooks存储)整体纳入内核白名单 L1·官方可增量下发改进·写入侧与召回侧不再割裂) · 0.6.0( · 派分身 dispatch_subagent + 通用子执行器 subagent_runner —— 主对话可一次派 1~N 个隔离「分身」并行干活[各自独立上下文 + 收紧工具白名单]·跑完自动汇总结论回本轮;分身默认只拿只读/研究白名单·硬 DENY 剔除 dispatch_subagent 自身[防无限递归·限一层]与 request_restart/update_core/service_* 等系统控制/破坏性工具·并发上限 2 + 每分身迭代预算防 token 爆·每个分身落 sessions/sub-*.jsonl 可回看;subagent_runner 从 app_runner 抽出通用「临时 messages→run_tool_loop→记账」中段·app_runner 改薄壳零回归·是后续工作流每步隔离化/串行升级的地基;两文件随 update_core 下发即激活[agent_tools 自动发现])八(2026-07-11 大扩白名单:daemon_api.py + api_routes/chat.py + api_routes/sessions.py + 工坊引擎5件[flow_runner/flow_steps/app_runner/create_workflow/create_app] + UI骨架[chat.html/chat.css/workshop.css] 全纳入内核·让「语音对话/模型行为思考强度/自主巡航进度/工作流并行组/简洁版+换肤」这批 0.6.0 能力对升级用户全部真生效;daemon_api.py 反转「永不同步」旧决定[见 excluded_borderline_history]·只碰框架代码不碰用户数据;apply_update 加「拉到新清单自动补一轮」·扩白名单后单轮到位[老版本首跳因跑旧代码仍需两轮·工具层已提示再升一次]) · 0.6.8beta( · 双轨记忆·情感优先[closure_check 情绪/生活信号词典大扩容 + 长度门槛<2 + _TECH_NOISE 反噪·命中率47%→100%] + 主动关怀纳入内核[proactive_call/rituals/dynamic_telemetry/ilink_client 进白名单·care 信号→到点主动微信慰问·防尬红线·ritual>care>silence·母体测不出的注入漏在源头修掉+过 localize] + notebook 写入标准[update_bro_note 进白名单·流水加内容预览] + 客户档案 CRM 详情重构[时间线/会议记录/交付过程·跨客户 FTS] + 知识库 P3[pinned/sensitive 开关] + 心愿/沉淀位拆 depot.js + API 加固[safe_json_body 畸形 body→干净400·clients 上传端点缺 python-multipart 时优雅降级不崩整条路由]) · 0.7.2beta(2026-07-28 · 白名单补漏 7 文件:顾问机制[workers/director+agent_tools/replan·总监模型三唤醒点]+视觉通道[agent_tools/look_at]+桌宠三件套[pet/activities/expressions·通知气泡]+provider配置后端[workers/provider_configs·已核实代码不含KEY·真值在 data/provider_configs.json(L3)]——修'新功能 commit 了但用户 update_core 拉不到'的断层[顾问机制/桌宠气泡/视觉修复全在白名单外];excluded_borderline 删 provider_configs.py 误判条目[原注释把机制代码与 data 层配置文件混淆];sprites 默认美术不进白名单·防覆盖用户自定义皮肤) · 0.8.0beta(2026-07-29 · 两天密集更新·五大功能线+白名单补12: ①通知体系[桌宠完成音效 ding/manbo.wav+设置页通知 tab+Windows toast 系统通知+浏览器标签闪烁+notify.jsonl 运行时数据出 git] ②顾问体系[总监模型分层:常驻执行+顾问三唤醒点(蓝图/破局/验收)+顾问在场感 live 进度金卡+顾问连续性+协同模式+顾问改名唯一性+顾问可停止] ③多实例并行安全[精准 checkpoint 按会话归属+卷入通知+safe_merge 合主干五道保护+edit_attribution 归属表] ④git 欠账三件套[欠账胶囊从永远亮到按需亮+/api/git-debt/detail 文件清单人话分类+一键收进主干] ⑤带图消息持久化+渲染性能针[刷新图不丢+长会话 content-visibility]+会话记住模型+GUARD 档位重定界+验收闭环第四问[git 欠账对账]+顾问验收管线强制+跨模型 session 500 根治+重启续场防呆/follow_up 默认值;白名单新增:通知体系3[notification_config/windows_toast/api_routes/notifications]+顾问2[advisor_live/api_routes/advisor]+多实例安全2[edit_attribution/safe_merge]+浏览器工具3[_browser/browser_act/browser_fetch]+核心路由2[governance/models])",
   "sources": {
     "primary": "gitee",
     "note": "支持多源(gitee+github)。真相源唯一=母体 master;只单向往外 push,下游只拉不推。update_core 可指定从哪个 remote 拉。github 当前为作者私有备份源(下游需授权方可匿名拉·转公开后即可当 gitee 的海外/抽风兜底源)。",
@@ -90,15 +90,17 @@
       "api_routes/core.py",
       "api_routes/chat.py",
       "api_routes/sessions.py",
-      "workers/scheduler.py"
+      "workers/scheduler.py",
+      "api_routes/governance.py",
+      "api_routes/models.py"
     ],
-    "provider机制": [
+    "provider机制(provider_configs 是配置面板后端机制代码·KEY 真值在 data/provider_configs.json[L3·never_sync·.gitignore]·本清单只同步代码永不碰 KEY)": [
       "model_aliases.py",
       "provider_presets.py",
       "daemon_provider.py",
-      "workers/env_aliases.py"
+      "workers/provider_configs.py"
     ],
-    "核心前端机制(L1·机制层·非用户皮肤层。皮肤/主题由用户在 UI 里切换·选择存 localStorage 不落文件·所以同步这些结构文件不会丢用户选的主题;仅极少数手改过 css 文件的高级用户会被覆盖·有 diff 预览 + checkpoint 可回退。2026-07-12 拆单文件债:成长档案 hub[画像/日记/技能库/心愿/沉淀位]抽到 depot.js·客户档案抽到 clients.js·均在 chat.js 之前加载·零构建全局作用域共享·随内核下发保持功能一致)": [
+    "核心前端机制(L1·机制层·非用户皮肤层。皮肤/主题由用户在 UI 里切换·选择存 localStorage 不落文件·所以同步这些结构文件不会丢用户选的主题;仅极少数手改过 css 文件的高级用户会被覆盖·有 diff 预览 + checkpoint 可回退。 拆单文件债:成长档案 hub[画像/日记/技能库] 抽到 depot.js·客户档案+用户运营抽到 clients.js·均在 chat.js 之前加载·零构建全局作用域共享·随内核下发保持母体/纯净版一致)": [
       "static/chat.js",
       "static/depot.js",
       "static/clients.js",
@@ -107,13 +109,12 @@
       "static/chat.css",
       "static/workshop.css"
     ],
-    "记忆系统(L1·通用基础能力·跨会话检索/自动注入/收尾闭环。cognition_loader 是画像/日记的数据源·画像查看器重构[时间序取尾部=最新·加'最近记了什么'时间线·profile 时间戳动态化]随内核下发·只读 soul/data[never_sync]不碰用户数据)": [
+    "记忆系统(L1·通用基础能力·跨会话检索/自动注入/收尾闭环。cognition_loader 是画像/OPUS日记的数据源· 画像查看器重构[时间序章节取尾部=最新·加'最近记了什么'时间线·profile 时间戳动态化]需随内核下发·只读 soul/data[never_sync]不碰用户数据)": [
       "workers/memory_index.py",
       "workers/closure_check.py",
       "agent_tools/recall_memory.py",
       "agent_tools/update_bro_note.py",
-      "workers/cognition_loader.py",
-      "workers/memory_compression.py"
+      "workers/cognition_loader.py"
     ],
     "技能系统(L1·playbook 经验沉淀 + 外部 skill 接住归一·发现→接住→沉淀→召回闭环的写入侧·与记忆系统召回侧配套·官方持续维护归一prompt/字段schema/发现脚手架。用户的 playbook 内容在 data/playbooks 属L3·本清单只管机制代码不碰内容)": [
       "workers/playbooks.py",
@@ -130,54 +131,61 @@
       "workers/subagent_runner.py",
       "agent_tools/dispatch_subagent.py"
     ],
-    "工坊引擎(L1·工作流串行/并行执行器 + app/flow 运行时 + 造应用/造工作流工具。只管【引擎机制代码】·用户造的 app/flow 内容在 data/workshop/ 属L3·永不同步。并行工作流组[单步可多 app 并发+扇入 join]随内核下发即生效·向后兼容旧串行 flow)": [
+    "工坊引擎(L1·工作流串行/并行执行器 + app/flow 运行时 + 造应用/造工作流工具。只管【引擎机制代码】·用户造的 app/flow 内容在 data/workshop/ 属L3·永不同步。三 并行工作流组[单步可多 app 并发+扇入 join]随内核下发即生效·向后兼容旧串行 flow)": [
       "workers/flow_runner.py",
       "workers/flow_steps.py",
       "workers/app_runner.py",
-      "workers/http_executor.py",
       "agent_tools/create_workflow.py",
       "agent_tools/create_app.py"
     ],
-    "演示稿与生图引擎(L1·slides_engine 自建薄引擎生 .pptx[风格/图表/流程图/图标/字体检测/封面]+ generate_presentation 对话内两步法生成 + generate_image 文生图[优先走用户自建生图 app→ENV 模型→浏览器→占位·并发出多张·agentic 串行锁]+ generate_report 报告产物「用对应软件打开」。引擎无新增 pip 依赖[python-pptx/Pillow 已在 requirements];产物落 data/presentations 属L3·never_sync·永不覆盖。工具靠 agent_tools 自动发现下发即激活)": [
-      "slides_engine/__init__.py",
-      "slides_engine/_draw.py",
-      "slides_engine/parse.py",
-      "slides_engine/styles.py",
-      "slides_engine/layouts.py",
-      "slides_engine/diagrams.py",
-      "slides_engine/icons.py",
-      "slides_engine/fonts.py",
-      "slides_engine/render.py",
-      "slides_engine/qa.py",
-      "agent_tools/generate_presentation.py",
-      "agent_tools/generate_image.py",
-      "agent_tools/generate_report.py"
-    ],
-    "抗套娃·任务账本与解套(L1·多步任务确定性工作记忆:track_task 把结论[✓通了/✗死了/决策]从过程蒸出来·closure_check[已白名单]每轮无损回灌进 system_suffix·语义压缩压不掉;replan 试多路失败后起干净上下文顾问重规划·治原地套娃放弃。账本数据在 data/ledgers 属L3·never_sync。工具靠 agent_tools 自动发现下发即激活)": [
-      "agent_tools/track_task.py",
-      "agent_tools/replan.py",
-      "workers/task_ledger.py"
-    ],
-    "私有知识库(L1·第二大脑·把用户资料[PDF/Word/PPT/MD]灌进来抽文本→进FTS5→可召回可cite回原文。骑在现成记忆引擎[memory_index/recall_memory·已在白名单]上·本组是知识库专属的抽取/存储/NLP工具/API。文档内容在 data/knowledge/ 属L3·never_sync·升级绝不覆盖用户资料;本清单只管引擎机制。文件夹分组+报告一键存入+pinned常驻优先+sensitive敏感隔离·随内核下发即生效)": [
+    "私有知识库(L1·第二大脑·把用户资料[PDF/Word/PPT/MD]灌进来抽文本→进FTS5→可召回可cite回原文。骑在现成记忆引擎[memory_index/recall_memory·已在白名单]上·本组是知识库专属的抽取/存储/NLP工具/API。文档内容在 data/knowledge/ 属L3·never_sync·升级绝不覆盖用户资料;本清单只管引擎机制。卷·文件夹分组+报告一键存入+pinned常驻优先·随内核下发即生效)": [
       "workers/doc_ingest.py",
       "workers/knowledge_base.py",
       "agent_tools/manage_knowledge.py",
       "api_routes/knowledge.py"
     ],
-    "客户档案(L1·合伙人记得每个客户·客户档案=记忆延伸。每个客户是会长厚的档案[偏好/交付复盘/pipeline阶段]·notes进FTS5[memory_index已在白名单]可召回;知识库文档可用manage_knowledge(link)挂到客户名下。客户数据在 data/clients/ 属L3·never_sync·升级绝不覆盖;本清单只管引擎机制)": [
+    "客户档案(L1·合伙人记得每个客户·GAP§5.1客户档案=记忆延伸。每个客户是会长厚的档案[偏好/交付复盘/pipeline阶段]·notes进FTS5[memory_index已在白名单]可召回;知识库文档可用manage_knowledge(link)挂到客户名下。客户数据在 data/clients/ 属L3·never_sync·升级绝不覆盖;本清单只管引擎机制。掘金脑/可行性通过KB(缺口①)间接吃到客户资料)": [
       "workers/clients.py",
       "agent_tools/manage_client.py",
       "api_routes/clients.py"
     ],
-    "掘金脑与信息雷达引擎(L1·原属L2用户自演化·因是通用引擎改进且不碰用户数据故纳入·让升级用户也能拿到。可行性分析吃私有知识库当客观背景·cite [k*] + 雷达并行抓取[ThreadPoolExecutor 并发·墙钟从串行相加降到最慢源]。用户的报告在 data/reports、雷达抓取结果在 data/radar*.json 属L3·never_sync·永不覆盖;本清单只管引擎机制·apply 前 checkpoint 可 git revert)": [
+    "掘金脑与信息雷达引擎(L1纳入·原属L2用户自演化·因是通用引擎改进且不碰用户数据故纳入·让升级用户也能拿到。feasibility 缺口①[可行性分析吃私有知识库当客观背景·cite [k*]] + 雷达并行抓取[ThreadPoolExecutor 并发·墙钟从串行相加降到最慢源]。用户的报告在 data/reports、雷达抓取结果在 data/radar*.json 属L3·never_sync·永不覆盖;本清单只管引擎机制。同 daemon_api.py 决策:只碰引擎代码·apply 前 checkpoint 可 git revert)": [
       "workers/feasibility_analyzer.py",
       "workers/info_radar.py"
     ],
-    "主动关怀与情感回访(L1·情感内核·proactive scheduler[已在核心循环]每节拍调 proactive_call.tick·跑防骚扰门控[静默时段/每天上限/最小间隔/同类去重/随机性]。care 信号来自 closure_check[已白名单·情感轨]·成熟后到点主动一句慰问·经 ilink_client 推到微信[配了才发·没配 no-op]。rituals=月度复盘等节律;dynamic_telemetry=距上次多久/上次聊啥。注入文案作 message 走不到 system 那道 localize·已在 proactive_call 显式过 localize_narration 中性化。用户的 proactive 台账/偏好在 data/runtime[never_sync]·永不覆盖)": [
+    "主动关怀与情感回访(L1·情感内核·proactive scheduler[已在核心循环]每节拍调 proactive_call.tick·跑防骚扰门控[静默时段/每天上限/最小间隔/同类去重/随机性]。care 信号来自 closure_check[已白名单·情感轨]·成熟后到点主动一句慰问·经 ilink_client 推到微信[配了才发·没配 no-op]。rituals=月度复盘等节律;dynamic_telemetry=距上次多久/上次聊啥[也供 daemon_api telemetry]。注入文案作 message 走不到 system 那道 localize·已在 proactive_call 显式过 localize_narration 去母体化[母体测不出的漏点在此堵死]。用户的 proactive 台账/偏好在 data/runtime[never_sync]·永不覆盖)": [
       "workers/proactive_call.py",
       "workers/rituals.py",
       "workers/dynamic_telemetry.py",
       "workers/ilink_client.py"
+    ],
+    "顾问机制(L1·总监模型分层·常驻模型执行+顾问模型三唤醒点[蓝图/破局/验收]。director=调度核心[读配置里 director 标记·拼唤醒提示词·跨 provider 现场建 client]·replan=工具入口[只读子推理·顾问只出方案主执行体动手]·advisor_live=顾问在场感 live 进度[SSE 实时金卡·活性心跳判定 stale]·advisor 路由=顾问配置/施工单/验收卡 API。顾问标哪个模型是 data/provider_configs.json 里的 director 字段[L3]·永不同步;本组只同步机制代码。soul_loader 对 director 是函数内 lazy import+吞异常·老用户缺文件也不炸·只顾问提示词为空)": [
+      "workers/director.py",
+      "agent_tools/replan.py",
+      "workers/advisor_live.py",
+      "api_routes/advisor.py"
+    ],
+    "视觉通道(L1·look_at 双路径视觉分发[多模态模型直看原图/纯文本模型走 fallback 看图·对 BRO 透明发图即看]。fallback 的 KEY/模型名走环境变量与 provider 配置[L3]·本组只同步分发机制代码)": [
+      "agent_tools/look_at.py"
+    ],
+    "通知体系(L1·完成/确认三通道通知[桌宠气泡+完成音效+Windows toast]+设置页通知开关+浏览器标签闪烁。notification_config=配置单例[读 data/notification_config.json·L3 never_sync]·windows_toast=系统 toast[winotify 可选依赖·缺了优雅降级不炸]·notifications 路由=双端读写配置 API。桌宠音效文件 ding/manbo.wav 随发布包全量下发不进白名单·notify.jsonl 运行时状态 never_sync)": [
+      "workers/notification_config.py",
+      "workers/windows_toast.py",
+      "api_routes/notifications.py"
+    ],
+    "多实例并行安全(L1·多 daemon 实例同跑时防互相覆盖。edit_attribution=文件归属表[哪个会话在改哪个文件·checkpoint 按归属 add·别的会话裸奔改动留工作区·卷入标 commit message+注对方 jsonl]·safe_merge=合主干五道保护[幂等放行/分支安全门/冲突预演/上线闸/失败回滚])": [
+      "workers/edit_attribution.py",
+      "agent_tools/safe_merge.py"
+    ],
+    "浏览器工具(L1·网页抓取+浏览器自动化。browser_fetch=只读抓页面[httpx 静态+Playwright JS 渲染+CDP 登录态]·browser_act=真操作网页[点击/填写/上传/截图/收图/探查·Playwright]·_browser=共享底层[Edge 进程管理/CDP 连接/页面提取])": [
+      "agent_tools/_browser.py",
+      "agent_tools/browser_act.py",
+      "agent_tools/browser_fetch.py"
+    ],
+    "桌宠(L1·情绪通道实体化·桌面宠物本体+动作绑定+表情映射·通知气泡[干完了/等你拍板]随内核下发即生效。pet.py import activities+expressions·三件套必须同批同步防 import 断裂。sprites 默认美术资源随发布包全量下发不进白名单[避免覆盖用户自定义皮肤]·本批更新纯代码未动美术;notify.jsonl/state.txt/position.txt 是运行时状态·never_sync)": [
+      "desktop_pet/pet.py",
+      "desktop_pet/activities.py",
+      "desktop_pet/expressions.py"
     ],
     "内核自升级机制": [
       "core_manifest.json",
@@ -186,11 +194,10 @@
     ]
   },
   "excluded_borderline": {
-    "agent_tools/__init__.py": "工具注册表·已改 pkgutil 自动发现(drop-in 即注册):新内核工具随 update_core 下发 .py 后·import 时自动激活·激活 gap 已根治不再需手动补 import。剥离工具靠物理删 .py(扫不到即不注册)·停用工具靠 _OPT_OUT(如 set_model)。仍不字节同步的唯一原因:头部基础设施注释有去母体化差异(身份词/卷号→中性)·末尾自动发现段两库已逐字一致",
-    "provider_configs.py": "含 provider key,属数据层(L3),不进白名单"
+    "agent_tools/__init__.py": "工具注册表·已改 pkgutil 自动发现(drop-in 即注册):新内核工具随 update_core 下发 .py 后·import 时自动激活·激活 gap 已根治不再需手动补 import。剥离工具靠物理删 .py(扫不到即不注册)·停用工具靠 _OPT_OUT(如 set_model)。仍不字节同步的唯一原因:头部基础设施注释有去母体化差异(BRO/卷号→中性)·末尾自动发现段两库已逐字一致"
   },
   "excluded_borderline_history": {
-    "daemon_api.py": "0.6.0beta(2026-07-11)已纳入白名单。原因:模型行为(思考/强度)后端 + 自主巡航进度的核心代码(_chat_impl / 进度记录器)就长在此文件·且与 RUNTIME/会话锁/localize 深度耦合无法干净抽出·不同步则升级用户拿不到这两样能力。风险已评估:只碰此框架代码文件本身·用户的 app/flow/雷达/记忆/灵魂在 data/soul/sessions 永不受影响;唯一理论风险是用户手改过本文件里的路由(纯净版用户扩能力走 agent_tools 自动发现/api_routes 模块化路由·基本不会手改)·且 apply 前 checkpoint 可 git revert 回退"
+    "daemon_api.py": "卷七十五续八(2026-07-11)已纳入白名单。原因:模型行为(思考/强度)后端 + 自主巡航进度的核心代码(_chat_impl / 进度记录器)就长在此文件·且与 RUNTIME/会话锁/localize 深度耦合无法干净抽出·不同步则升级用户拿不到这两样能力。风险已评估:只碰此框架代码文件本身·用户的 app/flow/雷达/记忆/灵魂在 data/soul/sessions 永不受影响;唯一理论风险是用户手改过本文件里的路由(纯净版用户扩能力走 agent_tools 自动发现/api_routes 模块化路由·基本不会手改)·且 apply 前 checkpoint 可 git revert 回退"
   },
   "never_sync": [
     "soul/**",

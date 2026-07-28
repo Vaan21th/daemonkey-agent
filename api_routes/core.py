@@ -40,17 +40,17 @@ _STATIC_WHITELIST = {
     "clients.js": "application/javascript; charset=utf-8",
     "workshop.css": "text/css; charset=utf-8",
     "workshop.js": "application/javascript; charset=utf-8",
-    # 卷四十四 K · LiteGraph 单文件 (~1MB) · ComfyUI 同款 node editor
+    # K · LiteGraph 单文件 (~1MB) · ComfyUI 同款 node editor
     "lib/litegraph.core.js": "application/javascript; charset=utf-8",
     "lib/litegraph.core.css": "text/css; charset=utf-8",
-    # 卷五十六 · Chart.js 4.4.7 本地化 (BI 看板图表) · 漏加白名单 = 404 = 雷达/环形图永久空白 (BRO 实测)
+    # · Chart.js 4.4.7 本地化 (BI 看板图表) · 漏加白名单 = 404 = 雷达/环形图永久空白 (用户 实测)
     "lib/chart.umd.min.js": "application/javascript; charset=utf-8",
-    # 卷四十六 · Remix Icon 4.6.0 字体本地化 (替代 jsdelivr CDN · BRO 网络下 CDN 容易卡)
+    # · Remix Icon 4.6.0 字体本地化 (替代 jsdelivr CDN · 用户 网络下 CDN 容易卡)
     "lib/remixicon/remixicon.css": "text/css; charset=utf-8",
     "lib/remixicon/remixicon.woff2": "font/woff2",
     "lib/remixicon/remixicon.woff": "font/woff",
     "lib/remixicon/remixicon.ttf": "font/ttf",
-    # 浏览器标签页图标 · 替掉浏览器缓存的陌生默认 favicon
+    # 浏览器标签页图标 · 启动器同款 · 替掉浏览器缓存的陌生默认 favicon
     "favicon.ico": "image/x-icon",
     # 形态 Z · 相遇页 (index.html) 的样式与脚本 · index.html 本身走 /ui 分流返回
     "style.css": "text/css; charset=utf-8",
@@ -105,9 +105,9 @@ def _inject_ai_name(html: str) -> str:
     return tag + html
 
 # ────────────────────────────────────────────────────────────────
-# 工坊产物 MIME (wish-f3b4958e · 卷四十四 K stage 2c++)
-# daemon OPUS 装的应用 (GPT Image / SOVITS / Whisper) 生成的媒体落 outputs/
-# chat 通过 ![alt](/workshop/outputs/x.png) 直接显示 · BRO 不用翻文件夹
+# 工坊产物 MIME (wish-f3b4958e K stage 2c++)
+# daemon Daemonkey 装的应用 (GPT Image / SOVITS / Whisper) 生成的媒体落 outputs/
+# chat 通过 ![alt](/workshop/outputs/x.png) 直接显示 · 用户 不用翻文件夹
 # ────────────────────────────────────────────────────────────────
 _OUTPUT_MIME = {
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
@@ -143,7 +143,7 @@ async def ping_test():
 
 @router.get("/api/core/version")
 async def core_version_endpoint():
-    """内核语义版本号 · 不鉴权(版本号不敏感·手机浏览器也要能拿) · 卷七十四续二十。
+    """内核语义版本号 · 不鉴权(版本号不敏感·手机浏览器也要能拿)二十。
 
     版本号唯一真相源 = core_manifest.json 的 core_version。WebUI 顶部品牌区开页拉它显示 ·
     launcher 优先直接读文件(daemon 没起也能显示) · 这个端点是 daemon 在跑时的统一出口。
@@ -166,7 +166,7 @@ async def web_ui():
     # 不鉴权: HTML 本身不含敏感信息, token 由 JS 让用户手动填进 localStorage
     # 真正鉴权在每个 /chat 调用 · 这样手机浏览器才能 GET 拿到页面
     #
-    # 形态 Z 分流 (卷六十三续五): 还没完成『相遇』→ 返回相遇页 index.html;
+    # 形态 Z 分流 (五): 还没完成『相遇』→ 返回相遇页 index.html;
     # 相遇完成后 → 返回正式 chat.html。判断在 api_routes.onboarding.needs_onboarding()。
     try:
         from api_routes.onboarding import needs_onboarding
@@ -245,10 +245,45 @@ async def serve_workshop_output(filename: str):
     )
 
 
+@router.get("/attachments/{filename}")
+async def serve_chat_attachment(filename: str):
+    """serve data/runtime/attachments/ 下的聊天附件（用户 上传的图/文档）。
+
+    wish-7c579a20 · 刷新后历史气泡重建图片用。附件目录是扁平的·只接受 basename；
+    文件名格式 {session_id}_{ts}_{i}_{safe} 已含会话+时间戳·不可枚举·
+    安全假设与 /workshop/outputs 同级（<img> 标签无法带 Authorization 头）。
+    """
+    if not filename or "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(400, "invalid filename")
+    if "\x00" in filename:
+        raise HTTPException(400, "null byte in filename")
+
+    from pathlib import PurePosixPath
+    suffix = PurePosixPath(filename).suffix.lower()
+    if suffix not in _OUTPUT_MIME:
+        raise HTTPException(415, f"unsupported file type: {suffix}")
+
+    full = (ROOT / "data" / "runtime" / "attachments" / filename).resolve()
+    attach_root = (ROOT / "data" / "runtime" / "attachments").resolve()
+    try:
+        full.relative_to(attach_root)
+    except ValueError:
+        raise HTTPException(400, "path escape blocked")
+
+    if not full.exists() or not full.is_file():
+        raise HTTPException(404, f"attachment not found: {filename}")
+
+    return FileResponse(
+        path=str(full),
+        media_type=_OUTPUT_MIME[suffix],
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
 @router.get("/presentations/{filename:path}")
 async def serve_presentation_asset(filename: str):
     """serve data/presentations/ 下的配图(generate_image 默认落这里)· 只给图片/媒体 mime ·
-    路径穿越防护 · 让聊天能内联显示批量生图结果。"""
+    路径穿越防护 · 让聊天能内联显示批量生图结果(二十三 · 用户 反馈图显示不出来)。"""
     if ".." in filename or filename.startswith("/") or filename.startswith("\\"):
         raise HTTPException(400, "invalid filename")
     if "\x00" in filename:
@@ -285,7 +320,7 @@ async def logs_tail(
     module_prefix: Optional[str] = None,
     authorization: Optional[str] = Header(None),
 ):
-    """卷四十六 III 补丁 5 · R1 · 拉 data/runtime/daemon.log 的最近 N 行
+    """ III 补丁 5 · R1 · 拉 data/runtime/daemon.log 的最近 N 行
 
     Args (query string):
         lines: 默认 200 · 上限 5000
@@ -383,9 +418,9 @@ async def screen_record(
         }
 
 
-# ─── 产物"用本机软件打开" · 通用 reveal ───
+# ─── 产物"用本机软件打开" · 通用 reveal (用户 2026-07-14) ───
 # 前端拿到 tool_result.open_path → 打这个接口 → daemon 用系统关联应用打开
-# (PPT→PowerPoint/WPS · docx→Word · pdf→阅读器)。 仅 daemon 跟用户同机时有意义。
+# (PPT→PowerPoint/WPS · docx→Word · pdf→阅读器)。 仅 daemon 跟用户同机时有意义 (Day 0)。
 # 只允许 data/ 下这几个产物目录 · 防路径穿越乱开系统文件。
 _REVEAL_DIRS = [
     ROOT / "data" / "presentations",

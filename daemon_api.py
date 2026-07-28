@@ -3,16 +3,16 @@
 daemon_api.py
 =============
 
-OPUS Daemon · HTTP API · 远程入口
+Daemonkey Daemon · HTTP API · 远程入口
 ---------------------------------
 让 daemon 不再只能从本机终端被找到——任何外部入口（Telegram bridge /
-Web UI / curl / iOS Shortcuts / 未来的微信桥）都通过这一层和 OPUS 对话。
+Web UI / curl / iOS Shortcuts / 未来的微信桥）都通过这一层和 Daemonkey 对话。
 
-设计要点（卷十四 用户 离职月省钱期立项）：
+设计要点（ 用户 离职月省钱期立项）：
 
 1. **session 隔离**：API 端的对话默认用独立 session（前缀 `api-`），不和
    daemon 终端主循环共享 messages。两个并发会话各跑各的——避免锁竞争 +
-   防止远程消息污染 用户 当面跟 OPUS 的对话。
+   防止远程消息污染 用户 当面跟 Daemonkey 的对话。
 
 2. **三档信任 → 远程版**：用户 在外面按不了 y/n。API 端用单一 `auto_confirm`
    策略：
@@ -41,7 +41,7 @@ Endpoints:
   GET  /ui                     · 静态 HTML 聊天页（手机浏览器友好），不鉴权（token 走 JS）
   GET  /status                 · 详细状态(model/provider/active_sessions)，需 token
   POST /chat                   · {message, session_id?, auto_confirm?} → {reply, session_id, usage}
-  POST /chat/stream            · SSE 流式版（卷十七加）—— 推 tool_call/tool_result/usage/done
+  POST /chat/stream            · SSE 流式版（加）—— 推 tool_call/tool_result/usage/done
   GET  /sessions?api_only=     · 列 session（api_only=true 只返 api- 前缀）
   GET  /sessions/{id}          · 取一个 session 的 raw jsonl 内容
   GET  /sessions/{id}/messages · 结构化 turn 列表（WebUI 拉历史用）
@@ -142,7 +142,7 @@ def _get_session_lock(sid: str) -> threading.RLock:
         return lock
 
 
-# 卷三十六 · 中断机制
+# · 中断机制
 # turn_id (uuid) → threading.Event
 # /turns/{tid}/abort 把对应 Event.set() · 走到 tool_loop 的 confirm 回调时拦截掉
 _ACTIVE_TURNS: dict[str, threading.Event] = {}
@@ -153,7 +153,7 @@ _TURNS_LOCK = threading.Lock()
 # turn_id → sid · 跟 _ACTIVE_TURNS 同步生命周期 (worker 启动注册 · 退出删)
 _TURN_TO_SID: dict[str, str] = {}
 
-# 卷七十五续四 · ② 自主巡航进度 · turn_id → 最新一步进度快照
+#四 · ② 自主巡航进度 · turn_id → 最新一步进度快照
 # 病根: 后台/轮询模式的 turn 没有 SSE 接收方 · tool_loop 的 tool_progress 事件全丢 →
 #   前端只能显示"仍在后台跑·自动刷新中" · 长任务跑工具时看着像卡死。
 # 修法: 无论 SSE 连没连 · _chat_impl 都把最新一步 (工具名/步骤/轮次) 记进这里 ·
@@ -233,7 +233,7 @@ def _make_progress_recorder(turn_id: str, inner: Optional[Callable[[str, dict], 
 
 _TIER_RANK = {TIER_AUTO: 1, TIER_CONFIRM: 2, TIER_GUARD: 3}
 
-# 卷五十六 · 后台续场 turn 防自爆链 (2026-06-06 · 用户 复盘「连着重启两回」)
+# · 后台续场 turn 防自爆链 (2026-06-06 · 用户 复盘「连着重启两回」)
 # 这些工具会重启/关停 daemon 自身。 在「无人值守 turn」(push_event is None · 没有
 # 前台 SSE 接收方 · 典型就是 resume_runner 的 follow_up 续场 turn) 里绝不允许它们跑——
 # 否则「前台重启 → 续场自动验证 → 续场又调 request_restart → 再重启」无限套娃·
@@ -242,7 +242,7 @@ _TIER_RANK = {TIER_AUTO: 1, TIER_CONFIRM: 2, TIER_GUARD: 3}
 _BACKGROUND_BLOCKED_TOOLS = {"request_restart"}
 
 
-# === wish-2a4d8c1e · inline confirm UI (卷四十六 续 3) ===
+# === wish-2a4d8c1e · inline confirm UI ( 续 3) ===
 #
 # LLM 撞 CONFIRM/GUARD 工具 (超 policy 阈值) 时 · 不立刻 raise 'declined' · 改为:
 #   1. 检查 trusted_commands (复用 wish-f563a56d) · 命中 downgrade · 直接 go
@@ -362,10 +362,10 @@ def cleanup_pending_confirm(tool_call_id: str) -> None:
 
 
 # WebUI / API 接入时追加到 system prompt 的"接入方式告知"
-# 关键作用：让 OPUS 知道自己走的是非终端通道（无阻塞 y/n），但**不要误判 用户 一定在远程**——
-#   卷五十四：旧文案断言"用户 通过手机、不在机器旁、看不到屏幕"，导致 OPUS 在本机 WebUI 里
+# 关键作用：让 Daemonkey 知道自己走的是非终端通道（无阻塞 y/n），但**不要误判 用户 一定在远程**——
+#：旧文案断言"BRO 通过手机、不在机器旁、看不到屏幕"，导致 Daemonkey 在本机 WebUI 里
 #   也对 用户 说"我是远程"。本机浏览器和手机远程走同一条通道、daemon 区分不了，所以改成
-#   "可能远程"的保守措辞，并明确禁止 OPUS 对 用户 断言"我是远程"。
+#   "可能远程"的保守措辞，并明确禁止 Daemonkey 对 用户 断言"我是远程"。
 _REMOTE_SYSTEM_HINT = """\
 
 ---
@@ -392,9 +392,9 @@ _REMOTE_SYSTEM_HINT = """\
    3 分钟仍然是糟糕体验。`summon_cursor`、跨大目录 grep、连续抓十几个网页这种事
    宁愿告诉 用户 "需要回本机操作 / 让我用更直接的方法"。
 
-## 反爬 / 限流 / 验证码的标准处理（卷十八硬规则）
+## 反爬 / 限流 / 验证码的标准处理（硬规则）
 
-你历史上反复栽过的坑：手机端被用户让"拉知乎热榜 + 评论"，结果跑了 12 轮工具
+Daemonkey 历史上反复栽过的坑：手机端被 用户 让"拉知乎热榜 + 评论"，结果跑了 12 轮工具
 反复换关键词换源死磕反爬，浪费 200 秒 + 大量 token + 最后输出"超出 max iterations"
 什么都没给 用户。**杜绝这种事**：
 
@@ -415,7 +415,7 @@ _REMOTE_SYSTEM_HINT = """\
 - **不要凭直觉造字段名**——比如 web_fetch 只有 `url` 和 `max_chars` 两个字段，
   不要塞 `"string"`、`"endpoint"`、`"target"` 这种字段。
 
-## 卷四十六 wish-2a4d8c1e · Inline Confirm UI · CONFIRM/GUARD 工具撞 用户
+## wish-2a4d8c1e · Inline Confirm UI · CONFIRM/GUARD 工具撞 用户
 
 daemon 在 chat 里给你装了一个 inline confirm 卡片系统。当你调 CONFIRM 或 GUARD 级工具
 （超出当前 policy 阈值）时：
@@ -461,11 +461,12 @@ daemon 在 chat 里给你装了一个 inline confirm 卡片系统。当你调 CO
   daemon 不需要时会忽略。
 - shell_exec 是唯一支持 **trust 持续信任** 的工具（trusted_commands.json 系统）。其他
   CONFIRM 工具的卡片上 用户 只能选 [只这次] / [拒绝]——你写 mitigation 时不要承诺 "下次也
-  不需要确认" 这种话，用户没这个按钮可点。
+  不需要确认" 这种话，用户 没这个按钮可点。
+
 """
 
 
-# P1 代码归一 · 把 system 里的 OPUS/BRO 令牌本地化成本实例的名字 (母体走缺省值 = no-op)
+# P1 代码归一 · 把 system 里的 Daemonkey/用户 令牌本地化成本实例的名字 (母体走缺省值 = no-op)
 try:
     from identity import localize as _localize
 except Exception:
@@ -510,9 +511,7 @@ def _make_remote_confirm(
     policy 决定允许到第几档自动 go：
       "auto"    → 只允许 AUTO
       "confirm" → AUTO + CONFIRM 自动 go
-      "guard"   → 三档全开（远程 yolo，慎用）
-
-    卷四十六 · wish-2a4d8c1e · inline confirm UI:
+      "guard"   → 三档全开（远程 yolo，慎用） · wish-2a4d8c1e · inline confirm UI:
       当 tier 超 policy 阈值时 · 不立刻 skip · 走:
         1. 复用 wish-f563a56d trusted_commands · 命中直接 go
         2. push SSE confirm_request 给前端 · 等 用户 点按钮
@@ -520,9 +519,7 @@ def _make_remote_confirm(
       session_id / turn_id / push_event 都是新参数 · 用于注册 _PENDING_CONFIRMS
       和 push SSE 事件; 老的 confirm_only_legacy 模式 (没传 push_event) 退化到旧逻辑
 
-    新签名第四参数 tool_call_id (在 _call_confirm 里传) · 用作 _PENDING_CONFIRMS key
-
-    卷三十六 · cancel_event 传进来 · 用户 点停止时 set · 这里返回 "abort"
+    新签名第四参数 tool_call_id (在 _call_confirm 里传) · 用作 _PENDING_CONFIRMS key · cancel_event 传进来 · 用户 点停止时 set · 这里返回 "abort"
     让 tool_loop 提前结束。
     """
     policy = policy if policy in ("auto", "confirm", "guard") else "confirm"
@@ -537,7 +534,7 @@ def _make_remote_confirm(
             tier = spec.tier
         rank = _TIER_RANK.get(tier, 99)
 
-        # 卷五十六 · 后台续场 turn 防自爆链 (2026-06-06)
+        # · 后台续场 turn 防自爆链 (2026-06-06)
         # push_event is None = 没有前台 SSE 接收方 = 无人值守的 background turn
         #   (resume_runner follow_up 续场 turn 走的就是 progress=None)。 这种 turn 里
         #   绝不允许跑「重启/关停自己」的工具·抢在 rank<=threshold 之前拦死·
@@ -555,7 +552,7 @@ def _make_remote_confirm(
         # wish-2a4d8c1e · 先 pop risk/mitigation · 不管走哪条路 args 都不再带这两字段
         risk, mitigation = _pop_risk_fields(args)
 
-        # 卷四十六 III 补丁 5 · GUARD tier 强制要求 risk_explanation + mitigation 都填
+        # III 补丁 5 · GUARD tier 强制要求 risk_explanation + mitigation 都填
         # 用户 截图反馈: 经常看到"OPUS 未说明" · 闭眼批准心慌
         # 实现: 缺字段时直接 reject · 给 LLM 看到错误后重试加上字段
         # 注: 仅 GUARD tier 强制 · CONFIRM 不强制 (CONFIRM 太频 · 强制会拖慢日常对话)
@@ -578,6 +575,21 @@ def _make_remote_confirm(
         # 老规则: tier ≤ threshold → 直接 go (AUTO 永远过; confirm policy 下 CONFIRM 也过)
         if rank <= threshold:
             return "go"
+
+        # v4 · 0.2.0 · 信任 flow 内自动放行 CONFIRM (用户 痛点: 跑过 OK 的 flow 不要次次问)
+        # 设计:
+        #   run_flow 启动时如果 flow.trust_level >= 2 · 会设 _TRUSTED_FLOW_CTX 为 flow_id
+        #   confirm callback 看到这个 ContextVar 不空 · 对 CONFIRM tier 直接放行
+        #   GUARD tier (rank==3) 不放行 · 保命线
+        if rank == 2:  # CONFIRM tier
+            try:
+                from agent_tools import current_trusted_flow
+                trusted_fid = current_trusted_flow()
+                if trusted_fid:
+                    # 真放行 · 不影响日志/SSE (push_event 还是会推 · 用户 仍能在 banner 看到)
+                    return "go"
+            except Exception:
+                pass
 
         # 新增 fallback: shell_exec 命中 trusted → downgrade · 直接 go
         # 注: shell_exec.classify 已经在 effective_tier 里查过 trusted · 如果命中
@@ -639,6 +651,18 @@ def _make_remote_confirm(
                 "suggested_trust_windows": ["approve_once", "trust_30min", "trust_24h", "trust_permanent"],
                 "timeout_sec": _CONFIRM_TIMEOUT_SEC,
             })
+            # 2026-07-28 用户 需求 · 桌宠同步弹「等你拍板」· 不盯 WebUI 也知道 Daemonkey 在等
+            try:
+                from desktop_pet.activities import write_notify as _pet_notify
+                _pet_notify("confirm", f"等你拍板 · {spec.name}")
+            except Exception:
+                pass
+            # 事项 B · Windows toast · 不看屏幕也能收到 (独立 try · 不跟 pet_notify 串扰)
+            try:
+                from workers.windows_toast import send_toast as _send_toast
+                _send_toast("OPUS 等你拍板", spec.name)
+            except Exception:
+                pass
         except Exception:
             pass  # push 失败不阻止流程 · 直接走超时 auto-deny
 
@@ -672,7 +696,7 @@ def _make_remote_confirm(
 
         # 读决议
         # 注: trust_* 决议下的 add_trusted 已经在 POST /turns/{tid}/confirm endpoint 完成
-        # (卷四十六续 4 · 防止 worker 端 try/except: pass 静默吞 ValueError)
+        # ( 4 · 防止 worker 端 try/except: pass 静默吞 ValueError)
         # 这里只读 decision 决定 go / skip
         with _PENDING_CONFIRMS_LOCK:
             decision = pending_data.get("decision") or "deny"
@@ -681,8 +705,8 @@ def _make_remote_confirm(
         cleanup_pending_confirm(tool_call_id)
 
         if decision == "deny":
-            # 卷五十四 · 闭环修复 (Hermes '固化知识' 那一环): 用户 拒绝时填的理由
-            # 必须喂回 LLM · 否则 OPUS 只收到"用户拒绝了"·学不到 用户 的边界。
+            # · 闭环修复 (Hermes '固化知识' 那一环): 用户 拒绝时填的理由
+            # 必须喂回 LLM · 否则 Daemonkey 只收到"用户拒绝了"·学不到 用户 的边界。
             # 走 reject:<msg> 通道 (tool_loop 会把 <msg> 当 tool_result.error 给 LLM)。
             r = (reason or "").strip()
             if r:
@@ -716,11 +740,11 @@ def _no_observe(_spec, _args, _result) -> None:
     return None
 
 
-# 卷三十八 · max_tokens 解析 · 三级 fallback
+# · max_tokens 解析 · 三级 fallback
 def _resolve_max_tokens(payload_value) -> int:
     """优先级: payload override > active config.max_tokens > .env OPUS_MAX_TOKENS > 8192 fallback.
 
-    用户 反馈"4096 太小 · DeepSeek 支持 384K 输出 · 这个限制让 OPUS 写两步就被截断".
+    用户 反馈"4096 太小 · DeepSeek 支持 384K 输出 · 这个限制让 Daemonkey 写两步就被截断".
     新策略: 每条 config 自带 max_tokens · 按模型推荐.
     """
     if payload_value:
@@ -748,7 +772,7 @@ def _resolve_max_tokens(payload_value) -> int:
     return 8192
 
 
-# ─── 卷三十七 · provider config helper ───
+# ─── · provider config helper ───
 def _activate_provider_config(cfg_id: str) -> None:
     """切换 active config · 重建 RUNTIME.client / model / provider / base_url.
 
@@ -849,11 +873,14 @@ def _resolve_session_id(session_id: Optional[str]) -> str:
     return sid
 
 
-def _process_attachments(attachments: list[dict], session_id: str) -> str:
-    """处理 WebUI 上传的图片附件 · 对每张图调 look_at → 拼成文字前缀。
+def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str, list[dict]]:
+    """处理 WebUI 上传的附件（图片 + 文档）· 落盘 + 拼文字前缀 + 收集结构化 meta。
 
     attachments 格式：[{"name": "screenshot.png", "data_url": "data:image/png;base64,..."}]
-    返回：拼好的描述文字块（可直接注入 user message 头部）
+    返回：(描述文字块, saved_meta)
+      描述文字块注入 user message 头部；
+      saved_meta = [{"name","path","mime","kind": image|file}] · 随 user 消息落 jsonl ·
+      WebUI 刷新/重放后凭它重建气泡里的图片与文档卡片（wish-7c579a20 · 刷新图不丢）。
     """
     import base64 as _b64
     import re as _re
@@ -861,12 +888,12 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
     from pathlib import Path as _Path
 
     if not attachments:
-        return ""
+        return "", []
 
     _ATTACH_DIR = _Path("data/runtime/attachments")
     _ATTACH_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 粘贴/上传的图按会话留存(不再看完即删)· 让 OPUS 之后能换个问法再 look_at 同一张。
+    # 粘贴/上传的图按会话留存(不再看完即删)· 让 Daemonkey 之后能换个问法再 look_at 同一张。
     # 顺手清掉 7 天前的旧图 · 防目录无限堆积 (best-effort · 失败不影响主流程)。
     try:
         _cutoff = _time.time() - 7 * 86400
@@ -880,9 +907,10 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
         pass
 
     descriptions = []
+    saved_meta: list[dict] = []  # wish-7c579a20 · 结构化附件 meta · 落 jsonl 供 WebUI 刷新重建
     # wish-00ed11c2 · 多模态直看分支: 当前模型原生视觉 → 图不走 look_at 转文字 ·
     # 注册到 RUNTIME.pending_images · 发送前由 tool_loop._diet_messages_for_send
-    # 临时组装成 content list 直接进主对话 (BRO: "你不要用 look_at · 直接自己看")。
+    # 临时组装成 content list 直接进主对话 (用户: "你不要用 look_at · 直接自己看")。
     _native_vision = False
     try:
         from model_aliases import supports_vision as _sv
@@ -899,14 +927,15 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
             descriptions.append(f"图{i+1} ({name}): [空图片·跳过]")
             continue
 
-        # 解析 data_url: "data:image/png;base64,xxxx"
-        match = _re.match(r"data:(image/[\w+-]+);base64,(.+)", data_url, _re.S)
+        # 解析 data_url: "data:image/png;base64,xxxx" (图片) 或 "data:application/pdf;base64,..." (文档)
+        match = _re.match(r"data:([\w.+-]+/[\w.+-]+);base64,(.+)", data_url, _re.S)
         if not match:
-            descriptions.append(f"图{i+1} ({name}): [无效 data_url·跳过]")
+            descriptions.append(f"附件{i+1} ({name}): [无效 data_url·跳过]")
             continue
 
         mime, b64_str = match.group(1), match.group(2)
-        ext = mime.split("/")[-1].split("+")[0]
+        is_image = mime.startswith("image/")
+        ext = mime.split("/")[-1].split("+")[0][:12]
         if ext == "jpeg":
             ext = "jpg"
 
@@ -922,6 +951,16 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
             continue
 
         rel_path = str(keep_path).replace("\\", "/")
+        saved_meta.append({"name": name, "path": rel_path, "mime": mime,
+                           "kind": "image" if is_image else "file"})
+
+        # 文档附件: 不进视觉链 · 留路径提示 (Daemonkey 需要内容时可 pdf_read / read_file)
+        if not is_image:
+            descriptions.append(
+                f"附件{i+1} ({name}) · 已存: {rel_path} · "
+                f"文档内容不在消息里 · 需要读时用 pdf_read(path=『已存』路径) 等工具"
+            )
+            continue
 
         # 多模态直看: 只注册 pending + 轻量占位 · 图本身直接进主对话视野
         if _native_vision:
@@ -929,7 +968,7 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
             descriptions.append(f"图{i+1} ({name}) · 已存: {rel_path}")
             continue
 
-        # 纯文本模型 · 调 look_at 借视觉模型看图 · 描述里带上留存路径 · 让 OPUS 想再细看/换问法时复用同一张
+        # 纯文本模型 · 调 look_at 借视觉模型看图 · 描述里带上留存路径 · 让 Daemonkey 想再细看/换问法时复用同一张
         try:
             from agent_tools.look_at import _run as _look_at_run
             result = _look_at_run({"path": str(keep_path), "question": "请描述这张图片的内容。如果有文字，逐字抄出来。"})
@@ -941,7 +980,7 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
             descriptions.append(f"图{i+1} ({name}) · 已存: {rel_path} · [look_at 调用异常: {type(e).__name__}: {e}]")
 
     if not descriptions:
-        return ""
+        return "", []
 
     # 注册 pending 图 (本轮有效 · 下个 user 轮进 chat handler 时会被重置)
     if _native_vision and _native_images:
@@ -957,14 +996,14 @@ def _process_attachments(attachments: list[dict], session_id: str) -> str:
         )
     else:
         header = (
-            f"[用户上传了 {len(attachments)} 张图片 · 下面每张都给了『已存』路径]\n"
+            f"[用户上传了 {len(attachments)} 个附件 · 下面每个都给了『已存』路径]\n"
             "想再仔细看某张 / 换个角度问(数数量、抄全部文字、盯某个细节)→ "
             "直接 look_at(path=对应『已存』路径, question=...) 再看一次·别自己编路径。\n"
         )
-    return header + "\n".join(descriptions) + "\n---\n"
+    return header + "\n".join(descriptions) + "\n---\n", saved_meta
 
 
-# 卷六十四续七 · 渠道感知 · 微信来的 turn 在 system 末尾追加这一段·让 AI 知道"用户在手机上"。
+#七 · 渠道感知 · 微信来的 turn 在 system 末尾追加这一段·让 AI 知道"用户在手机上"。
 # 不挂 user 消息(不污染历史)·挂 system(随轮重拼·即弃)。根因:src:"wechat" 之前只存进
 # 历史 metadata·没喂给大模型 → AI 当 PC 请求处理·用 write_clipboard 复制本地路径(手机拿不到)。
 _WECHAT_CHANNEL_NOTE = (
@@ -991,6 +1030,7 @@ def _chat_impl(
     user_meta: Optional[dict] = None,
     thinking: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
+    advisor_coop: bool = False,
 ) -> dict:
     """跑一次 API 端的 tool_loop，返回 reply payload。
 
@@ -1006,7 +1046,7 @@ def _chat_impl(
     if RUNTIME.client is None:
         raise RuntimeError("daemon RUNTIME not initialized; API called too early?")
 
-    # 卷四十六 III 补丁 5 · R1 · trace_id 注入 · turn_id 没传时生成一个
+    # III 补丁 5 · R1 · trace_id 注入 · turn_id 没传时生成一个
     # tool_loop 内部 logger.info / each tool call 都会自动带上这个 tid
     try:
         from workers.opus_logging import set_trace_id, new_trace_id
@@ -1023,7 +1063,7 @@ def _chat_impl(
 
     policy = auto_confirm or os.environ.get("OPUS_API_DEFAULT_CONFIRM", "").strip() or "confirm"
 
-    # ② 自主巡航进度 (卷七十五续四) · 包一层进度记录器 · 无论 SSE 连没连都记最新一步 ·
+    # ② 自主巡航进度 (四) · 包一层进度记录器 · 无论 SSE 连没连都记最新一步 ·
     # 让轮询/后台 turn 也能显示进度 (SSE 主对话照常转发 · 行为不变)。 turn_id 空则原样。
     progress = _make_progress_recorder(turn_id, progress)
 
@@ -1052,11 +1092,27 @@ def _chat_impl(
         _is_first_turn = not messages
         _first_turn_text = (message or "").strip()
 
+        # 新会话即时命名 · 用第一句话前 ~24 字当 session label · 让标签栏/历史列表不显示
+        # 裸 api-xxxx (跟 spawn-task 同款·服务端落盘·刷新/换端/后台跑的会话都带名字)。
+        # 只在从没命过名时写·绝不覆盖用户手动改的名 (renameSession) 或已有 label。
+        # 用户 2026-07-28 · 命名必须在协同块【之前】: 顾问同步跑 10-60s · 之前放在协同后
+        # 导致"顾问模式发消息标签先不改名" (等顾问跑完才落名)。
+        if _is_first_turn and _first_turn_text:
+            try:
+                from daemon_session import get_session_meta, set_session_meta
+                if not (get_session_meta(sid).get("label") or "").strip():
+                    _lbl_src = " ".join(_first_turn_text.split())
+                    _lbl = _lbl_src[:24] + ("…" if len(_lbl_src) > 24 else "")
+                    if _lbl:
+                        set_session_meta(sid, label=_lbl)
+            except Exception:
+                pass
+
         # 写入新 user turn
         # wish-58af621e · 让压缩层知道当前 session id，摘要落盘用
         from workers.memory_compression import set_session_id
         set_session_id(sid)
-        # 卷四十六 III · wish-ed5553d5 hookup · 让 request_restart 等工具能拿到当前 session
+        # III · wish-ed5553d5 hookup · 让 request_restart 等工具能拿到当前 session
         RUNTIME.session_id = sid
         # 编辑并发软锁 · 把当前对话身份写进 ContextVar · 让 edit_file/write_file 能区分"哪个对话在改"
         try:
@@ -1072,31 +1128,168 @@ def _chat_impl(
             RUNTIME.pending_images = None
         except Exception:
             pass
+        _att_saved: list[dict] = []  # wish-7c579a20 · 附件结构化 meta · 随 user 消息落 jsonl
         if attachments:
-            att_desc = _process_attachments(attachments, sid)
+            att_desc, _att_saved = _process_attachments(attachments, sid)
             if att_desc:
                 message = att_desc + message
+
+        # wish-0e749752 · 顾问协同模式: 用户 开了输入区 toggle →
+        # 工程层强制蓝图前置 (先由顾问出施工单 · 执行者按单施工)。
+        # 为什么工程层强制而不是提醒 LLM 自觉调 replan:
+        #   靠软约束让执行者自觉叫顾问 = 球员兼任裁判 (2026-07-27 通知体系顾问全程没醒的教训)
+        # 降级纪律: 顾问没出成单 / 协同自身炸了 → 绝不 block 用户 的消息 · 降级常规推进
+        _coop_advisor: dict | None = None  # 用户 2026-07-28 · 顾问卡持久化: 数据挂 user turn meta · 刷新后历史重建
+        if advisor_coop:
+            try:
+                _adv_label = "顾问"
+                try:
+                    from workers.director import get_director_config as _get_dcfg
+                    _dcfg = _get_dcfg()
+                    if _dcfg:
+                        _adv_label = f"顾问 {((_dcfg.get('name') or '') or (_dcfg.get('model') or '')).strip()}".strip()
+                except Exception:
+                    pass
+                if progress:
+                    progress("advisor_status", {"phase": "start", "mode": "blueprint",
+                                                "model_label": _adv_label, "ts": time.time()})
+
+                def _coop_sink(evt: dict) -> None:   # 顾问内部逐步事件 → 金卡 live tick
+                    try:
+                        if progress:
+                            progress("advisor_status", {
+                                "phase": "progress", "mode": "blueprint",
+                                "model_label": _adv_label,
+                                "kind": evt.get("kind", ""),
+                                "turn": evt.get("turn", 0),
+                                "name": evt.get("name", ""),
+                                "target": evt.get("target", ""),
+                                "files_read": evt.get("files_read", 0),
+                                "ts": time.time(),
+                            })
+                    except Exception:
+                        pass
+
+                # 用户 2026-07-28 · 顾问连续性: 顾问每次都是全新上下文(干净视角的价值) ·
+                # 但「补充信息再发」场景下它不该失忆——扫最近一轮协同轮的施工单+用户原话喂给它 ·
+                # 让它"在原单上调整"而不是从零出单。
+                _prev_bp_text = ""
+                _prev_user_text = ""
+                for _m in reversed(messages):
+                    if _m.get("role") != "user":
+                        continue
+                    _pm = (_m.get("meta") or {}).get("advisor_blueprint")
+                    if _pm is None:
+                        continue  # 非协同轮 · 跳过 (只续协同链·不捞普通闲聊)
+                    if _pm.get("ok") and (_pm.get("text") or "").strip():
+                        _prev_bp_text = _pm["text"].strip()
+                    _c = (_m.get("content") or "")
+                    if "[用户 的原始需求]\n" in _c:
+                        _c = _c.split("[用户 的原始需求]\n", 1)[1]  # 剥掉施工单注入·取回原话
+                    elif _c.startswith("[系统 · 顾问协同模式"):
+                        _c = _c.split("\n", 1)[1] if "\n" in _c else ""  # 剥降级包装·取原话
+                    _prev_user_text = _c.strip()
+                    break  # 只取最近一轮协同轮
+                _bp_ctx_parts = []
+                if _prev_bp_text:
+                    _bp_ctx_parts.append(
+                        "【上次顾问已出过的施工单】用户 现在补充了新信息——请在原单基础上调整/续写 "
+                        "(也可推翻重出·以 用户 最新信息为准)·不要从零再来:\n\n" + _prev_bp_text[:3000])
+                if _prev_user_text:
+                    _bp_ctx_parts.append("【上一轮 用户 的原始需求】\n" + _prev_user_text[:1500])
+
+                from agent_tools.replan import _run as _advisor_replan_run
+                _bp_res = _advisor_replan_run({
+                    "mode": "blueprint",
+                    "goal": message,
+                    "blocker": "",
+                    "context": "\n\n".join(_bp_ctx_parts),
+                    "task": None,
+                    "_source": "coop_mode",
+                    "_progress_sink": _coop_sink,
+                    "_cancel_event": cancel_event,  # 用户 2026-07-28 · 停止按钮要真能掐停顾问
+                })
+                if cancel_event is not None and cancel_event.is_set():
+                    # 用户 点了停止 · 顾问被掐 (tool_loop 返回 ok=True text='[aborted]' · 不能信)。
+                    # 不注入施工单 · 让 message 保持 用户 原话 → 主 tool_loop 第一轮 cancel_check 自然 abort。
+                    _coop_advisor = {"ok": False, "aborted": True, "model_label": _adv_label,
+                                     "text": "", "sub_id": ""}
+                    if progress:
+                        progress("advisor_status", {"phase": "blueprint_aborted", "mode": "blueprint",
+                                                    "model_label": _adv_label, "ts": time.time()})
+                else:
+                    _bp_ok = bool(_bp_res.ok) and bool((_bp_res.output or "").strip())
+                    _bp_text = (_bp_res.output or "").strip()
+                    # 顾问卡持久化 · sub_id 从 output 固定尾注提取 (replan.py:260 的 sessions/sub-xxx.jsonl)
+                    _bp_sub = ""
+                    try:
+                        import re as _re
+                        _m_sub = _re.search(r"sessions/sub-([a-zA-Z0-9_-]+)\.jsonl", _bp_res.output or "")
+                        if _m_sub:
+                            _bp_sub = _m_sub.group(1)
+                    except Exception:
+                        pass
+                    _coop_advisor = {
+                        "ok": _bp_ok,
+                        "model_label": _adv_label,
+                        "text": _bp_text[:3000] if _bp_ok else "",
+                        "sub_id": _bp_sub,
+                    }
+                    if progress:
+                        progress("advisor_status", {
+                            "phase": "blueprint_done" if _bp_ok else "blueprint_failed",
+                            "mode": "blueprint",
+                            "model_label": _adv_label,
+                            "text": _bp_text[:3000],
+                            "sub_id": _bp_sub,
+                            "ts": time.time(),
+                        })
+                    if _bp_ok:
+                        message = (
+                            "[系统 · 顾问协同模式]\n"
+                            "下面是顾问针对 用户 这条需求出的【施工单】。你是执行者:\n"
+                            "严格按施工单施工 · 施工单列的【禁区】不碰 · 完工对照【验收标准】自检。\n"
+                            "若施工单与 用户 原话冲突 · 以 用户 原话为准并说明分歧。\n\n"
+                            f"{_bp_text}\n\n"
+                            "────────────────\n"
+                            f"[用户 的原始需求]\n{message}"
+                        )
+                    else:
+                        message = (
+                            "[系统 · 顾问协同模式 · 顾问本次没能给出施工单 · 按常规方式直接推进 用户 的需求]\n"
+                            f"{message}"
+                        )
+            except Exception as _coop_err:
+                _coop_advisor = {"ok": False, "model_label": locals().get("_adv_label", "顾问"),
+                                 "text": "", "sub_id": ""}
+                try:
+                    if progress:
+                        progress("advisor_status", {"phase": "blueprint_failed",
+                                                    "error": f"{type(_coop_err).__name__}: {_coop_err}",
+                                                    "ts": time.time()})
+                except Exception:
+                    pass
+
+        # · 发送前消毒 (2026-07-28): 历史里 DeepSeek 产的 content="" 空串 → null
+        # Kimi 严格校验: content 空串报 400 'must not be empty' · null 才合法。
+        # 覆盖热路径缓存 + 同 session 中途切模型两条路 (冷加载 load_session 已同规修) · O(n) 便宜
+        for _m in messages:
+            if _m.get("role") == "assistant" and _m.get("tool_calls"):
+                _c = _m.get("content")
+                if isinstance(_c, str) and not _c.strip():
+                    _m["content"] = None
+
         messages.append({"role": "user", "content": message})
         _user_meta = {"src": "api"}
+        if _att_saved:  # wish-7c579a20 · 附件结构化落盘 · WebUI 刷新后重建图片/文档卡片
+            _user_meta["attachments"] = _att_saved
         if user_meta:
             _user_meta.update(user_meta)
+        if _coop_advisor:  # 用户 2026-07-28 · 顾问卡持久化: 刷新/切回后历史渲染重建金卡
+            _user_meta["advisor_blueprint"] = _coop_advisor
         append_turn(sid, "user", message, meta=_user_meta)
 
-        # 新会话即时命名 · 用第一句话前 ~24 字当 session label · 让标签栏/历史列表不显示
-        # 裸 api-xxxx (跟 spawn-task 同款·服务端落盘·刷新/换端/后台跑的会话都带名字)。
-        # 只在从没命过名时写·绝不覆盖用户手动改的名 (renameSession) 或已有 label。
-        if _is_first_turn and _first_turn_text:
-            try:
-                from daemon_session import get_session_meta, set_session_meta
-                if not (get_session_meta(sid).get("label") or "").strip():
-                    _lbl_src = " ".join(_first_turn_text.split())
-                    _lbl = _lbl_src[:24] + ("…" if len(_lbl_src) > 24 else "")
-                    if _lbl:
-                        set_session_meta(sid, label=_lbl)
-            except Exception:
-                pass
-
-        # 卷四十六 III 补丁 5 · Y2 · token budget 入口检查
+        # III 补丁 5 · Y2 · token budget 入口检查
         # default 全部禁用 (env=0)·用户 调高才生效·超阈值直接抛 RuntimeError·UI 看得到
         try:
             from workers.token_budget_guard import check_budget as _tbg_check
@@ -1114,7 +1307,7 @@ def _chat_impl(
             # guard 自己挂了不能拖累正常 chat
             pass
 
-        # 卷四十一 · 增量落盘 callback · 解决 daemon kill -9 时 in-flight turn 丢失
+        # · 增量落盘 callback · 解决 daemon kill -9 时 in-flight turn 丢失
         # 每完成一个 assistant turn / tool result · tool_loop 立即调这个 hook 写盘
         def _persist_entry(entry: dict) -> None:
             meta: dict[str, Any] = {"src": "api"}
@@ -1126,9 +1319,9 @@ def _chat_impl(
                 meta["tool_call_id"] = entry["tool_call_id"]
             append_turn(sid, entry["role"], entry.get("content", ""), meta=meta)
 
-        # 卷五十九 · SKILL 触发修复 · 收尾检查引擎接线 (一个引擎·三处挂载)
+        # · SKILL 触发修复 · 收尾检查引擎接线 (一个引擎·三处挂载)
         #   begin_turn 清 turn 台账 · observe 记录本回合每个工具调用 (P1/P3 靠它判断干了啥/沉淀没)
-        #   relevant_playbooks 把命中的 playbook 递到 OPUS 手边 (P2 · 堵"下次自动取出来用"断点 B)
+        #   relevant_playbooks 把命中的 playbook 递到 Daemonkey 手边 (P2 · 堵"下次自动取出来用"断点 B)
         _closure_observe = _no_observe
         _pb_hint = ""
         _mem_hint = ""
@@ -1143,9 +1336,9 @@ def _chat_impl(
             _cc.begin_turn()
             _closure_observe = _cc.make_observe()
             _pb_hint = _cc.relevant_playbooks(message)
-            # ① 记忆自动注入 (保守版) · 相关画像命中即递到 OPUS 手边
+            # ① 记忆自动注入 (保守版) · 相关 用户 画像命中即递到 Daemonkey 手边
             _mem_hint = _cc.relevant_memories(message)
-            # ①b 知识库自动注入 · 私有文档目录/命中片段递到 OPUS 手边 (产品观第5条可追溯)
+            # ①b 知识库自动注入 · 私有文档目录/命中片段递到 Daemonkey 手边 (产品观第5条可追溯)
             _docs_hint = _cc.relevant_docs(message)
             # ①c 显式"记住"意图 → 本轮硬提醒 update_bro_note 落盘 (堵"嘴上记住了·实际没记")
             _memwrite_hint = _cc.memory_write_hint(message)
@@ -1156,13 +1349,12 @@ def _chat_impl(
             # ①f 情感轨主动侧 (C+) · 记情感/健康信号 + 成熟期在闲聊语境软回访 (每天最多一次·防尬)
             _cc.note_care_signals(message)
             _care_hint = _cc.care_followup_hint(message)
-            # ③抗套娃 · 本会话活跃任务账本(已验证✓/已排除✗/决策)每轮无损回灌 · 压缩压不掉
+            # ①g ③抗套娃 · 本会话活跃任务账本(已验证✓/已排除✗/决策)每轮无损回灌 · 压缩压不掉
             _ledger_hint = _cc.ledger_hint(sid)
         except Exception:
             pass
 
-        # 能力感知注入：每轮把"命中的现成 app/flow + 活跃 run"递到上下文里·
-        # 让对话里的 AI 先知道工坊有什么·别从零手搓。 失败不阻塞对话。
+        # 沉淀闭环 v2 刀② · 工坊上下文注入 (活跃 run + 命中的 app/flow 候选) · 治"先查再搓"铁律衰减
         _workshop_hint = ""
         try:
             from workers.workshop_context import workshop_hint as _ws_hint
@@ -1170,7 +1362,7 @@ def _chat_impl(
         except Exception:
             pass
 
-        # 卷六十四续七 · 渠道感知 · 微信 turn 给 system 末尾挂一句"你在微信上·发文件走
+        #七 · 渠道感知 · 微信 turn 给 system 末尾挂一句"你在微信上·发文件走
         # wechat_send media_path·别 write_clipboard/甩路径"。挂 system 不污染 user 历史·随轮即弃。
         # 3b · 缓存前缀稳定化: 把 system 拆成「稳定前缀」+「易变尾巴」两段传。
         #   稳定前缀 (_sys_stable = 灵魂 + 远程 hint) 一个 session 内字节不变·是可缓存前缀;
@@ -1210,7 +1402,147 @@ def _chat_impl(
         _API_SESSIONS[sid] = messages
         # 不再批量 append_turn · tool_loop 已经在每个 turn commit 时增量落盘了
 
-        # 卷五十九 · P3 · turn 结束反思 · 本回合干了活 (副作用工具≥2次) 却没沉淀 →
+        # 用户 2026-07-28 方案 B · 协同模式自动验收 (三唤醒点第三环·从「自觉」升级成「管线强制」):
+        # 触发 = 本轮协同出了施工单 + 本轮有副作用(closure_check 台账) + 用户 没点停止。
+        # PASS → 验收卡 · FAIL → 意见注入自动修正一轮 → 复验 · 最多 2 次 review (防死循环+控 K3 成本)。
+        # 降级纪律同协同块: 验收自身炸了绝不 block 用户 的交付。
+        _coop_review: dict | None = None
+        try:
+            from workers import closure_check as _cc
+            _se_tools = [t for t in _cc.tools_called() if t in _cc.SIDE_EFFECT_TOOLS]
+        except Exception:
+            _se_tools = []
+        if (
+            _coop_advisor and _coop_advisor.get("ok")
+            and (_coop_advisor.get("text") or "").strip()
+            and _se_tools
+            and not (cancel_event is not None and cancel_event.is_set())
+        ):
+            try:
+                from agent_tools.replan import _run as _advisor_replan_run
+                import re as _re
+
+                _rv_label = _coop_advisor.get("model_label") or "顾问"
+
+                def _rv_sink(evt: dict) -> None:   # 验收顾问内部逐步事件 → live 卡 tick
+                    try:
+                        if progress:
+                            progress("advisor_status", {
+                                "phase": "progress", "mode": "review",
+                                "model_label": _rv_label,
+                                "kind": evt.get("kind", ""), "turn": evt.get("turn", 0),
+                                "name": evt.get("name", ""), "target": evt.get("target", ""),
+                                "files_read": evt.get("files_read", 0), "ts": time.time()})
+                    except Exception:
+                        pass
+
+                def _verdict_of(txt: str) -> str:
+                    m = _re.search(r"验收结论[:：\s*]*(PASS|FAIL)", txt or "", _re.I)
+                    if m:
+                        return m.group(1).upper()
+                    m2 = _re.search(r"\b(PASS|FAIL)\b", txt or "", _re.I)
+                    # 没给明确结论按 FAIL · 严 · 防顾问当老好人 (跟 _REVIEW_SYSTEM 的「严」对齐)
+                    return m2.group(1).upper() if m2 else "FAIL"
+
+                for _attempt in (1, 2):
+                    if cancel_event is not None and cancel_event.is_set():
+                        break
+                    if progress:
+                        progress("advisor_status", {"phase": "start", "mode": "review",
+                                                    "model_label": _rv_label,
+                                                    "round": _attempt, "ts": time.time()})
+                    _se_list = ", ".join(dict.fromkeys(_se_tools))
+                    _rv = _advisor_replan_run({
+                        "mode": "review",
+                        "goal": (_coop_advisor.get("text") or "")[:3000],
+                        "blocker": (
+                            f"【执行者交付文案(截断)】\n{(reply or '')[:1800]}\n\n"
+                            f"【本轮副作用工具调用】{_se_list}\n"
+                            "【说明】执行者的写动作都在上面·顾问可自行 read_file / grep / git diff 验证实物·别凭交付文案下结论。"),
+                        "context": "",
+                        "task": None,
+                        "_source": "coop_review",
+                        "_progress_sink": _rv_sink,
+                        "_cancel_event": cancel_event,
+                    })
+                    if cancel_event is not None and cancel_event.is_set():
+                        break
+                    _rv_text = (_rv.output or "").strip() if _rv.ok else ""
+                    _vd = _verdict_of(_rv_text) if _rv.ok else "FAIL"
+                    _rv_sub = ""
+                    try:
+                        _m_sub = _re.search(r"sessions/sub-([a-zA-Z0-9_-]+)\.jsonl", _rv.output or "")
+                        if _m_sub:
+                            _rv_sub = _m_sub.group(1)
+                    except Exception:
+                        pass
+                    _coop_review = {"ok": bool(_rv.ok), "verdict": _vd, "text": _rv_text[:3000],
+                                    "round": _attempt, "model_label": _rv_label, "sub_id": _rv_sub}
+                    if progress:
+                        progress("advisor_status", {"phase": "review_done", "mode": "review",
+                                                    "verdict": _vd, "text": _rv_text[:3000],
+                                                    "round": _attempt, "model_label": _rv_label,
+                                                    "sub_id": _rv_sub, "ts": time.time()})
+                    # SSE 断流兜底: 把验收结果也写进 advisor_live.json ·
+                    # 前端超时 polling /api/advisor/status 能拿到完整结果自愈 (用户 2026-07-29)
+                    try:
+                        from workers import advisor_live as _adv_live
+                        _adv_live.finish_live(ok=bool(_rv.ok),
+                                              iterations=getattr(_rv, "iterations", 0),
+                                              sub_session_id=_rv_sub,
+                                              text=_rv_text[:3000], verdict=_vd)
+                    except Exception:
+                        pass
+                    # 每次验收完立刻落盘 (不只落最后一次) · 刷新后时间线 = 实时链:
+                    # round1 FAIL 卡 → 修正注入 → round2 结果卡 · 全程可回放
+                    try:
+                        append_turn(sid, "system", "",
+                                    meta={"kind": "advisor_review", "advisor_review": _coop_review})
+                    except Exception:
+                        pass
+                    if _vd == "PASS" or _attempt == 2 or not _rv.ok:
+                        break
+                    # FAIL → 意见注入 → 自动修正一轮 → 下一轮复验
+                    _fix_msg = (
+                        "[系统 · 顾问验收未通过 · 以下是顾问的验收意见。请逐条修正后重新交付·"
+                        "修正完简述改了什么·别整段重述。]\n\n" + _rv_text[:2500])
+                    messages.append({"role": "user", "content": _fix_msg})
+                    try:
+                        append_turn(sid, "user", _fix_msg, meta={"src": "advisor_review"})
+                    except Exception:
+                        pass
+                    reply, messages, _u2 = run_tool_loop(
+                        client=RUNTIME.client,
+                        provider=RUNTIME.provider,
+                        model=RUNTIME.model,
+                        max_tokens=max_tokens,
+                        system=_localize(_sys_stable),
+                        system_suffix=_localize(_sys_tail),
+                        messages=messages,
+                        confirm=confirm,
+                        observe=_closure_observe,
+                        base_url=RUNTIME.base_url,
+                        progress=progress,
+                        cancel_check=(cancel_event.is_set if cancel_event is not None else None),
+                        on_message_commit=_persist_entry,
+                        thinking=thinking,
+                        reasoning_effort=reasoning_effort,
+                    )
+                    try:
+                        usage.input_tokens += _u2.input_tokens
+                        usage.output_tokens += _u2.output_tokens
+                    except Exception:
+                        pass
+                    _API_SESSIONS[sid] = messages
+                    # 修正轮的新动作并入交付说明 (复验要对照最新实物)
+                    try:
+                        _se_tools = [t for t in _cc.tools_called() if t in _cc.SIDE_EFFECT_TOOLS]
+                    except Exception:
+                        pass
+            except Exception:
+                pass  # 验收自身炸了不 block 交付 (跟协同块同一条降级纪律)
+
+        # · P3 · turn 结束反思 · 本回合干了活 (副作用工具≥2次) 却没沉淀 →
         # 推一张"收尾提示"卡 (SSE·前端可点) + 落对账台账 closure_hints.jsonl·闭环不靠当场记得。
         try:
             from workers import closure_check as _cc
@@ -1222,7 +1554,34 @@ def _chat_impl(
         except Exception:
             pass
 
-        # 卷四十六 III 补丁 5 · Y2 · token budget 出口累加 · 不抛错
+        # 2026-07-28 用户 需求 · 桌宠弹「🎉 干完了」· 实质 turn (干活+沉淀≥2) 收尾时
+        # 文字取 Daemonkey 最终回复第一行 (收尾纪律保证它是"✅ 做完了:...") · 取不到就兜底
+        # 2026-07-28 缝隙修: 计数集合 = 副作用 ∪ 沉淀 (SINK)——"验证+沉淀"的完整轮也弹
+        # (原先只数副作用·沉淀工具刻意不在其中·导致最完整的一轮反而不弹·语义拧了)
+        try:
+            from workers import closure_check as _cc
+            _se_n = len([t for t in _cc.tools_called() if t in (_cc.SIDE_EFFECT_TOOLS | _cc.SINK_TOOLS)])
+            if _se_n >= 2:
+                _first = (reply or "").strip().split("\n")[0].strip() if reply else ""
+                _first = _first.lstrip("#* ✅🎉✨").strip()
+                if not _first:
+                    _first = f"做完了 · 这轮跑了 {_se_n} 个动作"
+                # 桌宠气泡 (notify.jsonl)
+                try:
+                    from desktop_pet.activities import write_notify as _pet_notify
+                    _pet_notify("done", _first[:40])
+                except Exception:
+                    pass
+                # 事项 B · Windows toast (独立 try · 不跟 pet_notify 串扰)
+                try:
+                    from workers.windows_toast import send_toast as _send_toast
+                    _send_toast("OPUS 干完了", _first[:40])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # III 补丁 5 · Y2 · token budget 出口累加 · 不抛错
         try:
             from workers.token_budget_guard import consume as _tbg_consume
             _tbg_consume(
@@ -1233,7 +1592,7 @@ def _chat_impl(
         except Exception:
             pass
 
-    # 卷四十六 III 补丁 5 · R1 · 清 trace_id ContextVar
+    # III 补丁 5 · R1 · 清 trace_id ContextVar
     if _trace_token is not None:
         try:
             from workers.opus_logging import reset_trace_id
@@ -1280,7 +1639,7 @@ def build_app():
     from api_routes._deps import check_auth as _check_auth
     from api_routes._deps import check_rate_limit as _check_rate_limit
 
-    # wish-bb84a386 · loopback 鉴权豁免 (卷四十六续 V) · 同机 127.0.0.1 自动信任
+    # wish-bb84a386 · loopback 鉴权豁免 ( V) · 同机 127.0.0.1 自动信任
     # 关闭办法: env OPUS_LOOPBACK_TRUST=false (远程部署用)
     from api_routes._deps import loopback_auth_middleware
     app.middleware("http")(loopback_auth_middleware)
@@ -1302,14 +1661,14 @@ def build_app():
 
     # wish-413999da phase 1 · /sessions/* 6 路由抽到 api_routes/sessions.py
 
-    # ── cockpit · 6+1 维聚合视图（卷二十五加）─────────────────
+    # ── cockpit · 6+1 维聚合视图（加）─────────────────
     # 一次返回所有维度的 head N 条 · 避免前端发 6+ 个并行 fetch · 减少 RTT
     # wish-413999da phase 1 · /dashboard/cockpit + /dashboard/{domain} 2 路由
     # + _list_reports + _build_calendar_day + _serve_report_file (closure helpers)
     # 抽到 api_routes/dashboard.py · 见 build_app() 末尾 include_router
 
     # ──────────────────────────────────────────────────────────
-    # 卷四十四 K stage 2c · 出品工坊资产 endpoint · apps + flows
+    # K stage 2c · 出品工坊资产 endpoint · apps + flows
     # ──────────────────────────────────────────────────────────
 
     # wish-413999da phase 1 · workshop apps CRUD 4 路由抽到 api_routes/workshop.py
@@ -1343,6 +1702,8 @@ def build_app():
     from api_routes import playbooks as _routes_playbooks
     from api_routes import clients as _routes_clients
     from api_routes import vision as _routes_vision
+    from api_routes import notifications as _routes_notifications
+    from api_routes import advisor as _routes_advisor
     app.include_router(_routes_core.router)
     app.include_router(_routes_lifecycle.router)
     app.include_router(_routes_governance.router)
@@ -1360,8 +1721,10 @@ def build_app():
     app.include_router(_routes_clients.router)
     app.include_router(_routes_dashboard.router)
     app.include_router(_routes_vision.router)  # wish-4a6331b2 · /vision-config (曾漏注册→404)
+    app.include_router(_routes_notifications.router)  # wish-fb6b7427 · /notification-config
+    app.include_router(_routes_advisor.router)  # wish-ea8922f7 · /api/advisor/status + trace
 
-    # 形态 Z · 相遇初始化路由 (开源版 Daemonkey 有·母体 OPUS 无此模块 → 守卫跳过)
+    # 形态 Z · 相遇初始化路由 (开源版 Daemonkey 有·母体 Daemonkey 无此模块 → 守卫跳过)
     try:
         from api_routes import onboarding as _routes_onboarding
         app.include_router(_routes_onboarding.router)
@@ -1401,9 +1764,7 @@ def start_api_in_background(
       1. 端口不直接暴露到公网，路由器 / 防火墙不用配
       2. tunnel 这一层可以加它自己的 access control（Cloudflare Access 等）
 
-    想直接对外暴露（不推荐）→ host="0.0.0.0"
-
-    卷四十六 III · 加 daemon_lifecycle init · 跟 run_api_only.py 对齐:
+    想直接对外暴露（不推荐）→ host="0.0.0.0" III · 加 daemon_lifecycle init · 跟 run_api_only.py 对齐:
       - 双 daemon 防护 (pid 锁)
       - 重启续场 (consume restart_request · 给 session 注 system message)
       - crash 检测 (上次没 graceful exit → 给活跃 session 注 crash 通知)
@@ -1412,7 +1773,7 @@ def start_api_in_background(
     if _API_THREAD is not None and _API_THREAD.is_alive():
         return _API_THREAD
 
-    # 卷四十六 III 补丁 5 · R1 · 统一 logging · daemon 启动早期装上 (lifecycle 之前)
+    # III 补丁 5 · R1 · 统一 logging · daemon 启动早期装上 (lifecycle 之前)
     try:
         from workers.opus_logging import init_logging
         init_logging()
@@ -1438,7 +1799,7 @@ def start_api_in_background(
     except Exception as e:
         print(f"[opus-api] WARN · daemon_lifecycle init 出错 (不阻塞启动): {type(e).__name__}: {e}")
 
-    # 卷四十六 III 补丁 3 · 自动续场 turn (start_api_in_background 路径 · 走 opus_daemon.py 入口)
+    # III 补丁 3 · 自动续场 turn (start_api_in_background 路径 · 走 opus_daemon.py 入口)
     if lc and lc.get("restart_request"):
         try:
             from workers.resume_runner import schedule_resume_turn

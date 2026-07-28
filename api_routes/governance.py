@@ -9,15 +9,15 @@ api_routes/governance.py · 治理路由 (wish-413999da · phase 1)
   POST /api/token_budget/reset       · Y2 · 重置 token 用量
   GET  /api/ratelimit/status         · Y7 · 限流快照 (default disabled)
   GET  /api/audit/recent             · Y7 · 审计最近 N 条 (default disabled)
-  GET  /api/proactive/status         · 卷六十 · 主动 CALL 判定 + 台账
-  GET  /api/proactive/inbox          · 卷六十 · 收件箱 (前端心跳轮询)
-  POST /api/proactive/test           · 卷六十 · 手动触发一次主动 CALL
-  GET  /api/wechat/status            · 卷六十一 · iLink 微信渠道 / 24h 窗口 / 监听
-  POST /api/wechat/test              · 卷六十一 · 手动给用户微信发一条
-  POST /api/wechat/login/qr          · 卷六十一 · 取扫码登录二维码 (base64)
-  GET  /api/wechat/login/poll        · 卷六十一 · 轮询扫码状态 · 落 token
-  GET  /api/wechat/frequency         · 卷六十一 · 主动 CALL 频率档 (猫↔犬)
-  POST /api/wechat/frequency         · 卷六十一 · 设频率档
+  GET  /api/proactive/status · 主动 CALL 判定 + 台账
+  GET  /api/proactive/inbox · 收件箱 (前端心跳轮询)
+  POST /api/proactive/test · 手动触发一次主动 CALL
+  GET  /api/wechat/status · iLink 微信渠道 / 24h 窗口 / 监听
+  POST /api/wechat/test · 手动给 用户 微信发一条
+  POST /api/wechat/login/qr · 取扫码登录二维码 (base64)
+  GET  /api/wechat/login/poll · 轮询扫码状态 · 落 token
+  GET  /api/wechat/frequency · 主动 CALL 频率档 (猫↔犬)
+  POST /api/wechat/frequency · 设频率档
   POST /api/session/repair           · R3 · 悬空 tool_call 自愈
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Body, Header, HTTPException
+from fastapi import APIRouter, Body, Header, HTTPException, Request
 
 from api_routes._deps import check_auth
 from daemon_runtime import RUNTIME
@@ -67,12 +67,70 @@ async def status(authorization: Optional[str] = Header(None)):
     }
 
 
+@router.get("/api/git-debt")
+async def api_git_debt(authorization: Optional[str] = Header(None)):
+    """启动亮灯 · 当前 git 欠账 (只读 · 前端 header 胶囊启动时查 + 轮询)。
+
+    2026-07-29 用户 拍板: 欠账检查从「turn 结束兜底」扩到「开 WebUI 第一眼」——
+    打开页面时若分支领先 master 未合 / 有未提交改动, 左上角胶囊亮灯。
+    复用 workers.closure_check._git_debt (与收尾三问第四问同一事实源)。
+    """
+    check_auth(authorization)
+    try:
+        from workers.closure_check import _debt_text, _git_debt
+        debt = _git_debt()
+        if not debt:
+            return {"debt": False}
+        return {"debt": True, **debt, "message": _debt_text(debt)}
+    except Exception as e:
+        return {"debt": False, "error": str(e)}
+
+
+@router.get("/api/git-debt/detail")
+async def api_git_debt_detail(authorization: Optional[str] = Header(None)):
+    """欠账详情 (只读) · 前端面板事实源: 文件清单 + 人话分类 + 分支领先 commits。
+
+    2026-07-29 用户 直批三件套 B: "我点击之后完全没法知道未提交的是什么" ——
+    面板让 用户 看见每个文件是什么 (代码工作/文档/账本/会话数据...) 再决定收不收。
+    """
+    check_auth(authorization)
+    try:
+        from workers.git_ops import git_debt_detail
+        return git_debt_detail()
+    except Exception as e:
+        raise HTTPException(500, f"{type(e).__name__}: {e}")
+
+
+@router.post("/api/git-collect")
+async def api_git_collect(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+):
+    """一键收进主干 (用户 直批三件套 C · 2026-07-29)。
+
+    用户 原话: "coding 小白也能不说合主干 · 自己把完成工作合到主干防止被新实例覆盖"。
+    master 上 = 安全 commit · 分支上 = 先 commit 再 merge_wish_to_master 五道保护。
+    body 可带 {"session_id": "api-..."} → 精准归属收 (别的活跃会话裸奔改动留工作区)。
+    """
+    check_auth(authorization)
+    try:
+        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    except Exception:
+        body = {}
+    session_id = str((body or {}).get("session_id") or "").strip() or None
+    try:
+        from workers.git_ops import collect_to_master
+        return collect_to_master(session_owner=session_id)
+    except Exception as e:
+        raise HTTPException(500, f"{type(e).__name__}: {e}")
+
+
 @router.get("/api/token_budget/status")
 async def token_budget_status_endpoint(
     session_id: Optional[str] = None,
     authorization: Optional[str] = Header(None),
 ):
-    """卷四十六 III 补丁 5 · Y2 · token budget 状态查询
+    """ III 补丁 5 · Y2 · token budget 状态查询
 
     Query params:
         session_id: 可选 · 给出会附加 session_total / session_calls
@@ -92,7 +150,7 @@ async def token_budget_status_endpoint(
 async def ratelimit_status_endpoint(
     authorization: Optional[str] = Header(None),
 ):
-    """卷四十六 III 补丁 5 · Y7 · 限流状态 · default disabled"""
+    """ III 补丁 5 · Y7 · 限流状态 · default disabled"""
     check_auth(authorization)
     try:
         from workers.rate_limiter import snapshot as _rl_snap
@@ -107,7 +165,7 @@ async def audit_recent_endpoint(
     endpoint_filter: Optional[str] = None,
     authorization: Optional[str] = Header(None),
 ):
-    """卷四十六 III 补丁 5 · Y7 · 审计最近 N 条 · default disabled
+    """ III 补丁 5 · Y7 · 审计最近 N 条 · default disabled
 
     Query:
         n: 1..500 · 默认 50
@@ -129,7 +187,7 @@ async def token_budget_reset_endpoint(
     payload: dict = Body(default={}),
     authorization: Optional[str] = Header(None),
 ):
-    """卷四十六 III 补丁 5 · Y2 · 重置 token budget
+    """ III 补丁 5 · Y2 · 重置 token budget
 
     Args (JSON body · 都可选):
         session_id: 给出则只清这个 session
@@ -160,7 +218,7 @@ async def token_budget_reset_endpoint(
 
 @router.get("/api/proactive/status")
 async def proactive_status_endpoint(authorization: Optional[str] = Header(None)):
-    """卷六十 · 主动 CALL 状态 · 只读判定 + 台账 · 不发 turn
+    """ · 主动 CALL 状态 · 只读判定 + 台账 · 不发 turn
 
     Returns: enabled / scheduler_alive / in_quiet_hours / calls_today /
         candidate_triggers / would_call_now / next_trigger / recent[]
@@ -178,12 +236,12 @@ async def proactive_inbox_endpoint(
     since: str = "",
     authorization: Optional[str] = Header(None),
 ):
-    """卷六十 · 主动 CALL 收件箱 · 前端心跳轮询 · 返回 since 之后投递的主动消息
+    """ · 主动 CALL 收件箱 · 前端心跳轮询 · 返回 since 之后投递的主动消息
 
     Query:
         since: ISO 时间戳 · 只返回此刻之后投递的 · 空则返回空 (避免回放历史)
 
-    前端据此弹 toast + 自动加载对应 session · 让用户不用手刷就看到主动开口。
+    前端据此弹 toast + 自动加载对应 session · 让 用户 不用手刷就看到 Daemonkey 主动开口。
     """
     check_auth(authorization)
     from datetime import datetime, timezone
@@ -226,12 +284,12 @@ async def proactive_test_endpoint(
     payload: dict = Body(default={}),
     authorization: Optional[str] = Header(None),
 ):
-    """卷六十 · 手动触发一次主动 CALL · 让用户随时见证 (跳过防骚扰门控)
+    """ · 手动触发一次主动 CALL · 让 用户 随时见证 (跳过防骚扰门控)
 
     Args (JSON body · 都可选):
         kind: 'silence' (默认) / 'ritual'
 
-    后台 thread 跑真 LLM turn · 立刻返回 target_session · 几秒后打开那个 session 看 OPUS 的话。
+    后台 thread 跑真 LLM turn · 立刻返回 target_session · 几秒后打开那个 session 看 Daemonkey 的话。
     """
     check_auth(authorization)
     if not isinstance(payload, dict):
@@ -251,7 +309,7 @@ async def proactive_test_endpoint(
             "triggered": True,
             "target_session": sid,
             "trigger": trigger,
-            "note": "几秒后打开这个 session · 看 OPUS 的主动问候落地",
+            "note": "几秒后打开这个 session · 看 Daemonkey 的主动问候落地",
         }
     except Exception as e:
         raise HTTPException(500, f"{type(e).__name__}: {e}")
@@ -259,7 +317,7 @@ async def proactive_test_endpoint(
 
 @router.get("/api/wechat/status")
 async def wechat_status_endpoint(authorization: Optional[str] = Header(None)):
-    """卷六十一 · iLink 微信渠道状态 · 配置 / 24h 窗口 / 监听线程 / 静默"""
+    """ · iLink 微信渠道状态 · 配置 / 24h 窗口 / 监听线程 / 静默"""
     check_auth(authorization)
     try:
         from workers import ilink_client
@@ -279,22 +337,20 @@ def wechat_test_endpoint(
     payload: dict = Body(default={}),
     authorization: Optional[str] = Header(None),
 ):
-    """卷六十一 · 手动给用户微信发一条 · 验证 24h 窗口内主动推送
-
-    ⚠ 同步 def：send_text 是阻塞 requests · async 会卡事件循环 (卷六十一续修)。
+    """ · 手动给 用户 微信发一条 · 验证 24h 窗口内主动推送
 
     Args (JSON · 可选): text (默认一句测试语)
     """
     check_auth(authorization)
     if not isinstance(payload, dict):
         payload = {}
-    text = (payload.get("text") or "【OPUS·微信自测】这条是我主动推给你的，窗口还开着。").strip()
+    text = (payload.get("text") or "【Daemonkey·微信自测】这条是我主动推给你的，窗口还开着。").strip()
     try:
         from workers import ilink_client
         if not ilink_client.enabled():
             return {"ok": False, "reason": "not_configured", "note": "未扫码或 OPUS_WECHAT_ILINK=0"}
         if not ilink_client.window_open():
-            return {"ok": False, "reason": "window_closed", "note": "你超过 24h 没在微信开口·先发条微信开窗"}
+            return {"ok": False, "reason": "window_closed", "note": "BRO 超过 24h 没在微信开口·先发条微信开窗"}
         r = ilink_client.send_text(text)
         return {"ok": bool(r.get("ok")), "resp": r}
     except Exception as e:
@@ -303,32 +359,16 @@ def wechat_test_endpoint(
 
 @router.post("/api/wechat/login/qr")
 def wechat_login_qr_endpoint(authorization: Optional[str] = Header(None)):
-    """取微信登录二维码 · 返回 base64 data URI 直接给 <img>
+    """ · 取微信 ClawBot 登录二维码 · 返回 base64 data URI 直接给 <img>
 
-    ⚠ 故意写成同步 def (不是 async)：里面是阻塞式 requests.get(腾讯)·写成 async 会卡死
-    事件循环·导致取码/轮询期间整个 daemon 假死 (卷六十一续修)。def 让 FastAPI 丢线程池跑。
-
-    微信是标配功能（走腾讯官方 iLink·零私有服务器·每个用户扫码连自己的微信）。
-    依赖 requests / qrcode 已写进 requirements。万一依赖没装全 / 临时取不到码·
-    优雅返回 available=False·不抛 500。
-    """
+    ⚠ 同步 def (不是 async)：里面是阻塞式 requests.get(腾讯)·写 async 会卡死事件循环·
+    导致取码/轮询期间整个 daemon 假死 (修)。def 让 FastAPI 丢线程池跑。"""
     check_auth(authorization)
     try:
         from workers.ilink_login import fetch_qr
-    except Exception as e:
-        return {
-            "available": False,
-            "note": f"微信模块加载失败（{type(e).__name__}）——多半是依赖没装全。"
-                    "在项目目录跑一下 pip install -r requirements.txt（或 pip install requests qrcode）再重启即可。",
-        }
-    try:
         return fetch_qr()
     except Exception as e:
-        return {
-            "available": False,
-            "note": f"微信二维码暂时取不到（{type(e).__name__}）·过一会儿再点一次。"
-                    "如果一直不行·检查下网络能不能连 ilinkai.weixin.qq.com。",
-        }
+        raise HTTPException(500, f"{type(e).__name__}: {e}")
 
 
 @router.get("/api/wechat/login/poll")
@@ -336,9 +376,9 @@ def wechat_login_poll_endpoint(
     qrcode: str = "",
     authorization: Optional[str] = Header(None),
 ):
-    """卷六十一 · 轮询扫码状态 · confirmed 时落 token + 拉起监听
+    """ · 轮询扫码状态 · confirmed 时落 token + 拉起监听
 
-    ⚠ 同步 def：阻塞 requests · 前端每 2.5s 轮一次·若写 async 会反复卡死事件循环 (卷六十一续修)。"""
+    ⚠ 同步 def：阻塞 requests · 前端每 2.5s 轮一次·async 会反复卡死事件循环 (修)。"""
     check_auth(authorization)
     if not qrcode:
         raise HTTPException(400, "missing qrcode")
@@ -351,7 +391,7 @@ def wechat_login_poll_endpoint(
 
 @router.get("/api/wechat/frequency")
 async def wechat_frequency_get_endpoint(authorization: Optional[str] = Header(None)):
-    """卷六十一 · 主动 CALL 频率档位 (猫系↔犬系) · 当前档 + 全部档位"""
+    """ · 主动 CALL 频率档位 (猫系↔犬系) · 当前档 + 全部档位"""
     check_auth(authorization)
     try:
         from workers.proactive_prefs import status
@@ -365,7 +405,7 @@ async def wechat_frequency_set_endpoint(
     payload: dict = Body(default={}),
     authorization: Optional[str] = Header(None),
 ):
-    """卷六十一 · 设主动 CALL 频率档位 · 写 env (即时 + 持久)"""
+    """ · 设主动 CALL 频率档位 · 写 env (即时 + 持久)"""
     check_auth(authorization)
     preset = (payload or {}).get("preset", "").strip()
     if not preset:
@@ -385,7 +425,7 @@ async def session_repair_endpoint(
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """卷四十六 III 补丁 5 · R3 · 给用户手动触发 session 悬空 tool_call 自愈
+    """ III 补丁 5 · R3 · 给 用户 手动触发 session 悬空 tool_call 自愈
 
     Args (JSON body):
         session_id: 必填 · 例 'aaff8c0c-...'

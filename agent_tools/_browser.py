@@ -20,6 +20,7 @@ browser_fetch（眼）和 browser_act（手）共用这同一个实例 —— �
 from __future__ import annotations
 
 import os
+import re
 import socket
 import subprocess
 import time
@@ -38,6 +39,7 @@ CDP_URL = f"http://{CDP_HOST}:{CDP_PORT}"
 EDGE_PROFILE = Path(
     os.environ.get("DAEMONKEY_EDGE_PROFILE") or (PROJECT_ROOT / "sessions" / "edge_cdp_profile")
 )
+BROWSER_PID_FILE = EDGE_PROFILE / "daemon_browser.pid"
 
 # 候选浏览器——都是 Chromium 内核，CDP 完全一样。Edge 优先（Win 出厂自带、几乎人人有），
 # 没有再退 Chrome。用户也可用 DAEMONKEY_BROWSER_PATH 显式指定（绿色版 / 其他 Chromium 内核）。
@@ -84,16 +86,80 @@ def cdp_available() -> bool:
         return False
 
 
-def ensure_cdp(launch: bool = True, wait_secs: int = 25) -> bool:
-    """确保 daemon 专属 CDP Edge 在跑。
+def _kill_stale_browser() -> int:
+    """只杀命令行里带本 profile 路径的浏览器进程。返回杀掉的个数。"""
+    if os.name != "nt":
+        return 0
+    killed = 0
+    needle = str(EDGE_PROFILE).lower().replace("/", "\\")
+    try:
+        out = subprocess.check_output(
+            ["wmic", "process", "where",
+             "name='msedge.exe' or name='chrome.exe'",
+             "get", "ProcessId,CommandLine"],
+            text=True, errors="replace", timeout=10,
+        )
+    except Exception:
+        out = ""
+    for line in out.splitlines():
+        low = line.lower().replace("/", "\\")
+        if needle in low:
+            m = re.search(r"(\d+)\s*$", line.strip())
+            if m:
+                subprocess.run(["taskkill", "/F", "/T", "/PID", m.group(1)],
+                               capture_output=True)
+                killed += 1
+    # 兜底: wmic 没查到但 pid 档案在 → 直接按 pid 杀
+    if killed == 0 and BROWSER_PID_FILE.exists():
+        pid = BROWSER_PID_FILE.read_text().split()[0]
+        if pid.isdigit():
+            subprocess.run(["taskkill", "/F", "/T", "/PID", pid], capture_output=True)
+            killed += 1
+    if killed:
+        time.sleep(1.5)  # 等句柄/锁释放
+    return killed
 
-    已在 → True；没在且 launch → 用独立 profile + 独立端口起一个浏览器（不碰用户主浏览器）。
+
+def _clean_singleton_locks():
+    for name in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+        try:
+            (EDGE_PROFILE / name).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def cdp_healthy() -> bool:
+    """/json/version 200 且至少有一个 page target —— 白屏僵尸(主进程活、渲染全崩)判不健康。"""
+    if not cdp_available():
+        return False
+    try:
+        targets = httpx.get(f"{CDP_URL}/json/list", timeout=2.0).json()
+        return any(t.get("type") == "page" for t in targets)
+    except Exception:
+        return False
+
+
+def restart_browser(wait_secs: int = 25) -> bool:
+    """杀僵尸 + 清锁 + 重拉专属浏览器。"""
+    _kill_stale_browser()
+    _clean_singleton_locks()
+    return ensure_cdp(launch=True, wait_secs=wait_secs)
+
+
+def ensure_cdp(launch: bool = True, wait_secs: int = 25) -> bool:
+    """确保 daemon 专属 CDP Edge 在跑且健康。
+
+    健康 → True；不健康/没在且 launch → 清僵尸+锁后重拉。
     起不来（没装 Edge/Chrome / 端口没拉起）→ False，由调用方给出可读错误。
     """
-    if cdp_available():
+    if cdp_healthy():
         return True
     if not launch:
         return False
+    # 半死/尸体: 端口被占但 CDP 不应答 → 先清僵尸+锁, 否则 Popen 撞单实例锁静默退出
+    if cdp_available() or BROWSER_PID_FILE.exists():
+        _kill_stale_browser()
+        _clean_singleton_locks()
     exe = _find_browser()
     if not exe:
         return False
@@ -110,11 +176,12 @@ def ensure_cdp(launch: bool = True, wait_secs: int = 25) -> bool:
         # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP —— Edge 不随 daemon 重启而死
         flags = 0x00000008 | 0x00000200
     try:
-        subprocess.Popen(args, creationflags=flags, close_fds=True)
+        proc = subprocess.Popen(args, creationflags=flags, close_fds=True)
+        BROWSER_PID_FILE.write_text(f"{proc.pid} {time.time():.0f}", encoding="utf-8")
     except Exception:
         return False
     for _ in range(max(1, wait_secs)):
-        if cdp_available():
+        if cdp_healthy():
             return True
         time.sleep(1)
     return False

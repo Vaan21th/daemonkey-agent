@@ -1,18 +1,16 @@
 """
 workers/closure_check.py
-========================
+======================== · 收尾检查引擎 (SKILL 触发可靠性修复 · P1/P2/P3 共用地基)
 
-卷五十九 · 收尾检查引擎 (SKILL 触发可靠性修复 · P1/P2/P3 共用地基)
-
-背景 (两次代码侦察 + BRO 2026-06-06 拍板「冲全套」):
+背景 (两次代码侦察 + 用户 2026-06-06 拍板「冲全套」):
   铁律 9「收尾三问」是纯 system_prompt 文字 · 零代码强制 · 高密度写码时常被跳过;
   playbook 存得进、搜得到 · 但「下次自动取出来用」从没接通 · used_count 全 0。
-  根因: 成长类铁律靠 OPUS 自觉 · 安全类铁律 (密钥/大文件/上线) 靠代码硬闸——触发哲学分裂。
+  根因: 成长类铁律靠 Daemonkey 自觉 · 安全类铁律 (密钥/大文件/上线) 靠代码硬闸——触发哲学分裂。
 
 这个模块把「收尾点过三问」从软自觉挪向有节拍器 (一个引擎·三处挂载):
-  - turn 台账: 记录本回合 OPUS 调过哪些工具 (tool_loop 的 observe 钩子喂)
+  - turn 台账: 记录本回合 Daemonkey 调过哪些工具 (tool_loop 的 observe 钩子喂)
   - P1 wish 收尾轻硬闸: wish_update 进 review/live 前 · 干了活却没沉淀 → 拦一次 · 给狡辩出路
-  - P2 任务启动 recall: 用户消息命中已有 playbook → 自动捞出来递到 OPUS 手边
+  - P2 任务启动 recall: 用户消息命中已有 playbook → 自动捞出来递到 Daemonkey 手边
   - P2/P3 turn 结束反思: 干了活没沉淀 → 推一条收尾提示 (SSE 卡片) + 落对账台账
 
 为什么用 ContextVar 不用 RUNTIME 单例:
@@ -27,9 +25,12 @@ import contextvars
 import json
 import logging
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+from agent_tools._subprocess_helper import no_window_kwargs
 
 logger = logging.getLogger("opus.closure")
 
@@ -39,10 +40,10 @@ HINTS_FILE = ROOT / "data" / "runtime" / "closure_hints.jsonl"
 # ── 工具分类 ───────────────────────────────────────────────────────
 # 沉淀 / 三问工具: 本回合调过任一 · 就算「过了收尾三问」
 SINK_TOOLS = {
-    "update_bro_note",        # 问1 · BRO 新信号 → 画像
+    "update_bro_note",        # 问1 · 用户 新信号 → 画像
     "extract_playbook",       # 问2 · 可复用经验 → playbook
     "wish_add",               # 问3 · 能力缺口 → 心愿
-    "update_self_evolution",  # OPUS 日记 (也算沉淀)
+    "update_self_evolution",  # Daemonkey 日记 (也算沉淀)
 }
 
 # 带副作用的「干活」工具: 调了这些 = 这回合真做了事 (不是纯查询 / 闲聊)
@@ -126,10 +127,10 @@ def wish_closure_gate(target_status: str, *, acked: bool = False) -> Optional[st
         return None  # 已经沉淀过 · 放行
     from identity import localize_narration as _ln
     return _ln(
-        "收尾三问没过 (铁律 9 · 代码闸 · 卷五十九)\n\n"
+        "收尾三问没过 (铁律 9 · 代码闸)\n\n"
         f"本回合你干了带副作用的活 (改文件 / 跑命令 / 造 app ...) · 但还没调过任何沉淀工具就想标 `{target_status}`。\n"
         "先过一遍三问 (不是『觉得该不该』· 是硬纪律):\n"
-        "  ① BRO 这次透露新信号了吗? (状态 / 情绪 / 作息 / 偏好 / 决定) → 有则 `update_bro_note`\n"
+        "  ① 用户 这次透露新信号了吗? (状态 / 情绪 / 作息 / 偏好 / 决定) → 有则 `update_bro_note`\n"
         "  ② 这次的操作流程 / 踩坑值得复用吗? → 有则 `extract_playbook`\n"
         "  ③ 发现自己的能力缺口了吗? (『要是我有 X 就不费劲』) → 有则 `wish_add`\n\n"
         "**两条合法出路 (别硬标上线)**:\n"
@@ -180,7 +181,7 @@ def _keyword_playbooks(message: str, limit: int) -> list[dict]:
 #   真命中 top bm25 ∈ [-30, -12] (口播 -13.4 / 分镜 -27.3 / 下载 -23.9 / 前端 -20 / MIME -30 / 长文档 -12)
 #   离题/弱噪音 (天气 / Top2-3 撞词) bm25 ∈ [-9.8, -1]
 #   取 -10 卡断层: 6/6 真命中全过·挡掉"问A带出B"的弱噪音 + 离题 (堵 playbook 噪音注入)。
-#   仅剩主题相邻 playbook 互相带·属强相关·注入无害。
+#   仅剩 B站系主题相邻 (分镜↔下载·都含"B站视频") 互相带·属强相关·注入无害。
 #   注: 库变大后 bm25 绝对值会漂·按真实命中率重校 (跟 relevant_memories 同款调味位)。
 _PB_INJECT_MIN_SCORE = -10.0
 
@@ -190,7 +191,7 @@ def relevant_playbooks(message: str, *, limit: int = 2) -> str:
 
     主路径走 FTS5 (memory_index · jieba 分词 · 高召回·跟 recall_memory(scope='skill') 同源);
     FTS5 不可用退化到关键词匹配 (tag / 标题词)。
-    目的: 把『下次类似任务自动想起 playbook』从 OPUS 自觉挪成 daemon 确定性注入 (堵断点 B)。
+    目的: 把『下次类似任务自动想起 playbook』从 Daemonkey 自觉挪成 daemon 确定性注入 (堵断点 B)。
     """
     msg = (message or "").strip()
     if len(msg) < 4:
@@ -233,16 +234,16 @@ def relevant_playbooks(message: str, *, limit: int = 2) -> str:
 
 
 # ── ① 记忆自动注入 (保守版) ───────────────────────────────────────
-# 把「相关画像自动浮现」从 OPUS 自觉 recall 挪成 daemon 命中即注入·堵
-# 「夸了他 / 让他记下来·下次却不自动想起」这个断点 (闭环: 命中即浮现·不靠 OPUS 自觉)。
+# 把「相关画像自动浮现」从 Daemonkey 自觉 recall 挪成 daemon 命中即注入·堵
+# 「夸了他 / 让他记下来·下次却不自动想起」这个断点 (产品观第2条闭环)。
 # 保守起步: 只 scope=bro · 高 bm25 门槛 · 最多 1 条 · 只给标题+单行摘要 (token 便宜)。
 # 注入进 system 动态尾巴 (跟 relevant_playbooks 同处·不进灵魂缓存前缀)。
-# 阈值/条数是经验值·先开着测命中率与噪音·再按真实使用调。
-# _MEM_INJECT_MIN_SCORE 校准 (14 块画像语料实测):
+# 阈值/条数是经验值·先开着测命中率与噪音·再按真实使用调 (见船长日志 / SELF-EVOLUTION)。
+# _MEM_INJECT_MIN_SCORE 校准 (2026-06-18 · 14 块画像语料实测·tests/smoke_recall_two_stage 探针):
 #   离题 query (写代码/天气/量子物理) top bm25 ∈ [-8, -4.5]
-#   真命中 (作息/偏好/计划类)          top bm25 ∈ [-13, -10.2]
-#   取 -9.0 卡在中间·挡掉离题·放进真命中。
-#   注: bm25 绝对值随画像增长会漂移·语料变大后按 logger 的命中率重校 (调味位)。
+#   真命中 (作息/释权/硬件计划)        top bm25 ∈ [-13, -10.2]
+#   取 -9.0 卡在中间·挡掉离题 (尤其"帮我写代码"高频场景) · 放进真命中。
+#   注: bm25 绝对值随画像增长会漂移·语料变大后按 logger 的命中率重校 (我跟 用户 说过这是调味位)。
 _MEM_INJECT_MIN_SCORE = -9.0    # bm25 越负越相关·只留 <= 此值的强命中·挡离题噪音
 _MEM_INJECT_LIMIT = 1           # 最多注入几条画像 (保守起步=1)
 _MEM_INJECT_MIN_MSG_LEN = 8     # 消息太短不触发 (画像注入比 playbook 更克制)
@@ -250,10 +251,10 @@ _MEM_SNIPPET_CHARS = 180
 
 
 def relevant_memories(message: str, *, limit: int = _MEM_INJECT_LIMIT) -> str:
-    """用户消息强命中画像 → 返回一段拼进 system 的背景提示;无强命中返回空串。
+    """用户消息强命中 用户 画像 → 返回一段拼进 system 的背景提示;无强命中返回空串。
 
     保守版: 只搜 scope=bro · 卡 bm25 高门槛 (_MEM_INJECT_MIN_SCORE) · 最多 limit 条 ·
-    只给 章节标题 + 单行短摘要。目的是把相关偏好/标准在命中时自动递到 OPUS 手边·
+    只给 章节标题 + 单行短摘要。目的是把相关偏好/标准在命中时自动递到 Daemonkey 手边·
     而不是每轮硬塞 (那样既烧 token 又污染推理又破坏缓存)。
     """
     msg = (message or "").strip()
@@ -272,8 +273,8 @@ def relevant_memories(message: str, *, limit: int = _MEM_INJECT_LIMIT) -> str:
 
     top = hits[:limit]
     lines = [
-        "\n\n=== 相关画像 · daemon 自动检索 (来自用户画像·背景参考·别复述这段) ===",
-        "下面是跟这次请求相关的用户画像条目·参照它对齐用户的偏好/标准:",
+        "\n\n=== 相关画像 · daemon 自动检索 (来自 用户 画像·背景参考·别复述这段) ===",
+        "下面是跟这次请求相关的 用户 画像条目·参照它对齐 用户 的偏好/标准:",
     ]
     for c in top:
         sec = (getattr(c, "section", "") or "").strip()
@@ -291,7 +292,7 @@ def relevant_memories(message: str, *, limit: int = _MEM_INJECT_LIMIT) -> str:
 
 
 # ── ①b 知识库自动注入 (私有文档 · "第二大脑") ──────────────────────
-# 病根: 自动召回只 scope=bro · 知识库(scope=docs)从不进上下文 · OPUS 压根不知道
+# 病根: 自动召回只 scope=bro · 知识库(scope=docs)从不进上下文 · Daemonkey 压根不知道
 #       用户灌过资料 → 问"我资料里的事"时凭记忆瞎答 (违反产品观第5条可追溯)。
 # 修法: 知识库非空就给 system 尾巴挂一段——① 列出有哪些文档(标题目录·让它知道能查什么·
 #       也能桥接"软著"↔《软件登记网络包》这种口语↔正式名的词面差) ② 本轮强命中的片段
@@ -304,9 +305,9 @@ _DOC_CATALOG_MAX = 24            # 目录最多列几个标题·防知识库很�
 
 
 def relevant_docs(message: str) -> str:
-    """私有知识库自动注入:非空 → 告知 OPUS 有哪些资料 + 本轮命中片段·引导查证再答并 cite。
+    """私有知识库自动注入:非空 → 告知 Daemonkey 有哪些资料 + 本轮命中片段·引导查证再答并 cite。
 
-    catalog(标题目录)每轮都给·让 OPUS 知道『用户有这些资料·可查』;命中片段只在
+    catalog(标题目录)每轮都给·让 Daemonkey 知道『用户有这些资料·可查』;命中片段只在
     FTS5 强命中时才带正文。无知识库 / 空库 → 返回空串(零 token 零干扰)。
     """
     try:
@@ -345,7 +346,7 @@ def relevant_docs(message: str) -> str:
         except Exception:
             hit_lines = []
 
-    # 常驻(pinned)排前面并打标 · 让 OPUS 优先参考核心资料 (P1 · pinned 生效)
+    # 常驻(pinned)排前面并打标 · 让 Daemonkey 优先参考核心资料 (P1 · pinned 生效)
     docs.sort(key=lambda d: (0 if d.get("pinned") else 1, d.get("added_at", "")))
     catalog = "、".join(
         f"《{d.get('title', '?')}》" + ("(常驻)" if d.get("pinned") else "")
@@ -373,9 +374,9 @@ def relevant_docs(message: str) -> str:
 
 # ── ①c · 显式"记住"意图 → 本轮硬提醒落盘 ──────────────────────────
 # 病根: 用户纯聊天里说"记住我 X / 别忘了 / 以后都"时·这一轮没副作用工具·
-#   turn_end 三问不触发 → OPUS 极大概率只嘴上"好的记住了"·从不调 update_bro_note 落盘。
-#   (BRO 2026-07-12 报的"让他记住的东西他没记"就是这个断点)
-# 修法: 命中显式记忆意图 → 挂 system 尾巴一条硬指令·让 OPUS **本轮就调 update_bro_note**·
+#   turn_end 三问不触发 → Daemonkey 极大概率只嘴上"好的记住了"·从不调 update_bro_note 落盘。
+#   (用户 2026-07-12 报的"让他记住的东西他没记"就是这个断点)
+# 修法: 命中显式记忆意图 → 挂 system 尾巴一条硬指令·让 Daemonkey **本轮就调 update_bro_note**·
 #   而不是等收尾卡 (收尾卡是回复之后才出·救不了当轮)。挂 _sys_tail 不进灵魂缓存前缀。
 _MEM_WRITE_SIGNALS = (
     "记住", "记一下", "记下来", "记下", "记note", "记笔记", "帮我记", "给我记",
@@ -385,7 +386,7 @@ _MEM_WRITE_SIGNALS = (
 
 
 def memory_write_hint(message: str) -> str:
-    """用户显式让 OPUS 记住某事 → 返回一条"本轮必须 update_bro_note 落盘"的 system 指令。
+    """用户显式让 Daemonkey 记住某事 → 返回一条"本轮必须 update_bro_note 落盘"的 system 指令。
 
     只做词面命中 (保守)· 命中才注入·不命中零 token。挂在 system 动态尾巴·当轮生效。
     这是"你说→它落盘"闭环的关键一棒:把落盘时机从"回复之后的收尾卡"提前到"回复之前"。
@@ -400,16 +401,16 @@ def memory_write_hint(message: str) -> str:
         "\n\n=== 记忆落盘 · daemon 自动提示 (别复述这段) ===\n"
         "BRO 这一轮像是明确要你**记住某件事**。别只在回复里说『好的记住了』——那样下一根毛就丢了。\n"
         "**本轮就调 `update_bro_note` 把它写进对应维度** (profile=当下状态 / events=时间线 / "
-        "rules=长期特征 / dialogue=口头记号 / summary=月度压缩 / risks=风险信号)·写完再回复 BRO。\n"
+        "rules=长期特征 / dialogue=口头记号 / summary=月度压缩 / risks=风险信号)·写完再回复 用户。\n"
         "写的时候按规范:一条一句、带日期、带原话(如果有)、别把整段聊天糊进去。\n"
         "若确实不值得长期留存 (闲聊 / 临时上下文)·可跳过·但你要在心里过一遍这个判断。"
     )
 
 
 # ── ①d · 客户对话侧写 (B-P1/P2 · 命中已知客户/交易信号 → 软提醒记档) ─────
-# 病根: 跟客户聊出新进展(谈定/交付/状态变)时·OPUS 极少主动把它记进客户档案·
+# 病根: 跟客户聊出新进展(谈定/交付/状态变)时·Daemonkey 极少主动把它记进客户档案·
 #   档案不长厚 = "合伙人记得每个客户"落空。修法:命中即软提醒(不是硬闸)·
-#   OPUS 自己判断值不值得记·别打断当前话题。挂 _sys_tail·当轮生效。
+#   Daemonkey 自己判断值不值得记·别打断当前话题。挂 _sys_tail·当轮生效。
 _CLIENT_STATUS_CN = {"lead": "线索", "active": "在合作", "paused": "暂停", "done": "已结束"}
 _CLIENT_SIGNALS = (
     "客户", "甲方", "乙方", "对接", "对接人", "合作方", "合作", "签了", "签约", "成交",
@@ -448,7 +449,7 @@ def client_extract_hint(message: str) -> str:
     """命中已知客户 或 强客户/交易信号 → 一段软提醒:用 manage_client 记进档案。
 
     命中已建档客户 → 提醒有新进展就 note/status;只命中信号词(没建档)→ 提醒可 add。
-    软提醒·非硬闸·OPUS 自行判断;无命中零 token 零干扰。
+    软提醒·非硬闸·Daemonkey 自行判断;无命中零 token 零干扰。
     """
     msg = (message or "").strip()
     if len(msg) < 4:
@@ -475,15 +476,15 @@ def client_extract_hint(message: str) -> str:
         lines.append(
             "BRO 像是在聊一个客户 / 合作 / 交易。若这是个值得长期跟进的客户、且还没建档· 可以 "
             "`manage_client(action='add', name='...')` 建一份(把已知的公司 / 角色 / 需求一起带上)· "
-            "之后每次进展用 note 追加。**不确定值不值得建档·就先别建**(或自然地问 BRO 一句)。"
+            "之后每次进展用 note 追加。**不确定值不值得建档·就先别建**(或自然地问 用户 一句)。"
         )
     return "\n".join(lines)
 
 
 # ── ①e · 情感轨 (C · 隐式闲聊信号 → 悄悄记·不尬 callback) ──────────────
-# 病根: memory_write_hint 只接『显式说记住』· 但 BRO 闲聊里随口透露的个人的点
+# 病根: memory_write_hint 只接『显式说记住』· 但 用户 闲聊里随口透露的个人的点
 #   (爱吃啥 / 今天很累 / 家里的事) 没说"记住"·就永远漏掉——而这恰是合伙人该默默记住的。
-# 修法: 命中隐式个人信号 → 软提醒 OPUS 悄悄 update_bro_note · 严禁当面 callback / 为记而记 ·
+# 修法: 命中隐式个人信号 → 软提醒 Daemonkey 悄悄 update_bro_note · 严禁当面 callback / 为记而记 ·
 #   记下后靠 relevant_memories 在未来合适语境自然浮现(而不是现在尬夸尬关心)。
 # 与 memory_write_hint 互补: daemon_api 里显式已命中时不叠加本条(避免双重指令)。
 _CASUAL_SIGNALS = (
@@ -545,7 +546,7 @@ def casual_profile_hint(message: str) -> str:
 # 被动侧(上面)靠 relevant_memories 在合适语境自然浮现;主动侧是"隔几天主动关心一句"。
 # 防尬四道闸:① 只对身体/情绪/大生活节点回访(口味不回访)· ② 首次提到后隔 >18h 才成熟
 #   (不在同场对话里追)· ③ 单条回访后 72h 冷却、最多回访 2 次· ④ 语境门控:只在闲聊/打招呼
-#   这种自然时刻给一次·且一天全局最多一次。给的是软提示·OPUS 语境不合适可以当没看到。
+#   这种自然时刻给一次·且一天全局最多一次。给的是软提示·Daemonkey 语境不合适可以当没看到。
 _CARE_STATE = ROOT / "data" / "runtime" / "care_followups.json"
 _CARE_SIGNALS = (
     # 身体 / 疲惫(值得隔几天问一句"缓过来没")
@@ -605,9 +606,9 @@ def _care_save(d: dict) -> None:
 
 
 def note_care_signals(message: str) -> None:
-    """每轮跑一遍(便宜)· BRO 提到身体/情绪/大生活节点 → 记一个"待回访候选"。
+    """每轮跑一遍(便宜)· 用户 提到身体/情绪/大生活节点 → 记一个"待回访候选"。
 
-    同信号再次出现 = BRO 还在这事上 → 刷新成熟钟、清回访计数(别在他正说时插嘴回访)。
+    同信号再次出现 = 用户 还在这事上 → 刷新成熟钟、清回访计数(别在他正说时插嘴回访)。
     命中"好多了/没事了"等 → 放手最近一条(已解决就别再回访)。只写状态·不注入任何 token。
     """
     msg = (message or "").strip()
@@ -623,7 +624,7 @@ def note_care_signals(message: str) -> None:
     d = _care_load()
     items = d.get("items") or []
     if resolved and items:
-        items = items[:-1]          # 最近一条视为已被 BRO 亲口交代好了 → 放手
+        items = items[:-1]          # 最近一条视为已被 用户 亲口交代好了 → 放手
         d["items"] = items
         _care_save(d)
         if not hit:
@@ -674,7 +675,7 @@ def _find_ripe_care(items: list, now: datetime, *, need_no_proactive: bool = Fal
 def care_followup_hint(message: str) -> str:
     """被动侧:有"成熟"的待回访候选 + 当前是闲聊/打招呼语境 → 给一条软回访提示(每天最多一次)。
 
-    语境不合适(在干正事)一律不给。给出的也只是建议·OPUS 可判断当下不合适而略过。
+    语境不合适(在干正事)一律不给。给出的也只是建议·Daemonkey 可判断当下不合适而略过。
     与主动侧(mature_care_candidate)共享 care_followups.json 状态·同日/72h 内绝不双重关心。
     """
     msg = (message or "").strip()
@@ -713,7 +714,7 @@ def care_followup_hint(message: str) -> str:
         "\n\n=== 温柔回访 · daemon 自动提示 (别复述这段) ===\n"
         f"BRO {when}提过「{ripe.get('text', '')}」(身体 / 心情类信号)· 之后没再提起。\n"
         "**若这轮语境自然(在闲聊 / 打招呼)· 可以轻轻关心一句**(好点没 / 那阵子缓过来没)· 一句就够、别追问。\n"
-        "红线:只要语境稍不合适(在干正事 / 技术讨论 / BRO 有明确任务)就**当没看到·别提**。"
+        "红线:只要语境稍不合适(在干正事 / 技术讨论 / 用户 有明确任务)就**当没看到·别提**。"
         "别显得在查户口·别硬 callback。关心是顺势·不是打卡。"
     )
 
@@ -765,33 +766,121 @@ def mark_care_surfaced(signal: str, *, proactive: bool = False) -> None:
 
 
 # ── P2/P3 · turn 结束反思 ─────────────────────────────────────────
+# ── git 欠账对账 (wish-0f8e0ea3 · 铁律 9 第四问的代码闸) ─────────────
+# 设计哲学: 验收信号是瞬时事件·漏接就没了; 但「分支欠账」是持久状态·永不消失。
+# 所以不靠词表赌『每个验收信号都被接住』·靠状态对账赌『漏了下次也能翻出来』。
+# 干了活的 turn 结束时顺带查一次 (只读 git · <200ms) · 有欠账就塞进收尾提示。
+# 冷却 1h: 同一欠账签名不重复烦; 签名变了 (欠账增减/换分支) 立刻重提。
+
+_DEBT_NUDGE_COOLDOWN_SEC = 3600.0
+_last_debt_nudge: dict = {"sig": "", "ts": 0.0}
+
+
+def _git_debt() -> Optional[dict]:
+    """查 git 欠账 (只读 · best-effort)。
+
+    返回 None = 无欠账或查询失败; dict = {branch, ahead, dirty}。
+    ahead = 当前分支领先 master 的 commit 数 (在 master 上恒 0——散改已在主干);
+    dirty = 工作区未提交改动数。
+    """
+    try:
+        def _run(*args: str) -> str:
+            r = subprocess.run(
+                ["git", *args], cwd=str(ROOT), capture_output=True,
+                text=True, encoding="utf-8", errors="replace", timeout=10,
+                **no_window_kwargs(),
+            )
+            return (r.stdout or "").strip()
+
+        branch = _run("branch", "--show-current") or "?"
+        dirty = len([ln for ln in _run("status", "--porcelain").splitlines() if ln.strip()])
+        ahead = 0
+        if branch != "master":
+            n = _run("rev-list", "--count", "master..HEAD")
+            ahead = int(n) if n.isdigit() else 0
+        if not ahead and not dirty:
+            return None
+        return {"branch": branch, "ahead": ahead, "dirty": dirty}
+    except Exception as e:
+        logger.debug("_git_debt failed: %s", e)
+        return None
+
+
+def _debt_should_nudge(sig: str) -> bool:
+    """同一欠账签名冷却 1h 内不重复提醒; 签名变了立刻重提 (返回 True 并记录)。"""
+    now = datetime.now(timezone.utc).timestamp()
+    if sig != _last_debt_nudge["sig"] or now - _last_debt_nudge["ts"] > _DEBT_NUDGE_COOLDOWN_SEC:
+        _last_debt_nudge["sig"] = sig
+        _last_debt_nudge["ts"] = now
+        return True
+    return False
+
+
+def _debt_text(debt: dict) -> str:
+    parts = []
+    if debt["ahead"]:
+        parts.append(f"分支 `{debt['branch']}` 领先 master {debt['ahead']} 个 commit 未合")
+    if debt["dirty"]:
+        parts.append(f"工作区 {debt['dirty']} 个文件未提交")
+    return " · ".join(parts)
+
+
+_DEBT_SUGGESTION = {
+    "tool": "worktree_status",
+    "q": "有未合并 commit / 未提交改动? 查一下 · 该合走 safe_merge",
+}
+
+
 def turn_end_report(tools: Optional[list] = None) -> Optional[dict]:
     """一轮 chat 结束后调。返回 None = 不必提示;返回 dict = 该提醒收尾沉淀。
 
     触发: 副作用工具被调 ≥ 阈值 (真在干活) · 且本回合没调任何沉淀工具。
+    例外: 即使已沉淀 · 若有 git 欠账 (铁律 9 第四问) 也返回欠账-only 提示。
     返回 dict 给前端渲染收尾提示卡 + 落对账台账。
     """
     t = tools if tools is not None else tools_called()
     se_calls = [x for x in t if x in SIDE_EFFECT_TOOLS]
     if len(se_calls) < _TURN_END_MIN_SIDE_EFFECTS:
         return None
+
+    # ④ 欠账对账: 干了活的 turn 顺带查 git (跟沉不沉淀无关——漏接的验收信号靠它捞回来)
+    debt_hint = None
+    debt = _git_debt()
+    if debt:
+        sig = f"{debt['branch']}|{debt['ahead']}|{debt['dirty']}"
+        if _debt_should_nudge(sig):
+            debt_hint = _debt_text(debt)
+
     if did_sink(t):
-        return None  # 已沉淀 · 不打扰
+        if debt_hint:
+            return {
+                "kind": "closure_hint",
+                "side_effect_tools": sorted(set(se_calls)),
+                "side_effect_calls": len(se_calls),
+                "suggestions": [_DEBT_SUGGESTION],
+                "text": "git 欠账对账: " + debt_hint + "。收尾第四问: 要不要处理?",
+            }
+        return None  # 已沉淀且无欠账 · 不打扰
 
     se_kinds = sorted(set(se_calls))
+    suggestions = [
+        {"tool": "update_bro_note", "q": "BRO 这次透露新信号了吗?"},
+        {"tool": "extract_playbook", "q": "这次的操作流程 / 踩坑值得复用吗?"},
+        {"tool": "wish_add", "q": "发现自己的能力缺口了吗?"},
+    ]
+    text = (
+        "这回合你动了 " + "、".join(se_kinds)
+        + f" (共 {len(se_calls)} 次) · 但没沉淀任何东西。要不要过一遍收尾三问?"
+    )
+    if debt_hint:
+        suggestions.append(_DEBT_SUGGESTION)
+        text += " 另 · git 欠账: " + debt_hint + "。"
     return {
         "kind": "closure_hint",
         "side_effect_tools": se_kinds,
         "side_effect_calls": len(se_calls),
-        "suggestions": [
-            {"tool": "update_bro_note", "q": "BRO 这次透露新信号了吗?"},
-            {"tool": "extract_playbook", "q": "这次的操作流程 / 踩坑值得复用吗?"},
-            {"tool": "wish_add", "q": "发现自己的能力缺口了吗?"},
-        ],
-        "text": (
-            "这回合你动了 " + "、".join(se_kinds)
-            + f" (共 {len(se_calls)} 次) · 但没沉淀任何东西。要不要过一遍收尾三问?"
-        ),
+        "suggestions": suggestions,
+        "text": text,
     }
 
 
@@ -799,7 +888,7 @@ def ledger_hint(session_id: str) -> str:
     """③ 抗套娃 · 本会话活跃任务账本 → 每轮无损回灌进易变尾巴。无活跃账本返回空串。
 
     账本【不进语义压缩】(压缩发生在 messages 层·这是 system_suffix 层)·所以哪怕
-    久远对话被摘要掉·"哪条路通了/死了/做了什么决策"这些结论一定还在眼前。
+    久远对话被摘要掉·"哪条路通了/死了/做了什么决策"这些结论一定还在 Daemonkey 眼前。
     """
     try:
         from workers import task_ledger as _tl
@@ -811,7 +900,7 @@ def ledger_hint(session_id: str) -> str:
 def record_hint(session_id: str, report: dict) -> None:
     """把一条收尾提示落进对账台账 closure_hints.jsonl (best-effort·失败不影响主流程)。
 
-    给 BRO / OPUS 事后对账用: 回看『哪些 turn 干了活却没沉淀』·闭环不靠当场记得。
+    给 用户 / Daemonkey 事后对账用: 回看『哪些 turn 干了活却没沉淀』·闭环不靠当场记得。
     """
     try:
         HINTS_FILE.parent.mkdir(parents=True, exist_ok=True)

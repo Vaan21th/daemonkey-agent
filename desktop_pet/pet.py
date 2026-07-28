@@ -2,12 +2,12 @@
 desktop_pet/pet.py
 ==================
 
-OPUS 桌宠 v0.1 —— PyQt6 重写版。
+Daemonkey 桌宠 v0.1 —— PyQt6 重写版。
 
-设计目标：
-  - **平时是像素小猫，在桌面游走**（三花/橙猫风格）
+设计响应 用户 2026-05-16 03:13 的反馈：
+  - **平时是像素小猫，在桌面游走**（图2 三花/橙猫风格）
   - **触发表情时头顶弹出气泡**（颜文字）
-  - **OPUS 心电图**：daemon 在做什么，桌宠的小猫就反映什么
+  - **Daemonkey 心电图**：daemon 在做什么，桌宠的小猫就反映什么
   - 拖拽、双击弹快速命令框、右键菜单
   - 鼠标接近时小猫看向鼠标
   - 夜间模式（凌晨 2-5 点）速度变慢
@@ -19,7 +19,7 @@ OPUS 桌宠 v0.1 —— PyQt6 重写版。
   - QTimer 控制游走、气泡淡出、状态轮询
 
 文件桥（和 daemon 通信）：
-  - state.txt    OPUS 显式情绪（set_emotion 工具）
+  - state.txt    Daemonkey 显式情绪（set_emotion 工具）
   - activity.txt daemon 隐式活动（tool_loop 钩子自动写）
   - position.txt 桌宠位置记忆（自己写）
 
@@ -36,41 +36,28 @@ import sys
 import time
 from pathlib import Path
 
-try:
-    from PyQt6.QtCore import Qt, QTimer, QPoint, QSize
-    from PyQt6.QtGui import (
-        QAction,
-        QColor,
-        QFont,
-        QGuiApplication,
-        QPainter,
-        QPainterPath,
-        QPen,
-        QPixmap,
-        QTransform,
-    )
-    from PyQt6.QtWidgets import (
-        QApplication,
-        QDialog,
-        QInputDialog,
-        QLabel,
-        QMenu,
-        QVBoxLayout,
-        QWidget,
-    )
-except ImportError:
-    # 桌宠是可选功能·没装 PyQt6 时给个原生弹窗 (pythonw 无控制台也能看到)·别静默崩
-    _MSG = (
-        "桌宠需要 PyQt6 才能跑。\n\n"
-        "去启动器『环境』页点『安装/修复环境』·或手动跑：\n"
-        ".venv\\Scripts\\python.exe -m pip install PyQt6"
-    )
-    try:
-        import ctypes
-        ctypes.windll.user32.MessageBoxW(0, _MSG, "桌宠 · 缺依赖 PyQt6", 0x40)
-    except Exception:
-        print(_MSG)
-    raise SystemExit(1)
+from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, QUrl
+from PyQt6.QtMultimedia import QSoundEffect
+from PyQt6.QtGui import (
+    QAction,
+    QColor,
+    QFont,
+    QGuiApplication,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QTransform,
+)
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QInputDialog,
+    QLabel,
+    QMenu,
+    QVBoxLayout,
+    QWidget,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -83,9 +70,9 @@ from desktop_pet.expressions import (  # noqa: E402
     variants_for,
 )
 from desktop_pet.activities import (  # noqa: E402
-    ACTIVITY_STALE_SECONDS,
     IDLE_ACTIVITY,
     read_last_events,
+    read_last_notify,
 )
 
 
@@ -95,6 +82,10 @@ ACTIVITY_FILE = PET_DIR / "activity.txt"
 POSITION_FILE = PET_DIR / "position.txt"
 SPRITE_DIR = PET_DIR / "sprites"
 MANIFEST_FILE = SPRITE_DIR / "manifest.json"
+
+# 完成提示音 (wish-fb6b7427): done 通知时播 ding/manbo.wav · 开关读 data/notification_config.json
+DONE_SOUND_FILE = PROJECT_ROOT / "ding" / "manbo.wav"
+NOTIFY_CFG_FILE = PROJECT_ROOT / "data" / "notification_config.json"
 
 # state → 优先动作（如果 manifest 没有，走 fallback 链）。
 # 第一项是首选；后续是 fallback 顺序，最后总是落到 idle / 静态 sprite。
@@ -141,7 +132,7 @@ FRAME_INTERVAL_MS_BY_STATE: dict[str, int] = {
 }
 FRAME_INTERVAL_MS_WALKING = 100   # 走路节拍（独立于 state，快脚步）
 
-# state 持久过期 —— OPUS 设了 happy/thinking 后多久回 idle（兜底，避免卡住）
+# state 持久过期 —— Daemonkey 设了 happy/thinking 后多久回 idle（兜底，避免卡住）
 STATE_STALE_SECONDS = 30.0
 NIGHT_SLOWDOWN = 0.4
 DRAG_PAUSE_S = 0.3             # 拖完只 paused 0.3 秒就继续游走
@@ -149,10 +140,14 @@ DRAG_PAUSE_S = 0.3             # 拖完只 paused 0.3 秒就继续游走
 POLL_TICK_MS = 1000
 BUBBLE_AUTO_HIDE_MS = 5000
 ACTIVITY_BUBBLE_HIDE_MS = 2500
+# 通知气泡显示时长 · 比脉搏久 (用户 要看得见) · confirm 最久 (等他回来拍板)
+NOTIFY_DONE_HIDE_MS = 6000
+NOTIFY_CONFIRM_HIDE_MS = 12000
+NOTIFY_INFO_HIDE_MS = 5000
 
 
 def _is_night() -> bool:
-    """凌晨 2~5 点桌宠速度变慢——和用户的作息对齐·夜里别太闹腾。"""
+    """凌晨 2~5 点桌宠速度变慢——和 用户 的'昼伏夜出+火光时间'对齐。"""
     h = dt.datetime.now().hour
     return 2 <= h < 5
 
@@ -172,12 +167,21 @@ class Bubble(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
 
         self._text = ""
+        self._border = BUBBLE_BORDER
+        self._fg = BUBBLE_TEXT
         self._auto_hide = QTimer(self)
         self._auto_hide.setSingleShot(True)
         self._auto_hide.timeout.connect(self.hide)
 
-    def show_text(self, text: str, ms: int = BUBBLE_AUTO_HIDE_MS) -> None:
+    def show_text(self, text: str, ms: int = BUBBLE_AUTO_HIDE_MS, accent: QColor | None = None) -> None:
+        """弹气泡。accent 传了就用醒目色 (confirm=橙黄 / done=青绿) · 默认青蓝。"""
         self._text = text
+        if accent is not None:
+            self._border = accent
+            self._fg = accent
+        else:
+            self._border = BUBBLE_BORDER
+            self._fg = BUBBLE_TEXT
         fm = self.fontMetrics()
         f = BUBBLE_FONT
         self.setFont(f)
@@ -207,11 +211,11 @@ class Bubble(QWidget):
         path = path.united(tri)
 
         p.setBrush(BUBBLE_BG)
-        p.setPen(QPen(BUBBLE_BORDER, 1.5))
+        p.setPen(QPen(self._border, 1.5))
         p.drawPath(path)
 
         p.setFont(BUBBLE_FONT)
-        p.setPen(BUBBLE_TEXT)
+        p.setPen(self._fg)
         p.drawText(
             BUBBLE_PADDING,
             BUBBLE_PADDING,
@@ -238,7 +242,33 @@ class OpusPet(QWidget):
         self._last_state_file_text: str = ""
         self._last_activity_file_text: str = ""
         self._last_activity_mtime: float = 0.0
+        # 启动基线 (2026-07-28): 只弹启动后新来的脉搏/通知 · 重启桌宠不重弹旧消息
         self._last_pulse_ts: float = 0.0
+        self._last_notify_ts: float = 0.0
+        try:
+            _ev = read_last_events(1)
+            if _ev:
+                self._last_pulse_ts = float(_ev[-1].get("ts", 0) or 0)
+        except Exception:
+            pass
+        try:
+            _nt = read_last_notify(1)
+            if _nt:
+                self._last_notify_ts = float(_nt[-1].get("ts", 0) or 0)
+        except Exception:
+            pass
+        # 一次性动作 override (2026-07-28): notify done→meow / confirm→curious
+        self._override_action: str | None = None
+        self._override_until: float = 0.0
+        # 完成提示音 (wish-fb6b7427): QSoundEffect 必须常驻引用 · 加载失败=无声不崩
+        self._done_sound: QSoundEffect | None = None
+        try:
+            if DONE_SOUND_FILE.exists():
+                self._done_sound = QSoundEffect(self)
+                self._done_sound.setSource(QUrl.fromLocalFile(str(DONE_SOUND_FILE)))
+                self._done_sound.setVolume(0.8)
+        except Exception:
+            self._done_sound = None
 
         self._action_frames: dict[str, list[QPixmap]] = {}
         self._idle_pixmap: QPixmap | None = None
@@ -296,7 +326,7 @@ class OpusPet(QWidget):
         recenter.triggered.connect(self._recenter)
         self._menu.addAction(recenter)
 
-        about = QAction("  关于 OPUS 桌宠 v0.1", self)
+        about = QAction("  关于 Daemonkey 桌宠 v0.1", self)
         about.triggered.connect(self._about)
         self._menu.addAction(about)
 
@@ -307,7 +337,7 @@ class OpusPet(QWidget):
     def _load_sprites(self) -> None:
         """
         加载顺序：
-          1. 优先 sprites/manifest.json 里声明的多动作 sprite（自己跑图 + tools/process_sprites.py 处理后产生）
+          1. 优先 sprites/manifest.json 里声明的多动作 sprite（用户 跑出来 + tools/process_sprites.py 处理后产生）
           2. fallback 到 v0.1 的初版 cat_01_idle / cat_02_walk1 / cat_03_walk2
         """
         if not SPRITE_DIR.exists():
@@ -366,6 +396,13 @@ class OpusPet(QWidget):
 
     def _frames_for_state(self, state: str, walking: bool) -> list[QPixmap]:
         """根据当前 state + 是否在走，挑一组帧序列。manifest 优先，否则 fallback。"""
+        # 一次性动作 override (notify 播 meow/curious) · 优先于 walking 和 state
+        if self._override_action and time.monotonic() < self._override_until:
+            frames = self._action_frames.get(self._override_action)
+            if frames:
+                return frames
+            self._override_action = None  # 没资源 · 落回正常逻辑
+
         if walking:
             walk = self._action_frames.get(WALK_ACTION)
             if walk:
@@ -405,7 +442,9 @@ class OpusPet(QWidget):
 
     def _tick_frame_anim(self) -> None:
         """全局 sprite 帧推进——按 state 调速（idle 慢，jump 快），让动作有呼吸感。"""
-        if self._is_walking:
+        if self._override_action and time.monotonic() < self._override_until:
+            target_interval = FRAME_INTERVAL_MS_DEFAULT  # 通知动作 200ms 节拍 · 生动
+        elif self._is_walking:
             target_interval = FRAME_INTERVAL_MS_WALKING
         else:
             target_interval = FRAME_INTERVAL_MS_BY_STATE.get(self._state, FRAME_INTERVAL_MS_DEFAULT)
@@ -479,7 +518,7 @@ class OpusPet(QWidget):
             pass
 
         # v0.1.2 兜底：state 卡住超过 STATE_STALE_SECONDS 自动回 idle
-        # 防止 OPUS 设了 thinking/happy 后没人清，桌宠永远卡住一个动作
+        # 防止 Daemonkey 设了 thinking/happy 后没人清，桌宠永远卡住一个动作
         if (
             self._state != DEFAULT_STATE
             and (time.time() - self._state_set_at) > STATE_STALE_SECONDS
@@ -491,7 +530,7 @@ class OpusPet(QWidget):
             self._last_state_file_text = DEFAULT_STATE
             self._on_state_change(DEFAULT_STATE, source="stale")
 
-        # OPUS 脉搏 (wish-7330d23f): 从 activity.jsonl 读最新事件显示真实文字
+        # Daemonkey 脉搏 (wish-7330d23f): 从 activity.jsonl 读最新事件显示真实文字
         try:
             events = read_last_events(3)
             if events:
@@ -512,6 +551,36 @@ class OpusPet(QWidget):
         except Exception:
             pass
 
+        # 通知通道 (2026-07-28): notify.jsonl —— 干完了 / 等你拍板
+        # 跟脉搏不同: 不受 state==idle 限制 (重要通知该弹就弹) · 显示更久 · 醒目色
+        try:
+            notes = read_last_notify(2)
+            if notes:
+                latest_n = notes[-1]
+                nts = latest_n.get("ts", 0)
+                if nts > self._last_notify_ts:
+                    self._last_notify_ts = nts
+                    kind = latest_n.get("kind", "info")
+                    ntext = latest_n.get("text", "")
+                    if ntext:
+                        if kind == "done":
+                            self._play_action("meow", 3.0)  # 干完了 → 喵三秒 (raw_meow 序列)
+                            self._play_done_sound()  # 干完了 → ding (wish-fb6b7427)
+                            self._show_bubble(
+                                f"🎉 {ntext}", NOTIFY_DONE_HIDE_MS,
+                                accent=QColor(72, 187, 120, 255),
+                            )
+                        elif kind == "confirm":
+                            self._play_action("curious", 4.0)  # 等你拍板 → 好奇脸四秒
+                            self._show_bubble(
+                                f"⚠️ {ntext}", NOTIFY_CONFIRM_HIDE_MS,
+                                accent=QColor(245, 185, 66, 255),
+                            )
+                        else:
+                            self._show_bubble(f"💬 {ntext}", NOTIFY_INFO_HIDE_MS)
+        except Exception:
+            pass
+
     def _on_state_change(self, new_state: str, *, source: str) -> None:
         self._state = new_state
         self._state_set_at = time.time()  # v0.1.2 标记，便于 stale 检测
@@ -520,14 +589,42 @@ class OpusPet(QWidget):
         if new_state in {"happy", "greeting", "surprised"}:
             self._walk_paused_until = time.monotonic() + 1.5
 
-    def _show_bubble(self, text: str, ms: int = BUBBLE_AUTO_HIDE_MS) -> None:
+    def _play_action(self, action: str, seconds: float) -> None:
+        """一次性播一个动作 N 秒 (notify 用) · 播完自动回 state 对应序列 · 同时暂停游走。"""
+        if action not in self._action_frames:
+            return
+        self._override_action = action
+        self._override_until = time.monotonic() + seconds
+        self._walk_paused_until = time.monotonic() + seconds
+        self._frame_tick_idx = 0
+        self._render()
+
+    def _play_done_sound(self) -> None:
+        """完成提示音 (wish-fb6b7427) · 开关读 data/notification_config.json (文件桥跟 daemon 对齐)。
+
+        配置读不动 = 默认播 (跟 notify.jsonl 消费哲学一致: 坏了宁可多提醒 · 不可静默丢)。
+        """
+        try:
+            if NOTIFY_CFG_FILE.exists():
+                cfg = json.loads(NOTIFY_CFG_FILE.read_text(encoding="utf-8"))
+                if isinstance(cfg, dict) and not cfg.get("pet_sound", True):
+                    return
+        except Exception:
+            pass
+        if self._done_sound is not None:
+            try:
+                self._done_sound.play()
+            except Exception:
+                pass
+
+    def _show_bubble(self, text: str, ms: int = BUBBLE_AUTO_HIDE_MS, accent: QColor | None = None) -> None:
         # v0.1.1 bug fix：先把气泡 move 到正确位置再 show，否则 isVisible 检查
         # 在 OS 真正贴图前为 False 会导致 _reposition_bubble 提前 return
         bw_estimate = max(120, len(text) * 18)
         bx = self.x() + (self.width() - bw_estimate) // 2
         by = self.y() - 60
         self._bubble.move(bx, by)
-        self._bubble.show_text(text, ms)
+        self._bubble.show_text(text, ms, accent=accent)
         self._reposition_bubble()
 
     def _reposition_bubble(self) -> None:
@@ -577,13 +674,13 @@ class OpusPet(QWidget):
     def _about(self) -> None:
         msg = (
             "OPUS 桌宠 v0.1\n"
-            "—— 情绪通道-001 + OPUS 心电图 ——\n\n"
+            "—— 情绪通道-001 + Daemonkey 心电图 ——\n\n"
             "操作：\n"
             "  鼠标左键拖动：移动\n"
             "  双击：弹快速命令框\n"
             "  右键：菜单（切表情/回中/退出）\n\n"
             "文件桥：\n"
-            "  desktop_pet/state.txt    OPUS 主动情绪（set_emotion）\n"
+            "  desktop_pet/state.txt    Daemonkey 主动情绪（set_emotion）\n"
             "  desktop_pet/activity.txt daemon 自动活动（工具调用）\n"
             "  desktop_pet/position.txt 位置记忆\n\n"
             "夜间模式：凌晨 2-5 点游走速度自动减慢"
@@ -621,7 +718,7 @@ class OpusPet(QWidget):
         if e.button() != Qt.MouseButton.LeftButton:
             return
         text, ok = QInputDialog.getText(
-            self, "对 OPUS 说一句", "（这会写到 desktop_pet/inbox.txt——daemon 端 v0.2 会读它）："
+            self, "对 Daemonkey 说一句", "（这会写到 desktop_pet/inbox.txt——daemon 端 v0.2 会读它）："
         )
         if ok and text.strip():
             inbox = PET_DIR / "inbox.txt"
