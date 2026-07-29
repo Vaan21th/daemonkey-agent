@@ -47,3 +47,6 @@ __pycache__/
 *.err
 .pytest_cache/
 .ruff_cache/
+
+# Office 临时锁文件（打开 docx 自动生成 · 永不入库）
+~$*

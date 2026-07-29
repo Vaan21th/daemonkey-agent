@@ -23,12 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-_SNIPPET = (
-    "import os,sys; sys.path.insert(0,'.'); "
-    "os.environ.setdefault('OPUS_API_TOKEN','verify-gate-token'); "
-    "from agent_tools.verify_daemon_endpoints import _run; "
-    "r=_run({}); print(r.output); sys.exit(0 if r.ok else 1)"
-)
+from agent_tools.verify_daemon_endpoints import _SUBPROCESS_SNIPPET as _SNIPPET
 
 
 def _python() -> str:

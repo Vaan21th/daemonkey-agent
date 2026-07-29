@@ -598,6 +598,20 @@ _FILE_KIND_RULES: list[tuple[str, str, str]] = [
 ]
 
 
+# 欠账豁免 (2026-07-29 用户拍板): demo/方案稿/临时文件不算欠账。
+# 用户原话: 欠账胶囊只该收「daemonkey 应用、工作流、用户开发升级的 WISH、
+# 或没 WISH 的核心改动」——做方案对比产的 demo-* 文件不该亮胶囊。
+# 用黑名单制 (核心改动枚举不完 · 豁免类是有限的)。
+_DEBT_EXEMPT_PREFIXES = ("demo-", "~$")
+_DEBT_EXEMPT_SUFFIXES = (".tmp", ".bak", ".orig")
+
+
+def is_debt_exempt(path: str) -> bool:
+    """路径是否欠账豁免 (demo/临时文件)。面板与亮灯共用同一事实源。"""
+    name = path.replace("\\", "/").rsplit("/", 1)[-1]
+    return name.startswith(_DEBT_EXEMPT_PREFIXES) or name.endswith(_DEBT_EXEMPT_SUFFIXES)
+
+
 def _classify_file(path: str) -> tuple[str, str]:
     """路径 → (kind, 人话标签)。先按前缀规则 · 再按扩展名兜底。"""
     for prefix, kind, label in _FILE_KIND_RULES:
@@ -642,6 +656,8 @@ def git_debt_detail() -> dict:
                     p = p.split(" -> ", 1)[1].strip()
                 p = p.strip('"')
                 if not p:
+                    continue
+                if is_debt_exempt(p):  # 2026-07-29 用户拍板: demo/临时文件不算欠账
                     continue
                 kind, label = _classify_file(p)
                 files.append({"path": p, "status": status, "kind": kind, "label": label})

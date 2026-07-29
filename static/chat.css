@@ -2317,15 +2317,30 @@ header {
 }
 
 
-/*丁6 · 工具进度条 · Daemonkey 跑长 tool 链时让 用户 一眼知道在干啥 */
+/* 补丁6 · 工具进度条 · Daemonkey 跑长 tool 链时让用户一眼知道在干啥
+ * 2026-07-29 方案 A「流光细条」重构 (用户拍板): 削掉蓝灰大色块+整行扫光,
+ * 只留底部一道 2px 主题色流光。颜色全走 --opus 变量 · 8 套皮肤自适应。
+ * 2026-07-29 二轮 (用户视觉反馈): 去 border-top 上框 + 背景改 transparent,
+ * 跟上方消息区底色融为一体·视觉延展;唯一"进行中"信号=底部流光。 */
 .tool-progress {
   flex: 0 0 auto;
-  background: linear-gradient(90deg, rgba(102, 158, 255, 0.10), rgba(102, 158, 255, 0.04));
-  border-top: 1px solid var(--border);
-  font-size: 12px;
-  color: var(--dim1);
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--dim);
   position: relative;
   overflow: hidden;
+}
+.tool-progress::after {
+  content: "";
+  position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
+  background: linear-gradient(90deg, transparent 0%, var(--opus) 35%, var(--opus-dim) 65%, transparent 100%);
+  background-size: 220% 100%;
+  animation: tp-flow 2.4s linear infinite;
+  pointer-events: none;
+}
+@keyframes tp-flow {
+  from { background-position: 220% 0; }
+  to { background-position: -220% 0; }
 }
 
 /* v3 · 工作流跑时进度 banner (用户 图2 诉求) · 紫色调区别于 tool-progress 蓝色
@@ -2375,6 +2390,13 @@ header {
   background: linear-gradient(90deg, transparent, rgba(159, 122, 234, 0.20), transparent);
   animation: tool-shimmer 2.2s linear infinite;
   pointer-events: none;
+}
+/* 2026-07-29 补回: 方案A删 .tool-progress-bar 扫光时误删了共用的 keyframes,
+ * flow banner 扫光静默失效 (animation 引用不存在的 keyframes = 无动画不报错)。
+ * 收敛对象只是 tool-progress · flow banner 的紫光扫保留。 */
+@keyframes tool-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 .flow-runs-icon { font-size: 14px; position: relative; z-index: 1; }
 .flow-runs-text {
@@ -2684,26 +2706,15 @@ header {
 }
 
 .tool-progress-bar {
-  padding: 8px 14px;
-  display: flex; gap: 8px; align-items: center;
+  padding: 7px 16px;
+  display: flex; gap: 9px; align-items: center;
   position: relative;
 }
-.tool-progress-bar::before {
-  content: "";
-  position: absolute; left: 0; top: 0; bottom: 0;
-  width: 100%;
-  background: linear-gradient(90deg, transparent, rgba(102, 158, 255, 0.18), transparent);
-  animation: tool-shimmer 1.8s linear infinite;
-  pointer-events: none;
-}
-@keyframes tool-shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(100%); }
-}
+/* 2026-07-29 方案 A: 整行扫光 ::before 已删 · 动效收敛到底部 2px 流光 (.tool-progress::after) */
 .tool-progress-icon {
   font-size: 14px;
   position: relative; z-index: 1;
-  color: var(--accent);
+  color: var(--opus);
 }
 /* 进度条图标统一走 RemixIcon · 旋转的 loader 替代旧 ⚙ emoji */
 .tp-spin { display: inline-block; animation: tp-spin-kf 1.1s linear infinite; }
@@ -2717,17 +2728,22 @@ header {
   text-overflow: ellipsis;
 }
 .tool-progress-detail {
-  background: rgba(102, 158, 255, 0.12);
-  color: var(--accent);
-  border: 1px solid var(--border);
-  padding: 2px 8px;
+  background: transparent;
+  color: var(--dim);
+  border: 1px solid transparent;
+  padding: 2px 9px;
   border-radius: 999px;
   font-size: 11px;
   cursor: pointer;
   position: relative; z-index: 1;
   flex: 0 0 auto;
+  transition: color .18s ease, border-color .18s ease, background .18s ease;
 }
-.tool-progress-detail:hover { background: rgba(102, 158, 255, 0.22); }
+.tool-progress-detail:hover {
+  background: color-mix(in srgb, var(--opus) 10%, transparent);
+  color: var(--opus);
+  border-color: color-mix(in srgb, var(--opus) 35%, transparent);
+}
 
 .tool-progress-detail-list {
   border-top: 1px dashed var(--border);
@@ -2791,7 +2807,9 @@ header {
   max-height: 50vh;
   line-height: 1.4;
 }
-#input:focus { outline: none; border-color: var(--opus); }
+/* 2026-07-29 用户拍板: focus 边框走主题灰 (--dim) 不走 --opus 高亮——
+ * 输入框正上方就是进度条流光(也是 --opus)·两处同色系高亮相邻 = 视觉疲劳。 */
+#input:focus { outline: none; border-color: var(--dim); }
 #send {
   padding: 10px 18px;
   background: var(--opus);

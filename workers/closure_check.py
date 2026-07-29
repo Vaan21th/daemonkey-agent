@@ -25,12 +25,9 @@ import contextvars
 import json
 import logging
 import re
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-
-from agent_tools._subprocess_helper import no_window_kwargs
 
 logger = logging.getLogger("opus.closure")
 
@@ -782,25 +779,15 @@ def _git_debt() -> Optional[dict]:
     返回 None = 无欠账或查询失败; dict = {branch, ahead, dirty}。
     ahead = 当前分支领先 master 的 commit 数 (在 master 上恒 0——散改已在主干);
     dirty = 工作区未提交改动数。
+    2026-07-29 用户拍板: 复用 git_ops.git_debt_detail (含 demo/临时文件豁免过滤),
+    亮灯 / 收尾对账 / 面板三处永远同一事实源 · 改规则只改 git_ops 一处。
     """
     try:
-        def _run(*args: str) -> str:
-            r = subprocess.run(
-                ["git", *args], cwd=str(ROOT), capture_output=True,
-                text=True, encoding="utf-8", errors="replace", timeout=10,
-                **no_window_kwargs(),
-            )
-            return (r.stdout or "").strip()
-
-        branch = _run("branch", "--show-current") or "?"
-        dirty = len([ln for ln in _run("status", "--porcelain").splitlines() if ln.strip()])
-        ahead = 0
-        if branch != "master":
-            n = _run("rev-list", "--count", "master..HEAD")
-            ahead = int(n) if n.isdigit() else 0
-        if not ahead and not dirty:
+        from workers.git_ops import git_debt_detail  # 惰性 import 防循环
+        d = git_debt_detail()
+        if not d.get("debt"):
             return None
-        return {"branch": branch, "ahead": ahead, "dirty": dirty}
+        return {"branch": d["branch"], "ahead": d["ahead"], "dirty": d["dirty"]}
     except Exception as e:
         logger.debug("_git_debt failed: %s", e)
         return None
