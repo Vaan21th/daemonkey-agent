@@ -27,17 +27,14 @@
   // 正则跳过 DAEMONKEY_API_TOKEN / Daemonkey / OWNER-NOTEBOOK 这类技术标识·只换作为称呼出现的词
   var RE_AI = /Daemonkey(?![\w-])/g;
   var RE_OWNER = /\bBRO(?![\w-])/g;
-  // Daemonkey 分家: 取了自己名字的实例·把母体私有 lore「」中性成「<名字> 的家」。
-  // 前端 localizer 原本只换 Daemonkey/用户·「」这类叙事得单独抹·否则纯净版界面会漏出来。
-  var HOME = NAME ? (NAME + ' 的家') : '';
+  // 纯净版界面不含母体 lore 词·不需要 lore 替换逻辑。
   function fix(s) {
     if (!s) return s;
     if (doAI && s.indexOf('Daemonkey') >= 0) s = s.replace(RE_AI, NAME);
     if (doOwner && s.indexOf('用户') >= 0) s = s.replace(RE_OWNER, OWNER);
-    if (doAI && HOME && s.indexOf('') >= 0) s = s.split('').join(HOME);
     return s;
   }
-  function _hit(v) { return v && ((doAI && (v.indexOf('Daemonkey') >= 0 || v.indexOf('') >= 0)) || (doOwner && v.indexOf('用户') >= 0)); }
+  function _hit(v) { return v && ((doAI && v.indexOf('Daemonkey') >= 0) || (doOwner && v.indexOf('用户') >= 0)); }
   function walk(root) {
     if (!root) return;
     try {
