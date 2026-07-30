@@ -338,6 +338,20 @@ def main():
     elif safe_mode:
         print("[opus-api] SAFE MODE · 跳过后台调度启动")
 
+    # 启动通知: 版本比对(升级后首条对话告知更新内容) + 可选依赖体检(缺腿功能提醒补装)
+    # 只读 manifest + find_spec 探测 + 写 data/runtime/ · 零副作用 · 失败不阻塞启动
+    try:
+        from workers.startup_notices import refresh_startup_notices
+        _notices = refresh_startup_notices()
+        _vn = _notices.get("version_notice")
+        _md = _notices.get("missing_deps") or []
+        if _vn:
+            print(f"[opus-api] 检测到升级: {_vn.get('from')} → {_vn.get('to')} · 首条对话将转告更新内容")
+        if _md:
+            print(f"[opus-api] 可选依赖缺失 {len(_md)} 项 · 首条对话将提醒补装: {[d['pip'] for d in _md]}")
+    except Exception as e:
+        print(f"[opus-api] startup_notices 刷新失败 (不影响启动): {type(e).__name__}: {e}")
+
     # 卷四十六 III 补丁 5 · Y6 · .env hot reload watcher
     # 后台 thread · 默认每 5s poll .env mtime · 改了自动 reload 白名单字段
     try:

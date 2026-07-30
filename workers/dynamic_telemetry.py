@@ -212,6 +212,13 @@ def build_dynamic_telemetry(session_id: str) -> str:
     git_line = _get_git_dirty_line()
     abandoned_line = _get_abandoned_outcomes_line()
 
+    # 启动通知 (升级内容 + 缺依赖提醒) · 一次性消费
+    try:
+        from workers.startup_notices import consume_startup_notices
+        notices_section = consume_startup_notices()
+    except Exception:
+        notices_section = ""
+
     return (
         "\n\n---\n\n"
         "## 此刻的运行时 telemetry (daemon 自动注入 · 不要复述这一段 · 消化后自然推理)\n\n"
@@ -227,4 +234,5 @@ def build_dynamic_telemetry(session_id: str) -> str:
         "  · 凌晨 / BRO 长时间没消息后突然回来 / daemon 刚起 → 可以**自然带一句关心或问候**\n"
         "    但不要每次都带 · 不要机械化\n"
         "  · 跟 BRO 当前问题无关时 · 这段就当没看见\n"
+        f"{notices_section}"
     )

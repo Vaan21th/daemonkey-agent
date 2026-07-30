@@ -38,3 +38,14 @@ python-multipart>=0.0.9
 
 # wish-fb6b7427 · 事项 B · Windows toast 系统通知 (纯 ctypes · 零传递依赖)
 winotify>=1.1.0; sys_platform == "win32"
+
+# 0.8.2 hotfix · 补回依赖 + 桌宠音效新依赖
+# requests/qrcode: 微信渠道 (扫码登录 + 主动消息)
+requests>=2.31.0
+qrcode>=7.4.2
+# playwright: 浏览器的手/眼 (browser_act/browser_fetch) · 驱动系统 Edge 无需下载内核
+playwright>=1.40.0
+# PyQt6: 桌宠本体 (可选·没装只失桌宠·主程序不受影响)
+PyQt6>=6.6.0
+# PyQt6-QtMultimedia: 桌宠完成提示音 (独立 wheel·老环境只有 PyQt6 主包·需要补装它才有音效)
+PyQt6-QtMultimedia>=6.6.0

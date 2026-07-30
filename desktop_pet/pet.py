@@ -37,7 +37,12 @@ import time
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, QUrl
-from PyQt6.QtMultimedia import QSoundEffect
+try:
+    from PyQt6.QtMultimedia import QSoundEffect
+except ImportError:
+    # 可选依赖: PyQt6-QtMultimedia 是独立 wheel · 老环境只有 PyQt6 主包没装它
+    # 软导入: 缺了只失完成音效 · 桌宠本体照常跑 (硬 import 会启动即退出)
+    QSoundEffect = None
 from PyQt6.QtGui import (
     QAction,
     QColor,
@@ -263,7 +268,7 @@ class OpusPet(QWidget):
         # 完成提示音 (wish-fb6b7427): QSoundEffect 必须常驻引用 · 加载失败=无声不崩
         self._done_sound: QSoundEffect | None = None
         try:
-            if DONE_SOUND_FILE.exists():
+            if QSoundEffect is not None and DONE_SOUND_FILE.exists():
                 self._done_sound = QSoundEffect(self)
                 self._done_sound.setSource(QUrl.fromLocalFile(str(DONE_SOUND_FILE)))
                 self._done_sound.setVolume(0.8)
