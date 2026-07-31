@@ -105,6 +105,35 @@ def dirty_kernel_files(manifest: Optional[dict] = None) -> list[str]:
     return dirty
 
 
+# ── 0.8.5 · 升级保护层 (wish-f2f0f9de) · 用户魔改备份 ─────────────────────
+def _backup_user_overrides(files: list[str]) -> dict[str, str]:
+    """把用户魔改的白名单文件【物理备份】到 data/runtime/user_overrides/。
+
+    为什么物理备份 (不只靠 git checkpoint):
+      - checkpoint 把改动 commit 进 git 历史 · 可 git revert 找回 · 但用户不一定懂 git
+      - 物理备份给用户一个「看得见摸得着」的副本 · 合并时直接读它 · 零 git 门槛
+    返回 {file: backup_path} · 备份失败的文件跳过(不阻塞升级)。
+    """
+    backup_dir = ROOT / "data" / "runtime" / "user_overrides"
+    try:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return {}
+    out: dict[str, str] = {}
+    for f in files:
+        try:
+            src = ROOT / f
+            if not src.is_file():
+                continue
+            safe = f.replace("/", "__").replace("\\", "__")
+            dst = backup_dir / f"{safe}.bak"
+            dst.write_bytes(src.read_bytes())
+            out[f] = str(dst)
+        except Exception:
+            continue
+    return out
+
+
 def list_configured_remotes() -> dict[str, str]:
     """解析 `git remote -v` → {name: fetch_url}。 没仓库/没远程返空。"""
     if not _has_git():
@@ -197,10 +226,15 @@ def apply_update(remote: str, branch: str = "master", base: str = "HEAD",
         "checkpoint": str, "commit_sha": str|None, "note": str, "passes": int}
     """
     out: dict = {"ok": False, "updated": [], "added": [], "skipped_deleted": [],
-                 "checkpoint": "", "commit_sha": None, "note": "", "passes": 0}
+                 "checkpoint": "", "commit_sha": None, "note": "", "passes": 0,
+                 "user_overrides": []}  # 0.8.5 · 用户魔改备份清单
     if not _has_git():
         out["note"] = "git 未 init · 无法更新"
         return out
+
+    # 0.8.5 · 升级保护层 · checkpoint 前记下用户魔改 (checkpoint 会把工作区落盘成 commit·
+    #   之后 git status 就干净了·所以必须在这之前检测)
+    user_dirty = dirty_kernel_files()
 
     # ① 落袋为安: 覆盖前先把工作区所有改动 commit (复用 git_ops · 它自己拿放锁)。
     #    任何后续覆盖都能 git revert 找回 · 这是"绝不丢用户活儿"的物理保证。
@@ -225,6 +259,15 @@ def apply_update(remote: str, branch: str = "master", base: str = "HEAD",
         out["commit_sha"] = p1["commit_sha"]
         out["note"] = p1["note"]
         out["passes"] = 1
+
+        # 0.8.5 · 升级保护层 · 冲突候选 = 用户魔改 ∩ 官方覆盖 → 物理备份用户版
+        covered = list(p1["updated"]) + list(p1["added"])
+        conflicts = [f for f in user_dirty if f in covered]
+        if conflicts:
+            backups = _backup_user_overrides(conflicts)
+            out["user_overrides"] = [
+                {"file": f, "backup": backups.get(f, "")} for f in conflicts
+            ]
 
         # ③ 本轮拉到了 core_manifest.json → 白名单可能新增文件 · 用新清单从 HEAD 再补一轮。
         #    跑了第二轮就代表"新清单已完整生效"· passes=2 · 无论第二轮有没有捞到新文件。

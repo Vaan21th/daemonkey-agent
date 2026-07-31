@@ -149,6 +149,15 @@ def _run(args: dict) -> ToolResult:
             lines.append(f"\n  落袋: {res['checkpoint']}")
             if res["commit_sha"]:
                 lines.append(f"  本次更新已 commit · {res['commit_sha']} (想回退: git revert {res['commit_sha']})")
+            # 0.8.5 · 升级保护层 · 用户魔改备份报告
+            uos = res.get("user_overrides") or []
+            if uos:
+                lines.append("")
+                lines.append("⚠ 以下文件你本地改过 · 官方这版也更新了它们 · 你的版本已物理备份:")
+                for uo in uos:
+                    bak = uo.get("backup") or "(备份失败·但 git checkpoint 里有)"
+                    lines.append(f"    ! {uo['file']}  → 备份: {bak}")
+                lines.append("  需要把你的改动合并回来 · 对我说「合并我的改动」即可。")
             lines.append("\n⚠ 内核是 daemon 代码 · 改完需要【重启 daemon】才生效。")
             lines.append("  你的应用 / 工作流 / soul 灵魂记忆一个字节都没动。")
             return ToolResult(ok=True, output="\n".join(lines))
