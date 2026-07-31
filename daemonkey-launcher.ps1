@@ -73,19 +73,27 @@ $script:DaemonRunning = $false   # 0.8.3 · daemon 是否在跑 (启动按钮 �
 function Test-NewerVersion {
     param([string]$local, [string]$remote)
     $lp = $null; $rp = $null
-    if ($local  -match '^(\d+)\.(\d+)\.(\d+)([A-Za-z0-9]*)$') { $lp = @([int]$matches[1], [int]$matches[2], [int]$matches[3], $matches[4]) }
-    if ($remote -match '^(\d+)\.(\d+)\.(\d+)([A-Za-z0-9]*)$') { $rp = @([int]$matches[1], [int]$matches[2], [int]$matches[3], $matches[4]) }
+    # 支持 0.8.5 / 0.8.5beta / 0.8.5-hf1 (hotfix 后缀)
+    if ($local  -match '^(\d+)\.(\d+)\.(\d+)(?:-([A-Za-z0-9]+))?$') { $lp = @([int]$matches[1], [int]$matches[2], [int]$matches[3], $matches[4]) }
+    if ($remote -match '^(\d+)\.(\d+)\.(\d+)(?:-([A-Za-z0-9]+))?$') { $rp = @([int]$matches[1], [int]$matches[2], [int]$matches[3], $matches[4]) }
     if (-not $lp -or -not $rp) { return $false }
     for ($i = 0; $i -lt 3; $i++) {
         if ($rp[$i] -gt $lp[$i]) { return $true }
         if ($rp[$i] -lt $lp[$i]) { return $false }
     }
-    # 数字相同 → 后缀: release(空) > beta 等带后缀的
+    # 数字相同 → 后缀: hf(hotfix) > release(空) > beta > alpha
     $ls = [string]$lp[3]; $rs = [string]$rp[3]
-    if ($rs -eq $ls) { return $false }
-    if ($rs -eq '') { return $true }
-    if ($ls -eq '') { return $false }
-    return $false  # 同数字都带后缀 (beta vs alpha 之类) · 保守不提示
+    function SuffixRank([string]$s) {
+        if (-not $s) { return 2 }
+        if ($s.StartsWith('hf')) { return 3 }
+        if ($s.StartsWith('beta')) { return 1 }
+        if ($s.StartsWith('alpha')) { return 0 }
+        return 2
+    }
+    $lr = SuffixRank $ls; $rr = SuffixRank $rs
+    if ($rr -gt $lr) { return $true }
+    if ($rr -lt $lr) { return $false }
+    return ($rs.CompareTo($ls) -gt 0)
 }
 
 # ───── 品牌资源 · 签名保护 (卷七十五防篡改) ─────

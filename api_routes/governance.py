@@ -455,14 +455,28 @@ _UPDATE_STATUS_TTL = 600  # 10s 秒级缓存
 
 def _version_parts(v: str):
     import re
-    m = re.match(r"^(\d+)\.(\d+)\.(\d+)([A-Za-z0-9]*)$", (v or "").strip())
+    # 支持 0.8.5 / 0.8.5beta / 0.8.5-hf1 (hotfix 后缀)
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:-([A-Za-z0-9]+))?$", (v or "").strip())
     if not m:
         return None
-    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4))
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4) or "")
+
+
+def _suffix_rank(s: str) -> int:
+    """后缀定序: alpha=0 < beta=1 < 空(release)=2 < hfN(hotfix)=3 · 同序按字符串比。"""
+    if not s:
+        return 2
+    if s.startswith("hf"):
+        return 3
+    if s.startswith("beta"):
+        return 1
+    if s.startswith("alpha"):
+        return 0
+    return 2  # 未知后缀按 release 对待
 
 
 def _remote_newer(local: str, remote: str) -> bool:
-    """remote > local → True · 支持 0.8.3beta 后缀 (release 空后缀 > beta)。"""
+    """remote > local → True · 支持 0.8.5beta / 0.8.5-hf1 后缀 (hf > release > beta)。"""
     lp, rp = _version_parts(local), _version_parts(remote)
     if not lp or not rp:
         return False
@@ -471,7 +485,14 @@ def _remote_newer(local: str, remote: str) -> bool:
             return True
         if b < a:
             return False
-    return rp[3] == "" and lp[3] != ""
+    # 数字相同 → 后缀: hf(hotfix) > release > beta > alpha
+    ls, rs = lp[3], rp[3]
+    lr, rr = _suffix_rank(ls), _suffix_rank(rs)
+    if rr > lr:
+        return True
+    if rr < lr:
+        return False
+    return rs > ls if rs != ls else False
 
 
 @router.get("/api/update-status")
