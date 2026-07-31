@@ -187,13 +187,12 @@
       "workers/core_update.py",
       "agent_tools/update_core.py"
     ],
-    "急救入口(启动器层·daemon崩了也能用·运行时读IDENTITY中性化)·0.8.3 起含启动器源码+exe(用户双击入口·update_core 可下发·exe 由 pre-commit 钩子随 launcher 变动自动重编保鲜)": [
+    "急救入口(启动器层·daemon崩了也能用·运行时读IDENTITY中性化)": [
       "repair.bat",
       "ROLLBACK.bat",
       "verify.bat",
       "tools/rollback_emergency.ps1",
-      "daemonkey-launcher.ps1",
-      "Daemonkey.exe"
+      "daemonkey-launcher.ps1"
     ]
   },
   "excluded_borderline": {
