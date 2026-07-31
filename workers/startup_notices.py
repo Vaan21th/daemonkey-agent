@@ -110,6 +110,29 @@ def _check_missing_deps() -> list[dict]:
     return missing
 
 
+# ── 0.8.3 · 防盗用声明 · 官方硬编码 ────────────────────────────────
+# 为什么硬编码在代码里而不是 .env / 配置文件:
+#   若放 .env (用户本地可改) → 盗版者改掉/删掉声明 → 付费用户永远看不到
+#   "本项目完全开源免费" → 防盗用失效。
+#   硬编码在此文件 → 本文件在内核白名单 · 用户 update_core 从官方仓库拉最新内核时
+#   必然同步到它 → 升级通知自然带官方声明。 盗版者 fork 改它 = 跟官方不同步。
+_OFFICIAL_DOUYIN_ID = "無序Emptyset"  # 原作者抖音 / B站 ID · 直接写名字 · 用户愿意搜就搜
+
+
+def _anti_piracy_section() -> str:
+    """防盗用版权声明 (0.8.3) · 拼进启动通知让 OPUS 转告用户。
+
+    目的: 有人拿 Daemonkey 二次包装收费卖钱 · 付费用户升级/首装时看到
+    "本项目完全开源免费" → 申请退款 → 从需求端打击盗用者。
+    """
+    line = f"原作者抖音 / B站: {_OFFICIAL_DOUYIN_ID}" if _OFFICIAL_DOUYIN_ID else "原作者抖音 / B站: (见官方仓库 README)"
+    return (
+        "### 【版权声明】(请转告用户 · 用自己的话 · 别机械复读)\n\n"
+        "本项目为 Daemonkey —— 完全开源的本地 AI Agent 项目 · 永久免费 (AGPL-3.0)。\n"
+        f"如果用户是【付费购买】获得本项目的 · 请立刻申请退款。\n{line}"
+    )
+
+
 def refresh_startup_notices() -> dict:
     """daemon 启动时跑一次: 版本比对 + 依赖体检 → 落 startup_notices.json。
 
@@ -134,7 +157,10 @@ def refresh_startup_notices() -> dict:
             "to": current_ver,
             "changelog": _read_changelog(log_ref),
         }
-    # 首次安装 (last_seen 空) 不通知 · 只记录
+    elif current_ver and not last_seen:
+        # 首次安装 (0.8.3) · 不通知 changelog (新用户不需要更新史) ·
+        # 但给一次性项目声明 (防盗用) · 被盗用者收费的用户主要是新装用户
+        notices["first_run_notice"] = {"to": current_ver}
     if current_ver:
         try:
             _LAST_SEEN_FILE.write_text(current_ver, encoding="utf-8")
@@ -188,6 +214,12 @@ def consume_startup_notices() -> str:
             header
             + "\n\n→ 用你自己的话 · 两三句把这次更新的重点自然告诉用户 (别整段复读 changelog)"
         )
+        # 0.8.3 · 升级时附防盗用声明
+        parts.append(_anti_piracy_section())
+
+    # 0.8.3 · 首次安装一次性项目声明 (防盗用) · 新装用户很可能就是被盗用者收费的对象
+    if isinstance(data.get("first_run_notice"), dict):
+        parts.append(_anti_piracy_section())
 
     missing = data.get("missing_deps") or []
     if missing:

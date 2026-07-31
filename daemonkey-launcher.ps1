@@ -67,6 +67,26 @@ try {
     }
 } catch {}
 $script:StartText   = '启动'
+$script:DaemonRunning = $false   # 0.8.3 · daemon 是否在跑 (启动按钮 ↔ 关闭进程按钮切换)
+
+# 版本比较 (0.8.3 · 新版本提示用) · 支持 "0.8.3beta" 格式 (数字段 + 后缀) · remote > local → $true
+function Test-NewerVersion {
+    param([string]$local, [string]$remote)
+    $lp = $null; $rp = $null
+    if ($local  -match '^(\d+)\.(\d+)\.(\d+)([A-Za-z0-9]*)$') { $lp = @([int]$matches[1], [int]$matches[2], [int]$matches[3], $matches[4]) }
+    if ($remote -match '^(\d+)\.(\d+)\.(\d+)([A-Za-z0-9]*)$') { $rp = @([int]$matches[1], [int]$matches[2], [int]$matches[3], $matches[4]) }
+    if (-not $lp -or -not $rp) { return $false }
+    for ($i = 0; $i -lt 3; $i++) {
+        if ($rp[$i] -gt $lp[$i]) { return $true }
+        if ($rp[$i] -lt $lp[$i]) { return $false }
+    }
+    # 数字相同 → 后缀: release(空) > beta 等带后缀的
+    $ls = [string]$lp[3]; $rs = [string]$rp[3]
+    if ($rs -eq $ls) { return $false }
+    if ($rs -eq '') { return $true }
+    if ($ls -eq '') { return $false }
+    return $false  # 同数字都带后缀 (beta vs alpha 之类) · 保守不提示
+}
 
 # ───── 品牌资源 · 签名保护 (卷七十五防篡改) ─────
 # 真相源 = assets/brand.json (作者私钥签发, brand.sig)。 官方公钥内置于此。
@@ -318,6 +338,12 @@ $form.Add_Shown({
     $form.ClientSize = New-Object System.Drawing.Size(1000, 620)
     $form.Region = New-Object System.Drawing.Region((Get-RoundPath $form.Width $form.Height $script:WinRadius))
     $form.Invalidate()
+    # 0.8.3 · 抢前台 (双击 exe 后窗口要弹到最前面 · 之前要点任务栏才显示)
+    # TopMost 闪一下再取消 = 经典解法 · 绕过 Windows 前台锁 (非交互启动的进程 Activate 可能不够)
+    $form.Activate()
+    $form.BringToFront()
+    $form.TopMost = $true
+    $form.TopMost = $false
 })
 # 品牌验签失败 → 显著弹窗 (只警告·不阻断运行 · 卷七十五防篡改)
 $form.Add_Shown({
@@ -887,6 +913,23 @@ $banner.Add_Paint({
 })
 $pgLaunch.Controls.Add($banner)
 
+# ── 新版本提示徽标 (0.8.3) · banner 右上角 · 启动时后台查 Gitee · 有新版才显示 · 点击跳 Gitee release ──
+$lblUpdate = New-Object System.Windows.Forms.Label
+$lblUpdate.Text = '发现新版本 · 查看更新'
+$lblUpdate.Location = P 310 8
+$lblUpdate.Size = Sz 220 24
+$lblUpdate.Font = F 8.5 ([System.Drawing.FontStyle]::Bold)
+$lblUpdate.ForeColor = [System.Drawing.Color]::FromArgb(255, 214, 160)
+$lblUpdate.BackColor = [System.Drawing.Color]::FromArgb(180, 12, 14, 22)
+$lblUpdate.TextAlign = 'MiddleCenter'
+$lblUpdate.Cursor = [System.Windows.Forms.Cursors]::Hand
+$lblUpdate.Visible = $false
+$lblUpdate.Add_Click({ Start-Process 'https://gitee.com/vaan21th/dae-monkey/releases' })
+$banner.Controls.Add($lblUpdate)
+# hover 提示 (0.8.3): 说明升级方式 · 启动后对话里说「升级」即可拉取
+$lblUpdateTip = New-Object System.Windows.Forms.ToolTip
+$lblUpdateTip.SetToolTip($lblUpdate, '启动 Daemonkey 后，在对话里告诉它「升级」即可拉取最新版本')
+
 # 免费声明 (紧贴 banner 下方 · 一句话说明)
 $lblFreeTitle = New-Object System.Windows.Forms.Label
 $lblFreeTitle.Text = 'Daemonkey · 免费的个人 AI'
@@ -1334,6 +1377,37 @@ Set-AboutScroll 0
 #  启动逻辑 (沿用验证过的进程检测 · 卷四十四 I · 远程 cloudflared 已隐藏)
 # ═══════════════════════════════════════════════════
 $btnStart.Add_Click({
+    # 0.8.3 · 端口解析提前 (停止模式也要用)
+    $port = 0
+    if (-not [int]::TryParse($txtPort.Text, [ref]$port) -or $port -le 0 -or $port -gt 65535) {
+        Add-Log "端口不合法: $($txtPort.Text)" 'err'
+        return
+    }
+
+    # 0.8.3 · 停止模式: daemon 在跑 → 按钮已变「关闭进程」→ 点它停 daemon
+    if ($script:DaemonRunning) {
+        $btnStart.Enabled = $false
+        $btnStart.Text = '停止中…'
+        Add-Log "停止 daemon (port=$port)…" 'info'
+        $existing = Get-DaemonProcessInfo -Port $port
+        if ($existing) {
+            try {
+                Stop-Process -Id $existing.Pid -Force -ErrorAction Stop
+                for ($i = 0; $i -lt 20; $i++) {
+                    if (-not (Test-DaemonAlive -Port $port)) { break }
+                    Start-Sleep -Milliseconds 300
+                    [System.Windows.Forms.Application]::DoEvents()
+                }
+                Add-Log "daemon 已停止 (pid=$($existing.Pid))" 'ok'
+            } catch { Add-Log "停止 daemon 失败: $_" 'err' }
+        } else { Add-Log '没找到 daemon 进程 (可能已停)' 'warn' }
+        $script:DaemonRunning = $false
+        $btnStart.Text = $script:StartText
+        Set-ButtonFill $btnStart $cBtn
+        $btnStart.Enabled = $true
+        return
+    }
+
     $btnStart.Enabled = $false
     $btnStart.Text = '启动中…'
 
@@ -1351,14 +1425,6 @@ $btnStart.Add_Click({
     if (-not (Test-Path $serverScript)) {
         Add-Log "后端不存在: $serverScript" 'err'
         $btnStart.Enabled = $true; $btnStart.Text = $script:StartText; return
-    }
-
-    $port = 0
-    if (-not [int]::TryParse($txtPort.Text, [ref]$port) -or $port -le 0 -or $port -gt 65535) {
-        Add-Log "端口不合法: $($txtPort.Text)" 'err'
-        $btnStart.Enabled = $true
-        $btnStart.Text = $script:StartText
-        return
     }
 
     $daemonStarted = $false
@@ -1463,9 +1529,16 @@ $btnStart.Add_Click({
         Add-Log '提示: .env 没 WebUI 访问口令 · 去『环境』页生成口令' 'warn'
     }
 
-    Add-Log '全部完成 · 关掉本窗口不影响后台' 'ok'
-    $btnStart.Text = '✓ 启动完成 · 可关窗口'
-    Set-ButtonFill $btnStart $cOk
+    Add-Log '全部完成 · daemon 在后台运行' 'ok'
+    if ($daemonStarted) {
+        # 0.8.3 · 启动成功 → 按钮变「关闭进程」(点击可停 daemon)
+        $script:DaemonRunning = $true
+        $btnStart.Text = '关闭进程'
+        Set-ButtonFill $btnStart $cOk
+    } else {
+        $btnStart.Text = $script:StartText
+        Set-ButtonFill $btnStart $cBtn
+    }
     $btnStart.Enabled = $true
 })
 
@@ -1485,6 +1558,50 @@ if ($needSetup) {
     Show-Page 'launch'
     Term-Write '就绪 · 左侧选页 · 命令输出会显示在这里。' $cAccent
 }
+
+# ───── 0.8.3 · 启动时静默检查 Gitee 新版本 (只读 · 失败静默 · 不阻塞 UI) ─────
+# 中心库 = 官方 Gitee 仓库 (vaan21th/dae-monkey) · 拉 raw core_manifest.json 秒回 · 无 git 依赖
+# 跨线程通信 = 后台 Runspace 写 runtime 文件 · UI Timer 轮询读
+#   (PS 5.1 坑: scriptblock 转 Task/Thread 委托的线程没有 Runspace → cmdlet 抛
+#    PSInvalidOperationException · 必须显式建 Runspace)
+$script:UpdateTmpFile = Join-Path $script:Root 'data\runtime\remote_version_check.json'
+try {
+    $updateRS = [runspacefactory]::CreateRunspace()
+    $updateRS.Open()
+    $updatePS = [powershell]::Create()
+    $updatePS.Runspace = $updateRS
+    [void]$updatePS.AddScript({
+        param($url, $tmp)
+        try {
+            $raw = Invoke-RestMethod -Uri $url -TimeoutSec 6 -ErrorAction Stop
+            @{ remote = [string]$raw.core_version; checked_at = (Get-Date -Format 's') } |
+                ConvertTo-Json | Set-Content $tmp -Encoding UTF8
+        } catch { }
+    })
+    [void]$updatePS.AddParameter('url', 'https://gitee.com/vaan21th/dae-monkey/raw/master/core_manifest.json')
+    [void]$updatePS.AddParameter('tmp', $script:UpdateTmpFile)
+    [void]$updatePS.BeginInvoke()
+} catch { }
+# UI 轮询 · 文件出现即比对显示 (最多 ~10s · 无结果静默隐藏)
+$updateTimer = New-Object System.Windows.Forms.Timer
+$updateTimer.Interval = 500
+$updateTimer.Add_Tick({
+    if (Test-Path $script:UpdateTmpFile) {
+        $updateTimer.Stop()
+        try {
+            $j = Get-Content $script:UpdateTmpFile -Raw | ConvertFrom-Json
+            $rv = [string]$j.remote
+            $lv = [string]$script:Version -replace '^v', ''
+            if ($rv -and $lv -and (Test-NewerVersion -local $lv -remote $rv)) {
+                $lblUpdate.Text = "发现新版本 v$rv · 查看更新"
+                $lblUpdate.Visible = $true
+            }
+        } catch { }
+        Remove-Item $script:UpdateTmpFile -Force -ErrorAction SilentlyContinue
+        try { $updatePS.Dispose(); $updateRS.Close(); $updateRS.Dispose() } catch { }
+    }
+})
+$updateTimer.Start()
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 [void]$form.ShowDialog()

@@ -138,7 +138,21 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(ok=False, output="", error="reason too long (max 500 chars)")
 
     session_id = (args.get("session_id") or "").strip() or None
-    # III hookup · 没显式传 session_id 就从 RUNTIME 拿当前 session
+    # 0.8.3 串台修复 (2026-07-31 实测事故) · 优先用会话级 ContextVar · 不再直接信任进程单例
+    # 事故: 多 WebUI 标签并发时 · RUNTIME.session_id 被"最后发消息的会话"覆盖 · request_restart
+    #   fallback 取到别的会话 id → 重启续场注入错对话。
+    # ContextVar (_SESSION_CTX) 跟随每个 /chat 的执行上下文 (daemon_api 入口 set_session_context)
+    #   · 同一 asyncio task 里工具执行时取值正确 · 并发会话互不覆盖。
+    if not session_id:
+        try:
+            from agent_tools import current_session_id
+            _sid = current_session_id()
+            # current_session_id 没设过会退化到线程 id (形如 t12345) · 那不是真 session id · 不能用
+            if _sid and not str(_sid).startswith("t"):
+                session_id = str(_sid)
+        except Exception:
+            pass
+    # ContextVar 拿不到 (后台线程 / 终端 REPL) → 才 fallback RUNTIME (尽力 · 已知并发会串的旧路径)
     if not session_id:
         try:
             from daemon_runtime import RUNTIME

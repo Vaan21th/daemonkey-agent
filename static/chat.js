@@ -5459,25 +5459,42 @@ function appendReasoningDelta(state, textPiece) {
       if (toggle) toggle.textContent = showing ? '展开 ▾' : '收起 ▴';
     });
     if (state.$container) state.$container.appendChild(div);
-    state.currentStreamingReasoning = { div, body };
+    // 0.8.3 · 加 _pending/_raf 字段 · reasoning 走节流渲染
+    state.currentStreamingReasoning = { div, body, _pending: '', _raf: 0 };
   }
-  const body = state.currentStreamingReasoning.body;
-  body.appendChild(document.createTextNode(textPiece));
-  // reasoning-body 自身有 max-height + overflow-y · 必须把它自己也滚到底
-  // 否则外层 $msgs 滚到底 · 但 reasoning 窗口内仍卡在原位 用户 看不到新字
-  // 3 · body 跟外层都走软滚 · 用户 拖到上面看历史时不打扰
-  if (isNearBottom(body)) {
-    requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+  // 0.8.3 性能修复 · 模型 reasoning 逐 chunk 推 (每秒几十个) ·
+  // 老代码每 chunk appendChild + isNearBottom 读布局 ×2 + 两次滚动 → layout thrashing ·
+  // 长思考 + 大 DOM 时主线程吃满 → 滚动条拖不动。
+  // 修复: 累积到 _pending · RAF 合并每帧最多一次 append + 一次滚动判断 (肉眼无感·主线程降一个数量级)
+  const r = state.currentStreamingReasoning;
+  r._pending += textPiece;
+  if (!r._raf) {
+    r._raf = requestAnimationFrame(() => {
+      r._raf = 0;
+      if (!r._pending) return;
+      r.body.appendChild(document.createTextNode(r._pending));
+      r._pending = '';
+      // reasoning-body 自身有 max-height + overflow-y · 必须把它自己也滚到底
+      // 否则外层 $msgs 滚到底 · 但 reasoning 窗口内仍卡在原位 用户 看不到新字
+      // 3 · body 跟外层都走软滚 · 用户 拖到上面看历史时不打扰
+      if (isNearBottom(r.body)) {
+        r.body.scrollTop = r.body.scrollHeight;
+      }
+      scrollToBottom(state.$container, { force: false });
+    });
   }
-  scrollToBottom(state.$container, { force: false });
 }
 
 function finalizeStreamingReasoning(state) {
   if (!state || !state.currentStreamingReasoning) return;
-  state.currentStreamingReasoning.div.classList.remove('streaming');
+  const r = state.currentStreamingReasoning;
+  // 0.8.3 · 节流后最后一帧可能还有 pending 没刷 · finalize 前补刷 + 取消挂起的 RAF
+  if (r._raf) { cancelAnimationFrame(r._raf); r._raf = 0; }
+  if (r._pending) { r.body.appendChild(document.createTextNode(r._pending)); r._pending = ''; }
+  r.div.classList.remove('streaming');
   // 完成后默认收起 · 减视觉噪音 · 用户 想看再展开
-  const body = state.currentStreamingReasoning.body;
-  const header = state.currentStreamingReasoning.div.querySelector('.reasoning-header');
+  const body = r.body;
+  const header = r.div.querySelector('.reasoning-header');
   if (body && header) {
     body.hidden = true;
     const toggle = header.querySelector('.reasoning-toggle');

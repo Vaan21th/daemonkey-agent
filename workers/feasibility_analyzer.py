@@ -607,6 +607,7 @@ def analyze_feasibility(opp_id: str) -> dict:
         )
     except Exception as e:
         logger.warning("fetch evidence failed: %s", e)
+        evidence = {"ok": False, "results": [], "error": str(e)}
         evidence_block = "(web_search 拉实证失败 · LLM 请明确标注「客观信源不足」)"
 
     # 卷三十五补丁3 · evidence 来自 web search · escape `{}` 防 .format 炸

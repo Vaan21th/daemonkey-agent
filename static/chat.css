@@ -1886,18 +1886,16 @@ header {
 }
 
 /* · 流式中 · 思考链气泡呼吸一下 · 让 用户 知道在 streaming */
+/* 0.8.3 性能修复 · 背景动画触发持续 paint (长思考时整个 reasoning 块每秒重绘) · 改静态底色 ·
+   保留 blink 光标 (opacity 动画 · 合成器友好) · 呼吸效果极微弱 (6%→11%) 去掉无感 */
 .msg.opus.reasoning.streaming {
   border-left-color: color-mix(in srgb, var(--dim) 78%, transparent);
-  animation: reasoning-pulse 1.4s ease-in-out infinite;
+  background: color-mix(in srgb, var(--dim) 6%, transparent);
 }
 .msg.opus.reasoning.streaming .reasoning-body::after {
   content: ' ▌';
   color: color-mix(in srgb, var(--dim) 90%, transparent);
   animation: blink 1s steps(2, end) infinite;
-}
-@keyframes reasoning-pulse {
-  0%, 100% { background: color-mix(in srgb, var(--dim) 6%, transparent); }
-  50% { background: color-mix(in srgb, var(--dim) 11%, transparent); }
 }
 
 .input-bar {
