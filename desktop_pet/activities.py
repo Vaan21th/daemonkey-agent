@@ -28,9 +28,11 @@ from pathlib import Path
 _ACTIVITY_JSONL = Path(__file__).parent / "activity.jsonl"
 _ACTIVITY_TXT = Path(__file__).parent / "activity.txt"
 _STATE_FILE = Path(__file__).parent / "state.txt"
+_NOTIFY_JSONL = Path(__file__).parent / "notify.jsonl"
 
 # 最多保留最近 N 行事件，防止文件无限增长
 MAX_JSONL_LINES = 200
+MAX_NOTIFY_LINES = 100
 
 # 工具 → 人类可读描述模板
 TOOL_DESC_TEMPLATES: dict[str, str] = {
@@ -55,6 +57,7 @@ TOOL_DESC_TEMPLATES: dict[str, str] = {
     "summon_cursor":    "召唤 Cursor",
     "ssh_remote":       "远程诊断",
     "manage_info_source": "管理信源",
+    "client_handoff":   "查客户档案",
     "generate_report":  "生成报告",
     "draft_studio":     "工作室出品",
     "read_dashboard":   "查看板",
@@ -224,5 +227,56 @@ def read_last_events(n: int = 5) -> list[dict]:
             except json.JSONDecodeError:
                 pass
         return events
+    except Exception:
+        return []
+
+
+# ── 通知通道 (notify.jsonl) · 2026-07-28 ─────────────────────────────
+# 跟 activity (OPUS 脉搏·每个工具都写) 不同——notify 是【该让用户抬头的三件事】:
+#   done    · 一个实质 turn 干完了 (daemon 在 turn 收尾自动写)
+#   confirm · 有风险操作在 WebUI 等拍板 (confirm 卡片创建时写)
+#   info    · 其他该提醒的 (预留)
+# 桌宠轮询弹气泡 · 比 activity 气泡显示更久 · confirm 用醒目色。
+
+def write_notify(kind: str, text: str) -> None:
+    """写一条通知事件到 notify.jsonl。任何异常吞掉——通知是装饰,不能拖累主流程。"""
+    try:
+        event = {
+            "ts": time.time(),
+            "kind": (kind or "info").strip() or "info",
+            "text": (text or "").strip()[:120],
+        }
+        if not event["text"]:
+            return
+        _NOTIFY_JSONL.parent.mkdir(parents=True, exist_ok=True)
+        lines: list[str] = []
+        if _NOTIFY_JSONL.exists():
+            try:
+                lines = [l for l in _NOTIFY_JSONL.read_text(encoding="utf-8").strip().split("\n") if l.strip()]
+            except Exception:
+                lines = []
+        lines.append(json.dumps(event, ensure_ascii=False))
+        if len(lines) > MAX_NOTIFY_LINES:
+            lines = lines[-MAX_NOTIFY_LINES:]
+        _NOTIFY_JSONL.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except Exception:
+        pass
+
+
+def read_last_notify(n: int = 3) -> list[dict]:
+    """读最近 N 条通知事件。桌宠轮询用。"""
+    try:
+        if not _NOTIFY_JSONL.exists():
+            return []
+        text = _NOTIFY_JSONL.read_text(encoding="utf-8").strip()
+        if not text:
+            return []
+        out = []
+        for line in text.split("\n")[-n:]:
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+        return out
     except Exception:
         return []
