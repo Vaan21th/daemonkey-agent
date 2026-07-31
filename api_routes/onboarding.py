@@ -177,7 +177,22 @@ def _run(messages: list):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(502, f"{type(e).__name__}: {e}")
+        msg = f"{type(e).__name__}: {e}"
+        # 401 认证失败加固 · 用户直接改 .env 时没有 probe 拦截 · key/base_url 填错只能在这爆。
+        # 把服务端原文糊脸上用户看不懂 · 这里补一段可操作的排查提示(纯文本 · 不依赖前端渲染)。
+        if "401" in msg or "Authentication" in msg:
+            env = _load_env()
+            bu = env.get("OPUS_BASE_URL") or ""
+            mdl = env.get("OPUS_MODEL") or ""
+            msg = (
+                "模型服务拒绝了认证 (401)。请检查 .env 里的三行配置：\n"
+                f"- base_url（当前 = {bu or '未填'}）必须是你模型服务商的官方地址"
+                f"(DeepSeek 是 https://api.deepseek.com / v1 也可)\n"
+                f"- api_key 复制完整、无前后空格、不是网页版登录 key\n"
+                f"- model（当前 = {mdl or '未填'}）必须是该服务商支持的模型名\n"
+                f"原始错误：{msg}"
+            )
+        raise HTTPException(502, msg)
 
 
 def _maybe_finalize(tool_events: list) -> None:
