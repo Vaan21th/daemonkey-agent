@@ -1503,13 +1503,20 @@ $btnStart.Add_Click({
                 if (-not (Test-Path $petScript)) { Add-Log "桌宠脚本不存在: $petScript" 'err' }
                 else {
                     $petPython = if (Test-Path $script:VenvPythonW) { $script:VenvPythonW } else { $script:VenvPython }
-                    $petProc = Start-Process -FilePath $petPython -ArgumentList $petScript -WorkingDirectory $script:Root -PassThru -WindowStyle Hidden
+                    # 0.8.3 · 桌宠 stderr 重定向到 _pet.err · 崩溃时有真错误可查 (之前 exit=1 只能瞎猜缺 PyQt6)
+                    $petErrPath = Join-Path $script:Root '_pet.err'
+                    try {
+                        $petProc = Start-Process -FilePath $petPython -ArgumentList $petScript -WorkingDirectory $script:Root -PassThru -WindowStyle Hidden -RedirectStandardError $petErrPath
+                    } catch {
+                        # 重定向失败 (文件被占用等) · 退回无重定向
+                        $petProc = Start-Process -FilePath $petPython -ArgumentList $petScript -WorkingDirectory $script:Root -PassThru -WindowStyle Hidden
+                    }
                     # 桌宠崩得快 (缺 PyQt6 等)·等 1.8s 看它还在不在·别一拿到 process 就报"起来了"
                     Start-Sleep -Milliseconds 1800
                     if ($petProc -and -not $petProc.HasExited) {
                         Add-Log "桌宠起来了 (pid=$($petProc.Id)) · 在屏幕右下角" 'ok'
                     } elseif ($petProc -and $petProc.HasExited) {
-                        Add-Log "桌宠起了又退了 (exit=$($petProc.ExitCode)) · 多半缺 PyQt6 · 去『环境』页点【开始安装】补依赖" 'err'
+                        Add-Log "桌宠起了又退了 (exit=$($petProc.ExitCode)) · 真实错误见 _pet.err · 多半缺依赖去『环境』页补装" 'err'
                     } else {
                         Add-Log '桌宠没返回 process · 可能没起' 'warn'
                     }
