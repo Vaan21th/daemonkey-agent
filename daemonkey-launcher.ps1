@@ -1397,13 +1397,19 @@ $btnStart.Add_Click({
                     -WorkingDirectory $script:Root -PassThru -WindowStyle Hidden `
                     -RedirectStandardOutput $logPath -RedirectStandardError $errPath
                 $up = $false
-                for ($i = 0; $i -lt 30; $i++) {
-                    Start-Sleep -Milliseconds 800
+                $died = $false
+                # 2026-07-29 · 16s → 45s：daemon 加载内容变多（画像/记忆索引/工坊注入）· 16s 已不够
+                # 外加：每 5s 报一次进度（可观测不猜）· 进程秒挂立刻跳出报错（不等满）
+                for ($i = 0; $i -lt 90; $i++) {
+                    Start-Sleep -Milliseconds 500
                     if (Test-DaemonAlive -Port $port) { $up = $true; break }
+                    if ($proc.HasExited) { $died = $true; break }
+                    if (($i % 10) -eq 9) { Add-Log "daemon 还在起 (已等 $([int](($i + 1) / 2))s)…" 'info' }
                     [System.Windows.Forms.Application]::DoEvents()
                 }
                 if ($up) { Add-Log "daemon 起来了 · http://127.0.0.1:$port (pid=$($proc.Id))" 'ok'; $daemonStarted = $true }
-                else { Add-Log "daemon 等了 24s 没起来 · 看 $logPath" 'err' }
+                elseif ($died) { Add-Log "daemon 进程提前退出 (code=$($proc.ExitCode)) · 看 $errPath" 'err' }
+                else { Add-Log "daemon 等了 45s 没起来 · 看 $logPath" 'err' }
             } catch { Add-Log "起 daemon 失败: $_" 'err' }
         }
     } else { Add-Log 'daemon 未勾选 · 跳过' 'warn' }
