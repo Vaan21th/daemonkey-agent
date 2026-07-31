@@ -8240,6 +8240,149 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 .git-debt-chip i { font-size: 12px; }
 
+/* ── 开源免费胶囊 (0.8.4 · 版权声明 UI 兜底 · 常驻可及不打扰) ── */
+.free-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-left: 8px; padding: 3px 10px;
+  font-size: 11px; line-height: 1.4;
+  color: #6ee7a0;
+  background: rgba(110, 231, 160, 0.08);
+  border: 1px solid rgba(110, 231, 160, 0.35);
+  border-radius: 999px;
+  cursor: pointer; user-select: none; white-space: nowrap;
+  transition: background 0.2s, border-color 0.2s;
+  position: relative;
+  z-index: 60;
+}
+.free-chip:hover { background: rgba(110, 231, 160, 0.16); border-color: rgba(110, 231, 160, 0.6); }
+.free-chip.open { background: rgba(110, 231, 160, 0.18); border-color: rgba(110, 231, 160, 0.7); }
+.free-chip i { font-size: 12px; }
+.free-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  white-space: normal;   /* 关键: 覆盖 free-chip 的 nowrap 继承 · 否则卡片文字永不换行横向溢出 */
+  word-break: break-word;
+  background: linear-gradient(180deg, #232536 0%, #1d1f2c 100%);
+  border: 1px solid rgba(179, 157, 255, 0.22);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2);
+  padding: 16px 16px 14px;
+  z-index: 999;
+  opacity: 0;
+  transform: translateY(-4px) scale(0.98);
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.free-pop.show {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+.free-pop-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 700;
+  color: #e6e8f0;
+  margin-bottom: 10px;
+}
+.free-pop-title i {
+  font-size: 15px; color: var(--opus);
+  background: rgba(179, 157, 255, 0.14);
+  border-radius: 8px; padding: 4px;
+}
+.free-pop-verline {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+.free-ver-old {
+  color: var(--dim);
+  text-decoration: line-through;
+  text-decoration-color: rgba(224, 96, 96, 0.5);
+  background: rgba(224, 96, 96, 0.08);
+  border-radius: 6px; padding: 2px 8px;
+}
+.free-ver-new {
+  color: #6ee7a0;
+  font-weight: 700; font-size: 14px;
+  background: rgba(110, 231, 160, 0.1);
+  border: 1px solid rgba(110, 231, 160, 0.3);
+  border-radius: 6px; padding: 2px 8px;
+}
+.free-verline i { color: var(--dim2, #555); font-size: 13px; }
+.free-ver-tag {
+  font-size: 10px; color: #fff;
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  border-radius: 999px; padding: 1px 8px;
+  margin-left: auto;
+}
+.free-pop-changelog {
+  max-height: 140px; overflow-y: auto;
+  font-size: 11.5px; line-height: 1.75;
+  color: #aeb4c8;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.free-pop-changelog::-webkit-scrollbar { width: 5px; }
+.free-pop-changelog::-webkit-scrollbar-thumb { background: rgba(179, 157, 255, 0.3); border-radius: 99px; }
+.free-pop-license {
+  font-size: 12px; line-height: 1.8; color: #c8cddc;
+  margin-bottom: 12px;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.free-pop-license i {
+  font-size: 15px; color: #6ee7a0;
+  float: left; margin: 3px 8px 0 0;
+}
+.free-pop-license div {
+  overflow: hidden;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+.free-pop-license i {
+  font-size: 15px; color: #6ee7a0; margin-top: 2px; flex: 0 0 auto;
+}
+.free-pop-license .hl { color: #6ee7a0; font-weight: 600; }
+.free-pop-btn {
+  width: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 9px 0;
+  font-size: 13px; font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: filter 0.18s ease, transform 0.12s ease, box-shadow 0.18s ease;
+  box-shadow: 0 4px 14px rgba(109, 40, 217, 0.35);
+}
+.free-pop-btn:hover {
+  filter: brightness(1.12);
+  box-shadow: 0 6px 20px rgba(109, 40, 217, 0.5);
+}
+.free-pop-btn:active { transform: scale(0.98); }
+.free-pop-divider { height: 1px; background: var(--border); margin: 10px 0; }
+.free-pop-author {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; color: var(--dim);
+}
+.free-pop-author b { color: var(--text); font-weight: 600; }
+.free-pop-tag {
+  font-size: 10px; color: #6ee7a0;
+  border: 1px solid rgba(110, 231, 160, 0.35);
+  background: rgba(110, 231, 160, 0.08);
+  border-radius: 6px; padding: 1px 7px;
+}
+
 /* ── git 欠账面板 (2026-07-29 · 用户 直批三件套 B+C) ── */
 .git-debt-modal { max-width: 520px; }
 .git-debt-body { font-size: 13px; }

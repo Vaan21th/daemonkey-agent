@@ -445,3 +445,93 @@ async def session_repair_endpoint(
         return repair_session(session_id, dry_run=dry_run)
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+# ── 0.8.4 · 更新状态端点 (前端"有新版"胶囊用) ─────────────────────────
+# 检查 Gitee 官方仓库是否有比本地更新的版本 · 返回版本号 + changelog 摘要。
+# 10 分钟缓存防频繁拉 gitee · 失败静默 (无更新返回 has_update=False · 不阻塞 UI)。
+_UPDATE_STATUS_CACHE: dict = {"ts": 0.0, "result": None}
+_UPDATE_STATUS_TTL = 600  # 10s 秒级缓存
+
+def _version_parts(v: str):
+    import re
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)([A-Za-z0-9]*)$", (v or "").strip())
+    if not m:
+        return None
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4))
+
+
+def _remote_newer(local: str, remote: str) -> bool:
+    """remote > local → True · 支持 0.8.3beta 后缀 (release 空后缀 > beta)。"""
+    lp, rp = _version_parts(local), _version_parts(remote)
+    if not lp or not rp:
+        return False
+    for a, b in zip(lp[:3], rp[:3]):
+        if b > a:
+            return True
+        if b < a:
+            return False
+    return rp[3] == "" and lp[3] != ""
+
+
+@router.get("/api/update-status")
+async def api_update_status(authorization: Optional[str] = Header(None)):
+    check_auth(authorization)
+    import time as _t
+    now = _t.time()
+    cache = _UPDATE_STATUS_CACHE
+    if cache["result"] is not None and (now - cache["ts"]) < _UPDATE_STATUS_TTL:
+        return cache["result"]
+
+    result = {"has_update": False, "local_version": "", "remote_version": "",
+              "changelog": "", "checked_at": now, "error": ""}
+    # 本地版本
+    try:
+        from pathlib import Path
+        _root = Path(__file__).resolve().parent.parent
+        _mf = json_load(_root / "core_manifest.json")
+        result["local_version"] = str(_mf.get("core_version") or "")
+    except Exception as e:
+        result["error"] = f"local: {e}"
+        cache["result"] = result
+        cache["ts"] = now
+        return result
+
+    # 拉远程 (官方 Gitee 仓库 raw manifest · 超时 5s · 失败静默)
+    # 0.8.4 · 必须 async 执行 (asyncio.to_thread) · 同步 httpx 会阻塞 event loop 5s
+    # (缓存未命中时所有请求卡住"会不会拖慢性能" → 这是唯一的性能隐患点)
+    try:
+        import asyncio, httpx
+
+        async def _fetch_remote():
+            return await asyncio.to_thread(
+                lambda: httpx.get(
+                    "https://gitee.com/vaan21th/dae-monkey/raw/master/core_manifest.json",
+                    timeout=5.0, follow_redirects=True,
+                )
+            )
+
+        r = await _fetch_remote()
+        remote_mf = r.json()
+        remote_ver = str(remote_mf.get("core_version") or "")
+        result["remote_version"] = remote_ver
+        if remote_ver and _remote_newer(result["local_version"], remote_ver):
+            result["has_update"] = True
+            # changelog: 复用 startup_notices 的提取逻辑 (log_ref 累积文本取末段)
+            try:
+                from workers.startup_notices import _read_changelog
+                result["changelog"] = _read_changelog(str(remote_mf.get("log_ref") or ""), max_chars=1200)
+            except Exception:
+                result["changelog"] = ""
+    except Exception as e:
+        result["error"] = f"remote: {e}"
+
+    cache["result"] = result
+    cache["ts"] = now
+    return result
+
+
+def json_load(p):
+    import json
+    with open(p, "r", encoding="utf-8") as f:
+        return json.load(f)

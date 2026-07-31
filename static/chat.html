@@ -100,6 +100,32 @@
     <span class="pulse-dot" id="pulseDot">●</span>
   </span>
   <span class="git-debt-chip" id="gitDebtChip" style="display:none" onclick="showGitDebtPanel()" title="git 欠账 · 点击查看是什么 · 可一键收进主干"></span>
+  <!-- 更新胶囊 (0.8.4 · 有新版才显示 · 点开看更新说明+版权 · 按钮直接对话升级) -->
+  <span class="free-chip" id="freeChip" style="display:none" onclick="toggleFreeNotice(event)" title="发现新版本 · 点击查看">
+    <i class="ri-refresh-line"></i><span id="freeChipVer">新版本</span>
+    <div class="free-pop" id="freePop" onclick="event.stopPropagation()">
+      <div class="free-pop-title"><i class="ri-refresh-line"></i>发现新版本</div>
+      <div class="free-pop-verline">
+        <span class="free-ver-old" id="freeVerOld">v?</span>
+        <i class="ri-arrow-right-line"></i>
+        <span class="free-ver-new" id="freePopVer">v?</span>
+        <span class="free-ver-tag">最新</span>
+      </div>
+      <div class="free-pop-changelog" id="freePopChangelog">…</div>
+      <div class="free-pop-divider"></div>
+      <div class="free-pop-license">
+        <i class="ri-open-source-fill"></i>
+        <div>
+          本项目 <b>Daemonkey</b> 完全开源·<br>永久免费 (AGPL-3.0)。<br>
+          如果是 <span class="hl">付费购买</span> 获得的 · 请<span class="hl">立刻申请退款</span>。<br>
+          <span style="color:var(--dim)">原作者 抖音 / B站: <b style="color:var(--text)">無序Emptyset</b></span>
+        </div>
+      </div>
+      <button class="free-pop-btn" id="freeUpdateBtn" onclick="startDialogUpgrade(event)">
+        <i class="ri-chat-1-line"></i> 对话里升级
+      </button>
+    </div>
+  </span>
   <!-- git 欠账面板 (2026-07-29 用户 直批三件套 B+C): 看见未提交的是什么 · 一键收进主干 -->
   <div class="modal" id="gitDebtModal" onclick="if(event.target===this)closeGitDebtPanel()">
     <div class="modal-body git-debt-modal">

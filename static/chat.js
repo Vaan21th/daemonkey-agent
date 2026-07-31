@@ -1730,6 +1730,78 @@ async function showGitDebtPanel() {
   }
 }
 window.showGitDebtPanel = showGitDebtPanel;
+
+// 0.8.4 · 更新胶囊 · 有新版才显示 (版本号 + changelog + 版权 + 对话升级按钮)
+// 平时隐藏 · 轮询 /api/update-status · 有远程新版本才亮
+function toggleFreeNotice(e) {
+  e.stopPropagation();
+  const pop = document.getElementById('freePop');
+  const chip = document.getElementById('freeChip');
+  if (!pop || !chip) return;
+  const willShow = !pop.classList.contains('show');
+  pop.classList.toggle('show', willShow);
+  chip.classList.toggle('open', willShow);
+}
+window.toggleFreeNotice = toggleFreeNotice;
+document.addEventListener('click', function (e) {
+  const pop = document.getElementById('freePop');
+  const chip = document.getElementById('freeChip');
+  if (pop && pop.classList.contains('show')) {
+    pop.classList.remove('show');
+    if (chip) chip.classList.remove('open');
+  }
+});
+
+// 「对话里升级到最新版」→ 自动在输入框填升级指令并发送 · OPUS 在对话里主持 update_core
+function startDialogUpgrade(e) {
+  e.stopPropagation();
+  const pop = document.getElementById('freePop');
+  if (pop) pop.classList.remove('show');
+  const chip = document.getElementById('freeChip');
+  if (chip) chip.classList.remove('open');
+  const ver = (document.getElementById('freePopVer') || {}).textContent || '';
+  const $input = document.getElementById('userInput') || document.querySelector('.input-bar textarea') || document.querySelector('textarea');
+  const msg = '升级内核到最新版' + (ver ? ' (' + ver + ')' : '') + ' —— 从 WebUI 更新胶囊点进来的，请执行 update_core 升级流程';
+  if (typeof send === 'function') {
+    if ($input) { $input.value = msg; try { $input.dispatchEvent(new Event('input')); } catch (_) {} }
+    send();
+  } else {
+    // 兜底: 填进输入框让用户自己发
+    if ($input) { $input.value = msg; $input.focus(); }
+  }
+}
+window.startDialogUpgrade = startDialogUpgrade;
+
+// 轮询更新状态 · 页面加载 + 每 5 分钟 · 有新版显示胶囊
+async function _pollUpdateStatus() {
+  try {
+    const r = await fetch('/api/update-status', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) return;
+    const d = await r.json();
+    const chip = document.getElementById('freeChip');
+    if (!chip) return;
+    if (d && d.has_update) {
+      const ver = d.remote_version || '';
+      const chipVer = document.getElementById('freeChipVer');
+      const popVer = document.getElementById('freePopVer');
+      const verOld = document.getElementById('freeVerOld');
+      const changelog = document.getElementById('freePopChangelog');
+      if (chipVer) chipVer.textContent = '新版本 v' + ver;
+      if (popVer) popVer.textContent = 'v' + ver;
+      if (verOld) verOld.textContent = (d.local_version ? 'v' + d.local_version : 'v?');
+      if (changelog) changelog.textContent = d.changelog || '(远程未提供更新说明)';
+      chip.style.display = 'inline-flex';
+    }
+    // 无更新 → 保持隐藏 (默认 display:none)
+  } catch (e) { /* 静默: 网络/端点失败不打扰 */ }
+}
+window._pollUpdateStatus = _pollUpdateStatus;
+(function initUpdatePoll() {
+  setTimeout(_pollUpdateStatus, 1200);            // 页面加载后先查一次
+  setInterval(_pollUpdateStatus, 5 * 60 * 1000);  // 之后每 5 分钟
+})();
+
+
 function renderGitDebtPanel(d) {
   const body = document.getElementById('gitDebtPanelBody');
   const btn = document.getElementById('gitDebtCollectBtn');
