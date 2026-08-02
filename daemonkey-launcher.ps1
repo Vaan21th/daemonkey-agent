@@ -578,7 +578,10 @@ $script:termTimer.add_Tick({
         Start-Sleep -Milliseconds 60
         if ($script:termReaderOut) { try { $c = $script:termReaderOut.ReadToEnd(); if ($c) { Term-WriteRaw $c } } catch {} }
         if ($script:termReaderErr) { try { $e = $script:termReaderErr.ReadToEnd(); if ($e) { Term-WriteRaw $e $cWarn } } catch {} }
-        $code = $script:termProc.ExitCode
+        # 2026-08-02 · ExitCode 读取加固: HasExited 刚 true 时 ExitCode 可能未同步 (空) · Refresh 后再读 · 读不到显示 ?
+        $code = $null
+        try { $script:termProc.Refresh(); $code = $script:termProc.ExitCode } catch {}
+        if ($null -eq $code) { $code = '?' }
         $script:termTimer.Stop()
         if ($script:termReaderOut) { $script:termReaderOut.Close(); $script:termReaderOut = $null }
         if ($script:termReaderErr) { $script:termReaderErr.Close(); $script:termReaderErr = $null }
@@ -1570,13 +1573,16 @@ $btnStart.Add_Click({
 
 # ───── 首次使用检测 ─────
 function Test-NeedSetup {
+    # 2026-08-02 · 双条件判定 (防半成品 venv): python.exe + pyvenv.cfg 都在才算装好
     if (-not (Test-Path $script:VenvPython)) { return $true }
+    if (-not (Test-Path (Join-Path $script:Root '.venv\pyvenv.cfg'))) { return $true }
     return $false
 }
 
 # ───── 收尾 ─────
 # 2026-08-02 · 首次自动流程 (BRO 拍板): 环境未装 → 自动安装 → 装完自动启动 daemon + WebUI
 # 之后打开 (环境已装) → 直接启动页点【开始启动】· 不再手动两步走
+# 2026-08-02 修: 成功判定以【环境就绪】为准 (exit code 读取可能为空/未同步·不可靠)
 $needSetup = Test-NeedSetup
 if ($needSetup) {
     $onboardBanner.Visible = $true
@@ -1586,12 +1592,14 @@ if ($needSetup) {
     $runPs1 = Join-Path $script:Root 'run.ps1'
     Term-Run 'powershell.exe' "-NoProfile -ExecutionPolicy Bypass -File `"$runPs1`" -NoLaunch" -OnExit {
         param($code)
-        if ($code -eq 0) {
-            Add-Log '环境安装完成 · 自动启动 daemon + WebUI…' 'ok'
+        $ready = -not (Test-NeedSetup)
+        Add-Log "安装回调 · exit=$code · 环境就绪=$ready" 'warn'
+        if ($ready) {
+            Add-Log '环境就绪 · 自动启动 daemon + WebUI…' 'ok'
             Show-Page 'launch'
             $btnStart.PerformClick()
         } else {
-            Add-Log '环境安装失败 · 看右栏输出 · 可再点【开始安装】重试或去『急救』' 'err'
+            Add-Log "环境安装未完成 (exit=$code) · 看右栏输出 · 可再点【开始安装】重试或去『急救』" 'err'
         }
     }
 } else {
