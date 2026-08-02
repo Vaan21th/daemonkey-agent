@@ -597,6 +597,13 @@ def _care_load() -> dict:
 def _care_save(d: dict) -> None:
     try:
         _CARE_STATE.parent.mkdir(parents=True, exist_ok=True)
+        # 社区 7/31 · Bug #8 · Defender 瞬态锁防护
+        try:
+            from workers.safe_write import robust_write_json
+            robust_write_json(_CARE_STATE, d, backup=False)
+            return
+        except ImportError:
+            pass
         _CARE_STATE.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         pass
@@ -897,8 +904,14 @@ def record_hint(session_id: str, report: dict) -> None:
             "resolved": False,
             **report,
         }
-        with HINTS_FILE.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        # 社区 7/31 · Bug #8 · Defender 瞬态锁防护 (hints append)
+        try:
+            from workers.safe_write import robust_open_append
+            with robust_open_append(HINTS_FILE) as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        except ImportError:
+            with HINTS_FILE.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception as e:
         logger.debug("record_hint failed: %s", e)
 

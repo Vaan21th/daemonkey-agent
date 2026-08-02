@@ -107,14 +107,26 @@ def _read_json(path: Path) -> Optional[dict]:
 
 def _write_json(path: Path, data: dict) -> None:
     _ensure_dir()
+    # 社区 7/31 · Bug #8 · Defender 瞬态锁防护
+    try:
+        from workers.safe_write import robust_write_json
+        robust_write_json(path, data, backup=False)
+        return
+    except ImportError:
+        pass
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _append_history(record: dict) -> None:
     _ensure_dir()
     record["timestamp"] = _now_iso()
-    with RESTART_HISTORY_FILE.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    try:
+        from workers.safe_write import robust_open_append
+        with robust_open_append(RESTART_HISTORY_FILE) as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except ImportError:
+        with RESTART_HISTORY_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def _is_pid_alive(pid: int) -> bool:
@@ -223,8 +235,14 @@ def _inject_system_notice(session_path: Path, content: str) -> bool:
             "_injected_by": "daemon_lifecycle",
             "_injected_at": _now_iso(),
         }
-        with session_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+        # 社区 7/31 · Bug #8 · Defender 瞬态锁防护 (session 注入 append)
+        try:
+            from workers.safe_write import robust_open_append
+            with robust_open_append(session_path) as f:
+                f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+        except ImportError:
+            with session_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(msg, ensure_ascii=False) + "\n")
         return True
     except Exception:
         return False

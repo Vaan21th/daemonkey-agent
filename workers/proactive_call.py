@@ -69,8 +69,14 @@ def _record(entry: dict) -> None:
     entry.setdefault("ts", datetime.now(timezone.utc).isoformat())
     try:
         _LEDGER.parent.mkdir(parents=True, exist_ok=True)
-        with _LEDGER.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        # 社区 7/31 · Bug #8 · Defender 瞬态锁防护
+        try:
+            from workers.safe_write import robust_open_append
+            with robust_open_append(_LEDGER) as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except ImportError:
+            with _LEDGER.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except OSError as e:
         logger.warning("proactive ledger write failed: %s", e)
 

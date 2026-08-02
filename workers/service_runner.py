@@ -40,7 +40,6 @@ import platform
 import re
 import signal
 import subprocess
-import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -85,6 +84,13 @@ def _load_services() -> dict[str, dict]:
 def _save_services(services: dict[str, dict]) -> None:
     _ensure_dirs()
     payload = {"version": 1, "services": services, "saved_at": datetime.now().isoformat(timespec="seconds")}
+    # 社区 7/31 · Bug #8 · Defender 瞬态锁防护 (tmp+replace 带重试)
+    try:
+        from workers.safe_write import robust_write_json
+        robust_write_json(SERVICES_FILE, payload, backup=False)
+        return
+    except ImportError:
+        pass
     tmp = SERVICES_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(SERVICES_FILE)  # atomic on Windows + Unix

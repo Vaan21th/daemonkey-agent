@@ -74,8 +74,14 @@ def _log_event(record: dict) -> None:
         try:
             RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
             record["timestamp"] = _now_iso()
-            with (RUNTIME_DIR / "restart_history.jsonl").open("a", encoding="utf-8") as f:
-                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            # 社区 7/31 · Bug #8 · Defender 瞬态锁防护
+            try:
+                from workers.safe_write import robust_open_append
+                with robust_open_append(RUNTIME_DIR / "restart_history.jsonl") as f:
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            except ImportError:
+                with (RUNTIME_DIR / "restart_history.jsonl").open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception:
             pass
 
@@ -241,6 +247,13 @@ def try_auto_revert(reason: str) -> bool:
 
     try:
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        # 社区 7/31 · Bug #8 · Defender 瞬态锁防护 (revert marker)
+        try:
+            from workers.safe_write import robust_write_json
+            robust_write_json(REVERT_MARKER, {"from": head, "to": lg, "at": _now_iso(), "reason": reason}, backup=False)
+            return
+        except ImportError:
+            pass
         REVERT_MARKER.write_text(json.dumps(
             {"from": head, "to": lg, "at": _now_iso(), "reason": reason}, ensure_ascii=False, indent=2),
             encoding="utf-8")

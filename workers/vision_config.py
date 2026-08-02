@@ -45,6 +45,13 @@ def save_vision_config(cfg: dict) -> None:
         and cfg.get("api_key", "").strip()
     )
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    # 社区 7/31 · Bug #8 · Defender 瞬态锁防护
+    try:
+        from workers.safe_write import robust_write_json
+        robust_write_json(CONFIG_PATH, cfg, backup=False)
+        return
+    except ImportError:
+        pass
     CONFIG_PATH.write_text(
         json.dumps(cfg, ensure_ascii=False, indent=2),
         encoding="utf-8",

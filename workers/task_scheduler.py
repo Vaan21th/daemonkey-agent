@@ -70,6 +70,13 @@ def _load() -> dict:
 def _save(data: dict) -> None:
     with _IO_LOCK:
         _TASKS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        # 社区 7/31 · Bug #8 · Defender 瞬态锁防护 (tmp+replace 带重试)
+        try:
+            from workers.safe_write import robust_write_json
+            robust_write_json(_TASKS_FILE, data, backup=False)
+            return
+        except ImportError:
+            pass
         tmp = _TASKS_FILE.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(_TASKS_FILE)
