@@ -700,6 +700,7 @@ def run_tool_loop(
     system_suffix: str = "",
     thinking: str | None = None,
     reasoning_effort: str | None = None,
+    allowed_tool_names: set[str] | None = None,
 ) -> tuple[str, list[dict], UsageStats]:
     """
     多轮 tool use 循环。返回 (最终 OPUS 文本回复, 更新后的 messages, UsageStats)。
@@ -718,6 +719,11 @@ def run_tool_loop(
                   每次一个 assistant turn / tool result 落进 messages 时立刻调用 ·
                   让 daemon kill -9 时也不丢 in-flight turns。
                   上层注入 lambda entry: append_turn(sid, entry['role'], ...)。
+    allowed_tool_names: 工具白名单。 None = 全 REGISTRY 暴露 (主对话默认)。
+                   set[str] = 只暴露白名单内工具给 LLM · hallucinate 调白名单外
+                   的工具一律返回 "tool not allowed in this scope" 而非真执行。
+                   app_runner 跑工坊 app 时传入·防 app 子作用域 LLM 越权调
+                   run_app / python_exec 等大权限工具。
     """
     # ── 会话结构自愈（卷五十五 · 2026-06-03 · 防 [500] · P3 升级为完整体检）─────
     # 病根: turn 在 tool 执行前被打断 (重启/abort/网断) → 历史里留下 assistant.tool_calls
@@ -766,6 +772,7 @@ def run_tool_loop(
             on_message_commit=on_message_commit,
             system_suffix=system_suffix,
             thinking=thinking, reasoning_effort=reasoning_effort,
+            allowed_tool_names=allowed_tool_names,
         )
     elif provider == "anthropic":
         return _loop_anthropic(
@@ -777,6 +784,7 @@ def run_tool_loop(
             on_message_commit=on_message_commit,
             system_suffix=system_suffix,
             thinking=thinking, reasoning_effort=reasoning_effort,
+            allowed_tool_names=allowed_tool_names,
         )
     else:
         raise RuntimeError(f"unknown provider: {provider}")
@@ -858,6 +866,7 @@ def _loop_openai(
     system_suffix: str = "",
     thinking: str | None = None,
     reasoning_effort: str | None = None,
+    allowed_tool_names: set[str] | None = None,
 ) -> tuple[str, list[dict], UsageStats]:
     def _commit(entry: dict) -> None:
         if on_message_commit is None:
@@ -866,7 +875,10 @@ def _loop_openai(
             on_message_commit(entry)
         except Exception:
             pass
-    specs = list(REGISTRY.values())
+    if allowed_tool_names is None:
+        specs = list(REGISTRY.values())
+    else:
+        specs = [s for n, s in REGISTRY.items() if n in allowed_tool_names]
     tools_param = to_openai_tools(specs) if specs else None
 
     system_payload = _build_openai_system(system, system_suffix, base_url, model)
@@ -1154,6 +1166,18 @@ def _loop_openai(
             if spec is None:
                 result = ToolResult(ok=False, output="", error=f"unknown tool: {name}")
                 _push(progress, "tool_call", {"name": name, "summary": "(unknown tool)", "tier": "?"})
+            elif allowed_tool_names is not None and name not in allowed_tool_names:
+                # 白名单越权拦截 (审稿 app 调 run_app 跑 5 分钟内容制作 = 真实触发场景)
+                allowed_list = ", ".join(sorted(allowed_tool_names)) or "(empty)"
+                result = ToolResult(
+                    ok=False, output="",
+                    error=f"tool '{name}' not allowed in this app scope · whitelist: {allowed_list}",
+                )
+                _push(progress, "tool_call", {
+                    "name": name,
+                    "summary": f"(denied · not in app whitelist) {name}",
+                    "tier": "denied",
+                })
             else:
                 _push(progress, "tool_call", {
                     "name": name,
@@ -1308,6 +1332,7 @@ def _loop_anthropic(
     system_suffix: str = "",
     thinking: str | None = None,
     reasoning_effort: str | None = None,
+    allowed_tool_names: set[str] | None = None,
 ) -> tuple[str, list[dict], UsageStats]:
     def _commit(entry: dict) -> None:
         if on_message_commit is None:
@@ -1316,7 +1341,10 @@ def _loop_anthropic(
             on_message_commit(entry)
         except Exception:
             pass
-    specs = list(REGISTRY.values())
+    if allowed_tool_names is None:
+        specs = list(REGISTRY.values())
+    else:
+        specs = [s for n, s in REGISTRY.items() if n in allowed_tool_names]
     tools_param = to_anthropic_tools(specs) if specs else None
 
     # Anthropic 原生：system 用 list-of-blocks。
@@ -1410,6 +1438,18 @@ def _loop_anthropic(
             if spec is None:
                 result = ToolResult(ok=False, output="", error=f"unknown tool: {tu.name}")
                 _push(progress, "tool_call", {"name": tu.name, "summary": "(unknown tool)", "tier": "?"})
+            elif allowed_tool_names is not None and tu.name not in allowed_tool_names:
+                # 白名单越权拦截 (审稿 app 调 run_app 跑 5 分钟内容制作 = 真实触发场景)
+                allowed_list = ", ".join(sorted(allowed_tool_names)) or "(empty)"
+                result = ToolResult(
+                    ok=False, output="",
+                    error=f"tool '{tu.name}' not allowed in this app scope · whitelist: {allowed_list}",
+                )
+                _push(progress, "tool_call", {
+                    "name": tu.name,
+                    "summary": f"(denied · not in app whitelist) {tu.name}",
+                    "tier": "denied",
+                })
             else:
                 _push(progress, "tool_call", {
                     "name": tu.name,

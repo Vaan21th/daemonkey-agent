@@ -94,7 +94,7 @@ def setup_client(provider: str) -> tuple[object, str, str | None]:
         default_model = "claude-sonnet-4-5-20250929"
     elif provider == "openai":
         try:
-            from openai import OpenAI
+            import openai  # noqa: F401 · 存在性检查 (client 由 _create_robust_openai_client 建)
         except ImportError as e:
             raise SystemExit(
                 "ERROR: openai package not installed. Run pip install -r requirements.txt"
@@ -107,7 +107,7 @@ def setup_client(provider: str) -> tuple[object, str, str | None]:
                 "  OpenRouter:  https://openrouter.ai/api/v1\n"
                 "  PPIO:        https://api.ppinfra.com/v3/openai\n"
             )
-        client = OpenAI(api_key=api_key, base_url=base_url, timeout=LLM_HTTP_TIMEOUT_SEC)
+        client = _create_robust_openai_client(api_key=api_key, base_url=base_url, timeout=LLM_HTTP_TIMEOUT_SEC)
         default_model = "anthropic/claude-sonnet-4.5"
     else:
         raise SystemExit(f"ERROR: unknown OPUS_PROVIDER='{provider}'. Use anthropic or openai.")
@@ -132,6 +132,47 @@ def call_llm(client, provider: str, model: str, max_tokens: int, system: str, me
         return reply, getattr(usage, "prompt_tokens", 0) or 0, getattr(usage, "completion_tokens", 0) or 0
     else:
         raise RuntimeError(f"unknown provider: {provider}")
+
+
+def chat_create_safe(client, **kwargs):
+    """chat.completions.create 兼容性封装 (kimi-k3 等模型 temperature 硬限制)。
+
+    有的模型 (如 kimi-k3) 对 temperature 有硬限制: "invalid temperature: only 1 is allowed"。
+    调用方写死低 temperature (看图/翻译想要 0.2~0.3 求稳) 会直接 400。
+    策略: 先按调用方意图调 · 报 temperature 类错误时摘掉 temperature 用各家默认重试。
+    低温意图是"尽量稳"· 默认温度也能干活 · 但 400 是 zero output · 两害相权。
+    """
+    try:
+        return client.chat.completions.create(**kwargs)
+    except Exception as e:
+        msg = str(e).lower()
+        if "temperature" in msg and ("invalid" in msg or "only" in msg or "unsupported" in msg or "not support" in msg):
+            kwargs.pop("temperature", None)
+            return client.chat.completions.create(**kwargs)
+        raise
+
+
+def _create_robust_openai_client(*, api_key: str, base_url: str | None, timeout: float | None = None):
+    """OpenAI client + 传输层重试 (社区 7/31 · Bug #9)。
+
+    OpenAI SDK 默认 max_retries=2 只覆盖 HTTP 层 429/5xx · DNS 解析失败 / TLS 握手
+    超时 / TCP RST 等 transport 层错误 (APIConnectionError) 不触发重试 → 瞬态网络
+    抖动直接中断任务。 这里加 httpx HTTPTransport(retries=3) 让传输层也指数退避
+    (0.3s → 0.6s → 1.2s + jitter)。
+    """
+    import httpx
+    from openai import OpenAI
+    retries = 3
+    return OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        timeout=timeout,
+        max_retries=retries,
+        http_client=httpx.Client(
+            transport=httpx.HTTPTransport(retries=retries),
+            timeout=timeout,
+        ),
+    )
 
 
 def write_env_kv(key: str, value: str) -> None:
@@ -256,13 +297,13 @@ def probe_openai(api_key: str, base_url: str, model: str = "", timeout: float = 
     error 抛回前端·避免坏配置写进 .env 后把初见页卡死(只能手改 .env 的老坑)。
     """
     try:
-        from openai import OpenAI
+        import openai  # noqa: F401 · 存在性检查
     except ImportError:
         return False, "openai 包未安装·请先装依赖。"
     try:
         from provider_presets import safe_max_tokens
         test_model = (model or "").strip() or "gpt-4o-mini"
-        client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
+        client = _create_robust_openai_client(api_key=api_key, base_url=base_url, timeout=timeout)
         client.chat.completions.create(
             model=test_model,
             max_tokens=safe_max_tokens(16, test_model),

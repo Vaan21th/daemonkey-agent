@@ -171,6 +171,7 @@ async def create_provider_config(
             set_active=bool(payload.get("set_active")),
             max_tokens=payload.get("max_tokens"),
             vision=payload.get("vision"),  # wish-4a6331b2
+            director=bool(payload.get("director")),  # 顾问标记
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

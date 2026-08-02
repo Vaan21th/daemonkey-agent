@@ -49,6 +49,7 @@ import logging
 import os
 import shutil
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -120,6 +121,36 @@ def _do_backup(path: Path, *, keep: int = DEFAULT_KEEP) -> Optional[Path]:
         return None
 
 
+# ── Windows 瞬态句柄锁重试 (社区 7/31 反馈 · Defender 实时扫描持锁 ~50-200ms) ──────
+
+def _is_permission_err(e: BaseException) -> bool:
+    """只认「瞬态文件锁」类错误才值得重试 · 磁盘满/路径错等直接抛。
+
+    errno 13 = Permission denied (Defender 常见) · 32 = Windows sharing violation
+    (另一进程持有句柄)。 其他 OSError 不重试 —— 重试无效场景只会掩盖真问题。
+    """
+    if isinstance(e, PermissionError):
+        return True
+    if isinstance(e, OSError):
+        return getattr(e, "errno", None) in (13, 32)
+    return False
+
+
+def _retry_replace(src, dst, retries: int = 3) -> None:
+    """os.replace 带瞬态锁重试 · 指数退避 0.05s → 0.1s → 0.2s · 超次仍失败则抛原异常。"""
+    delay = 0.05
+    for i in range(retries):
+        try:
+            os.replace(src, dst)
+            return
+        except OSError as e:
+            if _is_permission_err(e) and i < retries - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise
+
+
 def atomic_write_text(
     path: Union[str, Path],
     content: str,
@@ -152,7 +183,7 @@ def atomic_write_text(
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
-        os.replace(tmp_name, p)
+        _retry_replace(tmp_name, p)
     except Exception:
         try:
             os.unlink(tmp_name)
@@ -240,5 +271,74 @@ __all__ = [
     "atomic_write_json",
     "list_backups",
     "restore_backup",
+    "robust_write_text",
+    "robust_write_json",
+    "robust_open_append",
+    "robust_replace",
     "BACKUP_DIR",
 ]
+
+
+# ── robust 系列 (社区 7/31 · Bug #8 · 批量补全瞬态锁防护) ─────────────────────────
+
+def robust_write_text(
+    path: Union[str, Path],
+    content: str,
+    *,
+    backup: bool = True,
+    keep_backups: int = DEFAULT_KEEP,
+    retries: int = 3,
+) -> dict:
+    """atomic_write_text + 瞬态 PermissionError 重试 · 其余行为完全一致。
+
+    返回同 atomic_write_text ({ok, path, backup, bytes})。
+    """
+    delay = 0.05
+    for i in range(retries):
+        try:
+            return atomic_write_text(path, content, backup=backup, keep_backups=keep_backups)
+        except OSError as e:
+            if _is_permission_err(e) and i < retries - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise
+
+
+def robust_write_json(
+    path: Union[str, Path],
+    data: Any,
+    *,
+    backup: bool = True,
+    keep_backups: int = DEFAULT_KEEP,
+    indent: int = 2,
+    ensure_ascii: bool = False,
+    retries: int = 3,
+) -> dict:
+    """atomic_write_json + 瞬态锁重试。"""
+    text = json.dumps(data, ensure_ascii=ensure_ascii, indent=indent)
+    return robust_write_text(path, text, backup=backup, keep_backups=keep_backups, retries=retries)
+
+
+def robust_open_append(path: Union[str, Path], *, retries: int = 3):
+    """open(path, 'a', encoding='utf-8') 带瞬态锁重试 · 返回已打开的 file object。
+
+    调用方负责 close (用 with 最稳)。 自动创建父目录。
+    """
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    delay = 0.05
+    for i in range(retries):
+        try:
+            return p.open("a", encoding="utf-8")
+        except OSError as e:
+            if _is_permission_err(e) and i < retries - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            raise
+
+
+def robust_replace(src: Union[str, Path], dst: Union[str, Path], *, retries: int = 3) -> None:
+    """os.replace 带瞬态锁重试 · 直接暴露给裸 tmp.replace 调用方迁移。"""
+    _retry_replace(src, dst, retries=retries)

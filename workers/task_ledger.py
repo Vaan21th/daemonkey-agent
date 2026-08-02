@@ -97,7 +97,12 @@ def _write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    # 社区 7/31 · Bug #7 · Windows Defender 瞬态句柄锁 → replace 失败 · 带重试
+    try:
+        from workers.safe_write import robust_replace
+        robust_replace(tmp, path)
+    except ImportError:
+        tmp.replace(path)
 
 
 # ---------- 活跃指针 ----------

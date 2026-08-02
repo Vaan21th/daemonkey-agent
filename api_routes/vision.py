@@ -56,6 +56,9 @@ async def set_vision_config(
         raise HTTPException(400, "base_url is required")
     if not api_key:
         raise HTTPException(400, "api_key is required")
+    if "****" in api_key:
+        # 社区 7/31 反馈: GET 回显的是掩码·前端原样回传保存会覆盖真 key → 永久 401
+        raise HTTPException(400, "api_key 是掩码显示值 (含 ****)·请粘贴完整 API key 再保存")
     if not base_url.startswith("https://"):
         raise HTTPException(400, "base_url must start with https://")
 

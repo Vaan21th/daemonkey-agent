@@ -163,7 +163,13 @@ def append_turn(session_id: str, role: str, content, meta: dict | None = None) -
     }
     if meta:
         record["meta"] = meta
-    with session_path(session_id).open("a", encoding="utf-8") as f:
+    # 社区 7/31 · Bug #7 · open("a") 被 Defender 瞬态锁 → 带重试打开
+    try:
+        from workers.safe_write import robust_open_append
+        _open_append = robust_open_append
+    except ImportError:
+        _open_append = lambda p: p.open("a", encoding="utf-8")
+    with _open_append(session_path(session_id)) as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     # · 对话 turn 即时进 FTS5 (断链 G 修复 · best-effort · 不阻塞写盘)

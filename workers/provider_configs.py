@@ -258,6 +258,7 @@ def add_config(
     set_active: bool = False,
     max_tokens: int | None = None,
     vision: bool | None = None,
+    director: bool = False,
 ) -> dict:
     """新增一条 config.
 
@@ -287,6 +288,7 @@ def add_config(
         "pinned": bool(pinned),
         "max_tokens": int(max_tokens),
         "vision": vision,  # wish-4a6331b2 · None=自动按模型族判断 / True=多模态 / False=纯文本
+        "director": bool(director),  # True=总监模型 (replan 三唤醒点召唤 · 现场建 client)
         "created_at": _now(),
         "updated_at": _now(),
     }
@@ -299,7 +301,7 @@ def add_config(
 
 def update_config(cfg_id: str, patch: dict) -> dict:
     """局部更新一条 config · 只能改: name / base_url / model / api_key / pinned / preset_id / max_tokens."""
-    ALLOWED = {"name", "base_url", "model", "api_key", "pinned", "preset_id", "max_tokens", "vision"}
+    ALLOWED = {"name", "base_url", "model", "api_key", "pinned", "preset_id", "max_tokens", "vision", "director"}
     data = load_configs()
     for c in data.get("configs") or []:
         if c.get("id") == cfg_id:
@@ -317,6 +319,13 @@ def update_config(cfg_id: str, patch: dict) -> dict:
                         except (ValueError, TypeError):
                             continue
                     c[k] = v.strip() if isinstance(v, str) else v
+            # 顾问(director)全局只能有一个 · 设新顾问时把其他配置的 director 原子清掉 ·
+            # 否则 UI 能点出两个"顾问"徽标
+            if (patch or {}).get("director") is True:
+                for other in data.get("configs") or []:
+                    if other.get("id") != cfg_id and other.get("director"):
+                        other["director"] = False
+                        other["updated_at"] = _now()
             c["updated_at"] = _now()
             save_configs(data)
             return c

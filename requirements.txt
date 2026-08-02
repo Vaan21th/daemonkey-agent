@@ -45,7 +45,7 @@ requests>=2.31.0
 qrcode>=7.4.2
 # playwright: 浏览器的手/眼 (browser_act/browser_fetch) · 驱动系统 Edge 无需下载内核
 playwright>=1.40.0
-# PyQt6: 桌宠本体 (可选·没装只失桌宠·主程序不受影响)
+# PyQt6: 桌宠本体 + 完成提示音 (可选·没装只失桌宠·主程序不受影响)
+# 注: PyQt6 6.2+ 已把 QtMultimedia 合并进主 wheel (from PyQt6.QtMultimedia 直接通)
+# 不要再加 PyQt6-QtMultimedia——该包名在 PyPI 不存在·加了会让 pip install 直接失败 (社区 7/31 反馈)
 PyQt6>=6.6.0
-# PyQt6-QtMultimedia: 桌宠完成提示音 (独立 wheel·老环境只有 PyQt6 主包·需要补装它才有音效)
-PyQt6-QtMultimedia>=6.6.0

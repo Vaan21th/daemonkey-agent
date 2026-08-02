@@ -107,6 +107,7 @@ def run_subagent(
     max_iterations: int = 8,
     max_tokens: Optional[int] = None,
     model: Optional[str] = None,
+    client: Optional[Any] = None,
     confirm: Optional[Callable] = None,
     progress: Optional[Callable[[str, dict], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
@@ -124,6 +125,7 @@ def run_subagent(
         max_iterations: tool_loop 最多几轮 (子任务不该很多)。
         max_tokens: 输出上限 · None → 走 bg_max_tokens + safe_max_tokens 兜底。
         model: 模型 id · None → runtime.model。
+        client: 自定义 LLM client · None → runtime.client (总监跨 provider 现场建)。
         confirm: 自定义确认回调 · None → 沙盒 auto-approve (_auto_confirm)。
         progress: SSE 进度 hook · 透传给 tool_loop 做工具级事件 (生命周期事件由上层发)。
         cancel_check: 返回 True 则下一轮前停。
@@ -166,6 +168,7 @@ def run_subagent(
                 "role": "_meta", "sub_session_id": sub_session_id,
                 "parent_session_id": parent_session_id,
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "model": used_model,  # 总监链路佐证 (查 sub session 知顾问真身)
                 "system_preview": (system or "")[:200],
             })
         except Exception:
@@ -173,7 +176,7 @@ def run_subagent(
 
     try:
         text, messages, usage = run_tool_loop(
-            client=runtime.client,
+            client=client or runtime.client,
             provider=runtime.provider,
             model=used_model,
             max_tokens=max_tokens,

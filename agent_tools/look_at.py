@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import base64
 import io
-import os
 from pathlib import Path
 from typing import Any
 
@@ -165,9 +164,8 @@ def _vision_subcall(
         _url = base_url.rstrip("/")
         if _url.endswith("/chat/completions"):
             _url = _url[: -len("/chat/completions")]
-        from openai import OpenAI as _OpenAI
-        from daemon_provider import LLM_HTTP_TIMEOUT_SEC  # 单一真相源 · 视觉模型也别写死短 timeout
-        client: Any = _OpenAI(api_key=api_key, base_url=_url, timeout=LLM_HTTP_TIMEOUT_SEC)
+        from daemon_provider import LLM_HTTP_TIMEOUT_SEC, _create_robust_openai_client  # 单一真相源 · 视觉模型也别写死短 timeout
+        client: Any = _create_robust_openai_client(api_key=api_key, base_url=_url, timeout=LLM_HTTP_TIMEOUT_SEC)
     else:
         client = RUNTIME.client
         if client is None:
@@ -186,11 +184,13 @@ def _vision_subcall(
         },
     ]
 
-    resp = client.chat.completions.create(
+    from daemon_provider import chat_create_safe  # kimi-k3 等模型 temperature 硬限制 · 自动降级重试
+    resp = chat_create_safe(
+        client,
         model=model,
         max_tokens=1024,
         messages=messages,
-        temperature=0.3,  # 看图要准确，低温度
+        temperature=0.3,  # 看图要准确，低温度 (不支持的模型自动摘掉发默认)
     )
 
     text = resp.choices[0].message.content or ""
