@@ -350,6 +350,27 @@ select:focus, input:focus { border-color: var(--accent); }
 }
 #intro.show .intro-go { opacity: 1; transform: none; }
 .intro-go:hover { filter: brightness(1.08); }
+.intro-go:disabled {
+  cursor: not-allowed;
+  filter: grayscale(.55) brightness(.75);
+  box-shadow: none;
+}
+.intro-count {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  opacity: 0;
+  transition: opacity 1s ease 1.9s;
+}
+#intro.show .intro-count { opacity: 1; }
+.intro-count #introCountNum {
+  display: inline-block;
+  min-width: 1.4em;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+}
 .op-glow {
   width: 14px;
   height: 14px;

@@ -563,6 +563,7 @@ function Add-Log {
 $script:termProc = $null
 $script:termReaderOut = $null
 $script:termReaderErr = $null
+$script:termOnExit = $null
 
 $script:termTimer = New-Object System.Windows.Forms.Timer
 $script:termTimer.Interval = 250
@@ -585,13 +586,20 @@ $script:termTimer.add_Tick({
         $btnTermStop.Enabled = $false
         Term-Write "[完成 · exit $code]" $cAccent
         $script:lblStatus.Text = '就绪'
+        if ($script:termOnExit) {
+            $cb = $script:termOnExit
+            $script:termOnExit = $null
+            try { & $cb $code } catch { Term-Write "完成回调失败: $_" $cErr }
+        }
     }
 })
 
 # 在右栏终端里跑命令 (单向输出 · 不弹黑窗)
+# 2026-08-02 · 加 -OnExit 完成回调 (进程退出时调用 · 首次自动安装→自动启动用)
 function Term-Run {
-    param([string]$exe, [string]$arguments, [string]$cwd = $script:Root)
+    param([string]$exe, [string]$arguments, [string]$cwd = $script:Root, [scriptblock]$OnExit = $null)
     if ($script:termProc) { Term-Write '[!] 已有命令在跑 · 等它结束或点停止' $cWarn; return }
+    $script:termOnExit = $OnExit
     $tag = [guid]::NewGuid().ToString('N').Substring(0, 8)
     $outFile = Join-Path $env:TEMP "dmk_$tag.out"
     $errFile = Join-Path $env:TEMP "dmk_$tag.err"
@@ -1011,7 +1019,7 @@ $onboardBanner.Region = New-Object System.Drawing.Region((Get-RoundPath 544 56 1
 $onboardBanner.Visible = $false
 $pgLaunch.Controls.Add($onboardBanner)
 $obLabel = New-Object System.Windows.Forms.Label
-$obLabel.Text = "第一次用?先去『环境』装好运行环境 · 再回来启动。"
+$obLabel.Text = "首次使用 · 正在自动安装运行环境 · 装完自动打开 WebUI"
 $obLabel.Location = P 16 10
 $obLabel.Size = Sz 380 36
 $obLabel.Font = F 9 ([System.Drawing.FontStyle]::Bold)
@@ -1023,7 +1031,7 @@ $obBtn.Add_Click({ Show-Page 'setup' })
 
 # 常驻底部引导 · 初次使用先去环境装 Python (无论是否已装环境都显示 · 给新人兜底)
 $lblFirstUse = New-Object System.Windows.Forms.Label
-$lblFirstUse.Text = "初次使用 · 请先配置环境:`r`n点左侧『环境』→【安装/修复运行环境】· 装好启动所需的 Python 等工具。"
+$lblFirstUse.Text = "首次使用 · 已自动开始安装运行环境:`r`n装完自动打开 WebUI 填 key · 之后打开直接点【启动】即可。"
 $lblFirstUse.Location = P 18 534
 $lblFirstUse.Size = Sz 558 44
 $lblFirstUse.Font = F 9
@@ -1038,7 +1046,7 @@ $pgSetup = New-Page 'setup' '环境 & 配置'
 
 $stepCard = New-Card $pgSetup 24 62 532 104 '' ''
 $stepLbl = New-Object System.Windows.Forms.Label
-$stepLbl.Text = "首次使用 · 跟着 3 步走:`r`n① 点下面【开始安装】· 装好运行环境 (Python / 依赖)`r`n② 装完回左侧『启动』页 · 点蓝色【启动】按钮`r`n③ 启动后在 WebUI『设置』里填 API key · 即可开聊"
+$stepLbl.Text = "首次使用 · 自动流程:`r`n① 检测到环境未装会自动安装 (约 1-2 分钟 · 看右栏)`r`n② 装完自动启动 daemon 并打开 WebUI`r`n③ 在 WebUI 里填 API key · 即可开聊。之后打开直接点『启动』。"
 $stepLbl.Location = P 18 12
 $stepLbl.Size = Sz 500 84
 $stepLbl.Font = F 9
@@ -1567,11 +1575,25 @@ function Test-NeedSetup {
 }
 
 # ───── 收尾 ─────
+# 2026-08-02 · 首次自动流程 (BRO 拍板): 环境未装 → 自动安装 → 装完自动启动 daemon + WebUI
+# 之后打开 (环境已装) → 直接启动页点【开始启动】· 不再手动两步走
 $needSetup = Test-NeedSetup
 if ($needSetup) {
     $onboardBanner.Visible = $true
     Show-Page 'setup'
-    Term-Write '欢迎来到 Daemonkey · 第一次用?跟着环境页走: 装环境 → 启动 → WebUI 里填 key。' $cAccent
+    Term-Write '首次使用 · 检测到运行环境未安装 · 自动开始安装 (约 1-2 分钟)…' $cAccent
+    Add-Log '首次使用 · 自动安装运行环境 (run.ps1 -NoLaunch) · 装完自动启动…' 'info'
+    $runPs1 = Join-Path $script:Root 'run.ps1'
+    Term-Run 'powershell.exe' "-NoProfile -ExecutionPolicy Bypass -File `"$runPs1`" -NoLaunch" -OnExit {
+        param($code)
+        if ($code -eq 0) {
+            Add-Log '环境安装完成 · 自动启动 daemon + WebUI…' 'ok'
+            Show-Page 'launch'
+            $btnStart.PerformClick()
+        } else {
+            Add-Log '环境安装失败 · 看右栏输出 · 可再点【开始安装】重试或去『急救』' 'err'
+        }
+    }
 } else {
     Show-Page 'launch'
     Term-Write '就绪 · 左侧选页 · 命令输出会显示在这里。' $cAccent

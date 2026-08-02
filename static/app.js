@@ -118,6 +118,7 @@ function doneBanner() {
 }
 
 // 录 key 后 · 开场片头：告诉用户接下来是一段「它想认识你」的对话·不是最终工作台
+// 2026-08-02 · 按钮加 5 秒倒计时(结束才能点)·明确告知即将进入相遇流程
 function showIntro(then) {
   const ov = document.createElement("div");
   ov.id = "intro";
@@ -125,7 +126,8 @@ function showIntro(then) {
     '<div class="op-glow"></div>' +
     '<div class="intro-title">接下来，让它先认识认识你</div>' +
     '<div class="intro-sub">下面是一段对话——<b>它想了解你</b>，好成为更懂你的搭档。<br>这还不是你的工作台；聊完，它会亲自带你进去。</div>' +
-    '<button class="intro-go">好，开始相遇 →</button>';
+    '<div class="intro-count">即将开始 · <span id="introCountNum">5</span> 秒后可点击</div>' +
+    '<button class="intro-go" disabled>好，开始相遇 →</button>';
   document.body.appendChild(ov);
   requestAnimationFrame(() => ov.classList.add("show"));
   let done = false;
@@ -136,7 +138,20 @@ function showIntro(then) {
     setTimeout(() => ov.remove(), 500);
     then();
   };
-  ov.querySelector(".intro-go").addEventListener("click", go);
+  const btn = ov.querySelector(".intro-go");
+  btn.addEventListener("click", go);
+  let left = 5;
+  const num = ov.querySelector("#introCountNum");
+  const timer = setInterval(() => {
+    left--;
+    if (num) num.textContent = String(left);
+    if (left <= 0) {
+      clearInterval(timer);
+      btn.disabled = false;
+      const cnt = ov.querySelector(".intro-count");
+      if (cnt) cnt.remove();
+    }
+  }, 1000);
 }
 
 // 进操作台 · 电影开幕式转场：黑屏渐入 → 心跳脉冲 → 名字浮现 → 一行字 → 倒计时 5 秒 → 进门
