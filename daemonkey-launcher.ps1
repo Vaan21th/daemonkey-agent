@@ -1597,7 +1597,15 @@ if ($needSetup) {
         if ($ready) {
             Add-Log '环境就绪 · 自动启动 daemon + WebUI…' 'ok'
             Show-Page 'launch'
-            $btnStart.PerformClick()
+            # $btnStart 是自绘 Panel (New-ActionButton) · 没有 PerformClick · 用反射触发 OnClick
+            # (2026-08-02 · BRO 实测: PerformClick 报 Panel 无此方法)
+            try {
+                $m = $btnStart.GetType().GetMethod('OnClick', [System.Reflection.BindingFlags]'Instance,NonPublic')
+                if ($m) { $m.Invoke($btnStart, @([System.EventArgs]::Empty)) }
+                else { Add-Log '找不到 OnClick 方法 · 请手动点【启动】' 'err' }
+            } catch {
+                Add-Log "自动触发启动失败: $_ · 请手动点【启动】" 'err'
+            }
         } else {
             Add-Log "环境安装未完成 (exit=$code) · 看右栏输出 · 可再点【开始安装】重试或去『急救』" 'err'
         }
