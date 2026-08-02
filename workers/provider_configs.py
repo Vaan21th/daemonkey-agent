@@ -20,7 +20,7 @@ workers/provider_configs.py
         "name": "DeepSeek V4 Pro · 官方",
         "provider_kind": "openai" | "anthropic",
         "base_url": "https://api.deepseek.com/v1",
-        "model": "deepseek-v4-pro",
+        "model": "deepseek-v4-flash",
         "api_key": "sk-xxx",        # 明文 · 文件在 .gitignore 内
         "preset_id": "deepseek-official",  # 关联 provider_presets · 拿 icon / note
         "pinned": true,             # 右上角切换器是否显示

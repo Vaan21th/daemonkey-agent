@@ -1071,7 +1071,7 @@ $btnKey.Add_Click({
         Copy-Item -Path $examplePath -Destination $envPath -Force
         Add-Log '.env 不存在 · 已从 .env.example 复制一份' 'warn'
     }
-    Start-Process notepad.exe -ArgumentList $envPath | Out-Null
+    Start-Process notepad.exe -ArgumentList ('"' + $envPath + '"') | Out-Null
     Add-Log '已打开 .env · 高级选项 · 填好 key 记得保存' 'ok'
 })
 
@@ -1514,10 +1514,13 @@ $btnStart.Add_Click({
                     # 0.8.3 · 桌宠 stderr 重定向到 _pet.err · 崩溃时有真错误可查 (之前 exit=1 只能瞎猜缺 PyQt6)
                     $petErrPath = Join-Path $script:Root '_pet.err'
                     try {
-                        $petProc = Start-Process -FilePath $petPython -ArgumentList $petScript -WorkingDirectory $script:Root -PassThru -WindowStyle Hidden -RedirectStandardError $petErrPath
+                        # 2026-08-02 · 路径含空格(如 "Daemonkey - 测试副本"/Program Files)时·单字符串 -ArgumentList
+                        # 会被 PS 5.1 按空格拆开 → pythonw 收到截断路径报 "can't find __main__ module" ·
+                        # PS 5.1 数组也不引号化(实测·只做空格 join)·必须手动加引号包裹
+                        $petProc = Start-Process -FilePath $petPython -ArgumentList ('"' + $petScript + '"') -WorkingDirectory $script:Root -PassThru -WindowStyle Hidden -RedirectStandardError $petErrPath
                     } catch {
                         # 重定向失败 (文件被占用等) · 退回无重定向
-                        $petProc = Start-Process -FilePath $petPython -ArgumentList $petScript -WorkingDirectory $script:Root -PassThru -WindowStyle Hidden
+                        $petProc = Start-Process -FilePath $petPython -ArgumentList ('"' + $petScript + '"') -WorkingDirectory $script:Root -PassThru -WindowStyle Hidden
                     }
                     # 桌宠崩得快 (缺 PyQt6 等)·等 1.8s 看它还在不在·别一拿到 process 就报"起来了"
                     Start-Sleep -Milliseconds 1800

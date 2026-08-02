@@ -35,7 +35,7 @@
         <li>左侧「API keys」→「创建 API key」→ 复制 <code>sk-</code> 开头那一长串（只显示一次，记得存好）。</li>
         <li>回到这里：服务商选「DeepSeek 官方」，把 key 粘进下面的「API Key」框，点保存即可。</li>
       </ol>
-      <p class="hint"><b>接口地址 base_url</b> 是服务商的 API 入口——选了预设会自动填好（DeepSeek 是 <code>https://api.deepseek.com</code>），一般不用动。换别的服务商（如 GLM 智谱）就选对应预设，或选「自定义」填它给你的地址。<b>模型 model</b> 已替你选好默认（DeepSeek 是 <code>deepseek-v4-pro</code>），一般不用动。</p>
+      <p class="hint"><b>接口地址 base_url</b> 是服务商的 API 入口——选了预设会自动填好（DeepSeek 是 <code>https://api.deepseek.com</code>），一般不用动。换别的服务商（如 GLM 智谱）就选对应预设，或选「自定义」填它给你的地址。<b>模型 model</b> 已替你选好默认（DeepSeek 是 <code>deepseek-v4-flash</code>，轻量省钱），一般不用动。</p>
     </div>
 
     <label class="field-label">服务商</label>
@@ -55,8 +55,8 @@
     </div>
 
     <label class="field-label">模型 model</label>
-    <input id="modelInp" type="text" value="deepseek-v4-pro" autocomplete="off" spellcheck="false">
-    <p class="hint">默认已给你选好——填了 DeepSeek 的 key 就直接用上目前最好的 <code>deepseek-v4-pro</code>。想换可改：GLM 常用 <code>glm-4.6</code>。</p>
+    <input id="modelInp" type="text" value="deepseek-v4-flash" autocomplete="off" spellcheck="false">
+    <p class="hint">默认已给你选好——填了 DeepSeek 的 key 就能直接用（<code>deepseek-v4-flash</code> 轻量省钱）。想换可改：旗舰 <code>deepseek-v4-pro</code>，GLM 常用 <code>glm-4.6</code>。</p>
 
     <button id="saveKeyBtn" class="primary-btn"><i class="ri-check-line"></i> 保存并开始相遇</button>
     <div id="keyMsg" class="key-msg"></div>

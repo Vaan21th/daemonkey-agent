@@ -41,10 +41,12 @@ MODEL_ALIASES: dict[str, str] = {
     "haiku":           "claude-3-haiku-20240307",
 
     # === DeepSeek family（纯文本 · 不支持视觉） ===
-    "deepseek":        "deepseek-v4-pro",       # 实测通·1M·$0.48/M·限时 2.5 折
-    "ds":              "deepseek-v4-pro",
-    "deepseek-v4":     "deepseek-v4-pro",
-    "v4":              "deepseek-v4-pro",
+    "deepseek":        "deepseek-v4-flash",   # 默认轻量省钱 (2026-08-02 BRO 拍板)
+    "ds":              "deepseek-v4-flash",
+    "deepseek-v4":     "deepseek-v4-flash",
+    "v4":              "deepseek-v4-flash",
+    "deepseek-pro":    "deepseek-v4-pro",      # 旗舰要显式点名
+    "v4-pro":          "deepseek-v4-pro",
     "deepseek-v3":     "DeepSeek-V3.1-Terminus",
     "deepseek-think":  "DeepSeek-V3.1-Think",
     "r1":              "DeepSeek-R1",

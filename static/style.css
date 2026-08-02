@@ -386,5 +386,21 @@ select:focus, input:focus { border-color: var(--accent); }
   transition: opacity 1s ease 1.9s;
 }
 #opening.show .op-line { opacity: 1; }
+.op-count {
+  margin-top: 26px;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  opacity: 0;
+  transition: opacity 1s ease 2.4s;
+}
+#opening.show .op-count { opacity: 1; }
+.op-count #opCountNum {
+  display: inline-block;
+  min-width: 1.4em;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--accent);
+}
 
 .hidden { display: none !important; }

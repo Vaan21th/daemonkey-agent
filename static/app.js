@@ -139,7 +139,8 @@ function showIntro(then) {
   ov.querySelector(".intro-go").addEventListener("click", go);
 }
 
-// 进操作台 · 电影开幕式转场：黑屏渐入 → 心跳脉冲 → 名字浮现 → 一行字 → 进门
+// 进操作台 · 电影开幕式转场：黑屏渐入 → 心跳脉冲 → 名字浮现 → 一行字 → 倒计时 5 秒 → 进门
+// 2026-08-02 · 加倒计时提示：初见填完 key 后很多人误会停留页就是正式页面 · 明确"即将进入正式页面"
 let _going = false;
 async function playOpeningTransition() {
   if (_going) return;
@@ -151,10 +152,17 @@ async function playOpeningTransition() {
   ov.innerHTML =
     '<div class="op-glow"></div>' +
     '<div class="op-name">「' + escHtml(name) + '」</div>' +
-    '<div class="op-line">我们的故事，从这里开始</div>';
+    '<div class="op-line">我们的故事，从这里开始</div>' +
+    '<div class="op-count">即将进入正式页面 · <span id="opCountNum">5</span> 秒</div>';
   document.body.appendChild(ov);
   requestAnimationFrame(() => ov.classList.add("show"));
-  setTimeout(() => { location.href = "/ui"; }, 3400);
+  let left = 5;
+  const num = ov.querySelector("#opCountNum");
+  const timer = setInterval(() => {
+    left--;
+    if (num) num.textContent = String(left);
+    if (left <= 0) { clearInterval(timer); location.href = "/ui"; }
+  }, 1000);
 }
 
 let typingEl = null;
@@ -173,7 +181,7 @@ function scroll() { chat.scrollTop = chat.scrollHeight; }
 
 // ── key 配置 ──
 const PRESET_MODEL = {
-  "https://api.deepseek.com": "deepseek-v4-pro",
+  "https://api.deepseek.com": "deepseek-v4-flash",
   "https://open.bigmodel.cn/api/paas/v4": "glm-4.6",
 };
 $("presetSel").addEventListener("change", (e) => {
