@@ -91,13 +91,6 @@ def _load_env():
             continue
         k, v = line.split("=", 1)
         os.environ.setdefault(k.strip(), v.strip())
-    # 品牌前缀别名:DAEMONKEY_* ↔ OPUS_* 双向补齐·让内核 os.environ["OPUS_*"] 读取
-    # 在用户 .env 用新 DAEMONKEY_ 前缀时仍拿到值(新旧 .env 都兼容)。
-    try:
-        from workers.env_aliases import normalize_env_aliases
-        normalize_env_aliases()
-    except Exception:
-        pass
 
 
 def _init_runtime():
@@ -108,7 +101,7 @@ def _init_runtime():
     (workers/provider_configs._migrate_from_env 自动建第一条 cfg)·让多 config UI 直接可用。
     """
     from daemon_runtime import RUNTIME
-    from daemon_provider import detect_provider, setup_client, write_public_env
+    from daemon_provider import detect_provider, setup_client, write_env_kv
     from soul_loader import load_soul
     from workers.provider_configs import get_active_config, apply_config_to_env
 
@@ -119,29 +112,16 @@ def _init_runtime():
         print(f"[opus-api] active provider config: {active.get('name')} · "
               f"{active.get('provider_kind')} / {active.get('model')}")
 
-    soul = load_soul()
-    RUNTIME.system_prompt = soul.system_prompt
-    RUNTIME.persist_callback = lambda new_model: write_public_env("OPUS_MODEL", new_model)
-
     provider = detect_provider()
-
-    # 形态 Z · 全新状态（相遇前还没配 key）：不建 client·daemon 照常起，
-    # /ui 进相遇页配 key·相遇 save-key 时热建 RUNTIME.client·相遇完进 chat 即可对话。
-    has_key = bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPUS_API_KEY"))
-    if not has_key:
-        RUNTIME.provider = provider
-        RUNTIME.model = os.environ.get("OPUS_MODEL", "")
-        RUNTIME.base_url = os.environ.get("OPUS_BASE_URL") or None
-        RUNTIME.client = None
-        print("[opus-api] 还没配置 API key · daemon 以『相遇』模式启动 · "
-              "在 /ui 完成相遇后即可对话")
-        return
-
     client, model, base_url = setup_client(provider)
+    soul = load_soul()
+
     RUNTIME.model = model
     RUNTIME.base_url = base_url
+    RUNTIME.persist_callback = lambda new_model: write_env_kv("OPUS_MODEL", new_model)
     RUNTIME.client = client
     RUNTIME.provider = provider
+    RUNTIME.system_prompt = soul.system_prompt
     print(f"[opus-api] RUNTIME 已就绪 · provider={provider} model={model}")
 
 
@@ -214,6 +194,19 @@ def _maybe_start_wechat():
         print(f"[opus-api] wechat listener 起不来（不影响 API）: {e}")
 
 
+def _maybe_start_feishu():
+    """0.9.1 · 飞书长连接监听 · 配置了 App ID/Secret 且启用才起 (之前漏加 · 重启后飞书不自动连)"""
+    try:
+        from workers.feishu_listener import start_listener_in_background
+        thread = start_listener_in_background()
+        if thread is not None and thread.is_alive():
+            print("[opus-api] feishu listener 已起 · 飞书发消息→OPUS 大脑→回复")
+        else:
+            print("[opus-api] feishu listener 禁用 · 未配置飞书或 OPUS_FEISHU_ENABLED=0")
+    except Exception as e:
+        print(f"[opus-api] feishu listener 起不来（不影响 API）: {e}")
+
+
 def main():
     # 卷四十六 IV (2026-05-26 第二十二根毛): stdout/stderr line-buffered
     # daemon 被 spawn 时 stdout 重定向到 data/daemon.out · 默认 block-buffered ·
@@ -226,19 +219,6 @@ def main():
         pass
 
     _load_env()
-
-    # Daemonkey · 本机用户永不手填 token：daemon 启动若 .env 没 OPUS_API_TOKEN 就自动生成 ·
-    # loopback 中间件 (api_routes/_deps.py) 给同机 127.0.0.1 请求覆盖注入它 → 前端 chat 无需碰 token。
-    # (没这一步·loopback 豁免因 env_token 为空而失效·chat.js 会弹『第一次需要填 token』框)
-    if not (os.environ.get("OPUS_API_TOKEN") or "").strip():
-        try:
-            import secrets
-            from daemon_provider import write_public_env
-            _tok = secrets.token_urlsafe(32)
-            write_public_env("OPUS_API_TOKEN", _tok)  # 落 .env 为 DAEMONKEY_API_TOKEN
-            print("[opus-api] 自动生成 API token · 本机 loopback 免手填")
-        except Exception as e:
-            print(f"[opus-api] WARN · 自动生成 API token 失败: {type(e).__name__}: {e}")
 
     # 卷四十六 III 补丁 5 · R1 · 统一 logging (RotatingFile + trace_id)
     # daemon 全生命周期前装好 · 让后续所有 logger.info 都落到 data/runtime/daemon.log
@@ -302,11 +282,13 @@ def main():
         print(f"[opus-api] WARN · boot_health 前端自检跳过 (不阻塞启动): {type(e).__name__}: {e}")
 
     # 卷六十四续六 · 启动时自动挂 git 钩子 (pre-commit 保鲜闸对所有用户生效·免手动 install_hooks)
+    # 0.5.0 · 先做首启 git init 兜底 (ZIP 解压的开源用户没 .git · 装了 git 就自动建仓库→解锁回档/升级)
     try:
-        from workers.boot_health import ensure_git_hooks
+        from workers.boot_health import ensure_git_repo, ensure_git_hooks
+        ensure_git_repo()
         ensure_git_hooks()
     except Exception as e:
-        print(f"[opus-api] WARN · ensure_git_hooks 跳过 (不阻塞启动): {type(e).__name__}: {e}")
+        print(f"[opus-api] WARN · ensure_git_repo/hooks 跳过 (不阻塞启动): {type(e).__name__}: {e}")
 
     # 卷三十三补丁 · 关键修复：必须先初始化 RUNTIME · 否则 /chat 端点直接 500
     try:
@@ -335,10 +317,11 @@ def main():
         _maybe_start_proactive()
         _maybe_start_scheduled_tasks()
         _maybe_start_wechat()
+        _maybe_start_feishu()
     elif safe_mode:
         print("[opus-api] SAFE MODE · 跳过后台调度启动")
 
-    # 启动通知: 版本比对(升级后首条对话告知更新内容) + 可选依赖体检(缺腿功能提醒补装)
+    # 0.8.2 hotfix · 启动通知: 版本比对(升级后首条对话告知更新内容) + 可选依赖体检(缺腿功能提醒补装)
     # 只读 manifest + find_spec 探测 + 写 data/runtime/ · 零副作用 · 失败不阻塞启动
     try:
         from workers.startup_notices import refresh_startup_notices
@@ -386,6 +369,23 @@ def main():
         schedule_last_good_advance(safe_mode=safe_mode)
     except Exception as e:
         print(f"[opus-api] WARN · last-good 前移调度失败 (不阻塞): {type(e).__name__}: {e}")
+
+    # 卷七十二 v3 · 静默 Windows asyncio Proactor 的 ConnectionResetError noise
+    # 根因: 客户端 (浏览器 / 桌宠) 短连接断开时 · ProactorEventLoop 报 WinError 10054 ·
+    # 不影响功能但会刷满日志。 装一个全局 logging filter 把它过滤掉。
+    try:
+        import logging as _lg
+        class _MuteProactorReset(_lg.Filter):
+            def filter(self, record):
+                msg = record.getMessage()
+                if "ConnectionResetError" in msg and "WinError 10054" in msg:
+                    return False
+                if "_call_connection_lost" in msg:
+                    return False
+                return True
+        _lg.getLogger("asyncio").addFilter(_MuteProactorReset())
+    except Exception:
+        pass
 
     print(f"[opus-api] starting on http://{args.host}:{args.port} ...")
     uvicorn.run(

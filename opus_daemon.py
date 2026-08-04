@@ -46,7 +46,7 @@ from daemon_session import (
     append_turn,
     new_session_id,
 )
-from daemon_provider import detect_provider, setup_client, write_public_env
+from daemon_provider import detect_provider, setup_client, write_env_kv
 from daemon_commands import CommandContext, dispatch_command
 from daemon_api import is_api_alive, start_api_in_background
 
@@ -238,14 +238,20 @@ def _maybe_start_wechat(console: Console) -> None:
         console.print("  [dim]wechat listener: BRO 微信发消息→OPUS 大脑→回复 (发 'opus stop' 静默)[/]\n")
 
 
+def _maybe_start_feishu(console: Console) -> None:
+    """0.9.0 (wish-aac348a1) · 飞书长连接收消息监听 · 配置了 app_id/secret 且启用才起"""
+    try:
+        from workers.feishu_listener import start_listener_in_background
+        thread = start_listener_in_background()
+    except Exception as e:
+        console.print(f"  [yellow]feishu listener start failed: {e}[/]")
+        return
+    if thread is not None and thread.is_alive():
+        console.print("  [dim]feishu listener: 飞书发消息→OPUS 大脑→回复 (长连接·无窗口)[/]\n")
+
+
 def run() -> int:
     load_dotenv(ROOT / ".env")
-    # 品牌前缀别名:让 .env 的 DAEMONKEY_* 镜像出内核要读的 OPUS_*(新旧 .env 兼容)
-    try:
-        from workers.env_aliases import normalize_env_aliases
-        normalize_env_aliases()
-    except Exception:
-        pass
 
     provider = detect_provider()
     try:
@@ -263,7 +269,7 @@ def run() -> int:
     # 注入运行时单例。set_model 工具 + summarize_session 工具 + /model 命令都靠它读写。
     RUNTIME.model = model
     RUNTIME.base_url = base_url
-    RUNTIME.persist_callback = lambda new_model: write_public_env("OPUS_MODEL", new_model)
+    RUNTIME.persist_callback = lambda new_model: write_env_kv("OPUS_MODEL", new_model)
     RUNTIME.client = client
     RUNTIME.provider = provider
     RUNTIME.system_prompt = soul.system_prompt
@@ -287,6 +293,7 @@ def run() -> int:
     _maybe_start_proactive(console)
     _maybe_start_scheduled_tasks(console)
     _maybe_start_wechat(console)
+    _maybe_start_feishu(console)
 
     max_tokens = int(os.environ.get("OPUS_MAX_TOKENS", "4096"))
     yolo = YoloState(enabled=False)

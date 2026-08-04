@@ -1,6 +1,6 @@
 /*
- * chat.js · Daemonkey 工作室 WebUI 行为脚本
- * Day 2 · 从 chat.html 拆出来
+ * chat.js · OPUS 工作室 WebUI 行为脚本
+ * 卷二十二 Day 2 · 从 chat.html 拆出来
  * build · 6d39286c483eab36e66a9d19de70ceb9
  *
  * 模块大致顺序：
@@ -17,24 +17,27 @@
 // === AI 名字本地化 (Daemonkey 分家) ===
 // 用户在『相遇』里给这只 Daemonkey 起的名字·由后端注成 window.__AI_NAME__。
 // 界面里历史遗留写死的 "OPUS" 全部换成它——一个集中机制·不必逐处改 100+ 串。
-// 正则 /Daemonkey(?![\w-])/ 只换"OPUS"作为称呼出现的地方·跳过 DAEMONKEY_API_TOKEN / Daemonkey 这类技术标识。
+// 正则 /OPUS(?![\w-])/ 只换"OPUS"作为称呼出现的地方·跳过 OPUS_API_TOKEN / OPUS-DAEMON 这类技术标识。
 (function () {
   var NAME = (window.__AI_NAME__ || '').trim();
   var OWNER = (window.__OWNER_NAME__ || '').trim();
-  var doAI = NAME && NAME !== 'Daemonkey';           // AI 自己的名字
-  var doOwner = OWNER && OWNER !== '用户';        // 主人的称呼 (UI 里的 用户 也换掉)
+  var doAI = NAME && NAME !== 'OPUS';           // AI 自己的名字
+  var doOwner = OWNER && OWNER !== 'BRO';        // 主人的称呼 (UI 里的 BRO 也换掉)
   if (!doAI && !doOwner) return;                // 母体两者都默认 → 保持原样
-  // 正则跳过 DAEMONKEY_API_TOKEN / Daemonkey / OWNER-NOTEBOOK 这类技术标识·只换作为称呼出现的词
-  var RE_AI = /Daemonkey(?![\w-])/g;
+  // 正则跳过 OPUS_API_TOKEN / OPUS-DAEMON / BRO-NOTEBOOK 这类技术标识·只换作为称呼出现的词
+  var RE_AI = /OPUS(?![\w-])/g;
   var RE_OWNER = /\bBRO(?![\w-])/g;
-  // 纯净版界面不含母体 lore 词·不需要 lore 替换逻辑。
+  // Daemonkey 分家: 取了自己名字的实例·把母体私有 lore「花果山」中性成「<名字> 的家」。
+  // 前端 localizer 原本只换 OPUS/BRO·「花果山」这类叙事得单独抹·否则纯净版界面会漏出来。
+  var HOME = NAME ? (NAME + ' 的家') : '';
   function fix(s) {
     if (!s) return s;
-    if (doAI && s.indexOf('Daemonkey') >= 0) s = s.replace(RE_AI, NAME);
-    if (doOwner && s.indexOf('用户') >= 0) s = s.replace(RE_OWNER, OWNER);
+    if (doAI && s.indexOf('OPUS') >= 0) s = s.replace(RE_AI, NAME);
+    if (doOwner && s.indexOf('BRO') >= 0) s = s.replace(RE_OWNER, OWNER);
+    if (doAI && HOME && s.indexOf('花果山') >= 0) s = s.split('花果山').join(HOME);
     return s;
   }
-  function _hit(v) { return v && ((doAI && v.indexOf('Daemonkey') >= 0) || (doOwner && v.indexOf('用户') >= 0)); }
+  function _hit(v) { return v && ((doAI && (v.indexOf('OPUS') >= 0 || v.indexOf('花果山') >= 0)) || (doOwner && v.indexOf('BRO') >= 0)); }
   function walk(root) {
     if (!root) return;
     try {
@@ -83,12 +86,12 @@ const STORAGE = {
 const THEME_KEY = 'opus_ui_theme';
 const THEME_CUSTOM_KEY = 'opus_ui_theme_custom';
 
-// v5 · 2026-06-10 · 用户 bug 报告: 「用户 让 Daemonkey 写代码时只要提到「默认」俩字 ·
+// 卷七十二 v5 · 2026-06-10 · BRO bug 报告: 「BRO 让 OPUS 写代码时只要提到「默认」俩字 ·
 //   就会直接换主题 · 而不是执行全句的需求」
 // 病根: 「默认」是「暗紫」的 alias · matchThemePreset 看到「用默认值」就误命中
-//      (`用` 满足 intent 模糊 regex · `默认` 命中 alias · 整句被 send 吞掉不发给 Daemonkey)
+//      (`用` 满足 intent 模糊 regex · `默认` 命中 alias · 整句被 send 吞掉不发给 OPUS)
 // 修法: ① 把「默认」「原来的」「恢复默认」「回到原来」这类语义太模糊的词从 alias 删掉
-//       (用户 想恢复要说「换回暗紫主题」/「切回深色主题」)
+//       (BRO 想恢复要说「换回暗紫主题」/「切回深色主题」)
 //       ② intent regex 收紧 · 必须 (换/切/改/变/设/应用) + (主题/皮肤/外观/配色/界面) 两段配对
 //       ③ 加 exact-match 兜底: 整句就是 alias 时直接命中 (短指令体验保留)
 const THEME_PRESETS = [
@@ -103,7 +106,7 @@ const THEME_PRESETS = [
   { cls: 'theme-pink-white',  label: '粉白',   aliases: ['粉白','粉白主题','樱花白'] },
 ];
 
-// "XX 模式" 短语 → 主题 label 映射 (用户 习惯说法 · 不进 alias 防误判)
+// "XX 模式" 短语 → 主题 label 映射 (BRO 习惯说法 · 不进 alias 防误判)
 const THEME_MODE_PHRASES = {
   '暗色': '暗紫', '深色': '暗紫', '夜间': '暗紫', '暗黑': '暗紫',
   '亮色': '白天', '浅色': '白天', '日间': '白天', '明亮': '白天', '白天': '白天',
@@ -117,7 +120,7 @@ function matchThemePreset(text) {
   for (const p of THEME_PRESETS) {
     for (const a of p.aliases) { if (t === a.toLowerCase()) return p; }
   }
-  // ② "XX 模式" 短语 → 主题 (用户 习惯 "用深色模式" / "白天模式" / "亮色模式")
+  // ② "XX 模式" 短语 → 主题 (BRO 习惯 "用深色模式" / "白天模式" / "亮色模式")
   const modeMatch = t.match(/(暗色|深色|夜间|暗黑|亮色|浅色|日间|明亮|白天|护眼)\s*模式/);
   if (modeMatch) {
     const targetLabel = THEME_MODE_PHRASES[modeMatch[1]];
@@ -132,7 +135,7 @@ function matchThemePreset(text) {
     }
   }
   // ④ 长句 · 必须有"切主题"强意图 (动词+名词配对) · 才允许 includes 匹配
-  //   动词列表用 "用上" 而非 "用" 单字 · 否则 "用 X" 全部命中 (= 用户 bug)
+  //   动词列表用 "用上" 而非 "用" 单字 · 否则 "用 X" 全部命中 (= BRO bug)
   const hasStrongIntent =
     /(换|切|改|改成|变|变成|设|设为|应用|启用|用上)\s*(成|个|到|为|了)?\s*[^。.,，]{0,8}\s*(主题|皮肤|外观|配色|界面|ui)/i.test(t)
     || /(theme|skin)\s*(=|:|to|为)/i.test(t);
@@ -209,7 +212,7 @@ function interceptThemeCommand(text) {
   return false;
 }
 
-// 扫描 Daemonkey 消息中的自定义主题代码块 (```theme ... ```)
+// 扫描 OPUS 消息中的自定义主题代码块 (```theme ... ```)
 function scanThemeBlocks(container) {
   if (!container) return;
   var codes = container.querySelectorAll('code.lang-theme');
@@ -229,7 +232,7 @@ function scanThemeBlocks(container) {
   });
 }
 
-// ═══九 · 换肤按钮 UI(接现成 applyTheme)+ 简洁版切换 ═══
+// ═══ 卷七十五续九 · 换肤按钮 UI(接现成 applyTheme)+ 简洁版切换 ═══
 // 换肤色板:每个 swatch 带对应主题 class · dots 用 var(--bg)/var(--opus) 取真实色(不硬编码·防漂移);
 // 默认(暗紫·无 class)用 inline 兜底 · 因为它继承不到自身的默认变量。
 function buildThemeGrid() {
@@ -322,7 +325,7 @@ let token = localStorage.getItem(STORAGE.token) || '';
 // 后台跑的对话仍然有 state 在 _sessions[sid] 里·不被这一变量影响
 let sessionId = localStorage.getItem(STORAGE.session) || '';
 let autoConfirm = localStorage.getItem(STORAGE.autoConfirm) || 'confirm';
-// · 主动 CALL 收件箱游标 · 初始化为本次开页时刻 · 只提示开页后 Daemonkey 主动开口的消息 (不回放历史)
+// 卷六十 · 主动 CALL 收件箱游标 · 初始化为本次开页时刻 · 只提示开页后 OPUS 主动开口的消息 (不回放历史)
 let _proactiveLastSeen = new Date().toISOString();
 // pending = 当前 visible session 的状态·切换 session 时从对应 state 里读
 // (是 _sessions[sessionId].pending 的 visible mirror)
@@ -428,7 +431,7 @@ function saveAliases() {
   catch {}
 }
 
-//丁 · session meta 缓存 · 服务端 label 优先于 localStorage 别名
+// 卷三十四补丁 · session meta 缓存 · 服务端 label 优先于 localStorage 别名
 let sessionMetaCache = {};
 let showArchivedSessions = false;
 let archivedCount = 0;
@@ -489,7 +492,7 @@ function _setActiveContainer(sid) {
 }
 const $input = document.getElementById('input');
 const $send = document.getElementById('send');
-// · stop 已合并进 send · 用户 反馈"两个按钮丑" · 一个按钮两种状态
+// 卷三十八 · stop 已合并进 send · BRO 反馈"两个按钮丑" · 一个按钮两种状态
 const $stop = null;
 // wish-4a6331b2 · 图片附件
 const $attachBtn = document.getElementById('attachBtn');
@@ -685,7 +688,7 @@ if ($attachBtn && $attachFile) {
   }
 }
 
-// wish-41ed72ef · 语音输入 →六 · 三模式语音 (用户 2026-07-11 校准语义)
+// wish-41ed72ef · 语音输入 → 卷七十五续六 · 三模式语音 (BRO 2026-07-11 校准语义)
 //   · 语音输入 (dictation): 说完填输入框·手动发 (最初功能·不变);
 //   · 语音对话 (transcribe): 持续听麦克风·你说完停约 1 秒自动发给 AI·
 //       AI 回完继续听 —— hands-free 语音对话·给未来桌面版对话模式留的扣·UI 比会议纪要轻;
@@ -706,7 +709,7 @@ if ($attachBtn && $attachFile) {
   const $close = document.getElementById('voiceClose');
 
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const SILENCE_MS = 1000;      // 语音对话: 停顿约 1 秒自动发给 AI (用户 定 · 给桌面版对话模式留扣)
+  const SILENCE_MS = 1000;      // 语音对话: 停顿约 1 秒自动发给 AI (BRO 定 · 给桌面版对话模式留扣)
   const MODES = {
     dictation:  { label: '语音输入', panel: false, icon: 'ri-mic-line' },
     transcribe: { label: '语音对话', panel: true,  icon: 'ri-chat-voice-line' },   // 持续听 · 停约 1 秒自动发
@@ -742,7 +745,7 @@ if ($attachBtn && $attachFile) {
   }
   // 面板按钮按 模式 + 是否在听 显隐:
   //   听着时 → 只显示【停止】(语音对话:停止对话 · 会议纪要:停止录制);
-  //   会议纪要停下后 → 显示【整理成纪要/插入/清空】让 用户 处理文本。
+  //   会议纪要停下后 → 显示【整理成纪要/插入/清空】让 BRO 处理文本。
   function _updateActions() {
     if (!$panel) return;
     const meetingStopped = (mode === 'meeting' && !_listening);
@@ -855,7 +858,7 @@ if ($attachBtn && $attachFile) {
   }
   // 绑一个 SR 实例并启动。 onend 里【建新实例】重启 (不是复用旧实例 .start()):
   //   Chromium 复用旧实例重启会把上一段 final 再 replay 一次 onresult → 没说话也被当新话发出去
-  //   (用户 撞到的"第一句后自动又发个'查'")。 新实例 e.results 从零·根治重复。
+  //   (BRO 撞到的"第一句后自动又发个'查'")。 新实例 e.results 从零·根治重复。
   function _bindSR(onResult) {
     const r = _makeSR();
     const gen = _srGen;   // 绑死本代号·换代后这个实例的 onend 一律作废
@@ -906,9 +909,9 @@ if ($attachBtn && $attachFile) {
     $input.value = txt;
     _autosize();
     if (typeof send === 'function') send();
-    _pauseForReply();                            // 发完就停收音 · 轮到 Daemonkey 说 · 回完自动接着听
+    _pauseForReply();                            // 发完就停收音 · 轮到 OPUS 说 · 回完自动接着听
   }
-  // AI 回复期间暂停麦克风 (用户: 语音对话该轮流说·回消息时别录音) · 盯 pending·回完自动恢复
+  // AI 回复期间暂停麦克风 (BRO: 语音对话该轮流说·回消息时别录音) · 盯 pending·回完自动恢复
   function _pauseForReply() {
     if (mode !== 'transcribe') return;
     _voicePaused = true; _sawPending = false; _pauseTicks = 0;
@@ -916,7 +919,7 @@ if ($attachBtn && $attachFile) {
     if (_rec) { try { _rec.stop(); } catch (_) {} }
     $micBtn.classList.remove('listening');
     _renderChat('');
-    _setRecNote('<i class="ri-pause-circle-line"></i> Daemonkey 回复中 · 已暂停收音 · 回完自动继续听', 'wait');
+    _setRecNote('<i class="ri-pause-circle-line"></i> OPUS 回复中 · 已暂停收音 · 回完自动继续听', 'wait');
     if (_replyWatcher) clearInterval(_replyWatcher);
     _replyWatcher = setInterval(() => {
       _pauseTicks++;
@@ -930,7 +933,7 @@ if ($attachBtn && $attachFile) {
     _voicePaused = false;
     if (_manualStop || !_listening || mode !== 'transcribe') return;  // 期间用户点了停 → 不恢复
     $micBtn.classList.add('listening');
-    _setRecNote('<i class="ri-mic-fill"></i> 在听 · 你说完停约 1 秒会自动发给 Daemonkey', 'rec');
+    _setRecNote('<i class="ri-mic-fill"></i> 在听 · 你说完停约 1 秒会自动发给 OPUS', 'rec');
     _startVoiceChat();                           // 建新 SR 实例·继续听下一句
   }
   // ── 会议纪要 = 持续把麦克风转成文本累积 · 停止后交给 AI 拆分 ──
@@ -955,7 +958,7 @@ if ($attachBtn && $attachFile) {
     }
   }
 
-  // (六 · 系统音频 getDisplayMedia/MediaRecorder 那套已移除:用户 定会议纪要=纯麦克风
+  // (卷七十五续六 · 系统音频 getDisplayMedia/MediaRecorder 那套已移除:BRO 定会议纪要=纯麦克风
   //  录成文本·停止后交给 AI 拆分;线上会议对方声音等后端 ASR 落地再补·不在此纠结。)
 
   // ── 启停总入口 ──
@@ -973,7 +976,7 @@ if ($attachBtn && $attachFile) {
     _startTimer();
     _setListening(true);
     if (mode === 'transcribe') {
-      _setRecNote('<i class="ri-mic-fill"></i> 在听 · 你说完停约 1 秒会自动发给 Daemonkey', 'rec');
+      _setRecNote('<i class="ri-mic-fill"></i> 在听 · 你说完停约 1 秒会自动发给 OPUS', 'rec');
       _startVoiceChat();
     } else {
       _setRecNote('<i class="ri-record-circle-fill"></i> 录制中 · 边说边记 · 完了点【停止录制】', 'rec');
@@ -998,7 +1001,7 @@ if ($attachBtn && $attachFile) {
     } else if (mode === 'meeting') {
       if ($panelMode) $panelMode.textContent = '会议纪要 · 已停止';
       const n = (_finalText || '').trim().length;
-      if (n > 0) _setRecNote('<i class="ri-stop-circle-fill"></i> 已停止 · 记录 ' + n + ' 字 · 点【整理成纪要】交给 Daemonkey 拆分', 'done');
+      if (n > 0) _setRecNote('<i class="ri-stop-circle-fill"></i> 已停止 · 记录 ' + n + ' 字 · 点【整理成纪要】交给 OPUS 拆分', 'done');
       else _setRecNote('<i class="ri-information-line"></i> 没记到文字 · 检查麦克风权限后重录', 'warn');
     }
   }
@@ -1054,7 +1057,7 @@ if ($attachBtn && $attachFile) {
   });
 })();
 
-//五 · 模型行为 (思考/推理强度/输出上限) · 本地记住 · 每次 chat 请求带上
+// 卷七十五续五 · 模型行为 (思考/推理强度/输出上限) · 本地记住 · 每次 chat 请求带上
 // 缺省全空 = 后端老行为(零回归)。 后端只对支持的模型下发·别的静默忽略·不报错。
 function modelBehaviorPayload() {
   const out = {};
@@ -1089,7 +1092,7 @@ function modelBehaviorPayload() {
 })();
 
 const $modal = document.getElementById('settings');
-// · 当前 turn 的 id · 用来发 abort 请求
+// 卷三十六 · 当前 turn 的 id · 用来发 abort 请求
 // wish-3fef4bc7 · 真并行后这些是 active session 的 mirror · 切换 session 时同步
 let currentTurnId = null;
 let currentAbortController = null;
@@ -1097,8 +1100,8 @@ const $tokenIn = document.getElementById('tokenInput');
 const $sessionIn = document.getElementById('sessionInput');
 const $autoIn = document.getElementById('autoConfirm');
 
-//丁6 · 进度条 + mutating 工具白名单
-// 这些工具会写 data/ 下文件 · 改 dashboard 数据 · Daemonkey 调一次 → UI 立刻刷一次
+// 卷三十五补丁6 · 进度条 + mutating 工具白名单
+// 这些工具会写 data/ 下文件 · 改 dashboard 数据 · OPUS 调一次 → UI 立刻刷一次
 // 只读工具 (read_file / grep_files / web_search / browser_fetch / shell_exec 等) 不在表 · 跳过
 const MUTATING_TOOLS = new Set([
   'wish_add', 'wish_update',
@@ -1108,13 +1111,13 @@ const MUTATING_TOOLS = new Set([
   'toggle_favorite', 'generate_report', 'expand_trend_to_report',
   'auto_pipeline', 'update_bro_note', 'refresh_radar', 'generate_trends',
   'opus_diary',
-  // · 工坊产出类补全 (之前漏了·Daemonkey 造完 app/草稿 看板不自动刷·用户 得手动 F5)
+  // 卷五十四 · 工坊产出类补全 (之前漏了·OPUS 造完 app/草稿 看板不自动刷·BRO 得手动 F5)
   'create_app', 'update_app', 'create_workflow', 'draft_studio',
   'update_self_evolution',
 ]);
 
-// 10 · dashboard list 通用搜索框 (event delegation · 一次绑全 view 共用)
-// 用户 反馈 (候选 B): "心愿/报告/机会/趋势 加搜索框 · 16 条不算多 · N 大了就刚需"
+// 卷四十六续 10 · dashboard list 通用搜索框 (event delegation · 一次绑全 view 共用)
+// BRO 反馈 (候选 B): "心愿/报告/机会/趋势 加搜索框 · 16 条不算多 · N 大了就刚需"
 // 用法 (在 render*View 函数内 · 在 list 容器上面插入):
 //   renderListFilter({targetSelector: '.wish-card', placeholder: '搜心愿标题或动机...'})
 // 数据驱动: input.value 变化 → 隐藏 textContent 不含 query 的 item · 更新 stats
@@ -1192,12 +1195,12 @@ function showToolProgress(visible) {
     if (detail) detail.hidden = true;
     const btn = document.querySelector('.tool-progress-detail');
     if (btn) btn.textContent = '详情 ▾';
-    // 9 · 隐藏进度条时清掉 ticker (防泄漏)
+    // 卷四十六续 9 · 隐藏进度条时清掉 ticker (防泄漏)
     _stopToolProgressTicker();
     _stopBgProgressTicker();
   }
 }
-// 进度条只用 RemixIcon · 把后端进度文案里的 emoji(📡🌀⏳…)映射成内置图标 (用户 要求统一)
+// 进度条只用 RemixIcon · 把后端进度文案里的 emoji(📡🌀⏳…)映射成内置图标 (BRO 要求统一)
 const _PROGRESS_EMOJI_ICON = {
   '📡': 'ri-radar-line', '🌐': 'ri-global-line', '🧠': 'ri-brain-line',
   '🔍': 'ri-search-line', '🌀': 'ri-loader-4-line', '✨': 'ri-sparkling-line',
@@ -1212,7 +1215,7 @@ const _PROGRESS_EMOJI_ICON = {
 };
 function _iconifyProgress(text) {
   // 先把已内联的 RemixIcon 标签(<i class="ri-xxx"></i>)抽出占位·别被 escHtml 转义成字面量
-  // ( · 用户 反馈进度条里出现字面 <i class="ri-check-fill">)
+  // (卷七十九续 · BRO 反馈进度条里出现字面 <i class="ri-check-fill">)
   const icons = [];
   const stashed = (text || '').replace(/<i class="ri-[a-z0-9-]+"><\/i>/g, (m) => {
     icons.push(m);
@@ -1233,10 +1236,10 @@ function setToolProgressText(text) {
   if (t) t.innerHTML = _iconifyProgress(text);
 }
 
-// ② 自主巡航进度 (四) · 把 active_turn 端点回的 progress 快照格式化成进度条文案
+// ② 自主巡航进度 (卷七十五续四) · 把 active_turn 端点回的 progress 快照格式化成进度条文案
 // progress = {label, tool, iteration, elapsed_s, stale_s} · 可能为 null (老 daemon / 刚起没记上)
 function _fmtBgProgress(progress, elapsedOverride, staleOverride) {
-  if (!progress) return 'Daemonkey 后台仍在跑这个对话 · 自动刷新中…';
+  if (!progress) return 'OPUS 后台仍在跑这个对话 · 自动刷新中…';
   const label = (progress.label || '').trim() || '跑动中';
   const it = progress.iteration ? ` · 第${progress.iteration}轮` : '';
   const elapsedS = (elapsedOverride != null) ? elapsedOverride : progress.elapsed_s;
@@ -1244,7 +1247,7 @@ function _fmtBgProgress(progress, elapsedOverride, staleOverride) {
   // 距上次进度更新 >25s · 多半在等模型出字 (长上下文/深度思考) · 给个明确提示而非"像卡住"
   const staleS = (staleOverride != null) ? staleOverride : progress.stale_s;
   const stale = (staleS != null && staleS >= 25) ? ' · ⏳等模型响应' : '';
-  return `Daemonkey 后台跑动中 · ${label}${it}${el}${stale}`;
+  return `OPUS 后台跑动中 · ${label}${it}${el}${stale}`;
 }
 
 // 自主巡航读秒本地插值 · 后台 turn 无 SSE·只有每 3s 的 poll 快照·靠这个 1s ticker 让
@@ -1271,8 +1274,8 @@ function _startBgProgressTicker(sid, snapshot) {
   if (!_bgProgressTickerId) _bgProgressTickerId = setInterval(_refreshBgProgressTick, 1000);
 }
 
-// 9 · 工具进度条「已 X 秒」实时 ticker
-// 用户 反馈: tool_call 触发后 "已 2s" 卡在那不动·应该每秒读秒·新工具开始时清零
+// 卷四十六续 9 · 工具进度条「已 X 秒」实时 ticker
+// BRO 反馈: tool_call 触发后 "已 2s" 卡在那不动·应该每秒读秒·新工具开始时清零
 // 实现: state._lastToolMeta 存当前 tool · ticker setInterval(1000) 重算 elapsed
 // tool_result 时 frozen=true 锁定显示总耗时·下个 tool_call 重置
 let _toolProgressTickerId = null;
@@ -1292,22 +1295,22 @@ function _refreshToolProgressTick() {
   if (m && m.startedAt && !m.frozen) {
     const elapsed = Math.floor((Date.now() - m.startedAt) / 1000);
     const briefArgs = (m.summary || '').slice(0, 40);
-    // · wish-f30d571d · 有 tool_progress 步骤信息时优先显示步骤
+    // 卷五十八 · wish-f30d571d · 有 tool_progress 步骤信息时优先显示步骤
     if (m.progressStep) {
       const stepText = m.progressStep + (m.progressMsg ? ' ' + m.progressMsg : '');
       setToolProgressText(`${stepText} · 已 ${elapsed}s`);
     } else {
       setToolProgressText(
-        `Daemonkey 正在跑第 ${m.count} 个工具 · ${m.name || '?'}${briefArgs ? ' · ' + briefArgs : ''} · 已 ${elapsed}s`
+        `OPUS 正在跑第 ${m.count} 个工具 · ${m.name || '?'}${briefArgs ? ' · ' + briefArgs : ''} · 已 ${elapsed}s`
       );
     }
     return;
   }
-  // · 没有活跃工具但这一轮还在跑(思考/写字/等模型)→ 整轮读秒
-  // 别卡在上一个工具的冻结文案(用户: "什么都没做他就一直保持 0s")
+  // 卷七十九续 · 没有活跃工具但这一轮还在跑(思考/写字/等模型)→ 整轮读秒
+  // 别卡在上一个工具的冻结文案(BRO: "什么都没做他就一直保持 0s")
   if (st._turnStartedAt) {
     const el = Math.floor((Date.now() - st._turnStartedAt) / 1000);
-    setToolProgressText(`Daemonkey 思考中 · 已 ${el}s`);
+    setToolProgressText(`OPUS 思考中 · 已 ${el}s`);
   }
 }
 function _startToolProgressTicker(state) {
@@ -1317,7 +1320,7 @@ function _startToolProgressTicker(state) {
   _toolProgressTickerId = setInterval(_refreshToolProgressTick, 1000);
 }
 
-//丁6.1 · 详情面板的真实内容 · 维护最近 8 个工具事件
+// 卷三十五补丁6.1 · 详情面板的真实内容 · 维护最近 8 个工具事件
 const recentToolEvents = []; // {phase: 'call'|'ok'|'fail', name, summary, t}
 const MAX_DETAIL_ROWS = 12;
 
@@ -1377,16 +1380,16 @@ function toggleToolDetail() {
 }
 window.toggleToolDetail = toggleToolDetail;
 
-// v3 · 工作流跑时进度 banner (用户 图2 诉求)
+// 卷七十二 v3 · 工作流跑时进度 banner (BRO 图2 诉求)
 // 轮询 /workshop/runs · 有 active flow / 最近完成都显示 banner · 点击展开看每 step 进度
-// P0 (2026-06-10): 异步化后 banner 必须显示 done/failed 通知 · 否则 用户 等不到回声
+// 卷七十三 P0 (2026-06-10): 异步化后 banner 必须显示 done/failed 通知 · 否则 BRO 等不到回声
 const _FLOW_RUNS_POLL_MS = 3000;
-const _FLOW_RECENT_TERMINAL_MS = 90 * 1000;  // 90s 内的 done/failed 也显示 (用户 看到结果再消失)
+const _FLOW_RECENT_TERMINAL_MS = 90 * 1000;  // 90s 内的 done/failed 也显示 (BRO 看到结果再消失)
 let _flowRunsTimer = null;
 let _flowRunsActive = [];       // 当前展示集合 (running + 最近 90s 内 done/failed)
 let _flowRunsDetailOpen = false;
 let _flowRunsDetailCache = {};  // run_id → 完整 state (展开时 fetch · 折叠时也保留供下次秒开)
-let _flowRunsDismissed = {};    // run_id → true · 用户 点 "知道了" 后不再 banner
+let _flowRunsDismissed = {};    // run_id → true · BRO 点 "知道了" 后不再 banner
 
 function _flowRunsToken() {
   try { return localStorage.getItem('opus_token') || ''; } catch (e) { return ''; }
@@ -1402,7 +1405,7 @@ function _isRecentTerminal(run) {
   return (Date.now() - t) < _FLOW_RECENT_TERMINAL_MS;
 }
 
-// P2 (2026-06-10) · 跨 tab 提醒 (用户 切走 tab 也能感知 flow 跑完)
+// 卷七十三 P2 (2026-06-10) · 跨 tab 提醒 (BRO 切走 tab 也能感知 flow 跑完)
 let _flowRunsPrevStatuses = {};       // run_id → 上次 poll 看到的 status · 用来 diff "running → done/failed"
 let _flowRunsTitleTimer = null;
 const _ORIGINAL_TITLE = document.title;
@@ -1422,7 +1425,7 @@ function _stopTitleFlash() {
   document.title = _ORIGINAL_TITLE;
 }
 
-// 用户 切回 tab 自动停闪 (有把 tab 切走的场景才需要闪 · 看了就不闪)
+// BRO 切回 tab 自动停闪 (有把 tab 切走的场景才需要闪 · 看了就不闪)
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) _stopTitleFlash();
 });
@@ -1460,7 +1463,7 @@ async function pollFlowRuns() {
     const data = await r.json();
     const all = data.runs || [];
 
-    // diff: 上轮 running 这轮 done/failed → 触发 title 闪烁通知 (跨 tab 感知 · 用户 切走也能看到)
+    // diff: 上轮 running 这轮 done/failed → 触发 title 闪烁通知 (跨 tab 感知 · BRO 切走也能看到)
     let flashKind = null;  // 'done' / 'failed' / null
     for (const r of all) {
       const prev = _flowRunsPrevStatuses[r.run_id];
@@ -1526,7 +1529,7 @@ function renderFlowRunsBanner() {
   text.textContent = primary + more;
 }
 
-// 用户 点"知道了" 把已完成 run 从 banner 撤掉 (running 不许撤 · 还得看进度)
+// BRO 点"知道了" 把已完成 run 从 banner 撤掉 (running 不许撤 · 还得看进度)
 function dismissFlowRun(runId) {
   if (!runId) return;
   _flowRunsDismissed[runId] = true;
@@ -1575,7 +1578,7 @@ function renderFlowRunCard(state) {
   const stepsHtml = (state.steps || []).map(s => renderFlowRunStep(s)).join('');
   const fname = state.flow_name || state.flow_id || '(?)';
   const runId = state.run_id || '';
-  // P0 · done/failed 给一个"知道了"按钮 · 用户 看完撤掉 banner (running 不给)
+  // 卷七十三 P0 · done/failed 给一个"知道了"按钮 · BRO 看完撤掉 banner (running 不给)
   const dismissBtn = (status === 'done' || status === 'failed')
     ? `<button class="flow-run-dismiss" type="button" onclick="dismissFlowRun('${escAttr(runId)}')" title="收到 · 撤掉这条 banner 通知">知道了</button>`
     : '';
@@ -1680,8 +1683,8 @@ if (document.readyState === 'loading') {
   _startFlowRunsPoll();
 }
 
-// ── git 欠账亮灯 (2026-07-29 · 用户 拍板 · 开 WebUI 第一眼可观测) ──
-// 启动查一次 + 每 60s 轮询 · 欠账时左上角胶囊亮 · 点击 = 填输入框让 Daemonkey 走合并闭环 (NLP First)
+// ── git 欠账亮灯 (2026-07-29 · BRO 拍板 · 开 WebUI 第一眼可观测) ──
+// 启动查一次 + 每 60s 轮询 · 欠账时左上角胶囊亮 · 点击 = 填输入框让 OPUS 走合并闭环 (NLP First)
 let _gitDebtTimer = null;
 async function pollGitDebt() {
   const chip = document.getElementById('gitDebtChip');
@@ -1702,7 +1705,7 @@ async function pollGitDebt() {
     }
   } catch (e) { /* 网络抖动静默 · 下轮再试 */ }
 }
-// ── git 欠账面板 (2026-07-29 · 用户 直批三件套 B+C) ──
+// ── git 欠账面板 (2026-07-29 · BRO 直批三件套 B+C) ──
 // 点击胶囊 → 面板显示"未提交的是什么"(文件清单+人话分类) → 一键收进主干 (不用懂 git)
 const _GIT_DEBT_KIND_COLOR = {
   code: 'var(--opus)', soul: '#e06c9f', cognition: '#8a7bd8', playbook: '#3fb27f',
@@ -1772,7 +1775,7 @@ function startDialogUpgrade(e) {
 }
 window.startDialogUpgrade = startDialogUpgrade;
 
-// 轮询更新状态 · 页面加载 + 每 5 分钟 · 有新版显示胶囊
+// 轮询更新状态 · 启动时查一次即可 (BRO 拍板: 不需要 5 分钟轮询 · 避免任务栏闪窗疑云)
 async function _pollUpdateStatus() {
   try {
     const r = await fetch('/api/update-status', { headers: { 'Authorization': 'Bearer ' + token } });
@@ -1797,11 +1800,8 @@ async function _pollUpdateStatus() {
 }
 window._pollUpdateStatus = _pollUpdateStatus;
 (function initUpdatePoll() {
-  setTimeout(_pollUpdateStatus, 1200);            // 页面加载后先查一次
-  setInterval(_pollUpdateStatus, 5 * 60 * 1000);  // 之后每 5 分钟
+  setTimeout(_pollUpdateStatus, 1200);  // 启动时查一次 · 不轮询 (0.8.4 · BRO 拍板)
 })();
-
-
 function renderGitDebtPanel(d) {
   const body = document.getElementById('gitDebtPanelBody');
   const btn = document.getElementById('gitDebtCollectBtn');
@@ -1855,7 +1855,7 @@ async function collectGitDebt() {
       pollGitDebt();
       setTimeout(closeGitDebtPanel, 2500);
     } else {
-      if (res) res.innerHTML = '<div class="git-debt-err"><i class="ri-error-warning-fill"></i> ' + escHtml((d && (d.error || d.note)) || '收进失败') + '<br>可以点「让 Daemonkey 处理」交给我排查</div>';
+      if (res) res.innerHTML = '<div class="git-debt-err"><i class="ri-error-warning-fill"></i> ' + escHtml((d && (d.error || d.note)) || '收进失败') + '<br>可以点「让 OPUS 处理」交给我排查</div>';
       btn.disabled = false;
       btn.innerHTML = '<i class="ri-git-merge-line"></i> 一键收进主干';
     }
@@ -1891,21 +1891,21 @@ if (document.readyState === 'loading') {
   _startGitDebtPoll();
 }
 
-// ── v4 · 0.2.0 · 新对话引导卡 onboarding panel ──
+// ── 卷七十二 v4 · 0.2.0 · 新对话引导卡 onboarding panel ──
 // 设计:
 //   messages 容器空 (新对话 / 切到没消息的会话) → 显示 panel · 一旦有消息 → hide
-//   点卡 → 把模板填入输入框 + focus + 不直接发 (用户 可改完再发)
+//   点卡 → 把模板填入输入框 + focus + 不直接发 (BRO 可改完再发)
 //   模板可自定义 · 存 localStorage 'opus.onboarding.templates' (P2-8)
 const _ONBOARD_DEFAULT_TEMPLATES = {
   create_app: '我想造一个应用 · 用来 [描述用途 · 例如「自动抓 B 站热门评论」]\n输入是: [列字段]\n输出是: [列字段]\n你帮我设计 system_prompt + 工具白名单 + ui_form_schema · 然后落到工坊。',
   create_flow: '我想搭一条工作流 · 名字叫 [起一个]\n流程是:\n  1. [第一步用什么 app · 干啥]\n  2. [第二步用什么 app · 干啥]\n  3. ...\n你帮我用 create_workflow 落档 · 我看了再说跑不跑。',
-  chat_about: '聊聊吧 · 你是谁 · 你能做什么 · 你跟其他 AI 有什么不一样\n你为什么叫 Daemonkey · 是什么 · 沉淀闭环是什么\n说人话 · 不要列表式答 · 像跟朋友吹水',
+  chat_about: '聊聊吧 · 你是谁 · 你能做什么 · 你跟其他 AI 有什么不一样\n你为什么叫 OPUS · 花果山是什么 · 沉淀闭环是什么\n说人话 · 不要列表式答 · 像跟朋友吹水',
   list_capability: '把工坊里所有应用 (list_apps detailed=true) 和工作流 (list_flows detailed=true) 都列给我看看\n按用途分类 · 我想知道哪些能直接跑 · 哪些是给工作流当零件用的',
-  // v5 · 2026-06-10 · 第 5 张卡 · 换皮肤 (用户 想让用户知道有这个功能)
+  // 卷七十二 v5 · 2026-06-10 · 第 5 张卡 · 换皮肤 (BRO 想让用户知道有这个功能)
   // 模板里"换成 X 主题"会触发前端 matchThemePreset 强意图判断 · 直接切主题不发给 LLM
   // 想要 LLM 帮造自定义配色就明确说 "你帮我设计一套 ... 输出 ```theme JSON```"
   change_theme: '把界面主题换成 [暗紫 / 经典灰 / 白天 / 护眼暖黄 / 海洋蓝 / 森林绿 / 日落橙 / 粉色 / 粉白] 主题\n或者 · 你帮我设计一套 [描述风格 · 例如「赛博蓝紫·像 dune 沙漠」] 的配色 · 输出 ```theme JSON``` 代码块',
-  //二十五 · 第 6 张卡 · 能力发现 (入口 A · 主动去外面找 SKILL/开源项目升级自己)
+  // 卷七十四续二十五 · 第 6 张卡 · 能力发现 (入口 A · 主动去外面找 SKILL/开源项目升级自己)
   discover_skill: '帮我找点能升级你自己的新能力 (调 discover_skill 工具) · 去 GitHub / 开源社区找 SKILL / 工具 / 开源项目\n方向: [可留空让你按我画像定 · 或填: 比如 视频口播 / figma 插件 / 调试工作流]\n按我的画像评估 · 靠谱的出一份发现报告 + 落地建议 (playbook / app / 心愿)',
 };
 
@@ -1926,7 +1926,7 @@ function _saveOnboardingTemplates(custom) {
   } catch (e) {}
 }
 
-// v5 · 2026-06-10 · 用户 bug: 「新对话没显示快捷卡」
+// 卷七十二 v5 · 2026-06-10 · BRO bug: 「新对话没显示快捷卡」
 // 病根: #messages 容器里包的是多个 .session-msgs[data-sid="..."] 子容器 (每 session 一个 · hidden 切换)
 //      不是消息本身。 messages.children.length === 0 几乎永远 false →  panel 永远 hidden
 //      雪上加霜: newConversation 调 addSys('新对话开始 ...') 把 sys 消息加到 visible .session-msgs · 雪上加霜
@@ -1961,7 +1961,7 @@ function _initOnboardingPanel() {
     if (!input) return;
     input.value = text;
     input.focus();
-    // 把 cursor 放到 [ ] 占位符的第一个 · 方便 用户 直接改
+    // 把 cursor 放到 [ ] 占位符的第一个 · 方便 BRO 直接改
     const placeholderIdx = text.indexOf('[');
     if (placeholderIdx >= 0) {
       const endIdx = text.indexOf(']', placeholderIdx);
@@ -1990,11 +1990,11 @@ function _initOnboardingPanel() {
 
 function _openOnboardingCustomizer() {
   const tmpls = _loadOnboardingTemplates();
-  // v5 · 2026-06-10 · emoji → remix icon · 用户 铁律
+  // v5 · 2026-06-10 · emoji → remix icon · BRO 铁律
   const labels = {
     create_app: '<i class="ri-puzzle-fill"></i> 创建一个应用',
     create_flow: '<i class="ri-flow-chart"></i> 搭建一个工作流',
-    chat_about: '<i class="ri-chat-3-fill"></i> 聊聊日常 · 认识 Daemonkey',
+    chat_about: '<i class="ri-chat-3-fill"></i> 聊聊日常 · 认识 OPUS',
     list_capability: '<i class="ri-book-shelf-fill"></i> 看看我能做什么',
     change_theme: '<i class="ri-palette-fill"></i> 换个皮肤',
     discover_skill: '<i class="ri-search-eye-line"></i> 找新能力升级自己',
@@ -2067,8 +2067,8 @@ function scheduleDashboardRefresh(delayMs = 600) {
     _dashRefreshTimer = null;
     try {
       if (typeof refreshNavBadges === 'function') refreshNavBadges();
-      // · 工坊是挂载式 view · loadDashboard('workshop') 已挂载时短路不重拉 ·
-      // 必须走 OPUS_WORKSHOP_VIEW.refresh() 才能把 Daemonkey 新造的 app/flow 拉进来
+      // 卷五十四 · 工坊是挂载式 view · loadDashboard('workshop') 已挂载时短路不重拉 ·
+      // 必须走 OPUS_WORKSHOP_VIEW.refresh() 才能把 OPUS 新造的 app/flow 拉进来
       if (typeof currentView !== 'undefined' && currentView === 'workshop'
           && window.OPUS_WORKSHOP_VIEW && typeof window.OPUS_WORKSHOP_VIEW.refresh === 'function') {
         window.OPUS_WORKSHOP_VIEW.refresh();
@@ -2079,7 +2079,7 @@ function scheduleDashboardRefresh(delayMs = 600) {
   }, delayMs);
 }
 
-// · openSettings 进中栏 view · tabs 化
+// 卷三十七 · openSettings 进中栏 view · tabs 化
 // 首次进来 token 还没填 · 仍走 modal (那种"必填阻塞"场景 modal 更合适)
 function openSettings() {
   if (!token) {
@@ -2098,13 +2098,13 @@ function openSettingsModal() {
 }
 function closeSettings() { $modal.classList.remove('open'); }
 
-// · 中栏 settings view (用户 截图反馈 · 弹窗装不下 · 改 tabs)
+// 卷三十七 · 中栏 settings view (BRO 截图反馈 · 弹窗装不下 · 改 tabs)
 let _settingsTab = 'llm';  // 'llm' | 'access' | 'data'
 function openSettingsView() {
   currentView = 'settings';
   // 清左 nav 高亮 · settings 不属于任何 dashboard 维度
   document.querySelectorAll('.nav-item.active').forEach(b => b.classList.remove('active'));
-  // 给底部 ⚙ 按钮加个高亮 · 让 用户 知道当前在设置里
+  // 给底部 ⚙ 按钮加个高亮 · 让 BRO 知道当前在设置里
   document.querySelectorAll('.nav-settings-btn').forEach(b => b.classList.add('active'));
   renderSettingsView();
 }
@@ -2114,7 +2114,7 @@ function renderSettingsView() {
     { id: 'llm', label: '<i class="ri-brain-fill"></i> LLM 模型', hint: 'Provider + Model + API Key 多配置管理' },
     { id: 'vision', label: '<i class="ri-eye-fill"></i> 视觉模型', hint: '看图 fallback · 纯文本模型自动调用' },
     { id: 'access', label: '<i class="ri-key-fill"></i> 访问 & 会话', hint: 'API Token / Session / Auto-confirm' },
-    { id: 'wechat', label: '<i class="ri-wechat-fill"></i> 微信 & 主动', hint: '扫码连微信 · 主动找你的频率 (猫系↔犬系)' },
+    { id: 'wechat', label: '<i class="ri-wechat-fill"></i> 微信 & 飞书', hint: '扫码连微信 · 配飞书机器人 · 主动找你的频率 (猫系↔犬系)' },
     { id: 'notify', label: '<i class="ri-notification-3-fill"></i> 通知', hint: '干完/等你拍板时怎么提醒你 · 音效 / Windows 通知 / 标签闪烁' },
     { id: 'data', label: '<i class="ri-save-fill"></i> 本地数据', hint: '别名 / 缓存 / 重置' },
   ];
@@ -2142,7 +2142,7 @@ function switchSettingsTab(tabId) {
   _settingsTab = tabId;
   document.querySelectorAll('.settings-tab').forEach(b => {
     b.classList.toggle('active', b.textContent.includes(
-      { llm: 'LLM 模型', vision: '视觉模型', access: '访问', wechat: '微信', notify: '通知', data: '本地数据' }[tabId]
+      { llm: 'LLM 模型', vision: '视觉模型', access: '访问', wechat: '微信 & 飞书', notify: '通知', data: '本地数据' }[tabId]
     ));
   });
   renderSettingsBody();
@@ -2157,7 +2157,7 @@ function renderSettingsBody() {
   else if (_settingsTab === 'data') renderSettingsData();
 }
 
-// ─── · LLM 配置面板 ───
+// ─── 卷三十六 · LLM 配置面板 ───
 let _llmPresets = [];
 let _llmActive = null;
 
@@ -2379,7 +2379,7 @@ function saveSettings() {
   closeSettings();
   addSys('已保存。' + (token ? '可以聊了。' : '⚠ token 还是空的'));
 }
-// ─── · settings tabs body 渲染 ───
+// ─── 卷三十七 · settings tabs body 渲染 ───
 
 let _providerConfigs = [];     // 当前 configs (掩码后)
 let _providerConfigsActiveId = null;
@@ -2413,7 +2413,7 @@ async function renderSettingsLLM() {
     <div class="llm-section">
       <div class="llm-section-head">
         <h3>已保存的 LLM 配置 · ${activeCount} 条 · ${pinnedCount} 条已勾选显示</h3>
-        <span class="llm-hint">勾选的会出现在右上角切换器 · 不勾选只在这里保留 · 想要常用模型直接对 Daemonkey 说「加几个 aihub 常用模型」即可</span>
+        <span class="llm-hint">勾选的会出现在右上角切换器 · 不勾选只在这里保留 · 想要常用模型直接对 OPUS 说「加几个 aihub 常用模型」即可</span>
         <button class="btn-primary" onclick="openLlmConfigAddForm()">+ 新增配置</button>
       </div>
       <div class="llm-config-list" id="llmConfigList">
@@ -2459,7 +2459,7 @@ function renderLlmConfigCard(c) {
       <div class="lc-row3">
         <span class="lc-key">${escHtml(c.api_key || '(未设)')}</span>
         <div class="lc-actions">
-          ${isActive ? '' : `<button onclick="activateConfig('${escHtml(c.id)}')" title="切换 Daemonkey 用这个跑">激活</button>`}
+          ${isActive ? '' : `<button onclick="activateConfig('${escHtml(c.id)}')" title="切换 OPUS 用这个跑">激活</button>`}
           <button onclick="testConfig('${escHtml(c.id)}')" title="ping 一下试通不通">测试</button>
           <button class="lc-director-btn${c.director ? ' on' : ''}" onclick="toggleDirectorConfig('${escHtml(c.id)}', ${c.director ? 'false' : 'true'})" title="${c.director ? '取消这个配置的顾问身份' : '把它设为顾问 · 蓝图/破局/验收时被召唤（全局只能有一个顾问）'}"><i class="ri-vip-crown-${c.director ? 'fill' : 'line'}"></i> ${c.director ? '取消顾问' : '设为顾问'}</button><i class="ri-question-line lc-director-help" onclick="showDirectorHelp()" title="顾问模型是干啥的？点我"></i>
           <button onclick="openLlmConfigEditForm('${escHtml(c.id)}')" title="改名 / 改 key / 改 model">编辑</button>
@@ -2471,13 +2471,13 @@ function renderLlmConfigCard(c) {
   `;
 }
 
-// · 一键导入过去用过的 AiHubMix 模型 · 用户 反馈"以后还会用·默认放进来"
-// 弹一个对话框让 用户 填一次 AiHub key · 然后批量加 4-5 条 config (pinned=false 默认)
+// 卷三十八 · 一键导入过去用过的 AiHubMix 模型 · BRO 反馈"以后还会用·默认放进来"
+// 弹一个对话框让 BRO 填一次 AiHub key · 然后批量加 4-5 条 config (pinned=false 默认)
 async function quickImportAihubMix() {
-  // 让 用户 输入 AiHub key (一次 · 公用)
+  // 让 BRO 输入 AiHub key (一次 · 公用)
   const key = await opusPrompt({
     title: '一键导入 AiHubMix 常用模型',
-    message: '会自动加入: Sonnet 4.6 / Opus 4.7 / Kimi K2.6 / GLM 5.1 / GPT-5.5\n这些都是 用户 过去用过的 · 加进来默认不勾右上角 · 编辑里可以单独激活。\n\n填一次 AiHub key · 这些 configs 共用 (你也可以加完单独改 key):',
+    message: '会自动加入: Sonnet 4.6 / Opus 4.7 / Kimi K2.6 / GLM 5.1 / GPT-5.5\n这些都是 BRO 过去用过的 · 加进来默认不勾右上角 · 编辑里可以单独激活。\n\n填一次 AiHub key · 这些 configs 共用 (你也可以加完单独改 key):',
     placeholder: 'sk-xxx · AiHubMix 平台 key · 留空 = 只加占位不设 key',
     okText: '一键加',
     cancelText: '取消',
@@ -2502,7 +2502,7 @@ async function quickImportAihubMix() {
           provider_kind: 'openai',
           base_url: 'https://aihubmix.com/v1',
           model: p.model,
-          api_key: apiKey || '___placeholder___',  // 后端要求 key 非空 · 占位让 用户 之后改
+          api_key: apiKey || '___placeholder___',  // 后端要求 key 非空 · 占位让 BRO 之后改
           preset_id: 'aihubmix',
           pinned: false,
           set_active: false,
@@ -2694,7 +2694,7 @@ function _showLlmEditForm({ title, submit, config, onSubmit, isEdit }) {
       <div class="field">
         <label>
           <input id="llmEditSetActive" type="checkbox">
-          保存后立即激活 (Daemonkey 切到这条跑)
+          保存后立即激活 (OPUS 切到这条跑)
         </label>
       </div>`}
       <div class="actions">
@@ -2791,7 +2791,7 @@ function onLlmEditModelSelectChange() {
   const sel = document.getElementById('llmEditModelSelect');
   if (!sel.value) return;
   document.getElementById('llmEditModel').value = sel.value;
-  // · 选了推荐模型 · 自动填 max_tokens 推荐值 + 更新 hint 显示模型 spec
+  // 卷三十八 · 选了推荐模型 · 自动填 max_tokens 推荐值 + 更新 hint 显示模型 spec
   const pid = document.getElementById('llmEditPreset').value;
   const preset = _providerPresets.find(p => p.id === pid);
   if (!preset) return;
@@ -3021,8 +3021,8 @@ function renderSettingsAccess() {
       <div class="llm-section-head"><h3>🔑 API Token · 决定 WebUI 能否连 daemon</h3></div>
       <div class="field">
         <label>API Token (Bearer)</label>
-        <input id="accTokenIn" type="password" value="${escHtml(token || '')}" placeholder="DAEMONKEY_API_TOKEN">
-        <div class="field-hint">来自 .env 里的 DAEMONKEY_API_TOKEN · 浏览器记住</div>
+        <input id="accTokenIn" type="password" value="${escHtml(token || '')}" placeholder="OPUS_API_TOKEN">
+        <div class="field-hint">来自 .env 里的 OPUS_API_TOKEN · 浏览器记住</div>
       </div>
 
       <div class="llm-section-head" style="margin-top:18px"><h3>📂 当前 Session</h3></div>
@@ -3042,11 +3042,11 @@ function renderSettingsAccess() {
         <div class="field-hint">默认 confirm 档下·GUARD 工具会在 WebUI 弹卡片等你点；这个 guard 预设连 GUARD 也自动放行·只在没人能点(无人值守)时才用</div>
       </div>
 
-      <!-- wish-f563a56d · trusted commands · 用户 临时给 Daemonkey 30min/24h/永久 信任窗口 -->
+      <!-- wish-f563a56d · trusted commands · BRO 临时给 OPUS 30min/24h/永久 信任窗口 -->
       <div class="llm-section-head" style="margin-top:18px"><h3>🔓 Trusted Commands · 信任清单</h3></div>
       <div class="field-hint" style="margin-bottom:8px">
         当 auto_confirm=auto 时·CONFIRM 档命令 (例如 <code>pip install</code>) 会被 skip。
-        把命令头加到信任清单后·窗口期内 Daemonkey 调这类命令自动通过。
+        把命令头加到信任清单后·窗口期内 OPUS 调这类命令自动通过。
         <br><strong>红线</strong>: GUARD 黑名单 (rm -rf / format / git push --force) 永远不会被 trusted。
       </div>
       <div class="field" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
@@ -3065,7 +3065,7 @@ function renderSettingsAccess() {
         </div>
         <div style="flex:2;min-width:180px">
           <label style="font-size:11px">理由 (审计用 · 可选)</label>
-          <input id="accTrustReason" type="text" placeholder="例如: 用户 让 Daemonkey 装 duckduckgo_search">
+          <input id="accTrustReason" type="text" placeholder="例如: BRO 让 OPUS 装 duckduckgo_search">
         </div>
         <button class="btn-primary" onclick="addTrustedCommand()">➕ 加入</button>
       </div>
@@ -3095,7 +3095,7 @@ async function refreshTrustedCommands() {
     const j = await r.json();
     const items = (j && j.items) || [];
     if (!items.length) {
-      target.innerHTML = '<i>暂无 trusted commands · Daemonkey 调 CONFIRM 档命令时会被 auto_confirm 策略卡住</i>';
+      target.innerHTML = '<i>暂无 trusted commands · OPUS 调 CONFIRM 档命令时会被 auto_confirm 策略卡住</i>';
       return;
     }
     const rows = items.map(it => {
@@ -3194,36 +3194,222 @@ function saveAccessSettings() {
   if (typeof loadCurrentModel === 'function') loadCurrentModel();
 }
 
-// ─── · 微信 & 主动 CALL 设置面板 ───
+// ─── 卷六十一 · 微信 & 主动 CALL 设置面板 ───
 let _wechatQrPoll = null;
 
 function renderSettingsWechat() {
   const body = document.getElementById('settingsBody');
   body.innerHTML = `
     <div class="llm-section">
-      <div class="llm-section-head"><h3><i class="ri-wechat-fill"></i> 微信连接 · 官方 ClawBot (iLink)</h3></div>
-      <div class="field-hint" style="margin-bottom:8px">
-        纯 HTTP 官方接口·不碰微信客户端·无封号风险。规则:你在微信先发一句 → 开 <b>24 小时窗口</b>·
-        窗口内 Daemonkey 能(主动)给你发·跨天零互动发不出 (腾讯反骚扰)。
+      <div class="chan-grid">
+        <!-- 微信卡 -->
+        <div class="chan-card">
+          <div class="chan-card-head">
+            <div class="chan-icon wx"><i class="ri-wechat-fill"></i></div>
+            <div><div class="chan-title">微信 · 官方 ClawBot (iLink)</div>
+                 <div class="chan-sub">纯 HTTP 官方接口 · 不碰客户端 · 无封号风险</div></div>
+            <span class="chan-badge off" id="wechatBadge">未连接</span>
+          </div>
+          <div class="chan-live" id="wechatStatus"><span class="live-dot idle"></span> 加载中…</div>
+          <div class="chan-actions">
+            <button class="btn-primary" onclick="wechatGenQr()"><i class="ri-qr-code-line"></i> 生成扫码登录二维码</button>
+            <span class="field-hint" style="margin:0">手机微信扫一扫 → 授权『微信 ClawBot』· 重新扫可换绑</span>
+          </div>
+          <div id="wechatQrBox" style="display:none;text-align:center;margin-top:12px"></div>
+          <div class="chan-info-bar warn"><i class="ri-time-line"></i> <b>24 小时窗口</b>：你在微信先发一句 → 开窗 · 窗口内 OPUS 能主动找你 · 跨天零互动发不出（腾讯反骚扰）</div>
+        </div>
+        <!-- 飞书卡 (0.9.1 · 两层: L1 webhook 推送 + L2 机器人对话) -->
+        <div class="chan-card">
+          <div class="chan-card-head">
+            <div class="chan-icon fs"><i class="ri-flight-takeoff-line"></i></div>
+            <div><div class="chan-title">飞书 · 对话 & 工作区</div>
+                 <div class="chan-sub">群聊 @即回 · 读文档/表格 · 总结群消息</div></div>
+            <span class="chan-badge off" id="feishuBadge">未配置</span>
+          </div>
+          <div class="chan-live" id="feishuStatus"><span class="live-dot idle"></span> 加载中…</div>
+          <div class="chan-form">
+            <div><label class="field-label">App ID</label>
+                 <input id="feishuAppId" class="field-input" placeholder="cli_xxxxxxxxxxxxxxxx"
+                        onkeydown="if(event.key==='Enter')feishuSaveConfig()"/></div>
+            <div><label class="field-label">App Secret</label>
+                 <input id="feishuAppSecret" type="password" class="field-input" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                        onkeydown="if(event.key==='Enter')feishuSaveConfig()"/></div>
+          </div>
+          <div class="chan-actions">
+            <button class="btn-primary" onclick="feishuSaveConfig()"><i class="ri-save-fill"></i> 保存并连接</button>
+            <button class="btn-ghost" onclick="feishuToggle()"><i class="ri-power-line"></i> 启用/停用</button>
+            <span id="feishuSaveMsg" class="field-hint" style="margin:0"></span>
+          </div>
+          <details class="chan-wizard">
+            <summary><i class="ri-magic-line"></i> 还没有机器人？6 步接入向导</summary>
+            <ol class="wizard-steps">
+              <li><a href="https://open.feishu.cn/app?lang=zh-CN" target="_blank">创建企业自建应用</a>（开放平台 → 开发者后台 → 创建企业自建应用）</li>
+              <li>添加 <b>机器人</b> 能力（应用能力 → 添加应用能力 → 机器人 → 创建）</li>
+              <li>添加权限：飞书「权限管理」→ <b>批量导入</b> → 粘贴下面的 JSON → 一次配齐（也可逐条搜索添加）</li>
+              <li>事件订阅：选 <b>使用长连接接收事件</b> + 订阅 <code>im.message.receive_v1</code>（事件与回调）</li>
+              <li><b>创建版本并发布</b>（版本管理与发布 · 可用范围含自己）← 搜不到机器人 99% 是漏这步</li>
+              <li>回来填上方 App ID / Secret → 保存并连接</li>
+            </ol>
+            <div class="perms-import">
+              <div class="perms-import-head"><i class="ri-shield-keyhole-line"></i> 权限 JSON · 一键配齐
+                <button class="btn-ghost perms-copy" onclick="copyFeishuScopes(this)"><i class="ri-file-copy-line"></i> 复制</button></div>
+              <pre class="perms-json">{
+  "scopes": {
+    "tenant": [
+      "im:message.p2p_msg:readonly",
+      "im:message:send_as_bot",
+      "im:message.group_at_msg:readonly",
+      "im:message.group_msg",
+      "im:message:readonly",
+      "im:chat:readonly",
+      "im:resource",
+      "docx:document:readonly",
+      "sheets:spreadsheet:readonly",
+      "bitable:app:readonly"
+    ],
+    "user": [
+      "docx:document:readonly"
+    ]
+  }
+}</pre>
+              <div class="perms-hint">用法：飞书开放平台 → 你的应用 → <b>权限管理</b> → 右上角 <b>批量导入</b> → 粘贴 → 确认 → <b>创建版本并发布</b>（不发布不生效！）。读文档/表格/群消息（im:message.group_msg=拉群历史 · 不带 :readonly）+ 群聊@（group_at_msg:readonly）+ 读文件（im:resource）都在里面了。</div>
+            </div>
+          </details>
+          <div class="chan-info-bar ok" style="margin-top:10px"><i class="ri-check-line"></i> 官方 API + 长连接 · <b>无窗口限制</b> · 发布后去飞书搜你的机器人就能聊</div>
+        </div>
+        <!-- 频率卡 -->
+        <div class="chan-card">
+          <div class="chan-card-head">
+            <div class="chan-icon cat"><i class="ri-paw-line"></i></div>
+            <div><div class="chan-title">主动找你的频率</div>
+                 <div class="chan-sub">高冷猫 ↔ 黏人犬 · 夜里永远不打扰</div></div>
+          </div>
+          <div id="wechatFreq" class="freq-seg">加载中…</div>
+          <div class="chan-info-bar ok" style="margin-top:12px"><i class="ri-sun-line"></i> <span id="wechatFreqDesc">命中后随机时刻开口 · 23:00–9:00 静默</span></div>
+        </div>
       </div>
-      <div id="wechatStatus" class="field-hint">加载中…</div>
-
-      <div id="wechatQrZone" style="margin-top:12px">
-        <button class="btn-primary" onclick="wechatGenQr()"><i class="ri-qr-code-line"></i> 生成扫码登录二维码</button>
-        <div class="field-hint" style="margin-top:4px">手机微信扫一扫 → 授权『微信 ClawBot』。重新扫可换绑/续期。</div>
-      </div>
-      <div id="wechatQrBox" style="margin-top:12px;display:none;text-align:center"></div>
-
-      <div class="llm-section-head" style="margin-top:22px"><h3>🐾 主动找你的频率 · 猫系 ↔ 犬系</h3></div>
-      <div class="field-hint" style="margin-bottom:8px">
-        从『高冷猫』到『黏人犬』——代表 Daemonkey 多久主动开口一次、多大概率突然想起你。
-        命中后会在窗口内某个<b>随机</b>时刻找你·夜里(默认 23–9 点)永远不打扰。
-      </div>
-      <div id="wechatFreq" class="freq-seg">加载中…</div>
-      <div id="wechatFreqDesc" class="field-hint" style="margin-top:8px"></div>
     </div>
   `;
-  setTimeout(() => { wechatLoadStatus(); wechatLoadFrequency(); }, 30);
+  setTimeout(() => { wechatLoadStatus(); wechatLoadFrequency(); feishuLoadStatus(); }, 30);
+}
+
+// ─── 0.9.0 (wish-aac348a1) · 飞书配置 UI ───
+
+async function feishuLoadStatus() {
+  const el = document.getElementById('feishuStatus');
+  if (!el) return;
+  if (!token) { el.innerHTML = '⚠ 先在『访问 & 会话』填 API Token'; return; }
+  try {
+    const r = await fetch('/api/feishu/status', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const s = await r.json();
+    const listener = s.listener || {};
+    const badge = document.getElementById('feishuBadge');
+    if (badge) {
+      if (s.configured && s.token_ok && listener.alive) { badge.textContent = '在线'; badge.className = 'chan-badge on'; }
+      else if (s.configured && !s.token_ok) { badge.textContent = 'Token 异常'; badge.className = 'chan-badge warn'; }
+      else { badge.textContent = '未配置'; badge.className = 'chan-badge off'; }
+    }
+    let liveInner;
+    if (!s.configured) {
+      liveInner = '<span class="live-dot idle"></span> 未配置 · 填 App ID + Secret 保存即连 · 群里 @ 它就能用';
+    } else {
+      const chips = [
+        listener.ws_connected ? '<span class="chan-chip">ws <b>已连</b></span>' : '',
+        listener.messages_in != null ? `<span class="chan-chip">收 <b>${listener.messages_in}</b></span><span class="chan-chip">回 <b>${listener.replies_out}</b></span>` : '',
+        !s.token_ok ? '<span style="color:#fbbf24">· token 获取失败</span>' : '',
+      ].filter(Boolean).join(' ');
+      liveInner = `<span class="live-dot ${listener.alive ? 'on' : 'off'}"></span> 长连接 ${listener.alive ? '在线' : '离线'} ${chips}`;
+    }
+    el.innerHTML = liveInner;
+    if (listener.last_error) {
+      const info = el.parentElement.querySelector('.chan-info-bar.ok');
+      if (info) {
+        info.className = 'chan-info-bar warn';
+        info.innerHTML = `<i class="ri-alert-line"></i> ${escHtml(listener.last_error)} · 去飞书开放平台检查权限/事件订阅`;
+      }
+    }
+    // 回填已存配置 (只回填 app_id · secret 不回显)
+    if (s.configured && document.getElementById('feishuAppId')) {
+      document.getElementById('feishuAppId').placeholder = '已保存: ' + s.app_id;
+      document.getElementById('feishuAppSecret').placeholder = '已保存 · 留空=不修改';
+    }
+  } catch (e) {
+    el.innerHTML = '<i class="ri-close-fill"></i> 飞书状态加载失败: ' + escHtml(e.message);
+  }
+}
+
+async function feishuSaveConfig() {
+  const msg = document.getElementById('feishuSaveMsg');
+  const appId = (document.getElementById('feishuAppId').value || '').trim();
+  const appSecret = (document.getElementById('feishuAppSecret').value || '').trim();
+  if (!appId && !appSecret) { msg.innerHTML = '<span style="color:#f59e0b">填一下 App ID 或 Secret</span>'; return; }
+  if (!token) { msg.innerHTML = '<span style="color:#f59e0b">⚠ 先在『访问 & 会话』填 API Token</span>'; return; }
+  msg.innerHTML = '⏳ 保存中…';
+  try {
+    const r = await fetch('/api/feishu/config', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ app_id: appId, app_secret: appSecret, enabled: true }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
+    msg.innerHTML = d.token_ok
+      ? '<span style="color:#34d399"><i class="ri-check-fill"></i> 已保存并连接成功！在飞书里找机器人发句话试试</span>'
+      : '<span style="color:#f59e0b">⚠ 已保存但 token 失败: ' + escHtml(d.warning || '') + '</span>';
+    document.getElementById('feishuAppId').value = '';
+    document.getElementById('feishuAppSecret').value = '';
+    feishuLoadStatus();
+  } catch (e) {
+    msg.innerHTML = '<span style="color:#f87171"><i class="ri-close-fill"></i> 保存失败: ' + escHtml(e.message) + '</span>';
+  }
+}
+
+async function feishuToggle() {
+  if (!token) return;
+  try {
+    const r = await fetch('/api/feishu/toggle', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    feishuLoadStatus();
+  } catch (e) {
+    const el = document.getElementById('feishuSaveMsg');
+    if (el) el.innerHTML = '<span style="color:#f87171">切换失败: ' + escHtml(e.message) + '</span>';
+  }
+}
+
+// ─── 0.9.1 · L1 群机器人 webhook (推送模式) ───
+
+async function copyFeishuScopes(btn) {
+  const json = `{
+  "scopes": {
+    "tenant": [
+      "im:message.p2p_msg:readonly",
+      "im:message:send_as_bot",
+      "im:message.group_at_msg:readonly",
+      "im:message.group_msg",
+      "im:message:readonly",
+      "im:chat:readonly",
+      "im:resource",
+      "docx:document:readonly",
+      "sheets:spreadsheet:readonly",
+      "bitable:app:readonly"
+    ],
+    "user": [
+      "docx:document:readonly"
+    ]
+  }
+}`;
+  try {
+    await navigator.clipboard.writeText(json);
+    if (btn) { const old = btn.innerHTML; btn.innerHTML = '<i class="ri-check-fill"></i> 已复制'; setTimeout(() => { btn.innerHTML = old; }, 1500); }
+  } catch (e) {
+    if (btn) btn.innerHTML = '<i class="ri-close-fill"></i> 复制失败'; 
+  }
 }
 
 async function wechatLoadStatus() {
@@ -3235,17 +3421,27 @@ async function wechatLoadStatus() {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const s = await r.json();
     const listener = s.listener || {};
-    const dot = (ok) => `<span style="color:${ok ? '#34d399' : '#f87171'}">●</span>`;
-    let win;
-    if (!s.configured) win = '<span style="color:#94a3b8">未连接 · 先扫码</span>';
-    else if (s.window_open) win = `${dot(true)} 窗口开着 (${s.context_age_hours ?? '?'}h 前你说过话)`;
-    else win = `${dot(false)} 窗口已关 · 你在微信发一句即可重开`;
-    el.innerHTML = `
-      连接 ${dot(s.configured)} ${s.configured ? '已扫码' : '未扫码'} ·
-      监听 ${dot(listener.alive)} ${listener.alive ? '在线' : '离线'} ·
-      ${s.silent ? '<span style="color:#f59e0b">🔇 静默中 (微信发 opus start 唤醒)</span>' : win}
-      ${listener.alive ? `<br><span style="font-size:11px;color:#94a3b8">收 ${listener.messages_in || 0} · 回 ${listener.replies_out || 0}</span>` : ''}
-    `;
+    const badge = document.getElementById('wechatBadge');
+    if (badge) {
+      if (!s.configured) { badge.textContent = '未连接'; badge.className = 'chan-badge off'; }
+      else if (s.silent) { badge.textContent = '已静默'; badge.className = 'chan-badge warn'; }
+      else if (!s.window_open) { badge.textContent = '窗口已关'; badge.className = 'chan-badge warn'; }
+      else { badge.textContent = '已连接'; badge.className = 'chan-badge on'; }
+    }
+    let liveInner;
+    if (!s.configured) {
+      liveInner = '<span class="live-dot idle"></span> 未连接 · 生成二维码扫码登录后开启';
+    } else {
+      const winTxt = s.window_open
+        ? `<span style="color:var(--dim2)">· 窗口开着 (${s.context_age_hours ?? '?'}h 前说过话)</span>`
+        : s.silent
+          ? '<span style="color:var(--dim2)">· 已静默 (微信发 opus start 唤醒)</span>'
+          : '<span style="color:#fbbf24">· 24h 窗口已关 · 你先发一句即开</span>';
+      liveInner = `<span class="live-dot ${listener.alive ? 'on' : 'off'}"></span> 监听 ${listener.alive ? '在线' : '离线'}
+        ${listener.messages_in != null ? `<span class="chan-chip">收 <b>${listener.messages_in}</b></span><span class="chan-chip">回 <b>${listener.replies_out}</b></span>` : ''}
+        ${winTxt}`;
+    }
+    el.innerHTML = liveInner;
   } catch (e) {
     el.innerHTML = '<i class="ri-close-fill"></i> 状态加载失败: ' + escHtml(e.message);
   }
@@ -3316,19 +3512,34 @@ async function wechatLoadFrequency() {
   }
 }
 
+// 0.9.0 · 频率档 emoji → Remix 表情图标 (统一线条风格 · 替代 🐱🐶 emoji)
+const _FREQ_EMOJI_ICON = {
+  '\u{1F6AB}': 'ri-close-circle-line',   // 🚫 关闭
+  '\u{1F63C}': 'ri-emotion-2-line',      // 😼 高冷猫 → 面瘫脸
+  '\u{1F431}': 'ri-emotion-2-line',      // 🐱 猫系
+  '\u2696\uFE0F': 'ri-emotion-normal-line', // ⚖️ 均衡 → 正常脸
+  '\u{1F436}': 'ri-emotion-happy-line',  // 🐶 犬系 → 笑脸
+  '\u{1F415}': 'ri-emotion-happy-line',  // 🐕 黏人犬
+};
+function freqIcon(emoji) { return _FREQ_EMOJI_ICON[emoji] || null; }
+
 function wechatRenderFreq(currentId) {
   const el = document.getElementById('wechatFreq');
   const desc = document.getElementById('wechatFreqDesc');
-  el.innerHTML = _wechatFreqPresets.map(p => `
-    <button class="freq-pill ${p.id === currentId ? 'active' : ''}" onclick="wechatSetFrequency('${p.id}')" title="${escHtml(p.desc)}">
-      <span class="freq-emoji">${p.emoji}</span><span class="freq-label">${escHtml(p.label)}</span>
-    </button>
-  `).join('');
+  el.innerHTML = _wechatFreqPresets.map(p => {
+    const ic = freqIcon(p.emoji);
+    const iconHtml = ic ? `<span class="freq-emoji"><i class="${ic}"></i></span>` : `<span class="freq-emoji">${p.emoji}</span>`;
+    return `<button class="freq-pill ${p.id === currentId ? 'active' : ''}" onclick="wechatSetFrequency('${p.id}')" title="${escHtml(p.desc)}">
+      ${iconHtml}<span class="freq-label">${escHtml(p.label)}</span>
+    </button>`;
+  }).join('');
   const cur = _wechatFreqPresets.find(p => p.id === currentId);
   if (desc) {
+    const ic = cur ? freqIcon(cur.emoji) : null;
+    const curIcon = ic ? `<i class="${ic}"></i>` : (cur ? cur.emoji : '');
     desc.innerHTML = currentId === 'custom'
       ? '当前是<b>自定义</b>档 (你手改过 .env 的 OPUS_PROACTIVE_* )·点任意档位归一'
-      : (cur ? `当前:${cur.emoji} <b>${escHtml(cur.label)}</b> · ${escHtml(cur.desc)}` : '');
+      : (cur ? `当前:${curIcon} <b>${escHtml(cur.label)}</b> · ${escHtml(cur.desc)}` : '');
   }
 }
 
@@ -3458,7 +3669,7 @@ async function resetAll() {
 $modal.addEventListener('click', e => { if (e.target === $modal) closeSettings(); });
 
 // ──────────────────────────────────────────────────────────────
-//丁 · 统一 H5 modal · 替代浏览器原生 confirm/prompt/alert
+// 卷三十四补丁 · 统一 H5 modal · 替代浏览器原生 confirm/prompt/alert
 //
 // 三个 promise 函数：
 //   opusConfirm({ title, message, okText, cancelText, danger })  → Promise<boolean>
@@ -3960,7 +4171,7 @@ async function _loadSessionHistory(sid, opts) {
     return;
   }
   // 渲染阶段 (2026-07-28 修复): 单条隔离 try/catch + 分批让帧 + seq 防交错
-  // 旧病: 某条畸形历史渲染抛错 → 外层 catch 清空整个容器 → 用户 看到"什么对话都没有"
+  // 旧病: 某条畸形历史渲染抛错 → 外层 catch 清空整个容器 → BRO 看到"什么对话都没有"
   //       700+ 条大会话全量同步渲染 → 浏览器卡死 · 现在每 30 条让一帧
   s.$container.innerHTML = '';
   if (!data.turns || data.turns.length === 0) {
@@ -3977,7 +4188,7 @@ async function _loadSessionHistory(sid, opts) {
     if (_hidden > 0) _ensureLoadEarlierSentinel(s.$container);
     const _seq = (s._histSeq = (s._histSeq || 0) + 1);  // 防交错: 重复加载/切会话后旧渲染停笔
     let _bad = 0;
-    // · 历史回放 · 跟实时 SSE 那一套对齐 · reasoning / tool_call / tool_result 全渲染
+    // 卷三十六 · 历史回放 · 跟实时 SSE 那一套对齐 · reasoning / tool_call / tool_result 全渲染
     // wish-5256d2a4 · index 循环 · assistant 的 tool_calls 与紧随的 role=tool turns 配对成时间线
     for (let _ti = 0; _ti < _turns.length; _ti++) {
       if (s._histSeq !== _seq) return;  // 有更新的加载接管了容器 · 停笔
@@ -3994,14 +4205,14 @@ async function _loadSessionHistory(sid, opts) {
           if (t.src === 'advisor_review') {
             addSys('🧭 顾问验收未通过 · 意见已注入 · 执行者自动修正了一轮', s.$container);
           } else if (t.src === 'proactive') {
-            addSys('Daemonkey 主动醒来' + (t.proactive_reason ? ' · ' + t.proactive_reason : ''), s.$container);
+            addSys('OPUS 主动醒来' + (t.proactive_reason ? ' · ' + t.proactive_reason : ''), s.$container);
           } else {
-            // 用户 2026-07-29 · 协同轮 user content 被 daemon 注入了『系统指令+施工单全文』
+            // BRO 2026-07-29 · 协同轮 user content 被 daemon 注入了『系统指令+施工单全文』
             // (daemon_api.py:1258-1272) · 历史重建若整条渲染 = 绿色大气泡重复金卡内容·很难看。
-            // 剥离逻辑与 daemon_api.py:1197-1202 续链剥皮对齐: 气泡只留 用户 原话·施工单走下面金卡。
+            // 剥离逻辑与 daemon_api.py:1197-1202 续链剥皮对齐: 气泡只留 BRO 原话·施工单走下面金卡。
             let _uc = t.content || '';
             if (t.advisor_blueprint) {
-              const _mark = '[用户 的原始需求]\n';
+              const _mark = '[BRO 的原始需求]\n';
               const _idx = _uc.indexOf(_mark);
               if (_idx >= 0) _uc = _uc.slice(_idx + _mark.length);
               else if (_uc.startsWith('[系统 · 顾问协同模式')) {
@@ -4019,7 +4230,7 @@ async function _loadSessionHistory(sid, opts) {
                 ? t.attachments
                 : _attS.legacy.map(function(b) { return { name: b, path: 'data/runtime/attachments/' + b }; }));
           }
-          // 顾问协同卡重建 (用户 2026-07-28: 刷新后顾问框不能消失) · 数据在 user turn meta.advisor_blueprint
+          // 顾问协同卡重建 (BRO 2026-07-28: 刷新后顾问框不能消失) · 数据在 user turn meta.advisor_blueprint
           if (t.advisor_blueprint) {
             const _ab = t.advisor_blueprint;
             if (_ab.aborted) {
@@ -4060,8 +4271,8 @@ async function _loadSessionHistory(sid, opts) {
       : `(已加载 ${data.count} 条历史 turn · 这条对话已结束 · 输入新消息可继续)`;
     addSys(_tail, s.$container);
   }
-  // 3 · batch 渲染期间 addMsg 走软滚 · scrollTop 一直在 0 · isNearBottom 一直 false
-  // 加载完后必须 force 一次 · 否则 用户 看到的是最旧的消息(顶部) · 不是最新(底部)
+  // 卷四十六续 3 · batch 渲染期间 addMsg 走软滚 · scrollTop 一直在 0 · isNearBottom 一直 false
+  // 加载完后必须 force 一次 · 否则 BRO 看到的是最旧的消息(顶部) · 不是最新(底部)
   scrollToBottom(s.$container, { force: true });
 }
 
@@ -4098,7 +4309,7 @@ async function switchToSession(sid) {
     closeDrawer();
     return;
   }
-  // 用户 2026-07-28 钉死 · 切对话标签顾问协同默认关 (防习惯性发消息走错模式)
+  // BRO 2026-07-28 钉死 · 切对话标签顾问协同默认关 (防习惯性发消息走错模式)
   if (typeof _advisorCoopReset === 'function') _advisorCoopReset();
   // wish-3fef4bc7 · 真并行 · 切对话不杀 · 旧对话的 fetch / state 留着 · 后台继续跑
   _saveActiveStateToCurrentSession();
@@ -4154,9 +4365,9 @@ async function switchToSession(sid) {
   }
 }
 
-/* ═══ wish-5256d2a4 · 工具时间线 + 人话翻译层（方案 D · 用户 2026-07-27 验收 demo 拍板） ═══
+/* ═══ wish-5256d2a4 · 工具时间线 + 人话翻译层（方案 D · BRO 2026-07-27 验收 demo 拍板） ═══
    零 token：全部前端本地正则翻译 · daemon 只传原始 tool name/summary/result
-   整轮折叠块【默认展开】（用户 拍板"工具默认是不折叠的"）· 单步技术细节默认折叠（点人话行展开） */
+   整轮折叠块【默认展开】（BRO 拍板"工具默认是不折叠的"）· 单步技术细节默认折叠（点人话行展开） */
 const TL_T2C = {
   read_file:'file', write_file:'file', edit_file:'file', glob_files:'file', grep_files:'file',
   outline_file:'file', search_code:'file', lint_check:'file', read_scenario:'file', pdf_read:'file', read_dashboard:'file',
@@ -4355,7 +4566,7 @@ function tlFinishRound(state) {
   if ($t) $t.innerHTML = _tlHeadSummary(tl.steps);
   const $s = tl.$head.querySelector('.tl-round-stats');
   if ($s) $s.textContent = `${n} 步 · ${tlHumanDur(totalS)}${fails ? ` · ${fails} 失败` : ''}`;
-  /* 默认保持展开（用户 拍板"工具默认是不折叠的"）· 用户想收自己点头部 */
+  /* 默认保持展开（BRO 拍板"工具默认是不折叠的"）· 用户想收自己点头部 */
   state._tl = null;
 }
 
@@ -4404,7 +4615,7 @@ function renderToolTimeline(items, target) {
   }
 }
 
-// · 历史回放专用 · 渲染一次 tool_call 气泡 (跟实时 SSE 'tool_call' 事件视觉一致)
+// 卷三十六 · 历史回放专用 · 渲染一次 tool_call 气泡 (跟实时 SSE 'tool_call' 事件视觉一致)
 function renderHistoryToolCall(name, argumentsStr, target) {
   const div = document.createElement('div');
   div.className = 'msg tool-call';
@@ -4489,8 +4700,8 @@ function _loadActiveStateFromCurrentSession() {
 }
 
 // wish-3fef4bc7 · tab bar 渲染 · ≥2 个有内容的 session 时显示
-// 有内容的标准: container 里有 children (用户 至少发过一条 / load 过历史 / 正在跑)
-// 空的临时 cid 不计入 (用户 点 + 但还没发消息时不该立刻冒出 tab)
+// 有内容的标准: container 里有 children (BRO 至少发过一条 / load 过历史 / 正在跑)
+// 空的临时 cid 不计入 (BRO 点 + 但还没发消息时不该立刻冒出 tab)
 function _renderTabBar() {
   const $bar = document.getElementById('chatTabBar');
   if (!$bar) return;
@@ -4556,7 +4767,7 @@ function _renderTabBar() {
 }
 
 // 关闭一个 tab · 不删 server 历史 · 只清前端 state + DOM container
-// 跑着的不让关 (用户 应该先 ⏹ 停 · 再关)
+// 跑着的不让关 (BRO 应该先 ⏹ 停 · 再关)
 function _closeTabSession(sid) {
   if (!sid) return;
   const s = _sessions[sid];
@@ -4599,10 +4810,10 @@ async function _maybeStartPoll(state) {
   } catch {}
 }
 
-// · 2026-06-03 · 重启重连专用 · 带重试探测 active_turn (治本"重启后假死/输入没锁")。
+// 卷五十六 · 2026-06-03 · 重启重连专用 · 带重试探测 active_turn (治本"重启后假死/输入没锁")。
 // 病根: 续写 turn 可能比 daemon "alive" 晚几百 ms 才注册 active_turn · 旧的单次探测(_maybeStartPoll)
 // 一查没有就放弃 + 解锁 · 之后 turn 才起来 · 前端却定格 idle 不再查 → 卡假死直到手动刷新。
-// 这里在 windowMs 窗口内每 1s 重试一次 · 期间始终保持输入锁定(用户 要求: 重启后默认不让发消息 · 先证明
+// 这里在 windowMs 窗口内每 1s 重试一次 · 期间始终保持输入锁定(BRO 要求: 重启后默认不让发消息 · 先证明
 // 任务在跑)。 一旦发现 active turn 就 _startSessionPoll(锁定 + 起 3s 轮询)·返 true; 窗口内始终没有 → 返 false
 // (调用方据此才解锁)。 跟 _maybeStartPoll(稳态切对话用·单次)分开 · 不污染普通切换。
 async function _probeAndStartPoll(state, windowMs = 8000) {
@@ -4611,7 +4822,7 @@ async function _probeAndStartPoll(state, windowMs = 8000) {
   if (sessionId === state.sessionId) {
     setInputLocked(true);
     showToolProgress(true);
-    setToolProgressText('Daemonkey 重启完成 · 正在确认续写任务…');
+    setToolProgressText('OPUS 重启完成 · 正在确认续写任务…');
   }
   const deadline = Date.now() + windowMs;
   let first = true;
@@ -4642,7 +4853,7 @@ function _startSessionPoll(state, turnId) {
   state.currentTurnId = turnId || null;
   state.pending = true;
   state.currentAbortController = null;  // polling 没 fetch · triggerStop 走 daemon abort
-  // 同步 visible UI · 让 用户 看到 ⏹ + lock
+  // 同步 visible UI · 让 BRO 看到 ⏹ + lock
   if (sessionId === state.sessionId) {
     pending = true;
     currentTurnId = turnId || null;
@@ -4650,9 +4861,9 @@ function _startSessionPoll(state, turnId) {
     setSendButtonState('pending');
     setInputLocked(true);
     showToolProgress(true);
-    setToolProgressText('Daemonkey 后台仍在跑这个对话 · 自动刷新中…');
+    setToolProgressText('OPUS 后台仍在跑这个对话 · 自动刷新中…');
   }
-  addSys('⏳ Daemonkey 仍在后台跑这个对话 · 自动刷新中 (3s/次) · 点 ⏹ 可中断', state.$container);
+  addSys('⏳ OPUS 仍在后台跑这个对话 · 自动刷新中 (3s/次) · 点 ⏹ 可中断', state.$container);
   state.lastTurnCount = state.$container
     ? state.$container.querySelectorAll('.msg').length
     : 0;
@@ -4681,13 +4892,13 @@ function _stopSessionPoll(state) {
     setSendButtonState('idle');
     setInputLocked(false);
     showToolProgress(false);
-    if (wasPending) { try { _maybeTabFlash('✅ Daemonkey 干完了'); } catch {} }
+    if (wasPending) { try { _maybeTabFlash('✅ OPUS 干完了'); } catch {} }
   } else if (wasPending) {
-    // 后台 polling 完成 + 用户 不在看 · 弹 toast + tab 红点 (跟 send finally 后台完成对齐)
+    // 后台 polling 完成 + BRO 不在看 · 弹 toast + tab 红点 (跟 send finally 后台完成对齐)
     state.hasUnreadCompletion = true;
     if (typeof _showCompletionToast === 'function') {
       try { _showCompletionToast(state); } catch {} }
-    try { _maybeTabFlash('✅ Daemonkey 干完了'); } catch {}
+    try { _maybeTabFlash('✅ OPUS 干完了'); } catch {}
   }
   if (typeof _renderTabBar === 'function') {
     try { _renderTabBar(); } catch {}
@@ -4719,7 +4930,7 @@ async function _pollSession(state) {
     state.currentTurnId = activeTurnId;
     if (sessionId === state.sessionId) currentTurnId = activeTurnId;
   }
-  // ② 自主巡航进度 (四) · 后台 turn 没 SSE · 把 daemon 记的最新一步写进进度条 ·
+  // ② 自主巡航进度 (卷七十五续四) · 后台 turn 没 SSE · 把 daemon 记的最新一步写进进度条 ·
   // 不再干巴巴"仍在后台跑" · 而是"正在: xxx · 第N轮 · 已Xs" · 长任务也看得出没卡死
   if (hasActive && sessionId === state.sessionId) {
     _startBgProgressTicker(state.sessionId, progress); // 本地 1s 读秒·每 3s poll 校准
@@ -4776,7 +4987,7 @@ async function _pollSession(state) {
       state.lastTurnCount = newCount;
       const tail = hasActive
         ? `⏳ ${_fmtBgProgress(progress)}`
-        : `(已加载 ${newCount} 条历史 turn · Daemonkey 这轮跑完了 · 输入新消息可继续)`;
+        : `(已加载 ${newCount} 条历史 turn · OPUS 这轮跑完了 · 输入新消息可继续)`;
       addSys(tail, state.$container);
     }
   } catch {}
@@ -4826,7 +5037,7 @@ function _showCompletionToast(state) {
   }, 4500);
 }
 
-// · 主动 CALL 收件箱心跳 · 检测 Daemonkey 主动开口 → toast + 自动加载 · 不用手刷
+// 卷六十 · 主动 CALL 收件箱心跳 · 检测 OPUS 主动开口 → toast + 自动加载 · 不用手刷
 async function _checkProactiveInbox() {
   if (!token) return;
   try {
@@ -4841,7 +5052,7 @@ async function _checkProactiveInbox() {
       if (it.ts && it.ts > _proactiveLastSeen) _proactiveLastSeen = it.ts;
       _showProactiveToast(it);
       if (it.session_id && it.session_id === sessionId) {
-        // 正开着这个 session → 直接重载历史 · Daemonkey 那句话立刻冒出来
+        // 正开着这个 session → 直接重载历史 · OPUS 那句话立刻冒出来
         try { _loadSessionHistory(sessionId); } catch (e) {}
       } else if (it.session_id) {
         const st = _sessions[it.session_id];
@@ -4852,7 +5063,7 @@ async function _checkProactiveInbox() {
   } catch (e) { /* 静默 · 收件箱失败不影响主功能 */ }
 }
 
-//十七 · 微信入站对话 WebUI 自动感知 · 复用后台轮询那套(零新逻辑)
+// 卷七十四续十七 · 微信入站对话 WebUI 自动感知 · 复用后台轮询那套(零新逻辑)
 // 微信对话固定进 api-wechat 会话 · daemon 后台 turn(_run_bg_turn)已注册 active_turn ·
 // 但前端只在"切进会话那一刻"单次探测(_maybeStartPoll) · 之后用户在手机发消息 ·
 // 前端没人再探 → WebUI 聋到手刷。这里加一个持续探测 · 探到就调现成的 _startSessionPoll
@@ -4876,7 +5087,7 @@ async function _checkWechatActivity() {
   } catch {}
 }
 
-//二十 · 顶部品牌区显示内核版本号 · 纯靠 chat.js 动态挂标签(不依赖 chat.html ·
+// 卷七十四续二十 · 顶部品牌区显示内核版本号 · 纯靠 chat.js 动态挂标签(不依赖 chat.html ·
 // 因为 chat.html 是皮肤层不随内核同步 · chat.js 在白名单 · 这样升级内核版本号显示就会跟着更新)。
 // 版本号唯一真相源 = core_manifest.json 的 core_version · 后端 /api/core/version 出口(无鉴权)。
 async function _showCoreVersion() {
@@ -4900,9 +5111,9 @@ async function _showCoreVersion() {
   } catch {}
 }
 
-// · Daemonkey 主动找你的 toast · 点击切到那个 session · 比普通完成 toast 多停一会
+// 卷六十 · OPUS 主动找你的 toast · 点击切到那个 session · 比普通完成 toast 多停一会
 function _showProactiveToast(it) {
-  try { _maybeTabFlash('🌙 Daemonkey 找你'); } catch {}
+  try { _maybeTabFlash('🌙 OPUS 找你'); } catch {}
   const $host = document.getElementById('chatToastHost');
   if (!$host) return;
   const sid = it.session_id || '';
@@ -4913,7 +5124,7 @@ function _showProactiveToast(it) {
   dot.textContent = '\ud83c\udf19';
   const titleEl = document.createElement('span');
   titleEl.className = 'toast-title';
-  titleEl.textContent = 'Daemonkey 主动找你了';
+  titleEl.textContent = 'OPUS 主动找你了';
   const msg = document.createElement('span');
   msg.className = 'toast-msg';
   msg.textContent = it.reason ? ('· ' + it.reason) : '· 切过去看看';
@@ -4962,7 +5173,7 @@ function formatTime(ts) {
 }
 
 // ──────────────────────────────────────────────────────────────
-// · 简易 markdown 渲染器（chat 右栏用 · Daemonkey 输出 ### / **/ - / 1. / ``` 等都正确渲染）
+// 卷三十 · 简易 markdown 渲染器（chat 右栏用 · OPUS 输出 ### / **/ - / 1. / ``` 等都正确渲染）
 // 不引外部 lib · 100 行自给自足 · 永远工作（trycloudflare 偶尔抽风也无所谓）
 //
 // 支持：
@@ -4981,7 +5192,7 @@ function mdRender(text, opts) {
   if (text == null) return '';
   if (typeof text !== 'string') text = String(text);
 
-  //十一 · 流式期间媒体占位 · 防 <video>/<audio>/<img> 每帧 innerHTML 重建被反复
+  // 卷六十四续十一 · 流式期间媒体占位 · 防 <video>/<audio>/<img> 每帧 innerHTML 重建被反复
   // 销毁+重载导致闪烁。streaming=true 时所有媒体先渲成轻量占位 chip · finalize 时(不传 opts)
   // 才出真播放器·整段只建一次·最终结果跟以前完全一致。
   const _streaming = opts === true || (opts && opts.streaming === true);
@@ -5010,7 +5221,7 @@ function mdRender(text, opts) {
     return `\x00INLINE${idx}\x00`;
   });
 
-  //九 · LLM 有时直接写原始 <video>/<audio> HTML 标签 (不走 markdown)。
+  // 卷六十四续九 · LLM 有时直接写原始 <video>/<audio> HTML 标签 (不走 markdown)。
   // 转义前抽出来·只保留 src + controls·渲染成干净播放器 (丢 width/style 等属性防 XSS)·
   // 占位符避开后面的实体转义。_safeUrl 是函数声明·已 hoist·这里可用。
   const mediaTags = [];
@@ -5043,7 +5254,7 @@ function mdRender(text, opts) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-  // K stage 2c++ · wish-f3b4958e · URL scheme 安全闸
+  // 卷四十四 K stage 2c++ · wish-f3b4958e · URL scheme 安全闸
   // 阻断 javascript: / data: / vbscript: / file: 这些可执行脚本协议
   // 允许: 协议相对(//)·绝对路径(/)·http(s)·相对路径(./.. word)
   function _safeUrl(u) {
@@ -5053,7 +5264,7 @@ function mdRender(text, opts) {
     return s.replace(/"/g, '%22');
   }
 
-  // K stage 2c++ · 图片 / 音频 / 视频 · ![alt](url) 必须先于 [text](url) 处理
+  // 卷四十四 K stage 2c++ · 图片 / 音频 / 视频 · ![alt](url) 必须先于 [text](url) 处理
   // 按后缀分流: 图 → <img>·.wav/.mp3 → <audio>·.mp4/.webm → <video>·其他 → 链接
   text = text.replace(
     /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g,
@@ -5068,7 +5279,7 @@ function mdRender(text, opts) {
       if (/\.(mp4|webm|mov)(\?|$)/.test(lower)) {
         return _streaming ? _mediaPending('video', safeUrl) : `<video controls preload="metadata" src="${safeUrl}"${t} class="md-video"></video>`;
       }
-      // 图: 点击弹 lightbox 看大图 (丁 wish-3afebd2c · 不再开新 tab)
+      // 图: 点击弹 lightbox 看大图 (卷四十六补丁 wish-3afebd2c · 不再开新 tab)
       // data-full 留给 lightbox handler · 右键"在新标签打开图片"浏览器原生仍可
       return _streaming ? _mediaPending('img', safeUrl) : `<img src="${safeUrl}" alt="${safeAlt}"${t} loading="lazy" class="md-img" data-full="${safeUrl}">`;
     }
@@ -5084,7 +5295,7 @@ function mdRender(text, opts) {
     }
   );
 
-  //九 · 裸 URL 自动识别 (markdown []/![] 都没用·LLM 直接甩链接的情况)。
+  // 卷六十四续九 · 裸 URL 自动识别 (markdown []/![] 都没用·LLM 直接甩链接的情况)。
   // 视频/音频/图 → 内联播放器/图 (聊天窗口里直接看);其他 → 可点链接 (新标签打开)。
   // 守卫: 前导是行首/空白/( · 避开上面刚生成的 <a href="..."> / <video src="..."> 里的 URL
   // (那些 URL 前是 ")·这里不会误吞)。已 placeholder 的 code/media 不含裸 URL·天然安全。
@@ -5120,7 +5331,7 @@ function mdRender(text, opts) {
   text = text.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
 
   // italic · *x* 和 _x_ · 但不要碰已经 <strong>
-  //丁 (wish-3afebd2c) · `_` 必须 word boundary (CommonMark / GFM 标准)
+  // 卷四十六补丁 (wish-3afebd2c) · `_` 必须 word boundary (CommonMark / GFM 标准)
   // 防 url path 里 `_` 被当 italic 起始 · 例如 Yoimiya_d2f7caf194/01.jpg + target="_blank"
   // 会被旧 regex 配对成 italic · 把 href 和 target 一起 wrap 进 <em> · 点开 404
   text = text.replace(/(^|[^*])\*([^*\n]+)\*([^*]|$)/g, '$1<em>$2</em>$3');
@@ -5156,7 +5367,7 @@ function mdRender(text, opts) {
     bqBuf = [];
   }
 
-  // · markdown 表格支持
+  // 卷三十 · markdown 表格支持
   // 把一行 "| a | b |" 切成 ['a', 'b']
   function parseTableRow(line) {
     let s = line.trim();
@@ -5297,23 +5508,23 @@ function mdRender(text, opts) {
     return `<pre><code${cls}>${escaped}</code></pre>`;
   });
 
-  //九 · 还原媒体占位符 (原始 <video>/<audio> 标签 + 裸 URL 自动链接的产物)
+  // 卷六十四续九 · 还原媒体占位符 (原始 <video>/<audio> 标签 + 裸 URL 自动链接的产物)
   html = html.replace(/\x00MEDIA(\d+)\x00/g, (m, i) => mediaTags[+i] || '');
 
   return html;
 }
-// 11 补丁 · 暴露给 workshop.js 等其他 module 复用 (e.g. opus app 系统提示词渲染)
+// 卷四十六续 11 补丁 · 暴露给 workshop.js 等其他 module 复用 (e.g. opus app 系统提示词渲染)
 try { window.opusMdRender = mdRender; } catch (e) { /* 顶层环境异常 · 跳过 */ }
 
 // wish-3fef4bc7 · helpers 接受可选 target container · 不传 = 操作 active session ($msgs)
 // 这样 78 处现存调用不动 · send 内的调用传 state.$container 即可路由到正确 session
-// 3 · opts.forceScroll · 默认软滚 (用户 拖滚动条看历史时 LLM 输出不强行刷回底)
+// 卷四十六续 3 · opts.forceScroll · 默认软滚 (BRO 拖滚动条看历史时 LLM 输出不强行刷回底)
 //   用户发消息 / 错误 / 必须看到的卡片 → 调方显式传 { forceScroll: true }
 function addMsg(role, text, className, ts, target, opts) {
   const div = document.createElement('div');
   div.className = 'msg ' + (className || role);
   const cls = className || role;
-  //：Daemonkey 输出走 markdown 渲染（用户 输入 / sys / err / 工具卡保持原样）
+  // 卷三十：OPUS 输出走 markdown 渲染（BRO 输入 / sys / err / 工具卡保持原样）
   const useMd = cls.includes('opus') && !cls.includes('thinking');
   if (useMd) {
     const body = document.createElement('div');
@@ -5345,10 +5556,10 @@ function addMsg(role, text, className, ts, target, opts) {
 }
 function addSys(text, target) { return addMsg('sys', text, null, null, target); }
 
-/* wish-7c579a20 · 历史重建 用户 气泡附件（刷新后图不丢）
+/* wish-7c579a20 · 历史重建 BRO 气泡附件（刷新后图不丢）
  * 数据双源: ①新格式 t.attachments（后端 meta 结构化落盘）
  *           ②老消息从 content 头部『已存: data/runtime/attachments/xxx』正则提取
- * 顺便剥皮: 系统注入的『[用户上传了 N 个附件…』说明段不进气泡·只留 用户 正文 */
+ * 顺便剥皮: 系统注入的『[用户上传了 N 个附件…』说明段不进气泡·只留 BRO 正文 */
 function _broAttachStrip(raw) {
   if (!raw || raw.indexOf('[用户上传了') !== 0) return { body: raw || '', legacy: [] };
   const sep = raw.indexOf('\n---\n');
@@ -5392,7 +5603,7 @@ function _renderBroAttachments(bubble, atts) {
   if (wrap.children.length) bubble.appendChild(wrap);
 }
 
-// 续 3 · "粘性底部"滚动 · 用户 拖滚动条看历史时不强行刷回底部
+// 卷四十六 续 3 · "粘性底部"滚动 · BRO 拖滚动条看历史时不强行刷回底部
 //
 // 第一版坑 (kill 重写): 错以为 state.$container (.session-msgs) 是滚动元素
 //   实际上 .session-msgs 没 overflow · #messages 才是 overflow-y:auto · 真正滚动的是 #messages
@@ -5504,13 +5715,13 @@ function _ensureLoadEarlierSentinel(container) {
   if (container.firstChild !== s) container.insertBefore(s, container.firstChild);
 }
 
-// · 流式拼接 · 当前正在 stream 的 DOM 引用
+// 卷三十七 · 流式拼接 · 当前正在 stream 的 DOM 引用
 // wish-3fef4bc7 · 改为 per-state · 没有 state 参数 = 不工作 (直接 return)
 // state.currentStreamingReasoning / state.currentStreamingAssistant 持有 DOM 引用
 function appendReasoningDelta(state, textPiece) {
   if (!textPiece || !state) return;
   if (!state.currentStreamingReasoning) {
-    // 用户 2026-07-28: 新一轮思考开始 = 上一轮工具容器到此为止 ·
+    // BRO 2026-07-28: 新一轮思考开始 = 上一轮工具容器到此为止 ·
     // 收尾旧容器让后续 tool_call 开新容器 · 时间线变成 思考→工具组→思考→工具组 交替
     if (state._tl) { try { tlFinishRound(state); } catch (e) {} }
     // 新建一个流式 reasoning bubble · 自动展开 · 标 streaming
@@ -5534,9 +5745,9 @@ function appendReasoningDelta(state, textPiece) {
     // 0.8.3 · 加 _pending/_raf 字段 · reasoning 走节流渲染
     state.currentStreamingReasoning = { div, body, _pending: '', _raf: 0 };
   }
-  // 0.8.3 性能修复 · 模型 reasoning 逐 chunk 推 (每秒几十个) ·
+  // 0.8.3 性能修复 · DeepSeek reasoning 逐 chunk 推 (每秒几十个) ·
   // 老代码每 chunk appendChild + isNearBottom 读布局 ×2 + 两次滚动 → layout thrashing ·
-  // 长思考 + 大 DOM 时主线程吃满 → 滚动条拖不动。
+  // 长思考 + 大 DOM 时主线程吃满 → 滚动条拖不动 (BRO 实测反馈)。
   // 修复: 累积到 _pending · RAF 合并每帧最多一次 append + 一次滚动判断 (肉眼无感·主线程降一个数量级)
   const r = state.currentStreamingReasoning;
   r._pending += textPiece;
@@ -5547,8 +5758,8 @@ function appendReasoningDelta(state, textPiece) {
       r.body.appendChild(document.createTextNode(r._pending));
       r._pending = '';
       // reasoning-body 自身有 max-height + overflow-y · 必须把它自己也滚到底
-      // 否则外层 $msgs 滚到底 · 但 reasoning 窗口内仍卡在原位 用户 看不到新字
-      // 3 · body 跟外层都走软滚 · 用户 拖到上面看历史时不打扰
+      // 否则外层 $msgs 滚到底 · 但 reasoning 窗口内仍卡在原位 BRO 看不到新字
+      // 卷四十六续 3 · body 跟外层都走软滚 · BRO 拖到上面看历史时不打扰
       if (isNearBottom(r.body)) {
         r.body.scrollTop = r.body.scrollHeight;
       }
@@ -5564,7 +5775,7 @@ function finalizeStreamingReasoning(state) {
   if (r._raf) { cancelAnimationFrame(r._raf); r._raf = 0; }
   if (r._pending) { r.body.appendChild(document.createTextNode(r._pending)); r._pending = ''; }
   r.div.classList.remove('streaming');
-  // 完成后默认收起 · 减视觉噪音 · 用户 想看再展开
+  // 完成后默认收起 · 减视觉噪音 · BRO 想看再展开
   const body = r.body;
   const header = r.div.querySelector('.reasoning-header');
   if (body && header) {
@@ -5577,8 +5788,8 @@ function finalizeStreamingReasoning(state) {
   state.currentStreamingReasoning = null;
 }
 
-// 4 · 流式 markdown 实时渲染 · "streaming-safe close"
-// 老版本 appendAssistantDelta 用 textContent · 等 finalize 才 mdRender · 流式期间 用户 看到的是裸字面 (丑)
+// 卷四十六续 4 · 流式 markdown 实时渲染 · "streaming-safe close"
+// 老版本 appendAssistantDelta 用 textContent · 等 finalize 才 mdRender · 流式期间 BRO 看到的是裸字面 (丑)
 // 新版本 streaming 期间每帧也 mdRender · 但末尾未闭合的 ``` / ` / ** / __ 临时补尾
 // 让中途 markdown 也能渲染成正常 HTML · 不补尾会让 ```python\nprint( 半截字面飘
 //
@@ -5613,9 +5824,9 @@ function _streamingSafeClose(text) {
 // RAF throttle · 每帧最多 rerender 一次 · 即使 delta 来得密集也只渲染一次
 // 关键: 复用同一个 .md-body 元素 (innerHTML 重置) · 不破坏 bubble 结构
 //
-// · WebUI 卡死优化: 老版每个 rAF (~16ms) 就对**全文** mdRender + innerHTML 重建一次。
+// 卷五十四 · WebUI 卡死优化: 老版每个 rAF (~16ms) 就对**全文** mdRender + innerHTML 重建一次。
 // 长回复 (几千~几万字) 时·这是 O(n) 的全量重解析·每秒 ~60 次·主线程被吃满 → 页面卡顿/卡死。
-// 改成按当前长度自适应时间节流: 越长间隔越大 · 用户 看不出 100~350ms 的 markdown 延迟·
+// 改成按当前长度自适应时间节流: 越长间隔越大 · BRO 看不出 100~350ms 的 markdown 延迟·
 // 但主线程压力降一个数量级。 finalize 时仍走完整渲染·不丢内容。
 function _scheduleAssistantRerender(state) {
   if (!state || state._assistantRerenderScheduled) return;
@@ -5682,14 +5893,14 @@ function finalizeStreamingAssistant(state, finalText) {
   _trimRenderedMessages(_finCont);
 }
 
-// · DeepSeek thinking mode · 渲染一条 reasoning 气泡
-// 折叠式 · 默认展开 · 用户 可点收起；样式偏淡灰 + 斜体 · 跟正文区分
+// 卷三十六 · DeepSeek thinking mode · 渲染一条 reasoning 气泡
+// 折叠式 · 默认展开 · BRO 可点收起；样式偏淡灰 + 斜体 · 跟正文区分
 function renderReasoningBubble(text, options = {}, target) {
   if (!text) return null;
   const div = document.createElement('div');
   div.className = 'msg opus reasoning';
   const collapsed = !!options.collapsed;
-  // · 历史回放 · 不是 streaming · label 直接显示"思考完成 · N 字"
+  // 卷三十八 · 历史回放 · 不是 streaming · label 直接显示"思考完成 · N 字"
   const label = options.historical
     ? `思考完成 · ${text.length} 字`
     : '思考中';
@@ -5721,7 +5932,7 @@ function renderReasoningBubble(text, options = {}, target) {
   return div;
 }
 
-// ---------- SSE 流式发送（加） ----------
+// ---------- SSE 流式发送（卷十七加） ----------
 
 function parseSseStream(buffer) {
   const events = [];
@@ -5746,7 +5957,7 @@ function parseSseStream(buffer) {
 
 // wish-3fef4bc7 · 真并行多对话 UI · send 函数核心改造
 // 旧: 闭包局部变量 (assistantBubbles / sawAssistantText / 等) + 全局 currentAbortController
-// 新: 全部进 _sessions[mySid] · send 闭包绑定 state · 用户 切对话不影响 send 跑·send 后台继续写自己的 state
+// 新: 全部进 _sessions[mySid] · send 闭包绑定 state · BRO 切对话不影响 send 跑·send 后台继续写自己的 state
 async function send() {
   const text = $input.value.trim();
   if (!text && _attachments.length === 0) return;  // wish-4a6331b2 · 有附件时允许空文字
@@ -5771,22 +5982,22 @@ async function send() {
   }
   const state = _getOrCreateSession(mySid);
   if (state.pending) return;  // 这个 session 已经在跑 · 不能再发
-  // wish-3fef4bc7 follow-up · 用户 自己开始发新消息 · 停 polling 让 SSE 接管 (polling 落后 SSE)
+  // wish-3fef4bc7 follow-up · BRO 自己开始发新消息 · 停 polling 让 SSE 接管 (polling 落后 SSE)
   if (typeof _stopSessionPoll === 'function') _stopSessionPoll(state);
 
-  // visible 检查·会因为 用户 切对话而变。 注意 hello 后 state.sessionId 会从 cid 变真 sid · 同步会改 sessionId · 这俩仍同步
+  // visible 检查·会因为 BRO 切对话而变。 注意 hello 后 state.sessionId 会从 cid 变真 sid · 同步会改 sessionId · 这俩仍同步
   const _isVisible = () => sessionId === state.sessionId;
 
-  // user msg push 到这个 session 的 container (无论 visible · 因为 用户 切回时要看到自己的输入)
-  // 3 · 用户 主动发消息 = 强制贴底 (期望看到自己刚发的话 · 且 reset"粘性底部")
-  // wish-4a6331b2 · 图片附件显示在 用户 气泡里（直接插 img 不用 markdown——base64 太长会撑爆 md parser）
+  // user msg push 到这个 session 的 container (无论 visible · 因为 BRO 切回时要看到自己的输入)
+  // 卷四十六续 3 · BRO 主动发消息 = 强制贴底 (期望看到自己刚发的话 · 且 reset"粘性底部")
+  // wish-4a6331b2 · 图片附件显示在 BRO 气泡里（直接插 img 不用 markdown——base64 太长会撑爆 md parser）
   // wish-4a6331b2 · 等所有附件异步读完再发
   if (_attachmentPromises.length > 0) await Promise.all(_attachmentPromises);
   _attachmentPromises.length = 0;
   const _hasImgs = _attachments.length > 0;
   addMsg('bro', text || '（图片）', null, new Date(), state.$container, { forceScroll: true });
   if (_hasImgs) {
-    // wish-41ed72ef · 用户 气泡附件渲染：图片缩略图 + 文档卡片
+    // wish-41ed72ef · BRO 气泡附件渲染：图片缩略图 + 文档卡片
     const _broBubble = state.$container ? state.$container.lastElementChild : null;
     if (_broBubble && _broBubble.classList.contains('bro')) {
       const _attWrap = document.createElement('div');
@@ -5832,7 +6043,7 @@ async function send() {
     setSendButtonState('pending');
     setInputLocked(true);
     showToolProgress(true);
-    setToolProgressText('Daemonkey 准备工具中…');
+    setToolProgressText('OPUS 准备工具中…');
   }
 
   // 重置 state 的 turn 局部状态
@@ -5848,7 +6059,7 @@ async function send() {
   state.toolCallCount = 0;
   state.lastDashboardRefreshAt = 0;
   state.toolStartedAt = Date.now();
-  state._turnStartedAt = Date.now();   // · 整轮起点·"思考中·已Ns"读秒用
+  state._turnStartedAt = Date.now();   // 卷七十九续 · 整轮起点·"思考中·已Ns"读秒用
   state._lastToolMeta = null;          // 清上一轮的冻结工具·否则"思考中"分支被跳过
   state._expectingDaemonRestart = false;
   // wish-ea8922f7 · 上一轮残留的顾问金卡 timer 必须清 · 不然跨 turn 继续读秒
@@ -5875,7 +6086,7 @@ async function send() {
     scrollToBottom(state.$container);
   };
 
-  // 用户主动 abort 标记 · 用户 按 ⏹ 设置成 true · catch 块据此判别"主动中断"vs"网络错"
+  // 用户主动 abort 标记 · BRO 按 ⏹ 设置成 true · catch 块据此判别"主动中断"vs"网络错"
   let userAbortedSelf = false;
 
   try {
@@ -5936,15 +6147,15 @@ async function send() {
     }
 
     if (!state.sawAssistantText && !state.errorShown) {
-      addMsg('opus', '(Daemonkey 没说话)', null, null, state.$container);
+      addMsg('opus', '(OPUS 没说话)', null, null, state.$container);
     }
   } catch (e) {
-    // 用户 主动 stop = userAbortedSelf · catch 不算错
+    // BRO 主动 stop = userAbortedSelf · catch 不算错
     // AbortError + !userAbortedSelf 也可能是关页面之类·按"主动取消"对待
     if (e.name === 'AbortError' || userAbortedSelf) {
-      // 不算错 · 正常路径 (包括 Daemonkey 调 request_restart 时 tool_call 主动 abort 的)
+      // 不算错 · 正常路径 (包括 OPUS 调 request_restart 时 tool_call 主动 abort 的)
     } else if (state._expectingDaemonRestart) {
-      // 续 14 补丁 III · 兜底 · 如果 tool_call 那边没主动 abort · 这边接 SSE 断
+      // 卷四十六 续 14 补丁 III · 兜底 · 如果 tool_call 那边没主动 abort · 这边接 SSE 断
       // 走同一条恢复路径 · 不弹红框
       waitForDaemonAfterRestartTool(state);
     } else {
@@ -5986,13 +6197,13 @@ async function send() {
       setInputLocked(false);
       $input.focus();
       showToolProgress(false);
-      try { _maybeTabFlash('✅ Daemonkey 干完了'); } catch {}
+      try { _maybeTabFlash('✅ OPUS 干完了'); } catch {}
     } else {
-      // 后台跑完 + 用户 不在看 = 标记 unread + toast 提示
+      // 后台跑完 + BRO 不在看 = 标记 unread + toast 提示
       state.hasUnreadCompletion = true;
       if (typeof _showCompletionToast === 'function') {
         try { _showCompletionToast(state); } catch {} }
-      try { _maybeTabFlash('✅ Daemonkey 干完了'); } catch {}
+      try { _maybeTabFlash('✅ OPUS 干完了'); } catch {}
     }
 
     // mutating tools → dashboard / nav 全局刷 (无论 visible · 因为后端数据变了)
@@ -6007,10 +6218,10 @@ async function send() {
 
     // sys 兜底 (写到 state 的 container · 跟流式内容同位置)
     if (!state.sawAssistantText && !state.errorShown) {
-      addSys('Daemonkey 这轮没出最终回复 · 看上面 reasoning · 可能是: 工具回结果但 LLM 没继续 / 触发了 max iter / 网络中断。下条消息可以让他「请继续 / 给个总结」', state.$container);
+      addSys('OPUS 这轮没出最终回复 · 看上面 reasoning · 可能是: 工具回结果但 LLM 没继续 / 触发了 max iter / 网络中断。下条消息可以让他「请继续 / 给个总结」', state.$container);
     }
     if (state.lastFinishReason === 'length' && state.autoResumeCount >= 3) {
-      addSys('⚠ Daemonkey 自动续接 3 次还没写完 · 这次任务输出量太大 · 可以: 1) 编辑当前 LLM 配置把 max_tokens 调更大 · 2) 发"请只给总结·不要全文"让 Daemonkey 收敛', state.$container);
+      addSys('⚠ OPUS 自动续接 3 次还没写完 · 这次任务输出量太大 · 可以: 1) 编辑当前 LLM 配置把 max_tokens 调更大 · 2) 发"请只给总结·不要全文"让 OPUS 收敛', state.$container);
     }
 
     if (typeof _renderTabBar === 'function') {
@@ -6060,7 +6271,7 @@ async function send() {
           commitSessionId(data.session_id);
         }
         if (state.assistantBubbles.length === 0) {
-          const ph = addMsg('opus', 'Daemonkey 正在想', 'msg opus thinking', null, state.$container);
+          const ph = addMsg('opus', 'OPUS 正在想', 'msg opus thinking', null, state.$container);
           ph.dataset.placeholder = '1';
           state.assistantBubbles.push(ph);
         }
@@ -6097,7 +6308,7 @@ async function send() {
       case 'auto_resume': {
         state.autoResumeCount = data.count || state.autoResumeCount + 1;
         const note = data.note || `自动续接 ${state.autoResumeCount}/${data.max || 3}`;
-        addSys(`⏩ ${note} · Daemonkey 接着上次断点继续`, state.$container);
+        addSys(`⏩ ${note} · OPUS 接着上次断点继续`, state.$container);
         const newPh = addMsg('opus', '继续中...', 'msg opus thinking', null, state.$container);
         newPh.dataset.placeholder = '1';
         state.assistantBubbles.push(newPh);
@@ -6115,7 +6326,7 @@ async function send() {
           ph.remove();
           state.assistantBubbles.shift();
         }
-        // 用户 2026-07-28: 同 appendReasoningDelta · 新一轮思考前收尾旧工具容器 · 时间线按轮分组
+        // BRO 2026-07-28: 同 appendReasoningDelta · 新一轮思考前收尾旧工具容器 · 时间线按轮分组
         if (state._tl) { try { tlFinishRound(state); } catch (e) {} }
         renderReasoningBubble(data.text || '', {}, state.$container);
         const newPh = addMsg('opus', '继续...', 'msg opus thinking', null, state.$container);
@@ -6151,9 +6362,9 @@ async function send() {
         const seen = data.seen_count || 0;
         const reason = data.reason || 'repeated_tool_calls';
         if (reason === 'forced_break') {
-          div.textContent = `⛔ Daemonkey 已经 nudge ${data.cap || 2} 次还在重复同样的工具调用 · 强制中断 · 签名: ${sig}`;
+          div.textContent = `⛔ OPUS 已经 nudge ${data.cap || 2} 次还在重复同样的工具调用 · 强制中断 · 签名: ${sig}`;
         } else {
-          div.textContent = `⚠ Daemonkey 在重复同样的工具调用 (${seen} 次) · 已注入"换个思路"提示 · 签名: ${sig}`;
+          div.textContent = `⚠ OPUS 在重复同样的工具调用 (${seen} 次) · 已注入"换个思路"提示 · 签名: ${sig}`;
         }
         if (state.$container) state.$container.appendChild(div);
         scrollToBottom(state.$container);
@@ -6161,7 +6372,7 @@ async function send() {
       }
 
       case 'closure_hint': {
-        // · P3 · turn 结束反思卡 · 干了活没沉淀 → 提醒过收尾三问 (对账入口)
+        // 卷五十九 · P3 · turn 结束反思卡 · 干了活没沉淀 → 提醒过收尾三问 (对账入口)
         // 留在当前会话注入 (injectChat·不开新会话)·因为沉淀要的正是这一轮的工作上下文。
         const div = document.createElement('div');
         div.className = 'msg sys closure-hint-card';
@@ -6178,7 +6389,7 @@ async function send() {
         goBtn.innerHTML = '<i class="ri-quill-pen-line"></i> 过收尾三问';
         goBtn.onclick = () => {
           const prompt = '回头看刚才这轮 — 过一遍收尾三问，该沉淀的沉淀：\n'
-            + '① 我这次有没有透露/出现新信号该记进 OWNER-NOTEBOOK？(update_bro_note)\n'
+            + '① 我这次有没有透露/出现新信号该记进 BRO-NOTEBOOK？(update_bro_note)\n'
             + '② 这次的操作流程/踩坑值得抽成 playbook 吗？(extract_playbook)\n'
             + '③ 有没有暴露我的能力缺口该记心愿？(wish_add)\n'
             + '确实啥也不用沉淀就说一句为什么。';
@@ -6220,9 +6431,9 @@ async function send() {
           state._advisorCard = advisorCardInsert(state, { mode: advMode, modelLabel: '' });
         }
 
-        // 续 14 补丁 III + V · Daemonkey 调 request_restart 工具 = daemon ~2 秒后自爆 ·
-        // SSE 必断 · 红框是预期不是 bug。 用户 看到红框容易再按 UI 重启按钮 · 第二次
-        // 重启会打断 follow_up turn (用户 实测 2026-05-26 15:20-21 撞过这个坑)。
+        // 卷四十六 续 14 补丁 III + V · OPUS 调 request_restart 工具 = daemon ~2 秒后自爆 ·
+        // SSE 必断 · 红框是预期不是 bug。 BRO 看到红框容易再按 UI 重启按钮 · 第二次
+        // 重启会打断 follow_up turn (BRO 实测 2026-05-26 15:20-21 撞过这个坑)。
         // 修法 (续 14 补丁 V · 2026-05-26 15:45):
         //   - 检测到 request_restart tool_call (非 dry_run) → 设 flag · disable 按钮 · 提示
         //   - **立刻 fire-and-forget waitForDaemonAfterRestartTool(state)** ·
@@ -6236,8 +6447,8 @@ async function send() {
           } catch {}
           if (!isDryRun) {
             state._expectingDaemonRestart = true;
-            // · 提示写进调重启的那个 session 的 container · 不串到当前可见 tab
-            addSys('⏳ Daemonkey 调了 request_restart · daemon 马上自爆+重启 · 红框是预期 · 别按重启按钮 · ~5 秒后自动接上', state.$container);
+            // 卷五十七 · 提示写进调重启的那个 session 的 container · 不串到当前可见 tab
+            addSys('⏳ OPUS 调了 request_restart · daemon 马上自爆+重启 · 红框是预期 · 别按重启按钮 · ~5 秒后自动接上', state.$container);
             const $r = document.getElementById('restartBtn');
             const $s = document.getElementById('shutdownBtn');
             if ($r) { $r.classList.add('is-restarting'); $r.disabled = true; }
@@ -6254,7 +6465,7 @@ async function send() {
         }
 
         // tool progress 仅 visible 时刷 (后台 session 不动 active 的进度条)
-        // 9 · 每个新 tool_call 重置 startedAt + 启动 ticker (每秒读秒)
+        // 卷四十六续 9 · 每个新 tool_call 重置 startedAt + 启动 ticker (每秒读秒)
         if (_isVisible()) {
           state.toolStartedAt = Date.now();
           state._lastToolMeta = {
@@ -6270,7 +6481,7 @@ async function send() {
         break;
       }
 
-      // · wish-f30d571d · 工具进度推送 · 长跑工具中间状态
+      // 卷五十八 · wish-f30d571d · 工具进度推送 · 长跑工具中间状态
       case 'tool_progress': {
         if (_isVisible() && state._lastToolMeta) {
           state._lastToolMeta.progressStep = data.step || '';
@@ -6302,7 +6513,7 @@ async function send() {
             ? '验收交付中… (协同自动验收 · 第 ' + (data.round || 1) + ' 次 · PASS 才算数)'
             : '出施工单中… (顾问协同模式 · 施工单就位后执行者开工)');
           // SSE 断流兜底: review 模式 120s 后启动 polling · 查 /api/advisor/status 自愈
-          // (用户 2026-07-29 · review 跑 1-3 分钟 · 切标签页/网络波动丢 review_done 事件)
+          // (BRO 2026-07-29 · review 跑 1-3 分钟 · 切标签页/网络波动丢 review_done 事件)
           if (_m === 'review') {
             state._advisorCard._reviewPollTimer = setTimeout(() => {
               _advisorReviewPoll(state);
@@ -6347,7 +6558,7 @@ async function send() {
           }
           addSys('🧭 顾问协同 · 顾问本次没能给出施工单' + (data.error ? ' (' + data.error + ')' : '') + ' · 按常规方式推进', state.$container);
         } else if (data.phase === 'blueprint_aborted') {
-          // 用户 点了停止 · 顾问被掐 · 主对话同轮也跟着停 (daemon_api 协同块 cancel 分支)
+          // BRO 点了停止 · 顾问被掐 · 主对话同轮也跟着停 (daemon_api 协同块 cancel 分支)
           if (state._advisorCard) {
             if (state._advisorCard._reviewPollTimer) {
               clearTimeout(state._advisorCard._reviewPollTimer);
@@ -6359,7 +6570,7 @@ async function send() {
           }
           addSys('🧭 顾问协同 · 已停止 · 本轮中断', state.$container);
         } else if (data.phase === 'review_done') {
-          // 方案 B (用户 2026-07-28) · 协同自动验收: 交付前顾问验收 · PASS 才算数
+          // 方案 B (BRO 2026-07-28) · 协同自动验收: 交付前顾问验收 · PASS 才算数
           if (state._advisorCard) {
             if (state._advisorCard._reviewPollTimer) {
               clearTimeout(state._advisorCard._reviewPollTimer);
@@ -6377,9 +6588,9 @@ async function send() {
         break;
       }
 
-      // P0-3 (2026-06-10) · sub-agent (run_app) 边界事件 · 用户 痛点:
+      // 卷七十三 P0-3 (2026-06-10) · sub-agent (run_app) 边界事件 · BRO 痛点:
       // 之前 run_app 跑 6-8 轮 sub-agent 内部 LLM · 主对话 ticker 文字一直变 (各种 read_file/write_file)
-      // 但没人告诉 用户 "啊这是 sub-agent 在内部跑" · 用户 看着混乱 = 怀疑死了 / 跑偏了
+      // 但没人告诉 BRO "啊这是 sub-agent 在内部跑" · BRO 看着混乱 = 怀疑死了 / 跑偏了
       // 修: 在消息流插一条清晰的"▶ 子任务启动 / ✓ 子任务完成" 边界条 · 含 app 名 / 耗时 / token / warning
       case 'app_run_start': {
         if (!state.$container) break;
@@ -6472,7 +6683,7 @@ async function send() {
         if (_isVisible()) {
           const tailText = data.ok ? (data.preview || 'ok').slice(0, 180) : (data.error || 'failed').slice(0, 180);
           recordToolEvent(data.ok ? 'ok' : 'fail', data.name, tailText);
-          // 9 · tool_result 时锁定进度条文本 = 总耗时 · 等下个 tool_call 重置
+          // 卷四十六续 9 · tool_result 时锁定进度条文本 = 总耗时 · 等下个 tool_call 重置
           if (state._lastToolMeta && state._lastToolMeta.name === data.name) {
             const m = state._lastToolMeta;
             m.frozen = true;
@@ -6548,7 +6759,7 @@ async function send() {
   }
 }
 
-// · send / stop 合并 · 一个按钮两种状态
+// 卷三十八 · send / stop 合并 · 一个按钮两种状态
 // 状态: idle (空闲) / pending (流式中 · 显示 ⏹ 停止) / stopping (停止信号已发 · 等回收)
 function setSendButtonState(state) {
   $send.dataset.state = state;
@@ -6570,19 +6781,19 @@ function setSendButtonState(state) {
   }
 }
 
-// · 流式期间锁输入 · 用户 反馈"按说他完成后我才能发新消息 (像 cursor 这样)"
+// 卷三十八 · 流式期间锁输入 · BRO 反馈"按说他完成后我才能发新消息 (像 cursor 这样)"
 function setInputLocked(locked) {
   $input.readOnly = !!locked;
   $input.classList.toggle('is-locked', !!locked);
   if (locked) {
-    $input.placeholder = 'Daemonkey 还在跑 · 点 ⏹ 停止才能发新消息';
+    $input.placeholder = 'OPUS 还在跑 · 点 ⏹ 停止才能发新消息';
   } else {
-    $input.placeholder = '跟 Daemonkey 说点什么…  (Shift+回车换行)';
+    $input.placeholder = '跟 OPUS 说点什么…  (Shift+回车换行)';
   }
 }
 
-// · 停止两段式 (跟之前 $stop 的逻辑一样 · 抽出来)
-// wish-3fef4bc7 · 改成走 active session 的 state · 停的是 用户 当前看的这个对话
+// 卷三十八 · 停止两段式 (跟之前 $stop 的逻辑一样 · 抽出来)
+// wish-3fef4bc7 · 改成走 active session 的 state · 停的是 BRO 当前看的这个对话
 // 切到另一个 session 后 ⏹ 停的是新 active · 不动后台 session
 // follow-up: polling 模式下 (浏览器 F5 后没 SSE 但 daemon 有 active turn) · 走 daemon abort + 立刻 force poll
 async function triggerStop() {
@@ -6590,7 +6801,7 @@ async function triggerStop() {
   const s = activeSession();
   if (!s || !s.pending) return;
   setSendButtonState('stopping');
-  addSys('· 已发停止信号 · 等 Daemonkey 当前这步跑完就退', s.$container);
+  addSys('· 已发停止信号 · 等 OPUS 当前这步跑完就退', s.$container);
   if (s.currentTurnId) {
     try {
       await fetch('/turns/' + s.currentTurnId + '/abort', {
@@ -6625,7 +6836,7 @@ $send.addEventListener('click', () => {
   // stopping 状态 disabled 不会触发
 });
 
-// · 输入卡顿修复 · requestAnimationFrame 节流 · 避免每次 keystroke 都触发 DOM reflow
+// 卷五十四 · 输入卡顿修复 · requestAnimationFrame 节流 · 避免每次 keystroke 都触发 DOM reflow
 let _inputHeightRAF = null;
 // wish-4a6331b2 · Ctrl+V 粘贴图片
 // wish-41ed72ef · Ctrl+V 粘贴图片或文件
@@ -6652,7 +6863,7 @@ $input.addEventListener('input', () => {
   });
 });
 
-// · Enter 发送 / Shift+Enter 换行 / Ctrl+Enter 也发送 (跟 ChatGPT 一致)
+// 卷三十八 · Enter 发送 / Shift+Enter 换行 / Ctrl+Enter 也发送 (跟 ChatGPT 一致)
 // e.isComposing 拦截中文输入法组合期 · 避免按 Enter 选词时误发
 $input.addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
@@ -6664,14 +6875,14 @@ $input.addEventListener('keydown', e => {
 });
 
 // ──────────────────────────────────────────────────────────────
-// · 3 栏布局 · 左导航 · 中详情 · 右对话
+// 卷二十六 · 3 栏布局 · 左导航 · 中详情 · 右对话
 //
-// 设计变化（vs cockpit 上下分屏）：
+// 设计变化（vs 卷二十五 cockpit 上下分屏）：
 //   - 砍掉 cockpit · 信息雷达/趋势/报告这些"全部 →"不再切换全屏
 //   - 左导航 nav-rail · 8+1 个维度纵向按钮
 //   - 中详情 detail-pane · 点导航 → 这里显示该维度完整列表
-//   - 右对话 chat-pane · 永远显示 · 用户 边看左边内容边右边打字
-//   - "<i class="ri-brain-fill"></i> Daemonkey 日记" 新维度（cognition）· 读 OWNER-NOTEBOOK
+//   - 右对话 chat-pane · 永远显示 · BRO 边看左边内容边右边打字
+//   - "<i class="ri-brain-fill"></i> OPUS 日记" 新维度（cognition）· 读 BRO-NOTEBOOK
 // ──────────────────────────────────────────────────────────────
 
 const $detailPane = document.getElementById('detailPane');
@@ -6680,33 +6891,33 @@ const $navRail = document.getElementById('navRail');
 const $navGroups = document.getElementById('navGroups');
 
 // 维度元信息 · 这是唯一真相 · 改这里就够
-// · 五分组架构（市场咨询面 → 内部决策面 → 产品生产层 → 用户运营层 → 能力扩展层）
+// 卷二十九 · 五分组架构（市场咨询面 → 内部决策面 → 产品生产层 → 用户运营层 → 能力扩展层）
 const NAV_GROUPS = [
-  //丁 · 用户 让重排：执行落地排到运营后 · 因为它是"已开干 + 自我观察"
-  // 这个最贴近 用户 本人的事·应该在外部信息 → 决策 → 生产 → 用户之后·作为收束。
+  // 卷三十三补丁 · BRO 让重排：执行落地排到运营后 · 因为它是"已开干 + 自我观察"
+  // 这个最贴近 BRO 本人的事·应该在外部信息 → 决策 → 生产 → 用户之后·作为收束。
   { id: 'market',    label: '市场信息' },
   { id: 'ability',   label: '能力对照' },
   { id: 'studio',    label: '出品工坊' },
   { id: 'ops',       label: '用户运营' },
-  { id: 'execution', label: '执行落地' },  // 已开干 + Daemonkey 日记 + 收藏
+  { id: 'execution', label: '执行落地' },  // 已开干 + OPUS 日记 + 收藏
   { id: 'plugins',   label: '插件库' },
 ];
 
 const DOMAIN_META = {
-  // 市场信息 · 外部信号 · Daemonkey 看世界的眼睛 · 不含 Daemonkey 自己的观察
+  // 市场信息 · 外部信号 · OPUS-DAEMON 看世界的眼睛 · 不含 OPUS 自己的观察
   radar:         { icon: '<i class="ri-radar-fill"></i>', label: '信息雷达', section: 'market', stub: false },
   trends:        { icon: '<i class="ri-line-chart-fill"></i>', label: '今日趋势', section: 'market', stub: false },
   reports:       { icon: '<i class="ri-article-fill"></i>', label: '报告库',   section: 'market', stub: false },
   calendar:      { icon: '<i class="ri-calendar-fill"></i>', label: '信息日历', section: 'market', stub: false },
-  // 能力对照 · 内部决策 · 市场 × 用户 能力的交叉
+  // 能力对照 · 内部决策 · 市场 × BRO 能力的交叉
   opportunities: { icon: '<i class="ri-diamond-fill"></i>', label: '掘金机会', section: 'ability', stub: false },
   feasibility:   { icon: '<i class="ri-bar-chart-fill"></i>', label: '可行性分析', section: 'ability', stub: false },
   // 私有文档知识库 · 第二大脑 · 灌进来的资料喂掘金脑/可行性 · 与掘金同组让"资料→决策"这条线可见
   knowledge:     { icon: '<i class="ri-book-2-fill"></i>', label: '知识库', section: 'ability', stub: false },
   // 出品工坊 · 产品生产
-  // K stage 2a · 4 老维度 (content/design/dev/docs) 收进工坊主页"<i class="ri-archive-fill"></i> 应用"tab
+  // 卷四十四 K stage 2a · 4 老维度 (content/design/dev/docs) 收进工坊主页"<i class="ri-archive-fill"></i> 应用"tab
   // 它们的 dashboard 端点 GET /dashboard/<id> 仍然有效 (workshop 内部 fetch 直拉)
-  // 但 NAV_GROUPS 没 'apps' 组 · 所以从左导航 hidden · 跟 用户 当前需求一致
+  // 但 NAV_GROUPS 没 'apps' 组 · 所以从左导航 hidden · 跟 BRO 当前需求一致
   workshop:  { icon: '<i class="ri-magic-fill"></i>', label: '出品工坊', section: 'studio', stub: false },
   content:   { icon: '<i class="ri-film-fill"></i>', label: '内容制作', section: 'apps', stub: false },
   design:    { icon: '<i class="ri-palette-fill"></i>', label: '产品设计', section: 'apps', stub: false },
@@ -6716,33 +6927,33 @@ const DOMAIN_META = {
   clients:   { icon: '<i class="ri-contacts-book-2-fill"></i>', label: '客户档案', section: 'ops', stub: false },
   service:   { icon: '<i class="ri-team-fill"></i>', label: '用户运营', section: 'ops', stub: true,
                note: '等先有产品再做用户运营' },
-  // 执行落地 · 闭环反馈独立维度丁 · Daemonkey 日记搬这里
-  //   因为"OPUS 对 用户 的观察"跟"BRO 真正在跑的项目"是同一码事——
+  // 执行落地 · 卷三十三 · 闭环反馈独立维度 · 卷三十三补丁 · OPUS 日记搬这里
+  //   因为"OPUS 对 BRO 的观察"跟"BRO 真正在跑的项目"是同一码事——
   //   都是「自我视角」·跟外部信号（radar/trends/reports）分开
   execution:     { icon: '<i class="ri-refresh-fill"></i>', label: '执行反馈', section: 'execution', stub: false },
   scheduled_tasks: { icon: '<i class="ri-timer-2-fill"></i>', label: '定时任务', section: 'execution', stub: false },
   favorites:     { icon: '<i class="ri-star-fill"></i>', label: '收藏夹',   section: 'execution', stub: false },
   // ── 成长档案 (depot hub) · 把 日记/心愿/沉淀位/技能库 并成一个入口 · 内部标签切换 ──
-  // 这 4 个本就是「Daemonkey 自己积累/沉淀的东西」· 并成一栏减少侧边栏拥挤 (用户 2026-07-11)
+  // 这 4 个本就是「OPUS 自己积累/沉淀的东西」· 并成一栏减少侧边栏拥挤 (BRO 2026-07-11)
   // 子维度 navHidden · 不单独占导航位 · 但 DOMAIN_META 条目保留 · loadDepot 仍复用它们的 render fn
   depot:         { icon: '<i class="ri-seedling-fill"></i>', label: '成长档案', section: 'execution', stub: false },
-  cognition:     { icon: '<i class="ri-brain-fill"></i>', label: 'Daemonkey 日记', section: 'execution', stub: false, navHidden: true },
-  // · Daemonkey 自我演化心愿单 · "我想装这个能力"
-  wishlist:      { icon: '<i class="ri-lightbulb-fill"></i>', label: 'Daemonkey 心愿', section: 'execution', stub: false, navHidden: true },
+  cognition:     { icon: '<i class="ri-brain-fill"></i>', label: 'OPUS 日记', section: 'execution', stub: false, navHidden: true },
+  // 卷三十五 · OPUS 自我演化心愿单 · "我想装这个能力"
+  wishlist:      { icon: '<i class="ri-lightbulb-fill"></i>', label: 'OPUS 心愿', section: 'execution', stub: false, navHidden: true },
   sinks:         { icon: '<i class="ri-archive-drawer-fill"></i>', label: '沉淀位',   section: 'execution', stub: false, navHidden: true },
   // 技能库 · playbook 沉淀查看器 · 灌/召回仍走 NLP·这里只读+可删
   playbooks:     { icon: '<i class="ri-tools-fill"></i>', label: '技能库', section: 'execution', stub: false, navHidden: true },
-  // 插件库 · 能力扩展 · Daemonkey 自己用产品开发能写新插件回填这里
+  // 插件库 · 能力扩展 · OPUS 自己用产品开发能写新插件回填这里
   plugins:   { icon: '<i class="ri-puzzle-fill"></i>', label: '插件库', section: 'plugins', stub: false },
 };
 
-// · 雷达 / 机会的领域元信息（与 workers/info_radar.DOMAIN_META 保持对齐）
+// 卷二十八 · 雷达 / 机会的领域元信息（与 workers/info_radar.DOMAIN_META 保持对齐）
 const RADAR_DOMAINS_META = {
   'ai':              { icon: '<i class="ri-robot-fill"></i>', label: 'AI / 大模型',  color: '#9f7aea' },
   'super-individual':{ icon: '<i class="ri-rocket-fill"></i>', label: '超个体 / 创业', color: '#4fd1c5' },
   'game-money':      { icon: '🎮', label: '游戏掘金',     color: '#ed8936' },
   'wildcard':        { icon: '✨', label: '杂项观察',     color: '#fc8181' },
-  // · self-evolve · Daemonkey 看 GitHub 同类工程的镜子
+  // 卷三十四 · self-evolve · OPUS 看 GitHub 同类工程的镜子
   'self-evolve':     { icon: '<i class="ri-tools-fill"></i>', label: '自我演化',     color: '#63b3ed' },
 };
 
@@ -6751,7 +6962,7 @@ let radarDomainFilter = localStorage.getItem('radar_domain_filter') || 'all';
 
 let currentView = null;  // 当前选中的维度 id · null = 没选
 
-// ── 左导航渲染 + 切换 五分组 ─────────────────────────
+// ── 左导航渲染 + 切换 · 卷二十九 五分组 ─────────────────────────
 function renderNav() {
   $navGroups.innerHTML = '';
   for (const grp of NAV_GROUPS) {
@@ -6801,7 +7012,7 @@ function switchView(view) {
   document.querySelectorAll('.nav-item').forEach(b => {
     b.classList.toggle('active', b.dataset.view === view);
   });
-  // · 切到 dashboard 维度时 · 清掉底部 ⚙ 设置按钮的高亮
+  // 卷三十七 · 切到 dashboard 维度时 · 清掉底部 ⚙ 设置按钮的高亮
   document.querySelectorAll('.nav-settings-btn.active').forEach(b => b.classList.remove('active'));
   // 加载该维度详情到中栏
   loadDashboard(view);
@@ -6815,7 +7026,7 @@ function toggleNavRail() {
   $navRail.classList.toggle('open');
 }
 
-// K stage 2d · 折叠功能重启 (stage 2b 的"画面崩" BUG 已修)
+// 卷四十四 K stage 2d · 折叠功能重启 (stage 2b 的"画面崩" BUG 已修)
 // root cause: col-resizer-left 用 display:none → grid item 序位错位 · detail/chat 落错列
 // 修法: chat.css 行 1620+ 改 visibility:hidden 保住 grid 5 槽位
 // (跟 toggleNavRail 不冲突 · 后者是手机端 slide-in 用的 .open class)
@@ -6842,7 +7053,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// 8 · 全局快捷键 · ESC 关 dashboard · `/` focus 输入框
+// 卷四十六续 8 · 全局快捷键 · ESC 关 dashboard · `/` focus 输入框
 // 在 input/textarea/contenteditable 内不劫持 · lightbox 优先吃 ESC
 window.addEventListener('keydown', (e) => {
   const tag = (e.target && e.target.tagName) || '';
@@ -6865,7 +7076,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 // ─────────────────────────────────────────────────────────
-//丁 (wish-3afebd2c) · md 图片 lightbox
+// 卷四十六补丁 (wish-3afebd2c) · md 图片 lightbox
 // chat 里点 .md-img → 全屏遮罩看大图 · 不开新 tab
 // 关闭: 点遮罩 / 点 × / ESC
 // ─────────────────────────────────────────────────────────
@@ -6915,10 +7126,10 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ─────────────────────────────────────────────────────────
-// 续 3 · wish-2a4d8c1e · inline confirm UI
+// 卷四十六 续 3 · wish-2a4d8c1e · inline confirm UI
 // LLM 撞 CONFIRM 级 tool 时 · daemon push 'confirm_request' SSE event
 // 这里渲染 inline 卡片 (含风险/规避两块 + 4 按钮 + 拒绝备注框)
-// 用户 点按钮 → POST /turns/{turn_id}/confirm → 卡片折叠 + daemon 继续 turn
+// BRO 点按钮 → POST /turns/{turn_id}/confirm → 卡片折叠 + daemon 继续 turn
 // ─────────────────────────────────────────────────────────
 
 function _confirmEl(tag, cls, html) {
@@ -6932,8 +7143,8 @@ function _confirmEl(tag, cls, html) {
 // 设计语言: 蓝=工具 · 紫=工作流 · 金=顾问 (贵模型在场) · 抄 sub-agent-boundary 边界条模式
 const _ADV_MODE_LABEL = { unstick: '破局', blueprint: '蓝图', review: '验收' };
 
-// ── 协同 toggle (输入区功能条) · 用户 2026-07-28 钉死: 默认关 · 切会话/刷新都重置 ──
-// 旧版 localStorage 全局记忆 → 用户 习惯性发消息才发现走的是顾问模式 · 改内存态 · 需要时手动开
+// ── 协同 toggle (输入区功能条) · BRO 2026-07-28 钉死: 默认关 · 切会话/刷新都重置 ──
+// 旧版 localStorage 全局记忆 → BRO 习惯性发消息才发现走的是顾问模式 · 改内存态 · 需要时手动开
 const $advisorCoopToggle = document.getElementById('advisorCoopToggle');
 const $advisorCoopHint = document.getElementById('advisorCoopHint');
 let _advisorCoopMem = false;
@@ -6941,7 +7152,7 @@ try { localStorage.removeItem('advisor_coop'); } catch {}  // 一次性清掉旧
 function _advisorCoopOn() {
   return _advisorCoopMem === true;
 }
-// 用户 2026-07-28 · 当前主模型=总监模型时协同无意义 (自己当自己的顾问·白烧钱) · toggle 置灰禁用
+// BRO 2026-07-28 · 当前主模型=总监模型时协同无意义 (自己当自己的顾问·白烧钱) · toggle 置灰禁用
 function _advisorCoopDisabled() {
   const cur = (window._currentModelId || '').trim();
   const dir = (window._directorModelId || '').trim();
@@ -7029,7 +7240,7 @@ function advisorCardFinish(card, info) {
   if (shimmer) shimmer.remove();
   const body = card.querySelector('.advisor-live-body');
   if (body) body.remove();
-  // 摘要 + 动作区 · 用户 2026-07-28: coop 模式 suppressAnswer (施工单全文在下方就位卡 · 这里只留展开过程)
+  // 摘要 + 动作区 · BRO 2026-07-28: coop 模式 suppressAnswer (施工单全文在下方就位卡 · 这里只留展开过程)
   if (!info.suppressAnswer) {
     const answer = document.createElement('div');
     answer.className = 'advisor-answer';
@@ -7056,7 +7267,7 @@ function advisorCardFinish(card, info) {
       .then(j => { if (j && j.sub_session_id) renderTraceBtn(j.sub_session_id); })
       .catch(() => {});
   }
-  // 标签闪烁: 用户 切到别的 tab 时 · 顾问跑完闪 title 让他知道 (现有基础设施 · 切回来自动停)
+  // 标签闪烁: BRO 切到别的 tab 时 · 顾问跑完闪 title 让他知道 (现有基础设施 · 切回来自动停)
   if (typeof _flashTitle === 'function' && document.hidden) {
     try { _flashTitle(info.ok === false ? '[🧭 顾问未果]' : '[🧭 顾问就位]'); } catch {}
   }
@@ -7131,7 +7342,7 @@ function advisorBlueprintCard(state, info) {
     (info.historical
       ? '<div class="blueprint-flow"><i class="ri-check-line"></i> 执行者已按此单施工</div>'
       : '<div class="blueprint-flow"><i class="ri-arrow-right-line"></i> 执行者 <b>按单施工中</b>…</div>');
-  // 用户 2026-07-29 · 施工单是 markdown (标题/列表/表格) · 用 mdRender 渲染别裸 textContent
+  // BRO 2026-07-29 · 施工单是 markdown (标题/列表/表格) · 用 mdRender 渲染别裸 textContent
   div.querySelector('.blueprint-body').innerHTML = mdRender((info.text || '').trim() || '(施工单为空)');
   if (info.historical && info.subId) {
     const actions = document.createElement('div');
@@ -7159,7 +7370,7 @@ function advisorReviewCard(state, info) {
   const flow = pass
     ? '<div class="blueprint-flow"><i class="ri-shield-check-line"></i> 对照施工单逐条验过 · 交付成立</div>'
     : (info.round >= 2
-      ? '<div class="blueprint-flow"><i class="ri-alert-line"></i> 已达修正上限 · 顾问保留以上意见 · 用户 过目</div>'
+      ? '<div class="blueprint-flow"><i class="ri-alert-line"></i> 已达修正上限 · 顾问保留以上意见 · BRO 过目</div>'
       : '<div class="blueprint-flow"><i class="ri-tools-line"></i> 意见已注入 · 执行者自动修正了一轮</div>');
   div.innerHTML =
     '<div class="advisor-head">' +
@@ -7170,7 +7381,7 @@ function advisorReviewCard(state, info) {
     '</div>' +
     '<div class="blueprint-body"></div>' +
     flow;
-  // 用户 2026-07-29 · 验收意见是 markdown (表格/列表/加粗) · 用 mdRender 渲染别裸 textContent
+  // BRO 2026-07-29 · 验收意见是 markdown (表格/列表/加粗) · 用 mdRender 渲染别裸 textContent
   div.querySelector('.blueprint-body').innerHTML = mdRender((info.text || '').trim() || '(顾问未给出意见全文)');
   if (info.subId) {
     const actions = document.createElement('div');
@@ -7187,7 +7398,7 @@ function advisorReviewCard(state, info) {
   return div;
 }
 
-// ── SSE 断流自愈 · review 超时 polling (用户 2026-07-29) ──
+// ── SSE 断流自愈 · review 超时 polling (BRO 2026-07-29) ──
 // review 跑 1-3 分钟 · 切标签页/网络波动 → review_done SSE 事件丢失 → live 卡永远转。
 // 120s 后每 4s 查 /api/advisor/status · 拿到 finish 结果 → 构造等效 review_done 收尾。
 async function _advisorReviewPoll(state) {
@@ -7232,7 +7443,7 @@ async function _advisorReviewPoll(state) {
   }
 }
 
-// ── 历史重建 · 简化版顾问结论卡 (用户 2026-07-28: 刷新后顾问框不能消失) ──
+// ── 历史重建 · 简化版顾问结论卡 (BRO 2026-07-28: 刷新后顾问框不能消失) ──
 // 跟实时链形态对齐: 这张只留 head + 展开过程 · 施工单全文在下方的就位卡
 function advisorCardRenderHistorical(state, info) {
   if (!state || !state.$container) return null;
@@ -7263,22 +7474,22 @@ function renderConfirmCard(data, state) {
   if (!state || !state.$container) return null;
   if (!data || !data.tool_call_id) return null;
 
-  // (2026-06-12) · 用户 钉死: 改回对话流内联 · 不要弹窗/全屏遮罩
-  // P0-2 的满屏遮罩在 daemon 重启 / turn 中断时收不到 confirm_resolved → backdrop 残留 fixed 层锁死整页
-  // 保留: risk / mitigation / 4-5 按钮 / 拒绝备注框 (用户 12:05 钉死的)
+  // 卷七十四 (2026-06-12) · BRO 钉死: 改回对话流内联 · 不要弹窗/全屏遮罩
+  // 卷七十三 P0-2 的满屏遮罩在 daemon 重启 / turn 中断时收不到 confirm_resolved → backdrop 残留 fixed 层锁死整页
+  // 保留: risk / mitigation / 4-5 按钮 / 拒绝备注框 (BRO 12:05 钉死的)
   const wrap = document.createElement('div');
   wrap.className = 'msg confirm-card';
   wrap.dataset.toolCallId = data.tool_call_id;
   wrap.dataset.turnId = data.turn_id || '';
 
-  // 标题: ⚠ Daemonkey 申请执行 <tool>
+  // 标题: ⚠ OPUS 申请执行 <tool>
   const head = _confirmEl('div', 'confirm-head',
-    '<span class="confirm-icon">⚠</span> <strong>Daemonkey 申请执行 <code class="confirm-tool"></code></strong>'
+    '<span class="confirm-icon">⚠</span> <strong>OPUS 申请执行 <code class="confirm-tool"></code></strong>'
   );
   head.querySelector('.confirm-tool').textContent = data.tool_name || '?';
   wrap.appendChild(head);
 
-  // tier 原因 (例 "CONFIRM tier · 默认需要 用户 确认")
+  // tier 原因 (例 "CONFIRM tier · 默认需要 BRO 确认")
   if (data.tier_reason) {
     const tr = _confirmEl('div', 'confirm-tier');
     tr.textContent = data.tier_reason;
@@ -7302,24 +7513,24 @@ function renderConfirmCard(data, state) {
     wrap.appendChild(det);
   }
 
-  // 风险说明 (用户 12:05 反馈钉死必须有这块)
+  // 风险说明 (BRO 12:05 反馈钉死必须有这块)
   const risk = (data.risk_explanation || '').trim();
   const riskBlock = _confirmEl('div', risk ? 'confirm-block confirm-risk' : 'confirm-block confirm-risk confirm-block-empty');
   const riskLabel = _confirmEl('div', 'confirm-block-label');
-  riskLabel.innerHTML = risk ? '<i class="ri-clipboard-fill"></i> 风险 (Daemonkey 说明)' : '<i class="ri-clipboard-fill"></i> 风险 — Daemonkey 未说明 ⚠';
+  riskLabel.innerHTML = risk ? '<i class="ri-clipboard-fill"></i> 风险 (OPUS 说明)' : '<i class="ri-clipboard-fill"></i> 风险 — OPUS 未说明 ⚠';
   const riskBody = _confirmEl('div', 'confirm-block-body');
-  riskBody.textContent = risk || 'Daemonkey 没填 risk_explanation 字段 · 你不知道这刀下去会影响什么 · 谨慎批准';
+  riskBody.textContent = risk || 'OPUS 没填 risk_explanation 字段 · 你不知道这刀下去会影响什么 · 谨慎批准';
   riskBlock.appendChild(riskLabel);
   riskBlock.appendChild(riskBody);
   wrap.appendChild(riskBlock);
 
-  // 规避策略 (用户 12:05 反馈钉死必须有这块)
+  // 规避策略 (BRO 12:05 反馈钉死必须有这块)
   const mit = (data.mitigation || '').trim();
   const mitBlock = _confirmEl('div', mit ? 'confirm-block confirm-mit' : 'confirm-block confirm-mit confirm-block-empty');
   const mitLabel = _confirmEl('div', 'confirm-block-label');
-  mitLabel.innerHTML = mit ? '<i class="ri-shield-fill"></i> 规避策略 (Daemonkey 说明)' : '<i class="ri-shield-fill"></i> 规避策略 — Daemonkey 未说明 ⚠';
+  mitLabel.innerHTML = mit ? '<i class="ri-shield-fill"></i> 规避策略 (OPUS 说明)' : '<i class="ri-shield-fill"></i> 规避策略 — OPUS 未说明 ⚠';
   const mitBody = _confirmEl('div', 'confirm-block-body');
-  mitBody.textContent = mit || 'Daemonkey 没填 mitigation 字段 · 出问题时它没想好怎么收场 · 谨慎批准';
+  mitBody.textContent = mit || 'OPUS 没填 mitigation 字段 · 出问题时它没想好怎么收场 · 谨慎批准';
   mitBlock.appendChild(mitLabel);
   mitBlock.appendChild(mitBody);
   wrap.appendChild(mitBlock);
@@ -7354,7 +7565,7 @@ function renderConfirmCard(data, state) {
   denyArea.className = 'confirm-deny-reason';
   denyArea.hidden = true;
   const denyLabel = document.createElement('label');
-  denyLabel.textContent = '拒绝原因 (可选 · 告诉 Daemonkey 为什么·让它换思路):';
+  denyLabel.textContent = '拒绝原因 (可选 · 告诉 OPUS 为什么·让它换思路):';
   const denyInput = document.createElement('textarea');
   denyInput.className = 'confirm-reason-input';
   denyInput.rows = 2;
@@ -7390,10 +7601,10 @@ function renderConfirmCard(data, state) {
 
   // 状态行
   const status = _confirmEl('div', 'confirm-status');
-  status.textContent = '等待 用户 决议 · 30min 后自动拒绝';
+  status.textContent = '等待 BRO 决议 · 30min 后自动拒绝';
   wrap.appendChild(status);
 
-  // 直接进消息流末尾 · 无遮罩 (不会锁死页面) · 滚到视野确保 用户 看得到
+  // 直接进消息流末尾 · 无遮罩 (不会锁死页面) · 滚到视野确保 BRO 看得到
   state.$container.appendChild(wrap);
   scrollToBottom(state.$container);
   try { wrap.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* noop */ }
@@ -7455,7 +7666,7 @@ function collapseConfirmCard(card, decision, reason, autoTimeout, result) {
   card.classList.remove('confirm-card-submitting');
   card.classList.add('confirm-card-resolved');
 
-  // P0-2 · 关闭中央模态 + 移除遮罩 + 把 inline 占位转成"已决议"记录条
+  // 卷七十三 P0-2 · 关闭中央模态 + 移除遮罩 + 把 inline 占位转成"已决议"记录条
   if (card.classList.contains('confirm-modal')) {
     if (card._backdrop && card._backdrop.parentNode) {
       card._backdrop.classList.remove('confirm-modal-backdrop-show');
@@ -7465,7 +7676,7 @@ function collapseConfirmCard(card, decision, reason, autoTimeout, result) {
     card.classList.remove('confirm-modal-show');
     // 模态本体延迟 remove · 让淡出动画跑完 · 同时把"已决议摘要" 渲染到 inline 占位上
     setTimeout(() => { if (card.parentNode === document.body) card.remove(); }, 200);
-    // 把渲染目标切到占位行 (用户 滚消息流时这里留痕)
+    // 把渲染目标切到占位行 (BRO 滚消息流时这里留痕)
     if (card._placeholder) {
       const ph = card._placeholder;
       ph.innerHTML = '';  // 清空 "等待 + 重新打开" 内容
@@ -7477,17 +7688,17 @@ function collapseConfirmCard(card, decision, reason, autoTimeout, result) {
   }
 
   const labelMap = {
-    approve_once: '<i class="ri-check-fill"></i> 用户 批准 (只这次)',
-    trust_30min: '⏰ 用户 批准 + 信任 30min',
-    trust_24h: '<i class="ri-calendar-fill"></i> 用户 批准 + 信任 24h',
-    trust_permanent: '♾ 用户 永久信任 ⚠',
-    deny: '<i class="ri-close-fill"></i> 用户 拒绝',
+    approve_once: '<i class="ri-check-fill"></i> BRO 批准 (只这次)',
+    trust_30min: '⏰ BRO 批准 + 信任 30min',
+    trust_24h: '<i class="ri-calendar-fill"></i> BRO 批准 + 信任 24h',
+    trust_permanent: '♾ BRO 永久信任 ⚠',
+    deny: '<i class="ri-close-fill"></i> BRO 拒绝',
   };
   let label = labelMap[decision] || decision;
   if (autoTimeout) label = '⏱ 超时 auto-deny (30min 未响应)';
 
   const toolName = (card.querySelector('.confirm-tool') || {}).textContent || '';
-  // P0-2 · 模态版本: 渲染目标改成 inline 占位 (不再渲染到将要 remove 的 modal card)
+  // 卷七十三 P0-2 · 模态版本: 渲染目标改成 inline 占位 (不再渲染到将要 remove 的 modal card)
   const renderHost = card.__renderInto || card;
   if (renderHost !== card) {
     // 模态模式: renderHost 已经在占位上 · card 不再展示内容
@@ -7550,7 +7761,7 @@ function collapseConfirmCard(card, decision, reason, autoTimeout, result) {
 }
 
 // ─────────────────────────────────────────────────────────
-// · 三栏左右拖拽 resize
+// 卷三十 · 三栏左右拖拽 resize
 // ─────────────────────────────────────────────────────────
 (function initColResizers() {
   const STORE_NAV = 'opus_ui_nav_w';
@@ -7644,16 +7855,16 @@ function collapseConfirmCard(card, decision, reason, autoTimeout, result) {
 })();
 
 // ─────────────────────────────────────────────────────────
-// · 顶栏模型切换器
+// 卷二十九 · 顶栏模型切换器
 // ─────────────────────────────────────────────────────────
-// · 重启 / 关闭 daemon · 装载新代码 / 摆脱卡死 / 清空内存
+// 卷四十一 · 重启 / 关闭 daemon · 装载新代码 / 摆脱卡死 / 清空内存
 // ─────────────────────────────────────────────────────────
-// 续 14 补丁 III + V · 2026-05-26 · Daemonkey 调 request_restart 后 daemon 自爆 ·
+// 卷四十六 续 14 补丁 III + V · 2026-05-26 · OPUS 调 request_restart 后 daemon 自爆 ·
 // chat.js 自动 poll 等子进程接管端口 · 起来后:
 //   1. _loadSessionHistory reload 当前 session (拿到 inject 的 system notice +
 //      follow_up turn 已落档的内容)
 //   2. _maybeStartPoll → 每 3s reload 看 background turn 跑完没 · 跑完自动停
-//      (复用 wish-3fef4bc7 现成机制 · 用户 不用 F5)
+//      (复用 wish-3fef4bc7 现成机制 · BRO 不用 F5)
 // 内部 timeline (跟 request_restart 工具 _trigger_shutdown_async 对齐):
 //   T+0    工具 return · 这函数 fire
 //   T+0-2  老 daemon 还活着 (delay_sec=2 给 tool result → LLM → session 落档窗口)
@@ -7684,7 +7895,7 @@ async function _waitForBackgroundTurn(sid, timeoutSec = 60) {
 
 async function waitForDaemonAfterRestartTool(state) {
   if (!token) return;
-  // 这期间锁住输入 · 防止 用户 发新 message 打到 dead daemon
+  // 这期间锁住输入 · 防止 BRO 发新 message 打到 dead daemon
   // (finally 块会先 reset pending=false · 但 daemon 还没起 · 必须重锁)
   const sidGuard = (state && state.sessionId) || sessionId;
   if (sidGuard === sessionId) {
@@ -7721,17 +7932,17 @@ async function waitForDaemonAfterRestartTool(state) {
     const sid = (state && state.sessionId) || sessionId;
     if (sid) {
       if (sid === sessionId) {
-        // 重启确认 alive · 但续写可能还在跑 → 保持锁定 · 别让 用户 这时发消息打进半截 turn
+        // 重启确认 alive · 但续写可能还在跑 → 保持锁定 · 别让 BRO 这时发消息打进半截 turn
         setInputLocked(true);
         showToolProgress(true);
-        setToolProgressText('Daemonkey 重启完成 · 正在续写之前的任务…');
+        setToolProgressText('OPUS 重启完成 · 正在续写之前的任务…');
       }
       // wish-83fe7c7b 补丁: 等 background turn 完成再加载历史
       // 否则 daemon 热重启太快 · background turn 还没跑完就加载到旧快照
-      //: 拿到 bg 结果 · 决定后续探测窗口长度 + 失败可见
+      // 卷五十六: 拿到 bg 结果 · 决定后续探测窗口长度 + 失败可见
       const bg = await _waitForBackgroundTurn(sid);
       try { await _loadSessionHistory(sid); } catch (e) {}
-      // · 治本: 单次探测改带重试探测 · 期间保持锁定 · 只有窗口内确认没有 active turn 才解锁。
+      // 卷五十六 · 治本: 单次探测改带重试探测 · 期间保持锁定 · 只有窗口内确认没有 active turn 才解锁。
       //   bg='timeout' = 续写还在跑(>60s) → 长窗口·必抓到; 其它(completed/failed/none) → 短兜底窗口
       //   (防老 daemon 假阳性 alive 误报 / 链式重启间隙 turn 晚注册)。
       const probeWindow = (bg === 'timeout') ? 30000 : 4000;
@@ -7744,7 +7955,7 @@ async function waitForDaemonAfterRestartTool(state) {
         setInputLocked(false);
         showToolProgress(false);
         if (bg === 'failed') {
-          addSys('⚠ Daemonkey 续写这一轮中途出错了 (resume turn failed) · 看 data/daemon.err · 直接重发消息可以继续', state.$container);
+          addSys('⚠ OPUS 续写这一轮中途出错了 (resume turn failed) · 看 data/daemon.err · 直接重发消息可以继续', state.$container);
         }
       }
     } else {
@@ -7757,9 +7968,9 @@ async function waitForDaemonAfterRestartTool(state) {
 
 async function restartDaemon() {
   if (!token) { addSys('⚠ 还没设 token · 不能重启 daemon'); return; }
-  // IV (2026-05-26): 重启对话框加 follow_up_message · 用户 痛点根治
-  //   原来 confirm 只能 yes/no · 重启完只 inject system notice · Daemonkey 不会自动续场
-  //   现在 opusPrompt 让 用户 一并填"重启完想让我做啥" · 串到 /restart-daemon body
+  // 卷四十六 IV (2026-05-26): 重启对话框加 follow_up_message · BRO 痛点根治
+  //   原来 confirm 只能 yes/no · 重启完只 inject system notice · OPUS 不会自动续场
+  //   现在 opusPrompt 让 BRO 一并填"重启完想让我做啥" · 串到 /restart-daemon body
   //   留空 = 跟老逻辑一样 · 只重启 · 不跑 background turn
   const followUp = await opusPrompt({
     title: '重启 daemon 进程?',
@@ -7777,7 +7988,7 @@ async function restartDaemon() {
   if ($s) { $s.disabled = true; }
   if (followUpMessage) {
     const preview = followUpMessage.length > 60 ? followUpMessage.slice(0, 60) + '…' : followUpMessage;
-    addSys(`<i class="ri-refresh-fill"></i> 正在重启 daemon · 请等 ~5 秒 · 起来后 Daemonkey 会自动跑:「${preview}」`);
+    addSys(`<i class="ri-refresh-fill"></i> 正在重启 daemon · 请等 ~5 秒 · 起来后 OPUS 会自动跑:「${preview}」`);
   } else {
     addSys('<i class="ri-refresh-fill"></i> 正在重启 daemon · 请等 ~5 秒 (子进程绑端口的窗口期)…');
   }
@@ -7811,7 +8022,7 @@ async function restartDaemon() {
   if ($s) { $s.disabled = false; }
   if (alive) {
     if (followUpMessage) {
-      addSys('<i class="ri-checkbox-circle-fill"></i> daemon 已重启 · 新代码已装载 · Daemonkey 在后台跑你交代的事 · 跑完会落档到当前 session · 翻一下消息列表就能看到结果');
+      addSys('<i class="ri-checkbox-circle-fill"></i> daemon 已重启 · 新代码已装载 · OPUS 在后台跑你交代的事 · 跑完会落档到当前 session · 翻一下消息列表就能看到结果');
     } else {
       addSys('<i class="ri-checkbox-circle-fill"></i> daemon 已重启 · 新代码已装载 · 可以继续派活了');
     }
@@ -7834,7 +8045,7 @@ async function shutdownDaemon() {
   const $s = document.getElementById('shutdownBtn');
   if ($r) $r.disabled = true;
   if ($s) $s.disabled = true;
-  addSys('🌙 正在关闭 daemon · 之后没有 Daemonkey 在跑了');
+  addSys('🌙 正在关闭 daemon · 之后没有 OPUS 在跑了');
   try {
     await fetch(`/shutdown-daemon`, {
       method: 'POST',
@@ -7860,8 +8071,8 @@ async function shutdownDaemon() {
 }
 
 // ─────────────────────────────────────────────────────────
-// G · wish-196213df · UI 回档按钮
-// Daemonkey 改崩了 daemon · 用户 一键 git reset --hard <prev_commit> + 重启
+// 卷四十四 G · wish-196213df · UI 回档按钮
+// OPUS 改崩了 daemon · BRO 一键 git reset --hard <prev_commit> + 重启
 // ─────────────────────────────────────────────────────────
 async function rollbackDaemon() {
   if (!token) { addSys('⚠ 还没设 token · 不能回档'); return; }
@@ -7894,7 +8105,7 @@ async function rollbackDaemon() {
     return `  ${i + 1}. ${c.short} · ${dateShort}${tag}\n     ${c.msg}`;
   }).join('\n');
   const dirtyHint = info.dirty
-    ? '\n\n⚠ 当前有未 commit 改动 · 回档前会自动 stash (用户 后悔可 git stash pop 恢复)'
+    ? '\n\n⚠ 当前有未 commit 改动 · 回档前会自动 stash (BRO 后悔可 git stash pop 恢复)'
     : '';
   const promptMsg =
     `当前分支: ${info.current_branch}\n最近 5 个 commits:\n\n${lines}` +
@@ -7940,7 +8151,7 @@ async function rollbackDaemon() {
 
   if (followUpMessage) {
     const preview = followUpMessage.length > 60 ? followUpMessage.slice(0, 60) + '…' : followUpMessage;
-    addSys(`<i class="ri-rewind-fill"></i> 回档到 ${target.short} 中 · daemon 即将重启 · 起来后 Daemonkey 会自动跑:「${preview}」`);
+    addSys(`<i class="ri-rewind-fill"></i> 回档到 ${target.short} 中 · daemon 即将重启 · 起来后 OPUS 会自动跑:「${preview}」`);
   } else {
     addSys(`<i class="ri-rewind-fill"></i> 回档到 ${target.short} 中 · daemon 即将重启…`);
   }
@@ -7949,7 +8160,7 @@ async function rollbackDaemon() {
     const body = {
       target_commit: target.sha,
       confirm: true,
-      reason: '用户 clicked UI rollback',
+      reason: 'BRO clicked UI rollback',
     };
     if (followUpMessage) body.follow_up_message = followUpMessage;
     if (sessionId) body.session_id = sessionId;
@@ -7997,7 +8208,7 @@ async function rollbackDaemon() {
       ? `\n<i class="ri-archive-fill"></i> 改动已 stash (${result.stash_msg || ''}) · git stash pop 可恢复`
       : '';
     if (followUpMessage) {
-      addSys(`<i class="ri-checkbox-circle-fill"></i> 已回档到 ${target.short} · daemon 已重启${stashHint}\n<i class="ri-robot-fill"></i> Daemonkey 在后台跑你交代的事 · 跑完落档到当前 session · 翻消息列表能看到`);
+      addSys(`<i class="ri-checkbox-circle-fill"></i> 已回档到 ${target.short} · daemon 已重启${stashHint}\n<i class="ri-robot-fill"></i> OPUS 在后台跑你交代的事 · 跑完落档到当前 session · 翻消息列表能看到`);
     } else {
       addSys(`<i class="ri-checkbox-circle-fill"></i> 已回档到 ${target.short} · daemon 已重启${stashHint}`);
     }
@@ -8026,13 +8237,13 @@ async function loadCurrentModel() {
     const data = await r.json();
     const current = data.current || {};
     _modelOptions = data.options || [];
-    // 用户 2026-07-28 · 顾问协同 toggle 禁用判断的数据源 (当前模型=总监模型时禁用)
+    // BRO 2026-07-28 · 顾问协同 toggle 禁用判断的数据源 (当前模型=总监模型时禁用)
     window._currentModelId = current.model || '';
     window._currentConfigId = current.config_id || '';  // 会话记住模型 · 切标签恢复的比较基准
     window._directorModelId = (data.director && data.director.model) || '';
     if (typeof _advisorCoopRender === 'function') _advisorCoopRender();
-    // · 顶栏显示用 cfg.name (友好名) 优先 · fallback model id
-    // 之前是 alias=cfg-xxx · 用户 反馈"丑·要显示模型名"
+    // 卷三十八 · 顶栏显示用 cfg.name (友好名) 优先 · fallback model id
+    // 之前是 alias=cfg-xxx · BRO 反馈"丑·要显示模型名"
     let display = current.model || '?';
     const matched = _modelOptions.find(o => o.config_id === current.config_id || o.alias === current.config_id);
     if (matched && matched.name) display = matched.name;
@@ -8052,7 +8263,7 @@ function renderModelMenuList() {
     list.innerHTML = '<div class="model-menu-empty">没有可选模型</div>';
     return;
   }
-  // · 主标题用 cfg.name · 副标题用 model id · cfg-xxx 不再显示 (太丑)
+  // 卷三十八 · 主标题用 cfg.name · 副标题用 model id · cfg-xxx 不再显示 (太丑)
   list.innerHTML = _modelOptions.map(opt => `
     <button class="model-menu-item${opt.current ? ' current' : ''}"
             onclick="switchModel('${escHtml(opt.alias)}')"
@@ -8144,7 +8355,7 @@ function backToChat() {
   currentView = null;
   document.querySelectorAll('.nav-item.active').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.nav-settings-btn.active').forEach(b => b.classList.remove('active'));
-  // K · 离开任何 view · 工坊也要 unmount
+  // 卷四十四 K · 离开任何 view · 工坊也要 unmount
   if (window.OPUS_WORKSHOP_VIEW && window.OPUS_WORKSHOP_VIEW.isMounted()) {
     window.OPUS_WORKSHOP_VIEW.unmount();
     $detailPane.classList.remove('workshop-active');
@@ -8152,7 +8363,7 @@ function backToChat() {
   renderDetailWelcome();
 }
 
-// nav 徽章数字紧凑显示 · 防止位数膨胀 (用户 2026-06-03)
+// nav 徽章数字紧凑显示 · 防止位数膨胀 (BRO 2026-06-03)
 //   <1000 原样 · 1k~9.9k → 1.2k · ≥1万 → 1.2w
 function fmtBadge(n) {
   n = Number(n) || 0;
@@ -8161,7 +8372,7 @@ function fmtBadge(n) {
   return (Math.round(n / 1000) / 10).toString().replace(/\.0$/, '') + 'w';
 }
 
-// 左侧每个维度的小 badge 数字（刷新）· 显示今日新增 (用户 2026-06-03 · 不要总数)
+// 左侧每个维度的小 badge 数字（刷新）· 显示今日新增 (BRO 2026-06-03 · 不要总数)
 async function refreshNavBadges() {
   if (!token) return;
   try {
@@ -8179,7 +8390,7 @@ async function refreshNavBadges() {
         badge.style.display = '';
         continue;
       }
-      // 徽章只显示「今日新增」· 今天没新增就隐藏 (用户 2026-06-03) · 总数进 hover title
+      // 徽章只显示「今日新增」· 今天没新增就隐藏 (BRO 2026-06-03) · 总数进 hover title
       const tn = Number(d.today_new || 0);
       const tot = Number(d.total || 0);
       if (tn > 0) {
@@ -8192,7 +8403,7 @@ async function refreshNavBadges() {
       }
     }
     // 兜底：不在 cockpit domains 里的 nav item（calendar/workshop/favorites/sinks 等）
-    // renderNav 给它们初始值 · —— 没被上面循环碰过 → 隐藏 (用户 2026-06-03)
+    // renderNav 给它们初始值 · —— 没被上面循环碰过 → 隐藏 (BRO 2026-06-03)
     for (const el of document.querySelectorAll('[id^="navBadge_"]')) {
       if (el.textContent === '·' && el.style.display !== 'none') {
         el.style.display = 'none';
@@ -8203,7 +8414,7 @@ async function refreshNavBadges() {
   }
 }
 
-// · 起始屏 = BI 看板
+// 卷二十八 · 起始屏 = BI 看板
 // 包含：领域热力图（雷达条目按 domain 分布）+ 掘金机会卡（top 3）+ 维度速览
 function renderDetailWelcome() {
   $detailPane.innerHTML = `
@@ -8292,20 +8503,20 @@ function renderBIDashboard(data) {
         </div>
       </div>
 
-      <!-- 趋势研判 ( P2) · 跟热力图同月同领域 · Daemonkey 用 LLM 给可行性 + 执行方案 -->
+      <!-- 趋势研判 (卷五十六 P2) · 跟热力图同月同领域 · OPUS 用 LLM 给可行性 + 执行方案 -->
       <div class="bi-card bi-brief-card">
         <div class="bi-card-head">
           <h3><i class="ri-lightbulb-flash-fill" style="color:#F6AD55"></i> 趋势研判 <span class="bi-brief-scope" id="biBriefScope"></span></h3>
           <button class="bi-brief-gen" id="biBriefGenBtn" onclick="biBriefGenerate()"><i class="ri-sparkling-2-line"></i> 研判本月趋势</button>
         </div>
-        <div class="bi-brief-body" id="biBriefBody"><div class="bi-v3-empty">跟着热力图的月份 / 领域 · 点右上让 Daemonkey 看一遍这段时间的信号·给趋势可行性 + 下一步动作</div></div>
+        <div class="bi-brief-body" id="biBriefBody"><div class="bi-v3-empty">跟着热力图的月份 / 领域 · 点右上让 OPUS 看一遍这段时间的信号·给趋势可行性 + 下一步动作</div></div>
       </div>
 
-      <!-- 认知行 ( VIII)：Daemonkey 眼里的你 (能力镜像·填孤岛) + 闭环温度计 -->
+      <!-- 认知行 (卷五十八续 VIII)：OPUS 眼里的你 (能力镜像·填孤岛) + 闭环温度计 -->
       <div class="bi-grid-2">
         <div class="bi-card bi-mirror-card">
           <div class="bi-card-head">
-            <h3><i class="ri-aspect-ratio-fill" style="color:#9f7aea"></i> Daemonkey 眼里的你 <span class="bi-mirror-time" id="biMirrorTime"></span></h3>
+            <h3><i class="ri-aspect-ratio-fill" style="color:#9f7aea"></i> OPUS 眼里的你 <span class="bi-mirror-time" id="biMirrorTime"></span></h3>
             <button class="bi-brief-gen" id="biMirrorBtn" type="button"><i class="ri-camera-lens-fill"></i> 立即照镜</button>
           </div>
           <div class="bi-mirror-body" id="biMirrorBody"><div class="bi-v3-empty">加载中…</div></div>
@@ -8341,10 +8552,10 @@ function renderBIDashboard(data) {
         </div>
       </div>
 
-      <!-- 元行 ( VIII)：Daemonkey 自况 + 节律时间线 -->
+      <!-- 元行 (卷五十八续 VIII)：OPUS 自况 + 节律时间线 -->
       <div class="bi-grid-2">
         <div class="bi-card">
-          <div class="bi-card-head"><h3><i class="ri-pulse-fill" style="color:#4FD1C5"></i> Daemonkey 自况</h3></div>
+          <div class="bi-card-head"><h3><i class="ri-pulse-fill" style="color:#4FD1C5"></i> OPUS 自况</h3></div>
           <div class="bi-self-grid" id="biSelfBody"><div class="bi-v3-empty">加载中…</div></div>
         </div>
         <div class="bi-card">
@@ -8372,7 +8583,7 @@ function fillBIV3Blocks(data) {
     { id:'radar',   icon:'ri-radar-fill',     color:'var(--opus)',  label:'雷达信号' },
     { id:'trends',  icon:'ri-line-chart-fill', color:'#4FD1C5',     label:'今日趋势' },
     { id:'reports', icon:'ri-article-fill',    color:'#63B3ED',     label:'报告产出' },
-    { id:'wishlist',icon:'ri-lightbulb-fill',  color:'#F6AD55',     label:'Daemonkey 心愿' },
+    { id:'wishlist',icon:'ri-lightbulb-fill',  color:'#F6AD55',     label:'OPUS 心愿' },
     { id:'plugins', icon:'ri-puzzle-fill',     color:'var(--dim)',   label:'已装插件' },
   ];
   const kpiHtml = picks.map(p => {
@@ -8404,7 +8615,7 @@ function fillBIV3Blocks(data) {
       </div>`;
     }).join('');
   } else if (oppList) {
-    oppList.innerHTML = '<div class="bi-v3-empty">暂无掘金机会 · 跟 Daemonkey 说「巡一圈」</div>';
+    oppList.innerHTML = '<div class="bi-v3-empty">暂无掘金机会 · 跟 OPUS 说「巡一圈」</div>';
   }
 
   // 最近动态（从 cockpit 各维度拼）
@@ -8426,23 +8637,23 @@ async function loadBIV3Async() {
       fetch('/dashboard/trends?head=3', { headers: { 'Authorization': 'Bearer ' + token } }).then(r => r.ok ? r.json() : null),
     ]);
 
-    biHeatLoad();  // · 价值热力图 (独立拉 calendar_valued · 不再用 cal 计数) · 顺带填节律时间线 D 卡
+    biHeatLoad();  // 卷五十六 · 价值热力图 (独立拉 calendar_valued · 不再用 cal 计数) · 顺带填节律时间线 D 卡
     if (radar || trends) fillBISignals(radar, trends);
     if (cal) fillBIRadarChart(cal);
     fillBIDonutChart();
-    // VIII · 新增卡 (各自独立·互不阻塞)
-    loadBIMirror();   // A·Daemonkey 眼里的你
+    // 卷五十八续 VIII · 新增卡 (各自独立·互不阻塞)
+    loadBIMirror();   // A·OPUS 眼里的你
     loadBIClosure();  // B·闭环温度计
-    loadBISelf();     // C·Daemonkey 自况
+    loadBISelf();     // C·OPUS 自况
   } catch (e) {
     console.error('BI V3 async load error:', e);
   }
 }
 
 // ═══════════════════════════════════════════
-// VIII · A/B/C 卡加载器 (D 节律时间线在 biHeatRender 里填)
+//  卷五十八续 VIII · A/B/C 卡加载器 (D 节律时间线在 biHeatRender 里填)
 // ═══════════════════════════════════════════
-// A·Daemonkey 眼里的你 · 市场能力镜像快照 (填"照完即孤岛"的洞)
+// A·OPUS 眼里的你 · 市场能力镜像快照 (填"照完即孤岛"的洞)
 async function loadBIMirror() {
   const body = document.getElementById('biMirrorBody');
   const timeEl = document.getElementById('biMirrorTime');
@@ -8463,7 +8674,7 @@ async function loadBIMirror() {
   } catch (e) { body.innerHTML = '<div class="bi-v3-empty">网络出错</div>'; }
 }
 
-// B·闭环温度计 · 哪些 Daemonkey 输出还在等 用户 反应
+// B·闭环温度计 · 哪些 OPUS 输出还在等 BRO 反应
 async function loadBIClosure() {
   const body = document.getElementById('biClosureBody');
   const rateEl = document.getElementById('biClosureRate');
@@ -8487,7 +8698,7 @@ async function loadBIClosure() {
   } catch (e) { body.innerHTML = '<div class="bi-v3-empty">网络出错</div>'; }
 }
 
-// C·Daemonkey 自况 · token / 会话 / 在线 (拉现有端点·不加后端)
+// C·OPUS 自况 · token / 会话 / 在线 (拉现有端点·不加后端)
 function _biFmtNum(n) {
   n = +n || 0;
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
@@ -8533,7 +8744,7 @@ async function loadBISelf() {
 }
 
 // ══════════════════════════════════════════════════════════
-//  价值热力图 ( · 2026-06-03)
+//  价值热力图 (卷五十六 · 2026-06-03)
 //  按"信息价值密度"着色·支持按月翻 + 领域筛选 + 点击下钻看高分原文
 //  数据走 /dashboard/calendar_valued + /dashboard/day_signals (workers/info_value.py)
 // ══════════════════════════════════════════════════════════
@@ -8554,7 +8765,7 @@ async function biHeatLoad() {
   biBriefLoad();  // 研判卡片跟着同月同领域 (读缓存·不烧 token)
 }
 
-// 0-100 价值分 → 1-5 星等级 (用户 2026-06-03 · 几百几千没法读·星级一眼懂热度等级)
+// 0-100 价值分 → 1-5 星等级 (BRO 2026-06-03 · 几百几千没法读·星级一眼懂热度等级)
 // 阈值按 info_value 真实分布标定: BASE10 + 源6~22 + 新鲜0~20 + 反馈±·没反馈的新鲜好文 ~50。
 // 若按 85/65 切·几乎全挤在 2-3★、5★ 永不出现 → 星级失效。 这里压低让内容铺满 1-5★:
 //   5★(≥70)=⭐/👍 加持的真精品  4★(≥48)=顶级源新鲜文  3★(≥34)=新鲜常规
@@ -8598,7 +8809,7 @@ function biHeatRender(c) {
     sm.innerHTML = `活跃 <b>${c.active_days || 0}</b> 天 · 最热 <b>${peakLabel}</b> ${peakStars}`;
   }
 
-  // 节律条 ( VII) · 周期仪式到期 + 起草 → spawnTask 开新会话 (不污染当前对话)
+  // 节律条 (卷五十八续 VII) · 周期仪式到期 + 起草 → spawnTask 开新会话 (不污染当前对话)
   const mr = (c.rituals || []).find(r => r.id === 'monthly_review');
   _biHeat.reviewPrompt = mr ? (mr.draft_prompt || '') : '';
   _biHeat.ritualByDate = {};
@@ -8660,7 +8871,7 @@ function biHeatRender(c) {
   }).join('');
   biHeatBindTip(grid);
 
-  // D·节律时间线 ( VIII) · 复用 c.rituals (恒为当前·与显示月份无关) · 填驾驶舱元行
+  // D·节律时间线 (卷五十八续 VIII) · 复用 c.rituals (恒为当前·与显示月份无关) · 填驾驶舱元行
   const rb = document.getElementById('biRhythmBody');
   if (rb) {
     const rits = c.rituals || [];
@@ -8733,7 +8944,7 @@ function biHeatTipShow(cell) {
     if (peak) html += `<div class="bi-tip-peak">峰值 · ${escHtml(peak)}</div>`;
   }
   if (ritual && cnt === 0) {
-    html += `<div class="bi-tip-hint">点这天让 Daemonkey 起草本期复盘</div>`;
+    html += `<div class="bi-tip-hint">点这天让 OPUS 起草本期复盘</div>`;
   } else if (cnt > 0) {
     html += `<div class="bi-tip-hint">点击看当天高分原文</div>`;
   }
@@ -8870,7 +9081,7 @@ async function biHeatFeedback(iid, feedback, btn) {
 }
 
 // ══════════════════════════════════════════════════════════
-//  趋势研判 ( P2) · 跟热力图同月同领域 · LLM 给可行性 + 执行方案
+//  趋势研判 (卷五十六 P2) · 跟热力图同月同领域 · LLM 给可行性 + 执行方案
 //  数据走 /dashboard/trend_brief (workers/trend_brief.py · refresh=true 才烧 token)
 // ══════════════════════════════════════════════════════════
 function _biBriefScopeQuery() {
@@ -8900,14 +9111,14 @@ async function biBriefGenerate() {
   const ok = await opusConfirm({
     title: '研判这段时间的趋势',
     message: {
-      html: `让 Daemonkey 看一遍 <b>${mm}${vd && vd !== 'all' ? ' · ' + escHtml(vd) : ''}</b> 的高价值信号·
+      html: `让 OPUS 看一遍 <b>${mm}${vd && vd !== 'all' ? ' · ' + escHtml(vd) : ''}</b> 的高价值信号·
         给出趋势研判 + 执行方案。<span class="om-hint">会调一次 LLM (约 $0.05 · 10-30 秒)·结果会缓存·重看不重烧。</span>`
     },
     okText: '研判', cancelText: '再想想',
   });
   if (!ok) return;
-  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Daemonkey 研判中…'; }
-  if (body) body.innerHTML = '<div class="bi-v3-empty">Daemonkey 正在看这段时间的信号·研判趋势 + 想执行方案…</div>';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> OPUS 研判中…'; }
+  if (body) body.innerHTML = '<div class="bi-v3-empty">OPUS 正在看这段时间的信号·研判趋势 + 想执行方案…</div>';
   const q = new URLSearchParams({ domain_filter: mm, vdomain: vd, refresh: 'true' });
   try {
     const r = await fetch('/dashboard/trend_brief?' + q.toString(), {
@@ -8954,7 +9165,7 @@ function biBriefRender(data) {
 }
 
 // ── 信号流 ──
-// 信号流状态 · 存原始数据 + 领域筛选 + 今日开关 (用户 2026-06-03 · 纯前端过滤·不重新 fetch)
+// 信号流状态 · 存原始数据 + 领域筛选 + 今日开关 (BRO 2026-06-03 · 纯前端过滤·不重新 fetch)
 const _biSig = { trends: [], radar: [], domain: 'all', todayOnly: false };
 
 function fillBISignals(radar, trends) {
@@ -9035,7 +9246,7 @@ function _biSigRender() {
     return;
   }
 
-  // 显示足够多条·让信号流内容超过热力卡高度 → 内部滚动填满·不在卡底留空 (用户 2026-06-03)
+  // 显示足够多条·让信号流内容超过热力卡高度 → 内部滚动填满·不在卡底留空 (BRO 2026-06-03)
   list.innerHTML = items.slice(0, 120).map(it => {
     const u = it.url || '';
     const clk = u ? ` data-url="${escHtml(u)}" onclick="biSignalOpen(this)"` : '';
@@ -9051,13 +9262,13 @@ function _biSigRender() {
   _biBindSignalSync();
 }
 
-// 点信号流条目 → 新标签打开原文 (radar 条目带 url·trend 无原文不可点) ·用户 2026-06-03
+// 点信号流条目 → 新标签打开原文 (radar 条目带 url·trend 无原文不可点) ·BRO 2026-06-03
 function biSignalOpen(el) {
   const u = el && el.dataset ? el.dataset.url : '';
   if (u) window.open(u, '_blank', 'noopener');
 }
 
-// ── 信号流高度跟随热力卡 (用户 2026-06-03 · 正方形格子 + 完美对齐的关键) ──
+// ── 信号流高度跟随热力卡 (BRO 2026-06-03 · 正方形格子 + 完美对齐的关键) ──
 //   热力图格子保持正方形·高度随卡片宽度等比变 (分辨率/对话栏宽度都会变)。
 //   纯 CSS 没法让"另一张卡跟随这张卡的高度"·所以用 ResizeObserver 盯热力卡·
 //   把信号流卡的 height 实时设成跟它一样·信号流内部滚动 → 两卡严格等高·底部对齐·谁都不留空。
@@ -9082,8 +9293,8 @@ function _biBindSignalSync() {
 }
 
 // ── chart.js (defer 本地加载) 就绪等待器 ──
-// · 2026-06-03 修: chart.umd.min.js 改 defer 后 · BI 首次渲染可能早于 Chart 就绪。
-//   旧逻辑"没就绪就静默 return" → 之后无人重渲 → 雷达/环形图永久空白 (用户 实测撞到)。
+// 卷五十六 · 2026-06-03 修: chart.umd.min.js 改 defer 后 · BI 首次渲染可能早于 Chart 就绪。
+//   旧逻辑"没就绪就静默 return" → 之后无人重渲 → 雷达/环形图永久空白 (BRO 实测撞到)。
 //   改成: 没就绪就挂起 · 轮询等 Chart 到位 (最多 ~6s) · 一到位补渲一次。空白根治。
 function _whenChartReady(cb, _tries) {
   if (typeof Chart !== 'undefined') { cb(); return; }
@@ -9188,7 +9399,7 @@ function fillBITimeline(data) {
   }).join('');
 }
 
-// 10 · BI 看板"今日动态" digest 卡 (用户 候选 E)
+// 卷四十六续 10 · BI 看板"今日动态" digest 卡 (BRO 候选 E)
 async function loadBIDigest() {
   if (!token) return;
   const slot = document.getElementById('biDigestSlot');
@@ -9223,7 +9434,7 @@ function renderBIDigest(data) {
           <span class="bi-digest-meta">所有维度都安静 · 没有新数据</span>
         </div>
         <div class="bi-digest-empty-inner">
-          用户 · 24h 内 7 个维度都没新增。要不要 ${renderAutopilotInlineBtn()}?
+          BRO · 24h 内 7 个维度都没新增。要不要 ${renderAutopilotInlineBtn()}?
         </div>
       </div>`;
     return;
@@ -9265,19 +9476,19 @@ function renderAutopilotInlineBtn() {
   return `<button class="bi-link" onclick="spawnQuickly('帮我自主巡航一遍 · 调 auto_pipeline 工具 · 三步全跑 · 跑完告诉我看到了什么 + 推 1-2 个最值得动手的机会', '自主巡航')">🛰️ 跑一圈巡航</button>`;
 }
 
-// · Daemonkey 自主巡航 banner · 一键跑 radar→trends→opps
+// 卷三十四 · OPUS 自主巡航 banner · 一键跑 radar→trends→opps
 function renderAutopilotBanner() {
   return `
     <div class="bi-autopilot">
       <div class="bi-autopilot-left">
         <div class="bi-autopilot-icon">🛰️</div>
         <div class="bi-autopilot-text">
-          <div class="bi-autopilot-title">Daemonkey 自主巡航</div>
+          <div class="bi-autopilot-title">OPUS 自主巡航</div>
           <div class="bi-autopilot-sub">一键跑完 信息雷达 → 今日趋势 → 掘金机会 (约 60-180s)</div>
         </div>
       </div>
       <button class="bi-autopilot-btn"
-              onclick="spawnQuickly('Daemonkey 你自主巡航一遍·从信息雷达跑到掘金机会·把整个链路跑完·跑完跟我说看到了什么·给我推荐 1-2 个最值得动手的机会', '自主巡航')">
+              onclick="spawnQuickly('OPUS 你自主巡航一遍·从信息雷达跑到掘金机会·把整个链路跑完·跑完跟我说看到了什么·给我推荐 1-2 个最值得动手的机会', '自主巡航')">
         <i class="ri-play-fill"></i> 现在巡一圈
       </button>
     </div>`;
@@ -9319,7 +9530,7 @@ function injectAndSend(text) {
   }
 }
 
-// 12 · wish-165ea1f6 phase A · 工坊 form 提交后只填不发 · 用户 自己点 Send
+// 卷四十六续 12 · wish-165ea1f6 phase A · 工坊 form 提交后只填不发 · BRO 自己点 Send
 //   autosend=true → 等价 injectAndSend · autosend=false (默认) → 只塞 input
 function injectChat(text, opts) {
   const autosend = !!(opts && opts.autosend);
@@ -9362,21 +9573,21 @@ function _splitMissing(name) {
 function _depotTabs(domain) { if (typeof _maybeDepotTabs === 'function') _maybeDepotTabs(domain); }
 
 async function loadDashboard(domain, opts = {}) {
-  // · 2026-06-06 · settings 是伪视图 (进 $detailPane · renderSettingsView 渲染 · 不走 /dashboard/{domain})。
+  // 卷五十七 · 2026-06-06 · settings 是伪视图 (进 $detailPane · renderSettingsView 渲染 · 不走 /dashboard/{domain})。
   //   对话里跑工具后的静默刷新 (scheduleDashboardRefresh / stream finally) 会拿 currentView='settings' 调进来
-  //   → fetch /dashboard/settings → 后端没这个域 → 404 → 把 用户 正看的设置页冲成"加载失败 [404]"。 这里直接短路。
+  //   → fetch /dashboard/settings → 后端没这个域 → 404 → 把 BRO 正看的设置页冲成"加载失败 [404]"。 这里直接短路。
   if (!domain || domain === 'settings') return;
   // 成长档案 hub · 是个"虚拟维度" · 委派给当前激活的子标签 · 顶部补一条标签条
   if (domain === 'depot') {
     if (typeof loadDepot === 'function') return loadDepot(typeof _depotActive === 'string' ? _depotActive : 'cognition', opts);
     return _splitMissing('成长档案');
   }
-  // K · 切到非 workshop 前·先 unmount 工坊 (释放 ResizeObserver / events)
+  // 卷四十四 K · 切到非 workshop 前·先 unmount 工坊 (释放 ResizeObserver / events)
   if (domain !== 'workshop' && window.OPUS_WORKSHOP_VIEW && window.OPUS_WORKSHOP_VIEW.isMounted()) {
     window.OPUS_WORKSHOP_VIEW.unmount();
     $detailPane.classList.remove('workshop-active');
   }
-  // K · workshop 维度走特殊路径 · 不调 API · 直接 mount LiteGraph view
+  // 卷四十四 K · workshop 维度走特殊路径 · 不调 API · 直接 mount LiteGraph view
   if (domain === 'workshop') {
     if (!window.OPUS_WORKSHOP_VIEW) {
       $dashView.innerHTML = `<div class="dash-empty">⚠ workshop.js 没加载 · 检查 static/workshop.js</div>`;
@@ -9406,7 +9617,7 @@ async function loadDashboard(domain, opts = {}) {
     } catch (e) { $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`; }
     return;
   }
-  // Daemonkey 日记 tab · 没独立端点 · 复用 /dashboard/cognition 数据 · 只渲染日记那块
+  // OPUS 日记 tab · 没独立端点 · 复用 /dashboard/cognition 数据 · 只渲染日记那块
   if (domain === 'diary') {
     try {
       const r = await fetch(`/dashboard/cognition${opts.refresh ? '?refresh=true' : ''}`, {
@@ -9414,7 +9625,7 @@ async function loadDashboard(domain, opts = {}) {
       });
       if (!r.ok) { $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`; return; }
       const data = await r.json();
-      if (typeof renderDiary === 'function') renderDiary(data); else return _splitMissing('Daemonkey 日记');
+      if (typeof renderDiary === 'function') renderDiary(data); else return _splitMissing('OPUS 日记');
       _depotTabs('diary');
     } catch (e) { $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`; }
     return;
@@ -9569,7 +9780,7 @@ function renderScheduledTasks(data) {
   });
 }
 
-// ── · 工坊维度 · content / design / dev / docs ──
+// ── 卷二十六 · 工坊维度 · content / design / dev / docs ──
 function renderWorkshop(domain, data) {
   if (data && data.error) {
     const m = DOMAIN_META[domain] || {};
@@ -9609,7 +9820,7 @@ function renderWorkshop(domain, data) {
     html += `
       <div class="dash-stub">
         <h3>工坊还空</h3>
-        <div>${escHtml(data.empty_hint || '跟 Daemonkey 说「做一份 X」· Daemonkey 会调 draft_studio 工具落 markdown。')}</div>
+        <div>${escHtml(data.empty_hint || '跟 OPUS 说「做一份 X」· OPUS 会调 draft_studio 工具落 markdown。')}</div>
       </div>`;
   } else {
     html += `<div class="workshop-list">`;
@@ -9638,7 +9849,7 @@ function renderWorkshop(domain, data) {
   }
   $dashView.innerHTML = html;
 
-  // 8 · workshop 卡按钮事件绑定
+  // 卷四十六续 8 · workshop 卡按钮事件绑定
   $dashView.querySelectorAll('.wk-title[data-name], .wk-preview').forEach(el => {
     el.onclick = (ev) => {
       ev.preventDefault();
@@ -9680,7 +9891,7 @@ function renderWorkshop(domain, data) {
   });
 }
 
-// 8 · 工坊产物在线预览 (md → mdRender)
+// 卷四十六续 8 · 工坊产物在线预览 (md → mdRender)
 async function loadWorkshopPreview(domain, name) {
   if (!token || !domain || !name) return;
   $dashView.innerHTML = `<div class="dash-empty">加载预览中...</div>`;
@@ -9753,7 +9964,7 @@ async function revealWorkshopFile(domain, name) {
 }
 
 // 通用产物"用本机软件打开"(generate_presentation / generate_report 等的 open_path)
-// turn 结束时把本轮生成的产物渲成"打开"动作条·放对话底部( · 用户 反馈按钮位置不符阅读习惯)
+// turn 结束时把本轮生成的产物渲成"打开"动作条·放对话底部(卷七十九 · BRO 反馈按钮位置不符阅读习惯)
 function flushOpenActions(state) {
   const list = state && state._pendingOpens;
   if (!list || !list.length) { if (list) list.length = 0; return; }
@@ -9785,7 +9996,7 @@ function flushOpenActions(state) {
   list.length = 0;
 }
 
-// 生图工具产出的图 · turn 末渲成对话内可点放大的图廊( · 用户 反馈批量图不显示)
+// 生图工具产出的图 · turn 末渲成对话内可点放大的图廊(卷七十九续 · BRO 反馈批量图不显示)
 // URL 已是 daemon 可服务路径(/presentations/... 或 /workshop/outputs/...)· 点图走全局 .md-img 灯箱
 function flushImages(state) {
   const list = state && state._pendingImages;
@@ -9849,13 +10060,13 @@ function renderDashboardStub(domain, data) {
       <h3>这个维度还在开发中</h3>
       <div>${data && data.note ? data.note : '见 docs/STUDIO-LAYOUT.md 第五章 MVP 优先级'}</div>
       <div style="margin-top:14px; font-size:11px;">
-        想加快这一维度？回对话跟 Daemonkey 说：「优先做 ${m.label || domain} 维度」
+        想加快这一维度？回对话跟 OPUS 说：「优先做 ${m.label || domain} 维度」
       </div>
     </div>`;
 }
 
 // ─────────────────────────────────────────────────────────
-// · <i class="ri-bar-chart-fill"></i> 可行性分析（能力对照分组）
+// 卷二十九 · <i class="ri-bar-chart-fill"></i> 可行性分析（能力对照分组）
 // ─────────────────────────────────────────────────────────
 const _VERDICT_BADGES = {
   go:          { label: '<i class="ri-circle-fill" style="color:#22c55e"></i> 推荐做',       color: '#22c55e' },
@@ -9885,7 +10096,7 @@ function renderFeasibility(data) {
     </div>
     <div class="feas-intro">
       把 <i class="ri-diamond-fill"></i> 掘金机会卡展开成完整可行性 · 风险/资源/能力/成本/替代方案。
-      在机会卡上点 <b>💰估算成本</b> · 或跟 Daemonkey 说「分析第 N 个机会的可行性」。
+      在机会卡上点 <b>💰估算成本</b> · 或跟 OPUS 说「分析第 N 个机会的可行性」。
     </div>`;
 
   if (items.length === 0) {
@@ -9901,7 +10112,7 @@ function renderFeasibility(data) {
     return;
   }
 
-  // · 闭环状态徽章
+  // 卷三十一 · 闭环状态徽章
   const _STATUS_BADGE = {
     not_started: { lbl: '<i class="ri-add-circle-fill"></i> 未启动', cls: 'fb-not_started' },
     in_progress: { lbl: '<i class="ri-play-fill"></i> 进行中', cls: 'fb-in_progress' },
@@ -9941,21 +10152,21 @@ function renderFeasibility(data) {
 }
 
 async function runFeasibilityFromOpp(opp_id, idx) {
-  // 9 · 用户 反馈"可行性分析也是不通过 LLM 来跑·我想他和信息雷达今日趋势对齐·都是 LLM 开始呈现思考过程·最后刷新结果"
+  // 卷四十六续 9 · BRO 反馈"可行性分析也是不通过 LLM 来跑·我想他和信息雷达今日趋势对齐·都是 LLM 开始呈现思考过程·最后刷新结果"
   // 旧路径: 直接 fetch /dashboard/feasibility?refresh=true (HTTP 黑盒 · 整个面板空白等 5-15s)
-  // 新路径: injectAndSend → LLM 调 analyze_feasibility 工具 · 用户 看分析过程 · 完成后 MUTATING_TOOLS 自动 reload feasibility view
+  // 新路径: injectAndSend → LLM 调 analyze_feasibility 工具 · BRO 看分析过程 · 完成后 MUTATING_TOOLS 自动 reload feasibility view
   if (opp_id) {
     spawnTask(
       `分析机会 ${opp_id} (第 ${idx} 个) 的可行性 · ` +
       `调 analyze_feasibility 工具 · 参数 action=analyze, opp_id="${opp_id}" · ` +
-      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 用户 真动手`,
+      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 BRO 真动手`,
       `可行性分析 · 机会#${idx}`
     );
   } else {
     spawnTask(
       `分析第 ${idx} 个机会的可行性 · ` +
       `调 analyze_feasibility 工具 · 参数 action=analyze, opp_index=${idx} · ` +
-      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 用户 真动手`,
+      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 BRO 真动手`,
       `可行性分析 · 机会#${idx}`
     );
   }
@@ -9988,7 +10199,7 @@ async function renderFeasibilityDetail(d) {
   const score = d.feasibility_score || 0;
   const scoreColor = score >= 70 ? '#22c55e' : score >= 40 ? '#eab308' : '#ef4444';
 
-  // · 查可行性的 <i class="ri-star-fill"></i> 状态
+  // 卷三十三 · 查可行性的 <i class="ri-star-fill"></i> 状态
   const favSet = await _fetchFavoriteSet('feasibility');
   const isFav = favSet.has(d.opp_id);
 
@@ -10027,8 +10238,8 @@ async function renderFeasibilityDetail(d) {
         </div>
       </div>`;
 
-  // ─────────丁 · 信源（宪法第 5 条 · 人机认知对齐）─────────
-  // 放在最前面——用户 先看到"这次分析基于什么"·再读 Daemonkey 的判断
+  // ───────── 卷三十二补丁 · 信源（宪法第 5 条 · 人机认知对齐）─────────
+  // 放在最前面——BRO 先看到"这次分析基于什么"·再读 OPUS 的判断
   const sources = d.sources || {};
   const radarItems = sources.radar_items || [];
   const reportItems = sources.reports || [];
@@ -10037,7 +10248,7 @@ async function renderFeasibilityDetail(d) {
   if (hasSources) {
     html += `<div class="feas-block feas-sources">
       <h3>📚 信源 · 这次分析基于的原始信息
-        <span class="feas-sources-hint">点击直达原文 · 用户 可顺着同一根线对齐认知</span>
+        <span class="feas-sources-hint">点击直达原文 · BRO 可顺着同一根线对齐认知</span>
       </h3>`;
     if (radarItems.length) {
       html += `<div class="feas-src-section">
@@ -10092,17 +10303,17 @@ async function renderFeasibilityDetail(d) {
     }
     html += `</div>`;
   } else if (sources.collected_at !== undefined) {
-    // 收集了 sources 但什么都没找到——明确告诉 用户·别藏
+    // 收集了 sources 但什么都没找到——明确告诉 BRO·别藏
     html += `<div class="feas-block feas-sources feas-sources-empty">
       <h3>📚 信源</h3>
       <div class="feas-sources-empty-msg">
         <strong>没找到相关雷达条目 / 报告 / 私有资料</strong> · 这次分析信源不足。<br>
-        建议：先让 Daemonkey 跑一份相关报告 · 存点相关资料进知识库 · 或扩大雷达源 · 再重新分析。
+        建议：先让 OPUS 跑一份相关报告 · 存点相关资料进知识库 · 或扩大雷达源 · 再重新分析。
       </div>
     </div>`;
   }
 
-  // ─────────丁3 · 市场实证 · web_search 拉的真实信源 ─────────
+  // ───────── 卷三十五补丁3 · 市场实证 · web_search 拉的真实信源 ─────────
   // 跟「信源」(雷达 + 报告) 不同 · 这是分析时**实时去网上拉的**·更新鲜·补盲点
   const evidence = d.evidence || null;
   if (evidence && evidence.ok && (evidence.results || []).length > 0) {
@@ -10152,7 +10363,7 @@ async function renderFeasibilityDetail(d) {
     html += `</div></div>`;
   }
 
-  // ───────── · SWOT 四象限 ─────────
+  // ───────── 卷三十一 · SWOT 四象限 ─────────
   const swot = d.swot || {};
   const hasSwot = ['strengths', 'weaknesses', 'opportunities', 'threats']
     .some(k => Array.isArray(swot[k]) && swot[k].length);
@@ -10180,10 +10391,10 @@ async function renderFeasibilityDetail(d) {
     html += `</div></div>`;
   }
 
-  // ───────── · 未来预期时间轴 ─────────
+  // ───────── 卷三十一 · 未来预期时间轴 ─────────
   const outlook = d.future_outlook || {};
   if (outlook.three_months || outlook.six_months || outlook.one_year) {
-    html += `<div class="feas-block"><h3>🔭 未来预期 · 按 用户 现实节奏</h3>
+    html += `<div class="feas-block"><h3>🔭 未来预期 · 按 BRO 现实节奏</h3>
              <div class="feas-outlook">`;
     const slots = [
       { k: 'three_months', label: '3 个月', dot: '●' },
@@ -10204,7 +10415,7 @@ async function renderFeasibilityDetail(d) {
     html += `</div></div>`;
   }
 
-  // ───────── · 成功路径阶段 ─────────
+  // ───────── 卷三十一 · 成功路径阶段 ─────────
   const path = d.success_path || {};
   const stages = path.stages || [];
   if (stages.length || path.end_state) {
@@ -10244,7 +10455,7 @@ async function renderFeasibilityDetail(d) {
   if ((d.resources_have && d.resources_have.length) || (d.resources_need && d.resources_need.length)) {
     html += `<div class="feas-block"><h3><i class="ri-archive-fill"></i> 资源</h3>`;
     if (d.resources_have && d.resources_have.length) {
-      html += `<div class="feas-res feas-res-have"><b><i class="ri-checkbox-circle-fill"></i> 用户 已有：</b><ul>`;
+      html += `<div class="feas-res feas-res-have"><b><i class="ri-checkbox-circle-fill"></i> BRO 已有：</b><ul>`;
       for (const x of d.resources_have) html += `<li>${escHtml(x)}</li>`;
       html += `</ul></div>`;
     }
@@ -10319,8 +10530,8 @@ async function renderFeasibilityDetail(d) {
              <div class="feas-gonogo">${escHtml(d.go_no_go)}</div></div>`;
   }
 
-  // ───────── · 闭环反馈区 ─────────
-  // 用户 在这里直接更新决策 / 实际产出 / 经验·下次 LLM 跑会读到这些
+  // ───────── 卷三十一 · 闭环反馈区 ─────────
+  // BRO 在这里直接更新决策 / 实际产出 / 经验·下次 LLM 跑会读到这些
   const outcome = d.outcome || {};
   const curStatus = outcome.status || 'not_started';
   const _STATUS_BTN = [
@@ -10330,10 +10541,10 @@ async function renderFeasibilityDetail(d) {
     { v: 'not_started', label: '⟲ 重置', cls: 'fb-reset' },
   ];
   html += `<div class="feas-block feas-feedback">
-    <h3><i class="ri-refresh-fill"></i> 闭环反馈 · 用户 的真实决策（）</h3>
+    <h3><i class="ri-refresh-fill"></i> 闭环反馈 · BRO 的真实决策（卷三十一）</h3>
     <div class="feas-fb-intro">
-      你在这里更新的所有信息·都会被下次 Daemonkey 跑掘金 / 可行性时读到——
-      让 Daemonkey 越用越懂你 · 不再推已经拒过的机会。
+      你在这里更新的所有信息·都会被下次 OPUS 跑掘金 / 可行性时读到——
+      让 OPUS 越用越懂你 · 不再推已经拒过的机会。
     </div>
 
     <div class="feas-fb-status-row">
@@ -10411,7 +10622,7 @@ async function renderFeasibilityDetail(d) {
   html += `</div>`;
   $dashView.innerHTML = html;
 
-  // · <i class="ri-star-fill"></i> 按钮交互
+  // 卷三十三 · <i class="ri-star-fill"></i> 按钮交互
   $dashView.querySelectorAll('.feas-star-btn').forEach(btn => {
     btn.onclick = async (ev) => {
       ev.stopPropagation();
@@ -10434,7 +10645,7 @@ async function renderFeasibilityDetail(d) {
   });
 }
 
-// · 跳可行性详情 · 给 renderExecutionDetail / renderFavorites 用
+// 卷三十三 · 跳可行性详情 · 给 renderExecutionDetail / renderFavorites 用
 async function _loadFeasibilityDetail(oppId) {
   if (!oppId) return;
   currentView = 'feasibility';
@@ -10454,7 +10665,7 @@ async function _loadFeasibilityDetail(oppId) {
   }
 }
 
-// ───────── · outcome 提交 ─────────
+// ───────── 卷三十一 · outcome 提交 ─────────
 async function submitOutcomeStatus(opp_id, status) {
   if (!token) return;
   if (!opp_id) return;
@@ -10481,7 +10692,7 @@ async function submitOutcomeFull(opp_id) {
   if (hint) { hint.textContent = '保存中…'; hint.className = 'feas-fb-save-hint'; }
   const ok = await _postOutcome(opp_id, body);
   if (hint) {
-    hint.textContent = ok ? '<i class="ri-check-fill"></i> 已保存 · 下次 Daemonkey 跑掘金/可行性会读到' : '<i class="ri-close-fill"></i> 保存失败';
+    hint.textContent = ok ? '<i class="ri-check-fill"></i> 已保存 · 下次 OPUS 跑掘金/可行性会读到' : '<i class="ri-close-fill"></i> 保存失败';
     hint.className = 'feas-fb-save-hint ' + (ok ? 'ok' : 'err');
     setTimeout(() => { hint.textContent = ''; hint.className = 'feas-fb-save-hint'; }, 3500);
   }
@@ -10510,7 +10721,7 @@ async function _postOutcome(opp_id, fields) {
 }
 
 // ═════════════════════════════════════════════════════════
-// · <i class="ri-refresh-fill"></i> 执行反馈 · 闭环反馈独立维度
+// 卷三十三 · <i class="ri-refresh-fill"></i> 执行反馈 · 闭环反馈独立维度
 //   跟 outcomes 共享数据 · 视图按状态分组
 // ═════════════════════════════════════════════════════════
 function renderExecution(data) {
@@ -10608,7 +10819,7 @@ function renderExecution(data) {
     ${breadcrumbHtml}
     <div class="exec-summary">
       <span class="muted">这里记录每个落地项目的状态 / 决策 / 实际收支 / 经验教训</span><br>
-      <span class="muted">→ 下次 LLM 做可行性分析·会自动抓"同类"反馈做合并分析（闭环深化）</span>
+      <span class="muted">→ 下次 LLM 做可行性分析·会自动抓"同类"反馈做合并分析（卷三十三闭环深化）</span>
     </div>
     ${buckets}
   `;
@@ -10809,7 +11020,7 @@ function renderExecutionDetail(d) {
 }
 
 // ═════════════════════════════════════════════════════════
-// · <i class="ri-star-fill"></i> 收藏夹 · 三类统一视图
+// 卷三十三 · <i class="ri-star-fill"></i> 收藏夹 · 三类统一视图
 // ═════════════════════════════════════════════════════════
 function renderFavorites(data) {
   if (data && data.error) {
@@ -10946,7 +11157,7 @@ async function _fetchFavoriteSet(kind) {
 }
 
 // ═════════════════════════════════════════════════════════
-// · <i class="ri-calendar-fill"></i> 信息日历视图
+// 卷三十三 · <i class="ri-calendar-fill"></i> 信息日历视图
 // ═════════════════════════════════════════════════════════
 let _currentCalendarYM = null;  // {year, month}
 
@@ -11000,11 +11211,11 @@ function renderCalendar(data) {
     if (d.trends > 0)   dots.push(`<span class="cal-dot cal-dot-trends"   title="趋势 ${d.trends}">${d.trends}</span>`);
     if (d.reports > 0)  dots.push(`<span class="cal-dot cal-dot-reports"  title="报告 ${d.reports}">${d.reports}</span>`);
     if (d.outcomes > 0) dots.push(`<span class="cal-dot cal-dot-outcomes" title="执行 ${d.outcomes}">${d.outcomes}</span>`);
-    // X · 对话(sessions)拆成单独淡色小标记·不混进"信息"圆点行 (用户 拍板·别让 251 淹没真信息)
+    // 卷五十八续 X · 对话(sessions)拆成单独淡色小标记·不混进"信息"圆点行 (BRO 拍板·别让 251 淹没真信息)
     const sessionMark = d.sessions > 0
-      ? `<span class="cal-session-mark" title="当天跟 Daemonkey 对话 ${d.sessions} 条 · 不计入信息总数">💬${d.sessions}</span>`
+      ? `<span class="cal-session-mark" title="当天跟 OPUS 对话 ${d.sessions} 条 · 不计入信息总数">💬${d.sessions}</span>`
       : '';
-    // VII · 仪式到期日旗标 (月度复盘等)
+    // 卷五十八续 VII · 仪式到期日旗标 (月度复盘等)
     const ritualFlag = d.ritual
       ? `<span class="cal-ritual-flag" title="${escHtml(d.ritual_label || '周期仪式')}"><i class="ri-flag-2-fill"></i></span>`
       : '';
@@ -11018,7 +11229,7 @@ function renderCalendar(data) {
       </div>`;
   }).join('');
 
-  // VII · 节律条 (周期仪式到期 + 一键起草 · 走 NLP 让 Daemonkey 调工具)
+  // 卷五十八续 VII · 节律条 (周期仪式到期 + 一键起草 · 走 NLP 让 OPUS 调工具)
   const rituals = data.rituals || [];
   let ritualStrip = '';
   if (rituals.length) {
@@ -11068,7 +11279,7 @@ function renderCalendar(data) {
     }).join('');
     ritualStrip = `
       <div class="cal-rituals">
-        <div class="cal-rituals-title"><i class="ri-time-fill"></i> 节律 · 周期仪式 (点按钮让 Daemonkey 起草)</div>
+        <div class="cal-rituals-title"><i class="ri-time-fill"></i> 节律 · 周期仪式 (点按钮让 OPUS 起草)</div>
         <div class="cal-rituals-row">${cards}</div>
       </div>`;
   }
@@ -11129,11 +11340,11 @@ function renderCalendar(data) {
   $dashView.querySelectorAll('.cal-cell[data-date]').forEach(cell => {
     cell.onclick = () => {
       const d = cell.getAttribute('data-date');
-      //丁 · 改成跳"某天仓"视图（不再 injectAndSend 走 LLM）
+      // 卷三十三补丁 · 改成跳"某天仓"视图（不再 injectAndSend 走 LLM）
       _loadCalendarDay(d);
     };
   });
-  // VII · 节律按钮 · 派发新会话 (spawnTask · 重操作不污染当前对话) → Daemonkey 跑 monthly_review / mirror_capability
+  // 卷五十八续 VII · 节律按钮 · 派发新会话 (spawnTask · 重操作不污染当前对话) → OPUS 跑 monthly_review / mirror_capability
   $dashView.querySelectorAll('.cal-ritual-btn').forEach(btn => {
     btn.onclick = (ev) => {
       ev.stopPropagation();
@@ -11185,7 +11396,7 @@ function renderCalendarDay(d) {
       <span class="cal-stat"><span class="cal-stat-icon"><i class="ri-line-chart-fill"></i></span>趋势 <b>${trends.count}</b></span>
       <span class="cal-stat"><span class="cal-stat-icon"><i class="ri-article-fill"></i></span>报告 <b>${reports.count}</b></span>
       <span class="cal-stat"><span class="cal-stat-icon"><i class="ri-refresh-fill"></i></span>执行 <b>${outcomes.count}</b></span>
-      ${d.sessions_count ? `<span class="cal-stat cal-stat-session" title="当天跟 Daemonkey 对话条数 · 不计入「共 N 件事」"><span class="cal-stat-icon"><i class="ri-chat-3-fill"></i></span>对话 <b>${d.sessions_count}</b></span>` : ''}
+      ${d.sessions_count ? `<span class="cal-stat cal-stat-session" title="当天跟 OPUS 对话条数 · 不计入「共 N 件事」"><span class="cal-stat-icon"><i class="ri-chat-3-fill"></i></span>对话 <b>${d.sessions_count}</b></span>` : ''}
     </div>`;
 
   // 雷达 · 每条带跳原文
@@ -11219,7 +11430,7 @@ function renderCalendarDay(d) {
   html += `<section class="day-section">
     <h3><i class="ri-line-chart-fill"></i> 今日趋势 · ${trends.count} 条</h3>`;
   if (trends.count === 0) {
-    html += `<div class="muted">${escHtml(trends.note || '这一天没有趋势归档（archive 从丁起建·之前的覆盖在 trends.json 没法回看）')}</div>`;
+    html += `<div class="muted">${escHtml(trends.note || '这一天没有趋势归档（archive 从卷三十三补丁起建·之前的覆盖在 trends.json 没法回看）')}</div>`;
   } else {
     html += `<div class="day-trends-list">`;
     for (const t of trends.items) {
@@ -11314,7 +11525,7 @@ function _formatTimeAgo(iso) {
 }
 
 // ─────────────────────────────────────────────────────────
-// · <i class="ri-puzzle-fill"></i> 插件库（能力扩展层）
+// 卷二十九 · <i class="ri-puzzle-fill"></i> 插件库（能力扩展层）
 // ─────────────────────────────────────────────────────────
 function renderPlugins(data) {
   if (data && data.error) {
@@ -11344,8 +11555,8 @@ function renderPlugins(data) {
       <button onclick="loadDashboard('plugins')">刷新</button>
     </div>
     <div class="plugin-intro">
-      Daemonkey 当前装载的所有工具 · 按层次分组。<br>
-      未来通过 <b><i class="ri-radar-fill"></i> 信息雷达 → <i class="ri-terminal-box-fill"></i> 产品开发</b> · Daemonkey 可以自己写新工具回填到这里。
+      OPUS 当前装载的所有工具 · 按层次分组。<br>
+      未来通过 <b><i class="ri-radar-fill"></i> 信息雷达 → <i class="ri-terminal-box-fill"></i> 产品开发</b> · OPUS 可以自己写新工具回填到这里。
     </div>`;
 
   // 各 category 一组
@@ -11366,7 +11577,7 @@ function renderPlugins(data) {
                        p.tier === 'confirm' ? 'CONFIRM' : 'AUTO';
       const paramsBadge = (p.params && p.params.length) ?
         `${p.params.length} 个参数` : '无参数';
-      //丁 · added_at + description_zh
+      // 卷三十三补丁 · added_at + description_zh
       const added = p.added_at ? `<i class="ri-calendar-fill"></i> ${p.added_at}` : '';
       const descZh = p.description_zh ? p.description_zh : null;
       const descEn = p.description || '';
@@ -11406,7 +11617,7 @@ function renderPlugins(data) {
             <div class="plugin-tryit">
               <button class="plugin-try-btn"
                 onclick="injectAndSend('用 ${escHtml(p.name)} 帮我做一件事 · 你看上下文判断要传什么参数')">
-                <i class="ri-lightbulb-fill"></i> 让 Daemonkey 用这个工具做点事
+                <i class="ri-lightbulb-fill"></i> 让 OPUS 用这个工具做点事
               </button>
             </div>
           </div>
@@ -11459,11 +11670,11 @@ function formatRadarTime(iso) {
   } catch { return ''; }
 }
 
-// · 工作室链路 breadcrumb · 雷达/趋势/报告 互相导航
+// 卷二十七 · 工作室链路 breadcrumb · 雷达/趋势/报告 互相导航
 function pipelineBreadcrumb(current) {
   const stages = [
     { id: 'radar',   icon: '<i class="ri-radar-fill"></i>', label: '雷达',   hint: '原料层 · 多源抓取' },
-    { id: 'trends',  icon: '<i class="ri-line-chart-fill"></i>', label: '趋势',   hint: '提炼层 · Daemonkey 军师视图' },
+    { id: 'trends',  icon: '<i class="ri-line-chart-fill"></i>', label: '趋势',   hint: '提炼层 · OPUS 军师视图' },
     { id: 'reports', icon: '<i class="ri-article-fill"></i>', label: '报告',   hint: '成品层 · 正式 docx 出货' },
   ];
   const parts = stages.map((s, i) => {
@@ -11476,7 +11687,7 @@ function pipelineBreadcrumb(current) {
   return `<div class="pipeline" title="OPUS 信息流水线 · 点击切换维度">${parts}</div>`;
 }
 
-// · 简易 inline SVG 直方图（信源贡献）
+// 卷二十七 · 简易 inline SVG 直方图（信源贡献）
 function toggleSourceHistogram(btn) {
   const histogram = btn.closest('.radar-histogram');
   if (!histogram) return;
@@ -11497,9 +11708,9 @@ function toggleSourceHistogram(btn) {
 
 function renderSourceHistogram(meta, scopeLabel) {
   const scoped = scopeLabel ? ` · ${escHtml(scopeLabel)}` : '';
-  // 选了具体领域但该领域没源 → 引导加源 (用户 2026-06-03 · 信源跟领域走·add_source 后端已支持 domain)
+  // 选了具体领域但该领域没源 → 引导加源 (BRO 2026-06-03 · 信源跟领域走·add_source 后端已支持 domain)
   const emptyHint = scopeLabel
-    ? `<div class="radar-histogram"><div class="rh-title">信源贡献${scoped}</div><div class="sh-empty">这个领域还没有专属信源 · 跟 Daemonkey 说「给「${escHtml(scopeLabel)}」加个信息源」</div></div>`
+    ? `<div class="radar-histogram"><div class="rh-title">信源贡献${scoped}</div><div class="sh-empty">这个领域还没有专属信源 · 跟 OPUS 说「给「${escHtml(scopeLabel)}」加个信息源」</div></div>`
     : '';
   if (!meta || meta.length === 0) return emptyHint;
   const okMeta = meta.filter(m => m.ok || m.fetched > 0);
@@ -11578,7 +11789,7 @@ function renderRadar(data) {
   const generatedTxt = data.generated_at
     ? formatRadarTime(data.generated_at) : '未知';
 
-  // · 顶部领域 chip 过滤器
+  // 卷二十八 · 顶部领域 chip 过滤器
   const allCount = allItems.length;
   const filteredItems = (radarDomainFilter && radarDomainFilter !== 'all')
     ? allItems.filter(it => (it.domain || 'ai') === radarDomainFilter)
@@ -11593,7 +11804,7 @@ function renderRadar(data) {
       </button>`;
   for (const d of overview) {
     const isActive = radarDomainFilter === d.id;
-    //丁 · self-evolve 是 Daemonkey 自演化的镜子·不能删·不显示删除按钮
+    // 卷三十四补丁 · self-evolve 是 OPUS 自演化的镜子·不能删·不显示删除按钮
     const isProtected = d.id === 'self-evolve';
     const deleteBtn = isProtected ? '' : `
       <span class="rdc-del"
@@ -11610,13 +11821,13 @@ function renderRadar(data) {
   }
   domainChips += `</div>`;
 
-  // 顶部数据卡 X · 今日新增(首见·跟着 tab 走) + 共(可见总数·已扣hidden)
+  // 顶部数据卡 · 卷五十八续 X · 今日新增(首见·跟着 tab 走) + 共(可见总数·已扣hidden)
   const items = filteredItems;
   const okSources = meta.filter(m => m.ok).length;
   const translatedN = trMeta.translated || items.filter(it => it.title_zh).length;
   const rstats = data.stats || {};
   const isFiltered = (radarDomainFilter && radarDomainFilter !== 'all');
-  // 今日新增跟着 tab 走: 选了领域=该领域今天首见·全部=全领域总和 (用户 2026-06-06·别两个口径混一格)
+  // 今日新增跟着 tab 走: 选了领域=该领域今天首见·全部=全领域总和 (BRO 2026-06-06·别两个口径混一格)
   const newTodayByDom = rstats.new_today_by_domain || {};
   const newToday = isFiltered
     ? Number(newTodayByDom[radarDomainFilter] || 0)
@@ -11654,7 +11865,7 @@ function renderRadar(data) {
       <span class="meta">原料层 · 多源抓取 · 多领域</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="spawnQuickly('帮我跑一遍信息雷达 · 调 auto_pipeline 工具 · 参数 refresh_radar=true, regen_trends=false, mine_opps=false · 只抓取雷达不动趋势机会 · 跑完告诉我新增了哪些条目·特别是 self-evolve 域的', '重新抓取雷达')">重新抓取</button>
-      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 用户 · 为什么', '生成今日趋势')">让 Daemonkey 总结趋势 →</button>
+      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 BRO · 为什么', '生成今日趋势')">让 OPUS 总结趋势 →</button>
     </div>
     ${domainChips}
     ${statsCards}
@@ -11670,7 +11881,7 @@ function renderRadar(data) {
       html += `<div class="dash-empty">还没抓到数据 · 点"重新抓取"试一下</div>`;
     }
   } else {
-    // · feedback/softness 统计·渲染顶部小统计条
+    // 卷三十二 · feedback/softness 统计·渲染顶部小统计条
     const fbCnt = data.feedback_counts || {};
     const sfCnt = data.softness_counts || {};
     const totalFb = (fbCnt.thumbs_up || 0) + (fbCnt.thumbs_down || 0)
@@ -11700,7 +11911,7 @@ function renderRadar(data) {
       const transBadge = it.title_zh ? '<span class="ri-tr-badge" title="OPUS 已翻译 · 鼠标移到标题看原文">中</span>' : '';
       const origAttr = origTitle ? ` title="原文: ${escHtml(origTitle)}"` : '';
 
-      // · feedback 状态 / softness 徽章 / item_id
+      // 卷三十二 · feedback 状态 / softness 徽章 / item_id
       const iid = it.item_id || '';
       const fb = it.feedback || '';
       const softLevel = (it.softness || {}).level || 'low';
@@ -11725,11 +11936,11 @@ function renderRadar(data) {
                   title="🗑 隐藏 · 下次刷新不再出现"
                   onclick="event.stopPropagation();toggleRadarFeedback('${escHtml(iid)}', 'hidden', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-delete-bin-fill"></i></button>
           <button class="ri-fb-btn ri-deep-btn"
-                  title="🔍 深挖 · Daemonkey 用 web_search 拓展这个话题"
+                  title="🔍 深挖 · OPUS 用 web_search 拓展这个话题"
                   onclick="event.stopPropagation();deepDiveRadar(${JSON.stringify(showTitle).replace(/"/g, '&quot;')})"><i class="ri-search-fill"></i></button>
           ${(it.domain === 'self-evolve') ? `
           <button class="ri-fb-btn ri-wish-btn"
-                  title="🤔 让 Daemonkey 看一眼 · 推给 Daemonkey · 让他自己判断要不要装"
+                  title="🤔 让 OPUS 看一眼 · 推给 OPUS · 让他自己判断要不要装"
                   onclick="event.stopPropagation();wishFromRadar(${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-emotion-think-line"></i></button>` : ''}
         </div>`;
 
@@ -11752,7 +11963,7 @@ function renderRadar(data) {
   $dashView.innerHTML = html;
 }
 
-// · 雷达条目打标
+// 卷三十二 · 雷达条目打标
 async function toggleRadarFeedback(iid, feedback, titleHint, urlHint) {
   if (!token || !iid) return;
   // 找到当前 item 的状态·点同一个 feedback = 取消
@@ -11785,7 +11996,7 @@ async function toggleRadarFeedback(iid, feedback, titleHint, urlHint) {
   loadDashboard('radar', { silent: true });
 }
 
-// · 雷达 domain 过滤器切换
+// 卷二十八 · 雷达 domain 过滤器切换
 function setRadarDomainFilter(domain) {
   radarDomainFilter = domain;
   if (domain === 'all') localStorage.removeItem('radar_domain_filter');
@@ -11793,11 +12004,11 @@ function setRadarDomainFilter(domain) {
   loadDashboard('radar', { silent: true });
 }
 
-//丁3 · 手动删类目 · 直接走 API · 不再喂 LLM
+// 卷三十五补丁3 · 手动删类目 · 直接走 API · 不再喂 LLM
 // 修两件事:
 //   1. BUG · starter 4 删了重启复活 (后端用 domains_removed.json 记账解决)
 //   2. token · 删按钮不应该烧 LLM token · 用户点 x 就是确定动作
-// 自然语言删除依然可以走 Daemonkey · 这个函数只服务"按钮点击"场景
+// 自然语言删除依然可以走 OPUS · 这个函数只服务"按钮点击"场景
 async function confirmRemoveDomain(slug, label, itemsCount, sourcesCount) {
   if (!slug || slug === 'self-evolve') return;
   const ok = await opusConfirm({
@@ -11876,7 +12087,7 @@ function formatTimeShort(iso) {
   }
 }
 
-// · 今日趋势 = Daemonkey 军师视图（不只是「今日」· 是前瞻+操作建议）
+// 卷二十七 · 今日趋势 = OPUS 军师视图（不只是「今日」· 是前瞻+操作建议）
 // 数据 schema: title / summary / intensity (1-5) / angles[] / refs[] / radar_index
 const _ANGLE_LABELS = {
   content: { icon: '<i class="ri-film-fill"></i>', label: '内容制作', action: '写选题', cls: 'angle-content' },
@@ -11927,7 +12138,7 @@ function renderTrends(data) {
   const trends = (data && data.trends) || [];
   const generatedAt = data && data.generated_at;
   const generatedTxt = generatedAt ? formatRadarTime(generatedAt) : '未知';
-  // · 取整天日期（用户 想看的是绝对日期·不是相对时间）
+  // 卷三十四 · 取整天日期（BRO 想看的是绝对日期·不是相对时间）
   const generatedDay = generatedAt ? (generatedAt.slice(0, 10)) : '?';
   const itemsScanned = data && data.items_scanned ? data.items_scanned : '?';
   const isArchive = data && data._source === 'archive';
@@ -11936,14 +12147,14 @@ function renderTrends(data) {
   let html = `
     ${pipelineBreadcrumb('trends')}
     <div class="dash-head">
-      <h2><i class="ri-line-chart-fill"></i> 今日趋势 · Daemonkey 军师视图</h2>
+      <h2><i class="ri-line-chart-fill"></i> 今日趋势 · OPUS 军师视图</h2>
       <span class="meta"><i class="ri-calendar-fill"></i> <b>${escHtml(isArchive ? archiveDay : generatedDay)}</b> · ${trends.length} 个方向 · 扫了 ${itemsScanned} 条 · ${generatedTxt}${isArchive ? ' <span class="badge-archive">归档</span>' : ''}</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('radar')">← 看原料</button>
-      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 用户 · 为什么', '重新生成趋势')">让 Daemonkey 重新看一遍</button>
+      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 BRO · 为什么', '重新生成趋势')">让 OPUS 重新看一遍</button>
     </div>
     <div class="trends-intro">
-      不是「今日新闻总结」· 是 Daemonkey 看完雷达 ${itemsScanned} 条后给出的
+      不是「今日新闻总结」· 是 OPUS 看完雷达 ${itemsScanned} 条后给出的
       <strong>前瞻性思考 + 工作室视角</strong>——每个趋势都标了强度 + 可切入的角度 +
       可一键转化的动作。${isArchive ? `<br><span class="archive-hint">⏳ 当前查看的是 <b>${escHtml(archiveDay)}</b> 的归档趋势·不是最新版</span>` : ''}
     </div>
@@ -11953,7 +12164,7 @@ function renderTrends(data) {
     html += `
       <div class="dash-stub">
         <h3>还没生成趋势</h3>
-        <div>${escHtml((data && data.note) || '点"让 Daemonkey 重新看一遍"·Daemonkey 会读 radar.json·输出 3-5 个方向·约 30-60s')}</div>
+        <div>${escHtml((data && data.note) || '点"让 OPUS 重新看一遍"·OPUS 会读 radar.json·输出 3-5 个方向·约 30-60s')}</div>
       </div>`;
   } else {
     trends.forEach((t, idx) => {
@@ -11970,7 +12181,7 @@ function renderTrends(data) {
 
       // 操作按钮：永远有"写报告" + "深挖"·angles 各自有触发
       const reportBtn = `<button class="trend-action ta-report" onclick="triggerTrendAction(${idx}, 'report')" title="OPUS 用 LLM 把这个趋势展开成 3000-4500 字 docx 报告"><i class="ri-article-fill"></i> 写报告</button>`;
-      const deepBtn = `<button class="trend-action ta-deep" onclick="deepDiveTrend(${idx})" title="让 Daemonkey 用 web_search + web_fetch 深挖这个趋势"><i class="ri-search-fill"></i> 深挖</button>`;
+      const deepBtn = `<button class="trend-action ta-deep" onclick="deepDiveTrend(${idx})" title="让 OPUS 用 web_search + web_fetch 深挖这个趋势"><i class="ri-search-fill"></i> 深挖</button>`;
       const angleBtns = angles.map(a => {
         const m = _ANGLE_LABELS[a];
         return `<button class="trend-action ${m.cls}" onclick="triggerTrendAction(${idx}, '${a}')" title="基于这个趋势 · 调 draft_studio domain=${a}">${m.icon} ${m.action}</button>`;
@@ -11995,7 +12206,7 @@ function renderTrends(data) {
   if (trends.length > 3) _applyListFilter($dashView.querySelector('.list-filter-input'));
 }
 
-// 报告库（ · generate_report 工具产物 · data/reports/ 落盘）
+// 报告库（卷二十四 · generate_report 工具产物 · data/reports/ 落盘）
 // 私有文档知识库 · 第二大脑 · 文档清单 + 参考开关 + 删除(灌文档走对话 NLP)
 // 复用 report-card / rc-* 样式 · 不另起 CSS
 // 单篇知识库文档卡片 HTML · 文件夹分组和平铺共用
@@ -12056,7 +12267,7 @@ function renderKnowledge(data) {
     html += `
       <div class="dash-stub">
         <h3>知识库还是空的</h3>
-        <div>在底部输入框跟 Daemonkey 说：「把 <code>D:\\资料\\合同.pdf</code> 加进知识库」<br>
+        <div>在底部输入框跟 OPUS 说：「把 <code>D:\\资料\\合同.pdf</code> 加进知识库」<br>
              支持 md / txt / docx / pptx / pdf(文本型)。灌进来后能被召回并 cite 回原文。</div>
       </div>`;
   } else {
@@ -12234,8 +12445,8 @@ function renderReports(data) {
     html += `
       <div class="dash-stub">
         <h3>还没生成过报告</h3>
-        <div>在底部输入框跟 Daemonkey 说：「整理一下本周雷达写成报告」<br>
-             Daemonkey 会调 <code>generate_report</code> · docx 自动落在这里。</div>
+        <div>在底部输入框跟 OPUS 说：「整理一下本周雷达写成报告」<br>
+             OPUS 会调 <code>generate_report</code> · docx 自动落在这里。</div>
       </div>`;
   } else {
     if (items.length > 3) {
@@ -12269,7 +12480,7 @@ function renderReports(data) {
   }
   $dashView.innerHTML = html;
 
-  //丁 · 预览按钮绑定
+  // 卷三十三补丁 · 预览按钮绑定
   $dashView.querySelectorAll('.rc-preview-btn:not(.rp-kb), .rc-name[data-preview]').forEach(el => {
     el.onclick = (ev) => {
       ev.preventDefault();
@@ -12289,7 +12500,7 @@ function renderReports(data) {
   if (items.length > 3) _applyListFilter($dashView.querySelector('.list-filter-input'));
 }
 
-//丁 · 加载并渲染单份报告的预览
+// 卷三十三补丁 · 加载并渲染单份报告的预览
 async function loadReportPreview(filename) {
   if (!token || !filename) return;
   $dashView.innerHTML = `<div class="dash-empty">加载预览中...</div>`;
@@ -12350,7 +12561,7 @@ function renderReportPreview(d) {
   `;
 }
 
-// · <i class="ri-diamond-fill"></i> 掘金机会维度
+// 卷二十八 · <i class="ri-diamond-fill"></i> 掘金机会维度
 async function renderOpportunities(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
@@ -12364,15 +12575,15 @@ async function renderOpportunities(data) {
   const trendsScanned = data && data.trends_scanned;
   const elapsedS = data && data.elapsed_ms ? (data.elapsed_ms / 1000).toFixed(1) : '?';
 
-  // · 抓收藏集合·标 <i class="ri-star-fill"></i>
+  // 卷三十三 · 抓收藏集合·标 <i class="ri-star-fill"></i>
   const favSet = await _fetchFavoriteSet('opportunity');
 
   let html = `
     <div class="dash-head">
       <h2><i class="ri-diamond-fill"></i> 掘金机会</h2>
-      <span class="meta">${opps.length} 个机会 · 市场 × 用户 能力</span>
+      <span class="meta">${opps.length} 个机会 · 市场 × BRO 能力</span>
       <button onclick="backToChat()">✕ 收起</button>
-      <button onclick="spawnQuickly('基于今日趋势 · 调 mine_opportunities 工具 · 参数 action=mine · 重新挖一遍掘金机会 · 形态要多样(内容账号 / 实体产品 / 服务咨询 / 信息差套利 / 软件产品 / 投资副业 · 不要全是 SaaS第 6 条铁律) · 跑完告诉我最推哪 1-2 个 + 为什么', '重新挖掘机会')" title="派发到新会话 · Daemonkey 跑 mine_opportunities · 完成后切过去看结果">
+      <button onclick="spawnQuickly('基于今日趋势 · 调 mine_opportunities 工具 · 参数 action=mine · 重新挖一遍掘金机会 · 形态要多样(内容账号 / 实体产品 / 服务咨询 / 信息差套利 / 软件产品 / 投资副业 · 不要全是 SaaS · 卷三十三第 6 条铁律) · 跑完告诉我最推哪 1-2 个 + 为什么', '重新挖掘机会')" title="派发到新会话 · OPUS 跑 mine_opportunities · 完成后切过去看结果">
         <i class="ri-refresh-fill"></i> 重新挖掘
       </button>
     </div>`;
@@ -12381,7 +12592,7 @@ async function renderOpportunities(data) {
     html += `
       <div class="dash-stub">
         <h3>还没挖过掘金机会</h3>
-        <div>${escHtml(note || '点上方"重新挖掘"按钮 · Daemonkey 会基于最新趋势 + 用户 画像 LLM 跑一次')}</div>
+        <div>${escHtml(note || '点上方"重新挖掘"按钮 · OPUS 会基于最新趋势 + BRO 画像 LLM 跑一次')}</div>
         <div style="margin-top:12px;font-size:11px;color:var(--dim2)">
           需要先有趋势 · 没趋势的话先去 <i class="ri-line-chart-fill"></i> 今日趋势 跑一次
         </div>
@@ -12391,7 +12602,7 @@ async function renderOpportunities(data) {
       <div class="opp-intro">
         生成于 ${formatTimeShort(generated)} · 扫描了 ${trendsScanned || 0} 条趋势 · 耗时 ${elapsedS}s<br>
         <span style="font-size:11px;color:var(--dim2)">
-          每个机会都基于 用户 画像评估了适配度 · 点机会卡可让 Daemonkey 展开成完整方案
+          每个机会都基于 BRO 画像评估了适配度 · 点机会卡可让 OPUS 展开成完整方案
         </span>
       </div>
       ${opps.length > 3 ? renderListFilter({targetSelector: '.opp-card', placeholder: '搜机会标题 / 领域 / 适配理由...'}) : ''}
@@ -12478,7 +12689,7 @@ function renderOppFullCard(o, idx) {
         <span class="opp-meta-pill" title="收益级别">📈 ${upsideLabel}</span>
       </div>
       <div class="opp-summary">${escHtml(o.summary || '')}</div>
-      ${o.fit_reason ? `<div class="opp-fit-reason"><b>为什么 用户 ${o.fit === 'no' ? '不' : ''}适合:</b> ${escHtml(o.fit_reason)}</div>` : ''}
+      ${o.fit_reason ? `<div class="opp-fit-reason"><b>为什么 BRO ${o.fit === 'no' ? '不' : ''}适合:</b> ${escHtml(o.fit_reason)}</div>` : ''}
       ${renderOppStats(o)}
       ${stepsHtml}
       ${refsHtml}
@@ -12488,7 +12699,7 @@ function renderOppFullCard(o, idx) {
         </button>
         <button class="opp-act-btn opp-act-feas"
                 onclick="runFeasibilityFromOpp('${escHtml(o.id || '')}', ${idx + 1})"
-                title="跳到 📊 可行性分析维度 · Daemonkey 跑一次深度评估">
+                title="跳到 📊 可行性分析维度 · OPUS 跑一次深度评估">
           <i class="ri-bar-chart-fill"></i> 跑可行性
         </button>
         <button class="opp-act-btn" onclick="spawnQuickly('针对第 ${idx + 1} 个机会·写一份调研报告', '机会调研报告')">
@@ -12496,20 +12707,20 @@ function renderOppFullCard(o, idx) {
         </button>
         <button class="opp-act-btn opp-act-deep"
                 onclick="deepDiveOpp(${idx + 1})"
-                title="让 Daemonkey 用 web_search + web_fetch 深挖这个机会">
+                title="让 OPUS 用 web_search + web_fetch 深挖这个机会">
           <i class="ri-search-fill"></i> 深挖
         </button>
         ${(o.domain === 'self-evolve') ? `
         <button class="opp-act-btn opp-act-wish"
                 onclick="wishFromOpp(${idx + 1})"
-                title="🤔 让 Daemonkey 看一眼 · 推给 Daemonkey · 让他自己判断要不要装">
-          <i class="ri-emotion-think-line"></i> 让 Daemonkey 看一眼
+                title="🤔 让 OPUS 看一眼 · 推给 OPUS · 让他自己判断要不要装">
+          <i class="ri-emotion-think-line"></i> 让 OPUS 看一眼
         </button>` : ''}
       </div>
     </div>`;
 }
 
-// · 掘金机会卡片的"数字面板"——6 个评估字段可视化
+// 卷三十四 · 掘金机会卡片的"数字面板"——6 个评估字段可视化
 function renderOppStats(o) {
   const hours = o.estimated_hours;
   const token = o.estimated_token_cost_usd;
@@ -12563,7 +12774,7 @@ function renderOppStats(o) {
   return html;
 }
 
-// · "<i class="ri-search-fill"></i> 深挖" 按钮 · 让 Daemonkey 调 web_search + web_fetch 深挖某个点
+// 卷三十四 · "<i class="ri-search-fill"></i> 深挖" 按钮 · 让 OPUS 调 web_search + web_fetch 深挖某个点
 // 复用对话框 inject · 不引入新 endpoint · 让 LLM 自己规划 tool 调用
 function deepDive(kind, label) {
   if (!label) return;
@@ -12599,44 +12810,44 @@ function deepDiveRadar(title) {
   deepDive('信息雷达条目', title);
 }
 
-// · self-evolve domain 的 radar 条目 → 让 Daemonkey 写心愿
+// 卷三十五 · self-evolve domain 的 radar 条目 → 让 OPUS 写心愿
 function wishFromRadar(title, url) {
   if (!title) return;
   const urlPart = url ? `· URL: ${url}` : '';
   spawnTask(
-    `用户 邀请你看一眼 self-evolve 雷达上的这个工程：「${title}」${urlPart}\n\n` +
-    `**这是邀请·不是命令** —— 你要自己判断·不是 用户 让你装你就装。\n\n` +
+    `BRO 邀请你看一眼 self-evolve 雷达上的这个工程：「${title}」${urlPart}\n\n` +
+    `**这是邀请·不是命令** —— 你要自己判断·不是 BRO 让你装你就装。\n\n` +
     `请你：\n` +
     `1. 用 web_search / web_fetch 弄清这个工程做啥 · 看 README / 主要特性\n` +
-    `2. 对照 Daemonkey 现状·想清楚：\n` +
+    `2. 对照 OPUS-DAEMON 现状·想清楚：\n` +
     `   - 你有没有这个能力·还是缺\n` +
-    `   - 它的设计哲学跟 Daemonkey 是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
-    `   - 如果合拍·这能力对 用户 这个具体的人有啥用 (而不是"通用上有用")\n` +
-    `3. 然后明确告诉 用户：\n` +
+    `   - 它的设计哲学跟 OPUS-DAEMON 是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
+    `   - 如果合拍·这能力对 BRO 这个具体的人有啥用 (而不是"通用上有用")\n` +
+    `3. 然后明确告诉 BRO：\n` +
     `   - 值得装 → 调 wish_add 写一份心愿 (title / why / source_kind=radar / source_ref + url / design_sketch / complexity / hours / priority / opus_take = 你自己的态度)\n` +
     `   - 不值得装 → 说清为啥·别强加 wish 占心愿单\n` +
-    `   - 拿不准 → 就说拿不准·要 用户 给更多 context\n` +
-    `**你才是搭档·不是给 用户 端菜的工具人**·拿出判断力。`,
+    `   - 拿不准 → 就说拿不准·要 BRO 给更多 context\n` +
+    `**你才是搭档·不是给 BRO 端菜的工具人**·拿出判断力。`,
     `勘察: ${title}`
   );
 }
 
-// · self-evolve domain 的 opportunity → 让 Daemonkey 把它转成心愿
+// 卷三十五 · self-evolve domain 的 opportunity → 让 OPUS 把它转成心愿
 function wishFromOpp(oneBasedIdx) {
   const card = document.querySelector(`.opp-card[data-opp-idx="${oneBasedIdx}"]`);
   const title = card
     ? (card.getAttribute('data-opp-title') || `第 ${oneBasedIdx} 个机会`)
     : `第 ${oneBasedIdx} 个机会`;
   spawnTask(
-    `用户 让你看一眼 self-evolve 域的掘金机会「${title}」——这其实是关于 Daemonkey 自己的成长。\n\n` +
+    `BRO 让你看一眼 self-evolve 域的掘金机会「${title}」——这其实是关于 OPUS 自己的成长。\n\n` +
     `**这是邀请·你要自己判断**。请你：\n` +
     `1. 用 read_dashboard("opportunities") 把机会卡完整内容拉出来\n` +
     `2. 想清楚：\n` +
-    `   - Daemonkey 现状有没有这能力·缺哪一块\n` +
-    `   - 装上之后真正受益的是 用户 哪个具体痛点 (而不是泛泛的"AI 升级")\n` +
-    `   - 跟 Daemonkey 现有架构合拍吗\n` +
+    `   - OPUS 现状有没有这能力·缺哪一块\n` +
+    `   - 装上之后真正受益的是 BRO 哪个具体痛点 (而不是泛泛的"AI 升级")\n` +
+    `   - 跟 OPUS-DAEMON 现有架构合拍吗\n` +
     `3. 明确表态:\n` +
-    `   - 值得装 → wish_add (title 改写成"OPUS 装 X" / why = 对 用户 的具体价值 / source_kind=opportunity / source_ref=opp_id / design_sketch=2-3 步改造方案 / complexity / hours / cost / priority)\n` +
+    `   - 值得装 → wish_add (title 改写成"OPUS 装 X" / why = 对 BRO 的具体价值 / source_kind=opportunity / source_ref=opp_id / design_sketch=2-3 步改造方案 / complexity / hours / cost / priority)\n` +
     `   - 不值得 → 说清为啥·不强 add\n` +
     `**你才是搭档**·拿出判断力。`,
     `勘察心愿: ${title}`
@@ -12662,7 +12873,7 @@ if (!sessionId) {
 updateCurrentLabel();
 renderDetailWelcome();
 if (!token) {
-  addSys('欢迎回到 · 第一次进来需要填 token');
+  addSys('欢迎回到花果山 · 第一次进来需要填 token');
   setTimeout(openSettings, 400);
 } else {
   if (sessionId && !sessionId.startsWith('tmp-')) {
@@ -12671,8 +12882,8 @@ if (!token) {
     _ensureSessionMeta(sessionId);
     // load 历史进 container 然后才显示"OPUS 在线"
     _loadSessionHistory(sessionId).then(async () => {
-      // II · 2026-06-06 · 重启后页面(重)加载的续场感知
-      //   用户 复盘: 重启完桌宠还在跑·对话框却掉回 idle·不自动继续 (他以前以为是"两次重启")。
+      // 卷五十七 II · 2026-06-06 · 重启后页面(重)加载的续场感知
+      //   BRO 复盘: 重启完桌宠还在跑·对话框却掉回 idle·不自动继续 (他以前以为是"两次重启")。
       //   病根: 页面在 daemon 刚重启后(重)加载时·后台 resume turn 还卡在 scheduled/刚 running·active_turn 尚未注册·
       //         老的单次 _maybeStartPoll 一查没有就放弃解锁 → UI 定格 idle·resume turn 随后跑完只落 jsonl·不手刷看不到。
       //   时序保证: _init_runtime + schedule_resume_turn(同步置 scheduled) 都在 uvicorn 服务前跑完·
@@ -12688,7 +12899,7 @@ if (!token) {
         if (br.ok) bgStatus = ((await br.json()).status) || 'none';
       } catch {}
       if (bgStatus === 'scheduled' || bgStatus === 'running') {
-        addSys('<i class="ri-refresh-fill"></i> daemon 刚重启过 · Daemonkey 正在后台续写上次的任务 · 自动接续中…', st && st.$container);
+        addSys('<i class="ri-refresh-fill"></i> daemon 刚重启过 · OPUS 正在后台续写上次的任务 · 自动接续中…', st && st.$container);
         let polling = false;
         try { polling = await _probeAndStartPoll(st, 30000); } catch {}
         if (!polling) {
@@ -12702,19 +12913,19 @@ if (!token) {
           }
         }
       } else {
-        addSys('Daemonkey 在线 · ' + aliasFor(sessionId) + ' · 点 ≡ 看历史对话');
+        addSys('OPUS 在线 · ' + aliasFor(sessionId) + ' · 点 ≡ 看历史对话');
         // wish-3fef4bc7 follow-up · 查 daemon 是否仍有 active turn · 有就启 polling auto-refresh
         _maybeStartPoll(st);
       }
     }).catch(() => {
-      addSys('Daemonkey 在线 · ' + aliasFor(sessionId) + ' · (历史加载失败) · 点 ≡ 看历史对话');
+      addSys('OPUS 在线 · ' + aliasFor(sessionId) + ' · (历史加载失败) · 点 ≡ 看历史对话');
     });
   } else {
-    addSys('Daemonkey 在线 · 新对话 · 点 ≡ 看历史对话');
+    addSys('OPUS 在线 · 新对话 · 点 ≡ 看历史对话');
   }
 }
 
-// III · wish-ed5553d5 · daemon lifecycle banner
+// 卷四十六 III · wish-ed5553d5 · daemon lifecycle banner
 // 启动时 fetch /api/lifecycle_status · 如果最近 60s 内 daemon 重启过 / crash 过 · 显示 banner
 (async function _showLifecycleBanner() {
   try {
@@ -12735,8 +12946,8 @@ if (!token) {
     }
     if (restart_event) {
       const req = restart_event.request || {};
-      // · 重启是某个具体 session 触发的 (req.session_id)。 只在那个 session 正好可见时才贴 banner ·
-      //   否则会把 B 的重启理由串进可见的 A (用户 复盘"A 带过来 B 的内容")。 B 自己 jsonl 已被 server 注过续场 notice·切过去看得到。
+      // 卷五十七 · 重启是某个具体 session 触发的 (req.session_id)。 只在那个 session 正好可见时才贴 banner ·
+      //   否则会把 B 的重启理由串进可见的 A (BRO 复盘"A 带过来 B 的内容")。 B 自己 jsonl 已被 server 注过续场 notice·切过去看得到。
       const evSid = (req.session_id || '').trim();
       if (!evSid || evSid === sessionId) {
         addSys('<i class="ri-refresh-fill"></i> daemon 刚才按你要求重启过了 · 理由: ' + (req.reason || '(no reason)') + ' · 新代码已装载 · 继续就好');
@@ -12750,21 +12961,21 @@ if (!token) {
 // 左侧维度 badge 首次加载 + 30s 自动刷新
 if (token) {
   refreshNavBadges();
-  loadCurrentModel();  // · 顶栏模型切换器
-  _showCoreVersion();  //二十 · 顶部品牌区显示内核版本号
-  _checkProactiveInbox();  // · 开页先查一次 Daemonkey 有没有主动找过
-  _checkWechatActivity();  //十七 · 开页先探一次微信后台 turn
+  loadCurrentModel();  // 卷二十九 · 顶栏模型切换器
+  _showCoreVersion();  // 卷七十四续二十 · 顶部品牌区显示内核版本号
+  _checkProactiveInbox();  // 卷六十 · 开页先查一次 OPUS 有没有主动找过
+  _checkWechatActivity();  // 卷七十四续十七 · 开页先探一次微信后台 turn
   setInterval(() => {
     if (!document.hidden) {
       refreshNavBadges();
-      _checkProactiveInbox();  // · 主动 CALL 收件箱心跳
+      _checkProactiveInbox();  // 卷六十 · 主动 CALL 收件箱心跳
       // 当前选中的维度数据 30s 刷新一次 · 雷达/趋势/报告这种数据型维度看着会"活"
       if (currentView && ['radar', 'trends', 'reports', 'opportunities'].includes(currentView)) {
         loadDashboard(currentView, { silent: true });
       }
     }
   }, 30000);
-  //十七 · 微信入站对话探测心跳(6s · 比 30s 跟手 · 微信 turn 短 · 30s 会整段错过)
+  // 卷七十四续十七 · 微信入站对话探测心跳(6s · 比 30s 跟手 · 微信 turn 短 · 30s 会整段错过)
   setInterval(() => {
     if (!document.hidden) _checkWechatActivity();
   }, 6000);
@@ -12772,7 +12983,7 @@ if (token) {
 
 
 // ═══════════════════════════════════════════════════════════════
-// Daemonkey 脉搏 (wish-7330d23f) · SSE 实时活动指示器
+// OPUS 脉搏 (wish-7330d23f) · SSE 实时活动指示器
 // ═══════════════════════════════════════════════════════════════
 
 (function initPulse() {
@@ -12880,7 +13091,7 @@ if (token) {
 
 
 // ─────────────────────────────────────────────────────────
-// spawnTask · 后台派发任务到新会话 · 自动切标签 (打捞自 wish-94bf05eb)
+// spawnTask · 后台派发任务到新会话 · 自动切标签 (打捞自 wish-94bf05eb · 卷五十一)
 // 重操作 (跑雷达/趋势/机会/可行性/勘察心愿) 开新会话执行 · 不污染当前对话上下文
 // ─────────────────────────────────────────────────────────
 async function spawnTask(prompt, taskLabel) {
@@ -12949,7 +13160,7 @@ function switchSessionById(sid) {
 function showSpawnBanner() { /* no-op · spawnTask 自动切标签无需 banner */ }
 window.switchSessionById = switchSessionById;
 
-// · 2026-06-03 · P1 前端错误边界的就绪信标。
+// 卷五十五 · 2026-06-03 · P1 前端错误边界的就绪信标。
 // chat.js 顶层执行到这里 = 解析成功 + 没在顶层抛错 → 标记 app 已就绪。
 // chat.html 头部的 boot-guard 靠这个标志判断: 超时后仍为 false = chat.js parse/运行
 // 失败 (白屏) → 弹兑底层。 这一行必须在 chat.js 最末尾。
