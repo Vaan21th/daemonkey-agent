@@ -27,7 +27,6 @@ import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +199,9 @@ def search_playbooks(query: str | None = None, task_type: str | None = None, tag
     query_lower = (query or "").lower()
 
     for pid, meta in playbooks.items():
+        # 0.8.8 · 退役过滤 (BRO 否掉的资产不再进注入池 · wish-e3db429f)
+        if meta.get("status") == "retired":
+            continue
         # task_type 过滤
         if task_type and meta.get("task_type", "").lower() != task_type.lower():
             continue

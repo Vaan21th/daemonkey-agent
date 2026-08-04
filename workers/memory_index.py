@@ -63,12 +63,38 @@ _FTS5_SAFE_RE = re.compile(r"^[\w\u4e00-\u9fff]+$")  # 允许字母数字下划�
 _FTS5_RESERVED = {"OR", "AND", "NOT", "NEAR"}
 
 
+# 0.8.9 · 查询停用词 (虚词/语气词/代词/高频介词) · 防污染 bm25 排名
+# 根因: "压缩后细节丢了" 切出 "后/了" 让只含停用词的 chunk 排名虚高 → 真命中被挤出阈值
+_QUERY_STOPWORDS = {
+    "后", "了", "的", "是", "我", "你", "他", "她", "它", "我们", "你们", "他们",
+    "吗", "呢", "吧", "啊", "呀", "哦", "嗯", "怎么", "什么", "为啥", "为什么",
+    "如何", "怎样", "咋", "在", "有", "就", "都", "和", "与", "及", "这", "那",
+    "个", "把", "被", "让", "用", "可以", "能", "会", "要", "想", "请", "帮",
+    "一下", "一个", "这个", "那个", "这些", "那些", "对", "给", "向", "从", "到",
+}
+
+# 0.8.9 · 中英/同义映射 (用户口语词 → 技术词) · 治词面不重合漏召回
+# 例: "git 提交卡住了" 切出 "提交" → 扩成 "commit" · 命中 "daemon-工程-commit-超时" playbook
+_QUERY_SYNONYMS = {
+    "提交": ["commit"], "卡住": ["commit"], "卡": ["commit"],
+    "报错": ["error"], "出错": ["error"], "错误": ["error"],
+    "发布": ["release"], "发版": ["release"], "上线": ["release"],
+    "缓存": ["cache"], "压缩": ["compact"],
+    "下载": ["download"], "视频": ["video"],
+    "生图": ["image"], "出图": ["image"], "画图": ["image"],
+    "前端": ["frontend", "ui"], "界面": ["ui"], "页面": ["ui"],
+    "换行": ["linebreak"], "乱码": ["encoding"], "编码": ["encoding"],
+    "重启": ["restart"], "崩溃": ["crash"], "假死": ["hang"],
+}
+
+
 def _tokenize_for_query(query: str) -> str:
     """search 用 · 切 query 后去重 + 过滤操作符 + 用 OR 连。
 
     case 1: 用户 query 含 OR (BRO 习惯 'X OR Y OR Z') · 切完会有连续 OR token → 必须去掉
     case 2: 'hermes-agent' 切完是 'hermes - agent' · '-' 是 FTS5 操作符 → 过滤
     case 3: 去重 · 同词出现多次没必要 (jieba 切 '工作模式 工作节奏' 会有 '工作' 两次)
+    case 4 (0.8.9): 停用词过滤 (虚词污染 bm25 排名) + 中英同义词扩展 (词面不重合漏召回)
     """
     if not _JIEBA_AVAILABLE:
         return query
@@ -78,6 +104,13 @@ def _tokenize_for_query(query: str) -> str:
     seen = set()
     safe = []
     for w in raw:
+        w_low = w.lower()
+        # 停用词 (虚词/语气词) · 只含它们的 chunk 不该参与排名
+        if w in _QUERY_STOPWORDS or w_low in _QUERY_STOPWORDS:
+            continue
+        # 单字符中文/符号 (jieba cut_for_search 的碎片) · 实词如 "丢" 也多为噪音
+        if len(w) == 1 and not w_low.isalnum():
+            continue
         if w.upper() in _FTS5_RESERVED:
             continue  # 去 'OR'/'AND'/'NOT'/'NEAR' (含小写)
         if not _FTS5_SAFE_RE.match(w):
@@ -86,6 +119,11 @@ def _tokenize_for_query(query: str) -> str:
             continue
         seen.add(w)
         safe.append(w)
+        # 同义词扩展 (中英映射 · 词面不重合时救召回)
+        for syn in _QUERY_SYNONYMS.get(w, []):
+            if syn not in seen:
+                seen.add(syn)
+                safe.append(syn)
     if not safe:
         return '"' + query.replace('"', '""') + '"'
     return " OR ".join(safe)
@@ -200,7 +238,7 @@ class MemoryChunk:
     token_count: int = 0
     updated_at: str = ""
     # FTS5 bm25 排名分数 · 越负越相关 (0.0 = LIKE 退化路径无分数)。
-    # 自动注入靠它做相关性门槛 · 没分数门槛会每轮硬塞 top_k 噪音
+    # 卷? · 自动注入靠它做相关性门槛 · 没分数门槛会每轮硬塞 top_k 噪音
     score: float = 0.0
 
 
@@ -792,8 +830,7 @@ def search(
 
     scope_filter_c = ""
     if scope == "bro":
-        # 开源版画像在 OWNER-NOTEBOOK·母体历史在 BRO-NOTEBOOK·两个都搜 (自动注入靠这个 scope)
-        scope_filter_c = "AND c.source IN ('OWNER-NOTEBOOK', 'BRO-NOTEBOOK')"
+        scope_filter_c = "AND c.source = 'BRO-NOTEBOOK'"
     elif scope == "self":
         scope_filter_c = "AND c.source IN ('SELF-EVOLUTION', 'OPUS-MEMORIES', 'SKILL')"
     elif scope == "sessions":

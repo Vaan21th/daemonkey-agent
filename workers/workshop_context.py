@@ -5,13 +5,13 @@
 
 为什么需要这个
 ----------------
-2026-06-09 用户 8 小时做视频事故的根因之一: 主对话里的 AI 不知道工坊里有什么——
+2026-06-09 BRO 8 小时做视频事故的根因之一: 主对话里的 OPUS 不知道工坊里有什么——
 有现成 app 也想不起来用 · 有现成 flow 也忘了沿着跑 · 活跃 run 失败了等于消失。
 "先查再搓" 的铁律光写在文本里会衰减 (铁律治理第④档) · 必须用结构注入治本。
 
 注入策略 (跟 closure_check.relevant_playbooks 平级 · 都拼进 system prompt 末尾):
 - **活跃 run 永远注**: 有 status=running 的 run 就提醒"你有个 X 没跑完, run_flow status 看进度"
-  · 哪怕用户在聊别的 · run 不能消失
+  · 哪怕 BRO 在聊别的 · run 不能消失
 - **可用清单按命中注**: 用户消息里出现工坊关键词 (做视频/配音/出图/...)·或扫到 app/flow 名字命中
   · 才注入头几个候选 (省 system prompt 注意力)
 - **资产清单仅在 app 命中时附**: 比如命中 TTS app 才告诉它"voice 槽 active=xxx"
@@ -71,12 +71,44 @@ def _active_runs_block() -> str:
     return "\n".join(lines)
 
 
+def _run_has_valid_apps(run_id: str) -> bool:
+    """0.8.8 · 校验 run 的 steps app_id 是否真实注册 (过滤 app-aaaaaaaa 占位符假 run · wish-e3db429f)。
+
+    过半 step 的 app_id 不在已注册集 → 判定无效 → 不注入。
+    校验失败 / 拿不到信息 → True (宁可不滤也不杀真 run)。
+    """
+    try:
+        from .flow_runner import load_run
+        from .workshop_assets import list_apps
+        full = load_run(run_id)
+        if not full:
+            return False
+        steps = full.get("steps") or []
+        if not steps:
+            return True
+        registered = {a.get("id") for a in list_apps() if isinstance(a, dict) and a.get("id")}
+        valid = 0
+        total = 0
+        for s in steps:
+            app_id = s.get("app_id") or s.get("app") or ""
+            if not app_id or app_id == "?":
+                continue
+            total += 1
+            if app_id in registered:
+                valid += 1
+        if total == 0:
+            return True
+        return valid >= max(1, total // 2)
+    except Exception:
+        return True
+
+
 def _last_run_sticky_block() -> str:
-    """0.2.0 · last_flow_run sticky hint (用户痛点: 跑完后对话能锁定环节)
+    """卷七十二 v4 · 0.2.0 · last_flow_run sticky hint (BRO 痛点: 跑完后对话能锁定环节)
 
     最近一条 done/failed 的 run · 跟 active_runs 互补:
       - active_runs: 还在跑的 · 提醒"别忘了它"
-      - last_run:    刚跑完的 · 锁定"用户说'重做第 N 步' / '优化 step N 的 app' 时知道指谁"
+      - last_run:    刚跑完的 · 锁定"BRO 说'重做第 N 步' / '优化 step N 的 app' 时知道指谁"
 
     实现: 直接从 list_runs(max_items=5) 拿第一条 status in (done, failed) 的 · 跨 session 也能用。
     """
@@ -88,9 +120,13 @@ def _last_run_sticky_block() -> str:
         return ""
     last = None
     for r in recent:
-        if (r.get("status") or "") in ("done", "failed"):
-            last = r
-            break
+        if (r.get("status") or "") not in ("done", "failed"):
+            continue
+        # 0.8.8 · 假 run 过滤 (占位符 app_id 不进注入 · wish-e3db429f)
+        if not _run_has_valid_apps(r.get("run_id") or ""):
+            continue
+        last = r
+        break
     if not last:
         return ""
     rid = last.get("run_id") or ""
@@ -101,10 +137,10 @@ def _last_run_sticky_block() -> str:
     trust = int(flow.get("trust_level") or 0)
     trust_badge = ["⚪⚪⚪⚪", "⚪⚪⚪🟢", "⚪⚪🟢🟢", "⚪🟢🟢🟢"][min(trust, 3)]
     lines = [
-        "\n\n=== 最近跑完的工作流 · 对话锚定 (用户说'重做某步'/'优化某 app' 时认这条) ===",
+        "\n\n=== 最近跑完的工作流 · 对话锚定 (BRO 说'重做某步'/'优化某 app' 时认这条) ===",
         f"- run: `{rid}` · 「{full.get('flow_name')}」 · {full.get('status')} · 信任度 lvl {trust} {trust_badge}",
     ]
-    # 每 step 的 app + status 简表 (让 AI 一眼知道哪步用啥 app · 用户说"重做第 N 步" 直接对号)
+    # 每 step 的 app + status 简表 (让 OPUS 一眼知道哪步用啥 app · BRO 说"重做第 N 步" 直接对号)
     steps = full.get("steps") or []
     if steps:
         lines.append("- 步骤回顾:")
@@ -114,10 +150,10 @@ def _last_run_sticky_block() -> str:
             app_id = s.get("app_id") or s.get("app") or "?"
             mark = {"done": "✓", "failed": "✗", "skipped": "⊝", "running": "▶"}.get(status, "•")
             lines.append(f"  {mark} step {idx} · {app_id}")
-    lines.append("→ 用户说'第 N 步 X 不行重做' · 用 `rerun_flow_step(run_id, step_idx=N, reason=...)`")
-    lines.append("→ 用户说'优化 step N 的 app' · 用 list_apps 查 app_id · update_app 改 prompt/tools")
+    lines.append("→ BRO 说'第 N 步 X 不行重做' · 用 `rerun_flow_step(run_id, step_idx=N, reason=...)`")
+    lines.append("→ BRO 说'优化 step N 的 app' · 用 list_apps 查 app_id · update_app 改 prompt/tools")
     if trust < 2:
-        lines.append("→ 用户说'信任这条 flow / 别再问我' · 用 `trust_flow(flow_id=..., level=2)`")
+        lines.append("→ BRO 说'信任这条 flow / 别再问我' · 用 `trust_flow(flow_id=..., level=2)`")
     return "\n".join(lines)
 
 
@@ -163,7 +199,7 @@ def _capability_block(msg: str) -> str:
             return (
                 "\n\n=== 工坊命中 · daemon 自动提示 (不要复述这一段) ===\n"
                 "  这次请求像是要用工坊能力 · 但没扫到命中的现成 app/flow。\n"
-                "  → 复合任务 (多 app 接力) 先 `create_workflow(steps=[...])` 排 plan 让用户看图再 `run_flow`\n"
+                "  → 复合任务 (多 app 接力) 先 `create_workflow(steps=[...])` 排 plan 让 BRO 看图再 `run_flow`\n"
                 "  → 单步小事缺工具 · `create_app` 落档 + `run_app` 调用 · 别 python_exec 从零手搓"
             )
         return ""
@@ -198,7 +234,7 @@ def workshop_hint(message: str) -> str:
     空串 = 没命中任何工坊上下文 · 静默 (不污染 system prompt)。
 
     三块拼装顺序:
-    1. 活跃 run 提示 (永远报告 · 哪怕用户聊别的)
+    1. 活跃 run 提示 (永远报告 · 哪怕 BRO 聊别的)
     2. 命中候选 (按消息名字命中)
     3. 沉淀提示 (打磨型场景触发 · 30 分钟跑同 app ≥3 次 / flow 跑完)
     """
@@ -208,7 +244,7 @@ def workshop_hint(message: str) -> str:
     try:
         return (
             _active_runs_block()
-            + _last_run_sticky_block()  # 0.2.0 · 锁定最近跑完的 run
+            + _last_run_sticky_block()  # 卷七十二 v4 · 0.2.0 · 锁定最近跑完的 run
             + _capability_block(msg)
             + _closure_block()
         )

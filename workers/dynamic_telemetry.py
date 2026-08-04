@@ -65,9 +65,31 @@ def _format_gap(sec: Optional[float]) -> str:
     return f"{int(sec / 86400)} 天前"
 
 
+def _session_label(stem: str) -> str:
+    """session 文件名 → 人话时间标签 (api-2026-08-05_015815_79d090 → 08-05 01:58)。
+
+    0.8.8 续 (telemetry 串台修 · wish 注入收敛): 标注来源会话 · 让用户知道这条来自哪个会话。
+    """
+    try:
+        parts = stem.split("_")
+        if len(parts) >= 2:
+            date = parts[0].replace("api-", "").replace("session-", "").strip()
+            t = parts[1]  # 015815
+            if len(date) >= 10 and len(t) >= 4:
+                return f"{date[5:]} {t[:2]}:{t[2:4]}"  # MM-DD HH:MM
+            if len(date) >= 10:
+                return date[5:]
+    except Exception:
+        pass
+    return "之前"
+
+
 def _get_last_summary(current_session_id: str) -> str:
     """扫 sessions/ 目录 · 找最近一个非当前 session 的 BRO user message · 压成一句摘要。
 
+    0.8.8 续 (telemetry 串台修 · wish 注入收敛):
+      - 排除 3 分钟内刚活跃的其他会话 → 正在另一个标签页聊的不算"上次聊到" (多开误读)
+      - 标注来源会话时间标签 → 用户知道这条来自哪个会话 · 消除"串台"误解
     纯字符串操作 · 不调 LLM。 开销 ~1ms（扫目录 + 读 jsonl 末尾 20 行）。
     """
     sessions_dir = pathlib.Path("sessions")
@@ -81,10 +103,13 @@ def _get_last_summary(current_session_id: str) -> str:
         reverse=True,
     )
 
-    # 找第一个不是当前 session 的
+    # 找第一个不是当前 session 的 · 排除 3 分钟内刚活跃的 (多开标签误读 · 正在聊的不算"上次")
     prev = None
+    now = time.time()
     for f in jsonl_files:
         if f.stem != current_session_id:
+            if now - f.stat().st_mtime < 180:
+                continue
             prev = f
             break
     if prev is None:
@@ -117,7 +142,7 @@ def _get_last_summary(current_session_id: str) -> str:
         if len(combined) > 150:
             combined = combined[:147] + "..."
 
-        return f"- 上次聊到: {combined}\n"
+        return f"- 上次聊到 (会话 {_session_label(prev.stem)}): {combined}\n"
 
     except Exception:
         return ""
@@ -212,7 +237,7 @@ def build_dynamic_telemetry(session_id: str) -> str:
     git_line = _get_git_dirty_line()
     abandoned_line = _get_abandoned_outcomes_line()
 
-    # 启动通知 (升级内容 + 缺依赖提醒) · 一次性消费
+    # 0.8.2 hotfix · 启动通知 (升级内容 + 缺依赖提醒) · 一次性消费
     try:
         from workers.startup_notices import consume_startup_notices
         notices_section = consume_startup_notices()
@@ -225,6 +250,7 @@ def build_dynamic_telemetry(session_id: str) -> str:
         f"- 现在: {now:%Y-%m-%d %H:%M %A}  ({_classify_hour(now.hour)})\n"
         f"- BRO 上一条消息: {_format_gap(gap_sec)}\n"
         f"- daemon 起来: {_format_gap(uptime_sec)}\n"
+        f"- 当前实际模型: {RUNTIME.model or '(未知)'}  ← 你真正在跑的模型 (provider_configs active · 不是 .env 的 OPUS_MODEL)\n"
         f"{summary_line}"
         f"{git_line}"
         f"{abandoned_line}"

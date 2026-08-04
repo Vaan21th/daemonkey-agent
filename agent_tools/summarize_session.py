@@ -4,7 +4,7 @@ agent_tools/summarize_session.py
 
 手动触发的 session 摘要工具——thin wrapper，核心逻辑在 workers/memory_compression.py。
 
-wish-58af621e 重构（）：
+wish-58af621e 重构（卷三十五）：
   原来的 _safe_split_index / _generate_summary / _stringify_message / _is_tool_pair_msg
   都搬到了 workers/memory_compression.py。
   这个工具现在只做：args 解析 → 调 auto_compress() → 原地替换 RUNTIME.messages → 组装 ToolResult。
@@ -52,6 +52,7 @@ def _run(args: dict) -> ToolResult:
         provider=RUNTIME.provider,
         keep_last_n=keep_last_n,
         model_id=RUNTIME.model,
+        force=True,  # v2 · 手动触发绕过经济性/stuck guard (wish-7f0adf2c · 同 Reasonix /compact)
     )
 
     # auto_compress 返回新列表 → 原地替换 RUNTIME.messages
@@ -89,7 +90,7 @@ SPEC = ToolSpec(
         "Compress earlier messages in the current session into a single summary, "
         "to free up context window for long sessions. Use when:\n"
         "  - You notice messages are >30 turns and input tokens climbing\n"
-        "  - 用户 says 'summarize' / 'compress' / 'free up context'\n"
+        "  - BRO says 'summarize' / 'compress' / 'free up context'\n"
         "  - You feel earlier context is no longer relevant to current work\n"
         "Keeps the last N messages (default 8) intact, summarizes everything before. "
         "Disk session file is NOT modified—full history stays for later /load. "

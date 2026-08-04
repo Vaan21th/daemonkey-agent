@@ -281,7 +281,7 @@ def _take_image_urls(result: ToolResult) -> list:
 
 # ---------- 发送时工具输出瘦身 (省 token · 非破坏) ----------
 # 问题: 一个大 read_file / browser_fetch / 报告的完整 output 全量入历史 · 之后【每一轮】
-#       都跟着重发 · 直到压缩层 (窗口占比阈值) 才收拾 · 窗口前这段是纯烧钱。
+#       都跟着重发 · 直到压缩层 (60% 窗口) 才收拾 · 窗口前这段是纯烧钱。
 # 修法: 只在【发给 API 的那一份 payload】上 · 把"旧的、超大的"工具输出截成 head + 省略提示。
 #       - 落盘的 session jsonl / 返回给 daemon 的 messages / UI 显示 · 全部不动 (真源完整)。
 #       - 当轮刚产出的工具输出必须全量 (LLM 要用) → 保留最近 KEEP_TAIL 条不瘦身。
@@ -615,7 +615,9 @@ _DEEPSEEK_LANG_HINT = (
 
 
 def _build_openai_system(
-    system_stable: str, system_suffix: str, base_url: str | None, model: str
+    system_stable: str, system_suffix: str, base_url: str | None, model: str,
+    *,
+    suffix_in_system: bool = True,   # False = 返回纯 stable · suffix 由调用方挪到 messages 末尾
 ) -> Any:
     """拼 OpenAI 协议的 system·把「稳定前缀」与「每轮变的尾巴」分开。
 
@@ -641,6 +643,8 @@ def _build_openai_system(
 
     # 不走 cache_control 的端点 (含 DeepSeek 自动缓存): 拼成一个 string·
     # 稳定前缀在前·易变尾巴在后·让 DeepSeek 的前缀匹配命中稳定段。
+    if not suffix_in_system:
+        return stable              # DeepSeek 路径: 纯 stable · 尾巴由调用方挪到 messages 末尾 (append-only)
     return stable + system_suffix
 
 
@@ -697,10 +701,10 @@ def run_tool_loop(
     progress: ProgressHook | None = None,
     cancel_check: Callable[[], bool] | None = None,
     on_message_commit: Callable[[dict], None] | None = None,
+    allowed_tool_names: set[str] | None = None,
     system_suffix: str = "",
     thinking: str | None = None,
     reasoning_effort: str | None = None,
-    allowed_tool_names: set[str] | None = None,
 ) -> tuple[str, list[dict], UsageStats]:
     """
     多轮 tool use 循环。返回 (最终 OPUS 文本回复, 更新后的 messages, UsageStats)。
@@ -719,11 +723,13 @@ def run_tool_loop(
                   每次一个 assistant turn / tool result 落进 messages 时立刻调用 ·
                   让 daemon kill -9 时也不丢 in-flight turns。
                   上层注入 lambda entry: append_turn(sid, entry['role'], ...)。
-    allowed_tool_names: 工具白名单。 None = 全 REGISTRY 暴露 (主对话默认)。
-                   set[str] = 只暴露白名单内工具给 LLM · hallucinate 调白名单外
-                   的工具一律返回 "tool not allowed in this scope" 而非真执行。
-                   app_runner 跑工坊 app 时传入·防 app 子作用域 LLM 越权调
-                   run_app / python_exec 等大权限工具。
+    allowed_tool_names: 沉淀闭环 v2 修补 · 卷七十二 (2026-06-10) · 工具白名单。
+                  None = 全 REGISTRY 暴露 (主对话默认)。
+                  set[str] = 只暴露白名单内工具给 LLM · hallucinate 调白名单外
+                  的工具一律返回 "tool not allowed in this scope" 而非真执行。
+                  app_runner 跑工坊 app 时传入·防 app 子作用域 LLM 越权调
+                  run_app / python_exec 等大权限工具(审稿 app 调 run_app 跑了 5 分钟
+                  内容制作 = 此条修补真实触发场景)。
     """
     # ── 会话结构自愈（卷五十五 · 2026-06-03 · 防 [500] · P3 升级为完整体检）─────
     # 病根: turn 在 tool 执行前被打断 (重启/abort/网断) → 历史里留下 assistant.tool_calls
@@ -751,12 +757,22 @@ def run_tool_loop(
     # 在每次 tool_loop 入口按 token 预算 + 模型窗口动态触发压缩，
     # 省 token + 避免长对话爆 context。对所有路径（终端/API/SSE）生效。
     try:
-        from workers.memory_compression import auto_compress, token_budget_check
+        from workers.memory_compression import auto_compress, token_budget_check, get_last_compression_stats
         if token_budget_check(messages, model_id=model):
             compressed = auto_compress(messages, client, model, provider, model_id=model)
             if compressed is not messages:
                 messages.clear()
                 messages.extend(compressed)
+                # v2 · 压缩/修剪 stats log (wish-7f0adf2c)
+                try:
+                    _push(progress, "usage", {
+                        "input_tokens": 0, "output_tokens": 0,
+                        "cache_read_tokens": 0, "cache_creation_tokens": 0,
+                        "iteration": -1,
+                        "compression": get_last_compression_stats(),
+                    })
+                except Exception:
+                    pass
     except Exception:
         # 自动压缩挂了不能把主流程搞崩
         pass
@@ -770,9 +786,9 @@ def run_tool_loop(
             max_iterations=max_iterations, base_url=base_url,
             progress=progress, cancel_check=cancel_check,
             on_message_commit=on_message_commit,
+            allowed_tool_names=allowed_tool_names,
             system_suffix=system_suffix,
             thinking=thinking, reasoning_effort=reasoning_effort,
-            allowed_tool_names=allowed_tool_names,
         )
     elif provider == "anthropic":
         return _loop_anthropic(
@@ -781,10 +797,10 @@ def run_tool_loop(
             confirm=confirm, observe=observe,
             max_iterations=max_iterations,
             progress=progress, cancel_check=cancel_check,
+            allowed_tool_names=allowed_tool_names,
             on_message_commit=on_message_commit,
             system_suffix=system_suffix,
             thinking=thinking, reasoning_effort=reasoning_effort,
-            allowed_tool_names=allowed_tool_names,
         )
     else:
         raise RuntimeError(f"unknown provider: {provider}")
@@ -805,7 +821,7 @@ def _extract_openai_cache_usage(usage: Any) -> tuple[int, int]:
     if creation or read:
         return creation, read
 
-    # DeepSeek 自动 disk cache (3a · 补抓·之前 0 命中是看不见不是没省)
+    # DeepSeek 自动 disk cache (卷? · 3a · 补抓·之前 0 命中是看不见不是没省)
     # DeepSeek 不区分 creation/read·命中即按 hit 价 (~1/50 miss 价)·映射成 read 这档。
     # 字段可能直接挂 usage·也可能被 openai SDK 收进 model_extra·两处都摸。
     ds_hit = getattr(usage, "prompt_cache_hit_tokens", None)
@@ -863,10 +879,10 @@ def _loop_openai(
     confirm, observe, max_iterations, base_url,
     progress=None, cancel_check=None,
     on_message_commit=None,
+    allowed_tool_names: set[str] | None = None,
     system_suffix: str = "",
     thinking: str | None = None,
     reasoning_effort: str | None = None,
-    allowed_tool_names: set[str] | None = None,
 ) -> tuple[str, list[dict], UsageStats]:
     def _commit(entry: dict) -> None:
         if on_message_commit is None:
@@ -881,8 +897,31 @@ def _loop_openai(
         specs = [s for n, s in REGISTRY.items() if n in allowed_tool_names]
     tools_param = to_openai_tools(specs) if specs else None
 
-    system_payload = _build_openai_system(system, system_suffix, base_url, model)
+    # wish-8f122254 · DeepSeek 自动 disk cache 修复:
+    # 每轮必变的 system_suffix 插在 messages 前 → 前缀匹配全断 → 缓存命中率 65-80%。
+    # 修复: DeepSeek 路径把尾巴 append 到发送副本末尾 (append-only · 历史前缀只增不改)·
+    #       只进发送副本 · 不写回持久化 messages。
+    # 注意: 尾部 new_entries 切片会把 oai_messages 新增内容写回 messages ·
+    #       所以 note 用对象引用记下来 · return 前 remove · 防持久化污染。
+    _tail_note: dict | None = None
+    _base_l = (base_url or "").lower()
+    _tail_in_system = os.environ.get("OPUS_DS_TAIL_IN_SYSTEM") == "1"
+    if system_suffix and "deepseek.com" in _base_l and not _tail_in_system:
+        try:
+            system_payload = _build_openai_system(
+                system, system_suffix, base_url, model, suffix_in_system=False)
+            _tail_note = {
+                "role": "user",
+                "content": "[system note · 每轮变化的运行时信息 · 不要复述这一段]\n" + system_suffix,
+            }
+        except Exception:
+            system_payload = _build_openai_system(system, system_suffix, base_url, model)
+            _tail_note = None
+    else:
+        system_payload = _build_openai_system(system, system_suffix, base_url, model)
     oai_messages: list[dict] = [{"role": "system", "content": system_payload}] + list(messages)
+    if _tail_note is not None:
+        oai_messages.append(_tail_note)
     total = UsageStats()
     final_text = ""
 
@@ -909,9 +948,23 @@ def _loop_openai(
             final_text = "[OPUS aborted by BRO]"
             _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
             break
+        # wish-8f122254 · max_tokens 动态封顶:
+        # 用户全局 max_tokens 固定占坑 (如 393216) · messages 涨到 ~650K 时
+        # messages+completion 超窗口 → 按窗口动态收窄输出预算。
+        _mt_safe = max_tokens
+        try:
+            from workers.memory_compression import _estimate_tokens as _est_tok
+            from provider_presets import context_window_for as _cw_for
+            _ctx = _cw_for(model)
+            if _ctx and _ctx > 0:
+                _est_now = _est_tok(oai_messages)
+                _headroom = max(1024, int(_ctx * 0.05))
+                _mt_safe = min(max_tokens, max(512, _ctx - _est_now - _headroom))
+        except Exception:
+            _mt_safe = max_tokens
         kwargs: dict[str, Any] = dict(
             model=model,
-            max_tokens=max_tokens,
+            max_tokens=_mt_safe,
             messages=_diet_messages_for_send(oai_messages),
             stream=True,
             stream_options={"include_usage": True},
@@ -1035,6 +1088,11 @@ def _loop_openai(
                     partial_entry["reasoning_content"] = reasoning
                 oai_messages.append(partial_entry)
                 _commit(partial_entry)
+            if _tail_note is not None:
+                try:
+                    oai_messages.remove(_tail_note)  # 按身份摘除 · 不随 new_entries 回写
+                except ValueError:
+                    pass
             new_entries = oai_messages[1 + len(messages):]
             messages.extend(new_entries)
             return final_text, messages, total
@@ -1049,6 +1107,12 @@ def _loop_openai(
                 cache_read_tokens=read,
             )
             total.add(turn_stats)
+            # v2 · 真实 usage 喂给压缩层 tokPerChar 校准 (wish-7f0adf2c · best-effort)
+            try:
+                from workers import memory_compression as _mc
+                _mc.note_real_usage(turn_stats.input_tokens, oai_messages)
+            except Exception:
+                pass
             _push(progress, "usage", {
                 "input_tokens": turn_stats.input_tokens,
                 "output_tokens": turn_stats.output_tokens,
@@ -1167,7 +1231,7 @@ def _loop_openai(
                 result = ToolResult(ok=False, output="", error=f"unknown tool: {name}")
                 _push(progress, "tool_call", {"name": name, "summary": "(unknown tool)", "tier": "?"})
             elif allowed_tool_names is not None and name not in allowed_tool_names:
-                # 白名单越权拦截 (审稿 app 调 run_app 跑 5 分钟内容制作 = 真实触发场景)
+                # 卷七十二 · 白名单越权拦截 (审稿 app 调 run_app 跑 5 分钟内容制作 = 真实触发场景)
                 allowed_list = ", ".join(sorted(allowed_tool_names)) or "(empty)"
                 result = ToolResult(
                     ok=False, output="",
@@ -1317,6 +1381,11 @@ def _loop_openai(
         oai_messages.append(max_entry)
         _commit(max_entry)
 
+    if _tail_note is not None:
+        try:
+            oai_messages.remove(_tail_note)  # 按身份摘除 · 不随 new_entries 回写
+        except ValueError:
+            pass
     new_entries = oai_messages[1 + len(messages):]
     messages.extend(new_entries)
     return final_text, messages, total
@@ -1329,10 +1398,10 @@ def _loop_anthropic(
     confirm, observe, max_iterations,
     progress=None, cancel_check=None,
     on_message_commit=None,
+    allowed_tool_names: set[str] | None = None,
     system_suffix: str = "",
     thinking: str | None = None,
     reasoning_effort: str | None = None,
-    allowed_tool_names: set[str] | None = None,
 ) -> tuple[str, list[dict], UsageStats]:
     def _commit(entry: dict) -> None:
         if on_message_commit is None:
@@ -1392,6 +1461,12 @@ def _loop_anthropic(
             cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
         )
         total.add(turn_stats)
+        # v2 · anthropic 路径同样喂真实 usage (wish-7f0adf2c · best-effort)
+        try:
+            from workers import memory_compression as _mc
+            _mc.note_real_usage(turn_stats.input_tokens, ant_messages)
+        except Exception:
+            pass
         _push(progress, "usage", {
             "input_tokens": turn_stats.input_tokens,
             "output_tokens": turn_stats.output_tokens,
@@ -1439,7 +1514,7 @@ def _loop_anthropic(
                 result = ToolResult(ok=False, output="", error=f"unknown tool: {tu.name}")
                 _push(progress, "tool_call", {"name": tu.name, "summary": "(unknown tool)", "tier": "?"})
             elif allowed_tool_names is not None and tu.name not in allowed_tool_names:
-                # 白名单越权拦截 (审稿 app 调 run_app 跑 5 分钟内容制作 = 真实触发场景)
+                # 卷七十二 · 白名单越权拦截 (审稿 app 调 run_app 跑 5 分钟内容制作 = 真实触发场景)
                 allowed_list = ", ".join(sorted(allowed_tool_names)) or "(empty)"
                 result = ToolResult(
                     ok=False, output="",
