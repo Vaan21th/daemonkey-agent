@@ -184,6 +184,38 @@ def _keyword_playbooks(message: str, limit: int) -> list[dict]:
 #   注: 库变大后 bm25 绝对值会漂·按真实命中率重校 (跟 relevant_memories 同款调味位)。
 _PB_INJECT_MIN_SCORE = -10.0
 
+# 0.9.0 · 注入日志 (wish 注入收敛样本收集) · 只写不改行为
+# 每次注入追加一行 jsonl 到 data/runtime/inject_log.jsonl · 供重校注入量/阈值用
+# 隐私: 只记消息前 200 字 + 注入项摘要 · 数据留 L3 本地 · 永不 sync / 永不回传
+_INJECT_LOG_PATH = None
+
+
+def _inject_log_path() -> Path:
+    global _INJECT_LOG_PATH
+    if _INJECT_LOG_PATH is None:
+        _INJECT_LOG_PATH = Path("data/runtime/inject_log.jsonl")
+        try:
+            _INJECT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+    return _INJECT_LOG_PATH
+
+
+def _log_injection(message: str, kind: str, items: list, *, hit_score: float | None = None) -> None:
+    """追加一条注入日志 · 失败静默 (日志绝不能影响注入主流程)。"""
+    try:
+        entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "kind": kind,                       # playbook / memory / docs
+            "msg": (message or "")[:200],
+            "hit_score": round(hit_score, 3) if hit_score is not None else None,
+            "items": [str(x)[:120] for x in items][:5],
+        }
+        with open(_inject_log_path(), "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
 
 def relevant_playbooks(message: str, *, limit: int = 2) -> str:
     """用户消息命中已有 playbook → 返回一段拼进 system 的提示;无匹配返回空串。
@@ -234,6 +266,7 @@ def relevant_playbooks(message: str, *, limit: int = 2) -> str:
     ]
     for pb in top:
         lines.append(f"- `{pb.get('id', '')}` · {pb.get('title', '')} (复用过 {pb.get('used_count', 0)} 次)")
+    _log_injection(msg, "playbook", [pb.get("title", "") for pb in top])
     return "\n".join(lines)
 
 
@@ -292,6 +325,9 @@ def relevant_memories(message: str, *, limit: int = _MEM_INJECT_LIMIT) -> str:
         )
     except Exception:
         pass
+    _log_injection(msg, "memory",
+                   [(getattr(c, "section", "") or "")[:60] for c in top],
+                   hit_score=getattr(top[0], "score", None) if top else None)
     return "\n".join(lines)
 
 
@@ -373,6 +409,9 @@ def relevant_docs(message: str) -> str:
         logger.info("relevant_docs 注入 · 目录 %d 篇 · 命中 %d 段", len(docs), len(hit_lines))
     except Exception:
         pass
+    _log_injection(msg, "docs",
+                   [d.get("title", "") for d in docs[:5]],
+                   hit_score=None)
     return "\n".join(lines)
 
 
