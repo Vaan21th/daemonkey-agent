@@ -17,14 +17,14 @@
 // === AI 名字本地化 (Daemonkey 分家) ===
 // 用户在『相遇』里给这只 Daemonkey 起的名字·由后端注成 window.__AI_NAME__。
 // 界面里历史遗留写死的 "OPUS" 全部换成它——一个集中机制·不必逐处改 100+ 串。
-// 正则 /OPUS(?![\w-])/ 只换"OPUS"作为称呼出现的地方·跳过 OPUS_API_TOKEN / OPUS-DAEMON 这类技术标识。
+// 正则 /OPUS(?![\w-])/ 只换"OPUS"作为称呼出现的地方·跳过 OPUS_API_TOKEN / 带连字符的技术标识。
 (function () {
   var NAME = (window.__AI_NAME__ || '').trim();
   var OWNER = (window.__OWNER_NAME__ || '').trim();
   var doAI = NAME && NAME !== 'OPUS';           // AI 自己的名字
   var doOwner = OWNER && OWNER !== 'BRO';        // 主人的称呼 (UI 里的 BRO 也换掉)
   if (!doAI && !doOwner) return;                // 母体两者都默认 → 保持原样
-  // 正则跳过 OPUS_API_TOKEN / OPUS-DAEMON / BRO-NOTEBOOK 这类技术标识·只换作为称呼出现的词
+  // 正则跳过 OPUS_API_TOKEN / 带连字符的技术标识·只换作为称呼出现的词
   var RE_AI = /OPUS(?![\w-])/g;
   var RE_OWNER = /\bBRO(?![\w-])/g;
   // Daemonkey 分家: 取了自己名字的实例·把母体私有 lore「花果山」中性成「<名字> 的家」。
@@ -6920,7 +6920,7 @@ const NAV_GROUPS = [
 ];
 
 const DOMAIN_META = {
-  // 市场信息 · 外部信号 · OPUS-DAEMON 看世界的眼睛 · 不含 OPUS 自己的观察
+  // 市场信息 · 外部信号 · 看世界的眼睛 · 不含助手自己的观察
   radar:         { icon: '<i class="ri-radar-fill"></i>', label: '信息雷达', section: 'market', stub: false },
   trends:        { icon: '<i class="ri-line-chart-fill"></i>', label: '今日趋势', section: 'market', stub: false },
   reports:       { icon: '<i class="ri-article-fill"></i>', label: '报告库',   section: 'market', stub: false },
@@ -12835,9 +12835,9 @@ function wishFromRadar(title, url) {
     `**这是邀请·不是命令** —— 你要自己判断·不是 BRO 让你装你就装。\n\n` +
     `请你：\n` +
     `1. 用 web_search / web_fetch 弄清这个工程做啥 · 看 README / 主要特性\n` +
-    `2. 对照 OPUS-DAEMON 现状·想清楚：\n` +
+    `2. 对照 Daemonkey 现状·想清楚：\n` +
     `   - 你有没有这个能力·还是缺\n` +
-    `   - 它的设计哲学跟 OPUS-DAEMON 是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
+    `   - 它的设计哲学跟 Daemonkey 是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
     `   - 如果合拍·这能力对 BRO 这个具体的人有啥用 (而不是"通用上有用")\n` +
     `3. 然后明确告诉 BRO：\n` +
     `   - 值得装 → 调 wish_add 写一份心愿 (title / why / source_kind=radar / source_ref + url / design_sketch / complexity / hours / priority / opus_take = 你自己的态度)\n` +
@@ -12861,7 +12861,7 @@ function wishFromOpp(oneBasedIdx) {
     `2. 想清楚：\n` +
     `   - OPUS 现状有没有这能力·缺哪一块\n` +
     `   - 装上之后真正受益的是 BRO 哪个具体痛点 (而不是泛泛的"AI 升级")\n` +
-    `   - 跟 OPUS-DAEMON 现有架构合拍吗\n` +
+    `   - 跟 Daemonkey 现有架构合拍吗\n` +
     `3. 明确表态:\n` +
     `   - 值得装 → wish_add (title 改写成"OPUS 装 X" / why = 对 BRO 的具体价值 / source_kind=opportunity / source_ref=opp_id / design_sketch=2-3 步改造方案 / complexity / hours / cost / priority)\n` +
     `   - 不值得 → 说清为啥·不强 add\n` +
