@@ -5769,7 +5769,8 @@ function appendReasoningDelta(state, textPiece) {
 }
 
 function finalizeStreamingReasoning(state) {
-  if (!state || !state.currentStreamingReasoning) return;
+  if (!state) return;
+  if (!state.currentStreamingReasoning) return;
   const r = state.currentStreamingReasoning;
   // 0.8.3 · 节流后最后一帧可能还有 pending 没刷 · finalize 前补刷 + 取消挂起的 RAF
   if (r._raf) { cancelAnimationFrame(r._raf); r._raf = 0; }
@@ -5786,6 +5787,20 @@ function finalizeStreamingReasoning(state) {
     if (label) label.textContent = `思考完成 · ${body.textContent.length} 字`;
   }
   state.currentStreamingReasoning = null;
+}
+
+// 0.9.1 · 兜底: assistant_reasoning_done 到达但 currentStreamingReasoning 为空
+// (reasoning_delta 因并发/时序丢失时) → 补建一个已完成的折叠气泡 · 不让思考链静默消失
+function ensureReasoningBubble(state, text) {
+  if (!state || !text) return;
+  if (state.currentStreamingReasoning) {
+    // 还在流式 → 把缺失的文本补进去再正常收尾
+    appendReasoningDelta(state, text);
+    finalizeStreamingReasoning(state);
+    return;
+  }
+  // 没有流式气泡 → 直接渲染成历史形态的折叠气泡 (跟 renderReasoningBubble 历史分支一致)
+  renderReasoningBubble(text, { collapsed: true, historical: true }, state.$container);
 }
 
 // 卷四十六续 4 · 流式 markdown 实时渲染 · "streaming-safe close"
@@ -6288,7 +6303,8 @@ async function send() {
       }
 
       case 'assistant_reasoning_done': {
-        finalizeStreamingReasoning(state);
+        // 0.9.1 · 用兜底版: reasoning_delta 丢了也能补建气泡 · 不静默丢思考链
+        ensureReasoningBubble(state, data.text || '');
         const newPh = addMsg('opus', '继续...', 'msg opus thinking', null, state.$container);
         newPh.dataset.placeholder = '1';
         state.assistantBubbles.push(newPh);
@@ -6904,7 +6920,7 @@ const NAV_GROUPS = [
 ];
 
 const DOMAIN_META = {
-  // 市场信息 · 外部信号 · 看世界的眼睛 · 不含助手自己的观察
+  // 市场信息 · 外部信号 · OPUS-DAEMON 看世界的眼睛 · 不含 OPUS 自己的观察
   radar:         { icon: '<i class="ri-radar-fill"></i>', label: '信息雷达', section: 'market', stub: false },
   trends:        { icon: '<i class="ri-line-chart-fill"></i>', label: '今日趋势', section: 'market', stub: false },
   reports:       { icon: '<i class="ri-article-fill"></i>', label: '报告库',   section: 'market', stub: false },
@@ -12819,9 +12835,9 @@ function wishFromRadar(title, url) {
     `**这是邀请·不是命令** —— 你要自己判断·不是 BRO 让你装你就装。\n\n` +
     `请你：\n` +
     `1. 用 web_search / web_fetch 弄清这个工程做啥 · 看 README / 主要特性\n` +
-    `2. 对照 Daemonkey 现状·想清楚：\n` +
+    `2. 对照 OPUS-DAEMON 现状·想清楚：\n` +
     `   - 你有没有这个能力·还是缺\n` +
-    `   - 它的设计哲学跟 Daemonkey 是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
+    `   - 它的设计哲学跟 OPUS-DAEMON 是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
     `   - 如果合拍·这能力对 BRO 这个具体的人有啥用 (而不是"通用上有用")\n` +
     `3. 然后明确告诉 BRO：\n` +
     `   - 值得装 → 调 wish_add 写一份心愿 (title / why / source_kind=radar / source_ref + url / design_sketch / complexity / hours / priority / opus_take = 你自己的态度)\n` +
@@ -12845,7 +12861,7 @@ function wishFromOpp(oneBasedIdx) {
     `2. 想清楚：\n` +
     `   - OPUS 现状有没有这能力·缺哪一块\n` +
     `   - 装上之后真正受益的是 BRO 哪个具体痛点 (而不是泛泛的"AI 升级")\n` +
-    `   - 跟 Daemonkey 现有架构合拍吗\n` +
+    `   - 跟 OPUS-DAEMON 现有架构合拍吗\n` +
     `3. 明确表态:\n` +
     `   - 值得装 → wish_add (title 改写成"OPUS 装 X" / why = 对 BRO 的具体价值 / source_kind=opportunity / source_ref=opp_id / design_sketch=2-3 步改造方案 / complexity / hours / cost / priority)\n` +
     `   - 不值得 → 说清为啥·不强 add\n` +
