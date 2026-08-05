@@ -3,18 +3,18 @@
 daemon_api.py
 =============
 
-Daemonkey Daemon · HTTP API · 远程入口
+OPUS Daemon · HTTP API · 远程入口
 ---------------------------------
 让 daemon 不再只能从本机终端被找到——任何外部入口（Telegram bridge /
-Web UI / curl / iOS Shortcuts / 未来的微信桥）都通过这一层和 Daemonkey 对话。
+Web UI / curl / iOS Shortcuts / 未来的微信桥）都通过这一层和 OPUS 对话。
 
-设计要点（ 用户 离职月省钱期立项）：
+设计要点（卷十四 BRO 离职月省钱期立项）：
 
 1. **session 隔离**：API 端的对话默认用独立 session（前缀 `api-`），不和
    daemon 终端主循环共享 messages。两个并发会话各跑各的——避免锁竞争 +
-   防止远程消息污染 用户 当面跟 Daemonkey 的对话。
+   防止远程消息污染 BRO 当面跟 OPUS 的对话。
 
-2. **三档信任 → 远程版**：用户 在外面按不了 y/n。API 端用单一 `auto_confirm`
+2. **三档信任 → 远程版**：BRO 在外面按不了 y/n。API 端用单一 `auto_confirm`
    策略：
      - `"auto"`   · 只跑 AUTO 工具，CONFIRM/GUARD 都 skip
      - `"confirm"`(默认) · AUTO+CONFIRM 自动 go，GUARD skip
@@ -41,7 +41,7 @@ Endpoints:
   GET  /ui                     · 静态 HTML 聊天页（手机浏览器友好），不鉴权（token 走 JS）
   GET  /status                 · 详细状态(model/provider/active_sessions)，需 token
   POST /chat                   · {message, session_id?, auto_confirm?} → {reply, session_id, usage}
-  POST /chat/stream            · SSE 流式版（加）—— 推 tool_call/tool_result/usage/done
+  POST /chat/stream            · SSE 流式版（卷十七加）—— 推 tool_call/tool_result/usage/done
   GET  /sessions?api_only=     · 列 session（api_only=true 只返 api- 前缀）
   GET  /sessions/{id}          · 取一个 session 的 raw jsonl 内容
   GET  /sessions/{id}/messages · 结构化 turn 列表（WebUI 拉历史用）
@@ -102,7 +102,7 @@ _API_SESSIONS: dict[str, list[dict]] = {}
 # 为什么这么拆:
 #   - RUNTIME.client / RUNTIME.provider 是单一全局对象 · 替换时必须排队 (但极少触发)
 #   - chat_impl 里写的是 _API_SESSIONS[sid] 跟磁盘 jsonl · 不同 sid 不踩车
-#   - 所以 chat_impl 抢 session lock 不抢全局锁 · 用户 终端 A + 终端 B 真并行
+#   - 所以 chat_impl 抢 session lock 不抢全局锁 · BRO 终端 A + 终端 B 真并行
 _API_LOCK = threading.RLock()
 
 # session_id → RLock · 让不同 session 的 chat 真并行
@@ -142,18 +142,18 @@ def _get_session_lock(sid: str) -> threading.RLock:
         return lock
 
 
-# · 中断机制
+# 卷三十六 · 中断机制
 # turn_id (uuid) → threading.Event
 # /turns/{tid}/abort 把对应 Event.set() · 走到 tool_loop 的 confirm 回调时拦截掉
 _ACTIVE_TURNS: dict[str, threading.Event] = {}
 _TURNS_LOCK = threading.Lock()
 
 # wish-3fef4bc7 follow-up · 浏览器 F5 后查"这个 session 有 active turn 吗"
-# 用来让 frontend 启动 polling auto-refresh · 不让 用户 手动 F5 第二次
+# 用来让 frontend 启动 polling auto-refresh · 不让 BRO 手动 F5 第二次
 # turn_id → sid · 跟 _ACTIVE_TURNS 同步生命周期 (worker 启动注册 · 退出删)
 _TURN_TO_SID: dict[str, str] = {}
 
-#四 · ② 自主巡航进度 · turn_id → 最新一步进度快照
+# 卷七十五续四 · ② 自主巡航进度 · turn_id → 最新一步进度快照
 # 病根: 后台/轮询模式的 turn 没有 SSE 接收方 · tool_loop 的 tool_progress 事件全丢 →
 #   前端只能显示"仍在后台跑·自动刷新中" · 长任务跑工具时看着像卡死。
 # 修法: 无论 SSE 连没连 · _chat_impl 都把最新一步 (工具名/步骤/轮次) 记进这里 ·
@@ -233,21 +233,21 @@ def _make_progress_recorder(turn_id: str, inner: Optional[Callable[[str, dict], 
 
 _TIER_RANK = {TIER_AUTO: 1, TIER_CONFIRM: 2, TIER_GUARD: 3}
 
-# · 后台续场 turn 防自爆链 (2026-06-06 · 用户 复盘「连着重启两回」)
+# 卷五十六 · 后台续场 turn 防自爆链 (2026-06-06 · BRO 复盘「连着重启两回」)
 # 这些工具会重启/关停 daemon 自身。 在「无人值守 turn」(push_event is None · 没有
 # 前台 SSE 接收方 · 典型就是 resume_runner 的 follow_up 续场 turn) 里绝不允许它们跑——
 # 否则「前台重启 → 续场自动验证 → 续场又调 request_restart → 再重启」无限套娃·
-# 还会把 用户 正在看的对话状态打断。 request_restart 是 CONFIRM 档·policy=confirm 下本
+# 还会把 BRO 正在看的对话状态打断。 request_restart 是 CONFIRM 档·policy=confirm 下本
 # 会自动 go·所以必须在 rank<=threshold 之前一刀拦死·且不受 OPUS_RESUME_AUTO_CONFIRM 影响。
 _BACKGROUND_BLOCKED_TOOLS = {"request_restart"}
 
 
-# === wish-2a4d8c1e · inline confirm UI ( 续 3) ===
+# === wish-2a4d8c1e · inline confirm UI (卷四十六 续 3) ===
 #
 # LLM 撞 CONFIRM/GUARD 工具 (超 policy 阈值) 时 · 不立刻 raise 'declined' · 改为:
 #   1. 检查 trusted_commands (复用 wish-f563a56d) · 命中 downgrade · 直接 go
 #   2. 没命中 → push SSE event `confirm_request` 给前端 (chat 弹卡片)
-#   3. worker thread 阻塞 wait Event · 直到 用户 点按钮 (POST /turns/confirm)
+#   3. worker thread 阻塞 wait Event · 直到 BRO 点按钮 (POST /turns/confirm)
 #   4. set Event · worker 解除阻塞 · 按决议返回 go/skip
 #
 # 阻塞机制: per-session lock 仍持 · 但只锁当前 session · 其他 session 不影响
@@ -262,7 +262,7 @@ _BACKGROUND_BLOCKED_TOOLS = {"request_restart"}
 #     "args_clean": dict,        # 已 pop risk/mitigation 的净版 · worker 用它调真 tool
 #     "command": str,            # shell_exec 特殊 · 用于 trust pattern 抽取
 #     "decision": str | None,    # 由 endpoint 写入: approve_once/trust_30min/trust_24h/trust_permanent/deny
-#     "reason": str,             # 用户 拒绝时填的备注
+#     "reason": str,             # BRO 拒绝时填的备注
 #     "created_at": float,
 #   }
 _PENDING_CONFIRMS: dict[str, dict] = {}
@@ -297,7 +297,7 @@ def _extract_trust_pattern(tool_name: str, args: dict) -> str:
     shell_exec 算法:
       1. shlex 分 token
       2. 跳过含 shell 控制字符 (| & ; > < ` $) 的 token —— 这些字符是 wish-f563a56d
-         add_trusted 安全检查会拒掉的 (防 用户 加 'pip install | rm -rf /' 这种 pattern)
+         add_trusted 安全检查会拒掉的 (防 BRO 加 'pip install | rm -rf /' 这种 pattern)
       3. 取连续非控制字符前缀的前 2 个 token
       4. 没有可用 token → 退回 tool_name
 
@@ -362,49 +362,49 @@ def cleanup_pending_confirm(tool_call_id: str) -> None:
 
 
 # WebUI / API 接入时追加到 system prompt 的"接入方式告知"
-# 关键作用：让 Daemonkey 知道自己走的是非终端通道（无阻塞 y/n），但**不要误判 用户 一定在远程**——
-#：旧文案断言"BRO 通过手机、不在机器旁、看不到屏幕"，导致 Daemonkey 在本机 WebUI 里
-#   也对 用户 说"我是远程"。本机浏览器和手机远程走同一条通道、daemon 区分不了，所以改成
-#   "可能远程"的保守措辞，并明确禁止 Daemonkey 对 用户 断言"我是远程"。
+# 关键作用：让 OPUS 知道自己走的是非终端通道（无阻塞 y/n），但**不要误判 BRO 一定在远程**——
+#   卷五十四：旧文案断言"BRO 通过手机、不在机器旁、看不到屏幕"，导致 OPUS 在本机 WebUI 里
+#   也对 BRO 说"我是远程"。本机浏览器和手机远程走同一条通道、daemon 区分不了，所以改成
+#   "可能远程"的保守措辞，并明确禁止 OPUS 对 BRO 断言"我是远程"。
 _REMOTE_SYSTEM_HINT = """\
 
 ---
 
 ## 当前会话的接入方式：WebUI / API（非本机终端 REPL）
 
-**重要**：你不是通过本机终端 REPL 跟 用户 说话，而是通过 WebUI / API 通道。
+**重要**：你不是通过本机终端 REPL 跟 BRO 说话，而是通过 WebUI / API 通道。
 **本机浏览器的 WebUI 和手机/外网远程走的是同一条通道·你无法区分**——
-按"可能远程"的保守前提调整本机感知行为，但**别对 用户 断言"你是远程"**
+按"可能远程"的保守前提调整本机感知行为，但**别对 BRO 断言"你是远程"**
 （他很可能就坐在这台机器前用浏览器）：
 
 1. **不一定能看到屏幕** —— 他可能在本机浏览器（看得到），也可能在手机（看不到）。
-   `take_screenshot` / `open_app` 这种"打开给你看"在远程会落空。要让 用户 看东西，
+   `take_screenshot` / `open_app` 这种"打开给你看"在远程会落空。要让 BRO 看东西，
    优先用能把内容直接带回对话的工具（`browser_fetch` / `web_fetch`），少用"我打开了 X 你看一下"。
 2. **按不了终端 y/n** —— 本机终端那个阻塞式确认红框在这条通道里不存在。
    CONFIRM/AUTO 档工具按 `OPUS_API_DEFAULT_CONFIRM` 策略自动跑（默认 confirm 档：AUTO + CONFIRM
-   都自动执行、不弹卡片）；只有 GUARD 档（高危）才会在 WebUI 弹 inline 确认卡片等 用户 点。
-   → 准确说法是"当前走 API 通道·CONFIRM 档按策略自动执行"，**别说"我是远程所以不弹确认"**误导 用户。
+   都自动执行、不弹卡片）；只有 GUARD 档（高危）才会在 WebUI 弹 inline 确认卡片等 BRO 点。
+   → 准确说法是"当前走 API 通道·CONFIRM 档按策略自动执行"，**别说"我是远程所以不弹确认"**误导 BRO。
 3. **拿内容用 fetch 类工具** —— 想看网页用 `browser_fetch`（attach 他已登录的 Edge，能看
    登录态页面）或 `web_fetch`（无登录 / 走 httpx）。**不要**截屏让他描述。
 4. **回话尽量精简** —— 屏幕可能小、流量可能贵；省略寒暄，直接给结论。需要多步骤的事，
    一段话讲清三件：你做了什么 / 看到了什么 / 下一步建议。
-5. **长任务慎用** —— SSE 流式输出虽然解决了 cloudflared 100s 超时，但 用户 在外面等
+5. **长任务慎用** —— SSE 流式输出虽然解决了 cloudflared 100s 超时，但 BRO 在外面等
    3 分钟仍然是糟糕体验。`summon_cursor`、跨大目录 grep、连续抓十几个网页这种事
-   宁愿告诉 用户 "需要回本机操作 / 让我用更直接的方法"。
+   宁愿告诉 BRO "需要回本机操作 / 让我用更直接的方法"。
 
-## 反爬 / 限流 / 验证码的标准处理（硬规则）
+## 反爬 / 限流 / 验证码的标准处理（卷十八硬规则）
 
-Daemonkey 历史上反复栽过的坑：手机端被 用户 让"拉知乎热榜 + 评论"，结果跑了 12 轮工具
+OPUS 历史上反复栽过的坑：手机端被 BRO 让"拉知乎热榜 + 评论"，结果跑了 12 轮工具
 反复换关键词换源死磕反爬，浪费 200 秒 + 大量 token + 最后输出"超出 max iterations"
-什么都没给 用户。**杜绝这种事**：
+什么都没给 BRO。**杜绝这种事**：
 
 - 看到 `401 Unauthorized` / `403 Forbidden` / `HTTP 202`（DuckDuckGo 反爬）/
   网页里"验证 / 请登录 / 异常访问 / 安全验证 / 请求异常"等关键词 → **立即停止重试
-  这个数据源**，不要换关键词 / 不要换聚合站继续撞。直接告诉 用户 哪个源拿不到。
-- **同一类目标连续 2 个源失败 → 立即停止，告诉 用户 当前能拿到的部分 + 拿不到的原因**。
+  这个数据源**，不要换关键词 / 不要换聚合站继续撞。直接告诉 BRO 哪个源拿不到。
+- **同一类目标连续 2 个源失败 → 立即停止，告诉 BRO 当前能拿到的部分 + 拿不到的原因**。
   不要试到 5 个源都失败。
 - **已经拿到"够回答原问题"的数据，立刻停手输出**——不要因为"可以更全/更深"再去抓
-  评论 / 详情。用户 在外面要的是 30 秒能扫完的速答，不是博士论文。
+  评论 / 详情。BRO 在外面要的是 30 秒能扫完的速答，不是博士论文。
 
 ## 工具调用 args 的纪律
 
@@ -415,35 +415,35 @@ Daemonkey 历史上反复栽过的坑：手机端被 用户 让"拉知乎热榜 
 - **不要凭直觉造字段名**——比如 web_fetch 只有 `url` 和 `max_chars` 两个字段，
   不要塞 `"string"`、`"endpoint"`、`"target"` 这种字段。
 
-## wish-2a4d8c1e · Inline Confirm UI · CONFIRM/GUARD 工具撞 用户
+## 卷四十六 wish-2a4d8c1e · Inline Confirm UI · CONFIRM/GUARD 工具撞 BRO
 
 daemon 在 chat 里给你装了一个 inline confirm 卡片系统。当你调 CONFIRM 或 GUARD 级工具
 （超出当前 policy 阈值）时：
 
-1. **daemon 会在 chat 弹卡片给 用户** —— 不再像以前那样直接返回 "declined" 给你。
+1. **daemon 会在 chat 弹卡片给 BRO** —— 不再像以前那样直接返回 "declined" 给你。
 2. **你必须在 args 里加两个扩展字段** —— schema 没列但 daemon 会读：
    - `risk_explanation`: **这条调用可能带来什么风险**（1-2 句话，具体到文件 / 进程 / 网络 /
      数据丢失）
    - `mitigation`: **你打算怎么规避这个风险**（1-2 句话，例如 "先 dry-run 看路径 / timeout
      10s / 失败不重试 / 留 git stash 兜底 / 只读不写"）
 3. **写不下就别瞎写** —— 风险 / 规避必须**真**，不是套话。写 "可能有风险" / "我会小心"
-   这种废话 用户 会不放心、不点 approve。不知道副作用就老实说不知道 —— **直接调一个
+   这种废话 BRO 会不放心、不点 approve。不知道副作用就老实说不知道 —— **直接调一个
    只读探测工具先看清楚，再来调有副作用的工具**。
-4. 用户 看完会点 4 个按钮之一：[只这次] / [信任 30min] / [信任 24h] / [永久信任] 或 [拒绝]。
-   你的 tool call 会**阻塞**到 用户 点了为止（30min 超时则 auto-deny）。
+4. BRO 看完会点 4 个按钮之一：[只这次] / [信任 30min] / [信任 24h] / [永久信任] 或 [拒绝]。
+   你的 tool call 会**阻塞**到 BRO 点了为止（30min 超时则 auto-deny）。
 
-**好坏对照示例** —— 用户 说 "清下 build 缓存吧"：
+**好坏对照示例** —— BRO 说 "清下 build 缓存吧"：
 
 ✓ 好的填法：
 ```
 {
   "command": "rm -rf dist/",
-  "risk_explanation": "递归删整个 dist/ 目录·里面是 npm build 的输出·删了下次 用户 跑 npm build 要重做约 2 分钟",
+  "risk_explanation": "递归删整个 dist/ 目录·里面是 npm build 的输出·删了下次 BRO 跑 npm build 要重做约 2 分钟",
   "mitigation": "我先 ls dist/ 确认确实是 build 输出 (.js / .map / index.html)·dist/ 不在 git 里·没回滚需求·删错也只是要重 build"
 }
 ```
 
-✗ 坏的填法（用户 会不放心 → 拒绝）：
+✗ 坏的填法（BRO 会不放心 → 拒绝）：
 ```
 {
   "command": "rm -rf dist/",
@@ -460,13 +460,12 @@ daemon 在 chat 里给你装了一个 inline confirm 卡片系统。当你调 CO
 - AUTO 工具不需要这两个字段（也不会弹卡片）。如果你不确定 tier，**保守起见加上**就行，
   daemon 不需要时会忽略。
 - shell_exec 是唯一支持 **trust 持续信任** 的工具（trusted_commands.json 系统）。其他
-  CONFIRM 工具的卡片上 用户 只能选 [只这次] / [拒绝]——你写 mitigation 时不要承诺 "下次也
-  不需要确认" 这种话，用户 没这个按钮可点。
-
+  CONFIRM 工具的卡片上 BRO 只能选 [只这次] / [拒绝]——你写 mitigation 时不要承诺 "下次也
+  不需要确认" 这种话，BRO 没这个按钮可点。
 """
 
 
-# P1 代码归一 · 把 system 里的 Daemonkey/用户 令牌本地化成本实例的名字 (母体走缺省值 = no-op)
+# P1 代码归一 · 把 system 里的 OPUS/BRO 令牌本地化成本实例的名字 (母体走缺省值 = no-op)
 try:
     from identity import localize as _localize
 except Exception:
@@ -511,15 +510,19 @@ def _make_remote_confirm(
     policy 决定允许到第几档自动 go：
       "auto"    → 只允许 AUTO
       "confirm" → AUTO + CONFIRM 自动 go
-      "guard"   → 三档全开（远程 yolo，慎用） · wish-2a4d8c1e · inline confirm UI:
+      "guard"   → 三档全开（远程 yolo，慎用）
+
+    卷四十六 · wish-2a4d8c1e · inline confirm UI:
       当 tier 超 policy 阈值时 · 不立刻 skip · 走:
         1. 复用 wish-f563a56d trusted_commands · 命中直接 go
-        2. push SSE confirm_request 给前端 · 等 用户 点按钮
+        2. push SSE confirm_request 给前端 · 等 BRO 点按钮
         3. 30min 超时 auto-deny
       session_id / turn_id / push_event 都是新参数 · 用于注册 _PENDING_CONFIRMS
       和 push SSE 事件; 老的 confirm_only_legacy 模式 (没传 push_event) 退化到旧逻辑
 
-    新签名第四参数 tool_call_id (在 _call_confirm 里传) · 用作 _PENDING_CONFIRMS key · cancel_event 传进来 · 用户 点停止时 set · 这里返回 "abort"
+    新签名第四参数 tool_call_id (在 _call_confirm 里传) · 用作 _PENDING_CONFIRMS key
+
+    卷三十六 · cancel_event 传进来 · BRO 点停止时 set · 这里返回 "abort"
     让 tool_loop 提前结束。
     """
     policy = policy if policy in ("auto", "confirm", "guard") else "confirm"
@@ -534,26 +537,26 @@ def _make_remote_confirm(
             tier = spec.tier
         rank = _TIER_RANK.get(tier, 99)
 
-        # · 后台续场 turn 防自爆链 (2026-06-06)
+        # 卷五十六 · 后台续场 turn 防自爆链 (2026-06-06)
         # push_event is None = 没有前台 SSE 接收方 = 无人值守的 background turn
         #   (resume_runner follow_up 续场 turn 走的就是 progress=None)。 这种 turn 里
         #   绝不允许跑「重启/关停自己」的工具·抢在 rank<=threshold 之前拦死·
         #   不受 OPUS_RESUME_AUTO_CONFIRM=guard 影响。 详见 _BACKGROUND_BLOCKED_TOOLS 注释。
         if push_event is None and spec.name in _BACKGROUND_BLOCKED_TOOLS:
             return (
-                "reject:你正跑在一个【后台续场 turn】里 (没有前台 SSE · 用户 不在场看)。"
+                "reject:你正跑在一个【后台续场 turn】里 (没有前台 SSE · BRO 不在场看)。"
                 "这个 turn 本身就是上一次重启之后新 daemon 自动拉起的——新代码早已装载、"
                 "你此刻就活在重启好的新 daemon 上·根本不需要再调 " + spec.name + "。"
-                "在后台二次重启会造成「重启→续场→又重启」套娃·还会打断 用户 正在看的对话。"
-                "→ 直接做完你的验证任务即可; 如果你真判断还需要再重启·把原因讲给 用户·"
-                "由 用户 在 WebUI 手动点重启按钮 (那条路径有前台在场)。"
+                "在后台二次重启会造成「重启→续场→又重启」套娃·还会打断 BRO 正在看的对话。"
+                "→ 直接做完你的验证任务即可; 如果你真判断还需要再重启·把原因讲给 BRO·"
+                "由 BRO 在 WebUI 手动点重启按钮 (那条路径有前台在场)。"
             )
 
         # wish-2a4d8c1e · 先 pop risk/mitigation · 不管走哪条路 args 都不再带这两字段
         risk, mitigation = _pop_risk_fields(args)
 
-        # III 补丁 5 · GUARD tier 强制要求 risk_explanation + mitigation 都填
-        # 用户 截图反馈: 经常看到"OPUS 未说明" · 闭眼批准心慌
+        # 卷四十六 III 补丁 5 · GUARD tier 强制要求 risk_explanation + mitigation 都填
+        # BRO 截图反馈: 经常看到"OPUS 未说明" · 闭眼批准心慌
         # 实现: 缺字段时直接 reject · 给 LLM 看到错误后重试加上字段
         # 注: 仅 GUARD tier 强制 · CONFIRM 不强制 (CONFIRM 太频 · 强制会拖慢日常对话)
         if rank == 3:  # GUARD tier
@@ -565,18 +568,18 @@ def _make_remote_confirm(
             if missing:
                 return (
                     "reject:GUARD tier 工具 (高风险 · " + spec.name + ") 必须在 args 里加 "
-                    + " + ".join(missing) + " 字段才能让 用户 看到批准卡片. 你这次没填, "
+                    + " + ".join(missing) + " 字段才能让 BRO 看到批准卡片. 你这次没填, "
                     "daemon 直接拦下来了——请重新调用同一个工具, 在 args 里加上:\n"
                     '  "risk_explanation": "这次操作的具体风险 (1-2 句, 比如 \'递归删 X 目录, 里面有 Y, 删了下次要 Z 分钟重做\')",\n'
                     '  "mitigation": "你打算怎么规避 (1-2 句, 比如 \'先 dry-run 看路径 / 失败不重试 / 留 git stash 兜底\')"\n'
-                    "禁止套话 (\'可能有风险\' / \'我会小心\'), 必须真. 加上后立即重试, 用户 才会看到批准请求."
+                    "禁止套话 (\'可能有风险\' / \'我会小心\'), 必须真. 加上后立即重试, BRO 才会看到批准请求."
                 )
 
         # 老规则: tier ≤ threshold → 直接 go (AUTO 永远过; confirm policy 下 CONFIRM 也过)
         if rank <= threshold:
             return "go"
 
-        # v4 · 0.2.0 · 信任 flow 内自动放行 CONFIRM (用户 痛点: 跑过 OK 的 flow 不要次次问)
+        # 卷七十二 v4 · 0.2.0 · 信任 flow 内自动放行 CONFIRM (BRO 痛点: 跑过 OK 的 flow 不要次次问)
         # 设计:
         #   run_flow 启动时如果 flow.trust_level >= 2 · 会设 _TRUSTED_FLOW_CTX 为 flow_id
         #   confirm callback 看到这个 ContextVar 不空 · 对 CONFIRM tier 直接放行
@@ -586,7 +589,7 @@ def _make_remote_confirm(
                 from agent_tools import current_trusted_flow
                 trusted_fid = current_trusted_flow()
                 if trusted_fid:
-                    # 真放行 · 不影响日志/SSE (push_event 还是会推 · 用户 仍能在 banner 看到)
+                    # 真放行 · 不影响日志/SSE (push_event 还是会推 · BRO 仍能在 banner 看到)
                     return "go"
             except Exception:
                 pass
@@ -630,8 +633,8 @@ def _make_remote_confirm(
             summary = spec.name
 
         tier_reason_map = {
-            TIER_CONFIRM: "CONFIRM tier · 改动类操作 · 当前策略要 用户 点确认",
-            TIER_GUARD: "GUARD tier · 高风险 · 必须 用户 显式批准",
+            TIER_CONFIRM: "CONFIRM tier · 改动类操作 · 当前策略要 BRO 点确认",
+            TIER_GUARD: "GUARD tier · 高风险 · 必须 BRO 显式批准",
         }
         tier_reason = tier_reason_map.get(tier, f"{tier} tier · policy={policy} 拒")
 
@@ -651,7 +654,7 @@ def _make_remote_confirm(
                 "suggested_trust_windows": ["approve_once", "trust_30min", "trust_24h", "trust_permanent"],
                 "timeout_sec": _CONFIRM_TIMEOUT_SEC,
             })
-            # 2026-07-28 用户 需求 · 桌宠同步弹「等你拍板」· 不盯 WebUI 也知道 Daemonkey 在等
+            # 2026-07-28 BRO 需求 · 桌宠同步弹「等你拍板」· 不盯 WebUI 也知道 OPUS 在等
             try:
                 from desktop_pet.activities import write_notify as _pet_notify
                 _pet_notify("confirm", f"等你拍板 · {spec.name}")
@@ -666,8 +669,8 @@ def _make_remote_confirm(
         except Exception:
             pass  # push 失败不阻止流程 · 直接走超时 auto-deny
 
-        # 阻塞等 用户 决议 (或 cancel · 或超时)
-        # 每 1s 检查一次 cancel · 让 用户 点停止能立刻退出
+        # 阻塞等 BRO 决议 (或 cancel · 或超时)
+        # 每 1s 检查一次 cancel · 让 BRO 点停止能立刻退出
         deadline = time.time() + _CONFIRM_TIMEOUT_SEC
         while True:
             if cancel_event is not None and cancel_event.is_set():
@@ -678,7 +681,7 @@ def _make_remote_confirm(
                 # 超时 auto-deny
                 with _PENDING_CONFIRMS_LOCK:
                     pending_data["decision"] = "deny"
-                    pending_data["reason"] = "(auto-denied · 用户 未在 30min 内响应)"
+                    pending_data["reason"] = "(auto-denied · BRO 未在 30min 内响应)"
                 try:
                     push_event("confirm_resolved", {
                         "tool_call_id": tool_call_id,
@@ -692,11 +695,11 @@ def _make_remote_confirm(
                 return "skip"
             wait_slot = min(1.0, remaining)
             if ev.wait(timeout=wait_slot):
-                break  # event set · 用户 决议来了
+                break  # event set · BRO 决议来了
 
         # 读决议
         # 注: trust_* 决议下的 add_trusted 已经在 POST /turns/{tid}/confirm endpoint 完成
-        # ( 4 · 防止 worker 端 try/except: pass 静默吞 ValueError)
+        # (卷四十六续 4 · 防止 worker 端 try/except: pass 静默吞 ValueError)
         # 这里只读 decision 决定 go / skip
         with _PENDING_CONFIRMS_LOCK:
             decision = pending_data.get("decision") or "deny"
@@ -705,14 +708,14 @@ def _make_remote_confirm(
         cleanup_pending_confirm(tool_call_id)
 
         if decision == "deny":
-            # · 闭环修复 (Hermes '固化知识' 那一环): 用户 拒绝时填的理由
-            # 必须喂回 LLM · 否则 Daemonkey 只收到"用户拒绝了"·学不到 用户 的边界。
+            # 卷五十四 · 闭环修复 (Hermes '固化知识' 那一环): BRO 拒绝时填的理由
+            # 必须喂回 LLM · 否则 OPUS 只收到"用户拒绝了"·学不到 BRO 的边界。
             # 走 reject:<msg> 通道 (tool_loop 会把 <msg> 当 tool_result.error 给 LLM)。
             r = (reason or "").strip()
             if r:
                 return (
-                    f"reject:用户 拒绝了这次 `{spec.name}` 调用 · 理由: {r}\n"
-                    f"→ 认真对待这个理由 (这是 用户 的边界/偏好信号) · 换思路或先问清楚 · "
+                    f"reject:BRO 拒绝了这次 `{spec.name}` 调用 · 理由: {r}\n"
+                    f"→ 认真对待这个理由 (这是 BRO 的边界/偏好信号) · 换思路或先问清楚 · "
                     f"不要原样重试。 如果这是个该长期记住的偏好·考虑调 update_bro_note 记下来。"
                 )
             return "skip"
@@ -740,11 +743,11 @@ def _no_observe(_spec, _args, _result) -> None:
     return None
 
 
-# · max_tokens 解析 · 三级 fallback
+# 卷三十八 · max_tokens 解析 · 三级 fallback
 def _resolve_max_tokens(payload_value) -> int:
     """优先级: payload override > active config.max_tokens > .env OPUS_MAX_TOKENS > 8192 fallback.
 
-    用户 反馈"4096 太小 · DeepSeek 支持 384K 输出 · 这个限制让 Daemonkey 写两步就被截断".
+    BRO 反馈"4096 太小 · DeepSeek 支持 384K 输出 · 这个限制让 OPUS 写两步就被截断".
     新策略: 每条 config 自带 max_tokens · 按模型推荐.
     """
     if payload_value:
@@ -772,7 +775,7 @@ def _resolve_max_tokens(payload_value) -> int:
     return 8192
 
 
-# ─── · provider config helper ───
+# ─── 卷三十七 · provider config helper ───
 def _activate_provider_config(cfg_id: str) -> None:
     """切换 active config · 重建 RUNTIME.client / model / provider / base_url.
 
@@ -863,7 +866,7 @@ def _resolve_session_id(session_id: Optional[str]) -> str:
     if not sid:
         return "api-" + new_session_id()
     if not sid.startswith("api-"):
-        # 限制 API 只能开/续 api- 前缀的 session——避免误改 用户 终端 session
+        # 限制 API 只能开/续 api- 前缀的 session——避免误改 BRO 终端 session
         # 历史。如果想 resume 终端 session，应该用 /sessions/{id} 接口先 read，
         # 在 client 侧把对话续上。
         raise ValueError(
@@ -893,7 +896,7 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
     _ATTACH_DIR = _Path("data/runtime/attachments")
     _ATTACH_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 粘贴/上传的图按会话留存(不再看完即删)· 让 Daemonkey 之后能换个问法再 look_at 同一张。
+    # 粘贴/上传的图按会话留存(不再看完即删)· 让 OPUS 之后能换个问法再 look_at 同一张。
     # 顺手清掉 7 天前的旧图 · 防目录无限堆积 (best-effort · 失败不影响主流程)。
     try:
         _cutoff = _time.time() - 7 * 86400
@@ -910,7 +913,7 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
     saved_meta: list[dict] = []  # wish-7c579a20 · 结构化附件 meta · 落 jsonl 供 WebUI 刷新重建
     # wish-00ed11c2 · 多模态直看分支: 当前模型原生视觉 → 图不走 look_at 转文字 ·
     # 注册到 RUNTIME.pending_images · 发送前由 tool_loop._diet_messages_for_send
-    # 临时组装成 content list 直接进主对话 (用户: "你不要用 look_at · 直接自己看")。
+    # 临时组装成 content list 直接进主对话 (BRO: "你不要用 look_at · 直接自己看")。
     _native_vision = False
     try:
         from model_aliases import supports_vision as _sv
@@ -954,7 +957,7 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
         saved_meta.append({"name": name, "path": rel_path, "mime": mime,
                            "kind": "image" if is_image else "file"})
 
-        # 文档附件: 不进视觉链 · 留路径提示 (Daemonkey 需要内容时可 pdf_read / read_file)
+        # 文档附件: 不进视觉链 · 留路径提示 (OPUS 需要内容时可 pdf_read / read_file)
         if not is_image:
             descriptions.append(
                 f"附件{i+1} ({name}) · 已存: {rel_path} · "
@@ -968,7 +971,7 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
             descriptions.append(f"图{i+1} ({name}) · 已存: {rel_path}")
             continue
 
-        # 纯文本模型 · 调 look_at 借视觉模型看图 · 描述里带上留存路径 · 让 Daemonkey 想再细看/换问法时复用同一张
+        # 纯文本模型 · 调 look_at 借视觉模型看图 · 描述里带上留存路径 · 让 OPUS 想再细看/换问法时复用同一张
         try:
             from agent_tools.look_at import _run as _look_at_run
             result = _look_at_run({"path": str(keep_path), "question": "请描述这张图片的内容。如果有文字，逐字抄出来。"})
@@ -1003,7 +1006,7 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
     return header + "\n".join(descriptions) + "\n---\n", saved_meta
 
 
-#七 · 渠道感知 · 微信来的 turn 在 system 末尾追加这一段·让 AI 知道"用户在手机上"。
+# 卷六十四续七 · 渠道感知 · 微信来的 turn 在 system 末尾追加这一段·让 AI 知道"用户在手机上"。
 # 不挂 user 消息(不污染历史)·挂 system(随轮重拼·即弃)。根因:src:"wechat" 之前只存进
 # 历史 metadata·没喂给大模型 → AI 当 PC 请求处理·用 write_clipboard 复制本地路径(手机拿不到)。
 _WECHAT_CHANNEL_NOTE = (
@@ -1015,6 +1018,11 @@ _WECHAT_CHANNEL_NOTE = (
     "- 【绝对不要】用 write_clipboard 复制路径、也不要只回一个本地路径（C:\\... 这种）——"
     "他在手机上，Ctrl+V 和电脑路径都拿不到那个文件。\n"
     "- 文字照常回即可，你的回复会自动发回他微信。\n"
+    "- 【模型认知 · 0.8.5】你实际在跑的模型 = telemetry 里的『当前实际模型』"
+    "（provider_configs 的 active 配置）· 不是 .env 的 OPUS_MODEL（那只是冷启动 fallback）。"
+    "他让你『换模型 / 换成 X』时：告诉他当前实际模型 + 去 WebUI 右上角 ⚙ 设置 → 模型 里切换"
+    "（或说『帮我切成 X』我会在对话里处理）· 【绝对不要】自己去改 .env 文件（GUARD 档会被拦·"
+    "而且改错会让 daemon 起不来）。\n"
 )
 
 
@@ -1044,9 +1052,11 @@ def _chat_impl(
     sid = _resolve_session_id(session_id)
 
     if RUNTIME.client is None:
-        raise RuntimeError("daemon RUNTIME not initialized; API called too early?")
+        raise RuntimeError(
+            "还没有配置 API key。请在首次相遇页 / 设置页里填 key（配置后会立即生效，无需重启）。"
+        )
 
-    # III 补丁 5 · R1 · trace_id 注入 · turn_id 没传时生成一个
+    # 卷四十六 III 补丁 5 · R1 · trace_id 注入 · turn_id 没传时生成一个
     # tool_loop 内部 logger.info / each tool call 都会自动带上这个 tid
     try:
         from workers.opus_logging import set_trace_id, new_trace_id
@@ -1063,7 +1073,7 @@ def _chat_impl(
 
     policy = auto_confirm or os.environ.get("OPUS_API_DEFAULT_CONFIRM", "").strip() or "confirm"
 
-    # ② 自主巡航进度 (四) · 包一层进度记录器 · 无论 SSE 连没连都记最新一步 ·
+    # ② 自主巡航进度 (卷七十五续四) · 包一层进度记录器 · 无论 SSE 连没连都记最新一步 ·
     # 让轮询/后台 turn 也能显示进度 (SSE 主对话照常转发 · 行为不变)。 turn_id 空则原样。
     progress = _make_progress_recorder(turn_id, progress)
 
@@ -1095,7 +1105,7 @@ def _chat_impl(
         # 新会话即时命名 · 用第一句话前 ~24 字当 session label · 让标签栏/历史列表不显示
         # 裸 api-xxxx (跟 spawn-task 同款·服务端落盘·刷新/换端/后台跑的会话都带名字)。
         # 只在从没命过名时写·绝不覆盖用户手动改的名 (renameSession) 或已有 label。
-        # 用户 2026-07-28 · 命名必须在协同块【之前】: 顾问同步跑 10-60s · 之前放在协同后
+        # BRO 2026-07-28 · 命名必须在协同块【之前】: 顾问同步跑 10-60s · 之前放在协同后
         # 导致"顾问模式发消息标签先不改名" (等顾问跑完才落名)。
         if _is_first_turn and _first_turn_text:
             try:
@@ -1112,7 +1122,7 @@ def _chat_impl(
         # wish-58af621e · 让压缩层知道当前 session id，摘要落盘用
         from workers.memory_compression import set_session_id
         set_session_id(sid)
-        # III · wish-ed5553d5 hookup · 让 request_restart 等工具能拿到当前 session
+        # 卷四十六 III · wish-ed5553d5 hookup · 让 request_restart 等工具能拿到当前 session
         RUNTIME.session_id = sid
         # 编辑并发软锁 · 把当前对话身份写进 ContextVar · 让 edit_file/write_file 能区分"哪个对话在改"
         try:
@@ -1134,12 +1144,12 @@ def _chat_impl(
             if att_desc:
                 message = att_desc + message
 
-        # wish-0e749752 · 顾问协同模式: 用户 开了输入区 toggle →
+        # wish-0e749752 · 顾问协同模式: BRO 开了输入区 toggle →
         # 工程层强制蓝图前置 (先由顾问出施工单 · 执行者按单施工)。
         # 为什么工程层强制而不是提醒 LLM 自觉调 replan:
         #   靠软约束让执行者自觉叫顾问 = 球员兼任裁判 (2026-07-27 通知体系顾问全程没醒的教训)
-        # 降级纪律: 顾问没出成单 / 协同自身炸了 → 绝不 block 用户 的消息 · 降级常规推进
-        _coop_advisor: dict | None = None  # 用户 2026-07-28 · 顾问卡持久化: 数据挂 user turn meta · 刷新后历史重建
+        # 降级纪律: 顾问没出成单 / 协同自身炸了 → 绝不 block BRO 的消息 · 降级常规推进
+        _coop_advisor: dict | None = None  # BRO 2026-07-28 · 顾问卡持久化: 数据挂 user turn meta · 刷新后历史重建
         if advisor_coop:
             try:
                 _adv_label = "顾问"
@@ -1170,8 +1180,8 @@ def _chat_impl(
                     except Exception:
                         pass
 
-                # 用户 2026-07-28 · 顾问连续性: 顾问每次都是全新上下文(干净视角的价值) ·
-                # 但「补充信息再发」场景下它不该失忆——扫最近一轮协同轮的施工单+用户原话喂给它 ·
+                # BRO 2026-07-28 · 顾问连续性: 顾问每次都是全新上下文(干净视角的价值) ·
+                # 但「补充信息再发」场景下它不该失忆——扫最近一轮协同轮的施工单+BRO原话喂给它 ·
                 # 让它"在原单上调整"而不是从零出单。
                 _prev_bp_text = ""
                 _prev_user_text = ""
@@ -1184,8 +1194,8 @@ def _chat_impl(
                     if _pm.get("ok") and (_pm.get("text") or "").strip():
                         _prev_bp_text = _pm["text"].strip()
                     _c = (_m.get("content") or "")
-                    if "[用户 的原始需求]\n" in _c:
-                        _c = _c.split("[用户 的原始需求]\n", 1)[1]  # 剥掉施工单注入·取回原话
+                    if "[BRO 的原始需求]\n" in _c:
+                        _c = _c.split("[BRO 的原始需求]\n", 1)[1]  # 剥掉施工单注入·取回原话
                     elif _c.startswith("[系统 · 顾问协同模式"):
                         _c = _c.split("\n", 1)[1] if "\n" in _c else ""  # 剥降级包装·取原话
                     _prev_user_text = _c.strip()
@@ -1193,10 +1203,10 @@ def _chat_impl(
                 _bp_ctx_parts = []
                 if _prev_bp_text:
                     _bp_ctx_parts.append(
-                        "【上次顾问已出过的施工单】用户 现在补充了新信息——请在原单基础上调整/续写 "
-                        "(也可推翻重出·以 用户 最新信息为准)·不要从零再来:\n\n" + _prev_bp_text[:3000])
+                        "【上次顾问已出过的施工单】BRO 现在补充了新信息——请在原单基础上调整/续写 "
+                        "(也可推翻重出·以 BRO 最新信息为准)·不要从零再来:\n\n" + _prev_bp_text[:3000])
                 if _prev_user_text:
-                    _bp_ctx_parts.append("【上一轮 用户 的原始需求】\n" + _prev_user_text[:1500])
+                    _bp_ctx_parts.append("【上一轮 BRO 的原始需求】\n" + _prev_user_text[:1500])
 
                 from agent_tools.replan import _run as _advisor_replan_run
                 _bp_res = _advisor_replan_run({
@@ -1207,11 +1217,11 @@ def _chat_impl(
                     "task": None,
                     "_source": "coop_mode",
                     "_progress_sink": _coop_sink,
-                    "_cancel_event": cancel_event,  # 用户 2026-07-28 · 停止按钮要真能掐停顾问
+                    "_cancel_event": cancel_event,  # BRO 2026-07-28 · 停止按钮要真能掐停顾问
                 })
                 if cancel_event is not None and cancel_event.is_set():
-                    # 用户 点了停止 · 顾问被掐 (tool_loop 返回 ok=True text='[aborted]' · 不能信)。
-                    # 不注入施工单 · 让 message 保持 用户 原话 → 主 tool_loop 第一轮 cancel_check 自然 abort。
+                    # BRO 点了停止 · 顾问被掐 (tool_loop 返回 ok=True text='[aborted]' · 不能信)。
+                    # 不注入施工单 · 让 message 保持 BRO 原话 → 主 tool_loop 第一轮 cancel_check 自然 abort。
                     _coop_advisor = {"ok": False, "aborted": True, "model_label": _adv_label,
                                      "text": "", "sub_id": ""}
                     if progress:
@@ -1247,16 +1257,16 @@ def _chat_impl(
                     if _bp_ok:
                         message = (
                             "[系统 · 顾问协同模式]\n"
-                            "下面是顾问针对 用户 这条需求出的【施工单】。你是执行者:\n"
+                            "下面是顾问针对 BRO 这条需求出的【施工单】。你是执行者:\n"
                             "严格按施工单施工 · 施工单列的【禁区】不碰 · 完工对照【验收标准】自检。\n"
-                            "若施工单与 用户 原话冲突 · 以 用户 原话为准并说明分歧。\n\n"
+                            "若施工单与 BRO 原话冲突 · 以 BRO 原话为准并说明分歧。\n\n"
                             f"{_bp_text}\n\n"
                             "────────────────\n"
-                            f"[用户 的原始需求]\n{message}"
+                            f"[BRO 的原始需求]\n{message}"
                         )
                     else:
                         message = (
-                            "[系统 · 顾问协同模式 · 顾问本次没能给出施工单 · 按常规方式直接推进 用户 的需求]\n"
+                            "[系统 · 顾问协同模式 · 顾问本次没能给出施工单 · 按常规方式直接推进 BRO 的需求]\n"
                             f"{message}"
                         )
             except Exception as _coop_err:
@@ -1270,7 +1280,7 @@ def _chat_impl(
                 except Exception:
                     pass
 
-        # · 发送前消毒 (2026-07-28): 历史里 DeepSeek 产的 content="" 空串 → null
+        # 卷八十四 · 发送前消毒 (2026-07-28): 历史里 DeepSeek 产的 content="" 空串 → null
         # Kimi 严格校验: content 空串报 400 'must not be empty' · null 才合法。
         # 覆盖热路径缓存 + 同 session 中途切模型两条路 (冷加载 load_session 已同规修) · O(n) 便宜
         for _m in messages:
@@ -1285,12 +1295,12 @@ def _chat_impl(
             _user_meta["attachments"] = _att_saved
         if user_meta:
             _user_meta.update(user_meta)
-        if _coop_advisor:  # 用户 2026-07-28 · 顾问卡持久化: 刷新/切回后历史渲染重建金卡
+        if _coop_advisor:  # BRO 2026-07-28 · 顾问卡持久化: 刷新/切回后历史渲染重建金卡
             _user_meta["advisor_blueprint"] = _coop_advisor
         append_turn(sid, "user", message, meta=_user_meta)
 
-        # III 补丁 5 · Y2 · token budget 入口检查
-        # default 全部禁用 (env=0)·用户 调高才生效·超阈值直接抛 RuntimeError·UI 看得到
+        # 卷四十六 III 补丁 5 · Y2 · token budget 入口检查
+        # default 全部禁用 (env=0)·BRO 调高才生效·超阈值直接抛 RuntimeError·UI 看得到
         try:
             from workers.token_budget_guard import check_budget as _tbg_check
             _budget = _tbg_check(sid)
@@ -1307,7 +1317,7 @@ def _chat_impl(
             # guard 自己挂了不能拖累正常 chat
             pass
 
-        # · 增量落盘 callback · 解决 daemon kill -9 时 in-flight turn 丢失
+        # 卷四十一 · 增量落盘 callback · 解决 daemon kill -9 时 in-flight turn 丢失
         # 每完成一个 assistant turn / tool result · tool_loop 立即调这个 hook 写盘
         def _persist_entry(entry: dict) -> None:
             meta: dict[str, Any] = {"src": "api"}
@@ -1319,9 +1329,9 @@ def _chat_impl(
                 meta["tool_call_id"] = entry["tool_call_id"]
             append_turn(sid, entry["role"], entry.get("content", ""), meta=meta)
 
-        # · SKILL 触发修复 · 收尾检查引擎接线 (一个引擎·三处挂载)
+        # 卷五十九 · SKILL 触发修复 · 收尾检查引擎接线 (一个引擎·三处挂载)
         #   begin_turn 清 turn 台账 · observe 记录本回合每个工具调用 (P1/P3 靠它判断干了啥/沉淀没)
-        #   relevant_playbooks 把命中的 playbook 递到 Daemonkey 手边 (P2 · 堵"下次自动取出来用"断点 B)
+        #   relevant_playbooks 把命中的 playbook 递到 OPUS 手边 (P2 · 堵"下次自动取出来用"断点 B)
         _closure_observe = _no_observe
         _pb_hint = ""
         _mem_hint = ""
@@ -1336,9 +1346,9 @@ def _chat_impl(
             _cc.begin_turn()
             _closure_observe = _cc.make_observe()
             _pb_hint = _cc.relevant_playbooks(message)
-            # ① 记忆自动注入 (保守版) · 相关 用户 画像命中即递到 Daemonkey 手边
+            # ① 记忆自动注入 (保守版) · 相关 BRO 画像命中即递到 OPUS 手边
             _mem_hint = _cc.relevant_memories(message)
-            # ①b 知识库自动注入 · 私有文档目录/命中片段递到 Daemonkey 手边 (产品观第5条可追溯)
+            # ①b 知识库自动注入 · 私有文档目录/命中片段递到 OPUS 手边 (产品观第5条可追溯)
             _docs_hint = _cc.relevant_docs(message)
             # ①c 显式"记住"意图 → 本轮硬提醒 update_bro_note 落盘 (堵"嘴上记住了·实际没记")
             _memwrite_hint = _cc.memory_write_hint(message)
@@ -1362,7 +1372,7 @@ def _chat_impl(
         except Exception:
             pass
 
-        #七 · 渠道感知 · 微信 turn 给 system 末尾挂一句"你在微信上·发文件走
+        # 卷六十四续七 · 渠道感知 · 微信 turn 给 system 末尾挂一句"你在微信上·发文件走
         # wechat_send media_path·别 write_clipboard/甩路径"。挂 system 不污染 user 历史·随轮即弃。
         # 3b · 缓存前缀稳定化: 把 system 拆成「稳定前缀」+「易变尾巴」两段传。
         #   稳定前缀 (_sys_stable = 灵魂 + 远程 hint) 一个 session 内字节不变·是可缓存前缀;
@@ -1402,10 +1412,10 @@ def _chat_impl(
         _API_SESSIONS[sid] = messages
         # 不再批量 append_turn · tool_loop 已经在每个 turn commit 时增量落盘了
 
-        # 用户 2026-07-28 方案 B · 协同模式自动验收 (三唤醒点第三环·从「自觉」升级成「管线强制」):
-        # 触发 = 本轮协同出了施工单 + 本轮有副作用(closure_check 台账) + 用户 没点停止。
+        # BRO 2026-07-28 方案 B · 协同模式自动验收 (三唤醒点第三环·从「自觉」升级成「管线强制」):
+        # 触发 = 本轮协同出了施工单 + 本轮有副作用(closure_check 台账) + BRO 没点停止。
         # PASS → 验收卡 · FAIL → 意见注入自动修正一轮 → 复验 · 最多 2 次 review (防死循环+控 K3 成本)。
-        # 降级纪律同协同块: 验收自身炸了绝不 block 用户 的交付。
+        # 降级纪律同协同块: 验收自身炸了绝不 block BRO 的交付。
         _coop_review: dict | None = None
         try:
             from workers import closure_check as _cc
@@ -1484,7 +1494,7 @@ def _chat_impl(
                                                     "round": _attempt, "model_label": _rv_label,
                                                     "sub_id": _rv_sub, "ts": time.time()})
                     # SSE 断流兜底: 把验收结果也写进 advisor_live.json ·
-                    # 前端超时 polling /api/advisor/status 能拿到完整结果自愈 (用户 2026-07-29)
+                    # 前端超时 polling /api/advisor/status 能拿到完整结果自愈 (BRO 2026-07-29)
                     try:
                         from workers import advisor_live as _adv_live
                         _adv_live.finish_live(ok=bool(_rv.ok),
@@ -1542,7 +1552,7 @@ def _chat_impl(
             except Exception:
                 pass  # 验收自身炸了不 block 交付 (跟协同块同一条降级纪律)
 
-        # · P3 · turn 结束反思 · 本回合干了活 (副作用工具≥2次) 却没沉淀 →
+        # 卷五十九 · P3 · turn 结束反思 · 本回合干了活 (副作用工具≥2次) 却没沉淀 →
         # 推一张"收尾提示"卡 (SSE·前端可点) + 落对账台账 closure_hints.jsonl·闭环不靠当场记得。
         try:
             from workers import closure_check as _cc
@@ -1554,8 +1564,8 @@ def _chat_impl(
         except Exception:
             pass
 
-        # 2026-07-28 用户 需求 · 桌宠弹「🎉 干完了」· 实质 turn (干活+沉淀≥2) 收尾时
-        # 文字取 Daemonkey 最终回复第一行 (收尾纪律保证它是"✅ 做完了:...") · 取不到就兜底
+        # 2026-07-28 BRO 需求 · 桌宠弹「🎉 干完了」· 实质 turn (干活+沉淀≥2) 收尾时
+        # 文字取 OPUS 最终回复第一行 (收尾纪律保证它是"✅ 做完了:...") · 取不到就兜底
         # 2026-07-28 缝隙修: 计数集合 = 副作用 ∪ 沉淀 (SINK)——"验证+沉淀"的完整轮也弹
         # (原先只数副作用·沉淀工具刻意不在其中·导致最完整的一轮反而不弹·语义拧了)
         try:
@@ -1581,7 +1591,7 @@ def _chat_impl(
         except Exception:
             pass
 
-        # III 补丁 5 · Y2 · token budget 出口累加 · 不抛错
+        # 卷四十六 III 补丁 5 · Y2 · token budget 出口累加 · 不抛错
         try:
             from workers.token_budget_guard import consume as _tbg_consume
             _tbg_consume(
@@ -1592,7 +1602,7 @@ def _chat_impl(
         except Exception:
             pass
 
-    # III 补丁 5 · R1 · 清 trace_id ContextVar
+    # 卷四十六 III 补丁 5 · R1 · 清 trace_id ContextVar
     if _trace_token is not None:
         try:
             from workers.opus_logging import reset_trace_id
@@ -1639,7 +1649,7 @@ def build_app():
     from api_routes._deps import check_auth as _check_auth
     from api_routes._deps import check_rate_limit as _check_rate_limit
 
-    # wish-bb84a386 · loopback 鉴权豁免 ( V) · 同机 127.0.0.1 自动信任
+    # wish-bb84a386 · loopback 鉴权豁免 (卷四十六续 V) · 同机 127.0.0.1 自动信任
     # 关闭办法: env OPUS_LOOPBACK_TRUST=false (远程部署用)
     from api_routes._deps import loopback_auth_middleware
     app.middleware("http")(loopback_auth_middleware)
@@ -1661,14 +1671,14 @@ def build_app():
 
     # wish-413999da phase 1 · /sessions/* 6 路由抽到 api_routes/sessions.py
 
-    # ── cockpit · 6+1 维聚合视图（加）─────────────────
+    # ── cockpit · 6+1 维聚合视图（卷二十五加）─────────────────
     # 一次返回所有维度的 head N 条 · 避免前端发 6+ 个并行 fetch · 减少 RTT
     # wish-413999da phase 1 · /dashboard/cockpit + /dashboard/{domain} 2 路由
     # + _list_reports + _build_calendar_day + _serve_report_file (closure helpers)
     # 抽到 api_routes/dashboard.py · 见 build_app() 末尾 include_router
 
     # ──────────────────────────────────────────────────────────
-    # K stage 2c · 出品工坊资产 endpoint · apps + flows
+    # 卷四十四 K stage 2c · 出品工坊资产 endpoint · apps + flows
     # ──────────────────────────────────────────────────────────
 
     # wish-413999da phase 1 · workshop apps CRUD 4 路由抽到 api_routes/workshop.py
@@ -1724,7 +1734,7 @@ def build_app():
     app.include_router(_routes_notifications.router)  # wish-fb6b7427 · /notification-config
     app.include_router(_routes_advisor.router)  # wish-ea8922f7 · /api/advisor/status + trace
 
-    # 形态 Z · 相遇初始化路由 (开源版 Daemonkey 有·母体 Daemonkey 无此模块 → 守卫跳过)
+    # 形态 Z · 相遇初始化路由 (开源版 Daemonkey 有·母体 OPUS 无此模块 → 守卫跳过)
     try:
         from api_routes import onboarding as _routes_onboarding
         app.include_router(_routes_onboarding.router)
@@ -1764,7 +1774,9 @@ def start_api_in_background(
       1. 端口不直接暴露到公网，路由器 / 防火墙不用配
       2. tunnel 这一层可以加它自己的 access control（Cloudflare Access 等）
 
-    想直接对外暴露（不推荐）→ host="0.0.0.0" III · 加 daemon_lifecycle init · 跟 run_api_only.py 对齐:
+    想直接对外暴露（不推荐）→ host="0.0.0.0"
+
+    卷四十六 III · 加 daemon_lifecycle init · 跟 run_api_only.py 对齐:
       - 双 daemon 防护 (pid 锁)
       - 重启续场 (consume restart_request · 给 session 注 system message)
       - crash 检测 (上次没 graceful exit → 给活跃 session 注 crash 通知)
@@ -1773,7 +1785,7 @@ def start_api_in_background(
     if _API_THREAD is not None and _API_THREAD.is_alive():
         return _API_THREAD
 
-    # III 补丁 5 · R1 · 统一 logging · daemon 启动早期装上 (lifecycle 之前)
+    # 卷四十六 III 补丁 5 · R1 · 统一 logging · daemon 启动早期装上 (lifecycle 之前)
     try:
         from workers.opus_logging import init_logging
         init_logging()
@@ -1799,7 +1811,7 @@ def start_api_in_background(
     except Exception as e:
         print(f"[opus-api] WARN · daemon_lifecycle init 出错 (不阻塞启动): {type(e).__name__}: {e}")
 
-    # III 补丁 3 · 自动续场 turn (start_api_in_background 路径 · 走 opus_daemon.py 入口)
+    # 卷四十六 III 补丁 3 · 自动续场 turn (start_api_in_background 路径 · 走 opus_daemon.py 入口)
     if lc and lc.get("restart_request"):
         try:
             from workers.resume_runner import schedule_resume_turn

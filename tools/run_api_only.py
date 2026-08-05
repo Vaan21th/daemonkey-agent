@@ -113,7 +113,17 @@ def _init_runtime():
               f"{active.get('provider_kind')} / {active.get('model')}")
 
     provider = detect_provider()
-    client, model, base_url = setup_client(provider)
+    try:
+        client, model, base_url = setup_client(provider)
+    except SystemExit as e:
+        msg = str(e)
+        if "API key not set" in msg:
+            # 0.9.1 · 相遇模式: 全新用户没 key 也能起 daemon → /ui 进相遇页填 key
+            # (onboarding.save-key 会热建 RUNTIME.client · 相遇完进 chat 不用重启)
+            print("[opus-api] 相遇模式 · 未配置 API key · daemon 正常起 · /ui 进相遇页填 key", flush=True)
+            client, model, base_url = None, "", None
+        else:
+            raise
     soul = load_soul()
 
     RUNTIME.model = model
@@ -122,7 +132,7 @@ def _init_runtime():
     RUNTIME.client = client
     RUNTIME.provider = provider
     RUNTIME.system_prompt = soul.system_prompt
-    print(f"[opus-api] RUNTIME 已就绪 · provider={provider} model={model}")
+    print(f"[opus-api] RUNTIME 已就绪 · provider={provider} model={model or '(未配置·相遇模式)'}")
 
 
 def _maybe_start_scheduler():
