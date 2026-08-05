@@ -18,7 +18,7 @@ logger = logging.getLogger("opus.feishu")
 
 _THREAD: Optional[threading.Thread] = None
 _FEISHU_SID = "api-feishu"
-_FEISHU_LABEL = "\u2708\ufe0f \u98de\u4e66 \u00b7 BRO"
+_FEISHU_LABEL = "\u2708\ufe0f \u98de\u4e66 \u00b7 \u7528\u6237"
 
 _STATE = {
     "started_at": None,
@@ -171,10 +171,28 @@ def _handle_message(data) -> None:
         if msg is None:
             logger.warning("feishu 事件无 message 字段: %s", type(data).__name__)
             return
+        # 0.9.0 BETA · 消息去重 (飞书断线重连/超时重试会重放事件 · 同一 message_id 只回一次)
+        message_id = getattr(msg, "message_id", "") or ""
+        if message_id:
+            now = time.time()
+            _STATE.setdefault("seen_msg_ids", {})
+            if message_id in _STATE["seen_msg_ids"]:
+                logger.info("feishu 重复消息跳过: %s", message_id)
+                return
+            _STATE["seen_msg_ids"][message_id] = now
+            # 环形清理: 只留最近 5 分钟的去重窗口 (防内存涨)
+            cutoff = now - 300
+            stale = [k for k, v in _STATE["seen_msg_ids"].items() if v < cutoff]
+            for k in stale:
+                del _STATE["seen_msg_ids"][k]
+            if len(_STATE["seen_msg_ids"]) > 2000:
+                # 兜底: 超 2000 条清一半 (最老的)
+                ordered = sorted(_STATE["seen_msg_ids"].items(), key=lambda kv: kv[1])
+                for k, _ in ordered[: len(ordered) // 2]:
+                    del _STATE["seen_msg_ids"][k]
         chat_type = getattr(msg, "chat_type", "") or ""
         content = getattr(msg, "content", "") or ""
         chat_id = getattr(msg, "chat_id", "") or ""
-        message_id = getattr(msg, "message_id", "") or ""
         msg_type = getattr(msg, "message_type", "") or "text"
         text = _text_of_message(content)
         # file 消息: 解析 file_key/file_name (下载读取用)
