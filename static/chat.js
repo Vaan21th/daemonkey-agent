@@ -17,27 +17,24 @@
 // === AI 名字本地化 (Daemonkey 分家) ===
 // 用户在『相遇』里给这只 Daemonkey 起的名字·由后端注成 window.__AI_NAME__。
 // 界面里历史遗留写死的 "OPUS" 全部换成它——一个集中机制·不必逐处改 100+ 串。
-// 正则 /OPUS(?![\w-])/ 只换"OPUS"作为称呼出现的地方·跳过 OPUS_API_TOKEN / 带连字符的技术标识。
+// 正则 /Daemonkey(?![\w-])/ 只换"OPUS"作为称呼出现的地方·跳过 DAEMONKEY_API_TOKEN / Daemonkey 这类技术标识。
 (function () {
   var NAME = (window.__AI_NAME__ || '').trim();
   var OWNER = (window.__OWNER_NAME__ || '').trim();
-  var doAI = NAME && NAME !== 'OPUS';           // AI 自己的名字
-  var doOwner = OWNER && OWNER !== 'BRO';        // 主人的称呼 (UI 里的 BRO 也换掉)
+  var doAI = NAME && NAME !== 'Daemonkey';           // AI 自己的名字
+  var doOwner = OWNER && OWNER !== '用户';        // 主人的称呼 (UI 里的 用户 也换掉)
   if (!doAI && !doOwner) return;                // 母体两者都默认 → 保持原样
-  // 正则跳过 OPUS_API_TOKEN / 带连字符的技术标识·只换作为称呼出现的词
-  var RE_AI = /OPUS(?![\w-])/g;
+  // 正则跳过 DAEMONKEY_API_TOKEN / Daemonkey / OWNER-NOTEBOOK 这类技术标识·只换作为称呼出现的词
+  var RE_AI = /Daemonkey(?![\w-])/g;
   var RE_OWNER = /\bBRO(?![\w-])/g;
-  // Daemonkey 分家: 取了自己名字的实例·把母体私有 lore「花果山」中性成「<名字> 的家」。
-  // 前端 localizer 原本只换 OPUS/BRO·「花果山」这类叙事得单独抹·否则纯净版界面会漏出来。
-  var HOME = NAME ? (NAME + ' 的家') : '';
+  // 纯净版界面不含母体 lore 词·不需要 lore 替换逻辑。
   function fix(s) {
     if (!s) return s;
-    if (doAI && s.indexOf('OPUS') >= 0) s = s.replace(RE_AI, NAME);
-    if (doOwner && s.indexOf('BRO') >= 0) s = s.replace(RE_OWNER, OWNER);
-    if (doAI && HOME && s.indexOf('花果山') >= 0) s = s.split('花果山').join(HOME);
+    if (doAI && s.indexOf('Daemonkey') >= 0) s = s.replace(RE_AI, NAME);
+    if (doOwner && s.indexOf('用户') >= 0) s = s.replace(RE_OWNER, OWNER);
     return s;
   }
-  function _hit(v) { return v && ((doAI && (v.indexOf('OPUS') >= 0 || v.indexOf('花果山') >= 0)) || (doOwner && v.indexOf('BRO') >= 0)); }
+  function _hit(v) { return v && ((doAI && v.indexOf('Daemonkey') >= 0) || (doOwner && v.indexOf('用户') >= 0)); }
   function walk(root) {
     if (!root) return;
     try {
@@ -1899,7 +1896,7 @@ if (document.readyState === 'loading') {
 const _ONBOARD_DEFAULT_TEMPLATES = {
   create_app: '我想造一个应用 · 用来 [描述用途 · 例如「自动抓 B 站热门评论」]\n输入是: [列字段]\n输出是: [列字段]\n你帮我设计 system_prompt + 工具白名单 + ui_form_schema · 然后落到工坊。',
   create_flow: '我想搭一条工作流 · 名字叫 [起一个]\n流程是:\n  1. [第一步用什么 app · 干啥]\n  2. [第二步用什么 app · 干啥]\n  3. ...\n你帮我用 create_workflow 落档 · 我看了再说跑不跑。',
-  chat_about: '聊聊吧 · 你是谁 · 你能做什么 · 你跟其他 AI 有什么不一样\n你为什么叫 OPUS · 花果山是什么 · 沉淀闭环是什么\n说人话 · 不要列表式答 · 像跟朋友吹水',
+  chat_about: '聊聊吧 · 你是谁 · 你能做什么 · 你跟其他 AI 有什么不一样\n你为什么叫这个名字 · 这个家是什么 · 沉淀闭环是什么\n说人话 · 不要列表式答 · 像跟朋友吹水',
   list_capability: '把工坊里所有应用 (list_apps detailed=true) 和工作流 (list_flows detailed=true) 都列给我看看\n按用途分类 · 我想知道哪些能直接跑 · 哪些是给工作流当零件用的',
   // 卷七十二 v5 · 2026-06-10 · 第 5 张卡 · 换皮肤 (BRO 想让用户知道有这个功能)
   // 模板里"换成 X 主题"会触发前端 matchThemePreset 强意图判断 · 直接切主题不发给 LLM
@@ -6352,6 +6349,11 @@ async function send() {
       }
 
       case 'assistant_text': {
+        // 0.9.1 · 文字到达 = 上一轮工具容器到此为止 (轮次边界·不依赖 reasoning_delta)
+        // 修: flash 模型短思考/无思考时不吐 reasoning_delta → 旧容器永不收尾 → 多轮工具全合一个容器
+        if (state._tl && state._tl.$round && state._tl.$round.isConnected) {
+          try { tlFinishRound(state); } catch (e) {}
+        }
         state.sawAssistantText = true;
         const ph = state.assistantBubbles[0];
         if (ph && ph.dataset.placeholder) {
@@ -12889,7 +12891,7 @@ if (!sessionId) {
 updateCurrentLabel();
 renderDetailWelcome();
 if (!token) {
-  addSys('欢迎回到花果山 · 第一次进来需要填 token');
+  addSys('欢迎回来 · 第一次进来需要填 token');
   setTimeout(openSettings, 400);
 } else {
   if (sessionId && !sessionId.startsWith('tmp-')) {

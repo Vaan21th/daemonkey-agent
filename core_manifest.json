@@ -1,6 +1,6 @@
 {
   "manifest_version": 1,
-  "core_version": "0.9.1-beta",
+  "core_version": "0.9.1-beta-hf2",
   "core_version_note": "0.8.9 正式版 · 缓存命中99.9%(修65-80%·易变尾巴挪尾部) + 压缩v2(省87.9%·user turn逐字保留·重启不蒸发) + 压缩绝对线15万触发 + 注入净化(退役playbook不再注入·FTS5漏网已堵) + telemetry串台修(来源标注+排除活跃) + 召回增强(停用词+中英映射·10查询10/10) · 2026-08-05 · 0.9.0-beta(2026-08-05 · 飞书测试版[beta·社区反馈迭代] · 两层接入砍到只剩对话模式: ①群聊@机器人回复[对标OpenClaw requireMention·需 im:message.group_at_msg:readonly] ②总结群消息[feishu_listener 拉群历史·需 im:message.group_msg] ③读飞书文档/表格/多维表格[feishu_docs·docx/sheets/bitable API] ④读群里发的文件[txt/md/pdf/docx/xlsx·im:resource 下载+解析·20MB上限] ⑤权限批量导入 JSON 做进向导[复制一次粘贴即配齐·不发布不生效] ⑥WebUI 设置页 微信&飞书 三卡改版+按钮圆角统一+emoji改Remix · 权限标识踩坑实录[group_msg 不带 :readonly 是官方原样·p2p/group_at 带 :readonly] · 微信链路零改动) · 0.9.1-beta(2026-08-05 · 0.9.0 BETA 补丁: 飞书消息去重[同 message_id 事件重放只回一次·5分钟窗口·修断线重连重复回复])",
   "description": "Daemonkey 内核(L1)白名单 — update_core 只同步这里列出的文件;清单外的一律物理不碰(用户的功能/应用/灵魂永不被覆盖)。人类可读版见 docs/CORE-MANIFEST.md。",
   "updated": "2026-08-05",
