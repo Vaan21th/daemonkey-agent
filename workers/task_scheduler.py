@@ -269,7 +269,7 @@ def _execute_task(task: dict) -> dict:
         msg = _build_message(task)
         from workers.proactive_call import _run_bg_turn
         # max_tokens 不传 → _run_bg_turn 默认走 bg_max_tokens() 真相源(用户 WebUI 全局设置)
-        # 定时任务常要生成完整文档/报告·吃用户设的大额度·别被写死小值截断。
+        # 定时任务常要生成完整文档/报告·吃用户设的大额度·别被写死小值截断 (卷七十四续三十一)。
         result = _run_bg_turn(msg, sid, reason=f"scheduled:{task.get('id')}")
         reply = (result.get("reply") or "")[:300]
         if (task.get("action") or {}).get("notify_wechat") and reply:

@@ -63,13 +63,6 @@ def _load_env() -> dict:
             continue
         k, v = line.split("=", 1)
         env[k.strip()] = v.strip().strip('"').strip("'")
-    # 品牌前缀别名:新用户 .env 用 DAEMONKEY_API_KEY·下面 _has_key/_get_client 仍按
-    # OPUS_API_KEY 读·这里把 dict 也镜像一遍(新旧 .env 都能识别)。
-    try:
-        from workers.env_aliases import normalize_env_aliases
-        normalize_env_aliases(env)
-    except Exception:
-        pass
     return env
 
 
@@ -243,7 +236,7 @@ async def save_key(request: Request, payload: dict = Body(...)):
     if not api_key or not base_url:
         raise HTTPException(400, "api_key 和 base_url 不能为空")
 
-    from daemon_provider import probe_openai, write_public_env, setup_client, clean_base_url
+    from daemon_provider import probe_openai, write_env_kv, setup_client, clean_base_url
 
     # base_url 去尾:用户常把完整端点(.../v1/chat/completions)整段贴进来·
     # OpenAI SDK 还会再拼 /chat/completions → 404。先归一成 base(通常到 /v1)。
@@ -257,18 +250,22 @@ async def save_key(request: Request, payload: dict = Body(...)):
     if not ok:
         raise HTTPException(400, err)
 
-    # 1. 写 .env(对外 DAEMONKEY_ 前缀·去 OPUS 品牌泄漏) + os.environ(内核仍读 OPUS_*)·
-    #    write_public_env 两边都写·运行中 daemon 立刻拿到·不必重启。
-    write_public_env("OPUS_PROVIDER", "openai")
-    write_public_env("OPUS_BASE_URL", base_url)
-    write_public_env("OPUS_API_KEY", api_key)
+    # 1. 写 .env + os.environ（让运行中 daemon 立刻拿到 · 不必重启）
+    write_env_kv("OPUS_PROVIDER", "openai")
+    write_env_kv("OPUS_BASE_URL", base_url)
+    write_env_kv("OPUS_API_KEY", api_key)
+    os.environ["OPUS_PROVIDER"] = "openai"
+    os.environ["OPUS_BASE_URL"] = base_url
+    os.environ["OPUS_API_KEY"] = api_key
     if model:
-        write_public_env("OPUS_MODEL", model)
+        write_env_kv("OPUS_MODEL", model)
+        os.environ["OPUS_MODEL"] = model
 
     # 2. 确保有 API token（loopback 中间件 + chat 鉴权要它在 os.environ）
     if not (os.environ.get("OPUS_API_TOKEN") or "").strip():
         tok = secrets.token_urlsafe(32)
-        write_public_env("OPUS_API_TOKEN", tok)
+        write_env_kv("OPUS_API_TOKEN", tok)
+        os.environ["OPUS_API_TOKEN"] = tok
 
     # 3. 同步成一条 provider_config（让 chat 设置页 LLM 模型栏能看到这把 key · 修图6）
     #    相遇填 key 走的是 .env·而设置页 LLM 栏读的是 data/provider_configs.json·
@@ -319,7 +316,9 @@ async def save_key(request: Request, payload: dict = Body(...)):
         pass  # 相遇本身用自己的 client·主 RUNTIME 热建失败不致命（重启即恢复）
 
     _reset_client()
-    return {"ok": True}
+    # 返回 token: 前端 app.js 要写进 localStorage (opus_ui_token) · 否则相遇完跳 chat.html
+    # 时前端 token 为空 → 弹"第一次需要填 token"设置框 (wish-0.9.2 初见验收发现)
+    return {"ok": True, "token": os.environ.get("OPUS_API_TOKEN", "")}
 
 
 @router.post("/open")

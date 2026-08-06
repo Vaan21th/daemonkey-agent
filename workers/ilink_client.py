@@ -2,7 +2,7 @@
 workers/ilink_client.py · iLink/ClawBot 微信渠道 · HTTP 客户端 + 上下文缓存 + 24h 窗口 (卷六十一)
 
 官方个人号 bot 接口 (Tencent/openclaw-weixin · ilinkai.weixin.qq.com)。纯 HTTP/JSON·零 openclaw/Node。
-官方 UI 钉死的规则: 用户先发消息 → 开 24h 窗口·窗口内带 context_token 能随时发·窗口外 /
+官方 UI 钉死的规则: BRO 先发消息 → 开 24h 窗口·窗口内 OPUS 带 context_token 能随时发·窗口外 /
 零上下文 → ret:-2。所以这层维护『最近一枚 context_token + 时间戳』·并暴露 window_open() 让主动
 CALL 判断能不能走微信。bot_token 是密钥·落 gitignored 的 data/runtime/ilink_token.json。
 """
@@ -26,7 +26,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 _TOKEN_FILE = _ROOT / "data" / "runtime" / "ilink_token.json"
 _CTX_FILE = _ROOT / "data" / "runtime" / "ilink_last_context.json"
 _SILENT_FLAG = _ROOT / "data" / "runtime" / "wechat_silent.flag"
-# 主动 CALL 时窗口关着 → 问候先攒这里 · 用户下次在微信开口续窗时由 flush_pending 补发
+# 主动 CALL 时窗口关着 → 问候先攒这里 · BRO 下次在微信开口续窗时由 flush_pending 补发
 _PENDING_FILE = _ROOT / "data" / "runtime" / "wechat_pending.jsonl"
 _PENDING_MAX = 5              # 最多攒几条 · 超了丢最旧的(防越积越多 + 补发刷屏)
 _PENDING_TTL_SEC = 48 * 3600  # 隔太久补发会很突兀 · 超 48h 的丢弃
@@ -144,7 +144,7 @@ def context_age_sec() -> Optional[float]:
 
 
 def window_open() -> bool:
-    """用户最近一条消息是否还在 23h 窗口内 (官方 24h · 留安全边界)。"""
+    """BRO 最近一条消息是否还在 23h 窗口内 (官方 24h · 留安全边界)。"""
     age = context_age_sec()
     return age is not None and age < _WINDOW_SEC
 
@@ -170,7 +170,7 @@ def send_text(
     to_user_id: Optional[str] = None,
     context_token: Optional[str] = None,
 ) -> dict:
-    """给用户发文本。默认 to=token 里的 ilink_user_id·context 用缓存最新一枚。
+    """给 BRO 发文本。默认 to=token 里的 ilink_user_id·context 用缓存最新一枚。
     返回 {ok, ret, ...}。ret:-2 = 没 context / 窗口外。空 {} = 成功。"""
     token, base, user = load_token()
     to = to_user_id or user
@@ -290,7 +290,7 @@ def pending_count() -> int:
 
 
 def flush_pending() -> int:
-    """用户在微信开口、窗口开着时调 · 把攒下的主动问候合成一条补发。返回补发条数。
+    """BRO 在微信开口、窗口开着时调 · 把攒下的主动问候合成一条补发。返回补发条数。
     超 _PENDING_TTL_SEC 的丢弃(隔太久补发突兀)；发成功才清队列(失败保留下次再补)。"""
     if not enabled() or is_silent() or not window_open():
         return 0
@@ -322,7 +322,7 @@ def flush_pending() -> int:
 
 def proactive_deliver(text: str) -> bool:
     """主动 CALL 用：窗口开 + 没静默 才把这条问候推到微信。返回是否真发出去。
-    窗口关着(但已配置、没静默) → 不丢弃 · 攒进队列 · 等用户下次在微信开口由 flush_pending 补发。"""
+    窗口关着(但已配置、没静默) → 不丢弃 · 攒进队列 · 等 BRO 下次在微信开口由 flush_pending 补发。"""
     if not enabled() or is_silent():
         return False
     if not window_open():

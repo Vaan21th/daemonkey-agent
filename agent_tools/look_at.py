@@ -2,23 +2,23 @@
 agent_tools/look_at.py
 ======================
 
-OPUS 的"眼睛"——看图然后回文字描述。
+Daemonkey 的"眼睛"——看图然后回文字描述。
 
 双路径视觉分发（wish-4a6331b2）：
   路径 A · 当前模型 supports_vision() == True (Claude/GPT/Gemini/Qwen)
-    → 图片 base64 直接进当前模型的 user message → OPUS 自己"看"原图
-    → 不经过中间视觉模型——就是 OPUS 的当前眼睛在看
+    → 图片 base64 直接进当前模型的 user message → Daemonkey 自己"看"原图
+    → 不经过中间视觉模型——就是 Daemonkey 的当前眼睛在看
   
   路径 B · 当前模型不支持 vision (DeepSeek/Kimi/GLM)
     → 调 Gemini 3.1 Flash Lite（通过同一 AiHubMix API）看图
-    → 返回文字描述 → OPUS "看到"文字版描述
+    → 返回文字描述 → Daemonkey "看到"文字版描述
     → 一张图 < $0.001，够用且便宜
 
 用途：
-  - 用户 在 WebUI 发图 → daemon_api 调 look_at → 描述拼进 user message
-  - OPUS 截屏后 → look_at 看屏幕 → 理解 用户 当前工作上下文
-  - 用户 丢一张 PDF 扫描页 → look_at → 文字描述
-  - 任何"OPUS 需要看到图片内容"的场景
+  - BRO 在 WebUI 发图 → daemon_api 调 look_at → 描述拼进 user message
+  - Daemonkey 截屏后 → look_at 看屏幕 → 理解 BRO 当前工作上下文
+  - BRO 丢一张 PDF 扫描页 → look_at → 文字描述
+  - 任何"Daemonkey 需要看到图片内容"的场景
 
 限制：
   - 支持的格式：PNG / JPEG / GIF / WebP / BMP
@@ -184,7 +184,7 @@ def _vision_subcall(
         },
     ]
 
-    from daemon_provider import chat_create_safe  # kimi-k3 等模型 temperature 硬限制 · 自动降级重试
+    from daemon_provider import chat_create_safe  # K3 等模型 temperature 硬限制 · 自动降级重试
     resp = chat_create_safe(
         client,
         model=model,
@@ -282,13 +282,13 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="look_at",
     description=(
-        "让 OPUS 看一张图片并返回文字描述。双路径：当前模型支持多模态（Claude/GPT/"
+        "让 Daemonkey 看一张图片并返回文字描述。双路径：当前模型支持多模态（Claude/GPT/"
         "Gemini/Qwen）→ 直接看图；当前模型纯文本（DeepSeek/Kimi/GLM）→ 调 Gemini "
         "Flash Lite fallback 看图。\n\n"
         "**调用时机**：\n"
         "  - 截屏后想看屏幕内容（配合 take_screenshot）\n"
-        "  - 用户 在 WebUI 上传了图片\n"
-        "  - 用户 让你看某张图片 / 截图 / 照片\n"
+        "  - BRO 在 WebUI 上传了图片\n"
+        "  - BRO 让你看某张图片 / 截图 / 照片\n"
         "  - 需要从图片中提取文字 / 错误信息\n\n"
         "**参数**：path（图片路径·必填），question（想问什么·可选·默认描述整张图）\n"
         "**返回**：纯文本描述。多模态模型看到的是原图（更精确），纯文本模型看到的是"

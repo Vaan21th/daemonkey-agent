@@ -2,9 +2,9 @@
 agent_tools/extract_playbook.py
 ================================
 
- · Playbook 抽取工具
+卷三十七 · Playbook 抽取工具
 
-OPUS 任务完成后 · 觉得「下次还能用」时 · 主动调这把操作模式
+Daemonkey 任务完成后 · 觉得「下次还能用」时 · 主动调这把操作模式
 抽成 data/playbooks/<slug>.md · 下次类似任务手动 search 加速。
 
 档位：CONFIRM

@@ -1,9 +1,10 @@
 """
 workers/git_ops.py
 ==================
-Daemonkey 自我演化的 git 纪律 · 单一真相 ( · 2026-06-01)
+OPUS 自我演化的 git 纪律 · 单一真相 (卷四十八 · 2026-06-01)
 
-为什么这个文件存在:复盘出"好活儿从不落主干"是所有灾难的总病根:
+为什么这个文件存在:
+  卷四十七复盘出"好活儿从不落主干"是所有灾难的总病根:
     - 写完代码重启 · 改动是裸的工作区改动 (request_restart 不 commit) → 一回退就丢
     - ready_for_merge 只改状态标志 · 不真 merge → 活儿烂在 wish 分支
     - wish 分支从"当前 HEAD"切 · 不是 master → 新 wish 丢掉前一个没合并的 wish
@@ -13,7 +14,7 @@ Daemonkey 自我演化的 git 纪律 · 单一真相 ( · 2026-06-01)
   单对话 · 都不会再出现 "A commit 了 · B 的任务重启把 A 抹掉"。
 
 约束:
-  - 所有 git 子进程显式 encoding='utf-8' (Windows 默认 GBK 会崩教训)
+  - 所有 git 子进程显式 encoding='utf-8' (Windows 默认 GBK 会崩 · 卷四十二教训)
   - 全部包在 daemon_git_lock 里串行化 (跟 write_file / wish_update / shell_exec 同一把锁)
   - 锁 / no_window 都用 lazy import · 避免 workers→agent_tools 的加载期循环依赖
 """
@@ -222,7 +223,7 @@ def checkpoint_commit(reason: str, owner: Optional[str] = None, notify: bool = T
                 m = meta.get(p, {})
                 msg_lines.append(f"  - {p} (会话 …{_ss(m.get('session','?'))})")
         # timeout=480: pre-commit hook 会跑全路由 smoke (staged 含 workers/static/ 时) ·
-        # 实测 用户 这台机 >180s (build_app 全 import + 141 路由 TestClient + node --check) ·
+        # 实测 BRO 这台机 >180s (build_app 全 import + 141 路由 TestClient + node --check) ·
         # 短 timeout 会误杀 commit (任务账本 2026-07-29 背书 · 30s→180s→480s 两次加码)
         crc, cout, cerr = _run_git(["commit", "-m", "\n".join(msg_lines)], timeout=480)
         if crc != 0:
@@ -288,7 +289,7 @@ def branch_from_master(wish_id: str, slug: str) -> tuple[Optional[str], str]:
     """③号机制: 从 master 切出 wish 分支 (确定的主干基线)。
 
     脚下脏 → 先 checkpoint 到当前分支 (不丢)。 已在目标分支 → 不切。
-    返 (branch_or_None, 给 用户 看的消息)。
+    返 (branch_or_None, 给 BRO 看的消息)。
     """
     if not _has_git():
         return None, "git 未 init · 跳过自动分支"
@@ -315,10 +316,10 @@ def branch_from_master(wish_id: str, slug: str) -> tuple[Optional[str], str]:
             action = "已从 master 新建并切到"
         if r_rc != 0:
             return None, f"git checkout 失败 · {r_err.strip()[:160]}"
-        return branch, f"{action}分支 `{branch}` · 基线=master · 用户 review 后 merge 回主干"
+        return branch, f"{action}分支 `{branch}` · 基线=master · BRO review 后 merge 回主干"
 
 
-# 误提交的备份/临时文件 · 永远不该被 merge 进主干 ( II)
+# 误提交的备份/临时文件 · 永远不该被 merge 进主干 (卷四十九 II)
 _JUNK_SUFFIXES = (".orig", ".tmp", ".swp", ".rej", "~")
 
 
@@ -348,8 +349,10 @@ def _branch_already_in_master(branch: str) -> bool:
 
 
 def _delete_merged_branch(branch: str) -> bool:
-    """合入后清掉 wish 分支书签 (调用方已持锁) · 用 -d (git 只删已合并的·安全) · 返是否删成。 · 2026-06-03 用户 拍板根治: 每个 daemon wish 自动建分支·合完没人删 →
-    历史攒了 33 个遗留分支 (用户 一看吓一跳)。 从此"合一个删一个"·不再堆积。
+    """合入后清掉 wish 分支书签 (调用方已持锁) · 用 -d (git 只删已合并的·安全) · 返是否删成。
+
+    卷五十五 · 2026-06-03 BRO 拍板根治: 每个 daemon wish 自动建分支·合完没人删 →
+    历史攒了 33 个遗留分支 (BRO 一看吓一跳)。 从此"合一个删一个"·不再堆积。
     删不掉 (是当前分支 / 别处 worktree 占用) 无害 · 只是没清成 · 不影响 merge 结果。
     """
     rc, _, _ = _run_git(["branch", "-d", branch], timeout=10)
@@ -357,7 +360,9 @@ def _delete_merged_branch(branch: str) -> bool:
 
 
 def merge_safety_blockers(branch: str, expected_wish_id: Optional[str] = None) -> list[str]:
-    """合并安全门 · 返回阻断原因列表 (空=安全)。 调用方已持锁。 II 病根: spawn-task 孤儿分支被错贴成另一个 wish 的 dev_branch ·
+    """合并安全门 · 返回阻断原因列表 (空=安全)。 调用方已持锁。
+
+    卷四十九 II 病根: spawn-task 孤儿分支被错贴成另一个 wish 的 dev_branch ·
     一旦推 ready_for_merge 就会盲并一个过期 + 含 8622 行误提交 .bak 的烂分支 ·
     直接污染 master。 安全门拦两类:
       ① wish-id 前缀对不上 → 疑似跨 wish 污染分支 / 贴错 dev_branch
@@ -384,8 +389,10 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
     """②号机制: 把 wish 分支真合回 master (闭环)。
 
     切到分支 → 脏则 checkpoint → 切 master → merge --no-ff。
-    冲突 → merge --abort 回到干净 master · 不留半合状态 · 让人手动解。 II: 合并前过安全门 (merge_safety_blockers) · 命中则拒绝盲并 ·
-    除非显式 allow_override=True (用户 知道自己在干嘛)。
+    冲突 → merge --abort 回到干净 master · 不留半合状态 · 让人手动解。
+
+    卷四十九 II: 合并前过安全门 (merge_safety_blockers) · 命中则拒绝盲并 ·
+    除非显式 allow_override=True (BRO 知道自己在干嘛)。
     返 {ok: bool, sha, note, blocked?}
     """
     out: dict = {"ok": False, "sha": None, "note": ""}
@@ -402,7 +409,7 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
         if ex_rc != 0:
             out["note"] = f"分支 `{branch}` 不存在 · 无法 merge"
             return out
-        # · 幂等前置闸 (2026-06-03 修 live 假阴性):
+        # 卷五十五 · 幂等前置闸 (2026-06-03 修 live 假阴性):
         #   分支内容若已在 master (祖先/cherry 等价) → 早被合入 (手动合 or 之前合过) ·
         #   直接放行·不 checkout·不被脏运行时文件撞。
         #   病根: 老逻辑无脑 checkout 记录的 dev_branch · 撞上脏 activity.jsonl/opus_wishlist.json
@@ -422,11 +429,11 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
             blockers = merge_safety_blockers(branch, expected_wish_id)
             if blockers:
                 out["blocked"] = True
-                out["note"] = ("🛑 merge 安全门拦截 ( II) · " + " ; ".join(blockers)
+                out["note"] = ("🛑 merge 安全门拦截 (卷四十九 II) · " + " ; ".join(blockers)
                                + " · 这不是干净的 wish 分支。 如确需合入: 请 cherry-pick "
                                  "其中干净的改动到新分支 · 或显式 allow_override=True")
                 return out
-        # · 切分支前先 checkpoint 当前分支的脏改动 · 否则脏树会让 checkout 直接 abort
+        # 卷五十五 · 切分支前先 checkpoint 当前分支的脏改动 · 否则脏树会让 checkout 直接 abort
         #   (今天事故的一半: 工作区脏着运行时文件 · checkout 报 "local changes would be overwritten")。
         pre_rc, pre_out, _ = _run_git(["status", "--porcelain"], timeout=10)
         if pre_rc == 0 and pre_out.strip():
@@ -440,7 +447,7 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
         if st_rc == 0 and st_out.strip():
             _run_git(["add", "-A"], timeout=20)
             _run_git(["commit", "-m", f"[checkpoint] merge 前存档 {branch}"], timeout=30)
-        # · 并发不打架的关键: 合并前先让分支吃下最新 master (B 先吃下已合的 A) ·
+        # 卷五十三 · 并发不打架的关键: 合并前先让分支吃下最新 master (B 先吃下已合的 A) ·
         # 冲突在分支上暴露·不污染 master。 之后 branch→master 就是干净快进。
         rb_rc, rb_out, rb_err = _run_git(
             ["merge", "master", "--no-edit", "-m", f"[refresh] {branch} 吃下最新 master 再合"], timeout=30)
@@ -450,9 +457,9 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
                            f"需先在分支上解决与 master 的冲突 (B 要先吃下已合入的 A) 再合。 "
                            f"git: {(rb_err or rb_out).strip()[:200]}")
             return out
-        # · B2 上线闸: 此刻工作区 = 分支(已吃下最新 master) = "将要变成 master 的样子"。
+        # 卷五十四 · B2 上线闸: 此刻工作区 = 分支(已吃下最新 master) = "将要变成 master 的样子"。
         # 合进 master 前·在全新子进程里验"这版能不能跑起来"(建 app + 路由 smoke + 前端 JS)。
-        # 过不了 → 不合·留在分支待修·master 保持干净。 allow_override=True 时跳过(用户 知道在干嘛)。
+        # 过不了 → 不合·留在分支待修·master 保持干净。 allow_override=True 时跳过(BRO 知道在干嘛)。
         if not allow_override:
             try:
                 from workers.verify_gate import run_verify_subprocess
@@ -462,7 +469,7 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
             if not v_ok:
                 _run_git(["checkout", "master"], timeout=15)  # 回到干净 master · 分支留着待修
                 out["blocked"] = True
-                out["note"] = ("🛑 上线闸拦截 ( B2) · 这版过不了 verify"
+                out["note"] = ("🛑 上线闸拦截 (卷五十四 B2) · 这版过不了 verify"
                                " (建不起来 / 路由有雷 / 前端 JS 坏) · 已留在分支不合入 master ·"
                                " 修好再合。 如确需强合: allow_override=True。\n"
                                + (v_report or "").strip()[-1500:])
@@ -472,7 +479,7 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
             out["note"] = f"切 master 失败 · {m_err.strip()[:160]}"
             return out
         mg_rc, mg_out, mg_err = _run_git(
-            ["merge", "--no-ff", branch, "-m", f"merge {branch} -> master (wish 闭环)"],
+            ["merge", "--no-ff", branch, "-m", f"merge {branch} -> master (wish 闭环 · 卷四十八)"],
             timeout=30)
         if mg_rc != 0:
             _run_git(["merge", "--abort"], timeout=15)
@@ -483,7 +490,7 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
         out["ok"] = True
         out["sha"] = s_out.strip() if s_rc == 0 else None
         note = f"已 merge `{branch}` -> master · {out['sha']} · 主干已含此 wish"
-        # · 合完即删 wish 分支 · 根治分支堆积 (2026-06-03 用户 拍板)。
+        # 卷五十五 · 合完即删 wish 分支 · 根治分支堆积 (2026-06-03 BRO 拍板)。
         # 此刻在 master 上·branch 已 --no-ff 合入·-d 安全删掉书签。
         if _delete_merged_branch(branch):
             out["branch_deleted"] = True
@@ -528,11 +535,11 @@ def last_good_ref() -> Optional[str]:
 
 
 def audit_wishes_merge_state(wishes: list[dict]) -> dict:
-    """ · 从 git 真相算每个 wish 的 dev_branch 相对 master 的合并状态。
+    """卷五十二 · 从 git 真相算每个 wish 的 dev_branch 相对 master 的合并状态。
 
     为什么从 git 算 · 不只信 wish 的 status 标签:
-      今早 用户 的痛点 (修好 B · A 变回去) 的病根正是 "标签写着 live · git 里却没合"。
-      status 是 Daemonkey 写的意图 · git 才是真相。 这个函数让 UI/Daemonkey 显示真相 ·
+      今早 BRO 的痛点 (修好 B · A 变回去) 的病根正是 "标签写着 live · git 里却没合"。
+      status 是 OPUS 写的意图 · git 才是真相。 这个函数让 UI/OPUS 显示真相 ·
       把 "已提交但躺在分支上、没进主干" 的欠账主动暴露出来 · 不必等回退才发现。
 
     一次锁 · 一次 for-each-ref 拿全部本地分支 · 再逐分支判定。 只对真有
@@ -574,8 +581,8 @@ def audit_wishes_merge_state(wishes: list[dict]) -> dict:
     return out
 
 
-# ── git 欠账面板 (2026-07-29 · 用户 直批三件套 B+C · 免 wish) ─────────────
-# 用户 原话: "coding 小白也能不说合主干 · 自己把完成工作合到主干防止被新实例覆盖"
+# ── git 欠账面板 (2026-07-29 · BRO 直批三件套 B+C · 免 wish) ─────────────
+# BRO 原话: "coding 小白也能不说合主干 · 自己把完成工作合到主干防止被新实例覆盖"
 # 两个函数给 /api/git-debt/detail 和 /api/git-collect 用:
 #   git_debt_detail()  只读 · 文件清单 + 人话分类 + 分支领先 commits
 #   collect_to_master() 一键收 · master=checkpoint commit · 分支=先commit再安全合(五道保护)
@@ -598,8 +605,8 @@ _FILE_KIND_RULES: list[tuple[str, str, str]] = [
 ]
 
 
-# 欠账豁免 (2026-07-29 用户拍板): demo/方案稿/临时文件不算欠账。
-# 用户原话: 欠账胶囊只该收「daemonkey 应用、工作流、用户开发升级的 WISH、
+# 欠账豁免 (2026-07-29 BRO 拍板): demo/方案稿/临时文件不算欠账。
+# BRO 原话: 欠账胶囊只该收「daemonkey 应用、工作流、用户开发升级的 WISH、
 # 或没 WISH 的核心改动」——做方案对比产的 demo-* 文件不该亮胶囊。
 # 用黑名单制 (核心改动枚举不完 · 豁免类是有限的)。
 _DEBT_EXEMPT_PREFIXES = ("demo-", "~$")
@@ -657,7 +664,7 @@ def git_debt_detail() -> dict:
                 p = p.strip('"')
                 if not p:
                     continue
-                if is_debt_exempt(p):  # 2026-07-29 用户拍板: demo/临时文件不算欠账
+                if is_debt_exempt(p):  # 2026-07-29 BRO 拍板: demo/临时文件不算欠账
                     continue
                 kind, label = _classify_file(p)
                 files.append({"path": p, "status": status, "kind": kind, "label": label})
@@ -691,7 +698,7 @@ def git_debt_detail() -> dict:
 
 
 def collect_to_master(reason: str = "", session_owner: Optional[str] = None) -> dict:
-    """一键收进主干 (用户 面板按钮) · master=checkpoint commit · 分支=先 commit 再安全合。
+    """一键收进主干 (BRO 面板按钮) · master=checkpoint commit · 分支=先 commit 再安全合。
 
     session_owner: 传当前会话 id → 精准归属收 (别的活跃会话裸奔改动留工作区·防卷入);
                    不传 → CEO 拍板全收 (add -A)。

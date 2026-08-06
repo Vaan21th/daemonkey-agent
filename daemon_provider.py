@@ -135,7 +135,7 @@ def call_llm(client, provider: str, model: str, max_tokens: int, system: str, me
 
 
 def chat_create_safe(client, **kwargs):
-    """chat.completions.create 兼容性封装 (kimi-k3 等模型 temperature 硬限制)。
+    """chat.completions.create 兼容性封装 (2026-07-28 · K3 看图 400 事故)。
 
     有的模型 (如 kimi-k3) 对 temperature 有硬限制: "invalid temperature: only 1 is allowed"。
     调用方写死低 temperature (看图/翻译想要 0.2~0.3 求稳) 会直接 400。
@@ -202,54 +202,12 @@ def write_env_kv(key: str, value: str) -> None:
     ENV_PATH.write_bytes("\n".join(lines).encode("utf-8"))
 
 
-def _remove_env_kv(key: str) -> None:
-    """从 .env 删掉某个 key= 行(找不到就什么都不做)。
-
-    用于品牌前缀迁移:写新的 DAEMONKEY_xxx 时顺手清掉历史残留的 OPUS_xxx 行·
-    避免 .env 里同一项两个前缀并存(并存时虽有 env_aliases 兜底·但行多了脏)。
-    """
-    if not ENV_PATH.exists():
-        return
-    raw = ENV_PATH.read_bytes()
-    text = raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
-    lines = text.split("\n")
-    pat = re.compile(rf"^\s*{re.escape(key)}\s*=")
-    kept = [ln for ln in lines if not pat.match(ln)]
-    if len(kept) != len(lines):
-        ENV_PATH.write_bytes("\n".join(kept).encode("utf-8"))
-
-
-# 对外可见的 env 前缀 · 用 DAEMONKEY_ 取代历史内部前缀(避免内部代号泄漏到用户 .env)。
-PUBLIC_ENV_PREFIX = "DAEMONKEY_"
-
-
-def write_public_env(key: str, value: str) -> None:
-    """写"用户可见"配置到 .env——OPUS_ 前缀的一律落成 DAEMONKEY_(品牌干净)。
-
-    - 内核几百处仍读 `os.environ["OPUS_*"]`·这里同时把内部 OPUS_ 名写进 os.environ·
-      让运行中的 daemon 立刻拿到新值(不必重启)。
-    - .env 文件里只留 DAEMONKEY_ 那一行·并清掉历史残留的 OPUS_ 行(老用户迁移)。
-    - 非 OPUS_ 前缀(如 ANTHROPIC_API_KEY)原样写·不动。
-    """
-    if not key.startswith("OPUS_"):
-        write_env_kv(key, value)
-        os.environ[key] = value
-        return
-    suffix = key[len("OPUS_"):]
-    pub = PUBLIC_ENV_PREFIX + suffix
-    write_env_kv(pub, value)
-    if pub != key:
-        _remove_env_kv(key)  # 清掉旧前缀残留行
-    os.environ[pub] = value
-    os.environ[key] = value  # 内部恒读 OPUS_* · 即时生效
-
-
 def clean_base_url(url: str) -> str:
     """去掉用户误贴的完整端点尾巴。
 
     OpenAI 兼容 SDK 只要 base(通常到 /v1)·会自己拼 /chat/completions。
-    用户贴成 https://x/v1/chat/completions 时·SDK 会拼成 .../chat/completions/chat/completions
-    → 404。这里把尾部的 /chat/completions(或 /completions)去掉·让初见/换 key 直接能连。
+    贴成 https://x/v1/chat/completions 时·SDK 会拼成 .../chat/completions/chat/completions
+    → 404。这里把尾部的 /chat/completions(或 /completions)去掉。
     """
     u = (url or "").strip().rstrip("/")
     for tail in ("/chat/completions", "/completions"):

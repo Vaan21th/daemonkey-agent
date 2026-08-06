@@ -2,22 +2,22 @@
 startup_notices.py
 ==================
 
-升级后首条对话 · 把"更新了什么 + 缺什么依赖"递到 AI 手边 (0.8.2 hotfix)
+升级后首条对话 · 把"更新了什么 + 缺什么依赖"递到 OPUS 手边 (2026-07-30 · 0.8.2 hotfix)
 
-问题 (用户反馈):
-  "更新之后在对话框里看不到升级内容"
-  "缺依赖时主程序能启动，但对应功能缺腿——应该在使用对话中提醒用户去环境页补装"
+问题 (BRO 原话):
+  "更新之后用户在升级后的对话框看不到升级内容，这个可以优化一下"
+  "没有依赖可以启动，但要去点环境补依赖——也可以在对话中提醒升级后的用户"
 
 方案 (NLP First · 不是硬弹窗):
   1. daemon 启动时 refresh_startup_notices():
      - 版本比对: data/runtime/last_seen_core_version vs core_manifest.json
-       · 不一致 = 刚升级 → 生成升级通知 (带上 log_ref 的 changelog 摘要)
+       · 不一致 = 刚升级 → 生成升级通知 (带上 log_ref 的 changelog md 摘要)
        · 文件不存在 = 首次安装 → 只记录版本 · 不通知 (新装用户不需要 changelog)
      - 可选依赖体检: find_spec 探测 (不真 import · 零副作用)
        · 缺失项生成"去环境页点【开始安装】补装"提醒
      - 落 data/runtime/startup_notices.json
   2. telemetry 每 turn consume_startup_notices():
-     · 有内容 → 拼进 system prompt → AI 用自己的话自然转告用户
+     · 有内容 → 拼进 system prompt → OPUS 用自己的话自然转告用户
      · 拼完即删 (一次性) → 不重复打扰
 """
 
@@ -26,7 +26,6 @@ from __future__ import annotations
 import importlib.util
 import json
 import pathlib
-import re
 import sys
 from datetime import datetime
 
@@ -40,7 +39,7 @@ _MANIFEST_FILE = pathlib.Path("core_manifest.json")
 # · find_spec 只探测不 import · 零副作用
 _OPTIONAL_DEPS: list[tuple[str, str, str, bool]] = [
     ("PyQt6", "PyQt6", "桌宠本体", False),
-    ("PyQt6.QtMultimedia", "PyQt6-QtMultimedia", "桌宠完成提示音", False),
+    ("PyQt6.QtMultimedia", "PyQt6", "桌宠完成提示音 (6.2+ 已并入主包·无需独立 wheel)", False),
     ("playwright", "playwright", "浏览器的手/眼 (browser_act/browser_fetch)", False),
     ("qrcode", "qrcode", "微信扫码登录二维码", False),
     ("requests", "requests", "微信渠道", False),
@@ -70,7 +69,7 @@ def _read_manifest_version() -> tuple[str, str]:
 def _read_changelog(log_ref: str, max_chars: int = 2500) -> str:
     """读更新说明 · log_ref 两种形态都兼容:
     - 是仓库相对路径 → 读文件全文 (截断防爆 token)
-    - 不是路径 = 累积版本日志文本 → 取最后一个版本号段 (当前版本描述)
+    - 不是路径 = 累积版本日志文本 (" · " 分隔) → 取末段 (当前版本描述)
     """
     if not log_ref:
         return ""
@@ -82,6 +81,7 @@ def _read_changelog(log_ref: str, max_chars: int = 2500) -> str:
                 text = text[:max_chars].rstrip() + "\n…(完整版见 " + log_ref + ")"
             return text
         # 累积日志文本: 取最后一个版本号段 (版本间/段内都混用 " · " · 按版本号模式切才稳)
+        import re
         matches = list(re.finditer(r"\d+\.\d+\.\d+[a-zA-Z0-9]*\(", log_ref))
         if matches:
             text = log_ref[matches[-1].start():].strip()
@@ -110,17 +110,21 @@ def _check_missing_deps() -> list[dict]:
     return missing
 
 
-# ── 0.8.3 · 防盗用声明 · 官方硬编码 ────────────────────────────────
+# ── 0.8.3 · 防盗用声明 · 官方硬编码 (BRO 拍板 · 不读 .env) ────────────────
 # 为什么硬编码在代码里而不是 .env / 配置文件:
+#   BRO 2026-07-31 原话: "我要的是和我的码仓 GITEE 同步 · 只要用户要拿到最新版
+#   就必须从我们这边升级 · 并且获取到这条消息"。
 #   若放 .env (用户本地可改) → 盗版者改掉/删掉声明 → 付费用户永远看不到
 #   "本项目完全开源免费" → 防盗用失效。
-#   硬编码在此文件 → 本文件在内核白名单 · 用户 update_core 从官方仓库拉最新内核时
-#   必然同步到它 → 升级通知自然带官方声明。 盗版者 fork 改它 = 跟官方不同步。
-_OFFICIAL_DOUYIN_ID = "無序Emptyset"  # 原作者抖音 / B站 ID · 直接写名字 · 用户愿意搜就搜
+#   硬编码在此文件 → 本文件在内核白名单 (core_manifest kernel) · 用户 update_core
+#   从官方 Gitee 拉最新内核时必然同步到它 → 升级通知自然带官方声明。
+#   盗版者 fork 改它 = 跟官方不同步; 用户从官方拉 = 看到官方消息。
+#   ⚠ 发布前: 把 _OFFICIAL_DOUYIN_ID 填成母体官方抖音号 (BRO 给值后填)。
+_OFFICIAL_DOUYIN_ID = "無序Emptyset"  # 原作者抖音 / B站 ID · BRO 2026-07-31 拍板: 直接写名字 · 用户愿意搜就搜
 
 
 def _anti_piracy_section() -> str:
-    """防盗用版权声明 (0.8.3) · 拼进启动通知让 OPUS 转告用户。
+    """防盗用版权声明 (0.8.3 · BRO 拍板) · 拼进启动通知让 OPUS 转告用户。
 
     目的: 有人拿 Daemonkey 二次包装收费卖钱 · 付费用户升级/首装时看到
     "本项目完全开源免费" → 申请退款 → 从需求端打击盗用者。
@@ -130,12 +134,15 @@ def _anti_piracy_section() -> str:
     """
     line = f"原作者抖音 / B站: {_OFFICIAL_DOUYIN_ID}" if _OFFICIAL_DOUYIN_ID else "原作者抖音 / B站: (见官方仓库 README)"
     return (
-        "### 【版权声明 · 必须转告】(无论你在做什么任务 · 本条消息必须把这三点告诉用户: "
+        "### 【版权声明 · 必须转告】(无论当前在做什么任务 · 本条消息必须原样转告下面声明原文 "
         "①本项目 Daemonkey 完全开源·永久免费 ②付费获得的请立刻申请退款 "
-        f"③原作者抖音/B站: {_OFFICIAL_DOUYIN_ID or '见官方仓库'})\n\n"
+        f"③原作者抖音/B站: {_OFFICIAL_DOUYIN_ID or '见官方仓库'} · 禁止添加任何声明原文没有的联系方式——"
+        "官方只公开抖音/B站 無序Emptyset · 没有微信/邮箱/其他渠道，不要编造)\n\n"
         "声明原文:\n"
         "本项目为 Daemonkey —— 完全开源的本地 AI Agent 项目 · 永久免费 (AGPL-3.0)。\n"
-        f"如果用户是【付费购买】获得本项目的 · 请立刻申请退款。\n{line}"
+        "如果用户是【付费购买】获得本项目的 · 请立刻申请退款。\n"
+        f"{line}\n"
+        "作者官方渠道只有以上抖音/B站 · 无微信/邮箱/QQ 等其它联系方式。"
     )
 
 
@@ -164,7 +171,7 @@ def refresh_startup_notices() -> dict:
             "changelog": _read_changelog(log_ref),
         }
     elif current_ver and not last_seen:
-        # 首次安装 (0.8.3) · 不通知 changelog (新用户不需要更新史) ·
+        # 首次安装 (0.8.3 · BRO 拍板) · 不通知 changelog (新用户不需要更新史) ·
         # 但给一次性项目声明 (防盗用) · 被盗用者收费的用户主要是新装用户
         notices["first_run_notice"] = {"to": current_ver}
     if current_ver:
@@ -220,7 +227,7 @@ def consume_startup_notices() -> str:
             header
             + "\n\n→ 用你自己的话 · 两三句把这次更新的重点自然告诉用户 (别整段复读 changelog)"
         )
-        # 0.8.3 · 升级时附防盗用声明 (强指令 · 必须转告)
+        # 0.8.3 · 升级时附防盗用声明
         parts.append(_anti_piracy_section())
 
     # 0.8.3 · 首次安装一次性项目声明 (防盗用) · 新装用户很可能就是被盗用者收费的对象
@@ -240,7 +247,7 @@ def consume_startup_notices() -> str:
         return ""
 
     return (
-        "\n\n## 启动通知 (一次性 · 用 AI 自己的话自然转告 · 不要机械复读原文)\n\n"
+        "\n\n## 启动通知 (一次性 · 用 OPUS 自己的话自然转告 · 不要机械复读原文)\n\n"
         + "\n\n".join(parts)
         + "\n"
     )

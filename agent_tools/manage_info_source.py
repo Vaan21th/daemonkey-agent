@@ -2,20 +2,20 @@
 agent_tools/manage_info_source.py
 ==================================
 
-OPUS 通过自然语言管理信息雷达的源清单。
+Daemonkey 通过自然语言管理信息雷达的源清单。
 
 档位：AUTO
   只动 data/radar_sources.json · 不调外网 · 不动文件系统其他位置。
-  即使误删一个源 · 用户 一句话能让 OPUS 加回来 · 风险足够低走 AUTO。
+  即使误删一个源 · BRO 一句话能让 Daemonkey 加回来 · 风险足够低走 AUTO。
 
 action:
   list    · 列出当前所有源 · 不传别的参数
   add     · 加新源 · 需要 name + url · 可选 category / type / max_items
   remove  · 删源 · 需要 source_id 或 name
   update  · 改源属性 · 需要 source_id · 可改 enabled / category / max_items / display
-  refresh · 立即让 worker 重新跑一次抓取 · 用于"刚改完源 用户 想看效果"
+  refresh · 立即让 worker 重新跑一次抓取 · 用于"刚改完源 BRO 想看效果"
 
-NLP 触发示例（OPUS 自己决定调这个工具的时机）：
+NLP 触发示例（Daemonkey 自己决定调这个工具的时机）：
   - "加一个抖音科技板块" → action=add
   - "把 arxiv 删了" → action=remove, source_id="arxiv-ai"
   - "TC AI 太多了 · 改成只看 5 条" → action=update, source_id="tc-ai", max_items=5
@@ -47,7 +47,7 @@ def _summarize(args: dict) -> str:
 
 
 def _format_source_line(s: dict) -> str:
-    """单源一行展示 · 给 LLM / 用户 都能读"""
+    """单源一行展示 · 给 LLM / BRO 都能读"""
     enabled_mark = "[on]" if s.get("enabled", True) else "[off]"
     return (
         f"  - {s['id']} {enabled_mark}  "
@@ -61,7 +61,7 @@ def _format_source_line(s: dict) -> str:
 
 
 def _resolve_id(sources: list[dict], hint: str) -> str | None:
-    """根据 用户 给的 hint (id / name / display) 找对应 source_id"""
+    """根据 BRO 给的 hint (id / name / display) 找对应 source_id"""
     hint_lower = hint.lower().strip()
     for s in sources:
         if s["id"] == hint:
@@ -153,8 +153,9 @@ def _run(args: dict) -> ToolResult:
                 category=(args.get("category") or "tech"),
                 display=args.get("display"),
                 max_items=int(args.get("max_items") or 10),
+                source_id=args.get("source_id"),  # 社区文档问题7: 之前漏传 → source_id 恒 None → 中文源撞 "src"
                 tags=args.get("tags"),
-                domain=(args.get("domain") or "self-evolve"),
+                domain=(args.get("domain") or "ai"),
             )
             return ToolResult(
                 ok=True,
@@ -191,7 +192,7 @@ def _run(args: dict) -> ToolResult:
                 output=(
                     f"已删除源 · {removed['id']} ({removed.get('display', '')})\n"
                     f"  原 url: {removed['url']}\n"
-                    f"\n如果误删 · 跟 OPUS 说'恢复 {removed['id']}'即可重加。"
+                    f"\n如果误删 · 跟 Daemonkey 说'恢复 {removed['id']}'即可重加。"
                 ),
             )
 
@@ -275,7 +276,7 @@ SPEC = ToolSpec(
     name="manage_info_source",
     description=(
         "Manage the info radar source list (data/radar_sources.json). "
-        "Use this when 用户 asks to add/remove/pause/adjust info sources, or asks "
+        "Use this when BRO asks to add/remove/pause/adjust info sources, or asks "
         "what sources are being watched, or asks to refresh the radar now.\n\n"
         "Actions:\n"
         "  list      · enumerate all sources with their state\n"
@@ -285,15 +286,15 @@ SPEC = ToolSpec(
         "  refresh   · trigger an immediate worker run (takes 20-60s, fetches all enabled sources)\n\n"
         "Categories used: tech / community / academic / tech-zh / startup / indie / ...\n"
         "Types supported: rss (default · works for RSS 2.0 and Atom feeds), html (reserved).\n\n"
-        "源配比标准: 给某领域加源时按 **大陆 70% + 海外 30%** 配比。\n"
+        "源配比标准（卷六十四续十五）: 给某领域加源时按 **大陆 70% + 海外 30%** 配比。\n"
         "  国内优先原生 RSS（量子位/36氪/雷锋网/IT之家/少数派/InfoQ中国…）· 大陆抓得快不踩墙；\n"
         "  海外只挑大陆能直连的（arxiv / 官方 blog / GitHub releases.atom）· 别加 Hacker News /\n"
         "  HuggingFace 这类大陆超时的死源。加前最好 web_fetch 验证 URL 真返回 RSS/Atom。\n\n"
         "Examples (NLP triggers):\n"
-        "  - 用户 says '加个少数派' → action=list first to check; then action=add\n"
-        "  - 用户 says '别看 arxiv 了' → action=remove, source_id='arxiv-ai'\n"
-        "  - 用户 says '看下都有哪些源' → action=list\n"
-        "  - 用户 says '现在刷一下雷达' → action=refresh"
+        "  - BRO says '加个少数派' → action=list first to check; then action=add\n"
+        "  - BRO says '别看 arxiv 了' → action=remove, source_id='arxiv-ai'\n"
+        "  - BRO says '看下都有哪些源' → action=list\n"
+        "  - BRO says '现在刷一下雷达' → action=refresh"
     ),
     tier=TIER_AUTO,
     input_schema={
@@ -347,8 +348,8 @@ SPEC = ToolSpec(
             "domain": {
                 "type": "string",
                 "description": (
-                    "领域桶 · slug · 默认只内置 self-evolve · "
-                    "用户在相遇 / 对话里挖出来的关注方向通过 add_focus_domain / init_domain 加成新 domain · "
+                    "领域桶 · slug · 默认有 ai/super-individual/game-money/wildcard · "
+                    "卷三十二起 BRO 通过 init_domain 工具可以加任意新 domain · "
                     "所以本字段不限定 enum · 但写错 domain add_source/update_source 会校验拒绝。"
                 ),
             },

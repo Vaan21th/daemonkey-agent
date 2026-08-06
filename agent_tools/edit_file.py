@@ -2,9 +2,9 @@
 agent_tools/edit_file.py
 ========================
 
-OPUS 的"精准改"——str_replace 局部替换。学 Cursor 的 StrReplace。
+Daemonkey 的"精准改"——str_replace 局部替换。学 Cursor 的 StrReplace。
 
-为什么造它 ( · chat.js 444K 整文件覆盖丢功能事故):
+为什么造它 (卷五十八 · chat.js 444K 整文件覆盖丢功能事故):
   write_file 只有"整文件覆盖" + read_file 一次只能看 40K 字符 →
   改一个 9000 行文件的某一段·也得把整文件重吐一遍·但看不见的 91% 只能靠记忆重建 →
   6/6 那次 (888e0ec) 就这么把语音/文档/视觉三块功能连人带码打回旧版·还语法全绿没人报警。
@@ -25,7 +25,8 @@ OPUS 的"精准改"——str_replace 局部替换。学 Cursor 的 StrReplace。
 
 三档:
   - 默认 CONFIRM
-  - 命中 .env / soul/ / .git/ / .venv/ / opus-soul / skills-cursor → GUARD
+  - 命中 .env / .git/ / .venv/ → GUARD (KEY安全/毁仓库/自爆级·2026-07-28 重定界)
+  - soul/ / Daemonkey-soul / skills-cursor → CONFIRM (有 git/副本冗余·可恢复·不弹窗)
   (复用 write_file 的分类逻辑·防冗余)
 """
 
@@ -191,8 +192,12 @@ SPEC = ToolSpec(
         "copy the text verbatim — do NOT include read_file's 'NNN | ' line-number prefix).\n"
         "  - >1 match → fails unless replace_all=true.\n"
         "  - On success: utf-8 roundtrip verify + syntax self-check; auto-rolls back on verify failure.\n\n"
+        "TOKEN DISCIPLINE (工具参数是每轮新增内容·不命中缓存·每轮全价付费 — 省一分是一分):\n"
+        "  - old_string 只带【唯一命中所需要的最短片段】· 能 1 行别 3 行· 够唯一别多带上下文 (旧规则'3-5 lines context'是上限不是默认· 先用最短试).\n"
+        "  - new_string 只写【替换成的部分】· 不重复粘贴未改动的上下文.\n"
+        "  - 大段文本 (>1K chars) 要传参前先问: 整段都必要吗? 还是可以让工具自己 read_file 那段?\n\n"
         "Workflow for big files: read_file the region → copy the exact snippet → edit_file with that as old_string.\n"
-        "Confirm tier (GUARD for .env / soul/ / .git/ / .venv / opus-soul / skills-cursor paths)."
+        "Confirm tier (GUARD only for .env / .git/ / .venv paths · soul/Daemonkey-soul paths are CONFIRM since 2026-07-28)."
     ),
     tier=TIER_CONFIRM,
     input_schema={
@@ -220,7 +225,7 @@ SPEC = ToolSpec(
             "force": {
                 "type": "boolean",
                 "description": (
-                    "Override the concurrent-edit advisory lock. Only set true after the user confirms "
+                    "Override the concurrent-edit advisory lock. Only set true after BRO confirms "
                     "no other conversation is mid-edit on this file (you'll be told if there's a conflict). "
                     "Default false."
                 ),

@@ -1,7 +1,7 @@
 """workers/subagent_runner.py
 =============================
 
-通用「子执行器」内核 (v0.6.0 · P0)
+v0.6.0 · P0 · 通用「子执行器」内核 (提案 docs/PROPOSAL-subagent-flow-v0.5.md)
 
 一句话: 把 app_runner 里「临时 messages + 一次 run_tool_loop + 记账」这段**通用中段**
 抽成独立可复用件。 subagent = 一次隔离的 LLM 工具循环:
@@ -13,9 +13,9 @@
   - 结构化结果回传 (SubagentResult · text/usage/iterations/warning)
 
 三个上层复用它:
-  1. app_runner.run_app  —— 工坊 app 执行
-  2. agent_tools/dispatch_subagent —— 主对话派 1~N 个分身并行
-  3. flow_runner 每步 —— 工作流串行
+  1. app_runner.run_app  —— 工坊 app 执行 (P0: 改薄壳调这里 · app 专属逻辑留壳里)
+  2. agent_tools/dispatch_subagent —— 主对话派 1~N 个分身并行 (P1)
+  3. flow_runner 每步 —— 工作流串行 (P2)
 
 设计边界 (守死 · 防把工坊味带进通用核心):
   - 本文件【不】做: 表单 prompt 拼装 / output_schema 提取 / 产出隔离 mandate /
@@ -82,7 +82,7 @@ def _make_commit_writer(sub_session_id: str) -> Callable[[dict], None]:
     """persist=True 时 · 把每个 turn 增量落到 sessions/sub-<id>.jsonl (可观测/可回看)。
 
     刻意做轻: 不走 daemon_session 那套全套会话基建 (那是主对话/续场的地盘) ·
-    子会话只是「附加可观测层」· 一行一个 turn 的 jsonl 足够。
+    子会话只是「附加可观测层」· 一行一个 turn 的 jsonl 足够 P0/P1 回看。
     """
     root = Path(__file__).resolve().parent.parent
     path = root / "sessions" / f"sub-{sub_session_id}.jsonl"
@@ -125,7 +125,7 @@ def run_subagent(
         max_iterations: tool_loop 最多几轮 (子任务不该很多)。
         max_tokens: 输出上限 · None → 走 bg_max_tokens + safe_max_tokens 兜底。
         model: 模型 id · None → runtime.model。
-        client: 自定义 LLM client · None → runtime.client (总监跨 provider 现场建)。
+        client: 自定义 LLM client · None → runtime.client (wish-8ffb9d65 · 总监跨 provider 现场建)。
         confirm: 自定义确认回调 · None → 沙盒 auto-approve (_auto_confirm)。
         progress: SSE 进度 hook · 透传给 tool_loop 做工具级事件 (生命周期事件由上层发)。
         cancel_check: 返回 True 则下一轮前停。
@@ -168,7 +168,7 @@ def run_subagent(
                 "role": "_meta", "sub_session_id": sub_session_id,
                 "parent_session_id": parent_session_id,
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "model": used_model,  # 总监链路佐证 (查 sub session 知顾问真身)
+                "model": used_model,  # wish-8ffb9d65 · 总监链路佐证 (查 sub session 知顾问真身)
                 "system_preview": (system or "")[:200],
             })
         except Exception:

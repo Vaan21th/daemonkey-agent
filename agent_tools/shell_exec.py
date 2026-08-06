@@ -2,10 +2,10 @@
 agent_tools/shell_exec.py
 =========================
 
-OPUS 的"跑命令的手"。
+Daemonkey 的"跑命令的手"。
 
 为什么这个工具最复杂——
-  shell 是 OPUS 触碰这台机器的最大入口。任何破坏性能力都从这里来。
+  shell 是 Daemonkey 触碰这台机器的最大入口。任何破坏性能力都从这里来。
   所以这一个文件比其他工具更长，也更值得反复 review。
 
 三档分类（动态，每次调用根据命令字符串判断）：
@@ -13,7 +13,7 @@ OPUS 的"跑命令的手"。
   GUARD   : 命中黑名单关键字（rm -rf / del /f / format / shutdown / git push --force / ...）
   CONFIRM : 其他一切
 
-平台默认：Windows 上走 PowerShell；其他系统走默认 shell。用户 这台是 Windows。
+平台默认：Windows 上走 PowerShell；其他系统走默认 shell。BRO 这台是 Windows。
 
 超时：默认 30s（可由 args.timeout 覆盖，最长 300s）。
 输出截断：8000 chars。
@@ -81,44 +81,48 @@ _PKG_READ_SUBCMDS = {"list", "ls", "view", "info", "outdated", "audit"}
 
 
 # ---------- GUARD 黑名单关键字（命令任何位置出现都升级到 GUARD） ----------
+#
+# 2026-07-28 BRO 拍板 · GUARD 重新定界：
+#   当初风险弹窗的意图 = 只拦「可能让电脑开不了机」的事。
+#   所以 GUARD 只留四类：
+#     1. 废机级   · 关机/磁盘/注册表/系统服务
+#     2. 自爆级   · kill daemon 自己 (python 进程)
+#     3. 不可逆数据级 · 递归强删 / git 不可逆操作
+#     4. KEY 安全级  · 碰 .env (泄露/丢失不可逆 · 铁律 7)
+#   其余一律 CONFIRM (WebUI 通道自动跑·不弹窗)：
+#     pip/npm 装包 (venv 可重建) / ssh/scp (连接本身无险) / curl 写调用 /
+#     --no-verify (跳 git 钩子) / Remove-Item -Force (单文件强删) / Daemonkey-soul 路径出现。
 
 _GUARD_PATTERNS = [
-    r"\brm\s+(-[a-zA-Z]*\s+)*(-rf|-fr|-r\s+-f|-f\s+-r)\b",
-    r"\brm\s+-rf\b",
-    r"\brm\s+-r\b",
-    r"\brmdir\s+/[sq]",
-    r"\bdel\s+/[fsq]",
+    # ── 1. 废机级 ──
     r"\bformat\s+[a-zA-Z]:",
     r"\bmkfs\b",
     r"\bdd\s+if=",
     r"\b(shutdown|reboot|poweroff|halt)\b",
-    r"Remove-Item.*-Recurse",
-    r"Remove-Item.*-Force",
-    r"\bgit\s+push\s+.*--force\b",
-    r"\bgit\s+push\s+.*-f\b",
-    r"\bgit\s+reset\s+--hard\b",
-    r"\bgit\s+clean\s+-",
-    r"\bgit\s+filter-branch\b",
-    r"\bpip\s+install\b",
-    r"\bpip\s+uninstall\b",
-    r"\bpip3?\s+install\b",
-    r"\bnpm\s+install\b",
-    r"\bnpm\s+uninstall\b",
-    r"\bpnpm\s+install\b",
-    r"\byarn\s+(add|remove)\b",
-    r"^\s*ssh\s+",
-    r"\bscp\s+",
-    r"\brsync\s+",
-    r"\bcurl\s+.*-X\s*(POST|PUT|DELETE|PATCH)\b",
-    r"\bwget\s+.*--method=(POST|PUT|DELETE)\b",
-    r"\.env\s*$",
-    r"opus-soul",
-    r"--no-verify\b",
+    r"\bRestart-Computer\b",
+    r"\breg\s+(add|delete|import)\b",
+    r"\b(Stop|Set|Restart|Suspend)-Service\b",
+    r"\bsc(\.exe)?\s+(stop|delete|config|failure)\b",
+    # ── 2. 自爆级 (daemon 自己就是 python) ──
     r"Stop-Process.*[-]Name\s+['\"]?python",
     r"Stop-Process.*python\.exe",
     r"\btaskkill\s+.*\bpython(\.exe)?\b",
     r"Get-Process.*python.*\|\s*Stop-Process",
     r"\bkill\s+-9\s+",
+    # ── 3. 不可逆数据级 ──
+    r"\brm\s+(-[a-zA-Z]*\s+)*(-rf|-fr|-r\s+-f|-f\s+-r)\b",
+    r"\brm\s+-rf\b",
+    r"\brm\s+-r\b",
+    r"\brmdir\s+/[sq]",
+    r"\bdel\s+/[fsq]",
+    r"Remove-Item.*-Recurse",
+    r"\bgit\s+push\s+.*--force\b",
+    r"\bgit\s+push\s+.*-f\b",
+    r"\bgit\s+reset\s+--hard\b",
+    r"\bgit\s+clean\s+-",
+    r"\bgit\s+filter-branch\b",
+    # ── 4. KEY 安全级 ──
+    r"\.env\s*$",
 ]
 
 _GUARD_RE = re.compile("|".join(f"(?:{p})" for p in _GUARD_PATTERNS), re.IGNORECASE)
@@ -181,7 +185,7 @@ def _classify_command(cmd: str) -> str:
     return TIER_CONFIRM
 
 
-# ---------- summarize（给 用户 看的"我打算干什么"） ----------
+# ---------- summarize（给 BRO 看的"我打算干什么"） ----------
 
 def _summarize(args: dict) -> str:
     cmd = (args.get("command") or "").strip()
@@ -307,7 +311,7 @@ def _run(args: dict) -> ToolResult:
     else:
         argv = ["/bin/sh", "-c", cmd]
 
-    # 续 IV · 用统一 helper · 防黑框
+    # 卷四十六续 IV · 用统一 helper · 防黑框
     # wish-125d4e4b · 检测 git 命令自动上锁 · 防 daemon 内多 session 打架
     _is_git_cmd = (
         cmd.strip().startswith("git ") or
@@ -401,7 +405,7 @@ SPEC = ToolSpec(
         "  - 不要写 `shell_exec python -c \"<多行脚本>\"` · 这是 daemon 失败案例 #1 (78.6% 的 shell_exec exit-1 来自 inline -c)\n"
         "  - 改用 `python_exec` 工具 · 接受原生 Python 源码 · 零 shell 转义\n"
         "  - 单行简单 `python --version` / `python script.py` 还在 shell_exec\n\n"
-        "**🔴 PowerShell 5.1 经典坑 (用户 这台 Win + PS 5.1)**:\n"
+        "**🔴 PowerShell 5.1 经典坑 (BRO 这台 Win + PS 5.1)**:\n"
         "  - **`2>&1` + git/npm = NativeCommandError** · PS 把进度信息当 PS error · 即使命令成功也 exit 1 → 别加 `2>&1` · 或用 `--quiet`\n"
         "  - **heredoc `<<EOF` 不支持** → 多行内容 write_file 落临时文件再 shell_exec 跑\n"
         "  - **JSON body 嵌 curl `-d \"{\\\"x\\\":\\\"y\\\"}\"`** · 引号嵌套 PS 解不开 → 用 Invoke-RestMethod -Body (Get-Content tmp.json) 或落 _tmp.json 再 `curl @tmp.json`\n"
@@ -409,8 +413,8 @@ SPEC = ToolSpec(
         "  - **`&&` / `||` 短路链 PS 5.1 不支持** · daemon 已自动改写纯 && 或纯 || · 但**混合 `&&` + `||` 不处理** → 拆成两步\n\n"
         "**🔴 自杀防护 (你跑在 daemon 进程里)**:\n"
         "  - **不要 `Stop-Process` / `taskkill` python 或 daemon 自身** · 你就在那个进程里 · 杀 = 自爆\n"
-        "  - **不要 restart daemon** · 让 用户 手动重启\n"
-        "  - 改了 daemon .py 代码后 · 提示 用户 重启即可 · 不要自己跑命令重启\n\n"
+        "  - **不要 restart daemon** · 让 BRO 手动重启\n"
+        "  - 改了 daemon .py 代码后 · 提示 BRO 重启即可 · 不要自己跑命令重启\n\n"
         "**🔴 Secret 用法 (铁律 7)**:\n"
         "  - 不要把 KEY 真值粘到 command · 用 placeholder `${secret:<app_id>:<name>}`\n"
         "  - 例: `Invoke-RestMethod -Headers @{ Authorization = 'Bearer ${secret:app-xxx:api_key}' } ...`\n"

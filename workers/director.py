@@ -1,10 +1,10 @@
 """workers/director.py
 =========================
 
-顾问模型 (内部字段名 director · UI/用户视角 2026-07-28 改称「顾问」) · 配置读取 + client 构建 + 唤醒纪律文案。
+wish-8ffb9d65 · 顾问模型 (内部字段名 director · UI/用户视角 2026-07-28 BRO 拍板改称「顾问」) · 配置读取 + client 构建 + 唤醒纪律文案。
 
-设计 (2026-07-27 拍板 · 动机: 贵模型全量跑日常+vibe coding 成本不可持续):
-  执行层 (主对话 + 分身) 常驻便宜模型 · 贵模型降级为【顾问】·
+设计 (2026-07-27 BRO 拍板 · 动机: K3 全量跑日常+vibe coding 日烧 ~¥100 不可持续):
+  执行层 (主对话 + 分身) 常驻便宜模型 (DeepSeek) · 贵模型 (如 K3) 降级为【顾问】·
   只在三个唤醒点进场: ① 蓝图(blueprint) ② 破局(unstick) ③ 验收(review)。
 
   总监标记跟着 provider 配置走 (provider_configs.json 的 director 字段 · 与 vision 标注同构):
@@ -73,7 +73,7 @@ def director_wake_prompt() -> str:
     name = (cfg.get("name") or cfg.get("model") or "顾问模型").strip()
     model = (cfg.get("model") or "").strip()
     return (
-        f"## 顾问模型 · 三唤醒点 (当前顾问: {name})\n\n"
+        f"## 顾问模型 · 三唤醒点 (wish-8ffb9d65 · 当前顾问: {name})\n\n"
         f"你(主对话)是【执行者】· 贵模型({model})是【顾问】· 它只在三个时刻通过 `replan` 进场 "
         "(干净上下文 · 不装灵魂 · 每次召唤现场建独立 client):\n"
         "  ① 蓝图 · 复杂工程任务开工前 → `replan(mode='blueprint', goal=...)` · 拿回【结构化施工单】"

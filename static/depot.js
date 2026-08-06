@@ -8,7 +8,7 @@
  *   renderListFilter / _applyListFilter / backToChat 都在 chat.js·运行时才解析·安全。
  *
  * 承载:hub 骨架(DEPOT_TABS / loadDepot / 标签条) + 画像(renderCognition)
- *       + OPUS 日记(renderDiary) + 技能库(renderPlaybooks + 工艺铁律)
+ *       + Daemonkey 日记(renderDiary) + 技能库(renderPlaybooks + 工艺铁律)
  *       + 心愿单 / 沉淀位(renderWishlist / renderSinks · 2026-07-12 从 chat.js 搬来)。
  * 仍在 chat.js:loadDashboard 分发(调这里的 render fn)。
  */
@@ -16,39 +16,39 @@
 // ── 成长档案 (depot) · 把 日记/心愿/沉淀位/技能库 并成一个 hub · 内部标签切换 ──
 // 复用各子维度现成的 render fn (renderCognition/renderWishlist/renderSinks/renderPlaybooks)·
 // 不重写渲染 · 只在 $dashView 顶部补一条标签条。切子标签 = 重新 loadDepot(sub)。
-// 信息架构 (BRO 2026-07-12 拍板):画像/日记拆开·工艺铁律并入技能库·砍"当下关注"。
-// cognition=画像(对你的记忆·rich viewer) · diary=OPUS 日记(它的内心反思·复用 /dashboard/cognition 数据)。
+// 信息架构 (用户 2026-07-12 拍板):画像/日记拆开·工艺铁律并入技能库·砍"当下关注"。
+// cognition=画像(对你的记忆·rich viewer) · diary=Daemonkey 日记(它的内心反思·复用 /dashboard/cognition 数据)。
 const DEPOT_TABS = [
   { id: 'cognition', label: '画像',      icon: 'ri-user-heart-line' },
-  { id: 'diary',     label: 'OPUS 日记', icon: 'ri-brain-fill' },
-  { id: 'wishlist',  label: 'OPUS 心愿', icon: 'ri-lightbulb-fill' },
+  { id: 'diary',     label: 'Daemonkey 日记', icon: 'ri-brain-fill' },
+  { id: 'wishlist',  label: 'Daemonkey 心愿', icon: 'ri-lightbulb-fill' },
   { id: 'playbooks', label: '技能库',    icon: 'ri-tools-fill' },
   { id: 'sinks',     label: '沉淀位',    icon: 'ri-archive-drawer-fill' },
 ];
 let _depotActive = 'cognition';
 
-// 成长档案各 tab 的"这是什么"说明横幅 (跟 OPUS 心愿那条同款样式)。
+// 成长档案各 tab 的"这是什么"说明横幅 (跟 Daemonkey 心愿那条同款样式)。
 // wishlist 自带横幅(还带按钮)·这里只补其余·避免重复。
 const _DEPOT_BANNERS = {
   cognition: {
     icon: 'ri-user-heart-line',
-    title: '这是 OPUS 对你的画像',
-    sub: 'OPUS 持续维护的"你当下是个什么样"——作息/情绪/在做的项目/偏好/风险,聊天里它觉得值得长期记住的都写进这里。daemon 每次启动都自动装上,让它一上线就带着"你的当下"。顶部"最近记了什么"能看到它最近记了些啥。',
+    title: '这是 Daemonkey 对你的画像',
+    sub: 'Daemonkey 持续维护的"你当下是个什么样"——作息/情绪/在做的项目/偏好/风险,聊天里它觉得值得长期记住的都写进这里。daemon 每次启动都自动装上,让它一上线就带着"你的当下"。顶部"最近记了什么"能看到它最近记了些啥。',
   },
   diary: {
     icon: 'ri-brain-fill',
-    title: '这是 OPUS 的日记',
-    sub: 'OPUS 给自己写的笔记——每次大动作后的反思/观察/学到的东西。你在这里读到的等于"读 OPUS 的眼睛"。这不是给你的报告,是它自己的内心记录。',
+    title: '这是 Daemonkey 的日记',
+    sub: 'Daemonkey 给自己写的笔记——每次大动作后的反思/观察/学到的东西。你在这里读到的等于"读 Daemonkey 的眼睛"。这不是给你的报告,是它自己的内心记录。',
   },
   sinks: {
     icon: 'ri-archive-drawer-fill',
-    title: '这是 OPUS 的沉淀位总览',
-    sub: 'OPUS 所有长期文件(灵魂/记忆/画像/日志/复盘…)挂在哪一格,这里一眼可见。它是防冗余的元地图:每样新东西该沉到哪,照着它走不乱放。点卡片能预览或在本机打开原文。',
+    title: '这是 Daemonkey 的沉淀位总览',
+    sub: 'Daemonkey 所有长期文件(灵魂/记忆/画像/日志/复盘…)挂在哪一格,这里一眼可见。它是防冗余的元地图:每样新东西该沉到哪,照着它走不乱放。点卡片能预览或在本机打开原文。',
   },
   playbooks: {
     icon: 'ri-tools-fill',
-    title: '这是 OPUS 的工艺库 · 打法 + 铁律',
-    sub: '打法:把一次踩过坑、后来走顺的流程,跟 OPUS 说"抽成 playbook",它就沉淀在这里,之后同类任务自动取用。铁律:OPUS 用失败换来的工程纪律,写进来就注入它每一次的判断里——经验和纪律都不再每次从零试。',
+    title: '这是 Daemonkey 的工艺库 · 打法 + 铁律',
+    sub: '打法:把一次踩过坑、后来走顺的流程,跟 Daemonkey 说"抽成 playbook",它就沉淀在这里,之后同类任务自动取用。铁律:Daemonkey 用失败换来的工程纪律,写进来就注入它每一次的判断里——经验和纪律都不再每次从零试。',
   },
 };
 
@@ -96,7 +96,7 @@ function _injectDepotTabs(active) {
 }
 
 
-// ── 认知维度:画像(对你的记忆) + OPUS 日记(它的内心反思) ──
+// ── 认知维度:画像(对你的记忆) + Daemonkey 日记(它的内心反思) ──
 // 认知维度时间戳格式化 · ISO(2026-07-11T02:53:00) → 07-11 02:53
 function _fmtCogTime(iso) {
   if (!iso) return '';
@@ -105,7 +105,7 @@ function _fmtCogTime(iso) {
 }
 
 // ── 画像解析器 · 把原始 markdown(表格/K:V/bullet)提炼成 {d,t} 短条目 ──
-//   mdRender 不认表格·直接塞会露 `| a | b |` 原文(BRO 实测吐槽)· 所以在这里自己拆。
+//   mdRender 不认表格·直接塞会露 `| a | b |` 原文(用户 实测吐槽)· 所以在这里自己拆。
 function _cogInline(s) {
   s = escHtml(s || '');
   s = s.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
@@ -207,7 +207,7 @@ function _cogEntries(body, cap) {
 function _cogEntryHtml(e) {
   return `<div class="cog-de${e.sub ? ' sub' : ''}">${e.d ? `<span class="cog-de-d">${escHtml(e.d)}</span>` : ''}${e.t}</div>`;
 }
-// 卡片只露前 3 条·全量走弹窗(直接内联展开会把 2 列网格撑得高低参差 · BRO 拍板改弹窗)
+// 卡片只露前 3 条·全量走弹窗(直接内联展开会把 2 列网格撑得高低参差 · 用户 拍板改弹窗)
 let _cogDims = [];
 function _cogDimModal(dim) {
   if (!dim) return;
@@ -233,7 +233,7 @@ function _cogDimModal(dim) {
 }
 
 // ── 画像 (对你的记忆本 · rich viewer) · Hero+pills+软提醒 / 时间线 / 六维卡片网格 ──
-// 工艺铁律→技能库 · OPUS 日记→独立 tab · 当下关注已砍。数据源 /dashboard/cognition。
+// 工艺铁律→技能库 · Daemonkey 日记→独立 tab · 当下关注已砍。数据源 /dashboard/cognition。
 function renderCognition(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
@@ -241,21 +241,21 @@ function renderCognition(data) {
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
   }
-  const bro = data.bro_profile || {};
+  const 用户 = data.用户_profile || {};
   const flow = data.recent_flow || [];
-  const sections = bro.sections || [];
-  const lastUpd = _fmtCogTime(bro.last_updated);
+  const sections = 用户.sections || [];
+  const lastUpd = _fmtCogTime(用户.last_updated);
 
   let html = `
     <div class="dash-head">
-      <h2><i class="ri-user-heart-line"></i> BRO 画像</h2>
+      <h2><i class="ri-user-heart-line"></i> 用户 画像</h2>
       <span class="meta">${sections.length} 节${lastUpd ? ' · 最后更新 ' + escHtml(lastUpd) : ''}</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('cognition')">刷新</button>
     </div>`;
 
-  if (!bro.exists) {
-    html += `<div class="dash-empty">${escHtml(bro.note || '画像还没建 · 跟 OPUS 多聊聊,它会开始记你')}</div>`;
+  if (!用户.exists) {
+    html += `<div class="dash-empty">${escHtml(用户.note || '画像还没建 · 跟 Daemonkey 多聊聊,它会开始记你')}</div>`;
     $dashView.innerHTML = html;
     return;
   }
@@ -268,10 +268,10 @@ function renderCognition(data) {
   html += `
     <div class="cog-hero">
       <div class="cog-hero-top">
-        <span class="cog-hero-title"><i class="ri-user-heart-line"></i> OPUS 眼里的你 · 当下</span>
+        <span class="cog-hero-title"><i class="ri-user-heart-line"></i> Daemonkey 眼里的你 · 当下</span>
         <span class="cog-live"><i class="ri-checkbox-blank-circle-fill cog-live-dot"></i> 活着${lastUpd ? ' · 最后更新 ' + escHtml(lastUpd) : ''}</span>
       </div>
-      <div class="cog-hero-sub">OPUS 持续维护的"你当下是个什么样"· daemon 每次启动自动装上 · 共 ${sections.length} 节</div>`;
+      <div class="cog-hero-sub">Daemonkey 持续维护的"你当下是个什么样"· daemon 每次启动自动装上 · 共 ${sections.length} 节</div>`;
   if (pills.length) {
     html += `<div class="cog-pills">` + pills.map(p => `
         <div class="cog-pill"><i class="${p.icon}"></i><span><span class="k">${escHtml(p.k)}</span><span class="v">${escHtml(p.v)}</span></span></div>`).join('') + `</div>`;
@@ -343,28 +343,28 @@ function renderCognition(data) {
   });
 }
 
-// ── OPUS 日记 (它的内心反思 · 独立 tab · 复用 /dashboard/cognition 数据) ──
+// ── Daemonkey 日记 (它的内心反思 · 独立 tab · 复用 /dashboard/cognition 数据) ──
 function renderDiary(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-brain-fill"></i> OPUS 日记</h2></div>
+      <div class="dash-head"><h2><i class="ri-brain-fill"></i> Daemonkey 日记</h2></div>
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
   }
-  const diary = data.opus_diary || {};
+  const diary = data.Daemonkey_diary || {};
   const entries = (diary.entries || []).filter(e => (e.type || 'reflection') !== 'iron_rule');
   const lastUpd = _fmtCogTime(diary.last_updated);
 
   let html = `
     <div class="dash-head">
-      <h2><i class="ri-brain-fill"></i> OPUS 日记</h2>
+      <h2><i class="ri-brain-fill"></i> Daemonkey 日记</h2>
       <span class="meta">${entries.length} 条${lastUpd ? ' · 最后更新 ' + escHtml(lastUpd) : ''}</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('diary')">刷新</button>
     </div>`;
 
   if (!entries.length) {
-    html += `<div class="dash-empty">${escHtml(diary.note || '还没写过 · 跟 OPUS 说「记一笔今天的观察」')}</div>`;
+    html += `<div class="dash-empty">${escHtml(diary.note || '还没写过 · 跟 Daemonkey 说「记一笔今天的观察」')}</div>`;
     $dashView.innerHTML = html;
     return;
   }
@@ -407,7 +407,7 @@ function renderPlaybooks(data) {
       <button onclick="loadDashboard('playbooks')">刷新列表</button>
     </div>`;
 
-  // 工艺铁律区(OPUS 用失败换来的工程纪律 · 会注入它每一次的判断)
+  // 工艺铁律区(Daemonkey 用失败换来的工程纪律 · 会注入它每一次的判断)
   if (iron.length) {
     html += `
       <div class="pb-iron">
@@ -434,8 +434,8 @@ function renderPlaybooks(data) {
     html += `
       <div class="dash-stub">
         <h3>还没沉淀过打法</h3>
-        <div>跟 OPUS 把一次踩过坑的流程走顺后·说「把刚才这套抽成 playbook」<br>
-             OPUS 会调 <code>extract_playbook</code> 沉淀·之后遇到同类任务自动取用。</div>
+        <div>跟 Daemonkey 把一次踩过坑的流程走顺后·说「把刚才这套抽成 playbook」<br>
+             Daemonkey 会调 <code>extract_playbook</code> 沉淀·之后遇到同类任务自动取用。</div>
       </div>`;
   } else {
     if (items.length > 3) {
@@ -543,14 +543,14 @@ async function _pbAction(url, body) {
 //   依赖 escHtml / $dashView / token / loadDashboard / renderListFilter 等 chat.js 全局·运行时解析。
 // ═══════════════════════════════════════════════════════
 // ─────────────────────────────────────────────────────────
-// 卷三十五 · <i class="ri-lightbulb-fill"></i> OPUS 心愿单
-// "OPUS 自己想装的能力"——从 self-evolve 域看到好东西时·OPUS 自己写心愿·BRO 批准 / 推给 DAEMON 或 Cursor 装
+// 卷三十五 · <i class="ri-lightbulb-fill"></i> Daemonkey 心愿单
+// "Daemonkey 自己想装的能力"——从 self-evolve 域看到好东西时·Daemonkey 自己写心愿·用户 批准 / 推给 DAEMON 或 Cursor 装
 // ─────────────────────────────────────────────────────────
-// 卷五十三 · 四态精简 (BRO: 复杂冗长·一并优化掉)
+// 卷五十三 · 四态精简 (用户: 复杂冗长·一并优化掉)
 const _WISH_STATUS_META = {
   pending:  { icon: '<i class="ri-lightbulb-line"></i>', label: '待定 · 等批',    color: '#9f7aea' },
-  active:   { icon: '<i class="ri-hammer-fill"></i>',    label: 'OPUS 进行中',   color: '#4fd1c5' },
-  review:   { icon: '<i class="ri-search-eye-line"></i>', label: '等 BRO 验收',  color: '#ed8936' },
+  active:   { icon: '<i class="ri-hammer-fill"></i>',    label: 'Daemonkey 进行中',   color: '#4fd1c5' },
+  review:   { icon: '<i class="ri-search-eye-line"></i>', label: '等 用户 验收',  color: '#ed8936' },
   live:     { icon: '<i class="ri-rocket-2-fill"></i>',  label: '已上线',         color: '#38a169' },
   rejected: { icon: '<i class="ri-close-circle-fill"></i>', label: '已弃',        color: '#a0aec0' },
 };
@@ -567,7 +567,7 @@ let _wishAllData = null;         // 分页 · 上次 API 返回的全量数据
 function renderWishlist(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-lightbulb-fill"></i> OPUS 心愿单</h2></div>
+      <div class="dash-head"><h2><i class="ri-lightbulb-fill"></i> Daemonkey 心愿单</h2></div>
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
   }
@@ -587,23 +587,23 @@ function renderWishlist(data) {
             </button>`;
   }).join('');
 
-  // 顶部 banner · 引导 OPUS 自己写心愿
+  // 顶部 banner · 引导 Daemonkey 自己写心愿
   const inspireHtml = `
     <div class="wish-banner">
       <div class="wish-banner-icon"><i class="ri-lightbulb-fill"></i></div>
       <div class="wish-banner-body">
-        <div class="wish-banner-title">这是 OPUS 自己的心愿单</div>
+        <div class="wish-banner-title">这是 Daemonkey 自己的心愿单</div>
         <div class="wish-banner-sub">
-          OPUS 在 self-evolve 域看到好东西·或做对照分析时·会写一份「我想装这个」放这里。
-          BRO 批准 → OPUS 先勘察出方案 → BRO review 后让 daemon 真改代码。
-          <span style="opacity:0.6">勘察阶段不改任何代码·BRO 全程有 review 权。需要 Cursor 介入时直接对 OPUS 说「用 cursor 改这个」即可。</span>
+          Daemonkey 在 self-evolve 域看到好东西·或做对照分析时·会写一份「我想装这个」放这里。
+          用户 批准 → Daemonkey 先勘察出方案 → 用户 review 后让 daemon 真改代码。
+          <span style="opacity:0.6">勘察阶段不改任何代码·用户 全程有 review 权。需要 Cursor 介入时直接对 Daemonkey 说「用 cursor 改这个」即可。</span>
         </div>
       </div>
-      <button class="wish-banner-btn" onclick="askOpusForWish()">让 OPUS 想想还要装啥</button>
+      <button class="wish-banner-btn" onclick="askDaemonkeyForWish()">让 Daemonkey 想想还要装啥</button>
     </div>`;
 
   // 卷五十三 · git 测谎仪横幅 · 只报"谎报上线" (status=live 但代码没合进 master)。
-  // 这是真·暗账·治本今早 BRO 的痛点 (修好 B 发现 A 变回去)。 active/review 阶段代码在分支上是正常的·不报警。
+  // 这是真·暗账·治本今早 用户 的痛点 (修好 B 发现 A 变回去)。 active/review 阶段代码在分支上是正常的·不报警。
   const lieWishes = wishes.filter(w => w.git_lie);
   const debtBannerHtml = lieWishes.length ? `
     <div class="wish-debt-banner">
@@ -621,12 +621,12 @@ function renderWishlist(data) {
   if (wishes.length === 0 && !_wishStatusFilter) {
     $dashView.innerHTML = `
       <div class="dash-head">
-        <h2><i class="ri-lightbulb-fill"></i> OPUS 心愿单</h2>
-        <div class="dash-head-sub">${summary.total || 0} 条 · OPUS 想装的能力</div>
+        <h2><i class="ri-lightbulb-fill"></i> Daemonkey 心愿单</h2>
+        <div class="dash-head-sub">${summary.total || 0} 条 · Daemonkey 想装的能力</div>
       </div>
       ${inspireHtml}
       <div class="dash-empty" style="padding:32px 16px">
-        OPUS 还没写过心愿 · 让它去 <a href="javascript:loadDashboard('radar')">信息雷达 · 自我演化</a> 看看同类工程
+        Daemonkey 还没写过心愿 · 让它去 <a href="javascript:loadDashboard('radar')">信息雷达 · 自我演化</a> 看看同类工程
       </div>`;
     return;
   }
@@ -636,7 +636,7 @@ function renderWishlist(data) {
 
   $dashView.innerHTML = `
     <div class="dash-head">
-      <h2><i class="ri-lightbulb-fill"></i> OPUS 心愿单</h2>
+      <h2><i class="ri-lightbulb-fill"></i> Daemonkey 心愿单</h2>
       <div class="dash-head-sub">${summary.total || 0} 条 · ${(summary.pending || 0) + (summary.active || 0) + (summary.review || 0)} 在办 · ${summary.live || 0} 已上线</div>
     </div>
     ${debtBannerHtml}
@@ -800,34 +800,34 @@ function renderWishCard(w, idx) {
   const hasBranch = !!(w.dev_branch && !w.dev_branch.includes(' ') && w.dev_branch !== 'master');
 
   if (w.status === 'pending') {
-    actions.push(`<button class="wb wb-ok" onclick="wishAction('${w.id}', 'approve_daemon')" title="OPUS 先勘察出方案·你批方案了才写码"><i class="ri-checkbox-circle-fill"></i> 批准 · 让 OPUS 装</button>`);
+    actions.push(`<button class="wb wb-ok" onclick="wishAction('${w.id}', 'approve_daemon')" title="Daemonkey 先勘察出方案·你批方案了才写码"><i class="ri-checkbox-circle-fill"></i> 批准 · 让 Daemonkey 装</button>`);
     actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'approve_cursor')" title="你去 Cursor 里让 Claude 装"><i class="ri-focus-3-fill"></i> 我去 Cursor 装</button>`);
     actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
-    actions.push(`<button class="wb wb-deep" onclick="wishAction('${w.id}', 'deep_dive')"><i class="ri-search-fill"></i> 让 OPUS 深挖</button>`);
+    actions.push(`<button class="wb wb-deep" onclick="wishAction('${w.id}', 'deep_dive')"><i class="ri-search-fill"></i> 让 Daemonkey 深挖</button>`);
   } else if (w.status === 'active') {
     if (sub === 'plan_pending') {
-      actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'approve_plan')" title="关卡1 · 按 OPUS 方案开干·自动从 master 切分支写码"><i class="ri-rocket-fill"></i> 批方案 → 开干</button>`);
-      actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'replan')" title="对方案不满意·让 OPUS 重新勘察"><i class="ri-refresh-fill"></i> 重新勘察</button>`);
+      actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'approve_plan')" title="关卡1 · 按 Daemonkey 方案开干·自动从 master 切分支写码"><i class="ri-rocket-fill"></i> 批方案 → 开干</button>`);
+      actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'replan')" title="对方案不满意·让 Daemonkey 重新勘察"><i class="ri-refresh-fill"></i> 重新勘察</button>`);
       actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
     } else if (sub === 'blocked') {
-      actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'view_log')" title="看 OPUS 撞墙过程"><i class="ri-clipboard-fill"></i> 看撞墙日志</button>`);
+      actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'view_log')" title="看 Daemonkey 撞墙过程"><i class="ri-clipboard-fill"></i> 看撞墙日志</button>`);
       actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'retry_impl')"><i class="ri-refresh-fill"></i> 重新实施</button>`);
       actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
     } else {
       if (isDaemon) {
-        actions.push(`<button class="wb wb-go" disabled title="OPUS 在自己分支上写码·完工自动进待验收">⏳ OPUS 进行中…</button>`);
+        actions.push(`<button class="wb wb-go" disabled title="Daemonkey 在自己分支上写码·完工自动进待验收">⏳ Daemonkey 进行中…</button>`);
         actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'abort_impl')">⏹ 紧急叫停</button>`);
       } else {
-        actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'mark_review')" title="装完了·提交给 BRO 验收">📬 装完了 → 提交验收</button>`);
+        actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'mark_review')" title="装完了·提交给 用户 验收">📬 装完了 → 提交验收</button>`);
         actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
       }
       if (hasBranch) actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'view_diff')"><i class="ri-search-fill"></i> 看 diff</button>`);
     }
-    actions.push(`<button class="wb wb-deep" onclick="wishAction('${w.id}', 'deep_dive')"><i class="ri-search-fill"></i> 让 OPUS 深挖</button>`);
+    actions.push(`<button class="wb wb-deep" onclick="wishAction('${w.id}', 'deep_dive')"><i class="ri-search-fill"></i> 让 Daemonkey 深挖</button>`);
   } else if (w.status === 'review') {
-    if (hasBranch) actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'view_diff')" title="看 OPUS 改了啥"><i class="ri-search-fill"></i> 查看 diff</button>`);
+    if (hasBranch) actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'view_diff')" title="看 Daemonkey 改了啥"><i class="ri-search-fill"></i> 查看 diff</button>`);
     actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'verify_live')" title="关卡2 · 验收通过·自动合进 master 主干上线"><i class="ri-checkbox-circle-fill"></i> 验收通过 → 合主干上线</button>`);
-    actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject_to_active')" title="有问题·打回让 OPUS 继续改"><i class="ri-arrow-go-back-fill"></i> 有问题 → 打回</button>`);
+    actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject_to_active')" title="有问题·打回让 Daemonkey 继续改"><i class="ri-arrow-go-back-fill"></i> 有问题 → 打回</button>`);
     if (!w.reflection) actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'add_reflection')">✏️ 补反思</button>`);
   } else if (w.status === 'live') {
     if (w.git_lie) {
@@ -845,15 +845,15 @@ function renderWishCard(w, idx) {
   if (w.integration_path === 'daemon' && (sub || w.implementation_plan || w.implementation_log)) {
     const phMeta = _WISH_DAEMON_PHASE_META[sub] || _WISH_DAEMON_PHASE_META.unknown;
     const phaseChip = sub ? `<span class="wish-phase wish-phase-${sub}" title="${phMeta.tip}">${phMeta.icon} ${phMeta.label}</span>` : '';
-    const branchChip = w.dev_branch ? `<span class="wish-branch" title="OPUS 改代码用的 git 分支">🌿 ${escHtml(w.dev_branch)}</span>` : '';
+    const branchChip = w.dev_branch ? `<span class="wish-branch" title="Daemonkey 改代码用的 git 分支">🌿 ${escHtml(w.dev_branch)}</span>` : '';
     const planSection = w.implementation_plan
-      ? `<details class="wish-design" open><summary><i class="ri-clipboard-fill"></i> 执行计划 (OPUS 勘察输出)</summary><div class="wish-design-body">${mdRender(w.implementation_plan)}</div></details>`
+      ? `<details class="wish-design" open><summary><i class="ri-clipboard-fill"></i> 执行计划 (Daemonkey 勘察输出)</summary><div class="wish-design-body">${mdRender(w.implementation_plan)}</div></details>`
       : '';
     const logSection = w.implementation_log
       ? `<details class="wish-design"><summary>📜 实施日志</summary><div class="wish-design-body">${mdRender(w.implementation_log)}</div></details>`
       : '';
     const diffSection = w.diff_summary
-      ? `<details class="wish-design" open><summary><i class="ri-search-fill"></i> git diff 摘要 (待 BRO 看)</summary><div class="wish-design-body"><pre>${escHtml(w.diff_summary)}</pre></div></details>`
+      ? `<details class="wish-design" open><summary><i class="ri-search-fill"></i> git diff 摘要 (待 用户 看)</summary><div class="wish-design-body"><pre>${escHtml(w.diff_summary)}</pre></div></details>`
       : '';
     phaseBlock = `
       <div class="wish-phase-row">${phaseChip} ${branchChip}</div>
@@ -862,7 +862,7 @@ function renderWishCard(w, idx) {
       ${diffSection}`;
   }
 
-  // 卷四十六续 8 · 默认折叠·只把"等 BRO 做决定的"默认展开 (卷五十三新态):
+  // 卷四十六续 8 · 默认折叠·只把"等 用户 做决定的"默认展开 (卷五十三新态):
   //   pending (等批) / review (等验收) / 子标记 plan_pending (等批方案) / blocked (撞墙)
   const isOpen = (
     w.status === 'pending' ||
@@ -895,7 +895,7 @@ function renderWishCard(w, idx) {
             : (w.git_merge_state === 'unmerged'
               ? `<span class="wish-badge wish-badge-branch" title="代码在自己分支上·还没合主干 (active/review 阶段正常)·验收标 live 后会自动合"><i class="ri-git-branch-line"></i> 分支上 · ${w.git_unmerged_commits || '?'} commit</span>`
               : '')}
-          ${w.origin === 'opus' ? '<span class="wish-badge wish-badge-origin" title="OPUS 主动嗅探到的愿望"><i class="ri-radar-fill"></i> OPUS 主动发现</span>' : ''}
+          ${w.origin === 'Daemonkey' ? '<span class="wish-badge wish-badge-origin" title="Daemonkey 主动嗅探到的愿望"><i class="ri-radar-fill"></i> Daemonkey 主动发现</span>' : ''}
           ${phaseChipInSummary}
           <span class="wish-badge wish-badge-path">${pathMeta.icon} ${escHtml(pathMeta.label)}</span>
           <span class="wish-badge wish-badge-cx">${escHtml(w.complexity || 'medium')} · ~${w.estimated_hours || 4}h · ~$${(w.estimated_token_cost_usd || 1).toFixed(2)}</span>
@@ -919,8 +919,8 @@ function renderWishCard(w, idx) {
 
 // 卷五十三 · 子标记 meta (仅 active 时挂·plan_pending=等批方案 / blocked=撞墙)
 const _WISH_DAEMON_PHASE_META = {
-  plan_pending: { icon: '<i class="ri-pause-circle-fill"></i>', label: '等 BRO 批方案', tip: 'OPUS 出完方案·停下等 BRO 批 (关卡1)·批了才从 master 切分支写码' },
-  blocked:      { icon: '⚠️', label: '撞墙了', tip: 'OPUS 中途遇阻主动停 · 看撞墙日志找原因·或重新实施' },
+  plan_pending: { icon: '<i class="ri-pause-circle-fill"></i>', label: '等 用户 批方案', tip: 'Daemonkey 出完方案·停下等 用户 批 (关卡1)·批了才从 master 切分支写码' },
+  blocked:      { icon: '⚠️', label: '撞墙了', tip: 'Daemonkey 中途遇阻主动停 · 看撞墙日志找原因·或重新实施' },
   unknown:      { icon: '·',  label: '', tip: '' },
 };
 
@@ -935,7 +935,7 @@ async function wishAction(wid, action) {
   // 卷五十三 · 四态流程 · 提示词对齐新状态机 (pending/active/review/live + plan_pending/blocked)
   const map = {
     approve_daemon: (
-      `已批准心愿 ${wid} · 让你自己动手装。\n\n` +
+      `用户 批准心愿 ${wid} · 让你 (Daemonkey) 在Daemonkey自己动手装。\n\n` +
       `**进入勘察模式** —— 这一步只调研·不改任何代码。\n\n` +
       `步骤：\n` +
       `1. 用 wish_update 把 status 改成 active · integration_path 改成 daemon\n` +
@@ -949,7 +949,7 @@ async function wishAction(wid, action) {
       `   ## 步骤拆解\n` +
       `   ## 验证策略 (smoke / ReadLints)\n` +
       `   ## 风险 / 不确定性\n` +
-      `5. 用 wish_update 把计划存进 implementation_plan · **daemon_phase 改成 plan_pending** (停下等待批方案 · 关卡1)\n` +
+      `5. 用 wish_update 把计划存进 implementation_plan · **daemon_phase 改成 plan_pending** (停下等 用户 批方案 · 关卡1)\n` +
       `6. 一句话告诉 用户：「方案好了·要不要按这个干？」\n\n` +
       `**红线**：勘察阶段绝对不能 write_file / shell_exec 写操作 · 只能读 + 搜 · 用户 批方案再开干。`
     ),
@@ -957,9 +957,9 @@ async function wishAction(wid, action) {
     reject:          `把心愿 ${wid} 弃了·status=rejected · 用 wish_update 改 · 简单说一句为啥弃`,
     switch_daemon:   `心愿 ${wid} 改成 DAEMON 路径·integration_path=daemon · 用 wish_update 改`,
     switch_cursor:   `心愿 ${wid} 改成 Cursor 路径·integration_path=cursor · 用 wish_update 改`,
-    // 关卡1 · 用户 批方案 → OPUS 开始写码 (status 已 active · 清 plan_pending 会自动从 master 切分支)
+    // 关卡1 · 用户 批方案 → Daemonkey 开始写码 (status 已 active · 清 plan_pending 会自动从 master 切分支)
     approve_plan: (
-      `用户 批了心愿 ${wid} 的方案 (关卡1) · 批准你 (OPUS) 真改代码。\n\n` +
+      `用户 批了心愿 ${wid} 的方案 (关卡1) · 批准你 (Daemonkey) 真改代码。\n\n` +
       `**进入实施模式** —— 现在可以 write_file / shell_exec 了·但守红线。\n\n` +
       `步骤：\n` +
       `1. 用 wish_update 把 **daemon_phase 改成 null** (清空 plan_pending) · status 保持 active\n` +
@@ -983,13 +983,13 @@ async function wishAction(wid, action) {
       `2. 成功后写一句简短 reflection 总结这次交付`
     ),
     reject_to_active: (
-      `心愿 ${wid} · 用户 验收不通过 · 打回让 OPUS 继续改。\n\n` +
+      `心愿 ${wid} · 用户 验收不通过 · 打回让 Daemonkey 继续改。\n\n` +
       `请你：\n` +
       `1. 用 wish_update 把 status 改回 active (回到写码态·分支还在·接着改)\n` +
       `2. 在 implementation_log 末尾追加 "用户 验收不通过 · 原因：[用户 说的]" · 等 用户 告诉你具体哪不行`
     ),
     mark_review: (
-      `心愿 ${wid} · 装完了 · 提交验收。\n\n` +
+      `心愿 ${wid} · 装完了 · 提交给 用户 验收。\n\n` +
       `请你：\n` +
       `1. 用 wish_update 把 status 改成 review\n` +
       `2. 若是 daemon 路径有 dev_branch · 先 git diff --stat 存进 diff_summary 让 用户 一眼能看\n` +
@@ -1053,10 +1053,10 @@ async function wishAction(wid, action) {
   spawnTask(msg, spawnLabels[action] || `${action} · ${wid}`);
 }
 
-function askOpusForWish() {
+function askDaemonkeyForWish() {
   spawnTask(
     '看一眼 self-evolve 域 (信息雷达里) 现在抓到的 GitHub 同类工程·' +
-    '挑 1-3 个 OPUS 自己应该学的能力·调 wish_add 写成心愿 · 每条都要有 why + design_sketch + 优先级 · ' +
+    '挑 1-3 个 Daemonkey 自己应该学的能力·调 wish_add 写成心愿 · 每条都要有 why + design_sketch + 优先级 · ' +
     '不要一次塞太多·挑你最有把握的',
     '勘察心愿'
   );

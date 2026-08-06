@@ -18,10 +18,15 @@ import time
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Body, Header, HTTPException, Request
+from fastapi import APIRouter, Body, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from api_routes._deps import check_auth, check_rate_limit
+
+# wish-93b0cabf (2026-08-06) · /context-usage 的 soul 固定块缓存 · 30s 过期。
+# 病根: async 端点里同步 load_soul (读灵魂+画像文件+拼 prompt) · 60s 轮询+done 重刷高频触发。
+# soul 内容低频变 (画像更新走 reload_soul_into_runtime 单独重建) · 30s 缓存足够 · 大幅降负载。
+_ctx_soul_cache = {"ts": 0.0, "sp": None}
 
 router = APIRouter()
 
@@ -44,11 +49,11 @@ async def chat(
     auto_confirm = payload.get("auto_confirm")
     max_tokens = _resolve_max_tokens(payload.get("max_tokens"))
     attachments = payload.get("attachments")  # wish-4a6331b2 · WebUI 图片上传
-    _thinking = payload.get("thinking") or None            #五 · 模型行为
+    _thinking = payload.get("thinking") or None            # 卷七十五续五 · 模型行为
     _reasoning_effort = payload.get("reasoning_effort") or None
     _advisor_coop = bool(payload.get("advisor_coop"))      # wish-0e749752 · 顾问协同模式
 
-    # III 补丁 5 · Y7 · audit log
+    # 卷四十六 III 补丁 5 · Y7 · audit log
     _audit_start = time.monotonic()
     _audit_ip = (request.client.host if request and request.client else None) or "unknown"
     _audit_sid_from_request = session_id or ""
@@ -95,7 +100,7 @@ async def chat_stream(
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """SSE 流式版 (加 · 解决 524 + 让 用户 看 Daemonkey 思考过程)"""
+    """SSE 流式版 (卷十七加 · 解决 524 + 让 BRO 看 OPUS 思考过程)"""
     check_auth(authorization)
     if not isinstance(payload, dict):
         raise HTTPException(400, "request body must be a JSON object")
@@ -115,7 +120,7 @@ async def chat_stream(
     auto_confirm = payload.get("auto_confirm")
     max_tokens = _resolve_max_tokens(payload.get("max_tokens"))
     attachments = payload.get("attachments")  # wish-4a6331b2
-    _thinking = payload.get("thinking") or None            #五 · 模型行为
+    _thinking = payload.get("thinking") or None            # 卷七十五续五 · 模型行为
     _reasoning_effort = payload.get("reasoning_effort") or None
     _advisor_coop = bool(payload.get("advisor_coop"))      # wish-0e749752 · 顾问协同模式
 
@@ -128,7 +133,7 @@ async def chat_stream(
     except ValueError as e:
         raise HTTPException(400, str(e))
 
-    # 会话记住模型 · 记下这一笔用的 active config · 切标签时恢复 (用户 诉求)
+    # 会话记住模型 · 记下这一笔用的 active config · 切标签时恢复 (BRO 诉求)
     try:
         from workers.provider_configs import list_configs as _lpc
         from daemon_session import get_session_meta as _gsm, set_session_meta as _ssm
@@ -220,7 +225,7 @@ async def abort_turn(
     turn_id: str,
     authorization: Optional[str] = Header(None),
 ):
-    """ · 用户 点停止按钮 · 中断正在跑的 turn"""
+    """卷三十六 · BRO 点停止按钮 · 中断正在跑的 turn"""
     check_auth(authorization)
     from daemon_api import _TURNS_LOCK, _ACTIVE_TURNS
     with _TURNS_LOCK:
@@ -237,7 +242,7 @@ async def confirm_tool_call(
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """wish-2a4d8c1e · 用户 在 chat 卡片点 4 按钮 (approve/trust_*/deny)"""
+    """wish-2a4d8c1e · BRO 在 chat 卡片点 4 按钮 (approve/trust_*/deny)"""
     check_auth(authorization)
     if not isinstance(payload, dict):
         raise HTTPException(400, "request body must be a JSON object")
@@ -373,13 +378,13 @@ async def spawn_task(
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """派发后台任务到新会话 · 不污染当前对话 (打捞自 wish-94bf05eb)
+    """派发后台任务到新会话 · 不污染当前对话 (打捞自 wish-94bf05eb · 卷五十一)
 
     前端按钮 (雷达/趋势/机会/心愿/工坊) 点"执行"时 · 走此端点创建新 session ·
     后台跑 LLM turn · 原会话不受污染 · 前端拿到 session_id 后自动切到新标签。
 
     入参:
-      - prompt (必填): 发给 Daemonkey 的任务指令
+      - prompt (必填): 发给 OPUS 的任务指令
       - task_label (可选): 任务名 · 空则取 prompt 前 40 字符
 
     返回 {ok, session_id, task_label, message}
@@ -407,10 +412,185 @@ async def spawn_task(
         name=f"spawn-{new_sid[-8:]}",
     )
     t.start()
-
     return {
         "ok": True,
         "session_id": new_sid,
         "task_label": task_label,
         "message": f"任务「{task_label}」已派发到新会话 {new_sid} · 后台执行中",
+    }
+
+
+@router.get("/context-usage")
+async def get_context_usage(
+    session_id: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None),
+):
+    """wish-bec4f3b9 · 当前会话上下文占用分块 + 缓存提示 (压缩圆圈 + Context Usage 卡片用).
+
+    返回契约 = chat-compress-proto.html 的 MOCK:
+      {total_tokens, max_tokens, used_pct, cache_hint,
+       blocks: [{key,label,icon,color,tokens,sub}]}
+    - soul/tools/rules/skills/profile 用 soul_loader 各段实测 (len//3 估 token · 中文偏 1:1 保守取 /3)
+    - history 用 session jsonl 消息实测 (_estimate_tokens)
+    - max_tokens = 当前模型 context_window × 0.7 (对齐 memory_compression.token_budget_check)
+    """
+    check_auth(authorization)
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+
+    # ── 1. 固定分块 (soul_loader 实测 · 含 runtime 画像/演化) ──
+    blocks = []
+    try:
+        from soul_loader import load_soul
+        # wish-93b0cabf · 30s 缓存 · 避免每次轮询/done 重刷都全量 load_soul
+        _now = time.time()
+        if _ctx_soul_cache["sp"] is None or _now - _ctx_soul_cache["ts"] > 30:
+            soul = load_soul(root, with_runtime=True)
+            _ctx_soul_cache["sp"] = soul.system_prompt or ""
+            _ctx_soul_cache["ts"] = _now
+        sp = _ctx_soul_cache["sp"]
+        # 各段锚点: 按 loader 里的 header 标记切
+        def _seg(marker: str) -> int:
+            idx = sp.find(marker)
+            return len(sp[idx:idx + 60000]) // 3 if idx >= 0 else 0
+        # soul 总 = 全量 (铁律+宪法+SKILL+自传+画像+演化都含在 system_prompt 里)
+        blocks.append({"key": "soul", "label": "System prompt", "icon": "ri-file-settings-fill",
+                       "color": "#B794F4", "tokens": len(sp) // 3, "sub": "灵魂层: 铁律+宪法+SKILL+自传+画像+演化 (全量)"})
+        blocks.append({"key": "rules", "label": "Rules", "icon": "ri-shield-check-fill",
+                       "color": "#F6AD55", "tokens": _seg("=== DAEMON 工程铁律"), "sub": "daemon_rules 铁律"})
+        blocks.append({"key": "skills", "label": "Skills", "icon": "ri-book-open-fill",
+                       "color": "#4FD1C5", "tokens": _seg("=== SKILL.md"), "sub": "SKILL.md + 场景索引"})
+        blocks.append({"key": "profile", "label": "画像 & 记忆注入", "icon": "ri-user-heart-fill",
+                       "color": "#FC8181", "tokens": _seg("=== BRO 的活人画像") + _seg("=== SELF-EVOLUTION") + _seg("=== 相关 playbook"), "sub": "画像 + 演化日记 + 每轮检索注入 (易变 · 不进缓存)"})
+    except Exception:
+        # 兜底锚点 (实测值 · soul_loader 加载失败时)
+        blocks.append({"key": "soul", "label": "System prompt", "icon": "ri-file-settings-fill",
+                       "color": "#B794F4", "tokens": 34923, "sub": "灵魂层 (实测锚点)"})
+        blocks.append({"key": "profile", "label": "画像 & 记忆注入", "icon": "ri-user-heart-fill",
+                       "color": "#FC8181", "tokens": 6000, "sub": "画像 + 演化日记 + 每轮检索注入"})
+
+    # tools: REGISTRY 序列化实测 (单条 · 去重)
+    try:
+        from agent_tools import REGISTRY
+        tool_chars = sum(len(s.name) + len(s.description) for s in REGISTRY.values())
+        blocks.append({"key": "tools", "label": "Tool definitions", "icon": "ri-tools-fill",
+                       "color": "#63B3ED", "tokens": tool_chars // 3,
+                       "sub": f"{len(REGISTRY)} 个工具 · 描述+schema"})
+    except Exception:
+        blocks.append({"key": "tools", "label": "Tool definitions", "icon": "ri-tools-fill",
+                       "color": "#63B3ED", "tokens": 22604, "sub": "97 个工具 (实测锚点)"})
+
+    # ── 2. history: 优先用内存真实状态 (RUNTIME.messages = 压缩/修剪后的当前上下文) ──
+    history_tokens = 0
+    history_src = "内存 (压缩后真实状态)"
+    sid = session_id or ""
+    try:
+        from daemon_runtime import RUNTIME
+        if RUNTIME.messages:
+            from workers.memory_compression import _estimate_tokens
+            history_tokens = _estimate_tokens(RUNTIME.messages)
+            # 会话匹配: 只在没显式指定 session 或指定的是当前会话时用内存
+            if sid and RUNTIME.session_id and sid != RUNTIME.session_id:
+                history_tokens = 0  # 指定了别的会话 → 走磁盘
+    except Exception:
+        pass
+    if history_tokens == 0:
+        if sid:
+            try:
+                from daemon_session import load_session  # 现有加载器 · 返回 message list
+                msgs = load_session(sid) or []
+                from workers.memory_compression import _estimate_tokens
+                history_tokens = _estimate_tokens(msgs)
+                history_src = f"磁盘 {sid}"
+            except Exception:
+                try:
+                    p = root / "sessions" / f"{sid}.jsonl"
+                    if p.exists():
+                        import json as _json
+                        msgs = []
+                        for line in p.read_text(encoding="utf-8").splitlines():
+                            try:
+                                msgs.append(_json.loads(line))
+                            except Exception:
+                                pass
+                        from workers.memory_compression import _estimate_tokens
+                        history_tokens = _estimate_tokens(msgs)
+                        history_src = f"磁盘 {sid}"
+                except Exception:
+                    history_tokens = 0
+        else:
+            try:
+                from daemon_session import load_session
+                msgs = load_session("") or []
+                from workers.memory_compression import _estimate_tokens
+                history_tokens = _estimate_tokens(msgs)
+                history_src = "磁盘"
+            except Exception:
+                history_tokens = 0
+    blocks.append({"key": "history", "label": "Conversation", "icon": "ri-chat-3-fill",
+                   "color": "#A0AEC0", "tokens": history_tokens,
+                   "sub": f"{history_src} · 超阈值触发压缩 (min(窗口×0.7, 256K))"})
+
+    # ── 3. max_tokens: 对齐 memory_compression.token_budget_check 真实阈值 ──
+    #    阈值 = min(context_window × ratio, abs_cap) · 不是裸窗口×0.7
+    max_tokens = 172000  # 兜底
+    try:
+        from workers.memory_compression import _get_context_window, _get_ratio, _get_abs_cap
+        model_id = ""
+        try:
+            from daemon_runtime import RUNTIME
+            model_id = RUNTIME.model or ""
+        except Exception:
+            pass
+        if not model_id and sid:
+            # 从 session meta 找模型 (尽力)
+            try:
+                from daemon_session import get_session_meta
+                model_id = (get_session_meta(sid).get("model") or "")
+            except Exception:
+                pass
+        cw = _get_context_window(model_id)
+        if cw > 0:
+            max_tokens = min(int(cw * _get_ratio()), _get_abs_cap())
+        elif model_id:
+            # 窗口未知但模型名有 → 用绝对线兜底
+            max_tokens = _get_abs_cap()
+    except Exception:
+        pass
+
+    # ── 4. 缓存提示: 最近一轮 cache_read > 0 = 前缀已预热 ──
+    cache_hint = {"primed": False}
+    try:
+        p = root / "data" / "runtime" / "chat_turns_usage.jsonl"
+        if p.exists():
+            lines = p.read_text(encoding="utf-8").splitlines()
+            if lines:
+                import json as _json
+                last = _json.loads(lines[-1])
+                cache_hint = {"primed": (last.get("cache_read_tokens") or 0) > 0,
+                              "last_cache_read": last.get("cache_read_tokens") or 0}
+    except Exception:
+        pass
+
+    # ── 主进度只算会话部分 (对齐 token_budget_check 压缩口径 · 固定块不进圆圈) ──
+    total = sum(b["tokens"] for b in blocks)          # 全量 (面板展示用)
+    fixed_tokens = total - next((b["tokens"] for b in blocks if b["key"] == "history"), 0)  # 固定块 (灵魂+工具+规则+技能+画像)
+    history_tok = next((b["tokens"] for b in blocks if b["key"] == "history"), 0)
+    used_pct = round(history_tok / max_tokens * 100, 1) if max_tokens else 0
+    model = "unknown"
+    try:
+        from daemon_runtime import RUNTIME
+        model = RUNTIME.model
+    except Exception:
+        pass
+    return {
+        "total_tokens": total,
+        "fixed_tokens": fixed_tokens,
+        "history_tokens": history_tok,
+        "max_tokens": max_tokens,
+        "used_pct": used_pct,       # 会话部分占比 · 压缩检查同口径
+        "model": model,
+        "cache_hint": cache_hint,
+        "blocks": blocks,
     }

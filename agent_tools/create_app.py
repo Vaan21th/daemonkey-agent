@@ -1,15 +1,15 @@
 """agent_tools/create_app.py
 ============================
 
- K stage 2c · OPUS 给自己造一个 app 模块
+卷四十四 K stage 2c · Daemonkey 给自己造一个 app 模块
 
 什么是 app:
     一个独立子能力的封装 · 给自己挂一个名字 + 描述 + 系统提示词 + 工具白名单 + 模型提示
-    用户 在出品工坊「应用」tab 看到一个个卡片 · 点开 → 配置 → 运行
+    BRO 在出品工坊「应用」tab 看到一个个卡片 · 点开 → 配置 → 运行
 
 调用时机:
-    - 用户 在主对话区跟 OPUS 说「建一个文字转语音的应用」/「再做个 X 应用」
-    - OPUS 自己识别到画工作流时缺一个 app · 顺手 create_app 一个
+    - BRO 在主对话区跟 Daemonkey 说「建一个文字转语音的应用」/「再做个 X 应用」
+    - Daemonkey 自己识别到画工作流时缺一个 app · 顺手 create_app 一个
 
 跟 create_workflow 的区别:
     create_app          ← 独立模块 · 一个原子能力
@@ -17,7 +17,7 @@
 
 tier:
     TIER_AUTO —— 只是落一个 json 文件 · 不执行代码 · 不动 .env / soul / 红线
-    用户 之后在工坊里点「保存」/「删除」可控 · 完全是声明式资产
+    BRO 之后在工坊里点「保存」/「删除」可控 · 完全是声明式资产
 """
 
 from __future__ import annotations
@@ -42,8 +42,8 @@ def _run(args: dict) -> ToolResult:
     from workers.workshop_assets import save_app
     import re
 
-    #  K stage 2c++ · wish-96ee1b52 · 铁律 7 防御
-    # 拒绝在 system_prompt / description 里出现 KEY-like 字符串 · 教 OPUS 改用 placeholder
+    # 卷四十四 K stage 2c++ · wish-96ee1b52 · 铁律 7 防御
+    # 拒绝在 system_prompt / description 里出现 KEY-like 字符串 · 教 Daemonkey 改用 placeholder
     # 阈值: 16+ chars 连续字母+数字 (sk-fake-DEADBEEF 21 chars · 真 sk-xxx 通常 32-64)
     danger_patterns = [
         # OpenAI/Anthropic/DeepSeek 风格 sk-xxx KEY
@@ -91,7 +91,8 @@ def _run(args: dict) -> ToolResult:
             "output_schema": args.get("output_schema") or [],
             "exec_kind": args.get("exec_kind") or "agentic",
             "exec_template": args.get("exec_template"),
-            "created_by": "OPUS",
+            "asset_slots": args.get("asset_slots") or [],
+            "created_by": "Daemonkey",
         })
     except ValueError as e:
         return ToolResult(ok=False, output="", error=str(e))
@@ -118,13 +119,19 @@ def _run(args: dict) -> ToolResult:
         lines.append(f"  - 输出端口: {', '.join(out_names)} ({len(out_names)} 项 · 给工作流接下游用)")
     exec_kind = app.get("exec_kind") or "agentic"
     lines.append(f"  - 执行模式: {exec_kind}" + (" (0 LLM · 直接 HTTP)" if exec_kind == "scripted" else " (LLM session · 默认)"))
+    if app.get("asset_slots"):
+        slot_names = [s["name"] for s in app["asset_slots"]]
+        lines.append(f"  - 资产槽: {', '.join(slot_names)} · 真值用 manage_app_asset(set) 登记")
+    lines.append(f"  - 版本: v{app.get('version', 1)} · spec_version={app.get('spec_version', 1)}")
+    for w in app.get("_warnings") or []:
+        lines.append(f"  - ⚠ {w}")
     lines.append("")
-    lines.append("→ 用户 去出品工坊 · 「应用」tab 能看到这张新卡片 · 点开可以编辑/调试。")
+    lines.append("→ BRO 去出品工坊 · 「应用」tab 能看到这张新卡片 · 点开可以编辑/调试。")
     if app["ui_form_schema"]:
         if exec_kind == "scripted":
-            lines.append("→ 「测试」tab 已可用 · 用户 填表单 → 点『▶ 后端真跑』 → 直接 HTTP · 不烧 token。")
+            lines.append("→ 「测试」tab 已可用 · BRO 填表单 → 点『▶ 后端真跑』 → 直接 HTTP · 不烧 token。")
         else:
-            lines.append("→ 「测试」tab 已可用 · 用户 填表单 → 拼成 prompt → 自动塞到主对话框。")
+            lines.append("→ 「测试」tab 已可用 · BRO 填表单 → 拼成 prompt → 自动塞到主对话框。")
     if app["output_schema"]:
         lines.append("→ 工作流画布: 这个 app 是个节点 · 输出能接下游节点的输入端口。")
     return ToolResult(ok=True, output="\n".join(lines))
@@ -134,28 +141,41 @@ SPEC = ToolSpec(
     name="create_app",
     description=(
         "在出品工坊里造一个新 app · 独立子能力模块·一个 json 资产\n\n"
-        "**🔴 关键调用次序 · 用户 说『建一个 X 应用』时第一刀就是这个工具**:\n"
+        "**🔴 六段标准 (沉淀闭环 v2 · 内核硬校验 · agentic app 的 system_prompt 必须含这些\n"
+        "markdown 标题段·缺了 save 会被拒绝并吐模板)**:\n"
+        "  ① `## 角色` 一句话这 app 干什么  ② `## 输入` 表单字段/上游输入含义\n"
+        "  ③ `## 动作` 步骤化执行流程  ④ `## 输出规范` 产出一律写 data/workshop/outputs/<app_id>/\n"
+        "  ⑤ `## 坑清单` 踩过的坑 (初建写'暂无'·段落必须在·以后迭代往这沉淀)\n"
+        "  ⑥ `## 资产引用` 声明了 asset_slots 才必须 · 说明运行时读哪些资产槽\n"
+        "  段内内容自由发挥 · 结构硬性内容自由。scripted app 豁免 (LLM 不读它的 prompt)。\n"
+        "  产出隔离铁律: prompt 里严禁出现别的 app 的 outputs/app-xxx 路径 (写=违规·内核拦)。\n\n"
+        "**asset_slots (配置=用户个性资产槽 · 沉淀闭环 v2)**:\n"
+        "  app 需要用户个性资产 (IP 形象图/画面风格参考/文本风格参考/voice 克隆) 时声明槽位 ·\n"
+        "  例 [{name:'voice', type:'json', label:'声音克隆(active+versions)'}] ·\n"
+        "  真值不写 prompt · 用 manage_app_asset(set) 登记到 data/workshop/assets/<app_id>.json ·\n"
+        "  运行时先 manage_app_asset(get) 读 · 这是跨对话不蒸发的单一事实源。\n\n"
+        "**🔴 关键调用次序 · BRO 说『建一个 X 应用』时第一刀就是这个工具**:\n"
         "  1. **先 create_app 落档 (签合同)** · 把 name + description + 推荐工具白名单\n"
-        "     落到 data/workshop/apps/<id>.json · 用户 在工坊立刻看见卡片 ·  K stage 2c\n"
+        "     落到 data/workshop/apps/<id>.json · BRO 在工坊立刻看见卡片 · 卷四十四 K stage 2c\n"
         "  2. 第二刀再去做实际事 (找资源 / 启服务 / 试调用 / 看 api 文档)\n"
-        "  3. 即便环境没装好 / 服务没启起来 / 网络抽风 · app json 已落 · 用户 至少有一张\n"
-        "     『我跟 OPUS 一起开了头』的卡片留下来 · **不会两手空空**\n\n"
-        "  ❌ 反面教材 ( K stage 2c · GPT-SoVITS 实测): OPUS 花 17 分钟\n"
+        "  3. 即便环境没装好 / 服务没启起来 / 网络抽风 · app json 已落 · BRO 至少有一张\n"
+        "     『我跟 Daemonkey 一起开了头』的卡片留下来 · **不会两手空空**\n\n"
+        "  ❌ 反面教材 (卷四十四 K stage 2c · GPT-SoVITS 实测): Daemonkey 花 17 分钟\n"
         "     全盘搜资源 → 看 api.py → 启服务 → 验 CUDA · 一个 typo 翻车整 turn 中断 ·\n"
-        "     create_app 一次都没调 · 用户 F5 工坊还是空 · 17 分钟功夫一张卡片都没留\n"
+        "     create_app 一次都没调 · BRO F5 工坊还是空 · 17 分钟功夫一张卡片都没留\n"
         "  ✅ 正确流程: 检索完局部资源 (~3 分钟) 一确认有 → 立刻 create_app 落档 →\n"
-        "     再去启服务 / 试调用 · 后续即便翻车 · 卡片在 · 用户 可在工坊看到这个 app\n\n"
+        "     再去启服务 / 试调用 · 后续即便翻车 · 卡片在 · BRO 可在工坊看到这个 app\n\n"
         "**什么时候调**:\n"
-        "  - 用户 说「建一个 X 应用」「做一个 X 工具」「再加个 Y app」时 · 第一刀\n"
-        "  - OPUS 自己排工作流时发现缺一个原子能力·先 create_app 再 create_workflow\n"
-        "  - 用户 在外面看到一个第三方 API (比如 ElevenLabs / OpenAI Vision) · 提供 KEY + 文档 ·\n"
-        "    OPUS 把它封装成 app · system_prompt 写调用规约 · tools=['web_fetch', 'shell_exec']\n\n"
+        "  - BRO 说「建一个 X 应用」「做一个 X 工具」「再加个 Y app」时 · 第一刀\n"
+        "  - Daemonkey 自己排工作流时发现缺一个原子能力·先 create_app 再 create_workflow\n"
+        "  - BRO 在外面看到一个第三方 API (比如 ElevenLabs / OpenAI Vision) · 提供 KEY + 文档 ·\n"
+        "    Daemonkey 把它封装成 app · system_prompt 写调用规约 · tools=['web_fetch', 'shell_exec']\n\n"
         "**字段哲学**:\n"
-        "  - description 写给人看 · 一句话讲清这个 app 干嘛 (用户 在工坊卡片上看)\n"
+        "  - description 写给人看 · 一句话讲清这个 app 干嘛 (BRO 在工坊卡片上看)\n"
         "  - system_prompt 写给将来调用这个 app 的 LLM 看 · 角色设定 + 风格约束 +\n"
         "    具体 endpoint/路径/key 占位符 (用 ${API_KEY} / ${SERVICE_PATH} 这种)\n"
         "  - tools 是这个 app 允许调的工具白名单 · 比如 ['shell_exec', 'open_app']\n"
-        "    → 不写 = 默认能用所有 OPUS 工具 · 但建议白名单收紧 (Coze 五槽里的『技能』)\n"
+        "    → 不写 = 默认能用所有 Daemonkey 工具 · 但建议白名单收紧 (Coze 五槽里的『技能』)\n"
         "  - model_hint 是推荐模型 · 比如 'sonnet-4.5' / 'deepseek-v4-pro' · 留空也行\n\n"
         "**⚡ 并行 app (v0.6.0 · 独立子任务同时干)**:\n"
         "  当这个 app 的活天然能拆成 N 个**互不依赖**的子任务时 (搜 N 个素材 / 查 N 个方向 /\n"
@@ -166,24 +186,24 @@ SPEC = ToolSpec(
         "  边界: 一次最多 6 个 · 分身默认只读/研究白名单 (搜索查证够用) · 分身不能再派分身。\n\n"
         "**红线**:\n"
         "  - 不要在 system_prompt 里写让 LLM 改 .env / soul / 红线动作的指令\n"
-        "  - **🔴 铁律 7 · 严禁把 用户 的真 API KEY 写进 app json 任何字段** · 包括 description /\n"
+        "  - **🔴 铁律 7 · 严禁把 BRO 的真 API KEY 写进 app json 任何字段** · 包括 description /\n"
         "    system_prompt / 自定义字段 / 自创 'config' 字段。 KEY 必须走 `app_set_secret` 落\n"
         "    `data/workshop/secrets/`·system_prompt 里只用 placeholder `${secret:<app_id>:<name>}`\n"
         "    引用·daemon 在 shell_exec 启动子进程时自动 resolve\n"
         "  - 装 API 应用的标准三步: create_app → app_set_secret → 用 placeholder 写 system_prompt\n"
         "  - 一次只造一个 app · 别一次塞多个\n\n"
-        "**产物落点规范** ( K · 6.1):\n"
+        "**产物落点规范** (卷四十四 K · 6.1):\n"
         "  - 生成媒体落 `data/workshop/outputs/<app_id>/<filename>` (按 app_id 分桶不串扰)\n"
-        "  - 给 用户 看就在最终回答里写 markdown: `![alt](/workshop/outputs/<app_id>/x.png)`\n"
-        "  - chat.js 把 `![](...)` 自动转 <img> · .wav 转 <audio> · .mp4 转 <video>·用户 直接看\n"
+        "  - 给 BRO 看就在最终回答里写 markdown: `![alt](/workshop/outputs/<app_id>/x.png)`\n"
+        "  - chat.js 把 `![](...)` 自动转 <img> · .wav 转 <audio> · .mp4 转 <video>·BRO 直接看\n"
         "  - 不要用 HTML `<img>` 标签 (会被 escape) · 不要写 windows 绝对路径 (file:// 浏览器拒)\n\n"
         "**UI 表单字段 `ui_form_schema`** (wish-165ea1f6 · 2026-05-26 上线):\n"
-        "  写出来 → 工坊「测试」tab 自动渲染表单 · 用户 不用每次打字 prompt · 重复跑同一 app 巨爽。\n"
-        "  Phase A 落地路径 (NLP First): 用户 填完表单 → 前端把字段拼成自然语言 prompt → 塞主对话框 →\n"
-        "  OPUS 接到后按 system_prompt 处理 · 跟正常对话一样。 没有黑魔法 · 只是省了打字。\n\n"
+        "  写出来 → 工坊「测试」tab 自动渲染表单 · BRO 不用每次打字 prompt · 重复跑同一 app 巨爽。\n"
+        "  Phase A 落地路径 (NLP First): BRO 填完表单 → 前端把字段拼成自然语言 prompt → 塞主对话框 →\n"
+        "  Daemonkey 接到后按 system_prompt 处理 · 跟正常对话一样。 没有黑魔法 · 只是省了打字。\n\n"
         "  **什么时候该写 ui_form_schema**:\n"
         "    ✅ 应用的输入参数稳定 · 字段固定 (SOVITS = 文字+情绪 · GPT-Image = 描述+尺寸)\n"
-        "    ✅ 用户 会重复用 · 5 次以上 / 周\n"
+        "    ✅ BRO 会重复用 · 5 次以上 / 周\n"
         "    ❌ 应用是开放对话型 (聊天 / 头脑风暴) · 写了反而约束创造力\n\n"
         "  **示例 · SOVITS 文字转语音**:\n"
         "    ui_form_schema: [\n"
@@ -192,8 +212,8 @@ SPEC = ToolSpec(
         "      {name: 'speed',   type: 'number',   label: '语速', default: 1.0, min: 0.5, max: 2.0}\n"
         "    ]\n\n"
         "  **字段命名规范**: name 必须是 [a-zA-Z_][a-zA-Z0-9_]* · 不能用保留字\n"
-        "  (input/output/app/opus/now/today) · 字段名重复会被拒。\n\n"
-        "  **system_prompt 引用 form 输入**: 写「用户 通过表单提供了以下输入: ...」让 LLM 知道字段对应关系。\n"
+        "  (input/output/app/Daemonkey/now/today) · 字段名重复会被拒。\n\n"
+        "  **system_prompt 引用 form 输入**: 写「BRO 通过表单提供了以下输入: ...」让 LLM 知道字段对应关系。\n"
         "  Phase A 不做 ${ui:<name>} 模板插值 (那是 phase B 工作流引擎的活)·这里只是声明 UI。"
     ),
     tier=TIER_AUTO,
@@ -208,7 +228,7 @@ SPEC = ToolSpec(
             },
             "description": {
                 "type": "string",
-                "description": "用途说明 · 用户 看卡片时一眼明白干嘛 · 1-3 句话",
+                "description": "用途说明 · BRO 看卡片时一眼明白干嘛 · 1-3 句话",
                 "minLength": 4,
                 "maxLength": 400,
             },
@@ -218,19 +238,42 @@ SPEC = ToolSpec(
             },
             "system_prompt": {
                 "type": "string",
-                "description": "应用被调用时给底层 LLM 的角色 + 任务指令 · 写得越具体效果越好",
+                "description": (
+                    "应用被调用时给底层 LLM 的角色 + 任务指令 · 写得越具体效果越好。"
+                    "agentic app 必须含六段 markdown 标题: 角色/输入/动作/输出规范/坑清单"
+                    "(+资产引用·有 asset_slots 时) · 缺段会被内核拒绝"
+                ),
+            },
+            "asset_slots": {
+                "type": "array",
+                "description": (
+                    "可选 · 声明这个 app 需要的用户个性资产槽 (配置页渲染依据)。"
+                    "真值走 manage_app_asset 落 data/workshop/assets/<app_id>.json · 不写进 prompt。"
+                    "例: [{name:'ip_images',type:'images',label:'IP 形象图'},"
+                    "{name:'style_ref',type:'text',label:'画面风格参考'}]"
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string", "description": "槽名 · [a-zA-Z_][a-zA-Z0-9_]*"},
+                        "type": {"type": "string", "enum": ["text", "json", "images", "file"]},
+                        "label": {"type": "string", "description": "中文标签 · 给 BRO 看"},
+                        "help": {"type": "string", "description": "提示文字"},
+                    },
+                    "required": ["name"],
+                },
             },
             "tools": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "工具白名单 · 这个 app 允许调的 OPUS 工具名 · 比如 ['shell_exec', 'open_app'] · "
+                    "工具白名单 · 这个 app 允许调的 Daemonkey 工具名 · 比如 ['shell_exec', 'open_app'] · "
                     "留空表示允许所有工具"
                 ),
             },
             "model_hint": {
                 "type": "string",
-                "description": "推荐底层模型 · 比如 'sonnet-4.5' · 留空表示用 用户 当前默认模型",
+                "description": "推荐底层模型 · 比如 'sonnet-4.5' · 留空表示用 BRO 当前默认模型",
             },
             "exec_kind": {
                 "type": "string",
@@ -292,7 +335,7 @@ SPEC = ToolSpec(
                     "  - ${ui:field}        · form 字段值\n"
                     "  - ${ui:field:default} · 字段缺失时用 default (default 是字面量·不递归)\n"
                     "  - ${secret:<app_id>:<name>} · 铁律 7 标准·走 workers.app_secrets 跟 shell_exec 同一存储\n"
-                    "                                  daemon OPUS 先调 app_set_secret 落 KEY · 再用 placeholder 引用\n"
+                    "                                  daemon Daemonkey 先调 app_set_secret 落 KEY · 再用 placeholder 引用\n"
                     "  - ${secret:<name>}   · 单段简写·自动用 context.app_id (只能拿自己 app 的 secret · 不能跨 app)\n"
                     "  - ${upstream:node_id:port} · 工作流上游 node output (workflow_engine 用)\n"
                     "  - ${app_id} / ${ts} / ${ts_ms} · 自动注入\n\n"
@@ -331,8 +374,8 @@ SPEC = ToolSpec(
                 "type": "array",
                 "description": (
                     "可选 · 声明这个 app 在工坊『测试』tab 显示的 UI 表单字段 · "
-                    "用户 重复跑同一 app 时不用每次打字。 详见上面 description 里的字段哲学 + 示例。 "
-                    "字段名 (name) 必须是合法变量名 · 不能用保留字 (input/output/app/opus/now/today)。 "
+                    "BRO 重复跑同一 app 时不用每次打字。 详见上面 description 里的字段哲学 + 示例。 "
+                    "字段名 (name) 必须是合法变量名 · 不能用保留字 (input/output/app/Daemonkey/now/today)。 "
                     "Phase A 阶段表单提交后 · 前端会把字段拼成自然语言 prompt 塞回主对话框 · "
                     "走 NLP First 路径 · 跟跟你正常说话调这个 app 完全等价。 "
                     "最多 20 个字段·复杂的输入应该走 NLP 而不是堆字段。"
@@ -351,7 +394,7 @@ SPEC = ToolSpec(
                         },
                         "label": {
                             "type": "string",
-                            "description": "中文标签 · 给 用户 看的人话 · 没填用 name",
+                            "description": "中文标签 · 给 BRO 看的人话 · 没填用 name",
                         },
                         "required": {
                             "type": "boolean",

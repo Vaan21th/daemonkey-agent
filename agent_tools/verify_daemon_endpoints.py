@@ -1,9 +1,9 @@
 """
 agent_tools/verify_daemon_endpoints.py
 ======================================
- · wish-4b16633d · 改完 daemon 核心代码自动 dogfood 全路由
+卷四十六 · wish-4b16633d · 改完 daemon 核心代码自动 dogfood 全路由
 
-wish-4b16633d bug: OPUS 改 daemon 代码后自称"改好了"但没验证 → commit 后
+wish-4b16633d bug: Daemonkey 改 daemon 代码后自称"改好了"但没验证 → commit 后
 daemon 起不来 (漏 import / 参数雷)。用 FastAPI TestClient (不是 curl)
 能直接拿 Python traceback · commit 前调一次。
 
@@ -60,7 +60,7 @@ def _resolve_path(pattern: str, probe: str | None = None) -> str:
 
 
 def _run(args: dict) -> ToolResult:
-    # 0. 模式 (2026-07-29 用户拍板 · 双模式):
+    # 0. 模式 (2026-07-29 BRO 拍板 · 双模式):
     #   fast(默认) 假 token + 并行 → 1.2s 全绿 · 验 import雷/参数雷/前端JS (smoke 立身之本)
     #   deep        真 token + 串行 + 单请求8s超时 + LLM端点跳过 → 大改后深测 auth handler 本体
     # 事故根因: 真 token 下 auth handler 全真跑 (/chat/stream 真调 LLM · 无参 POST 真执行),
@@ -70,8 +70,8 @@ def _run(args: dict) -> ToolResult:
 
     # 1. 确保 token 在环境里 + sys.path
     if deep:
-        token = os.environ.get("OPUS_API_TOKEN") or "test-smoke-token"
-        os.environ["OPUS_API_TOKEN"] = token  # deep: app auth 与请求头同值 → handler 真跑
+        token = os.environ.get("Daemonkey_API_TOKEN") or "test-smoke-token"
+        os.environ["Daemonkey_API_TOKEN"] = token  # deep: app auth 与请求头同值 → handler 真跑
     else:
         # fast: 环境保持原样 · 请求头带【保证不匹配】的 token → auth 401 早退 (1.2s 的关键)。
         # 教训: 千万别把 os.environ 也改成假值——那样请求头与 auth 比对一致 → handler 真跑
@@ -115,7 +115,7 @@ def _run(args: dict) -> ToolResult:
     sse_list: list[str] = []
     fail_details: list[str] = []
 
-    # ── 并发 smoke (2026-07-29 用户拍板: 串行 138 路由慢到发指 → 线程池并发) ──
+    # ── 并发 smoke (2026-07-29 BRO 拍板: 串行 138 路由慢到发指 → 线程池并发) ──
     # 纪律: TestClient 非线程安全 (内部 anyio portal 不可共享) → 每线程独立 client。
     # 任务收集与汇总仍按路由原顺序 → 输出稳定 · diff 友好。
     tasks: list[dict] = []
@@ -178,7 +178,7 @@ def _run(args: dict) -> ToolResult:
 
         if resp.status_code == 503:
             r["verdict"] = "skip"
-            r["lines"].append(f"{_SKIP} {method:6} {path_pattern}  (503 · OPUS_API_TOKEN 未配)")
+            r["lines"].append(f"{_SKIP} {method:6} {path_pattern}  (503 · Daemonkey_API_TOKEN 未配)")
             return r
 
         if resp.status_code == 401:
@@ -266,8 +266,8 @@ def _run(args: dict) -> ToolResult:
             lines.append(fd)
             lines.append("")
 
-    # 6.5 前端 JS 语法 ( · 2026-06-03 事故补)
-    #   route smoke 只验 Python · 这一节补前端那环: OPUS 改完 static/*.js 也能在 commit 前
+    # 6.5 前端 JS 语法 (卷五十四 · 2026-06-03 事故补)
+    #   route smoke 只验 Python · 这一节补前端那环: Daemonkey 改完 static/*.js 也能在 commit 前
     #   发现自己把 chat.js 改断了 (本次事故: python_exec 切片把 chat.js 尾部 1660 行吞了)。
     fe_ok = True
     try:
@@ -355,9 +355,9 @@ def _extract_error(resp) -> str:
     return body.replace("\n", " ").replace("\r", " ")
 
 
-# ── 子进程隔离入口 (2026-07-29 用户拍板) ─────────────────────────────
+# ── 子进程隔离入口 (2026-07-29 BRO 拍板) ─────────────────────────────
 # 事故: 工具在 daemon 进程内跑 TestClient smoke → 138 路由串行打满 GIL →
-# asyncio 事件循环被饿死 → WebUI 重启/关闭按钮全部失灵 · 用户连砍两次。
+# asyncio 事件循环被饿死 → WebUI 重启/关闭按钮全部失灵 · BRO 连砍两次。
 # 修复: 工具入口改为全新子进程跑 _run (跟 verify_gate 上线闸同一姿势)——
 #   ① daemon 事件循环零占用 · 体检再慢也拖不死 WebUI
 #   ② 子进程从磁盘 fresh import · 测的是新代码不是内存旧代码 (顺带更准)
@@ -365,7 +365,7 @@ def _extract_error(resp) -> str:
 
 _SUBPROCESS_SNIPPET = (
     "import os,sys; sys.path.insert(0,'.'); "
-    "os.environ.setdefault('OPUS_API_TOKEN','verify-gate-token'); "
+    "os.environ.setdefault('Daemonkey_API_TOKEN','verify-gate-token'); "
     "from agent_tools.verify_daemon_endpoints import _run; "
     "r=_run({'mode': os.environ.get('VERIFY_SMOKE_MODE','fast')}); "
     "print(r.output); sys.exit(0 if r.ok else 1)"
@@ -418,11 +418,11 @@ SPEC = ToolSpec(
     description=(
         "对 daemon 所有 HTTP 路由做一次快速 smoke test · 用 FastAPI TestClient"
         "（不是 curl）· 能拿 Python traceback。 **外加前端 static/*.js 语法校验** "
-        "(node --check · 加)。\n"
+        "(node --check · 卷五十四加)。\n"
         "\n"
-        "**调用时机**: OPUS 改完 daemon_api.py / agent_tools/*.py / static/*.js 后、commit 前。\n"
+        "**调用时机**: Daemonkey 改完 daemon_api.py / agent_tools/*.py / static/*.js 后、commit 前。\n"
         "改完自称「改好了」之前必须先跑这个——不漏 import / 参数雷 · 也不漏把 chat.js 改断 "
-        "(事故: python_exec 切片把 chat.js 尾部吞了·route smoke 全绿但 WebUI 白屏)。\n"
+        "(卷五十四事故: python_exec 切片把 chat.js 尾部吞了·route smoke 全绿但 WebUI 白屏)。\n"
         "\n"
         "**跳过**: /restart-daemon /shutdown-daemon (有不可逆副作用) · static/lib/ 下三方 vendor JS\n"
         "**SSE**: /chat/stream 走流首帧 · /api/pulse/stream 走 probe=1 诊断分支\n"

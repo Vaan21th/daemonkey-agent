@@ -3,8 +3,8 @@
     "filesystem": {
       "transport": "stdio",
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "F:/Desktop/OPUS-DAEMON"],
-      "description": "Read/write files in OPUS-DAEMON project (sandboxed to project root)"
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "F:/Desktop/Daemonkey"],
+      "description": "Read/write files in Daemonkey project (sandboxed to project root)"
     },
     "github": {
       "transport": "stdio",

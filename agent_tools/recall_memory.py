@@ -2,13 +2,13 @@
 agent_tools/recall_memory.py
 ============================
 
-OPUS 跨会话记忆检索工具——调用 workers/memory_index.py 的 FTS5 引擎。
+Daemonkey 跨会话记忆检索工具——调用 workers/memory_index.py 的 FTS5 引擎。
 
- · wish-273374f6 · SQLite FTS5 全文检索。
+卷三十五 · wish-273374f6 · SQLite FTS5 全文检索。
 
 档位：AUTO
   - 纯只读 · 不修改任何文件 · 不联网
-  - OPUS 用这个工具查自己的长期记忆（OWNER-NOTEBOOK / SELF-EVOLUTION / sessions）
+  - Daemonkey 用这个工具查自己的长期记忆（BRO-NOTEBOOK / SELF-EVOLUTION / sessions）
 """
 
 from __future__ import annotations
@@ -21,9 +21,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 _SCOPE_LABELS = {
-    "OWNER-NOTEBOOK": "📖 用户 画像",
-    "SELF-EVOLUTION": "📝 OPUS 演化档案",
-    "OPUS-MEMORIES": "🧬 OPUS 自传",
+    "BRO-NOTEBOOK": "📖 BRO 画像",
+    "SELF-EVOLUTION": "📝 Daemonkey 演化档案",
+    "Daemonkey-MEMORIES": "🧬 Daemonkey 自传",
     "SKILL": "⚙️ 灵魂入口",
     "session": "💬 对话记录",
     "session_summary": "🧠 对话摘要",
@@ -158,21 +158,21 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="recall_memory",
     description=(
-        "搜索 OPUS 的长期记忆库（OWNER-NOTEBOOK + SELF-EVOLUTION + OPUS-MEMORIES + SKILL + 历史对话记录）。"
+        "搜索 Daemonkey 的长期记忆库（BRO-NOTEBOOK + SELF-EVOLUTION + Daemonkey-MEMORIES + SKILL + 历史对话记录）。"
         "用 SQLite FTS5 做全文检索，毫秒级返回。\n"
         "\n"
         "**两段式（省 token）**：\n"
         "1. 先 `mode=list`（默认）→ 拿到一串 `id + 单行摘要`。大多数「我有没有记过 X」看摘要就能答，别急着取全文。\n"
         "2. 摘要不够、确实要看某条原文 → `mode=full` + `ids=[挑中的 id]` 取全文。\n"
         "\n"
-        "**调用时机**（OPUS 主动判断）：\n"
-        "- 用户 问'上次我们聊过 X' / '我之前说过 Y 吗' / '你还记得 Z 吗'\n"
-        "- 用户 提到某个过去的话题，你想确认自己有没有记录\n"
-        "- 你需要引用 OWNER-NOTEBOOK 里的具体画像条目时\n"
+        "**调用时机**（Daemonkey 主动判断）：\n"
+        "- BRO 问'上次我们聊过 X' / '我之前说过 Y 吗' / '你还记得 Z 吗'\n"
+        "- BRO 提到某个过去的话题，你想确认自己有没有记录\n"
+        "- 你需要引用 BRO-NOTEBOOK 里的具体画像条目时\n"
         "- 你需要查自己的演化历史（SELF-EVOLUTION）时\n"
         "- 任何不确定'这个信息是不是在灵魂层里'的时候——搜一下比猜更靠谱\n"
         "\n"
-        "**scope**: all(全部) / bro(只看用户画像) / self(OPUS自传+日记) / sessions(历史对话+蒸馏摘要) / skill(playbook ·  II) / docs(私有文档知识库) / clients(客户档案备注)\n"
+        "**scope**: all(全部) / bro(只看BRO画像) / self(Daemonkey自传+日记) / sessions(历史对话+蒸馏摘要) / skill(playbook · 卷四十六 II) / docs(私有文档知识库) / clients(客户档案备注)\n"
         "**查询语法**: FTS5 原生语法，支持 AND/OR/NOT、短语\"双引号\"、前缀* 等。"
     ),
     tier=TIER_AUTO,
@@ -208,8 +208,8 @@ SPEC = ToolSpec(
                 "type": "string",
                 "enum": ["all", "bro", "self", "sessions", "skill", "docs", "clients"],
                 "description": (
-                    "搜索范围: all(全部) / bro(用户画像) / self(OPUS自传+日记+SKILL) / "
-                    "sessions(历史对话) / skill(playbook ·  II wish-1c229865) / "
+                    "搜索范围: all(全部) / bro(BRO画像) / self(Daemonkey自传+日记+SKILL) / "
+                    "sessions(历史对话) / skill(playbook · 卷四十六 II wish-1c229865) / "
                     "docs(私有文档知识库 · 用户灌进来的资料/合同/PDF) / clients(客户档案备注)。默认 all。"
                 ),
                 "default": "all",

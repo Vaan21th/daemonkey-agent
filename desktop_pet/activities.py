@@ -50,14 +50,14 @@ TOOL_DESC_TEMPLATES: dict[str, str] = {
     "open_app":         "启动应用",
     "set_model":        "切换模型",
     "set_emotion":      "切换表情",
-    "update_bro_note":  "更新用户画像",
+    "update_bro_note":  "更新 BRO 画像",
     "update_self_evolution": "写日记",
     "summarize_session":     "压缩会话",
     "wechat_send":      "发微信",
     "summon_cursor":    "召唤 Cursor",
     "ssh_remote":       "远程诊断",
-    "manage_info_source": "管理信源",
     "client_handoff":   "查客户档案",
+    "manage_info_source": "管理信源",
     "generate_report":  "生成报告",
     "draft_studio":     "工作室出品",
     "read_dashboard":   "查看板",
@@ -231,10 +231,10 @@ def read_last_events(n: int = 5) -> list[dict]:
         return []
 
 
-# ── 通知通道 (notify.jsonl) · 2026-07-28 ─────────────────────────────
-# 跟 activity (OPUS 脉搏·每个工具都写) 不同——notify 是【该让用户抬头的三件事】:
+# ── 通知通道 (notify.jsonl) · 2026-07-28 BRO 需求 ─────────────────────────
+# 跟 activity (OPUS 脉搏·每个工具都写) 不同——notify 是【该让 BRO 抬头的三件事】:
 #   done    · 一个实质 turn 干完了 (daemon 在 turn 收尾自动写)
-#   confirm · 有风险操作在 WebUI 等拍板 (confirm 卡片创建时写)
+#   confirm · 有风险操作在 WebUI 等他拍板 (confirm 卡片创建时写)
 #   info    · 其他该提醒的 (预留)
 # 桌宠轮询弹气泡 · 比 activity 气泡显示更久 · confirm 用醒目色。
 

@@ -14,14 +14,14 @@ agent_tools/_edit_lock.py
 它怎么治:
   一张【进程内】的按文件锁登记表(owner = session id · TTL 自动过期)。每次 edit_file /
   write_file 写盘前问一句:
-    1) 锁冲突 —— 这文件 TTL 内正被【另一个对话】改 → 软提示"排队"·让 Daemonkey 告诉 用户·
-       确认不冲突再带 force=true 重调。 (用户 选的 ask 软提示·不硬拦)
+    1) 锁冲突 —— 这文件 TTL 内正被【另一个对话】改 → 软提示"排队"·让 Daemonkey 告诉 BRO·
+       确认不冲突再带 force=true 重调。 (BRO 选的 ask 软提示·不硬拦)
     2) 指纹防覆盖 —— 磁盘内容自上次被工具改过后又变了(被外部 / Cursor / 另一对话改的) →
        直接覆盖会盖掉那次改动 → 软提示·让 Daemonkey 先重读再 force。
 
 设计原则(照抄 _git_lock 的克制):
   - 纯进程内 · 一把 threading.Lock 守登记表 · 不落盘(不引入文件锁损坏风险)
-  - 只覆盖 daemon 内多会话场景(用户 说 Cursor 只当人工兜底·不靠它)
+  - 只覆盖 daemon 内多会话场景(BRO 说 Cursor 只当人工兜底·不靠它)
   - advisory(建议性) · 永远能 force 过 · 绝不把 Daemonkey 自己锁死
 """
 
@@ -76,7 +76,7 @@ def guard(
         path: 目标文件绝对路径
         owner: 当前对话身份(session id · 见 agent_tools.current_session_id)
         current_text: 磁盘当前内容(调用方刚读到的·用来算指纹)
-        force: True = 强行接管(用户 确认过不冲突) · 跳过两道软提示
+        force: True = 强行接管(BRO 确认过不冲突) · 跳过两道软提示
         tool: 调用来源标签(给冲突文案用·如 'edit_file' / 'write_file:overwrite')
 
     Returns:
@@ -100,7 +100,7 @@ def guard(
                     f"⚠️ 编辑锁冲突：这个文件 {_fmt_ago(now - existing['ts'])}前正被【另一个对话】"
                     f"(session {_short(existing['owner'])} · 用 {existing.get('tool', '?')})改，"
                     "它可能还没收尾。\n"
-                    "为避免你俩互相覆盖，最好等它弄完——可以先去做别的、或问 用户 那边是不是在改这个文件。\n"
+                    "为避免你俩互相覆盖，最好等它弄完——可以先去做别的、或问 BRO 那边是不是在改这个文件。\n"
                     "→ 如果确认现在就要改（那个对话已经停了 / 你确定改的不是同一段），"
                     "再调一次本工具并带 force=true。"
                 )

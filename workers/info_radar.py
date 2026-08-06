@@ -61,7 +61,7 @@ SOURCES_FILE = DATA_DIR / "radar_sources.json"
 DOMAINS_EXTRA_FILE = DATA_DIR / "domains_extra.json"  # 卷三十二 · BRO 自定义新 domain
 DOMAINS_REMOVED_FILE = DATA_DIR / "domains_removed.json"  # 卷三十五补丁3 · 被删的 starter 持久化
 
-USER_AGENT = "Daemonkey-Radar/0.2 (+https://github.com)"
+USER_AGENT = "Daemonkey-Radar/0.2 (Studio - BRO + OPUS)"
 # HTTP header 必须 ASCII · 中文中点会触发 httpx urllib3 的 'ascii' codec can't encode
 DEFAULT_TIMEOUT = 15.0
 DEFAULT_MAX_ITEMS_PER_SOURCE = 15
@@ -86,7 +86,7 @@ class RadarItem:
     summary: str = ""
     published_at: str = ""
     fetched_at: str = ""
-    domain: str = "self-evolve"  # 领域分组 · 见 DOMAIN_META
+    domain: str = "ai"  # 卷二十八：领域分组 · 见 DOMAIN_META
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -97,27 +97,52 @@ class RadarItem:
 #   - 预定义初始集 (避免乱) · 但允许通过 add_domain() 加新的
 #   - 每个 domain 有 label/icon/color/description · 给 UI 渲染用
 #   - 雷达条目和工坊产出都带 domain · 可以筛选 / 聚合
-# 默认只预设 self-evolve 一个内置领域——其他领域全部由「相遇 / 对话」中
-# 挖掘出用户真正关注的方向后，用 add_domain() / add_focus_domain() 动态新建。
-# 不再硬塞 AI / 创业 / 游戏 等"别人的领域"，避免新用户看到一堆不相干的预设类目。
 DOMAIN_META: dict[str, dict] = {
-    # 看同类工程 · 决定要不要"自己装修自己"（自我演化机制的镜子，唯一内置）
+    "ai": {
+        "label": "AI / 大模型",
+        "icon": "🤖",
+        "color": "#9f7aea",
+        "description": "AI · LLM · 智能体 · 研究 · 产品 · 工具",
+    },
+    "super-individual": {
+        "label": "超个体 / 创业",
+        "icon": "🦅",
+        "color": "#4fd1c5",
+        "description": "独立开发者 · 内容创作 · 个人品牌 · 副业模式",
+    },
+    "game-money": {
+        "label": "游戏掘金",
+        "icon": "🎮",
+        "color": "#ed8936",
+        "description": "游戏赚钱机会 · 搬砖 · 攻略 · 新赛季 · 服务",
+    },
+    "wildcard": {
+        "label": "杂项观察",
+        "icon": "✨",
+        "color": "#fc8181",
+        "description": "其他领域 · 长尾信号 · 未归类的有趣东西",
+    },
+    # 卷三十四 · OPUS 看同类工程·决定要不要"自己装修自己"
     "self-evolve": {
         "label": "自我演化",
         "icon": "🔧",
         "color": "#63b3ed",
-        "description": "GitHub 同类工程 · 自我演化的镜像参考 · 看到好东西就自己学过来",
+        "description": "GitHub 同类工程 · OPUS 的镜像参考 · 看到好东西就自己学过来",
     },
 }
 
 
-# 唯一不可删的内置 domain：self-evolve——它是看同类工程的镜子·
-# 没了它就失去自我演化能力·这是工程红线。其余领域都由用户自己加 / 删。
+# 卷三十四 · 唯一不可删的内置 domain
+# BRO 卷三十四补丁定调：starter 4 个（ai / super-individual / game-money / wildcard）
+# 都允许删——它们只是默认起点·BRO 有判断力决定要不要。
+#
+# **只有 self-evolve 真正不可删**——因为这是 OPUS 看同类工程的镜子·
+# 没了它·OPUS 失去自演化能力·这是工程红线。
 _PROTECTED_DOMAINS = {"self-evolve"}
 
 # 删 domain 时·如果还有 source 在里面·默认 reassign 到哪个 fallback domain
 # 这里维护一个优先级链 · 第一个还存在的 domain 就是 target
-_REASSIGN_FALLBACK_ORDER = ["self-evolve"]
+_REASSIGN_FALLBACK_ORDER = ["wildcard", "ai", "super-individual", "self-evolve"]
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -242,16 +267,16 @@ def remove_domain(
 ) -> dict:
     """删一个雷达 domain
 
-    领域都是用户自己挖出来的关注方向·想删就删：
-      - 用户自建的 domain 都允许删
-      - 但 self-evolve 受保护（看同类工程的镜子·没了失去自我演化）
+    卷三十三补丁创建·卷三十四补丁解锁 starter 4 个：
+      - 4 个 starter (ai/super-individual/game-money/wildcard) **现在允许删**
+      - 但 self-evolve 仍然受保护（OPUS 看同类工程的镜子·没了失去自演化）
 
     Args:
       slug: 要删的 domain
       sources_action: 'reassign' (默认) | 'delete' (连源一起删) | 'keep' (留着但 dangling)
       target_domain: reassign 模式下源要归到哪个 domain
         - 不传 → 自动从 _REASSIGN_FALLBACK_ORDER 找第一个还存在 + 不是 slug 的 domain
-        - 默认会归到 self-evolve
+        - 比如删 'wildcard' 时·默认 target 会变成 'ai'
 
     红线：
       - 不允许删 self-evolve
@@ -399,15 +424,142 @@ def list_domains() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# 默认源清单（Daemonkey 开源版 · 只预设「自我演化」一个领域）
+# 默认源清单（卷六十四续十五 · 大陆 70% + 海外 30%）
+# ---------------------------------------------------------------------------
+# 配比原则（内容域 · 不含下方 self-evolve 基建源）：
+#   - 国内原生 RSS 优先——大陆抓得快、内容贴近、不踩墙
+#   - 海外只留"大陆能直连 + 高价值"的（arxiv 论文 / The Decoder AI 新闻）
+#   - 全部经雷达 UA 实测可抓（返回有效 RSS/Atom）——别塞死链接
+#   - 实测剔除的死源：Hacker News / HuggingFace / IndieHackers（大陆连接超时/0 项）
+# 7 国内 : 3 海外 = 70 : 30。新领域加源也照这个标准（见 init_domain / manage_info_source）。
 # ---------------------------------------------------------------------------
 
 DEFAULT_SOURCES: list[dict] = [
+    # ── ZH · 7 个（70%）· 国内原生 RSS ──
+    {
+        "id": "qbitai",
+        "name": "量子位",
+        "display": "量子位",
+        "category": "tech-zh",
+        "type": "rss",
+        "url": "https://www.qbitai.com/feed",
+        "max_items": 12,
+        "enabled": True,
+        "tags": ["ZH", "ai-news"],
+        "_origin": "default",
+    },
+    {
+        "id": "36kr",
+        "name": "36氪",
+        "display": "36氪",
+        "category": "tech-zh",
+        "type": "rss",
+        "url": "https://36kr.com/feed",
+        "max_items": 12,
+        "enabled": True,
+        "tags": ["ZH", "startup"],
+        "_origin": "default",
+    },
+    {
+        "id": "leiphone",
+        "name": "雷锋网",
+        "display": "雷锋网",
+        "category": "tech-zh",
+        "type": "rss",
+        "url": "https://www.leiphone.com/feed",
+        "max_items": 10,
+        "enabled": True,
+        "tags": ["ZH", "ai-news"],
+        "_origin": "default",
+    },
+    {
+        "id": "ithome",
+        "name": "IT之家",
+        "display": "IT之家",
+        "category": "tech-zh",
+        "type": "rss",
+        "url": "https://www.ithome.com/rss/",
+        "max_items": 12,
+        "enabled": True,
+        "tags": ["ZH", "tech-news"],
+        "_origin": "default",
+    },
+    {
+        "id": "infoq-cn",
+        "name": "InfoQ 中国 AI",
+        "display": "InfoQ CN",
+        "category": "tech-zh",
+        "type": "rss",
+        "url": "https://www.infoq.cn/feed/ai",
+        "max_items": 10,
+        "enabled": True,
+        "tags": ["ZH", "tech-news"],
+        "_origin": "default",
+    },
+    {
+        "id": "ifanr",
+        "name": "爱范儿",
+        "display": "爱范儿",
+        "category": "tech-zh",
+        "type": "rss",
+        "url": "https://www.ifanr.com/feed",
+        "max_items": 10,
+        "enabled": True,
+        "tags": ["ZH", "consumer-tech"],
+        "_origin": "default",
+    },
+    {
+        "id": "sspai",
+        "name": "少数派 · 效率",
+        "display": "少数派",
+        "category": "tech-zh",
+        "type": "rss",
+        "url": "https://sspai.com/feed",
+        "max_items": 8,
+        "enabled": True,
+        "tags": ["ZH", "productivity"],
+        "_origin": "default",
+    },
+    # ── EN · 3 个（30%）· 大陆实测可直连 ──
+    {
+        "id": "arxiv-ai",
+        "name": "arxiv cs.AI",
+        "display": "arxiv cs.AI",
+        "category": "academic",
+        "type": "rss",
+        "url": "http://export.arxiv.org/rss/cs.AI",
+        "max_items": 10,
+        "enabled": True,
+        "tags": ["EN", "ai-research"],
+        "_origin": "default",
+    },
+    {
+        "id": "arxiv-cl",
+        "name": "arxiv cs.CL",
+        "display": "arxiv cs.CL",
+        "category": "academic",
+        "type": "rss",
+        "url": "http://export.arxiv.org/rss/cs.CL",
+        "max_items": 10,
+        "enabled": True,
+        "tags": ["EN", "nlp-research"],
+        "_origin": "default",
+    },
+    {
+        "id": "decoder",
+        "name": "The Decoder",
+        "display": "The Decoder",
+        "category": "tech",
+        "type": "rss",
+        "url": "https://the-decoder.com/feed/",
+        "max_items": 8,
+        "enabled": True,
+        "tags": ["EN", "ai-news"],
+        "_origin": "default",
+    },
     # ─────────────────────────────────────────────────────────────────────
-    # Daemonkey 开源版 · 唯一预设领域 = self-evolve（自我演化）· system_required 不可删
-    #   只预设「自我演化」——daemon 盯同类 agent 工程·看到好东西自己学过来。
-    #   AI / 学术 / 科技资讯等都不预设：那是「他」的兴趣·由相遇收集或他手动添加，
-    #   而不是替他先入为主地塞一堆 OPUS 自己关心的 AI 源。
+    # 卷三十四 · self-evolve · OPUS 看同类工程 · system_required 不可删
+    # （这是 OPUS 自我演化的基建源 · 不计入内容域的 70/30 配比）
     # ─────────────────────────────────────────────────────────────────────
     {
         "id": "gh-trending-python",
@@ -567,7 +719,12 @@ def _slugify(name: str) -> str:
     s = name.lower().strip()
     s = _ID_RE.sub("-", s)
     s = re.sub(r"-+", "-", s).strip("-")
-    return s[:40] or "src"
+    if s:
+        return s[:40]
+    # 全中文/无 ASCII 名 → fallback 撞裸 "src" · 连续加中文源互相覆盖 (社区文档问题7)
+    # 修: src-<md5(name) 前 8 位> · 中文源 id 唯一
+    import hashlib
+    return "src-" + hashlib.md5(name.encode("utf-8")).hexdigest()[:8]
 
 
 def add_source(
@@ -580,7 +737,7 @@ def add_source(
     max_items: int = 10,
     tags: Optional[list[str]] = None,
     source_id: Optional[str] = None,
-    domain: str = "self-evolve",
+    domain: str = "ai",
 ) -> dict:
     """加新源 · 返回新建的源记录 · 同 id 会抛 ValueError
 
@@ -805,8 +962,6 @@ def refresh_radar(progress=None, translate: bool = True) -> dict:
 
     progress: 可选回调 (step, msg) · 串行巡源时按『信源 i/N』实时回报·
     给 auto_pipeline 传 push_tool_progress 用·让前端别干等 (卷六十一续)。
-    translate: 是否逐条翻译英文标题 (走 LLM·首次最慢的一步)。首启热数据时传 False
-    可省下大半时间——中文源本就不用译·英文源(自我演化)留待后续 refresh 再补译。
     """
     logger.info("info_radar refresh started")
     sources = list_sources(enabled_only=True)

@@ -1,19 +1,19 @@
 """workers/app_runner.py
 ========================
 
- 12 · wish-165ea1f6 phase B · 跑一个 app · 复用 tool_loop · 独立 session
+卷四十六续 12 · wish-165ea1f6 phase B · 跑一个 app · 复用 tool_loop · 独立 session
 
 一个 app 跑一次 = 一个临时 messages list + 一次 run_tool_loop 调用。
 不污染主对话历史·跑完即丢。 给两个上层场景用:
 
-  1. POST /workshop/apps/{aid}/run  · 用户 在工坊『测试』tab 点 ▶ 真跑
+  1. POST /workshop/apps/{aid}/run  · BRO 在工坊『测试』tab 点 ▶ 真跑
   2. workflow_engine 跑到 app node 时 · 顺着拓扑调一次 run_app · 拿 outputs 接下游
 
 设计哲学:
   - app 不是新的 daemon · 只是『带特定 system_prompt + 工具白名单』的一次 LLM 调用
   - 完全复用 tool_loop · 不写新 LLM 协议代码
-  - confirm 在 app 上下文里 auto-approve (用户 主动点了▶ · 已经隐式同意 · 不再阻塞)
-  - app 内的 tool 调用 progress 通过 SSE 流回 UI · 用户 实时看 AI 在干啥
+  - confirm 在 app 上下文里 auto-approve (BRO 主动点了▶ · 已经隐式同意 · 不再阻塞)
+  - app 内的 tool 调用 progress 通过 SSE 流回 UI · BRO 实时看 OPUS 在干啥
   - output_schema 存在时 · 在 prompt 末尾要求 LLM 输出 ```json {...}``` · 后处理 parse
 
 调用约定:
@@ -119,14 +119,14 @@ def _build_input_prompt(
             l = o.get("label") or n
             lines.append(f"  - `{n}` ({t}) · {l}")
         lines.append("示例: ```json\\n{\"field_a\": \"value\", \"field_b\": 42}\\n```")
-        lines.append("正文部分照常给 用户 看 · JSON 块给下游程序提取 · 二者别冲突。")
+        lines.append("正文部分照常给 BRO 看 · JSON 块给下游程序提取 · 二者别冲突。")
 
     return "\n".join(lines)
 
 
 def _extract_outputs_from_text(text: str, output_schema: list[dict]) -> dict:
     """从 LLM 回答里提取 output 字段
-
+    
     策略:
         1. 没 output_schema · 返回 {'output': text 全文}
         2. 有 schema · 找末尾的 ```json ... ``` 块·parse JSON · 按 schema name 字段提
@@ -176,19 +176,6 @@ def _allowed_tools(app: dict) -> list:
     return [REGISTRY[name] for name in whitelist if name in REGISTRY]
 
 
-def _auto_confirm(spec, args, *more) -> str:
-    """app 跑动时 · 用户 已主动点 ▶ · auto-approve 所有 tool tier
-
-    安全考量: app 一定要从 用户 信任的 AI / 用户 自己 create_app 出来 · 不是任意来源。
-    后续如要更严·给 app json 加 safety 字段·让创建者决定级别。
-    """
-    return "yes"
-
-
-def _no_observe(*args, **kwargs) -> None:
-    pass
-
-
 def run_app(
     *,
     app: dict,
@@ -207,7 +194,7 @@ def run_app(
         inputs: form 字段名 → 值 · 跟 app.ui_form_schema 对齐 (但允许额外字段)
         runtime: daemon 的 RUNTIME 对象 · 从 daemon_api 注入
         progress: SSE hook · 来自 tool_loop 的 ProgressHook
-        cancel_check: 用户 中途按取消时返回 True
+        cancel_check: BRO 中途按取消时返回 True
         upstream_outputs: 工作流上游 node 的 outputs · 拼进 prompt 让 LLM 参考
         max_iterations: tool_loop 最多跑几个 turn (app 不该需要很多·12 足够)
         max_tokens: 输出 token 上限 · 默认走 RUNTIME 的全局值
@@ -222,8 +209,6 @@ def run_app(
             'error': str | None,
         }
     """
-    from tool_loop import run_tool_loop
-
     if not isinstance(app, dict) or not app.get("id"):
         return {"ok": False, "text": "", "outputs": {}, "usage": {},
                 "iterations": 0, "error": "app spec invalid"}
@@ -233,13 +218,13 @@ def run_app(
         system_prompt = (
             f"你正在以「{app.get('name') or 'app'}」这个 app 的身份运行。 "
             f"用途: {app.get('description') or '(未声明)'}。 "
-            "用户 通过表单提供输入·你按表单字段把活做漂亮·调用授权工具完成实际产出。"
+            "BRO 通过表单提供输入·你按表单字段把活做漂亮·调用授权工具完成实际产出。"
         )
 
     # 沉淀闭环 v2 刀① · 运行时强制注入 (不依赖 app 作者是否写对):
     #   1. 产出隔离——治产出串目录的事故
     #   2. 资产槽必读——治"多版本资产只剩废版"的事故
-    #  P1 (2026-06-10) 补丁③ · 调度预算 — 治 token 失控 (用户 看计费台"意外的高")
+    # 卷七十三 P1 (2026-06-10) 补丁③ · 调度预算 — 治 token 失控 (BRO 看计费台"意外的高")
     aid = app.get("id") or ""
     mandates = [
         "",
@@ -275,8 +260,8 @@ def run_app(
     messages: list[dict] = [{"role": "user", "content": user_msg}]
 
     tools = _allowed_tools(app)
-    # 沉淀闭环 v2 修补 · 工具白名单真生效 (之前 tools 只挂在 progress event 里给前端看
-    # LLM 实际看的是全 REGISTRY · 审稿 app 因此能调 run_app 跑 5 分钟内容制作 · 现在拦)
+    # 卷七十二 · 沉淀闭环 v2 修补 · 工具白名单真生效 (之前 tools 只挂在 progress event 里给前端看
+    # · LLM 实际看的是全 REGISTRY · 审稿 app 因此能调 run_app 跑 5 分钟内容制作 · 现在拦)
     allowed_names: set[str] | None = {s.name for s in tools} if app.get("tools") else None
 
     used_max_tokens = max_tokens
@@ -298,38 +283,38 @@ def run_app(
         except Exception:
             pass
 
-    iterations_before = 0  # tool_loop 不直接暴露 · 用 messages 长度变化近似
-    initial_msg_len = len(messages)
+    # 卷七十五 · v0.6.0 P0 · 跑 loop 这段中段抽进 workers/subagent_runner.py 复用。
+    # run_app 保留自己的 app 专属逻辑 (表单 prompt / 上面的 mandate / 下面的 output 提取
+    # + runs 自增 + usage sink) —— 对外行为逐字节不变。 inject_budget_mandate=False:
+    # run_app 上面已拼了 app 版调度预算 mandate · 不让通用核心重复注入。
+    from .subagent_runner import run_subagent
 
-    try:
-        text, messages, usage = run_tool_loop(
-            client=runtime.client,
-            provider=runtime.provider,
-            model=app.get("model_hint") or runtime.model,
-            max_tokens=used_max_tokens,
-            system=system_prompt,
-            messages=messages,
-            confirm=_auto_confirm,
-            observe=_no_observe,
-            max_iterations=max_iterations,
-            base_url=runtime.base_url,
-            progress=progress,
-            cancel_check=cancel_check,
-            on_message_commit=None,  # 不沉到 session jsonl · 跑完即丢
-            allowed_tool_names=allowed_names,  # 白名单真生效
-        )
-    except Exception as e:
-        err = f"{type(e).__name__}: {e}"
+    sub = run_subagent(
+        system=system_prompt,
+        user_msg=user_msg,
+        runtime=runtime,
+        tools_whitelist=allowed_names,       # 卷七十二 · 白名单真生效
+        max_iterations=max_iterations,
+        max_tokens=used_max_tokens,
+        model=app.get("model_hint") or runtime.model,
+        progress=progress,
+        cancel_check=cancel_check,
+        inject_budget_mandate=False,
+        persist=False,                       # app 跑完即丢 · 不沉 session jsonl
+    )
+
+    if not sub.ok:
         if progress:
             try:
-                progress("app_run_error", {"error": err})
+                progress("app_run_error", {"error": sub.error})
             except Exception:
                 pass
         return {
             "ok": False, "text": "", "outputs": {}, "usage": {},
-            "iterations": 0, "error": err,
+            "iterations": 0, "error": sub.error,
         }
 
+    text = sub.text
     outputs = _extract_outputs_from_text(text, app.get("output_schema") or [])
 
     # 沉淀闭环 v2 刀② · runs 自增 (字段早就有 · 自增一直缺失 · 所有 agentic 跑法都过这里)
@@ -346,31 +331,13 @@ def run_app(
     except Exception:
         pass
 
-    result_usage = {
-        "input_tokens": getattr(usage, "input_tokens", 0),
-        "output_tokens": getattr(usage, "output_tokens", 0),
-        "cache_read_tokens": getattr(usage, "cache_read_tokens", 0),
-        "cache_creation_tokens": getattr(usage, "cache_creation_tokens", 0),
-    }
+    result_usage = sub.usage
+    iterations = sub.iterations
+    hit_budget = sub.hit_budget
+    warning = sub.warning
 
-    iterations = max(1, (len(messages) - initial_msg_len + 1) // 2)
-
-    #  P1 (2026-06-10) · token 撞顶检测 (用户 看计费台"意外的高"的根因之一)
-    # iterations 接近 max_iterations 时 · LLM 大概率没真正出活 · 需要 用户 注意 + 落账
-    hit_budget = iterations >= max_iterations
-    near_budget = iterations >= max(1, max_iterations - 1) and not hit_budget
-    warning = None
-    if hit_budget:
-        warning = (
-            f"撞 max_iterations 上限 ({iterations}/{max_iterations}) · "
-            f"sub-agent 没在预算内出完整 output_schema 字段 · 输出可能不完整 · "
-            f"考虑: ① 提高 app 的 max_iterations · ② 精简 system_prompt · ③ 拆分成更小的 sub-app"
-        )
-    elif near_budget:
-        warning = f"接近预算上限 ({iterations}/{max_iterations}) · 下次跑要注意 token 消耗"
-
-    #  P1 (2026-06-10) · sub-agent token usage sink (sub-agent 跑完不进 session jsonl ·
-    # 用户 之前只能去计费台对账 · 现在 sink 到 data/runtime/app_runs_usage.jsonl 一次性查)
+    # 卷七十三 P1 (2026-06-10) · sub-agent token usage sink (sub-agent 跑完不进 session jsonl ·
+    # BRO 之前只能去计费台对账 · 现在 sink 到 data/runtime/app_runs_usage.jsonl 一次性查)
     try:
         _sink_app_usage(app, inputs, result_usage, iterations, max_iterations, warning)
     except Exception:
@@ -411,7 +378,7 @@ def _sink_app_usage(
     max_iterations: int,
     warning: Optional[str],
 ) -> None:
-    """落 sub-agent token usage 一行 jsonl · 给 用户 事后对账 · 不进 session 主流"""
+    """落 sub-agent token usage 一行 jsonl · 给 BRO 事后对账 · 不进 session 主流"""
     from pathlib import Path as _P
     import time as _t
 
@@ -429,6 +396,7 @@ def _sink_app_usage(
         "ts": _t.strftime("%Y-%m-%dT%H:%M:%S"),
         "app_id": app.get("id") or "",
         "app_name": app.get("name") or "",
+        "model_id": app.get("model_hint") or app.get("model") or "unknown",  # wish-bec4f3b9 · billing 按模型聚合
         "iterations": iterations,
         "max_iterations": max_iterations,
         "input_tokens": in_tok,

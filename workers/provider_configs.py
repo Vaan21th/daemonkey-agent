@@ -259,6 +259,7 @@ def add_config(
     max_tokens: int | None = None,
     vision: bool | None = None,
     director: bool = False,
+    pricing: dict | None = None,
 ) -> dict:
     """新增一条 config.
 
@@ -288,7 +289,8 @@ def add_config(
         "pinned": bool(pinned),
         "max_tokens": int(max_tokens),
         "vision": vision,  # wish-4a6331b2 · None=自动按模型族判断 / True=多模态 / False=纯文本
-        "director": bool(director),  # True=总监模型 (replan 三唤醒点召唤 · 现场建 client)
+        "director": bool(director),  # wish-8ffb9d65 · True=总监模型 (replan 三唤醒点召唤 · 现场建 client)
+        "pricing": _normalize_pricing(pricing),  # wish-bec4f3b9 · 可选价格表 (每 1M tokens · 成本估算用)
         "created_at": _now(),
         "updated_at": _now(),
     }
@@ -300,8 +302,8 @@ def add_config(
 
 
 def update_config(cfg_id: str, patch: dict) -> dict:
-    """局部更新一条 config · 只能改: name / base_url / model / api_key / pinned / preset_id / max_tokens."""
-    ALLOWED = {"name", "base_url", "model", "api_key", "pinned", "preset_id", "max_tokens", "vision", "director"}
+    """局部更新一条 config · 只能改: name / base_url / model / api_key / pinned / preset_id / max_tokens / vision / director / pricing."""
+    ALLOWED = {"name", "base_url", "model", "api_key", "pinned", "preset_id", "max_tokens", "vision", "director", "pricing"}
     data = load_configs()
     for c in data.get("configs") or []:
         if c.get("id") == cfg_id:
@@ -318,9 +320,13 @@ def update_config(cfg_id: str, patch: dict) -> dict:
                                 continue
                         except (ValueError, TypeError):
                             continue
+                    # pricing 是可选 dict · 走归一化 (None/空 = 清除)
+                    if k == "pricing":
+                        c[k] = _normalize_pricing(v)
+                        continue
                     c[k] = v.strip() if isinstance(v, str) else v
-            # 顾问(director)全局只能有一个 · 设新顾问时把其他配置的 director 原子清掉 ·
-            # 否则 UI 能点出两个"顾问"徽标
+            # wish-8ffb9d65 follow-up (BRO 2026-07-28): 顾问(director)全局只能有一个 ·
+            # 设新顾问时把其他配置的 director 原子清掉 · 否则 UI 能点出两个"顾问"徽标
             if (patch or {}).get("director") is True:
                 for other in data.get("configs") or []:
                     if other.get("id") != cfg_id and other.get("director"):
@@ -383,3 +389,32 @@ def apply_config_to_env(cfg: dict) -> None:
         os.environ["ANTHROPIC_API_KEY"] = key
     else:
         os.environ["OPUS_API_KEY"] = key
+
+
+def _normalize_pricing(p) -> dict | None:
+    """pricing 可选 · None/空 dict → None (未配置) · 数字字段强转 float · 非法 → None.
+
+    结构 (每 1M tokens 单价): {"currency", "input", "output", "cache_read", "cache_creation",
+    "source_url", "checked_at", "note"} · cache_creation 不配时按 input×1.25 算 (对齐 tool_loop 计价口径).
+    """
+    if not isinstance(p, dict) or not p:
+        return None
+
+    def _f(k):
+        v = p.get(k)
+        try:
+            return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+    out = {
+        "currency": (p.get("currency") or "USD").strip().upper()[:3],
+        "input": _f("input"),
+        "output": _f("output"),
+        "cache_read": _f("cache_read"),
+        "cache_creation": _f("cache_creation"),
+        "source_url": (p.get("source_url") or "").strip()[:500],
+        "checked_at": (p.get("checked_at") or "").strip()[:40],
+        "note": (p.get("note") or "").strip()[:200],
+    }
+    return out if (out["input"] is not None or out["output"] is not None) else None

@@ -6,29 +6,29 @@ Daemonkey 用浏览器抓需要 JS 渲染 / 需要登录才能看的网页。
 
 两种工作模式（自动选）：
 
-  模式 A · CDP attach（首选，需 用户 一次性配置）
-    用户 的 Edge 启动时加 --remote-debugging-port=9222
-    Daemonkey 用 Playwright 的 connect_over_cdp 直接 attach 到 用户 正在用的 Edge 实例
+  模式 A · CDP attach（首选，需 BRO 一次性配置）
+    BRO 的 Edge 启动时加 --remote-debugging-port=9222
+    Daemonkey 用 Playwright 的 connect_over_cdp 直接 attach 到 BRO 正在用的 Edge 实例
     →  共享所有 cookies / sessions / 登录态
-    →  能访问公司内网 / 微信公众号原文 / 付费墙等任何 用户 自己能看的页面
+    →  能访问公司内网 / 微信公众号原文 / 付费墙等任何 BRO 自己能看的页面
 
   模式 B · 独立 profile（fallback，无配置成本）
-    起一个独立的 Playwright Edge 实例，没有 用户 的 cookies
+    起一个独立的 Playwright Edge 实例，没有 BRO 的 cookies
     能跑 JS、能渲染 SPA，但访问需登录的页面会撞登录墙
     比 web_fetch 强（能跑 JS），比模式 A 弱（没登录态）
 
-为什么不直接复制 用户 Edge cookies？
+为什么不直接复制 BRO Edge cookies？
   - Edge 在跑时用 OS share-deny 锁住 cookies SQLite
   - sqlite3 immutable=1 也打不开
   - 用 Backup API 需要 admin / SeBackupPrivilege
-  - 用户 26 个 Edge 进程开着不可能关——所以走 CDP
+  - BRO 26 个 Edge 进程开着不可能关——所以走 CDP
 
 成本：
-  - 模式 A：连接快（< 1s），共享 用户 已开的 page，零启动成本
+  - 模式 A：连接快（< 1s），共享 BRO 已开的 page，零启动成本
   - 模式 B：每次启动 3-5s，不复用
 
 风险：
-  - 模式 A：Daemonkey 能开新 page、能浏览任何 用户 能浏览的页面
+  - 模式 A：Daemonkey 能开新 page、能浏览任何 BRO 能浏览的页面
     → 这就是为什么本工具是 CONFIRM 档
 """
 
@@ -94,7 +94,7 @@ class _TextExtractor(HTMLParser):
 
 
 def _fetch_via_cdp(url: str, wait_seconds: int) -> tuple[bool, str, str, str]:
-    """用 CDP attach 到 用户 现有 Edge 实例。返回 (ok, html, title, final_url) 或 (False, error_msg, '', '')。"""
+    """用 CDP attach 到 BRO 现有 Edge 实例。返回 (ok, html, title, final_url) 或 (False, error_msg, '', '')。"""
     try:
         from playwright.sync_api import sync_playwright as _sp
     except ImportError:
@@ -125,7 +125,7 @@ def _fetch_via_cdp(url: str, wait_seconds: int) -> tuple[bool, str, str, str]:
 
 
 def _fetch_via_standalone(url: str, wait_seconds: int, visible: bool) -> tuple[bool, str, str, str]:
-    """启动独立 Playwright Edge profile——没 用户 的登录态，但能跑 JS。"""
+    """启动独立 Playwright Edge profile——没 BRO 的登录态，但能跑 JS。"""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -228,7 +228,7 @@ def _run(args: dict) -> ToolResult:
     from identity import localize_narration as _ln
     out_lines = [
         f"browser_fetch · {final_url}",
-        # 只本地化这条 meta 行(用户→主人名)·正文 text 是透传网页内容·不动
+        # 只本地化这条 meta 行(BRO→主人名)·正文 text 是透传网页内容·不动
         _ln(f"mode: {chosen_mode}{' (dedicated Edge · its own login)' if chosen_mode == 'cdp' else ' (no login state)'}"),
     ]
     if title:
@@ -261,7 +261,7 @@ SPEC = ToolSpec(
             "mode": {
                 "type": "string",
                 "enum": ["auto", "cdp", "standalone"],
-                "description": "auto (default) | cdp (use 用户's Edge cookies) | standalone (no login)",
+                "description": "auto (default) | cdp (use BRO's Edge cookies) | standalone (no login)",
             },
             "wait_seconds": {
                 "type": "integer",

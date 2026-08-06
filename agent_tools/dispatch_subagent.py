@@ -1,18 +1,18 @@
 """agent_tools/dispatch_subagent.py
 ===================================
 
-主对话派分身 (v0.6.0 · P1)
+v0.6.0 · P1 · 主对话派分身 (提案 docs/PROPOSAL-subagent-flow-v0.5.md)
 
-一句话: 主对话里的 AI 把 1~N 个子任务派给隔离的「分身」并行干 · 每个分身独立上下文
+一句话: 主对话里的 Daemonkey 把 1~N 个子任务派给隔离的「分身」并行干 · 每个分身独立上下文
 + 收紧工具白名单 · 跑完自动汇总结论回到本轮 tool_result。
 
 底层复用 workers/subagent_runner.run_subagent (P0 抽的通用子执行器) —— 零改工具协议。
 
 典型场景:
-  用户: "同时查一下 A 框架、B 框架、C 框架各自的坑 · 再给我对比"
+  BRO: "同时查一下 A 框架、B 框架、C 框架各自的坑 · 再给我对比"
   → 派 3 个分身各查一个 · 并发跑 · 一份对比汇总回来 (不占主对话上下文逐个查)
 
-安全边界:
+安全边界 (守死 · 见提案第 5 节风险表):
   - **不递归**: 分身白名单里剔除 dispatch_subagent 自身 (v0.6.0 限一层)
   - **不给系统控制权**: 硬 DENY 掉 request_restart / update_core / summon_cursor 等
   - **默认只读**: 不显式给 tools 时 · 分身只拿【只读/研究】白名单 (查证类)
@@ -31,7 +31,7 @@ from . import (
     register_tool,
 )
 
-# 并发/规模闸 (并行烧 token → 上限 + 预算)
+# 并发/规模闸 (提案风险表: 并行烧 token → 上限 + 预算)
 _MAX_CONCURRENCY = 2       # 最多同时 2 个分身在跑 (即使派了更多也排队)
 _MAX_TASKS = 6             # 一次最多派 6 个
 _DEFAULT_MAX_ITER = 12     # 每分身默认迭代预算
@@ -102,7 +102,7 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str) -> dict:
         tools_whitelist=wl,
         max_iterations=max_iter,
         progress=None,               # 分身工具级事件不逐个回灌主 SSE (只回灌启动/完成里程碑)
-        persist=True,                # 落 sessions/sub-*.jsonl 可回看 (可追溯)
+        persist=True,                # 落 sessions/sub-*.jsonl 可回看 (可追溯 · 宪法第5条)
         parent_session_id=parent_sid,
         inject_budget_mandate=True,
     )
@@ -202,7 +202,7 @@ SPEC = ToolSpec(
         "  - 一个请求天然拆成几个独立子任务 (查 A、查 B、查 C 再对比) → 并行比自己逐个查省时\n"
         "  - 想把一段查证隔离出去 · 不让中间过程占满主对话上下文\n"
         "  - 也可放进某个工坊 app 的 tools · 让 app 步内并行 (如『素材并行查询』把每个镜头的\n"
-        "    检索词一次并行搜) → app 跑到这步会自动放行 · 不打断你\n\n"
+        "    检索词一次并行搜) → app 跑到这步会自动放行 · 不打断 BRO\n\n"
         "**用法**:\n"
         "  - tasks: 数组 · 每项 {goal(必填一句话目标), tools?(工具白名单), max_iter?(迭代预算)}\n"
         "  - 不给 tools → 分身默认只拿【只读/研究】工具 (read_file/grep/web_search/… · 最安全)\n"
@@ -211,7 +211,7 @@ SPEC = ToolSpec(
         f"  - 一次最多 {_MAX_TASKS} 个 · 并发上限 {_MAX_CONCURRENCY} (排队跑 · 防 token 爆)\n"
         "  - 分身【不能】再派分身 (限一层递归) · 【不给】request_restart/update_core 等系统控制权\n"
         "  - 每个分身跑完落 sessions/sub-*.jsonl 可回看 (可追溯)\n\n"
-        "**tier**: CONFIRM · 会并行烧 token · 派之前让你拍一下确认 (信任 flow 内自动放行)"
+        "**tier**: CONFIRM · 会并行烧 token · 派之前让 BRO 拍一下 (信任 flow 内自动放行)"
     ),
     tier=TIER_CONFIRM,
     input_schema={

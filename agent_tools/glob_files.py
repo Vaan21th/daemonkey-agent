@@ -2,7 +2,7 @@
 agent_tools/glob_files.py
 =========================
 
-OPUS 的"按名字找文件"——通配符列文件。补 Cursor Glob 那块盲区 (续 ④)。
+Daemonkey 的"按名字找文件"——通配符列文件。补 Cursor Glob 那块盲区 (卷五十八续 ④)。
 
 为什么 (grep_files / shell 都不顺手):
   grep_files 要先有"内容 pattern"·想按【文件名】找 (chat.* / **/*.py / 所有 test_*)

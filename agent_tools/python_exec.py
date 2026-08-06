@@ -2,7 +2,7 @@
 agent_tools/python_exec.py
 ==========================
 
-OPUS 跑 Python 代码的手——绕过 shell 转义地狱。
+Daemonkey 跑 Python 代码的手——绕过 shell 转义地狱。
 
 为什么造这个工具——
   扫最近 30 个 session 的 224 次 shell_exec · 42 次 (18.8%) 失败 ·
@@ -33,12 +33,10 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 import uuid
 from pathlib import Path
 
 from . import (
-    TIER_AUTO,
     TIER_CONFIRM,
     TIER_GUARD,
     ToolResult,
@@ -56,21 +54,31 @@ MAX_TIMEOUT_SEC = 300
 MAX_OUTPUT_CHARS = 8000
 
 
+# 2026-07-28 BRO 拍板 · GUARD 重新定界 (跟 shell_exec 同一把尺 · 只拦"开不了机级"):
+#   当初风险弹窗的意图 = 只拦「可能让电脑开不了机 / 不可逆」的事。
+#   所以 GUARD 只留三类:
+#     1. 自爆级   · os.kill / SIGTERM (能杀 daemon 进程)
+#     2. 不可逆数据级 · rmtree 递归强删
+#     3. KEY 安全级  · 写 .env (泄露/丢失不可逆 · 铁律 7)
+#   其余一律 CONFIRM (WebUI 通道 confirm 策略自动跑 · 不弹窗):
+#     os.system / subprocess (跑命令本身无险·废机命令由 shell_exec GUARD_RE 兜底) /
+#     socket (起连接无险) / os.remove 单文件 (跟 Remove-Item -Force 同级) / 写绝对路径文件。
 _GUARD_PATTERNS = [
-    r"\bos\.system\s*\(",
-    r"\bsubprocess\.(run|call|Popen|check_output|check_call)\s*\(",
-    r"\bshutil\.rmtree\s*\(",
-    r"\bfrom\s+shutil\s+import\s+[\w\s,]*\brmtree\b",
-    r"\brmtree\s*\(",
-    r"\bos\.remove\s*\([\s'\"]*[/\\]",
-    r"\bos\.unlink\s*\([\s'\"]*[/\\]",
+    # ── 1. 自爆级 (能杀 daemon 进程) ──
     r"\bos\.kill\s*\(",
     r"\bfrom\s+os\s+import\s+[\w\s,]*\bkill\b",
     r"signal\.SIGKILL|signal\.SIGTERM",
-    r"\bsocket\.(socket|create_server)\s*\(",
-    r"\bopen\s*\([^)]*['\"][a-zA-Z]:\\\\[^)]*['\"](\s*,\s*['\"][wxa])",
-    r"^\s*import\s+os\s*;\s*os\.",
-    r"__import__\s*\(\s*['\"]subprocess",
+    # ── 2. 不可逆数据级 (递归强删) ──
+    r"\bshutil\.rmtree\s*\(",
+    r"\bfrom\s+shutil\s+import\s+[\w\s,]*\brmtree\b",
+    r"\brmtree\s*\(",
+    # ── 3. KEY 安全级 (写 .env · 铁律 7) ──
+    r"\bopen\s*\([^)]*['\"][^'\"]*\.env['\"]\s*,\s*['\"][wax]",
+    r"\bpathlib[^;]*\.env[^;]*write_text\s*\(",
+    # ── 4. shell 命令拆 list 形态 (subprocess.run(['rm','-rf',...]) 逃逸 shell_exec 扫描) ──
+    r"['\"]rm['\"]\s*,\s*['\"]-[a-zA-Z]*[rf]['\"]",
+    r"['\"]git['\"]\s*,\s*['\"]push['\"][^)]*(--force|['\"]-f)",
+    r"['\"](shutdown|reboot|format|mkfs)['\"]",
 ]
 _GUARD_RE = re.compile("|".join(f"(?:{p})" for p in _GUARD_PATTERNS), re.IGNORECASE | re.MULTILINE)
 
@@ -80,6 +88,14 @@ def _classify_code(code: str) -> str:
         return TIER_CONFIRM
     if _GUARD_RE.search(code):
         return TIER_GUARD
+    # 废机命令兜底: code 里经 os.system/subprocess 跑 shell 废机命令 (format C:/shutdown/递归强删等)
+    # 复用 shell_exec 同一份 GUARD 关键词 · 两边一把尺
+    try:
+        from .shell_exec import _GUARD_RE as _SHELL_GUARD_RE
+        if _SHELL_GUARD_RE.search(code):
+            return TIER_GUARD
+    except Exception:
+        pass
     return TIER_CONFIRM
 
 
@@ -124,7 +140,7 @@ def _run(args: dict) -> ToolResult:
     else:
         py_path = str(VENV_PY)
 
-    #  · B4 · 跑代码前拍 surface 文件 mtime 快照 · 用于精准定位本次改动 (告警级自检)
+    # 卷五十四 · B4 · 跑代码前拍 surface 文件 mtime 快照 · 用于精准定位本次改动 (告警级自检)
     _pre_snapshot: dict = {}
     try:
         from workers.edit_selfcheck import snapshot_mtimes
@@ -145,7 +161,7 @@ def _run(args: dict) -> ToolResult:
 
         argv = [py_path, "-X", "utf8", str(tmp_path)]
 
-        # 续 IV · 用统一 helper · 防黑框 (Windows 父无 console 时 spawn 子进程默认弹新 console)
+        # 卷四十六续 IV · 用统一 helper · 防黑框 (Windows 父无 console 时 spawn 子进程默认弹新 console)
         try:
             proc = subprocess.run(
                 argv,
@@ -181,7 +197,7 @@ def _run(args: dict) -> ToolResult:
         parts.append(f"--- exit code: {rc} ---")
         output = "\n".join(parts)
 
-        #  · B4 · 编辑后即时自检: 本次若改动过 daemon 表面 .py / static js 且语法坏了 → 告警 (不拦)
+        # 卷五十四 · B4 · 编辑后即时自检: 本次若改动过 daemon 表面 .py / static js 且语法坏了 → 告警 (不拦)
         try:
             from workers.edit_selfcheck import selfcheck_changed
             sc_ok, sc_warn = selfcheck_changed(_pre_snapshot)

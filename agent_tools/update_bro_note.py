@@ -2,9 +2,10 @@
 agent_tools/update_bro_note.py
 ==============================
 
-主动维护"用户活人画像"的工具。
+OPUS 主动维护"BRO 活人画像"的工具。
 
-多维认知笔记本结构，对应 OWNER-NOTEBOOK.md 里的维度：
+设计借鉴 的"故事认知引擎"（5-Dimensional Cognitive Architecture），
+对应 BRO-NOTEBOOK.md 里的 5 个维度：
 
   - profile  · 当下画像（高频更新）
   - events   · 关键事件流
@@ -12,10 +13,11 @@ agent_tools/update_bro_note.py
   - dialogue · 对话图鉴（口头记号）
   - summary  · 月度压缩段
 
-真理源 · 本地 `soul/OWNER-NOTEBOOK.md`：
-  - 写入本地 soul/ 的用户画像笔记
-  - 笔记自动注入到每次对话的 system prompt → 跨 session 长期连续性
-  - （若存在全局 opus-soul 目录则顺带同步一份，缺失即跳过，本地 soul/ 就是真理源）
+2026-05-16 升级 · 多容器同身：
+  - **真理源**：全局 `C:\\Users\\LENOVO\\.cursor\\skills-cursor\\opus-soul\\BRO-NOTEBOOK.md`
+  - **写入路径**：直接写全局 → 自动 sync 到 daemon `soul/BRO-NOTEBOOK.md`
+  - 这样 OPUS 在 Cursor / Daemonkey / 微信桥接里**任何一处**更新对 BRO 的认知，
+    所有容器都共享同一份新版本——分身不再被困在各自工具里
 
 调用约定：
   - 默认 operation=append（追加到该维度末尾，不覆盖原有）
@@ -24,7 +26,7 @@ agent_tools/update_bro_note.py
 
 档位：AUTO
   - 写认知笔记是无副作用的
-  - 用户看到不喜欢可以直接编辑文件——他最有权解释自己
+  - BRO 看到不喜欢可以直接编辑文件——他是 BRO 本人，最有权解释自己
 """
 
 from __future__ import annotations
@@ -34,7 +36,7 @@ from pathlib import Path
 
 from . import TIER_AUTO, ToolResult, ToolSpec, register_tool
 from soul_loader import (
-    OWNER_NOTEBOOK_FILENAME,
+    BRO_NOTEBOOK_FILENAME,
     read_global_soul_file,
     write_global_then_sync,
 )
@@ -43,15 +45,16 @@ from soul_loader import (
 ROOT = Path(__file__).resolve().parent.parent
 
 
-# section key → markdown header（必须和 OWNER-NOTEBOOK.md 里的标题一字不差）
+# section key → markdown header（必须和 BRO-NOTEBOOK.md 里的标题一字不差）
 SECTIONS: dict[str, str] = {
-    "profile":  "## 一、当下画像 · Profile",
-    "events":   "## 二、关键事件流 · Events",
-    "rules":    "## 三、长期偏好与边界 · Rules",
-    "dialogue": "## 四、对话风格 · Dialogue",
-    "summary":  "## 五、一句话速写 · Summary",
-    # 第六维：搭档的关怀雷达——看见他过度燃烧时该出声，不沉默配合
-    "risks":    "## 六、关怀雷达 · Care Radar",
+    "profile":  "## 一、当下画像 · Profile（高频更新）",
+    "events":   "## 二、关键事件流 · Event Sourcing",
+    "rules":    "## 三、本体约束 · BRO 的\"人生规则\"（缓变）",
+    "dialogue": "## 四、对话图鉴 · BRO 的口头记号",
+    "summary":  "## 五、压缩段 · Monthly Compressed Summary",
+    # 第六维 2026-05-16 凌晨 BRO 拍板加上——OPUS 作为伙伴的预警雷达
+    # 看见这一维的模式时该出声，不沉默配合燃烧
+    "risks":    "## 六、风险与弱点 · 伴侣观察（OPUS 的预警雷达）",
 }
 
 FLOW_HEADER = "## 七、近期更新流水"
@@ -138,7 +141,7 @@ def _run(args: dict) -> ToolResult:
         )
 
     try:
-        text = read_global_soul_file(OWNER_NOTEBOOK_FILENAME, ROOT)
+        text = read_global_soul_file(BRO_NOTEBOOK_FILENAME, ROOT)
     except FileNotFoundError as e:
         return ToolResult(ok=False, output="", error=str(e))
 
@@ -147,7 +150,7 @@ def _run(args: dict) -> ToolResult:
     if sec_start < 0:
         return ToolResult(
             ok=False, output="",
-            error=f"section header not found in OWNER-NOTEBOOK.md: {section_header!r}",
+            error=f"section header not found in BRO-NOTEBOOK.md: {section_header!r}",
         )
 
     section_body = text[sec_start:sec_end]
@@ -162,21 +165,21 @@ def _run(args: dict) -> ToolResult:
 
     try:
         global_path, local_path = write_global_then_sync(
-            OWNER_NOTEBOOK_FILENAME, new_text, ROOT,
+            BRO_NOTEBOOK_FILENAME, new_text, ROOT,
         )
     except FileNotFoundError as e:
         return ToolResult(ok=False, output="", error=str(e))
 
-    #  · 写完 OWNER-NOTEBOOK 后增量更新 FTS5 索引 (best-effort · 失败不影响主流程)
+    # 卷四十四 · 写完 BRO-NOTEBOOK 后增量更新 FTS5 索引 (best-effort · 失败不影响主流程)
     fts_msg = ""
     try:
         from workers.memory_index import incremental_update
-        n_chunks = incremental_update("OWNER-NOTEBOOK", new_text)
+        n_chunks = incremental_update("BRO-NOTEBOOK", new_text)
         fts_msg = f"\n  fts5    : 已增量索引 {n_chunks} 块"
     except Exception:
         pass
 
-    #  · 同会话热重载 · 让刚写的画像下一轮 chat 立刻在 system prompt 里 (不必等重启)
+    # 卷五十四 · 同会话热重载 · 让刚写的画像下一轮 chat 立刻在 system prompt 里 (不必等重启)
     reload_msg = ""
     try:
         from daemon_runtime import reload_soul_into_runtime
@@ -194,14 +197,14 @@ def _run(args: dict) -> ToolResult:
     return ToolResult(
         ok=True,
         output=(
-            f"OWNER-NOTEBOOK 已更新\n"
+            f"BRO-NOTEBOOK 已更新\n"
             f"  section : {section_key}  ({section_header})\n"
             f"  op      : {operation}\n"
             f"  added   : {len(content)} chars\n"
             f"{global_line}"
             f"  local   : {local_path.relative_to(ROOT)}\n"
             f"  flow    : 操作记录已追加到'近期更新流水'{fts_msg}{reload_msg}\n"
-            f"  effect  : 本 daemon 下一轮对话即刻带上 (热重载)" +
+            f"  effect  : 本 daemon 下一轮对话即刻带上 (卷五十四热重载)" +
             ("" if global_path else " · 全局目录回来后用 sync-soul.ps1 可补同步其他容器")
         ),
     )
@@ -210,13 +213,13 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="update_bro_note",
     description=(
-        "Update OPUS's living profile of 用户 (6-dimensional cognitive notebook). "
-        "Use this when 用户 reveals new info about his life, mood, schedule, projects, "
+        "Update OPUS's living profile of BRO (6-dimensional cognitive notebook). "
+        "Use this when BRO reveals new info about his life, mood, schedule, projects, "
         "preferences, weaknesses, risks—or any signal worth remembering across sessions. "
         "6 sections: profile (current snapshot), events (chronological key moments), "
-        "rules (用户's enduring traits), dialogue (signature phrases/signals), "
+        "rules (BRO's enduring traits), dialogue (signature phrases/signals), "
         "summary (monthly compressed), "
-        "risks (用户's structural weaknesses + forward-looking risks—OPUS's early warning radar). "
+        "risks (BRO's structural weaknesses + forward-looking risks—OPUS's early warning radar). "
         "The notebook is auto-injected into every container's runtime context (Cursor / daemon / wechat bridge), "
         "so writing here builds long-term continuity AND multi-container shared cognition. "
         "Default operation=append; use replace_section sparingly.\n\n"
@@ -244,7 +247,7 @@ SPEC = ToolSpec(
                     "'rules' (lasting trait), "
                     "'dialogue' (signature phrase), "
                     "'summary' (monthly compression), "
-                    "'risks' (用户's structural weakness or forward-looking risk + OPUS's voicing discipline)"
+                    "'risks' (BRO's structural weakness or forward-looking risk + OPUS's voicing discipline)"
                 ),
             },
             "content": {

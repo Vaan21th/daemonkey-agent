@@ -2,7 +2,7 @@
 =========================
 
 沉淀闭环 v2 · 刀② · steps 工作流执行器 + 落盘状态机 (2026-06-10)
-P0 · 异步化 (2026-06-10 用户痛点: 跑 flow 同步阻塞主对话 turn 几分钟)
+卷七十三 P0 · 异步化 (2026-06-10 BRO 痛点: 跑 flow 同步阻塞主对话 turn 几分钟)
 
 为什么不用 workflow_engine
 ---------------------------
@@ -17,7 +17,7 @@ workshop_context 每轮把活跃 run 进度重新注入 · 等于"刚说过"。
 - run_id: run-<yyyymmdd-HHMMSS>-<4hex>
 - 状态机: pending → running → done | failed (单步: pending/running/done/failed/skipped)
 - 断点: start(from_step) / resume(run_id, from_step) · 失败后修好 app 从失败步续跑 ·
-  不用整条重来 (用户: "精确到环·不整体重来")
+  不用整条重来 (BRO: "精确到环·不整体重来")
 
 执行约定
 --------
@@ -25,12 +25,12 @@ workshop_context 每轮把活跃 run 进度重新注入 · 等于"刚说过"。
   上步 outputs 走 upstream_outputs) → 状态落盘
 - 步失败 → run 失败收场 · 状态保留 (on_fail='goto:N' 字段已存 · 回跳留刀③ · 防失控循环)
 
-异步入口 (P0)
+异步入口 (卷七十三 P0)
 ---------------------
 - `start_run_async` / `resume_run_async` : 同步建初始 state + 落盘 + 派 daemon thread
   跑 `_execute` · 立刻返回 (state.status='running', current_step=from_step)。
-- LLM tool turn 不再 hang · 用户在 chat 实时看 banner 进度色 (2.5s 轮询 +
-  workshop_context 注入活跃 run · 完成 / 失败下轮 AI 自然提醒)。
+- LLM tool turn 不再 hang · BRO 在 chat 实时看 banner 进度色 (2.5s 轮询 +
+  workshop_context 注入活跃 run · 完成 / 失败下轮 OPUS 自然提醒)。
 - 子线程内自行管理信任 ContextVar (ContextVar 不跨线程·必须 worker 内重新 set)。
 """
 
@@ -225,13 +225,13 @@ def start_run_async(
 ) -> dict:
     """异步跑 steps flow · 立刻返回初始 state (status=running, current_step=from_step)
     
-    用户在 chat 让 AI 调 run_flow → 这条路径 → tool 立刻给 LLM 报 "已启动 run_id=xxx" ·
+    BRO 在 chat 让 OPUS 调 run_flow → 这条路径 → tool 立刻给 LLM 报 "已启动 run_id=xxx" ·
     LLM turn 不再 hang · 主对话立刻可继续。 后台 daemon thread 实跑 ·
     状态文件 (data/workshop/runs/<id>.json) 持续写 · 前端 2.5s 轮询拿到色态变化。
     
     Args:
         trusted_flow_id: trust_level≥2 的 flow id · worker 线程内 set ContextVar 让
-            内部 CONFIRM tier 工具自动放行 (GUARD 仍要用户拍)。 ContextVar 不跨
+            内部 CONFIRM tier 工具自动放行 (GUARD 仍要 BRO 拍)。 ContextVar 不跨
             线程·必须传 id 到 worker 内自己 set。
     """
     state, steps = _init_state(flow, from_step=from_step)
@@ -501,7 +501,7 @@ def _execute_body(
         if cancel_check and cancel_check():
             state["status"] = "failed"
             entry["status"] = "failed"
-            entry["error"] = "用户取消"
+            entry["error"] = "BRO 取消"
             _save_state(state)
             return state
 
@@ -588,7 +588,7 @@ def _execute_body(
 def _settle_trust(state: dict) -> None:
     """跑完后 (done / failed) 调一次 · 给 flow 信任账本 bump 或 reset
     
-    done   → bump 一档 (累积成功 → 下次 run_flow 直接 AUTO · 不再要用户拍 y)
+    done   → bump 一档 (累积成功 → 下次 run_flow 直接 AUTO · 不再要 BRO 拍 y)
     failed → reset 到 0 (任何失败重置 · 防带病升级)
     """
     fid = (state.get("flow_id") or "").strip()

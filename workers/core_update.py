@@ -26,7 +26,6 @@ workers/core_update.py
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Optional
 
 from workers.git_ops import ROOT, _ensure_identity, _has_git, _lock, _run_git, checkpoint_commit
@@ -105,7 +104,7 @@ def dirty_kernel_files(manifest: Optional[dict] = None) -> list[str]:
     return dirty
 
 
-# ── 0.8.5 · 升级保护层 (wish-f2f0f9de) · 用户魔改备份 ─────────────────────
+# ── 0.8.4 · 升级保护层 (wish-f2f0f9de) · 用户魔改备份 ─────────────────────
 def _backup_user_overrides(files: list[str]) -> dict[str, str]:
     """把用户魔改的白名单文件【物理备份】到 data/runtime/user_overrides/。
 
@@ -227,12 +226,12 @@ def apply_update(remote: str, branch: str = "master", base: str = "HEAD",
     """
     out: dict = {"ok": False, "updated": [], "added": [], "skipped_deleted": [],
                  "checkpoint": "", "commit_sha": None, "note": "", "passes": 0,
-                 "user_overrides": []}  # 0.8.5 · 用户魔改备份清单
+                 "user_overrides": []}  # 0.8.4 · 用户魔改备份清单
     if not _has_git():
         out["note"] = "git 未 init · 无法更新"
         return out
 
-    # 0.8.5 · 升级保护层 · checkpoint 前记下用户魔改 (checkpoint 会把工作区落盘成 commit·
+    # 0.8.4 · 升级保护层 · checkpoint 前记下用户魔改 (checkpoint 会把工作区落盘成 commit·
     #   之后 git status 就干净了·所以必须在这之前检测)
     user_dirty = dirty_kernel_files()
 
@@ -260,7 +259,7 @@ def apply_update(remote: str, branch: str = "master", base: str = "HEAD",
         out["note"] = p1["note"]
         out["passes"] = 1
 
-        # 0.8.5 · 升级保护层 · 冲突候选 = 用户魔改 ∩ 官方覆盖 → 物理备份用户版
+        # 0.8.4 · 升级保护层 · 冲突候选 = 用户魔改 ∩ 官方覆盖 → 物理备份用户版
         covered = list(p1["updated"]) + list(p1["added"])
         conflicts = [f for f in user_dirty if f in covered]
         if conflicts:

@@ -4,7 +4,7 @@ agent_tools/replan.py
 
 卡住解套 · "干净视角顾问"(抗套娃 · vibe coding 场景)。
 
-问题(用户 实测):猴子在一个多步任务里试了几条路都失败后,上下文被"失败叙事"污染,
+问题(BRO 实测):猴子在一个多步任务里试了几条路都失败后,上下文被"失败叙事"污染,
 陷入习得性无助 → 要么原地套娃、要么放弃。而把同样的需求丢给 Codex(同一个模型!),
 Codex 给个执行方案,猴子照着就能跑。差异不在智商,在【干净上下文 + 规划姿态】。
 
@@ -19,6 +19,8 @@ Codex 给个执行方案,猴子照着就能跑。差异不在智商,在【干净
 档位:AUTO —— 纯只读 + 一次子推理 · 不改任何文件。卡住时就该顺手调,别加确认摩擦。
 """
 from __future__ import annotations
+
+import json  # wish-bec4f3b9 · 顾问唤醒 sink
 
 from . import (
     REGISTRY,
@@ -177,7 +179,7 @@ def _run(args: dict) -> ToolResult:
     # wish-ea8922f7 · 顾问在场感: 把顾问内部 tool_loop 的事件引出来 →
     #   ① advisor_live.json (单一事实源 · 刷新/另一标签可恢复 live 卡)
     #   ② push_tool_progress → 主 SSE tool_progress 事件 → 前端进度条实时变
-    # 没有这层 · 顾问跑的 10-30s 里 用户 只能看到一行死文字 (2026-07-28 用户 截图痛点)
+    # 没有这层 · 顾问跑的 10-30s 里 BRO 只能看到一行死文字 (2026-07-28 BRO 截图痛点)
     _adv_live.write_live(mode=mode, model_label=advisor_label,
                          source=(args.get("_source") or "replan_tool"), session_id=sid)
     _adv_steps = {"n": 0, "files": 0}
@@ -216,7 +218,7 @@ def _run(args: dict) -> ToolResult:
             pass  # 状态推送坏了不能把顾问本体搞崩
 
     try:
-        # 用户 2026-07-28 · 协同模式停止链路: 主对话 cancel_event → 顾问 tool_loop 每轮头部检查
+        # BRO 2026-07-28 · 协同模式停止链路: 主对话 cancel_event → 顾问 tool_loop 每轮头部检查
         _cancel_evt = args.get("_cancel_event")
         _cancel_check = None
         if _cancel_evt is not None:
@@ -248,6 +250,27 @@ def _run(args: dict) -> ToolResult:
 
     push_tool_progress("✓ 顾问出方案", f"{r.iterations} 轮勘查")
 
+    # wish-bec4f3b9 · 顾问唤醒落盘 (replan 工具路径 · 不走 coop 时也能被 billing 看到)
+    try:
+        import time as _RT
+        from pathlib import Path as _RP
+        _sink_f = _RP(__file__).resolve().parent.parent / "data" / "runtime" / "advisor_wakes.jsonl"
+        _sink_f.parent.mkdir(parents=True, exist_ok=True)
+        _adv_usage = getattr(r, "usage", None) or {}
+        _wake = {
+            "ts": _RT.strftime("%Y-%m-%dT%H:%M:%S"),
+            "source": args.get("_source") or "replan_tool",
+            "mode": mode,
+            "advisor_model": advisor_label,
+            "sub_id": getattr(r, "sub_session_id", "") or "",
+        }
+        for _k in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_creation_tokens"):
+            _wake[_k] = int(_adv_usage.get(_k) or 0)
+        with open(_sink_f, "a", encoding="utf-8") as _f:
+            _f.write(json.dumps(_wake, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
     if not r.ok and not (r.text or "").strip():
         return ToolResult(ok=False, output="", error=f"顾问没能给出方案: {r.error or '(未知)'}")
 
@@ -277,13 +300,13 @@ SPEC = ToolSpec(
     name="replan",
     description=(
         "三唤醒点顾问 · 请一个【全新上下文的顾问】来出蓝图 / 破局 / 验收 (抗套娃)。\n"
-        "若 用户 在设置里给某条 provider 配置标了「总监模型」· 本工具自动用它跑顾问 (跨 provider 现场建 client·贵模型);\n"
+        "若 BRO 在设置里给某条 provider 配置标了「总监模型」· 本工具自动用它跑顾问 (跨 provider 现场建 client·贵模型);\n"
         "没标 → 用当前主模型 (零回归)。 同一个任务换到干净上下文 + 规划姿态·往往能看清当局者迷的卡点。\n\n"
         "**三种模式 (mode 参数)**:\n"
         "  - unstick (默认) · 卡壳破局: 试了 2+ 条路都失败 / 报错反复 / 正想说『要不要换方案』时调 · blocker 必填\n"
         "  - blueprint · 开工前出施工单: 复杂工程任务动手前调 · goal 必填 · blocker 可选 (写约束/顾虑)\n"
         "  - review · 交付前验收: 有副作用任务宣布完成前调 · goal(原蓝图) + blocker(交付说明+diff摘要) 必填\n"
-        "**什么时候调(别等 用户 提)**:\n"
+        "**什么时候调(别等 BRO 提)**:\n"
         "  - 看到上下文里任务账本提示『别硬撑』时 → unstick\n"
         "  - 改 daemon 代码 / 走 wish 流程 / 多文件改动开工前 → blueprint (施工单落 track_task 再动手)\n"
         "  - 要宣布『做完了』之前 → review (PASS 才算数)\n"

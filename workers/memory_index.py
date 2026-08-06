@@ -755,16 +755,11 @@ def check_stale() -> bool:
             logger.info("索引过期: %s 有新修改", fn)
             return True
 
-    if SESSIONS_DIR.exists():
-        for sf in SESSIONS_DIR.glob("*.jsonl"):
-            if sf.stat().st_mtime > db_mtime:
-                logger.info("索引过期: sessions/%s 有新文件", sf.name)
-                return True
-        # 卷五十八续 · 接通血管: 摘要更新也算过期 (auto_compress 重新压缩会刷新 .summary.json)
-        for sf in SESSIONS_DIR.glob("*.summary.json"):
-            if sf.stat().st_mtime > db_mtime:
-                logger.info("索引过期: sessions/%s 摘要有更新", sf.name)
-                return True
+    # 注意: sessions/*.jsonl + *.summary.json 不参与 stale 判定 (wish-93b0cabf · 2026-08-06)
+    # 病根: session 每轮对话必写 → mtime 永远 > db → check_stale 永远 True →
+    #       load_soul 每次都同步全量 rebuild (30-40s) → 阻塞事件循环 → 对话卡死。
+    # session 内容的索引走 index_session_turn (611 行·每轮写盘即插 FTS) + index_session_summary·
+    # 不需要全量重建来索引它们。灵魂/playbook/知识库/客户档案 (低频源) 仍走全量重建。
 
     # 卷四十六 II · wish-1c229865 · playbooks 也参与 stale 检测
     if PLAYBOOKS_DIR.exists():

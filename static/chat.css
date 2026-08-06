@@ -1,10 +1,10 @@
 /*
- * chat.css · OPUS 工作室 WebUI 样式
+ * chat.css · Daemonkey 工作室 WebUI 样式
  * 卷二十二 Day 2 · 从 chat.html 拆出来
  *
  * 包含：
  *   - 主题色 / 排版基础
- *   - 消息气泡（bro / opus / sys / err / thinking / streaming / tool-call / tool-result）
+ *   - 消息气泡（用户 / Daemonkey / sys / err / thinking / streaming / tool-call / tool-result）
  *   - 时间戳样式
  *   - input-bar / modal / drawer
  *   - 操作台布局（sidebar + content-area + main-layout）
@@ -14,10 +14,10 @@
 
 :root {
   /* 卷五十六 · 默认主题统一为 Daemonkey 暗紫(初见页同款) · 老灰移到 .theme-classic */
-  --opus: #b794f6;
-  --opus-dim: #9f7aea;
-  --bro: #48BB78;
-  --bro-dim: #38A765;
+  --Daemonkey: #b794f6;
+  --Daemonkey-dim: #9f7aea;
+  --用户: #48BB78;
+  --用户-dim: #38A765;
   --sys: #F6AD55;
   --red: #F56565;
   --bg: #16131f;
@@ -27,7 +27,7 @@
   --text: #ece8f5;
   --dim: #9a90b3;
   --dim2: #6f6685;
-  /* 用户(BRO)气泡 · 紫渐变(初见页同款) · 经典灰主题里会被覆盖回绿 */
+  /* 用户(用户)气泡 · 紫渐变(初见页同款) · 经典灰主题里会被覆盖回绿 */
   --user: #4a3a6e;
   --user-dim: #382d52;
 }
@@ -82,7 +82,7 @@ header {
   padding-top: max(10px, env(safe-area-inset-top));
 }
 .title { font-weight: 600; font-size: 14px; }
-.title .opus { color: var(--opus); }
+.title .Daemonkey { color: var(--Daemonkey); }
 .title .dim { color: var(--dim); font-weight: 400; font-size: 12px; }
 .ctl {
   background: transparent; color: var(--dim);
@@ -121,12 +121,12 @@ header {
   transition: border-color 0.15s, color 0.15s, transform 0.4s;
 }
 .restart-btn:hover {
-  border-color: var(--opus);
-  color: var(--opus);
+  border-color: var(--Daemonkey);
+  color: var(--Daemonkey);
 }
 .restart-btn.is-restarting {
-  color: var(--opus);
-  border-color: var(--opus);
+  color: var(--Daemonkey);
+  border-color: var(--Daemonkey);
   animation: restart-spin 1s linear infinite;
   cursor: wait;
 }
@@ -180,8 +180,8 @@ header {
   transition: border-color 0.15s, background 0.15s;
 }
 .model-btn:hover {
-  border-color: var(--opus);
-  color: var(--opus);
+  border-color: var(--Daemonkey);
+  color: var(--Daemonkey);
 }
 .model-btn .model-dot {
   color: #22c55e;
@@ -291,7 +291,7 @@ header {
   position: fixed;
   top: 60px;
   right: 16px;
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: white;
   padding: 10px 16px;
   border-radius: 8px;
@@ -327,30 +327,30 @@ header {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.msg.bro {
+.msg.用户 {
   align-self: flex-end;
   background: linear-gradient(135deg, var(--user), var(--user-dim));
   color: #fff;
   border-bottom-right-radius: 4px;
 }
-.msg.opus {
-  /* 卷三十 · OPUS 输出常常是长 markdown（表格/列表/代码块）· 卡片化铺满
+.msg.Daemonkey {
+  /* 卷三十 · Daemonkey 输出常常是长 markdown（表格/列表/代码块）· 卡片化铺满
      · 替代旧的 align-self:flex-start + max-width:88%（右侧 12% 留白） */
   align-self: stretch;
   max-width: 100%;
   width: auto;
   background: var(--bg2);
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
   border-bottom-left-radius: 4px;
 }
-/* 没有 markdown body 的 OPUS 气泡（极少见 · 比如 fallback "OPUS 没说话"）
+/* 没有 markdown body 的 Daemonkey 气泡（极少见 · 比如 fallback "Daemonkey 没说话"）
    仍走旧的气泡感 · 不必硬铺满 */
-.msg.opus:not(:has(.md-body)) {
+.msg.Daemonkey:not(:has(.md-body)) {
   align-self: flex-start;
   max-width: 88%;
 }
 
-/* 卷三十 · markdown 渲染容器（在 .msg.opus 里）
+/* 卷三十 · markdown 渲染容器（在 .msg.Daemonkey 里）
    把 .msg 默认的 white-space:pre-wrap 让位给真正的 markdown 块元素 */
 .md-body {
   white-space: normal;
@@ -367,8 +367,8 @@ header {
   color: var(--text);
 }
 .md-body h1 { font-size: 18px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
-.md-body h2 { font-size: 16px; color: var(--opus); }
-.md-body h3 { font-size: 15px; color: var(--opus); }
+.md-body h2 { font-size: 16px; color: var(--Daemonkey); }
+.md-body h3 { font-size: 15px; color: var(--Daemonkey); }
 .md-body h4 { font-size: 14px; color: var(--text); }
 .md-body h5, .md-body h6 { font-size: 13px; color: var(--dim); }
 .md-body p {
@@ -378,13 +378,13 @@ header {
 .md-body strong { color: var(--text); font-weight: 700; }
 .md-body em { color: var(--dim); font-style: italic; }
 .md-body a {
-  color: var(--opus);
+  color: var(--Daemonkey);
   text-decoration: none;
   border-bottom: 1px dashed rgba(159, 122, 234, 0.4);
 }
 .md-body a:hover {
   color: #b89cf2;
-  border-bottom-color: var(--opus);
+  border-bottom-color: var(--Daemonkey);
 }
 .md-body ul, .md-body ol {
   margin: 4px 0 10px;
@@ -425,7 +425,7 @@ header {
   margin: 8px 0;
   padding: 6px 12px;
   background: rgba(159, 122, 234, 0.05);
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
   color: var(--dim);
   font-style: italic;
   border-radius: 0 4px 4px 0;
@@ -437,7 +437,7 @@ header {
   background: var(--border);
 }
 
-/* 卷三十 · markdown 表格（BRO 在卷三十交付后立刻抓住的 corner case） */
+/* 卷三十 · markdown 表格（用户 在卷三十交付后立刻抓住的 corner case） */
 .md-table-wrap {
   margin: 10px 0;
   overflow-x: auto;
@@ -459,7 +459,7 @@ header {
   font-weight: 700;
   text-align: left;
   padding: 8px 12px;
-  color: var(--opus);
+  color: var(--Daemonkey);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
@@ -498,7 +498,7 @@ header {
   cursor: zoom-in;
 }
 .md-body .md-img:hover {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
 }
 .md-body .md-audio {
   display: block;
@@ -594,7 +594,7 @@ header {
 }
 
 /* 卷四十六 续 3 · wish-2a4d8c1e · inline confirm UI 卡片
-   LLM 撞 CONFIRM 级 tool 时在 chat 弹这个卡片 · BRO 4 按钮决议 */
+   LLM 撞 CONFIRM 级 tool 时在 chat 弹这个卡片 · 用户 4 按钮决议 */
 .msg.confirm-card {
   align-self: center;
   width: 92%;
@@ -626,7 +626,7 @@ header {
   border-radius: 4px;
   font-family: var(--font-mono, ui-monospace, Menlo, monospace);
   font-size: 13px;
-  color: var(--opus, #c9a978);
+  color: var(--Daemonkey, #c9a978);
 }
 .msg.confirm-card .confirm-tier {
   font-size: 11px;
@@ -667,7 +667,7 @@ header {
   padding: 10px 12px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.04);
-  border-left: 3px solid var(--opus, #c9a978);
+  border-left: 3px solid var(--Daemonkey, #c9a978);
 }
 .msg.confirm-card .confirm-block.confirm-risk {
   border-left-color: #ff8c64;
@@ -716,7 +716,7 @@ header {
 }
 .msg.confirm-card .confirm-btn:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.08);
-  border-color: var(--opus, #c9a978);
+  border-color: var(--Daemonkey, #c9a978);
 }
 .msg.confirm-card .confirm-btn:active:not(:disabled) {
   transform: translateY(1px);
@@ -802,7 +802,7 @@ header {
   opacity: 0.7;
 }
 
-/* 折叠态 (BRO 决议后) */
+/* 折叠态 (用户 决议后) */
 .msg.confirm-card.confirm-card-resolved {
   background: rgba(255, 255, 255, 0.03);
   border-color: var(--border);
@@ -847,8 +847,8 @@ header {
 
 /* ─────────────────────────────────────────────────────────
  * 卷七十三 P0-2 (2026-06-10) · confirm 中央模态化
- * BRO 痛点: inline 卡片滚出可视区看不到 = 等死 · 改为强焦点模态
- * 复用 OPUS_MODAL 的"满屏遮罩 + 中央卡片"视觉语言
+ * 用户 痛点: inline 卡片滚出可视区看不到 = 等死 · 改为强焦点模态
+ * 复用 Daemonkey_MODAL 的"满屏遮罩 + 中央卡片"视觉语言
  * ───────────────────────────────────────────────────────── */
 .confirm-modal-backdrop {
   position: fixed;
@@ -892,7 +892,7 @@ header {
   z-index: 2;
 }
 
-/* 消息流里的占位 chip (BRO 滚回去时知道这里在等确认 · 可点重弹) */
+/* 消息流里的占位 chip (用户 滚回去时知道这里在等确认 · 可点重弹) */
 .msg.confirm-placeholder {
   align-self: flex-start;
   max-width: 720px;
@@ -936,7 +936,7 @@ header {
 /* ─────────────────────────────────────────────────────────
  * 卷七十三 P0-2 (2026-06-10) · 工坊产出文件 preview modal
  * 复用 .confirm-modal-backdrop 遮罩 · 卡片样式独立
- * BRO 痛点: other 类型 (md/json/txt) 卡片点击无反应 · 现在弹中央 modal 预览
+ * 用户 痛点: other 类型 (md/json/txt) 卡片点击无反应 · 现在弹中央 modal 预览
  * ───────────────────────────────────────────────────────── */
 .output-preview-modal {
   position: fixed;
@@ -1070,7 +1070,7 @@ header {
 
 /* ─────────────────────────────────────────────────────────
  * 卷七十三 P0-3 (2026-06-10) · sub-agent (run_app) 边界事件
- * BRO 痛点: sub-agent 内部 6-8 轮 tool · 主对话看着混乱 = 怀疑死了
+ * 用户 痛点: sub-agent 内部 6-8 轮 tool · 主对话看着混乱 = 怀疑死了
  * 加清晰 ▶/✓/✗ 边界条 · 含 app 名 / 耗时 / token / warning
  * ───────────────────────────────────────────────────────── */
 .msg.sub-agent-boundary {
@@ -1182,11 +1182,11 @@ header {
   font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
   letter-spacing: 0.3px;
 }
-.msg.bro .time {
+.msg.用户 .time {
   text-align: right;
   color: rgba(255,255,255,0.55);
 }
-.msg.opus .time {
+.msg.Daemonkey .time {
   text-align: left;
   color: var(--dim2);
 }
@@ -1206,10 +1206,10 @@ header {
   border-left-color: var(--red);
   color: #ffb4b4;
 }
-.msg.tool-call .tool-name { color: var(--opus); font-weight: 600; }
-.msg.tool-result .tool-name { color: var(--opus); font-weight: 600; }
+.msg.tool-call .tool-name { color: var(--Daemonkey); font-weight: 600; }
+.msg.tool-result .tool-name { color: var(--Daemonkey); font-weight: 600; }
 
-/* ═══ wish-5256d2a4 · 工具时间线（方案 D · BRO 2026-07-27 拍板） ═══
+/* ═══ wish-5256d2a4 · 工具时间线（方案 D · 用户 2026-07-27 拍板） ═══
    整轮折叠块【默认展开】· 单步技术细节默认折叠（点人话行展开） */
 .tl-round {
   align-self: stretch;
@@ -1218,7 +1218,7 @@ header {
   border-radius: 10px;
   background: rgba(155, 89, 182, 0.05);
   overflow: hidden;
-  /* 2026-07-28 BRO · 入场质感跟聊天气泡一致 · 轻微上浮出现 */
+  /* 2026-07-28 用户 · 入场质感跟聊天气泡一致 · 轻微上浮出现 */
   animation: msgFloatUp 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .tl-round-head {
@@ -1233,7 +1233,7 @@ header {
   background: rgba(155, 89, 182, 0.08);
 }
 .tl-round-head:hover { background: rgba(155, 89, 182, 0.14); }
-.tl-round-ico { color: var(--opus); font-size: 13px; }
+.tl-round-ico { color: var(--Daemonkey); font-size: 13px; }
 .tl-round-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tl-round-title b { color: var(--text); font-weight: 600; }
 .tl-round-stats { flex-shrink: 0; font-size: 11px; color: var(--dim2); }
@@ -1274,7 +1274,7 @@ header {
   word-break: break-all;
 }
 .tl-step-action:hover { color: #fff; }
-.tl-step-action b { color: var(--opus); font-weight: 600; }
+.tl-step-action b { color: var(--Daemonkey); font-weight: 600; }
 .tl-step-result {
   margin-top: 2px;
   font-size: 11.5px;
@@ -1283,7 +1283,7 @@ header {
 }
 .tl-step-result.tl-pending { color: var(--dim2); }
 .tl-step-result.tl-ok { color: var(--dim); }
-.tl-step-result.tl-ok i { color: var(--bro); }
+.tl-step-result.tl-ok i { color: var(--用户); }
 .tl-step-result.tl-fail { color: #ffb4b4; }
 .tl-step-result.tl-fail i { color: var(--red); }
 .tl-fail-text { color: var(--red); font-weight: 600; }
@@ -1309,10 +1309,10 @@ header {
 .tr-open {
   margin-left: 8px;
   padding: 3px 10px;
-  border: 1px solid var(--opus);
+  border: 1px solid var(--Daemonkey);
   border-radius: 999px;
   background: rgba(155, 89, 182, 0.14);
-  color: var(--opus);
+  color: var(--Daemonkey);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
@@ -1371,15 +1371,15 @@ header {
   transition: border-color 0.15s ease, transform 0.15s ease;
 }
 .dk-img-gallery .md-img:hover {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   transform: translateY(-1px);
 }
-.msg.opus.streaming {
+.msg.Daemonkey.streaming {
   border-left-color: rgba(155, 89, 182, 0.5);
 }
-.msg.opus.streaming::after {
+.msg.Daemonkey.streaming::after {
   content: ' ▌';
-  color: var(--opus);
+  color: var(--Daemonkey);
   animation: blink 1s steps(2, end) infinite;
 }
 @keyframes blink {
@@ -1442,8 +1442,8 @@ header {
   color: var(--text);
 }
 .settings-tab.active {
-  color: var(--opus);
-  border-bottom-color: var(--opus);
+  color: var(--Daemonkey);
+  border-bottom-color: var(--Daemonkey);
 }
 .settings-body .field {
   margin-bottom: 12px;
@@ -1470,9 +1470,9 @@ header {
 .settings-body .field input:focus,
 .settings-body .field select:focus {
   outline: none;
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
 }
-/* 卷三十八 · option 强制深底白字 · 修 BRO 反馈 "下拉看不清" */
+/* 卷三十八 · option 强制深底白字 · 修 用户 反馈 "下拉看不清" */
 .settings-body .field select option {
   background: var(--bg2);
   color: var(--text);
@@ -1537,9 +1537,9 @@ header {
   color: var(--text);
 }
 .settings-body .actions .btn-primary {
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: #fff;
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
 }
 .settings-body .actions .btn-primary:hover {
   filter: brightness(1.15);
@@ -1592,10 +1592,10 @@ header {
   font-size: 12px;
 }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.live-dot.on  { background: #34d399; animation: opusPulse 2s infinite; }
+.live-dot.on  { background: #34d399; animation: DaemonkeyPulse 2s infinite; }
 .live-dot.off { background: #f87171; }
 .live-dot.idle { background: var(--dim2); }
-@keyframes opusPulse {
+@keyframes DaemonkeyPulse {
   0%   { box-shadow: 0 0 0 0 rgba(52, 211, 153, .45); }
   70%  { box-shadow: 0 0 0 7px rgba(52, 211, 153, 0); }
   100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
@@ -1619,7 +1619,7 @@ header {
   width: 100%; box-sizing: border-box;
   color-scheme: dark;
 }
-.field-input:focus { outline: none; border-color: var(--opus); }
+.field-input:focus { outline: none; border-color: var(--Daemonkey); }
 .field-input::placeholder { color: var(--dim2); }
 .chan-info-bar {
   border-left: 3px solid; border-radius: 4px;
@@ -1703,14 +1703,14 @@ header {
   transition: border-color 0.15s, color 0.15s;
 }
 .vision-radio:has(input:checked) {
-  border-color: var(--opus); color: var(--text); background: rgba(159,122,234,0.08);
+  border-color: var(--Daemonkey); color: var(--text); background: rgba(159,122,234,0.08);
 }
 .vision-radio i { font-size: 15px; }
-.vision-radio input[type="radio"] { margin: 0; accent-color: var(--opus); }
+.vision-radio input[type="radio"] { margin: 0; accent-color: var(--Daemonkey); }
 
 /* wish-8ffb9d65 · 总监模型 checkbox 旁的 ? 帮助图标 */
 .director-help-icon { cursor: pointer; opacity: .55; font-size: 14px; margin-left: 2px; transition: opacity .15s; }
-.director-help-icon:hover { opacity: 1; color: var(--opus); }
+.director-help-icon:hover { opacity: 1; color: var(--Daemonkey); }
 #directorHelpText { margin-top: 6px; line-height: 1.6; }
 
 /* checkbox label 对齐——input 和文字居中 */
@@ -1740,9 +1740,9 @@ header {
 }
 .llm-section-head .btn-primary {
   margin-left: auto;
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: #fff;
-  border: 1px solid var(--opus);
+  border: 1px solid var(--Daemonkey);
   padding: 5px 14px;
   border-radius: 4px;
   cursor: pointer;
@@ -1763,7 +1763,7 @@ header {
   gap: 4px;
 }
 .llm-config-card.active {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   background: rgba(102, 158, 255, 0.08);
 }
 .lc-row1 {
@@ -1779,7 +1779,7 @@ header {
   font-weight: 500;
 }
 .lc-active-badge {
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: #fff;
   font-size: 10px;
   padding: 2px 6px;
@@ -1912,13 +1912,19 @@ header {
 .llm-edit-card h3 {
   margin: 0 0 14px 0;
   font-size: 14px;
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
+/* wish-bec4f3b9 · 价格表行 (settings 编辑卡) */
+.pricing-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pricing-row select { width: 86px; padding: 4px 6px; background: var(--bg3); color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+.pricing-row input { width: 110px !important; }
+.pricing-row .btn-ghost { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.pricing-row .btn-ghost .spin { display: inline-block; animation: restart-spin 1s linear infinite; }
 
 /* nav 底部 ⚙ 设置按钮高亮 (当前在 settings view 时) */
 .nav-settings-btn.active {
   background: rgba(102, 158, 255, 0.12);
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 
 /* 卷三十六 · 设置 modal · LLM 配置面板 */
@@ -1949,7 +1955,7 @@ header {
 .llm-config-block select:focus,
 .llm-config-block input:focus {
   outline: none;
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
 }
 .llm-config-block .field-hint {
   font-size: 11px;
@@ -1964,8 +1970,8 @@ header {
 }
 
 /* 卷三十六 · DeepSeek thinking mode · 思考链气泡 (折叠式)
-   2026-07-28 BRO 拍板方案 A · 雾灰系：色值全部从 --dim/--text 派生 · 8 套皮肤自动跟随 · 去斜体回系统字体 */
-.msg.opus.reasoning {
+   2026-07-28 用户 拍板方案 A · 雾灰系：色值全部从 --dim/--text 派生 · 8 套皮肤自动跟随 · 去斜体回系统字体 */
+.msg.Daemonkey.reasoning {
   align-self: stretch;
   /* 跟工具时间线框同宽 · 覆盖 :not(:has(.md-body)) 的 88% 回退（同权重·此处后定义胜） */
   max-width: 100%;
@@ -1980,7 +1986,7 @@ header {
   white-space: pre-wrap;
   word-break: break-word;
 }
-.msg.opus.reasoning .reasoning-header {
+.msg.Daemonkey.reasoning .reasoning-header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1989,16 +1995,16 @@ header {
   margin-bottom: 4px;
   user-select: none;
 }
-.msg.opus.reasoning .reasoning-icon {
+.msg.Daemonkey.reasoning .reasoning-icon {
   font-size: 14px;
 }
-.msg.opus.reasoning .reasoning-label {
+.msg.Daemonkey.reasoning .reasoning-label {
   color: color-mix(in srgb, var(--dim) 92%, transparent);
   font-weight: 600;
   font-size: 11px;
   letter-spacing: 0.5px;
 }
-.msg.opus.reasoning .reasoning-toggle {
+.msg.Daemonkey.reasoning .reasoning-toggle {
   margin-left: auto;
   color: var(--dim2);
   font-size: 10px;
@@ -2006,11 +2012,11 @@ header {
   border-radius: 4px;
   background: color-mix(in srgb, var(--dim) 8%, transparent);
 }
-.msg.opus.reasoning .reasoning-toggle:hover {
+.msg.Daemonkey.reasoning .reasoning-toggle:hover {
   background: color-mix(in srgb, var(--dim) 16%, transparent);
   color: var(--text);
 }
-.msg.opus.reasoning .reasoning-body {
+.msg.Daemonkey.reasoning .reasoning-body {
   color: color-mix(in srgb, var(--text) 66%, transparent);
   max-height: 360px;
   overflow-y: auto;
@@ -2019,14 +2025,14 @@ header {
   word-break: break-word;
 }
 
-/* 卷三十七 · 流式中 · 思考链气泡呼吸一下 · 让 BRO 知道在 streaming */
+/* 卷三十七 · 流式中 · 思考链气泡呼吸一下 · 让 用户 知道在 streaming */
 /* 0.8.3 性能修复 · 背景动画触发持续 paint (长思考时整个 reasoning 块每秒重绘) · 改静态底色 ·
    保留 blink 光标 (opacity 动画 · 合成器友好) · 呼吸效果极微弱 (6%→11%) 去掉无感 */
-.msg.opus.reasoning.streaming {
+.msg.Daemonkey.reasoning.streaming {
   border-left-color: color-mix(in srgb, var(--dim) 78%, transparent);
   background: color-mix(in srgb, var(--dim) 6%, transparent);
 }
-.msg.opus.reasoning.streaming .reasoning-body::after {
+.msg.Daemonkey.reasoning.streaming .reasoning-body::after {
   content: ' ▌';
   color: color-mix(in srgb, var(--dim) 90%, transparent);
   animation: blink 1s steps(2, end) infinite;
@@ -2039,6 +2045,7 @@ header {
   border-top: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 8px;
   padding-bottom: max(10px, env(safe-area-inset-bottom));
+  position: relative;  /* wish-bec4f3b9 · ctx-card 浮层定位锚点 */
 }
 
 /* wish-4a6331b2 · 图片附件预览区 */
@@ -2197,6 +2204,44 @@ header {
   min-width: auto;
 }
 
+/* ═══════════ wish-bec4f3b9 · 上下文压缩圆圈 + Context Usage 卡片 ═══════════ */
+.ctx-ring-wrap { position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; }
+.ctx-ring {
+  width: 26px; height: 26px; cursor: pointer; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; transition: opacity .15s;
+}
+.ctx-ring:hover { opacity: .85; }
+.ctx-ring svg { position: absolute; inset: 0; }
+.ctx-ring-pct {
+  font-size: 8px; font-weight: 700; color: var(--text); line-height: 1;
+}
+.ctx-card {
+  position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 90;
+  width: 340px; max-width: calc(100vw - 48px);
+  background: var(--bg2, #141824); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 14px; box-shadow: 0 10px 34px rgba(0,0,0,.5);
+}
+.ctx-card-head {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 10px;
+}
+.ctx-card-head .badge { margin-left: auto; }
+.ctx-card-close { cursor: pointer; color: var(--dim); font-size: 15px; margin-left: 4px; }
+.ctx-card-close:hover { color: var(--text); }
+.ctx-card-cache { font-size: 12px; color: var(--text); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.ctx-card-foot { font-size: 10px; color: var(--dim); margin-top: 6px; }
+.ctx-block { margin-bottom: 7px; }
+.ctx-block-row { display: flex; justify-content: space-between; font-size: 12px; }
+.ctx-block-row .lbl { color: var(--text); }
+.ctx-block-row .val { color: var(--dim); font-variant-numeric: tabular-nums; }
+.ctx-block-bar { height: 6px; border-radius: 3px; background: var(--bg3); overflow: hidden; margin-top: 3px; }
+.ctx-block-fill { height: 100%; border-radius: 3px; }
+.ctx-block-sub { font-size: 10px; color: var(--dim); margin-top: 1px; }
+@media (max-width: 640px) {
+  .ctx-card { width: 290px; }
+}
+
 /* ═══════════ wish-ea8922f7 · 顾问在场感 · 金色卡片 (抄 sub-agent-boundary 模式) ═══════════ */
 :root {
   --advisor: #e6b450;
@@ -2205,9 +2250,9 @@ header {
   --advisor-border: rgba(230, 180, 80, 0.35);
 }
 .msg.advisor-card {
-  align-self: stretch;  /* 跟 .msg.tool-call / .msg.opus 同款 · 不随内容 shrink-to-fit */
+  align-self: stretch;  /* 跟 .msg.tool-call / .msg.Daemonkey 同款 · 不随内容 shrink-to-fit */
   min-width: 0;         /* flex item 经典坑 · 防长内容撑破 max-width:88% (继承 .msg) */
-  max-width: 100%;      /* BRO 2026-07-28 实测钉死 · 跟 .msg.opus 对齐横着拉满 (继承的 88% 会右空 12%) */
+  max-width: 100%;      /* 用户 2026-07-28 实测钉死 · 跟 .msg.Daemonkey 对齐横着拉满 (继承的 88% 会右空 12%) */
   background: linear-gradient(135deg, var(--advisor-bg), rgba(230,180,80,0.03));
   border: 1px solid var(--advisor-border);
   border-radius: 10px;
@@ -2302,7 +2347,7 @@ header {
 .trace-row.tool-fail .tool-name { color: #f08484; }
 /* 协同模式施工单就位卡 · 左侧金竖条 */
 .msg.advisor-card.blueprint-card { border-left: 3px solid var(--advisor); }
-/* BRO 2026-07-29 · body 改 mdRender 渲染 · white-space: normal (pre-wrap 会撕裂表格/列表布局) */
+/* 用户 2026-07-29 · body 改 mdRender 渲染 · white-space: normal (pre-wrap 会撕裂表格/列表布局) */
 .blueprint-body { padding: 8px 14px 12px; font-size: 12.5px; white-space: normal; word-break: break-word; max-height: 420px; overflow-y: auto; line-height: 1.6; }
 .blueprint-body .md-table-wrap { margin: 6px 0; }
 .blueprint-body .md-table { font-size: 12px; }
@@ -2365,7 +2410,7 @@ header {
 /* 关键: .voice-act 有显式 display · 会盖掉 [hidden] 的 display:none → 补回 · 否则按钮全露 */
 .voice-act[hidden] { display: none !important; }
 
-/* 语音对话模式 · 比会议纪要更轻(BRO: 别长得像会议纪要) —— 矮识别条 + 通话感 · 只留【停止对话】 */
+/* 语音对话模式 · 比会议纪要更轻(用户: 别长得像会议纪要) —— 矮识别条 + 通话感 · 只留【停止对话】 */
 .voice-panel.is-chat .voice-transcript {
   min-height: 30px; max-height: 72px;
   background: transparent; border: 1px dashed var(--border);
@@ -2378,7 +2423,7 @@ header {
 /* 卷七十五续五 · 模型行为设置 (思考/强度/输出上限) */
 .mb-tag { font-size: 11px; font-weight: 400; color: var(--dim2); margin-left: 6px; text-transform: none; letter-spacing: 0; }
 
-/* 模型行为 · 挂在右上角模型下拉里 (BRO: 放右上角·像 Cursor 那个模型菜单) */
+/* 模型行为 · 挂在右上角模型下拉里 (用户: 放右上角·像 Cursor 那个模型菜单) */
 .mm-behavior { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
 .mm-behavior .model-menu-head { border-bottom: none; margin-bottom: 4px; padding-bottom: 4px; }
 .mmb-row { display: flex; align-items: center; gap: 10px; padding: 4px 8px; }
@@ -2421,21 +2466,21 @@ header {
 }
 .attach-doc-card .remove-btn:hover { background: rgba(220, 50, 50, 0.85); }
 
-/* wish-7c579a20 · 历史重建的 BRO 气泡附件（发送当下走 inline style · 重建走类） */
-.bro-attach-imgs img.bro-attach-img {
+/* wish-7c579a20 · 历史重建的 用户 气泡附件（发送当下走 inline style · 重建走类） */
+.用户-attach-imgs img.用户-attach-img {
   max-width: 280px; max-height: 200px; border-radius: 8px;
   margin-top: 6px; display: block; cursor: zoom-in;
 }
-.attach-doc-card.bro-attach-doc {
+.attach-doc-card.用户-attach-doc {
   width: auto; height: auto; flex-direction: row; gap: 8px;
   padding: 8px 12px; margin-top: 6px; justify-content: flex-start;
   text-decoration: none;
 }
-.attach-doc-card.bro-attach-doc i { font-size: 20px; }
-.attach-doc-card.bro-attach-doc .doc-name { max-width: none; font-size: 12px; }
+.attach-doc-card.用户-attach-doc i { font-size: 20px; }
+.attach-doc-card.用户-attach-doc .doc-name { max-width: none; font-size: 12px; }
 
 /* wish-7c579a20 · 长会话渲染性能: 屏外消息跳过 layout/paint
- * (BRO 反馈: 展开折叠后整个窗口滚动+输入持续卡顿 · 几万字可见文本每次重排重绘太贵)
+ * (用户 反馈: 展开折叠后整个窗口滚动+输入持续卡顿 · 几万字可见文本每次重排重绘太贵)
  * Chromium 标准做法 (Discord/Slack 同款) · auto = 渲染过的记住真实高度 · 未渲染按 90px 估 */
 .msg, .tl-round {
   content-visibility: auto;
@@ -2449,10 +2494,10 @@ header {
 }
 
 
-/* 卷三十五补丁6 · 工具进度条 · OPUS 跑长 tool 链时让 BRO 一眼知道在干啥
- * 2026-07-29 方案 A「流光细条」重构 (BRO 拍板): 削掉蓝灰大色块+整行扫光,
- * 只留底部一道 2px 主题色流光。颜色全走 --opus 变量 · 8 套皮肤自适应。
- * 2026-07-29 二轮 (BRO 视觉反馈): 去 border-top 上框 + 背景改 transparent,
+/* 卷三十五补丁6 · 工具进度条 · Daemonkey 跑长 tool 链时让 用户 一眼知道在干啥
+ * 2026-07-29 方案 A「流光细条」重构 (用户 拍板): 削掉蓝灰大色块+整行扫光,
+ * 只留底部一道 2px 主题色流光。颜色全走 --Daemonkey 变量 · 8 套皮肤自适应。
+ * 2026-07-29 二轮 (用户 视觉反馈): 去 border-top 上框 + 背景改 transparent,
  * 跟上方消息区底色融为一体·视觉延展;唯一"进行中"信号=底部流光。 */
 .tool-progress {
   flex: 0 0 auto;
@@ -2465,7 +2510,7 @@ header {
 .tool-progress::after {
   content: "";
   position: absolute; left: 0; right: 0; bottom: 0; height: 2px;
-  background: linear-gradient(90deg, transparent 0%, var(--opus) 35%, var(--opus-dim) 65%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, var(--Daemonkey) 35%, var(--Daemonkey-dim) 65%, transparent 100%);
   background-size: 220% 100%;
   animation: tp-flow 2.4s linear infinite;
   pointer-events: none;
@@ -2475,9 +2520,9 @@ header {
   to { background-position: -220% 0; }
 }
 
-/* 卷七十二 v3 · 工作流跑时进度 banner (BRO 图2 诉求) · 紫色调区别于 tool-progress 蓝色
+/* 卷七十二 v3 · 工作流跑时进度 banner (用户 图2 诉求) · 紫色调区别于 tool-progress 蓝色
  * 卷七十三 P0 (2026-06-10): 异步化后 banner 需要 done(绿)/failed(红) 通知态 ·
- *   BRO 不再依赖 LLM tool 同步返结果 · banner 是唯一的"跑完 / 失败"反馈通道 */
+ *   用户 不再依赖 LLM tool 同步返结果 · banner 是唯一的"跑完 / 失败"反馈通道 */
 .flow-runs-banner {
   flex: 0 0 auto;
   background: linear-gradient(90deg, rgba(159, 122, 234, 0.14), rgba(159, 122, 234, 0.04));
@@ -2686,7 +2731,7 @@ header {
   margin-bottom: 6px;
 }
 .onboarding-title strong { color: #c7adff; font-weight: 700; }
-/* v5 · 2026-06-10 · 标题前闪光 icon · BRO 铁律: remix 替 emoji */
+/* v5 · 2026-06-10 · 标题前闪光 icon · 用户 铁律: remix 替 emoji */
 .onboarding-title .onboarding-spark {
   color: #c7adff;
   font-size: 20px;
@@ -2699,7 +2744,7 @@ header {
   color: #888;
   letter-spacing: 0.4px;
 }
-/* v5 · 2026-06-10 · BRO 的原版 slogan (致敬 2026-05-15 那句"我只想要一个不用次次告别熟悉又陌生的你") */
+/* v5 · 2026-06-10 · 用户 的原版 slogan (致敬 2026-05-15 那句"我只想要一个不用次次告别熟悉又陌生的你") */
 .onboarding-slogan {
   font-family: 'Georgia', 'Times New Roman', serif;
   font-style: italic;
@@ -2716,7 +2761,7 @@ header {
   line-height: 1;
 }
 .onboarding-cards {
-  /* 卷七十二 v5 · 2026-06-10 · BRO 加第 5 张换皮肤卡 ·
+  /* 卷七十二 v5 · 2026-06-10 · 用户 加第 5 张换皮肤卡 ·
      从硬 1fr 1fr 改 auto-fit minmax · 5 张在宽屏 3+2 自适应排 · 不挤 */
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -2846,7 +2891,7 @@ header {
 .tool-progress-icon {
   font-size: 14px;
   position: relative; z-index: 1;
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 /* 进度条图标统一走 RemixIcon · 旋转的 loader 替代旧 ⚙ emoji */
 .tp-spin { display: inline-block; animation: tp-spin-kf 1.1s linear infinite; }
@@ -2872,9 +2917,9 @@ header {
   transition: color .18s ease, border-color .18s ease, background .18s ease;
 }
 .tool-progress-detail:hover {
-  background: color-mix(in srgb, var(--opus) 10%, transparent);
-  color: var(--opus);
-  border-color: color-mix(in srgb, var(--opus) 35%, transparent);
+  background: color-mix(in srgb, var(--Daemonkey) 10%, transparent);
+  color: var(--Daemonkey);
+  border-color: color-mix(in srgb, var(--Daemonkey) 35%, transparent);
 }
 
 .tool-progress-detail-list {
@@ -2933,18 +2978,18 @@ header {
   border-radius: 10px;
   font-size: 16px;
   font-family: inherit;
-  /* 卷三十：BRO 要求 textarea 上下拉伸 · 显示更多输入文本 */
+  /* 卷三十：用户 要求 textarea 上下拉伸 · 显示更多输入文本 */
   resize: vertical;
   min-height: 42px;
   max-height: 50vh;
   line-height: 1.4;
 }
-/* 2026-07-29 BRO 拍板: focus 边框走主题灰 (--dim) 不走 --opus 高亮——
- * 输入框正上方就是进度条流光(也是 --opus)·两处同色系高亮相邻 = 视觉疲劳。 */
+/* 2026-07-29 用户 拍板: focus 边框走主题灰 (--dim) 不走 --Daemonkey 高亮——
+ * 输入框正上方就是进度条流光(也是 --Daemonkey)·两处同色系高亮相邻 = 视觉疲劳。 */
 #input:focus { outline: none; border-color: var(--dim); }
 #send {
   padding: 10px 18px;
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: #fff;
   border: none;
   border-radius: 10px;
@@ -2955,7 +3000,7 @@ header {
   transition: background 0.15s, transform 0.06s;
 }
 #send:hover { filter: brightness(1.1); }
-#send:active { background: var(--opus-dim); transform: scale(0.97); }
+#send:active { background: var(--Daemonkey-dim); transform: scale(0.97); }
 #send:disabled { background: #555; color: var(--dim); cursor: not-allowed; }
 
 /* 卷三十八 · send/stop 合并 · pending 时变红 + 脉冲呼吸 */
@@ -3005,7 +3050,7 @@ header {
 .modal-body h2 {
   margin: 0 0 16px;
   font-size: 16px;
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 .field { margin-bottom: 14px; }
 .field label {
@@ -3026,7 +3071,7 @@ header {
   font-family: inherit;
 }
 .field input[type="password"] { font-family: monospace; }
-.field input:focus, .field select:focus { outline: none; border-color: var(--opus); }
+.field input:focus, .field select:focus { outline: none; border-color: var(--Daemonkey); }
 .field-hint {
   color: var(--dim2);
   font-size: 11px;
@@ -3046,13 +3091,13 @@ header {
   font-weight: 600;
   cursor: pointer;
 }
-.btn-primary { background: var(--opus); color: #fff; border-radius: 10px; }
-.btn-primary:active { background: var(--opus-dim); }
+.btn-primary { background: var(--Daemonkey); color: #fff; border-radius: 10px; }
+.btn-primary:active { background: var(--Daemonkey-dim); }
 .btn-ghost { background: transparent; color: var(--dim); border: 1px solid var(--border) !important; border-radius: 10px; }
 .btn-danger { background: var(--red); color: #fff; border-radius: 10px; }
 
-/* 卷三十四补丁 · 统一 H5 modal (opusConfirm / opusPrompt / opusAlert) */
-.opus-modal-body {
+/* 卷三十四补丁 · 统一 H5 modal (DaemonkeyConfirm / DaemonkeyPrompt / DaemonkeyAlert) */
+.Daemonkey-modal-body {
   max-width: 440px;
   animation: omFadeIn 0.16s ease-out;
 }
@@ -3060,17 +3105,17 @@ header {
   from { opacity: 0; transform: translateY(-12px) scale(0.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
-.opus-modal-body .om-icon {
+.Daemonkey-modal-body .om-icon {
   font-size: 32px;
   text-align: center;
   margin-bottom: 8px;
   line-height: 1;
 }
-.opus-modal-body h2 {
+.Daemonkey-modal-body h2 {
   text-align: center;
   margin: 0 0 12px;
 }
-.opus-modal-body .om-message {
+.Daemonkey-modal-body .om-message {
   color: var(--text);
   font-size: 14px;
   line-height: 1.55;
@@ -3079,17 +3124,17 @@ header {
   margin-bottom: 8px;
   text-align: center;
 }
-.opus-modal-body .om-message .om-hint {
+.Daemonkey-modal-body .om-message .om-hint {
   display: block;
   color: var(--dim2);
   font-size: 12px;
   margin-top: 8px;
   line-height: 1.5;
 }
-.opus-modal-body .om-input-wrap {
+.Daemonkey-modal-body .om-input-wrap {
   margin: 14px 0 0;
 }
-.opus-modal-body .om-input-wrap input {
+.Daemonkey-modal-body .om-input-wrap input {
   width: 100%;
   padding: 10px 12px;
   background: var(--bg3);
@@ -3099,22 +3144,22 @@ header {
   font-size: 14px;
   font-family: inherit;
 }
-.opus-modal-body .om-input-wrap input:focus {
+.Daemonkey-modal-body .om-input-wrap input:focus {
   outline: none;
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
 }
-.opus-modal-body .om-actions {
+.Daemonkey-modal-body .om-actions {
   margin-top: 18px;
 }
 /* danger 主按钮 · 删除类操作专用 */
-.opus-modal-body .om-actions .btn-primary.danger {
+.Daemonkey-modal-body .om-actions .btn-primary.danger {
   background: var(--red);
 }
-.opus-modal-body .om-actions .btn-primary.danger:active {
+.Daemonkey-modal-body .om-actions .btn-primary.danger:active {
   background: #b91c1c;
 }
 /* alert 模式 · 只有一个按钮 · 撑满 */
-.opus-modal-body.alert-only .om-actions .btn-ghost {
+.Daemonkey-modal-body.alert-only .om-actions .btn-ghost {
   display: none;
 }
 
@@ -3149,9 +3194,9 @@ header {
   border-bottom: 1px solid var(--border);
   display: flex; justify-content: space-between; align-items: center;
 }
-.drawer-head h2 { margin: 0; font-size: 14px; color: var(--opus); }
+.drawer-head h2 { margin: 0; font-size: 14px; color: var(--Daemonkey); }
 .drawer-new {
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: #fff;
   border: none;
   padding: 8px 12px;
@@ -3181,7 +3226,7 @@ header {
   position: relative;
 }
 .session-item:hover { background: var(--bg3); }
-.session-item.active { background: var(--bg3); border-color: var(--opus); }
+.session-item.active { background: var(--bg3); border-color: var(--Daemonkey); }
 .session-item.pinned {
   /* 置顶的 · 左边贴一根金色细条 */
   border-left: 2px solid #ffd166;
@@ -3314,7 +3359,7 @@ header {
 }
 .archived-toggle button:hover {
   color: var(--text);
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
 }
 .menu-btn {
   background: transparent;
@@ -3340,7 +3385,7 @@ header {
 /* ────────────────────────────────────────────────────────────────
    卷二十六 · 3 栏布局（左导航 · 中详情 · 右对话）
    ----------------------------------------------------------------
-   BRO 否决了卷二十五的上看板/下对话——卡片挤一排横向滚动不好用。
+   用户 否决了卷二十五的上看板/下对话——卡片挤一排横向滚动不好用。
    新形态：
      header
      ├─ nav-rail (左 · 维度按钮纵向 · ~200px)
@@ -3385,7 +3430,7 @@ header {
 }
 .col-resizer:hover::before,
 .col-resizer.dragging::before {
-  background: var(--opus);
+  background: var(--Daemonkey);
   width: 2px;
 }
 .col-resizer.dragging {
@@ -3452,7 +3497,7 @@ header {
 }
 .nav-collapse-btn:hover {
   background: var(--bg3);
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 .nav-collapse-btn .icon {
   font-size: 14px;
@@ -3461,7 +3506,7 @@ header {
 }
 .nav-collapse-btn .label { flex: 1; text-align: left; }
 
-/* 卷四十四 K stage 2b · icon-only 折叠 (BRO 反馈:只折叠左导航 · 不藏不消失)
+/* 卷四十四 K stage 2b · icon-only 折叠 (用户 反馈:只折叠左导航 · 不藏不消失)
    - nav-rail 缩到 56px · 仅显示 icon · 仍能点切维度 (像 VSCode/Cursor 那样)
    - col-resizer 折叠态用 visibility 隐藏 (不能用 display:none · 见 stage 2d 注释)
    - nav-rail 内部 .label / .nav-section / badge 全部 hidden · icon 居中放大
@@ -3566,8 +3611,8 @@ header {
 .nav-item:hover { background: var(--bg3); }
 .nav-item.active {
   background: var(--bg3);
-  border-color: var(--opus);
-  color: var(--opus);
+  border-color: var(--Daemonkey);
+  color: var(--Daemonkey);
 }
 .nav-item.stub { opacity: 0.55; }
 .nav-item.disabled {
@@ -3594,7 +3639,7 @@ header {
 }
 .nav-item .badge.has-items {
   background: rgba(159, 122, 234, 0.15);
-  color: var(--opus);
+  color: var(--Daemonkey);
   border-color: rgba(159, 122, 234, 0.35);
 }
 .nav-item .badge.stub {
@@ -3662,8 +3707,8 @@ header {
   transition: border-color 0.15s, color 0.15s;
 }
 .chat-history-btn:hover {
-  border-color: var(--opus);
-  color: var(--opus);
+  border-color: var(--Daemonkey);
+  color: var(--Daemonkey);
 }
 .chat-session-name {
   flex: 1;
@@ -3676,7 +3721,7 @@ header {
   text-align: center;
 }
 .chat-pane-new {
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: white;
   border: none;
   border-radius: 8px;
@@ -3694,7 +3739,7 @@ header {
   overflow-y: auto;
   padding: 16px;
 }
-/* OPUS 自留地 · hub 内部标签条 (日记/心愿/沉淀位/技能库) · 药丸风 · 主色描当前态 */
+/* Daemonkey 自留地 · hub 内部标签条 (日记/心愿/沉淀位/技能库) · 药丸风 · 主色描当前态 */
 .depot-tabs {
   display: flex;
   gap: 6px;
@@ -3718,9 +3763,9 @@ header {
 .depot-tab i { font-size: 15px; line-height: 1; }
 .depot-tab:hover { color: var(--text); border-color: var(--dim2); background: var(--bg3); }
 .depot-tab.active {
-  color: var(--opus);
-  border-color: color-mix(in srgb, var(--opus) 45%, transparent);
-  background: color-mix(in srgb, var(--opus) 14%, transparent);
+  color: var(--Daemonkey);
+  border-color: color-mix(in srgb, var(--Daemonkey) 45%, transparent);
+  background: color-mix(in srgb, var(--Daemonkey) 14%, transparent);
   font-weight: 600;
 }
 .dash-head {
@@ -3735,7 +3780,7 @@ header {
 .dash-head h2 {
   margin: 0;
   font-size: 16px;
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 .dash-head .meta {
   font-size: 11px;
@@ -3752,7 +3797,7 @@ header {
   cursor: pointer;
   font-family: inherit;
 }
-.dash-head button:hover { color: var(--opus); border-color: var(--opus); }
+.dash-head button:hover { color: var(--Daemonkey); border-color: var(--Daemonkey); }
 .dash-head button:disabled { color: var(--dim2); cursor: not-allowed; }
 .dash-empty {
   color: var(--dim);
@@ -3769,7 +3814,7 @@ header {
   border-radius: 10px;
   border: 1px dashed var(--border);
 }
-.dash-stub h3 { margin: 0 0 8px; color: var(--opus); font-size: 14px; }
+.dash-stub h3 { margin: 0 0 8px; color: var(--Daemonkey); font-size: 14px; }
 
 /* 信息雷达 · 条目卡片 */
 .radar-item {
@@ -3780,7 +3825,7 @@ header {
   border-left: 3px solid transparent;
   transition: border-color 0.15s;
 }
-.radar-item:hover { border-left-color: var(--opus); }
+.radar-item:hover { border-left-color: var(--Daemonkey); }
 .radar-item .ri-title {
   color: var(--text);
   font-size: 14px;
@@ -3789,7 +3834,7 @@ header {
   text-decoration: none;
   display: block;
 }
-.radar-item .ri-title:hover { color: var(--opus); }
+.radar-item .ri-title:hover { color: var(--Daemonkey); }
 .radar-item .ri-meta {
   display: flex;
   align-items: center;
@@ -3802,7 +3847,7 @@ header {
   padding: 1px 6px;
   background: var(--bg3);
   border-radius: 3px;
-  color: var(--opus);
+  color: var(--Daemonkey);
   font-size: 10px;
 }
 .radar-item .ri-cat {
@@ -3878,7 +3923,7 @@ header {
   transform: scale(1.08);
 }
 .ri-fb-btn.active {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   background: rgba(159, 122, 234, 0.18);
   opacity: 1;
 }
@@ -3932,7 +3977,7 @@ header {
   color: var(--dim);
   border: 1px solid var(--border);
 }
-.radar-src-chip.ok { color: var(--bro); }
+.radar-src-chip.ok { color: var(--用户); }
 .radar-src-chip.fail { color: var(--red); }
 
 /* 今日趋势卡（卷二十二 Day 3 加） */
@@ -3941,11 +3986,11 @@ header {
   margin-bottom: 10px;
   background: var(--bg2);
   border-radius: 8px;
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
 }
 .trend-card .tc-head {
   font-size: 14px;
-  color: var(--opus);
+  color: var(--Daemonkey);
   font-weight: 600;
   margin-bottom: 6px;
 }
@@ -3964,7 +4009,7 @@ header {
   text-decoration: none;
   margin-right: 8px;
 }
-.trend-card .tc-refs a:hover { color: var(--opus); }
+.trend-card .tc-refs a:hover { color: var(--Daemonkey); }
 
 .reports-list {
   display: flex;
@@ -3975,7 +4020,7 @@ header {
   padding: 12px 14px;
   background: var(--bg2);
   border-radius: 8px;
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
 }
 /* 知识库 · 已静音(停止参考)的文档 · 淡出 + 灰边 */
 .report-card.kb-off {
@@ -4032,8 +4077,8 @@ header {
   padding: 10px 14px; cursor: pointer; user-select: none;
   background: var(--bg3); transition: background .15s;
 }
-.kb-folder-head:hover { background: color-mix(in srgb, var(--opus) 12%, var(--bg3)); }
-.kb-folder-ico { color: var(--opus); font-size: 16px; }
+.kb-folder-head:hover { background: color-mix(in srgb, var(--Daemonkey) 12%, var(--bg3)); }
+.kb-folder-ico { color: var(--Daemonkey); font-size: 16px; }
 .kb-folder-name { font-weight: 600; color: var(--text); font-size: 13px; }
 .kb-folder-count {
   font-size: 11px; color: var(--dim); background: var(--bg);
@@ -4052,7 +4097,7 @@ header {
   width: 100%; background: var(--bg2); border: 1px solid var(--border);
   border-radius: 9px; padding: 8px 12px; color: var(--text); margin-bottom: 12px; font-size: 12.5px;
 }
-.cl-search:focus { outline: none; border-color: var(--opus); }
+.cl-search:focus { outline: none; border-color: var(--Daemonkey); }
 
 /* 阶段标签页 */
 .stage-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
@@ -4067,7 +4112,7 @@ header {
 }
 .stage-tab:hover { color: var(--text); }
 .stage-tab.active { color: #fff; border-color: transparent; }
-.stage-tab.active.all { background: var(--opus); }
+.stage-tab.active.all { background: var(--Daemonkey); }
 .stage-tab.active.active { background: #30a46c; }
 .stage-tab.active.lead { background: #e2b53e; color: #1a1a1a; }
 .stage-tab.active.paused { background: #e08748; }
@@ -4085,14 +4130,14 @@ header {
   background: var(--bg2); border: 1px solid var(--border); border-radius: 11px; padding: 11px 13px;
   cursor: pointer; border-left: 3px solid var(--dim2); transition: .15s;
 }
-.ccard:hover { border-color: var(--opus); }
-.ccard.sel { border-color: var(--opus); background: var(--bg3); }
+.ccard:hover { border-color: var(--Daemonkey); }
+.ccard.sel { border-color: var(--Daemonkey); background: var(--bg3); }
 .ccard.st-active { border-left-color: #30a46c; }
 .ccard.st-lead { border-left-color: #e2b53e; }
 .ccard.st-paused { border-left-color: #e08748; }
 .ccard.st-done { border-left-color: var(--dim2); }
 .cc-r1 { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
-.cc-name { font-size: 14px; font-weight: 600; color: var(--opus); display: inline-flex; align-items: center; gap: 5px; }
+.cc-name { font-size: 14px; font-weight: 600; color: var(--Daemonkey); display: inline-flex; align-items: center; gap: 5px; }
 .cc-co { font-size: 12px; color: var(--dim); }
 .cc-r2 { font-size: 11.5px; color: var(--dim2); margin-top: 3px; display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
 .cc-r2 span { display: inline-flex; align-items: center; gap: 3px; }
@@ -4100,7 +4145,7 @@ header {
   margin-top: 7px; font-size: 11.5px; color: var(--dim); background: var(--bg);
   border-radius: 7px; padding: 5px 8px; display: flex; gap: 6px; align-items: flex-start;
 }
-.cc-latest i { color: var(--opus); margin-top: 1px; }
+.cc-latest i { color: var(--Daemonkey); margin-top: 1px; }
 .cc-latest .d { color: var(--dim2); flex-shrink: 0; }
 .cc-r3 { margin-top: 7px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .cl-tag { font-size: 10.5px; color: var(--dim); background: var(--bg3); border: 1px solid var(--border); border-radius: 7px; padding: 1px 7px; }
@@ -4137,12 +4182,12 @@ header {
 .cl-pill { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 7px 11px; min-width: 110px; }
 .cl-pill .k { font-size: 10.5px; color: var(--dim2); display: flex; align-items: center; gap: 4px; }
 .cl-pill .v { font-size: 13px; color: var(--text); margin-top: 2px; font-weight: 600; }
-.cl-pill .v.hl { color: var(--opus); }
+.cl-pill .v.hl { color: var(--Daemonkey); }
 
 .cl-sec { padding: 14px 18px; border-bottom: 1px solid var(--border); }
 .cl-sec:last-child { border-bottom: none; }
 .cl-sec-t { font-size: 12.5px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
-.cl-sec-t i { color: var(--opus); font-size: 15px; }
+.cl-sec-t i { color: var(--Daemonkey); font-size: 15px; }
 .cl-sec-t .hint { font-size: 10.5px; font-weight: 400; color: var(--dim2); margin-left: auto; }
 .cl-need { background: rgba(159,122,234,.07); border: 1px solid rgba(159,122,234,.22); border-radius: 9px; padding: 10px 13px; font-size: 12.5px; color: var(--text); line-height: 1.6; white-space: pre-wrap; }
 .cl-need-empty { color: var(--dim2); background: var(--bg); border-style: dashed; }
@@ -4150,7 +4195,7 @@ header {
 /* 时间线 */
 .cl-chips { display: flex; gap: 6px; margin-bottom: 11px; flex-wrap: wrap; }
 .cl-chip { font-size: 11px; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg); color: var(--dim); cursor: pointer; }
-.cl-chip.on { background: var(--opus); border-color: var(--opus); color: #fff; }
+.cl-chip.on { background: var(--Daemonkey); border-color: var(--Daemonkey); color: #fff; }
 .cl-tl { display: flex; flex-direction: column; }
 .cl-tl-item { display: grid; grid-template-columns: 52px 22px 1fr; gap: 9px; padding: 9px 0; border-bottom: 1px dashed var(--border); }
 .cl-tl-item:last-child { border-bottom: none; }
@@ -4158,14 +4203,14 @@ header {
 .cl-tl-ic { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; }
 .cl-tl-ic.k-meeting { background: rgba(76,141,216,.16); color: #7db4ee; }
 .cl-tl-ic.k-progress { background: rgba(48,164,108,.16); color: #4ade9a; }
-.cl-tl-ic.k-deliver { background: rgba(159,122,234,.16); color: var(--opus); }
+.cl-tl-ic.k-deliver { background: rgba(159,122,234,.16); color: var(--Daemonkey); }
 .cl-tl-ic.k-need { background: rgba(226,181,62,.16); color: #e2b53e; }
 .cl-tl-ic.k-note { background: var(--bg3); color: var(--dim); }
 .cl-tl-txt { font-size: 12.5px; color: var(--text); line-height: 1.6; }
 .cl-tl-kind { font-size: 10.5px; font-weight: 600; margin-right: 6px; }
 .cl-tl-kind.k-meeting { color: #7db4ee; } .cl-tl-kind.k-progress { color: #4ade9a; }
-.cl-tl-kind.k-deliver { color: var(--opus); } .cl-tl-kind.k-need { color: #e2b53e; } .cl-tl-kind.k-note { color: var(--dim); }
-.cl-tl-more { color: var(--opus); cursor: pointer; font-size: 11.5px; margin-top: 3px; display: inline-block; }
+.cl-tl-kind.k-deliver { color: var(--Daemonkey); } .cl-tl-kind.k-need { color: #e2b53e; } .cl-tl-kind.k-note { color: var(--dim); }
+.cl-tl-more { color: var(--Daemonkey); cursor: pointer; font-size: 11.5px; margin-top: 3px; display: inline-block; }
 .cl-tl-full { display: none; white-space: pre-wrap; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; margin-top: 6px; font-size: 12px; color: var(--dim); line-height: 1.7; }
 .cl-tl-full.open { display: block; }
 
@@ -4173,25 +4218,25 @@ header {
 .cl-note-add { margin-top: 11px; }
 .cl-note-toggle {
   font-size: 12px; padding: 5px 12px; border-radius: 8px; cursor: pointer;
-  background: var(--bg); color: var(--opus); border: 1px solid var(--border); display: inline-flex; align-items: center; gap: 5px;
+  background: var(--bg); color: var(--Daemonkey); border: 1px solid var(--border); display: inline-flex; align-items: center; gap: 5px;
 }
-.cl-note-toggle:hover { border-color: var(--opus); }
+.cl-note-toggle:hover { border-color: var(--Daemonkey); }
 .cl-note-form { margin-top: 9px; display: flex; flex-direction: column; gap: 8px; }
 .cl-note-kind { font-size: 12px; padding: 5px 8px; border-radius: 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); align-self: flex-start; }
 .cl-note-text { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: 12.5px; resize: vertical; font-family: inherit; }
-.cl-note-text:focus { outline: none; border-color: var(--opus); }
+.cl-note-text:focus { outline: none; border-color: var(--Daemonkey); }
 .cl-note-foot { display: flex; justify-content: flex-end; }
-.cl-note-save { font-size: 12px; padding: 6px 14px; border-radius: 8px; cursor: pointer; background: var(--opus); color: #fff; border: 1px solid var(--opus); display: inline-flex; align-items: center; gap: 5px; }
+.cl-note-save { font-size: 12px; padding: 6px 14px; border-radius: 8px; cursor: pointer; background: var(--Daemonkey); color: #fff; border: 1px solid var(--Daemonkey); display: inline-flex; align-items: center; gap: 5px; }
 .cl-note-save:disabled { opacity: .6; cursor: default; }
 .cl-note-hint { margin-top: 9px; font-size: 11px; color: var(--dim2); background: var(--bg); border: 1px dashed var(--border); border-radius: 8px; padding: 7px 10px; display: flex; gap: 6px; align-items: flex-start; line-height: 1.55; }
-.cl-note-hint i { color: var(--opus); margin-top: 1px; }
+.cl-note-hint i { color: var(--Daemonkey); margin-top: 1px; }
 
 /* 交付与过程 */
 .cl-dl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 @media (max-width: 640px) { .cl-dl-grid { grid-template-columns: 1fr; } }
 .cl-dl-card { background: var(--bg); border: 1px solid var(--border); border-radius: 9px; padding: 9px 11px; display: flex; gap: 8px; align-items: center; cursor: pointer; }
-.cl-dl-card:hover { border-color: var(--opus); }
-.cl-dl-ic { width: 30px; height: 30px; border-radius: 7px; background: var(--bg3); display: flex; align-items: center; justify-content: center; color: var(--opus); flex-shrink: 0; }
+.cl-dl-card:hover { border-color: var(--Daemonkey); }
+.cl-dl-ic { width: 30px; height: 30px; border-radius: 7px; background: var(--bg3); display: flex; align-items: center; justify-content: center; color: var(--Daemonkey); flex-shrink: 0; }
 .cl-dl-info .t { font-size: 12.5px; color: var(--text); }
 .cl-dl-info .m { font-size: 10.5px; color: var(--dim2); margin-top: 1px; }
 
@@ -4203,8 +4248,8 @@ header {
   display: flex; align-items: center; gap: 7px; padding: 9px 11px; border-radius: 9px;
   background: var(--bg); border: 1px solid var(--border); cursor: pointer; font-size: 13px; color: var(--text);
 }
-.cl-pick-item:hover { border-color: var(--opus); background: var(--bg3); }
-.cl-pick-item i { color: var(--opus); }
+.cl-pick-item:hover { border-color: var(--Daemonkey); background: var(--bg3); }
+.cl-pick-item i { color: var(--Daemonkey); }
 .cl-pick-co { font-size: 11.5px; color: var(--dim); }
 .cl-pick-badge { margin-left: auto; }
 
@@ -4213,7 +4258,7 @@ header {
   font-size: 13px; padding: 2px 7px; border-radius: 7px; cursor: pointer; line-height: 1;
   background: transparent; color: var(--dim); border: 1px solid var(--border);
 }
-.kb-flag:hover { color: var(--text); border-color: var(--opus); }
+.kb-flag:hover { color: var(--text); border-color: var(--Daemonkey); }
 .kb-flag-pin.on { color: #e2b53e; border-color: rgba(226,181,62,.5); background: rgba(226,181,62,.12); }
 .kb-flag-sen.on { color: #e5484d; border-color: rgba(229,72,77,.5); background: rgba(229,72,77,.12); }
 .kb-flag-badge i { font-size: 11px; }
@@ -4241,7 +4286,7 @@ header {
   display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--dim);
   margin-bottom: 12px; cursor: pointer;
 }
-.cl-import-dedupe input { accent-color: var(--opus); }
+.cl-import-dedupe input { accent-color: var(--Daemonkey); }
 .cl-import-sample-title { font-size: 12px; font-weight: 600; color: var(--dim); margin-bottom: 6px; }
 .cl-import-sample {
   overflow: auto; max-height: 200px; border: 1px solid var(--border); border-radius: 8px;
@@ -4263,7 +4308,7 @@ header {
 }
 .cl-import-cancel:hover { background: var(--bg3); }
 .cl-import-go {
-  background: var(--opus) !important; border-color: var(--opus) !important; color: #fff !important;
+  background: var(--Daemonkey) !important; border-color: var(--Daemonkey) !important; color: #fff !important;
   display: inline-flex; align-items: center; gap: 5px;
 }
 .cl-import-go:hover { filter: brightness(1.08); }
@@ -4274,7 +4319,7 @@ header {
 }
 .report-card .rc-name {
   font-size: 14px;
-  color: var(--opus);
+  color: var(--Daemonkey);
   text-decoration: none;
   font-weight: 600;
   word-break: break-all;
@@ -4298,7 +4343,7 @@ header {
   padding: 4px 10px;
   font-size: 11px;
   border-radius: 6px;
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: white;
   text-decoration: none;
   white-space: nowrap;
@@ -4329,13 +4374,13 @@ header {
   transition: all 0.15s;
 }
 .pl-stage:hover {
-  color: var(--opus);
-  border-color: var(--opus);
+  color: var(--Daemonkey);
+  border-color: var(--Daemonkey);
 }
 .pl-stage.active {
   background: rgba(159, 122, 234, 0.15);
-  border-color: var(--opus);
-  color: var(--opus);
+  border-color: var(--Daemonkey);
+  color: var(--Daemonkey);
   font-weight: 600;
 }
 .pl-arrow {
@@ -4361,7 +4406,7 @@ header {
 .rs-n {
   font-size: 22px;
   font-weight: 700;
-  color: var(--opus);
+  color: var(--Daemonkey);
   line-height: 1.1;
 }
 .rs-l {
@@ -4371,7 +4416,7 @@ header {
 }
 /* 卷五十八续 X · 今日新增卡 · 突出"今天抓到多少" */
 .rs-card-today {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   background: linear-gradient(180deg, rgba(159,122,234,0.12), var(--bg2));
 }
 .rs-card-today .rs-n { color: #b794f4; }
@@ -4413,7 +4458,7 @@ header {
   padding: 0 5px;
   font-size: 9px;
   background: rgba(159, 122, 234, 0.18);
-  color: var(--opus);
+  color: var(--Daemonkey);
   border-radius: 4px;
   vertical-align: middle;
   font-weight: 600;
@@ -4429,10 +4474,10 @@ header {
   font-size: 13px;
   color: var(--text);
   line-height: 1.6;
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
 }
 .trends-intro strong {
-  color: var(--opus);
+  color: var(--Daemonkey);
   font-weight: 600;
 }
 
@@ -4470,7 +4515,7 @@ header {
 }
 .tc-intensity.intensity-low { color: var(--dim2); }
 .tc-intensity.intensity-3 { color: var(--cyan, #4fd1c5); border-color: rgba(79, 209, 197, 0.3); }
-.tc-intensity.intensity-4 { color: var(--opus); border-color: rgba(159, 122, 234, 0.4); }
+.tc-intensity.intensity-4 { color: var(--Daemonkey); border-color: rgba(159, 122, 234, 0.4); }
 .tc-intensity.intensity-5 {
   color: var(--orange, #ed8936);
   border-color: rgba(237, 137, 54, 0.5);
@@ -4523,13 +4568,13 @@ header {
   transition: all 0.15s;
 }
 .trend-action:hover {
-  border-color: var(--opus);
-  color: var(--opus);
+  border-color: var(--Daemonkey);
+  color: var(--Daemonkey);
 }
 .trend-action.ta-report {
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: white;
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
 }
 .trend-action.ta-report:hover {
   filter: brightness(1.1);
@@ -4619,7 +4664,7 @@ header {
 }
 .bi-autopilot-btn {
   padding: 8px 18px;
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: white;
   border: none;
   border-radius: 8px;
@@ -4635,7 +4680,7 @@ header {
   transform: scale(0.97);
 }
 
-/* ── 卷二十六 · 🧠 OPUS 日记 · BRO 画像 · 开放问题 ── */
+/* ── 卷二十六 · 🧠 Daemonkey 日记 · 用户 画像 · 开放问题 ── */
 .cognition-block {
   background: var(--bg2);
   border-radius: 10px;
@@ -4648,7 +4693,7 @@ header {
   background: linear-gradient(to right, rgba(237, 137, 54, 0.08), transparent);
 }
 .cognition-block.cognition-diary {
-  border-left-color: var(--opus);
+  border-left-color: var(--Daemonkey);
 }
 .cognition-block.cognition-profile {
   border-left-color: var(--cyan, #4fd1c5);
@@ -4729,12 +4774,12 @@ header {
 }
 .cog-entry[open] summary::before, .cog-section[open] summary::before {
   content: '▾';
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 .cog-e-date {
   font-family: ui-monospace, monospace;
   font-size: 11px;
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 .cog-e-title { color: var(--text); font-weight: 500; flex: 1; }
 .cog-e-body, .cog-s-body {
@@ -4759,10 +4804,10 @@ header {
 }
 .cog-hero-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 5px; }
 .cog-hero-title { font-size: 15px; font-weight: 700; color: var(--text); display: inline-flex; align-items: center; gap: 7px; }
-.cog-hero-title i { color: var(--opus); }
+.cog-hero-title i { color: var(--Daemonkey); }
 .cog-live {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; color: var(--bro, #48BB78);
+  font-size: 11px; color: var(--用户, #48BB78);
   background: rgba(72,187,120,.12); border: 1px solid rgba(72,187,120,.3);
   padding: 2px 9px; border-radius: 20px;
 }
@@ -4775,7 +4820,7 @@ header {
   font-size: 13px; font-weight: 600; color: var(--text);
   margin: 18px 2px 10px;
 }
-.cog-sec-title i { color: var(--opus); font-size: 16px; }
+.cog-sec-title i { color: var(--Daemonkey); font-size: 16px; }
 .cog-sec-hint { font-size: 11px; font-weight: 400; color: var(--dim2); }
 
 /* 最近记了什么 · 时间线 */
@@ -4788,7 +4833,7 @@ header {
 }
 .cog-flow-row:last-child { border-bottom: none; }
 .cog-flow-date {
-  font-family: ui-monospace, monospace; font-size: 11px; color: var(--opus);
+  font-family: ui-monospace, monospace; font-size: 11px; color: var(--Daemonkey);
   flex-shrink: 0; width: 78px; font-variant-numeric: tabular-nums;
 }
 .cog-flow-text { font-size: 12.5px; line-height: 1.5; color: var(--text); flex: 1; }
@@ -4806,7 +4851,7 @@ header {
   background: var(--bg2); border: 1px solid var(--border);
   border-radius: 11px; padding: 4px 14px 0; transition: border-color .15s;
 }
-.cog-card[open] { border-color: var(--opus); padding-bottom: 12px; }
+.cog-card[open] { border-color: var(--Daemonkey); padding-bottom: 12px; }
 .cog-card-head {
   display: flex; align-items: center; gap: 10px;
   cursor: pointer; list-style: none; padding: 11px 0; font-size: 13.5px;
@@ -4814,11 +4859,11 @@ header {
 .cog-card-head::-webkit-details-marker { display: none; }
 .cog-card-name { font-weight: 600; color: var(--text); flex: 1; }
 .cog-card-tag {
-  font-size: 10.5px; color: var(--opus); background: var(--bg3);
+  font-size: 10.5px; color: var(--Daemonkey); background: var(--bg3);
   border-radius: 6px; padding: 2px 8px; display: inline-flex; align-items: center; gap: 4px;
 }
 .cog-card-caret { color: var(--dim2); font-size: 16px; transition: transform .18s ease; flex-shrink: 0; }
-.cog-card[open] .cog-card-caret { transform: rotate(180deg); color: var(--opus); }
+.cog-card[open] .cog-card-caret { transform: rotate(180deg); color: var(--Daemonkey); }
 .cog-card-body {
   font-size: 12.5px; line-height: 1.7; color: var(--dim);
   max-height: 340px; overflow: auto;
@@ -4835,7 +4880,7 @@ header {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   transition: all .15s;
 }
-.cog-more:hover { color: var(--opus); border-color: var(--opus); }
+.cog-more:hover { color: var(--Daemonkey); border-color: var(--Daemonkey); }
 .cog-diary-entry .cog-e-date { flex-shrink: 0; }
 
 /* 技能库 · 工艺铁律区 */
@@ -4850,7 +4895,7 @@ header {
   background: var(--bg); border: 1px solid var(--border); border-radius: 11px;
   padding: 9px 13px; font-size: 12.5px; min-width: 178px;
 }
-.cog-pill i { font-size: 17px; color: var(--opus); flex-shrink: 0; }
+.cog-pill i { font-size: 17px; color: var(--Daemonkey); flex-shrink: 0; }
 .cog-pill .k { color: var(--dim2); font-size: 11px; display: block; }
 .cog-pill .v { color: var(--text); }
 .cog-checkin {
@@ -4866,7 +4911,7 @@ header {
 /* 时间线维度徽标 */
 .cog-flow-dim {
   display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
-  font-size: 11px; color: var(--opus); background: var(--bg3);
+  font-size: 11px; color: var(--Daemonkey); background: var(--bg3);
   border-radius: 6px; padding: 2px 8px; white-space: nowrap;
 }
 .cog-flow-dim i { font-size: 13px; }
@@ -4877,12 +4922,12 @@ header {
   padding: 15px 16px; display: flex; flex-direction: column;
   transition: border-color .15s, transform .15s;
 }
-.cog-dim:hover { border-color: var(--opus); transform: translateY(-1px); }
+.cog-dim:hover { border-color: var(--Daemonkey); transform: translateY(-1px); }
 .cog-dim-head { display: flex; align-items: center; gap: 10px; }
 .cog-dim-ic {
   width: 34px; height: 34px; border-radius: 9px; background: var(--bg3);
   display: inline-flex; align-items: center; justify-content: center;
-  color: var(--opus); font-size: 18px; flex-shrink: 0;
+  color: var(--Daemonkey); font-size: 18px; flex-shrink: 0;
 }
 .cog-dim-nw { flex: 1; min-width: 0; }
 .cog-dim-name { font-size: 14px; font-weight: 600; color: var(--text); display: block; }
@@ -4899,7 +4944,7 @@ header {
 }
 .cog-de::before {
   content: ""; position: absolute; left: 0; top: 7px;
-  width: 5px; height: 5px; border-radius: 50%; background: var(--opus);
+  width: 5px; height: 5px; border-radius: 50%; background: var(--Daemonkey);
 }
 .cog-de-d { color: var(--dim2); font-size: 11px; margin-right: 6px; font-variant-numeric: tabular-nums; }
 .cog-de.sub { color: var(--dim); font-weight: 600; margin-top: 2px; }
@@ -4914,7 +4959,7 @@ header {
   border: 1px solid var(--border); border-radius: 9px; padding: 7px; cursor: pointer;
   transition: all .15s;
 }
-.cog-dim-btn:hover { color: var(--opus); border-color: var(--opus); }
+.cog-dim-btn:hover { color: var(--Daemonkey); border-color: var(--Daemonkey); }
 /* 展开全部弹窗 · 复用 .kb-modal 壳 · 里面平铺全量条目 */
 .cog-modal-list { display: flex; flex-direction: column; gap: 11px; }
 @media (max-width: 900px) { .cog-grid { grid-template-columns: 1fr; } .cog-pill { min-width: 0; flex: 1; } }
@@ -4943,7 +4988,7 @@ header {
   border-radius: 6px;
   font-size: 12px;
   color: var(--dim);
-  border-left: 2px solid var(--opus);
+  border-left: 2px solid var(--Daemonkey);
 }
 .workshop-list { display: flex; flex-direction: column; gap: 8px; }
 .workshop-card {
@@ -4953,7 +4998,7 @@ header {
   border: 1px solid var(--border);
   transition: border-color 0.15s;
 }
-.workshop-card:hover { border-color: var(--opus); }
+.workshop-card:hover { border-color: var(--Daemonkey); }
 .wk-head {
   display: flex;
   align-items: center;
@@ -4965,7 +5010,7 @@ header {
   font-size: 10px;
   padding: 2px 8px;
   background: rgba(159, 122, 234, 0.15);
-  color: var(--opus);
+  color: var(--Daemonkey);
   border-radius: 8px;
   border: 1px solid rgba(159, 122, 234, 0.3);
 }
@@ -4988,7 +5033,7 @@ header {
 }
 /* 卷四十六续 8 · workshop 卡操作按钮 */
 .wk-title[href] { cursor: pointer; text-decoration: none; }
-.wk-title[href]:hover { color: var(--opus); text-decoration: underline; }
+.wk-title[href]:hover { color: var(--Daemonkey); text-decoration: underline; }
 .wk-btn {
   font-size: 10px;
   padding: 2px 8px;
@@ -5001,14 +5046,14 @@ header {
   white-space: nowrap;
   transition: all 0.15s;
 }
-.wk-btn:hover { border-color: var(--opus); color: var(--opus); }
+.wk-btn:hover { border-color: var(--Daemonkey); color: var(--Daemonkey); }
 .wk-btn:disabled { opacity: 0.5; cursor: wait; }
-.wk-preview { border-color: rgba(159, 122, 234, 0.4); color: var(--opus); }
+.wk-preview { border-color: rgba(159, 122, 234, 0.4); color: var(--Daemonkey); }
 .wk-reveal  { border-color: rgba(96, 165, 250, 0.4); color: #93c5fd; }
 .wk-dl { color: var(--dim2); }
 
 /* ── 响应式 ─────────────────────────────────── */
-/* 中屏：导航 + 对话窄一点 · 卷三十：用 CSS var 让 BRO 拖完仍然生效 */
+/* 中屏：导航 + 对话窄一点 · 卷三十：用 CSS var 让 用户 拖完仍然生效 */
 @media (max-width: 1280px) {
   :root { --nav-w: 190px; --chat-w: 360px; }
 }
@@ -5107,7 +5152,7 @@ header {
 .bi-link {
   background: transparent;
   border: 1px solid var(--border);
-  color: var(--opus);
+  color: var(--Daemonkey);
   font-size: 11px;
   padding: 3px 9px;
   border-radius: 12px;
@@ -5123,7 +5168,7 @@ header {
   gap: 10px;
 }
 
-/* 卷四十六续 10 · BI 看板"今日动态" digest 卡 (BRO 候选 E) */
+/* 卷四十六续 10 · BI 看板"今日动态" digest 卡 (用户 候选 E) */
 .bi-digest-loading, .bi-digest-empty {
   padding: 12px 14px;
   background: var(--bg2);
@@ -5178,9 +5223,9 @@ header {
   border: 1px solid var(--border);
   transition: all 0.15s;
 }
-.bi-digest-hot { cursor: pointer; border-left: 3px solid var(--opus); }
+.bi-digest-hot { cursor: pointer; border-left: 3px solid var(--Daemonkey); }
 .bi-digest-hot:hover {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   background: rgba(159, 122, 234, 0.08);
   transform: translateY(-1px);
 }
@@ -5215,7 +5260,7 @@ header {
 .bi-digest-new {
   font-size: 18px;
   font-weight: 700;
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 .bi-digest-zero {
   font-size: 16px;
@@ -5227,7 +5272,7 @@ header {
   margin-top: 2px;
 }
 
-/* 卷四十六续 10 · dashboard list 通用搜索框 (BRO 候选 B) */
+/* 卷四十六续 10 · dashboard list 通用搜索框 (用户 候选 B) */
 .list-filter {
   display: flex;
   align-items: center;
@@ -5239,7 +5284,7 @@ header {
   border-radius: 8px;
   transition: border-color 0.15s;
 }
-.list-filter:focus-within { border-color: var(--opus); }
+.list-filter:focus-within { border-color: var(--Daemonkey); }
 .list-filter-icon { font-size: 14px; color: var(--dim2); flex-shrink: 0; display: inline-flex; align-items: center; }
 .list-filter-input {
   flex: 1;
@@ -5334,7 +5379,7 @@ header {
 }
 .bi-opp-card {
   background: var(--bg2);
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
   border-radius: 8px;
   padding: 12px 14px;
 }
@@ -5396,7 +5441,7 @@ header {
   transition: border-color 0.15s ease;
   color: var(--text);
 }
-.bi-domain-card:hover { border-color: var(--opus); }
+.bi-domain-card:hover { border-color: var(--Daemonkey); }
 .bi-domain-card.stub { opacity: 0.55; cursor: default; }
 .bi-dc-head {
   display: flex;
@@ -5408,7 +5453,7 @@ header {
 .bi-dc-total {
   font-size: 18px;
   font-weight: 600;
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 .bi-dc-hint {
   font-size: 10px;
@@ -5441,12 +5486,12 @@ header {
   transition: all 0.15s ease;
 }
 .rdc:hover {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
 }
 .rdc.active {
   background: var(--bg);
-  border-color: var(--opus);
-  color: var(--opus);
+  border-color: var(--Daemonkey);
+  color: var(--Daemonkey);
   font-weight: 600;
 }
 .rdc-n {
@@ -5458,7 +5503,7 @@ header {
   color: var(--dim);
 }
 .rdc.active .rdc-n {
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: var(--bg);
 }
 
@@ -5499,7 +5544,7 @@ header {
 }
 
 /* ─────────────────────────────────────────────────────────
-   卷三十五 · 💭 OPUS 心愿单
+   卷三十五 · 💭 Daemonkey 心愿单
    ───────────────────────────────────────────────────────── */
 .wish-banner {
   display: flex;
@@ -5531,7 +5576,7 @@ header {
   line-height: 1.5;
 }
 .wish-banner-btn {
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: #fff;
   border: none;
   border-radius: 6px;
@@ -5543,7 +5588,7 @@ header {
   flex-shrink: 0;
 }
 .wish-banner-btn:hover {
-  background: var(--opus-dim);
+  background: var(--Daemonkey-dim);
 }
 /* 成长档案 tab 下的说明横幅 · 紧贴标签条 */
 .depot-banner {
@@ -5654,7 +5699,7 @@ details.wish-card[open] > summary.wish-card-head {
   border: 1px solid var(--border); transition: border-color 0.15s;
   display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
 }
-.sink-card:hover { border-color: var(--opus); }
+.sink-card:hover { border-color: var(--Daemonkey); }
 .sink-card-missing { opacity: 0.45; border-style: dashed; }
 .sink-card-label { font-weight: 600; font-size: 12px; color: var(--fg); white-space: nowrap; }
 .sink-card-role {
@@ -5673,7 +5718,7 @@ details.wish-card[open] > summary.wish-card-head {
   cursor: pointer; white-space: nowrap;
   transition: all 0.15s;
 }
-.sink-card-actions .wb:hover { border-color: var(--opus); color: var(--opus); }
+.sink-card-actions .wb:hover { border-color: var(--Daemonkey); color: var(--Daemonkey); }
 
 /* 沉淀位预览 modal · 复用 md-lightbox 模式 */
 #sinkPreviewModal {
@@ -5699,7 +5744,7 @@ details.wish-card[open] > summary.wish-card-head {
   border: 1px solid var(--border); border-radius: 6px;
   cursor: pointer; transition: all 0.15s;
 }
-.spm-head .wb:hover { border-color: var(--opus); color: var(--opus); }
+.spm-head .wb:hover { border-color: var(--Daemonkey); color: var(--Daemonkey); }
 .spm-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
 .spm-body.md { font-size: 13px; line-height: 1.7; }
 .spm-truncated {
@@ -5769,7 +5814,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 .wish-badge-origin {
   background: rgba(159,122,234,0.12);
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 /* 卷五十三 · git 测谎仪徽章 · 红色="谎报上线" (status=live 但没合主干) */
 .wish-badge-unmerged {
@@ -5844,7 +5889,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   margin: 6px 0;
 }
 .wish-source a {
-  color: var(--opus);
+  color: var(--Daemonkey);
   text-decoration: none;
 }
 .wish-source a:hover {
@@ -5915,7 +5960,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   transition: all 0.15s;
 }
 .wish-actions .wb:hover {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
 }
 .wish-actions .wb-ok {
   background: rgba(72,187,120,0.10);
@@ -5948,7 +5993,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 .wish-actions .wb-deep:hover { background: rgba(159,122,234,0.18); border-color: #b794f4; }
 
-/* radar 条目 + opp 卡上的"OPUS 也想要"按钮 (self-evolve 域专属) */
+/* radar 条目 + opp 卡上的"Daemonkey 也想要"按钮 (self-evolve 域专属) */
 .ri-fb-btn.ri-wish-btn {
   color: #b794f4;
 }
@@ -6052,7 +6097,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 
 /* 计划 / 日志 / diff 三个 details 跟设计草图共用样式 · 但加些区分 */
 .wish-card .wish-design[open] > summary {
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 .wish-card .wish-design-body pre {
   background: #120f1a;
@@ -6088,7 +6133,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 .opp-card {
   background: var(--bg2);
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
   border-radius: 10px;
   padding: 14px 16px;
 }
@@ -6265,12 +6310,12 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 12px;
-  color: var(--opus);
+  color: var(--Daemonkey);
   cursor: pointer;
 }
 .opp-act-btn:hover {
   background: var(--bg2);
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
 }
 .opp-act-feas {
   color: #4fd1c5 !important;
@@ -6293,7 +6338,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   border-radius: 8px;
   margin-bottom: 14px;
 }
-.feas-intro b { color: var(--opus); }
+.feas-intro b { color: var(--Daemonkey); }
 
 .feas-empty {
   display: flex;
@@ -6326,7 +6371,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   transition: border-color 0.15s, transform 0.15s;
 }
 .feas-card:hover {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   transform: translateY(-2px);
 }
 .feas-card-head {
@@ -6382,11 +6427,11 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 12px;
-  color: var(--opus);
+  color: var(--Daemonkey);
   cursor: pointer;
 }
 .feas-act:hover {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   background: rgba(159, 122, 234, 0.08);
 }
 
@@ -6454,13 +6499,13 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 .feas-block h3 {
   font-size: 13px;
   margin: 0 0 12px;
-  color: var(--opus);
+  color: var(--Daemonkey);
   font-weight: 600;
 }
 
 /* ─── 卷三十二补丁 · 信源（宪法第 5 条·人机认知对齐）─── */
 .feas-sources {
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
 }
 .feas-sources h3 {
   display: flex;
@@ -6503,7 +6548,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   transition: border-color 0.15s, background 0.15s;
 }
 .feas-src-item:hover {
-  border-left-color: var(--opus);
+  border-left-color: var(--Daemonkey);
   background: var(--bg3);
 }
 .feas-src-radar  { border-left-color: rgba(96, 165, 250, 0.4); }
@@ -6514,7 +6559,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   padding: 1px 6px;
   border-radius: 4px;
   background: rgba(159, 122, 234, 0.18);
-  color: var(--opus);
+  color: var(--Daemonkey);
   font-family: monospace;
   font-size: 11px;
   font-weight: 700;
@@ -6539,7 +6584,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   min-width: 0;
 }
 .feas-src-link:hover {
-  color: var(--opus);
+  color: var(--Daemonkey);
   text-decoration: underline;
 }
 .feas-src-time {
@@ -6807,7 +6852,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   padding: 10px 12px;
   background: var(--bg);
   border-radius: 8px;
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
 }
 .feas-outlook-when {
   display: flex;
@@ -6815,13 +6860,13 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   gap: 6px;
 }
 .feas-outlook-dot {
-  color: var(--opus);
+  color: var(--Daemonkey);
   font-size: 14px;
 }
 .feas-outlook-label {
   font-size: 12px;
   font-weight: 700;
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 .feas-outlook-text {
   font-size: 12px;
@@ -6859,7 +6904,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 .feas-stage-num {
   width: 28px; height: 28px;
   border-radius: 50%;
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: var(--bg);
   display: flex; align-items: center; justify-content: center;
   font-size: 13px; font-weight: 700;
@@ -6904,7 +6949,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   background: linear-gradient(135deg,
     rgba(159, 122, 234, 0.12),
     rgba(159, 122, 234, 0.04));
-  border: 1px dashed var(--opus);
+  border: 1px dashed var(--Daemonkey);
   border-radius: 10px;
 }
 .feas-end-state-icon {
@@ -6913,7 +6958,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 .feas-end-state-label {
   font-size: 11px;
-  color: var(--opus);
+  color: var(--Daemonkey);
   font-weight: 700;
   margin-bottom: 4px;
 }
@@ -6927,7 +6972,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
    卷三十一 · 闭环反馈区
    ─────────────────────────────────────────────────────────── */
 .feas-feedback {
-  border-top: 2px solid var(--opus) !important;
+  border-top: 2px solid var(--Daemonkey) !important;
 }
 .feas-fb-intro {
   font-size: 11px;
@@ -6976,13 +7021,13 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   transition: all 0.15s;
 }
 .feas-fb-btn:hover {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   background: var(--bg3);
 }
 .feas-fb-btn.active {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   background: rgba(159, 122, 234, 0.18);
-  color: var(--opus);
+  color: var(--Daemonkey);
   font-weight: 700;
 }
 .feas-fb-btn.fb-go.active    { border-color: #38bdf8; color: #38bdf8; background: rgba(56,189,248,0.14); }
@@ -7023,7 +7068,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 .feas-fb-field input:focus,
 .feas-fb-field textarea:focus {
   outline: none;
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
 }
 
 .feas-fb-save-row {
@@ -7037,9 +7082,9 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   font-weight: 700;
   padding: 8px 18px;
   border-radius: 10px;
-  border: 1px solid var(--opus);
+  border: 1px solid var(--Daemonkey);
   background: rgba(159, 122, 234, 0.18);
-  color: var(--opus);
+  color: var(--Daemonkey);
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -7111,7 +7156,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   border-radius: 8px;
   margin-bottom: 14px;
 }
-.plugin-intro b { color: var(--opus); }
+.plugin-intro b { color: var(--Daemonkey); }
 
 .plugin-cat {
   margin-bottom: 18px;
@@ -7216,7 +7261,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   user-select: none;
   margin-bottom: 4px;
 }
-.plugin-desc-en-toggle:hover { color: var(--opus); }
+.plugin-desc-en-toggle:hover { color: var(--Daemonkey); }
 .plugin-desc-en {
   font-size: 11.5px;
   color: var(--dim2);
@@ -7241,7 +7286,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 11px;
-  color: var(--opus);
+  color: var(--Daemonkey);
 }
 .plugin-params-list .type {
   color: var(--dim2);
@@ -7271,11 +7316,11 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 12px;
-  color: var(--opus);
+  color: var(--Daemonkey);
   cursor: pointer;
 }
 .plugin-try-btn:hover {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   background: rgba(159, 122, 234, 0.08);
 }
 .plugin-card-future {
@@ -7343,13 +7388,13 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   font-size: 12.5px;
   color: var(--dim);
 }
-.exec-breadcrumb .arrow { color: var(--opus); font-weight: 600; }
+.exec-breadcrumb .arrow { color: var(--Daemonkey); font-weight: 600; }
 .exec-breadcrumb .muted { opacity: 0.6; }
 
 .exec-summary {
   padding: 10px 14px;
   background: rgba(255, 255, 255, 0.02);
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
   border-radius: 4px;
   margin-bottom: 16px;
   font-size: 12.5px;
@@ -7439,7 +7484,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--opus);
+  color: var(--Daemonkey);
   font-size: 11px;
   padding: 3px 8px;
   cursor: pointer;
@@ -7548,7 +7593,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   box-sizing: border-box;
 }
 .exec-input:focus {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   outline: none;
 }
 .exec-update-row {
@@ -7559,7 +7604,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 .exec-update-row .exec-input { flex: 1; margin: 0; }
 .exec-save-btn {
   margin-top: 10px;
-  background: var(--opus);
+  background: var(--Daemonkey);
   border: none;
   color: white;
   font-size: 13px;
@@ -7627,7 +7672,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   cursor: pointer;
   color: var(--dim);
 }
-.fav-open:hover { background: rgba(159, 122, 234, 0.1); color: var(--opus); }
+.fav-open:hover { background: rgba(159, 122, 234, 0.1); color: var(--Daemonkey); }
 .fav-remove:hover { color: #d97a7a; border-color: #d97a7a; }
 
 /* ── 📖 报告预览（卷三十三补丁）── */
@@ -7637,7 +7682,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   text-decoration: none;
 }
 .rc-name[data-preview]:hover {
-  color: var(--opus);
+  color: var(--Daemonkey);
   text-decoration: underline;
 }
 .rc-src-badge {
@@ -7660,8 +7705,8 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 .rc-preview-btn {
   background: transparent;
-  border: 1px solid var(--opus);
-  color: var(--opus);
+  border: 1px solid var(--Daemonkey);
+  color: var(--Daemonkey);
   font-size: 11.5px;
   padding: 3px 10px;
   border-radius: 6px;
@@ -7683,8 +7728,8 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   margin-left: 6px;
 }
 .rp-dl-btn:hover {
-  border-color: var(--opus);
-  color: var(--opus);
+  border-color: var(--Daemonkey);
+  color: var(--Daemonkey);
   background: rgba(159, 122, 234, 0.06);
 }
 
@@ -7738,7 +7783,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 .rp-cover-title {
   font-size: 26px;
   font-weight: 700;
-  color: var(--opus);
+  color: var(--Daemonkey);
   margin-bottom: 8px;
   line-height: 1.3;
 }
@@ -7766,7 +7811,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   display: inline-block;
 }
 .rp-md h1, .rp-md h2, .rp-md h3, .rp-md h4 {
-  color: var(--opus);
+  color: var(--Daemonkey);
   margin: 1.3em 0 0.55em;
   font-weight: 600;
 }
@@ -7794,7 +7839,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 .rp-md blockquote {
   margin: 1em 0;
   padding: 8px 14px;
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
   color: var(--dim);
   background: rgba(159, 122, 234, 0.04);
   border-radius: 0 6px 6px 0;
@@ -7810,9 +7855,9 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   padding: 6px 12px;
   text-align: left;
 }
-.rp-md th { background: rgba(159, 122, 234, 0.08); color: var(--opus); font-weight: 600; }
+.rp-md th { background: rgba(159, 122, 234, 0.08); color: var(--Daemonkey); font-weight: 600; }
 .rp-md tr:nth-child(even) td { background: rgba(255, 255, 255, 0.02); }
-.rp-md a { color: var(--opus); }
+.rp-md a { color: var(--Daemonkey); }
 .rp-md a:hover { text-decoration: underline; }
 .rp-md hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
 
@@ -7834,12 +7879,12 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 .cal-nav:hover, .cal-jump-today:hover {
   background: rgba(159, 122, 234, 0.1);
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
 }
 .cal-current {
   font-size: 15px;
   font-weight: 600;
-  color: var(--opus);
+  color: var(--Daemonkey);
   padding: 0 12px;
 }
 .cal-jump-today { margin-left: auto; }
@@ -7902,7 +7947,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   align-items: center;
   gap: 5px;
 }
-.cal-ritual-main b { color: var(--opus); }
+.cal-ritual-main b { color: var(--Daemonkey); }
 .cal-ritual-sub {
   font-size: 11px;
   color: var(--dim);
@@ -7914,17 +7959,17 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   font-size: 11.5px;
   padding: 4px 12px;
   border-radius: 5px;
-  border: 1px solid var(--opus);
+  border: 1px solid var(--Daemonkey);
   background: rgba(159, 122, 234, 0.12);
   color: var(--text);
   cursor: pointer;
 }
 .cal-ritual-btn:hover {
-  background: var(--opus);
+  background: var(--Daemonkey);
   color: #fff;
 }
 .cal-cell.cal-has-ritual { border-color: rgba(159, 122, 234, 0.5); }
-.cal-ritual-flag { color: var(--opus); font-size: 10px; margin-left: 3px; }
+.cal-ritual-flag { color: var(--Daemonkey); font-size: 10px; margin-left: 3px; }
 
 .cal-grid {
   display: grid;
@@ -7953,7 +7998,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   transition: all 0.15s;
 }
 .cal-cell:hover {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   background: rgba(159, 122, 234, 0.08);
 }
 .cal-cell-out {
@@ -7966,7 +8011,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   background: transparent;
 }
 .cal-today {
-  border-color: var(--opus);
+  border-color: var(--Daemonkey);
   background: rgba(159, 122, 234, 0.12) !important;
 }
 .cal-peak {
@@ -7978,7 +8023,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   color: var(--dim);
   margin-bottom: 4px;
 }
-.cal-today .cal-day { color: var(--opus); }
+.cal-today .cal-day { color: var(--Daemonkey); }
 .cal-dots {
   display: flex;
   flex-wrap: wrap;
@@ -8000,7 +8045,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 .cal-dot-outcomes { background: rgba(255, 122, 122, 0.7); }
 .cal-dot-sessions { background: rgba(159, 122, 234, 0.7); }
 
-/* 卷五十八续 X · 对话(sessions)拆成淡色小标记 · 不混进信息圆点行·视觉降权 (BRO 拍板) */
+/* 卷五十八续 X · 对话(sessions)拆成淡色小标记 · 不混进信息圆点行·视觉降权 (用户 拍板) */
 .cal-session-mark {
   font-size: 9px;
   color: var(--dim2);
@@ -8039,7 +8084,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 .day-section h3 {
   font-size: 14px;
   margin: 0 0 10px 0;
-  color: var(--opus);
+  color: var(--Daemonkey);
   padding-bottom: 6px;
   border-bottom: 1px solid var(--border);
 }
@@ -8062,7 +8107,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   text-decoration: none;
   font-size: 13.5px;
 }
-.dri-title:hover { color: var(--opus); text-decoration: underline; }
+.dri-title:hover { color: var(--Daemonkey); text-decoration: underline; }
 .dri-meta { font-size: 11.5px; color: var(--dim); margin-top: 3px; }
 .dri-meta .muted { margin-left: 4px; }
 
@@ -8090,7 +8135,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   font-size: 13px;
   font-weight: 500;
 }
-.day-report-name:hover { color: var(--opus); text-decoration: underline; }
+.day-report-name:hover { color: var(--Daemonkey); text-decoration: underline; }
 
 .day-outc-item {
   padding: 8px 12px;
@@ -8111,7 +8156,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   cursor: pointer;
   margin-right: 8px;
 }
-.back-btn:hover { border-color: var(--opus); color: var(--opus); }
+.back-btn:hover { border-color: var(--Daemonkey); color: var(--Daemonkey); }
 
 .sh-collapsed { display: none; }
 .sh-toggle-btn {
@@ -8125,7 +8170,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   margin-top: 4px;
   background: var(--bg3);
 }
-.sh-toggle-btn:hover { color: var(--opus); border-color: var(--opus); }
+.sh-toggle-btn:hover { color: var(--Daemonkey); border-color: var(--Daemonkey); }
 
 
 /* ======================================================================
@@ -8154,7 +8199,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 /* ═══════════════════════════════════════════════════════════════
    卷七十五续十 · 会话标签栏重做 —— 胶囊式 · 工作台 + 简洁版通用
    旧版是"文件夹式" tab(顶部圆角 + 底边线)· 标签栏还单独铺一条深色背景(var(--bg))
-   + border-bottom · 只有 1~2 个 tab 时右边留一长条空横线 · 很怪(BRO 说的"诡异横线")。
+   + border-bottom · 只有 1~2 个 tab 时右边留一长条空横线 · 很怪(用户 说的"诡异横线")。
    新版:标签栏透明·融进 chat-pane(bg2) · 去掉底边线 · 圆角胶囊 tab ·
    当前态用主色淡填充(color-mix 跟随皮肤·换肤自动变色) · hover 柔和 · 关闭键悬浮才显眼。
    ═══════════════════════════════════════════════════════════════ */
@@ -8202,9 +8247,9 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 .chat-tab:active { transform: translateY(0.5px); }
 .chat-tab.active {
-  background: color-mix(in srgb, var(--opus) 16%, transparent);
-  color: var(--opus);
-  border-color: color-mix(in srgb, var(--opus) 42%, transparent);
+  background: color-mix(in srgb, var(--Daemonkey) 16%, transparent);
+  color: var(--Daemonkey);
+  border-color: color-mix(in srgb, var(--Daemonkey) 42%, transparent);
   font-weight: 500;
 }
 .chat-tab.running {   /* 去掉刺眼左竖线 · 改淡琥珀描边 · 配合已有 spinner */
@@ -8276,7 +8321,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 .chat-toast {
   pointer-events: auto;
   background: var(--bg2);
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
   padding: 10px 14px;
   border-radius: 8px;
   display: flex;
@@ -8296,13 +8341,13 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--opus);
-  box-shadow: 0 0 6px var(--opus);
+  background: var(--Daemonkey);
+  box-shadow: 0 0 6px var(--Daemonkey);
   flex: 0 0 auto;
 }
 .chat-toast .toast-title {
   font-weight: 600;
-  color: var(--opus);
+  color: var(--Daemonkey);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -8333,7 +8378,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 
 
-/* ── OPUS 脉搏 (wish-7330d23f) ─────────────────────────────── */
+/* ── Daemonkey 脉搏 (wish-7330d23f) ─────────────────────────────── */
 
 .pulse-indicator {
   display: inline-flex;
@@ -8360,7 +8405,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   animation: pulse-breathe 1.2s ease-in-out infinite;
 }
 
-/* ── git 欠账亮灯胶囊 (2026-07-29 · BRO 拍板 · 开 WebUI 第一眼可观测) ── */
+/* ── git 欠账亮灯胶囊 (2026-07-29 · 用户 拍板 · 开 WebUI 第一眼可观测) ── */
 
 .git-debt-chip {
   display: inline-flex;
@@ -8433,7 +8478,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   margin-bottom: 10px;
 }
 .free-pop-title i {
-  font-size: 15px; color: var(--opus);
+  font-size: 15px; color: var(--Daemonkey);
   background: rgba(179, 157, 255, 0.14);
   border-radius: 8px; padding: 4px;
 }
@@ -8528,7 +8573,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   border-radius: 6px; padding: 1px 7px;
 }
 
-/* ── git 欠账面板 (2026-07-29 · BRO 直批三件套 B+C) ── */
+/* ── git 欠账面板 (2026-07-29 · 用户 直批三件套 B+C) ── */
 .git-debt-modal { max-width: 520px; }
 .git-debt-body { font-size: 13px; }
 .git-debt-loading { color: var(--dim); padding: 18px 0; text-align: center; }
@@ -8587,7 +8632,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   padding: 10px 14px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--opus, #ce9eff);
+  color: var(--Daemonkey, #ce9eff);
   background: var(--bg2);
   border-bottom: 1px solid var(--border, #333);
   backdrop-filter: blur(8px);
@@ -8625,12 +8670,12 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
    ═══════════════════════════════════════════════════════════════ */
 
 /* 白天模式 */
-/* 经典灰 · 2026-06 紫主题之前的老深灰(含绿色用户气泡) */
+/* 经典灰 · Daemonkey 2026-06 紫主题之前的老深灰(含绿色用户气泡) */
 .theme-classic {
   --bg: #1a1a1a; --bg2: #252525; --bg3: #303030;
   --border: #383838; --text: #e8e8e8;
   --dim: #888; --dim2: #666;
-  --opus: #9F7AEA; --opus-dim: #7B5DC4;
+  --Daemonkey: #9F7AEA; --Daemonkey-dim: #7B5DC4;
   --user: #48BB78; --user-dim: #38A765;
 }
 
@@ -8638,7 +8683,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   --bg: #f5f5f5; --bg2: #ffffff; --bg3: #e8e8e8;
   --border: #d0d0d0; --text: #1a1a1a;
   --dim: #666; --dim2: #888;
-  --opus: #6C5CE7; --opus-dim: #5A4BD1;
+  --Daemonkey: #6C5CE7; --Daemonkey-dim: #5A4BD1;
 }
 
 /* 护眼暖黄 */
@@ -8646,7 +8691,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   --bg: #f4ecd8; --bg2: #faf3e0; --bg3: #e8dcc8;
   --border: #c4b998; --text: #433422;
   --dim: #8b7355; --dim2: #6b5b45;
-  --opus: #9b6b3a; --opus-dim: #7d5530;
+  --Daemonkey: #9b6b3a; --Daemonkey-dim: #7d5530;
 }
 
 /* 海洋蓝 */
@@ -8654,7 +8699,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   --bg: #0d1b2a; --bg2: #1b2838; --bg3: #1b3a5c;
   --border: #1b4a6b; --text: #c8ddf0;
   --dim: #6b8db5; --dim2: #4a6d94;
-  --opus: #4da6ff; --opus-dim: #3d8ad9;
+  --Daemonkey: #4da6ff; --Daemonkey-dim: #3d8ad9;
 }
 
 /* 森林绿 */
@@ -8662,7 +8707,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   --bg: #0d1f0d; --bg2: #1a2f1a; --bg3: #1f3a1f;
   --border: #2a4a2a; --text: #c8e6c8;
   --dim: #6b9b6b; --dim2: #4a7a4a;
-  --opus: #4caf50; --opus-dim: #3d9142;
+  --Daemonkey: #4caf50; --Daemonkey-dim: #3d9142;
 }
 
 /* 日落橙 */
@@ -8670,7 +8715,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   --bg: #1f1410; --bg2: #2a1f18; --bg3: #3a2518;
   --border: #4a3020; --text: #f0d8c0;
   --dim: #b08060; --dim2: #8b6040;
-  --opus: #ff8c42; --opus-dim: #e67a35;
+  --Daemonkey: #ff8c42; --Daemonkey-dim: #e67a35;
 }
 
 
@@ -8679,15 +8724,15 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   --bg: #1a1018; --bg2: #261c24; --bg3: #32262e;
   --border: #4a3540; --text: #e8d5e0;
   --dim: #b88da0; --dim2: #8b6075;
-  --opus: #e87fb8; --opus-dim: #c96b9e;
-  --bro: #48BB78; --bro-dim: #38A765;
+  --Daemonkey: #e87fb8; --Daemonkey-dim: #c96b9e;
+  --用户: #48BB78; --用户-dim: #38A765;
 }
 /* 粉白 */
 .theme-pink-white {
   --bg: #fdf5f7; --bg2: #ffffff; --bg3: #f8e8ec;
   --border: #e8cdd5; --text: #3d2028;
   --dim: #a08090; --dim2: #7a606a;
-  --opus: #e87fb8; --opus-dim: #c96b9e;
+  --Daemonkey: #e87fb8; --Daemonkey-dim: #c96b9e;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -8713,12 +8758,12 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   background: transparent; color: var(--dim); font-size: 11px; font-family: inherit;
   transition: border-color 0.15s, color 0.15s, transform 0.1s;
 }
-.theme-swatch:hover { border-color: var(--opus); color: var(--text); transform: translateY(-1px); }
-.theme-swatch.active { border-color: var(--opus); background: rgba(159, 122, 234, 0.12); color: var(--text); }
+.theme-swatch:hover { border-color: var(--Daemonkey); color: var(--text); transform: translateY(-1px); }
+.theme-swatch.active { border-color: var(--Daemonkey); background: rgba(159, 122, 234, 0.12); color: var(--text); }
 .swatch-dots { display: flex; gap: 3px; }
 .swatch-dots span { width: 13px; height: 13px; border-radius: 50%; border: 1px solid rgba(128, 128, 128, 0.25); }
 .swatch-dots .sw-bg { background: var(--bg); }
-.swatch-dots .sw-op { background: var(--opus); }
+.swatch-dots .sw-op { background: var(--Daemonkey); }
 
 /* ── 简洁版切换按钮 ── */
 .compact-toggle {
@@ -8727,9 +8772,9 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   cursor: pointer; font-size: 13px; display: inline-flex; align-items: center;
   font-family: inherit; white-space: nowrap; transition: all 0.18s;
 }
-.compact-toggle:hover { color: var(--opus); border-color: var(--opus); }
+.compact-toggle:hover { color: var(--Daemonkey); border-color: var(--Daemonkey); }
 .compact-toggle .lab { font-weight: 500; }
-body.compact .compact-toggle { background: var(--opus); color: #fff; border-color: var(--opus); }
+body.compact .compact-toggle { background: var(--Daemonkey); color: #fff; border-color: var(--Daemonkey); }
 
 /* ── 简洁版布局:折叠 nav + detail + resizer · 只留居中对话栏 ──
    丝滑做法(卷七十五续十·改): 逐帧改 grid 列宽会 layout thrash(detail 里有重内容·仪表盘/雷达)·
@@ -8830,10 +8875,10 @@ body.compact #shutdownBtn { display: none; }
   transition: background 0.15s, border-color 0.15s;
 }
 .bi-signal-item + .bi-signal-item { margin-top: 3px; }
-.bi-signal-item:hover { background: var(--bg3); border-color: var(--opus); }
+.bi-signal-item:hover { background: var(--bg3); border-color: var(--Daemonkey); }
 .bi-signal-item.clickable { cursor: pointer; }
-.bi-signal-item.clickable:hover .bi-signal-title { color: var(--opus); }
-/* 信号流"今日"开关 (BRO 2026-06-03) */
+.bi-signal-item.clickable:hover .bi-signal-title { color: var(--Daemonkey); }
+/* 信号流"今日"开关 (用户 2026-06-03) */
 .bi-sig-head-r { display: inline-flex; align-items: center; gap: 8px; }
 .bi-sig-today {
   background: var(--bg3); border: 1px solid transparent; color: var(--dim);
@@ -8842,11 +8887,11 @@ body.compact #shutdownBtn { display: none; }
 }
 .bi-sig-today:hover { color: var(--text); }
 .bi-sig-today.active {
-  background: color-mix(in srgb, var(--opus) 22%, transparent);
-  border-color: var(--opus); color: var(--text);
+  background: color-mix(in srgb, var(--Daemonkey) 22%, transparent);
+  border-color: var(--Daemonkey); color: var(--text);
 }
 .bi-signal-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.bi-signal-dot.radar { background: var(--opus); }
+.bi-signal-dot.radar { background: var(--Daemonkey); }
 .bi-signal-dot.trend { background: #4FD1C5; }
 .bi-signal-dot.opp { background: #F6AD55; }
 .bi-signal-dot.report { background: #63B3ED; }
@@ -8894,6 +8939,34 @@ body.compact #shutdownBtn { display: none; }
 .bi-tl-text { flex: 1; min-width: 0; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .bi-tl-domain { font-size: 10px; color: var(--dim2); flex-shrink: 0; }
 
+/* wish-bec4f3b9 · 计费卡 (billing) */
+.bi-range-bar { display: flex; gap: 4px; }
+.bi-range-bar .btn-ghost { padding: 3px 10px; font-size: 11px; border-radius: 6px; }
+.bi-range-bar .btn-ghost.active { background: var(--Daemonkey); color: #fff; border-color: var(--Daemonkey); }
+.bi-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bi-unpriced { color: #F6AD55; }
+.bi-link-btn { color: var(--Daemonkey); text-decoration: none; font-size: 12px; white-space: nowrap; }
+.bi-link-btn:hover { text-decoration: underline; }
+.bi-hint-i { color: #F6AD55; font-size: 11px; margin-left: 4px; cursor: help; }
+.bi-bar-bg { background: var(--bg3); border-radius: 4px; overflow: hidden; }
+.proto-kpi-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 900px) { .proto-kpi-4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 900px) { .bi-grid-2 { grid-template-columns: 1fr; } }
+
+/* 模型切换时间线 · 方案 B (2026-08-06 用户 拍板) */
+.bi-tl-main { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg3); border-radius: 10px; font-size: 12.5px; margin-bottom: 8px; }
+.bi-tl-main > i:first-child { color: var(--teal); font-size: 14px; }
+.bi-tl-main b { font-weight: 600; }
+.bi-tl-arr { color: var(--dim2); font-size: 11px; display: flex; }
+.bi-tl-main-meta { color: var(--dim2); font-size: 11px; margin-left: auto; white-space: nowrap; }
+.bi-tl-adv { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 10px; font-size: 12.5px; margin-bottom: 8px; background: linear-gradient(135deg, rgba(124,92,252,.14), rgba(183,148,244,.08)); border: 1px solid rgba(124,92,252,.35); border-left: 3px solid var(--purple); }
+.bi-tl-adv > i { color: var(--purple); font-size: 14px; }
+.bi-tl-adv-lbl { color: var(--purple); font-weight: 700; font-size: 11.5px; letter-spacing: .5px; }
+.bi-tl-adv-sep { color: var(--dim2); }
+.bi-tl-adv b { font-weight: 600; }
+.bi-tl-adv-meta { color: var(--dim); font-size: 11.5px; margin-left: auto; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+.bi-tl-mode { color: var(--amber); font-size: 11px; }
+
 /* 日历热力图 */
 .bi-cal-grid {
   display: grid;
@@ -8914,7 +8987,7 @@ body.compact #shutdownBtn { display: none; }
 .bi-cal-cell.d2 { background: rgba(159,122,234,0.45); }
 .bi-cal-cell.d3 { background: rgba(159,122,234,0.65); }
 .bi-cal-cell.d4 { background: rgba(159,122,234,0.85); }
-.bi-cal-cell.d5p { background: var(--opus); }
+.bi-cal-cell.d5p { background: var(--Daemonkey); }
 .bi-cal-labels {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
   font-size: 10px; color: var(--dim2); text-align: center; margin-bottom: 3px;
@@ -8945,7 +9018,7 @@ body.compact #shutdownBtn { display: none; }
 .bi-cal-cell.d2 { background: rgba(159,122,234,0.45); }
 .bi-cal-cell.d3 { background: rgba(159,122,234,0.65); }
 .bi-cal-cell.d4 { background: rgba(159,122,234,0.85); }
-.bi-cal-cell.d5p { background: var(--opus); }
+.bi-cal-cell.d5p { background: var(--Daemonkey); }
 .bi-cal-labels {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
   font-size: 10px; color: var(--dim2); text-align: center; margin-bottom: 4px;
@@ -8970,7 +9043,7 @@ body.compact #shutdownBtn { display: none; }
   width: 22px; height: 22px; border-radius: 4px; display: inline-flex;
   align-items: center; justify-content: center; font-size: 14px; transition: all .12s;
 }
-.bi-heat-arrow:hover { background: var(--opus); color: #fff; }
+.bi-heat-arrow:hover { background: var(--Daemonkey); color: #fff; }
 .bi-heat-domains { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
 .bi-heat-dom {
   background: var(--bg3); border: 1px solid transparent; color: var(--dim);
@@ -8980,11 +9053,11 @@ body.compact #shutdownBtn { display: none; }
 .bi-heat-dom i { font-style: normal; opacity: .6; font-size: 10px; }
 .bi-heat-dom:hover { color: var(--text); }
 .bi-heat-dom.active {
-  background: color-mix(in srgb, var(--dc, var(--opus)) 22%, transparent);
-  border-color: var(--dc, var(--opus)); color: var(--text);
+  background: color-mix(in srgb, var(--dc, var(--Daemonkey)) 22%, transparent);
+  border-color: var(--dc, var(--Daemonkey)); color: var(--text);
 }
 .bi-heat-summary { font-size: 11px; color: var(--dim2); margin-bottom: 6px; }
-.bi-heat-summary b { color: var(--opus); font-weight: 600; }
+.bi-heat-summary b { color: var(--Daemonkey); font-weight: 600; }
 /* 价值星级 · 实心金 + 空心暗·一眼看出热度等级 (取代几百几千的原始分) */
 .bi-stars {
   color: #f5c451; letter-spacing: 1px; font-size: 12px;
@@ -9000,13 +9073,13 @@ body.compact #shutdownBtn { display: none; }
 .bi-cal-cell.has { cursor: pointer; }
 .bi-cal-cell.empty:hover { transform: none; }
 
-/* 热力图占大头·信号流压窄 (BRO 2026-06-03 · 左宽右窄)
+/* 热力图占大头·信号流压窄 (用户 2026-06-03 · 左宽右窄)
    align-items:start → 两卡顶部对齐。热力卡按正方形日历的自然高度·
    信号流高度由 JS 同步成一模一样 (_biSyncSignalHeight)·谁都不被 grid 拉变形。
    底部对齐靠"等高"保证·不靠 grid stretch (stretch 会把矮的拉空)。 */
 .bi-grid-2.bi-row-heat { grid-template-columns: 1.4fr 1fr; align-items: start; }
 
-/* 日历正方形格子·等比填满卡片宽度 (BRO 要的"等比缩放": 卡越宽格子越大·永远正方形·不变矩形)。
+/* 日历正方形格子·等比填满卡片宽度 (用户 要的"等比缩放": 卡越宽格子越大·永远正方形·不变矩形)。
    width:100% 横向填满·格子 aspect-ratio:1 走全局 .bi-cal-cell·这里不再覆盖成矩形。 */
 .bi-heat-card .bi-cal-grid,
 .bi-heat-card .bi-cal-labels { width: 100%; }
@@ -9021,7 +9094,7 @@ body.compact #shutdownBtn { display: none; }
   color: var(--text); opacity: .32; pointer-events: none; font-variant-numeric: tabular-nums;
 }
 .bi-cal-cell.has .bi-cal-num { opacity: .92; font-weight: 600; }
-.bi-cal-cell.today { outline: 1.5px solid var(--opus); outline-offset: -1px; }
+.bi-cal-cell.today { outline: 1.5px solid var(--Daemonkey); outline-offset: -1px; }
 
 /* 节律 overlay (卷五十八续 VII) · 周期仪式到期日 */
 .bi-ritual-strip {
@@ -9029,24 +9102,24 @@ body.compact #shutdownBtn { display: none; }
   margin: 0 0 8px; font-size: 11px; color: var(--dim2);
 }
 .bi-ritual-lbl { display: inline-flex; align-items: center; gap: 5px; }
-.bi-ritual-lbl i { color: var(--opus); }
-.bi-ritual-lbl b { color: var(--opus); font-weight: 600; }
+.bi-ritual-lbl i { color: var(--Daemonkey); }
+.bi-ritual-lbl b { color: var(--Daemonkey); font-weight: 600; }
 .bi-ritual-done { color: #6ee7a8; }
 .bi-ritual-todo { color: #ffd166; }
 .bi-ritual-btn {
   font-size: 11px; padding: 3px 11px; border-radius: 5px;
-  border: 1px solid var(--opus); background: rgba(159,122,234,0.12);
+  border: 1px solid var(--Daemonkey); background: rgba(159,122,234,0.12);
   color: var(--text); cursor: pointer; transition: background 0.12s, color 0.12s;
 }
-.bi-ritual-btn:hover { background: var(--opus); color: #fff; }
+.bi-ritual-btn:hover { background: var(--Daemonkey); color: #fff; }
 .bi-cal-cell.bi-cal-ritual { outline: 1.5px dashed rgba(159,122,234,0.7); outline-offset: -1px; cursor: pointer; }
 .bi-cal-cell.bi-cal-ritual:hover { transform: scale(1.2); z-index: 1; }
 .bi-cal-flag {
   position: absolute; bottom: 1px; right: 2px; font-size: 9px;
-  line-height: 1; color: var(--opus); pointer-events: none;
+  line-height: 1; color: var(--Daemonkey); pointer-events: none;
 }
 .bi-heat-tip .bi-tip-ritual {
-  color: var(--opus); font-weight: 600; display: flex; align-items: center; gap: 4px;
+  color: var(--Daemonkey); font-weight: 600; display: flex; align-items: center; gap: 4px;
   margin-bottom: 2px;
 }
 /* 抽屉里的节律横幅 (点格子=看·起草=明确按钮) */
@@ -9055,20 +9128,20 @@ body.compact #shutdownBtn { display: none; }
   padding: 9px 12px; margin: 0 0 8px; border-radius: 8px;
   background: rgba(159,122,234,0.10); border: 1px solid rgba(159,122,234,0.35);
 }
-.bi-drawer-ritual-txt { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--opus); font-weight: 600; }
+.bi-drawer-ritual-txt { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--Daemonkey); font-weight: 600; }
 
 /* ════ 卷五十八续 VIII · 四张新卡 ════ */
-/* A·OPUS 眼里的你 (能力镜像快照) */
+/* A·Daemonkey 眼里的你 (能力镜像快照) */
 .bi-mirror-time { font-size: 11px; color: var(--dim2); font-weight: 400; margin-left: 6px; }
 .bi-mirror-body {
   max-height: 320px; overflow-y: auto; font-size: 12.5px; line-height: 1.7;
   color: var(--text); padding-right: 4px;
 }
 .bi-mirror-body h1, .bi-mirror-body h2, .bi-mirror-body h3 {
-  font-size: 13px; color: var(--opus); margin: 10px 0 4px; font-weight: 600;
+  font-size: 13px; color: var(--Daemonkey); margin: 10px 0 4px; font-weight: 600;
 }
 .bi-mirror-body blockquote {
-  margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--opus);
+  margin: 6px 0; padding: 6px 10px; border-left: 3px solid var(--Daemonkey);
   background: rgba(159,122,234,0.08); color: var(--dim); border-radius: 0 5px 5px 0;
 }
 .bi-mirror-body ul { padding-left: 18px; margin: 4px 0; }
@@ -9084,7 +9157,7 @@ body.compact #shutdownBtn { display: none; }
 .bi-closure-fill { height: 100%; background: linear-gradient(90deg, #4FD1C5, #9f7aea); border-radius: 3px; transition: width 0.3s; }
 .bi-closure-hint { font-size: 10.5px; color: var(--dim2); margin-top: 3px; }
 
-/* C·OPUS 自况 */
+/* C·Daemonkey 自况 */
 .bi-self-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .bi-self-cell {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -9100,9 +9173,9 @@ body.compact #shutdownBtn { display: none; }
   padding: 8px 0; border-bottom: 1px solid var(--border);
 }
 .bi-rhythm-row:last-child { border-bottom: none; }
-.bi-rhythm-row > i { color: var(--opus); font-size: 14px; grid-row: span 2; align-self: center; }
+.bi-rhythm-row > i { color: var(--Daemonkey); font-size: 14px; grid-row: span 2; align-self: center; }
 .bi-rhythm-main { font-size: 12px; color: var(--text); }
-.bi-rhythm-main b { color: var(--opus); }
+.bi-rhythm-main b { color: var(--Daemonkey); }
 .bi-rhythm-sub { font-size: 10.5px; color: var(--dim2); }
 
 /* 热力格子多行 tooltip */
@@ -9114,11 +9187,11 @@ body.compact #shutdownBtn { display: none; }
 }
 .bi-tip-date { font-weight: 700; color: var(--text); margin-bottom: 2px; }
 .bi-tip-val { color: var(--dim); }
-.bi-tip-val b { color: var(--opus); font-size: 13px; }
+.bi-tip-val b { color: var(--Daemonkey); font-size: 13px; }
 .bi-tip-peak { color: var(--dim2); margin-top: 2px; white-space: normal; }
-.bi-tip-hint { color: var(--opus); opacity: .7; margin-top: 4px; font-size: 10px; }
+.bi-tip-hint { color: var(--Daemonkey); opacity: .7; margin-top: 4px; font-size: 10px; }
 
-/* 工作流加载抽屉 (BRO 2026-06-03 · 取代"输入序号"弹窗·右侧滑出点选) */
+/* 工作流加载抽屉 (用户 2026-06-03 · 取代"输入序号"弹窗·右侧滑出点选) */
 .wf-drawer { position: fixed; inset: 0; z-index: 9000; }
 .wf-drawer-mask { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
 .wf-drawer-panel {
@@ -9133,7 +9206,7 @@ body.compact #shutdownBtn { display: none; }
   padding: 12px 14px; border-bottom: 1px solid var(--border);
   font-size: 13px; font-weight: 600; color: var(--text);
 }
-.wf-drawer-head i { color: var(--opus); }
+.wf-drawer-head i { color: var(--Daemonkey); }
 .wf-drawer-x { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 18px; }
 .wf-drawer-x:hover { color: var(--text); }
 .wf-drawer-body { flex: 1; overflow-y: auto; padding: 10px; }
@@ -9142,8 +9215,8 @@ body.compact #shutdownBtn { display: none; }
   border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px;
   cursor: pointer; transition: all .12s; background: var(--bg3);
 }
-.wf-load-row:hover { border-color: var(--opus); background: color-mix(in srgb, var(--opus) 10%, var(--bg3)); }
-.wf-load-ic { flex: 0 0 auto; font-size: 18px; color: var(--opus); width: 24px; text-align: center; }
+.wf-load-row:hover { border-color: var(--Daemonkey); background: color-mix(in srgb, var(--Daemonkey) 10%, var(--bg3)); }
+.wf-load-ic { flex: 0 0 auto; font-size: 18px; color: var(--Daemonkey); width: 24px; text-align: center; }
 .wf-load-main { flex: 1; min-width: 0; }
 .wf-load-name { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wf-load-meta { font-size: 11px; color: var(--dim2); margin-top: 2px; }
@@ -9164,7 +9237,7 @@ body.compact #shutdownBtn { display: none; }
   padding: 12px 14px; border-bottom: 1px solid var(--border);
   font-size: 13px; font-weight: 600; color: var(--text);
 }
-.bi-heat-drawer-head i.ri-fire-fill { color: var(--opus); }
+.bi-heat-drawer-head i.ri-fire-fill { color: var(--Daemonkey); }
 .bi-heat-drawer-x {
   background: none; border: none; color: var(--dim); cursor: pointer; font-size: 18px;
 }
@@ -9180,12 +9253,12 @@ body.compact #shutdownBtn { display: none; }
 }
 .bi-sig-val .bi-stars { font-size: 13px; }
 .bi-sig-main { flex: 1; min-width: 0; }
-/* 信号流压窄后标题截 2 行·不让长标题把右栏撑爆 (BRO 2026-06-03 · 压缩信号流) */
+/* 信号流压窄后标题截 2 行·不让长标题把右栏撑爆 (用户 2026-06-03 · 压缩信号流) */
 .bi-sig-title {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   font-size: 12.5px; line-height: 1.4; color: var(--text); text-decoration: none;
 }
-a.bi-sig-title:hover { color: var(--opus); text-decoration: underline; }
+a.bi-sig-title:hover { color: var(--Daemonkey); text-decoration: underline; }
 .bi-sig-meta { font-size: 10.5px; color: var(--dim2); margin-top: 2px; }
 .bi-sig-fb { flex: 0 0 auto; display: flex; gap: 2px; }
 .bi-sig-fb button {
@@ -9193,7 +9266,7 @@ a.bi-sig-title:hover { color: var(--opus); text-decoration: underline; }
   font-size: 13px; padding: 2px; border-radius: 4px;
 }
 .bi-sig-fb button:hover { color: var(--text); }
-.bi-sig-fb button.on { color: var(--opus); }
+.bi-sig-fb button.on { color: var(--Daemonkey); }
 
 /* ══ 趋势研判卡 (卷五十六 P2) ══ */
 .bi-brief-scope { font-size: 11px; color: var(--dim2); font-weight: 400; margin-left: 6px; }
@@ -9216,7 +9289,7 @@ a.bi-sig-title:hover { color: var(--opus); text-decoration: underline; }
 .bi-brief-moves { margin: 0 0 4px; padding-left: 20px; }
 .bi-brief-moves li { font-size: 12px; color: var(--text); line-height: 1.6; }
 .bi-brief-refs { font-size: 11px; color: var(--dim2); margin-top: 4px; }
-.bi-brief-refs a { color: var(--opus); text-decoration: none; margin-right: 6px; }
+.bi-brief-refs a { color: var(--Daemonkey); text-decoration: none; margin-right: 6px; }
 .bi-brief-refs a:hover { text-decoration: underline; }
 .bi-brief-foot { font-size: 10.5px; color: var(--dim2); text-align: right; margin-top: 8px; }
 
@@ -9233,7 +9306,7 @@ a.bi-sig-title:hover { color: var(--opus); text-decoration: underline; }
   max-width: 100%;
   background: rgba(159, 122, 234, 0.08);
   border: 1px solid rgba(159, 122, 234, 0.35);
-  border-left: 3px solid var(--opus);
+  border-left: 3px solid var(--Daemonkey);
   border-radius: 8px;
   padding: 10px 12px;
   margin: 8px 0;
@@ -9241,7 +9314,7 @@ a.bi-sig-title:hover { color: var(--opus); text-decoration: underline; }
 .closure-hint-head {
   font-size: 12px;
   font-weight: 600;
-  color: var(--opus);
+  color: var(--Daemonkey);
   display: flex;
   align-items: center;
   gap: 6px;

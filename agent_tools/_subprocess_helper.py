@@ -10,15 +10,15 @@ daemon 跑子进程的**统一姿势** · 避免 Windows 黑框 console 窗口�
   - Windows 行为: 父进程没 console 时 · 子进程默认会**自动创建新 console** ·
     即使命令 < 100ms · 黑框也会闪一下
   - 修法 ①: 给 subprocess 调用加 creationflags=CREATE_NO_WINDOW (Windows 后台进程标准做法)
-  - 修法 ②: startupinfo 设 SW_HIDE (belt-and-suspenders · 续 · wish-503f93e0 补漏 —
+  - 修法 ②: startupinfo 设 SW_HIDE (belt-and-suspenders · 卷四十六续 · wish-503f93e0 补漏 —
     CREATE_NO_WINDOW 在某些 Windows 版本对 python.exe (console subsystem) 不完全生效 ·
     STARTF_USESHOWWINDOW + SW_HIDE 在内核层直接不让窗口出现)
   - 修法 ③: spawn daemon 自身用 pythonw.exe (GUI subsystem · Windows 从不给它分配 console ·
-    续二 · 2026-05-29 — python.exe 作为 console subsystem PE · 无论什么 flag ·
+    卷四十六续二 · 2026-05-29 — python.exe 作为 console subsystem PE · 无论什么 flag ·
     内核在 CreateProcess 最早期就分配了 console · CREATE_NO_WINDOW + SW_HIDE 只能事后补救 ·
     仍有微秒级闪窗。pythonw.exe 根治)
   - 历史教训: 17 个 .py 用 subprocess · 13 个分散在各处忘加 flag ·
-    每个新工具都可能再翻车 · 抽到一处统一管 ( IV)
+    每个新工具都可能再翻车 · 抽到一处统一管 (卷四十六 IV)
 
 三个 helper:
   - no_window_kwargs()   : 普通子进程 (短任务 · daemon 等返回)
@@ -42,7 +42,7 @@ from pathlib import Path
 _IS_WINDOWS = sys.platform.startswith("win")
 
 
-# 续 · wish-503f93e0 补漏 · 2026-05-29
+# 卷四十六续 · wish-503f93e0 补漏 · 2026-05-29
 # CREATE_NO_WINDOW 对 python.exe (console subsystem PE) 在某些 Windows 版本不完全生效
 # belt-and-suspenders: 同时设 creationflags=CREATE_NO_WINDOW + startupinfo.SW_HIDE
 # SW_HIDE 在内核层直接不让窗口出现 · 跟 CreateProcess dwFlags 正交 · 不冲突

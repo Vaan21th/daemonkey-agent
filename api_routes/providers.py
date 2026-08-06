@@ -29,7 +29,7 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from fastapi import APIRouter, Body, Header, HTTPException
+from fastapi import APIRouter, Body, Header, HTTPException, Query
 
 from api_routes._deps import check_auth
 from daemon_runtime import RUNTIME
@@ -78,9 +78,19 @@ async def test_provider(
     if not model or not api_key:
         raise HTTPException(400, "model and api_key are required")
     from daemon_api import _test_provider_inner
-    return await _test_provider_inner(
-        provider_kind=provider_kind, base_url=base_url, model=model, api_key=api_key
-    )
+    # 内部同步 SDK 已包 asyncio.to_thread · 这里 await 协程 + 总超时兜底 (社区文档问题1)
+    import asyncio
+    try:
+        return await asyncio.wait_for(
+            _test_provider_inner(
+                provider_kind=provider_kind, base_url=base_url, model=model, api_key=api_key,
+            ),
+            timeout=25.0,
+        )
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": "timeout: provider 测试超过 25s 未返回", "hint": "网络不通 / base_url 错 / 代理未开"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}", "hint": "provider 测试异常"}
 
 
 @router.post("/providers/switch")
@@ -102,17 +112,24 @@ async def switch_provider(
     if provider_kind not in ("openai", "anthropic"):
         raise HTTPException(400, f"unknown provider_kind: {provider_kind}")
 
-    from daemon_provider import write_public_env, setup_client, clean_base_url
+    from daemon_provider import write_env_kv, setup_client, clean_base_url
     # base_url 去尾(.../v1/chat/completions → .../v1)·避免 SDK 重复拼接 404
     base_url = clean_base_url(base_url)
-    # 写 .env 对外用 DAEMONKEY_ 前缀(去 OPUS 泄漏)·write_public_env 同步 os.environ 内核名
-    write_public_env("OPUS_PROVIDER", provider_kind)
-    write_public_env("OPUS_BASE_URL", base_url)
-    write_public_env("OPUS_MODEL", model)
+    write_env_kv("OPUS_PROVIDER", provider_kind)
+    write_env_kv("OPUS_BASE_URL", base_url)
+    write_env_kv("OPUS_MODEL", model)
     if provider_kind == "anthropic":
-        write_public_env("ANTHROPIC_API_KEY", api_key)
+        write_env_kv("ANTHROPIC_API_KEY", api_key)
     else:
-        write_public_env("OPUS_API_KEY", api_key)
+        write_env_kv("OPUS_API_KEY", api_key)
+
+    os.environ["OPUS_PROVIDER"] = provider_kind
+    os.environ["OPUS_BASE_URL"] = base_url
+    os.environ["OPUS_MODEL"] = model
+    if provider_kind == "anthropic":
+        os.environ["ANTHROPIC_API_KEY"] = api_key
+    else:
+        os.environ["OPUS_API_KEY"] = api_key
 
     try:
         client, _default_model, resolved_base = setup_client(provider_kind)
@@ -171,7 +188,8 @@ async def create_provider_config(
             set_active=bool(payload.get("set_active")),
             max_tokens=payload.get("max_tokens"),
             vision=payload.get("vision"),  # wish-4a6331b2
-            director=bool(payload.get("director")),  # 顾问标记
+            director=bool(payload.get("director")),  # wish-8ffb9d65
+            pricing=payload.get("pricing"),  # wish-bec4f3b9 · 可选价格表
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -271,9 +289,116 @@ async def test_provider_config_ep(
     if not cfg:
         raise HTTPException(404, f"config not found: {cfg_id}")
     from daemon_api import _test_provider_inner
-    return await _test_provider_inner(
-        provider_kind=cfg["provider_kind"],
-        base_url=cfg.get("base_url") or "",
-        model=cfg["model"],
-        api_key=cfg["api_key"],
-    )
+    # 内部同步 SDK 已包 asyncio.to_thread · 这里 await 协程 + 总超时兜底 (社区文档问题1)
+    import asyncio
+    try:
+        return await asyncio.wait_for(
+            _test_provider_inner(
+                provider_kind=cfg["provider_kind"],
+                base_url=cfg.get("base_url") or "",
+                model=cfg["model"],
+                api_key=cfg["api_key"],
+            ),
+            timeout=25.0,
+        )
+    except asyncio.TimeoutError:
+        return {"ok": False, "error": "timeout: provider 测试超过 25s 未返回", "hint": "网络不通 / base_url 错 / 代理未开"}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}", "hint": "provider 测试异常"}
+
+
+# ---------- wish-bec4f3b9 · 价格表: 查已配 / 自动查官方价 ----------
+
+@router.get("/llm-pricing")
+async def get_llm_pricing(
+    provider_id: Optional[str] = Query(None),
+    model: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None),
+):
+    """读一条 config 已保存的 pricing (未配 → {"pricing": null}).
+
+    GET /llm-pricing?provider_id=<id> 或 ?model=<model> (模糊匹配配了价的).
+    """
+    check_auth(authorization)
+    from workers.pricing import load_pricing
+    try:
+        p = load_pricing(provider_id or None, model or "")
+    except Exception:
+        p = None
+    return {"ok": True, "pricing": p}
+
+
+@router.post("/llm-pricing/lookup")
+async def lookup_llm_pricing(
+    payload: dict = Body(...),
+    authorization: Optional[str] = Header(None),
+):
+    """自动查官方定价页 → 提取结构化价格 (每 1M tokens).
+
+    body: {preset_id?, model?, base_url?}
+    流程: preset 有 pricing_url → 抓官方页 → 正则提取三价 → 返回 {pricing, source_url}
+          (只返回不落盘 · 前端确认后随 provider 保存接口写入)
+    无 url / 解析失败 → 422 + hint (让用户手填 · 不静默填假价).
+    """
+    check_auth(authorization)
+    from provider_presets import PRESETS
+    from workers.pricing import cached_lookup, preset_model_price
+
+    preset_id = payload.get("preset_id") or ""
+    model = payload.get("model") or ""
+    base_url = payload.get("base_url") or ""
+
+    # ── 优先: preset 内置官方价 (零网络 · 准确 · 标签即官方价) ──
+    if preset_id and model:
+        builtin = preset_model_price(preset_id, model)
+        if builtin:
+            import datetime
+            return {
+                "ok": True,
+                "pricing": builtin,
+                "source_url": next((p.pricing_url for p in PRESETS if p.id == preset_id), ""),
+                "checked_at": datetime.datetime.now().isoformat(timespec="seconds"),
+                "note": "查自官方定价页 · 请核对后保存 (价格可能随时调整)",
+            }
+
+    # ── fallback: 网页抓取 ──
+    url = ""
+    for p in PRESETS:
+        if p.id == preset_id:
+            url = p.pricing_url
+            break
+    if not url:
+        # 按 base_url 模糊匹配 preset
+        for p in PRESETS:
+            if base_url and p.base_url and base_url.strip().rstrip("/") == p.base_url.strip().rstrip("/"):
+                url = p.pricing_url
+                break
+    if not url:
+        raise HTTPException(422, {
+            "error": "该 provider 无官方定价页 (中转聚合渠道) · 请手动填写价格",
+            "hint": "价格可以在 provider 官方文档/控制台查到 · 填完后保存即可",
+        })
+
+    try:
+        pricing = cached_lookup(url, model)
+    except ValueError as e:
+        raise HTTPException(422, {
+            "error": f"官方页解析失败: {e}",
+            "hint": "可能页面结构变了 · 请打开官方定价页手动抄价",
+            "source_url": url,
+        })
+    except Exception as e:
+        raise HTTPException(422, {
+            "error": f"查价失败: {type(e).__name__}: {e}",
+            "hint": "请手动填写价格",
+            "source_url": url,
+        })
+
+    import datetime
+    return {
+        "ok": True,
+        "pricing": pricing,
+        "source_url": url,
+        "checked_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "note": "查自官方定价页 · 请核对后保存 (价格可能随时调整)",
+    }

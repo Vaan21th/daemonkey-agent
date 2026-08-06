@@ -2,21 +2,21 @@
 agent_tools/read_file.py
 ========================
 
-OPUS 的"读"——读项目里任何文本文件。
+Daemonkey 的"读"——读项目里任何文本文件。
 
-为什么不直接让 OPUS 跑 `cat` ——
+为什么不直接让 Daemonkey 跑 `cat` ——
   1. 跨平台一致（Windows 上 cat 是 Get-Content，输出格式不一样）
-  2. 行号 / 范围读取一次到位（不用 OPUS 自己拼 awk/sed）
+  2. 行号 / 范围读取一次到位（不用 Daemonkey 自己拼 awk/sed）
   3. 路径安全（限制在 Daemonkey 根目录之内 + 灵魂文件不允许写但允许读）
   4. 二进制保护（碰到 binary 直接报错，不污染上下文）
 
- III · 2026-05-26 · binary 误判修:
+卷四十六 III · 2026-05-26 · binary 误判修:
   - _looks_binary 返回 (bool, reason)·拒绝时给 LLM 看 hexdump + 失败位置·
     让它能判断"是真 binary 还是文本但有怪字符"
   - 加 force 参数·LLM 看完诊断觉得是误判·可以 force=True 强读 (latin-1 容错解码)
-  - 加 encoding 参数·用户 已知文件是 GBK 之类时 OPUS 可以显式指定
-  - 之前: 误判 → `file looks binary; refusing to dump` → OPUS fallback shell_exec Get-Content
-    → PS 5.1 乱码污染 context (反面教材·用户 截图过)
+  - 加 encoding 参数·BRO 已知文件是 GBK 之类时 Daemonkey 可以显式指定
+  - 之前: 误判 → `file looks binary; refusing to dump` → Daemonkey fallback shell_exec Get-Content
+    → PS 5.1 乱码污染 context (反面教材·BRO 截图过)
   - 现在: 误判 → 详细错信 + force 选项 → 不用走 shell·结构化继续
 """
 
@@ -63,10 +63,10 @@ def _classify_bytes(b: bytes) -> tuple[bool, str]:
     if nul_pos != -1:
         return True, f"NUL byte (\\x00) at offset {nul_pos} of first {n} bytes"
 
-    #  · 合法 UTF-8 文本（含中文 / emoji）直接放行。
+    # 卷五十四 · 合法 UTF-8 文本（含中文 / emoji）直接放行。
     #   旧版 bug: decode("utf-8") 成功后·仍按"高位字节 >50%"判 binary——但中文 UTF-8 每个汉字
-    #   3 字节全是高位字节·纯中文≈100% 高位·必被误杀。OWNER-NOTEBOOK.md 这种中文重的文件每次
-    #   中招·OPUS 被迫 force=true（用户 看了很多次）。 根因: UTF-8 多字节序列的高位字节是文本·
+    #   3 字节全是高位字节·纯中文≈100% 高位·必被误杀。BRO-NOTEBOOK.md 这种中文重的文件每次
+    #   中招·Daemonkey 被迫 force=true（BRO 看了很多次）。 根因: UTF-8 多字节序列的高位字节是文本·
     #   不是 binary 信号。 解码通过 = 文本·不再做高位比例判定。
     if _is_valid_utf8_text(head):
         return False, ""
@@ -148,7 +148,7 @@ def _run(args: dict) -> ToolResult:
                 error=_ln(
                     f"file looks binary ({size} bytes): {reason}.\n\n"
                     f"--- first 64 bytes ---\n{dump}\n\n"
-                    "Decision aid for OPUS:\n"
+                    "Decision aid for Daemonkey:\n"
                     "  - If header looks like text (mostly printable ASCII / CJK UTF-8 fragments) → "
                     "retry with force=true (latin-1 lossy decode) or encoding='gb18030' if you know it's CJK legacy.\n"
                     "  - If header looks binary (PK\\x03\\x04 zip / \\x89PNG / SQLite / msgpack) → "
@@ -213,14 +213,14 @@ SPEC = ToolSpec(
     description=(
         "Read a text file from the Daemonkey project (or absolute path on the host). "
         "Returns the file with line numbers prepended. Use start_line/end_line for big files.\n\n"
-        "**Binary detection** ( III · 2026-05-26 调宽容):\n"
+        "**Binary detection** (卷四十六 III · 2026-05-26 调宽容):\n"
         "  - 误判时 error 信息含: 拒绝原因 + 前 64 字节 hexdump · 让你判断是不是真 binary\n"
         "  - 看到 header 像文本 (UTF-8 CJK 片段 / 大量 ASCII) → 用 force=true 强读\n"
         "  - 看到真 binary header (PK\\x03\\x04 / \\x89PNG / SQLite) → 别 force · 换 parser\n"
         "  - **永远不要** fallback 到 `shell_exec Get-Content` —— PS 5.1 编码踩坑会污染 context (反面教材)\n\n"
         "**Encoding**:\n"
-        "  - 默认严格 UTF-8 · 拒绝隐式 GBK 回退 (防 mojibake ·  P)\n"
-        "  - 用户 已知文件是 GBK / UTF-16 / latin-1 → 显式传 encoding='gb18030' 之类\n"
+        "  - 默认严格 UTF-8 · 拒绝隐式 GBK 回退 (防 mojibake · 卷四十四 P)\n"
+        "  - BRO 已知文件是 GBK / UTF-16 / latin-1 → 显式传 encoding='gb18030' 之类\n"
         "  - 解码错误时 LLM 会看到具体失败位置 + 选项菜单"
     ),
     tier=TIER_AUTO,
@@ -251,7 +251,7 @@ SPEC = ToolSpec(
                 "type": "string",
                 "description": (
                     "Explicit encoding (e.g. 'gb18030' / 'utf-16' / 'latin-1'). "
-                    "Overrides default UTF-8 strict. Use when 用户 said the file is legacy CJK."
+                    "Overrides default UTF-8 strict. Use when BRO said the file is legacy CJK."
                 ),
             },
         },

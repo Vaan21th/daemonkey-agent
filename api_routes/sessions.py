@@ -4,7 +4,7 @@ api_routes/sessions.py · session 管理路由 (wish-413999da · phase 1)
 
 6 路由 · session jsonl 的 CRUD + 元数据:
 
-  GET    /sessions                       · 列 session 带 label/pinned/archived (丁)
+  GET    /sessions                       · 列 session 带 label/pinned/archived (卷三十四补丁)
   POST   /sessions/{sid}/meta            · 改 label/pinned/archived
   DELETE /sessions/{sid}                 · 删 jsonl + 清 meta
   GET    /sessions/{sid}                 · 返回 raw jsonl
@@ -44,7 +44,7 @@ async def sessions(
     include_archived: bool = False,
     archived_only: bool = False,
 ):
-    """列 session · 带 label / pinned / archived 元数据 (丁)
+    """列 session · 带 label / pinned / archived 元数据 (卷三十四补丁)
 
     Query:
       api_only=true       · 只返 api- 前缀 (WebUI 默认 · 避免污染终端 session)
@@ -136,7 +136,7 @@ async def update_session_meta_endpoint(
     body: dict,
     authorization: Optional[str] = Header(None),
 ):
-    """更新 session 的 label / pinned / archived (丁)
+    """更新 session 的 label / pinned / archived (卷三十四补丁)
 
     Body (任意子集):
       label: str|null  · 重命名 · null 或空字符串 = 清掉别名
@@ -173,7 +173,7 @@ async def remove_session(
     sid: str,
     authorization: Optional[str] = Header(None),
 ):
-    """删一个 session · 真删 jsonl + 清 meta (丁)
+    """删一个 session · 真删 jsonl + 清 meta (卷三十四补丁)
 
     如果 RUNTIME 当前正在用这个 session · 顺便把 RUNTIME.session_id 清掉·
     防止下一笔 append_turn 写到一个已经删了的文件路径。
@@ -229,8 +229,8 @@ async def session_active_turn(sid: str, authorization: Optional[str] = Header(No
     """wish-3fef4bc7 follow-up · 浏览器 F5 后查这个 session 有没有 active turn
 
     浏览器刷新后 SSE connection 断了 · 但 daemon worker 仍在跑 (sync thread · 不依赖 SSE)。
-    用户 F5 后 frontend 调这个 endpoint · 有 active turn 就启动 3s polling auto-refresh
-    历史 · 让 用户 不用手动 F5 第二次就能看到 daemon 后台跑出来的内容。
+    BRO F5 后 frontend 调这个 endpoint · 有 active turn 就启动 3s polling auto-refresh
+    历史 · 让 BRO 不用手动 F5 第二次就能看到 daemon 后台跑出来的内容。
     """
     check_auth(authorization)
     # 从 daemon_api 模块取共享 state (build_app 时 daemon_api 已 load)

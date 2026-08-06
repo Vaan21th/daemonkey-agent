@@ -2,7 +2,7 @@
 agent_tools/search_code.py
 ==========================
 
-OPUS 的"按意思找代码"——语义代码搜索。补 Cursor SemanticSearch 那块盲区 (续 ②)。
+Daemonkey 的"按意思找代码"——语义代码搜索。补 Cursor SemanticSearch 那块盲区 (卷五十八续 ②)。
 
 为什么 (grep_files 不够):
   grep_files 是【字面正则】——你得先猜对关键词。 问"哪里处理重启后续场"这种概念问题·
@@ -14,7 +14,7 @@ OPUS 的"按意思找代码"——语义代码搜索。补 Cursor SemanticSearch
     但抓不到真同义词 (login vs authenticate)。
   - 可选 **neural rerank** (配了 embedding 端点才开): TF-IDF 先预筛 top-N 候选·
     再用 embedding 余弦重排 → 成本有界 (每次 query 只 embed ~60 段·还按 mtime 缓存)。
-    开启方式: 设环境变量 OPUS_EMBED_BASE_URL + OPUS_EMBED_API_KEY + OPUS_EMBED_MODEL。
+    开启方式: 设环境变量 Daemonkey_EMBED_BASE_URL + Daemonkey_EMBED_API_KEY + Daemonkey_EMBED_MODEL。
     任何一步出错 → 静默退回 TF-IDF (绝不因为 embedding 挂了就搜不了)。
 
 AUTO tier · 纯读 · 不改任何文件。
@@ -149,9 +149,9 @@ def _tfidf_scores(query: str, chunks: list[dict]) -> list[float]:
 
 
 def _embed_config() -> dict | None:
-    base = os.environ.get("OPUS_EMBED_BASE_URL")
-    key = os.environ.get("OPUS_EMBED_API_KEY")
-    model = os.environ.get("OPUS_EMBED_MODEL")
+    base = os.environ.get("Daemonkey_EMBED_BASE_URL")
+    key = os.environ.get("Daemonkey_EMBED_API_KEY")
+    model = os.environ.get("Daemonkey_EMBED_MODEL")
     if base and key and model:
         return {"base_url": base, "api_key": key, "model": model}
     return None
@@ -240,7 +240,7 @@ SPEC = ToolSpec(
         "Semantic code search — find code by MEANING, not exact text (complements grep_files's literal regex). "
         "Ask conceptual questions like 'where do we resume a turn after restart' or 'how are attachments parsed'. "
         "Default backend is offline TF-IDF with camelCase/snake_case tokenization (so 'load session' matches "
-        "loadSession / _load_session_history); if OPUS_EMBED_BASE_URL/API_KEY/MODEL env are set it upgrades to "
+        "loadSession / _load_session_history); if Daemonkey_EMBED_BASE_URL/API_KEY/MODEL env are set it upgrades to "
         "neural embedding rerank (bounded cost, falls back to TF-IDF on any error). "
         "Returns ranked file:line ranges — then read_file that range / outline_file the file / edit_file. Read-only."
     ),

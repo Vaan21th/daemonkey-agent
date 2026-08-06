@@ -561,44 +561,57 @@ _UPDATE_STATUS_TTL = 600  # 10s 秒级缓存
 
 def _version_parts(v: str):
     import re
-    # 支持 0.8.5 / 0.8.5beta / 0.8.5-hf1 (hotfix 后缀)
-    m = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:-([A-Za-z0-9]+))?$", (v or "").strip())
+    # 支持 0.8.5 / 0.8.9a / 0.8.5beta / 0.8.5-hf1 / 0.9.1-beta-hf2 / 0.9.2beta 全格式
+    # (2026-08-06 修: 旧正则只认 -hf1 单段后缀 · 0.8.9a / 0.9.1-beta-hf2 / 0.9.2beta 全解析失败 → 胶囊永不亮)
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:[-_]*([A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*))?$", (v or "").strip())
     if not m:
         return None
-    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4) or "")
+    nums = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    suffix = (m.group(4) or "").strip('-_')
+    toks = [t for t in re.split(r'[-_]', suffix) if t]
+    return (nums, toks)
 
 
-def _suffix_rank(s: str) -> int:
-    """后缀定序: alpha=0 < beta=1 < 空(release)=2 < hfN(hotfix)=3 · 同序按字符串比。"""
-    if not s:
+def _suffix_rank(s) -> int:
+    """后缀定序(多段): alpha/a=0 < beta=1 < 空(release)=2 < hfN(hotfix)=3 · 同序按字符串比。
+    toks 可为 list(新实现) 或 str(旧调用·兼容)。"""
+    import re
+    if s is None:
         return 2
-    if s.startswith("hf"):
+    if isinstance(s, str):
+        toks = [t for t in re.split(r'[-_]', s) if t] if s else []
+    else:
+        toks = s
+    if not toks:
+        return 2
+    if any(t.startswith("hf") for t in toks):
         return 3
-    if s.startswith("beta"):
+    if any(t.startswith("beta") for t in toks):
         return 1
-    if s.startswith("alpha"):
+    if any(t.startswith("alpha") for t in toks):
         return 0
+    if any(t.startswith("a") for t in toks):
+        return 0  # 0.8.9a 的 a = alpha 变体
     return 2  # 未知后缀按 release 对待
 
 
 def _remote_newer(local: str, remote: str) -> bool:
-    """remote > local → True · 支持 0.8.5beta / 0.8.5-hf1 后缀 (hf > release > beta)。"""
+    """remote > local → True · 支持 0.8.5beta / 0.8.9a / 0.8.5-hf1 / 0.9.1-beta-hf2 / 0.9.2beta (2026-08-06 修)。"""
     lp, rp = _version_parts(local), _version_parts(remote)
     if not lp or not rp:
         return False
-    for a, b in zip(lp[:3], rp[:3]):
+    for a, b in zip(lp[0], rp[0]):
         if b > a:
             return True
         if b < a:
             return False
     # 数字相同 → 后缀: hf(hotfix) > release > beta > alpha
-    ls, rs = lp[3], rp[3]
-    lr, rr = _suffix_rank(ls), _suffix_rank(rs)
+    lr, rr = _suffix_rank(lp[1]), _suffix_rank(rp[1])
     if rr > lr:
         return True
     if rr < lr:
         return False
-    return rs > ls if rs != ls else False
+    return rp[1] > lp[1] if rp[1] != lp[1] else False
 
 
 @router.get("/api/update-status")

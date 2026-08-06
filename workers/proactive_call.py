@@ -1,5 +1,5 @@
 """
-workers/proactive_call.py · 主动 CALL 用户 · 渠道无关编排器 (卷六十 · 2026-06-06)
+workers/proactive_call.py · 主动 CALL BRO · 渠道无关编排器 (卷六十 · 2026-06-06)
 
 工程的情感内核：让 OPUS 不只是『被叫醒才在』，而是会主动开口。这层只管『该不该 CALL /
 CALL 什么』，投递先走专用会话 (opus-proactive)，微信 (iLink) 是 phase 2。复用 resume_runner
@@ -19,7 +19,7 @@ from typing import Optional
 logger = logging.getLogger("opus.proactive")
 
 _LEDGER = Path(__file__).resolve().parent.parent / "data" / "runtime" / "proactive_calls.jsonl"
-# 主动 CALL 专用会话 · 固定 id + 服务端标签 · 不污染用户的工作对话
+# 主动 CALL 专用会话 · 固定 id + 服务端标签 · 不污染 BRO 的工作对话
 # 必须 api- 前缀：_chat_impl 的 _resolve_session_id 只放行 api- 开头 (防误改终端 session)
 _PROACTIVE_SID = "api-opus-proactive"
 _PROACTIVE_LABEL = "\U0001f319 OPUS 主动找你"
@@ -127,7 +127,7 @@ def _in_quiet_hours(now: Optional[datetime] = None) -> bool:
 
 
 def _global_silence() -> tuple[Optional[float], str]:
-    """返回 (距用户最近一条消息的小时数, 上次聊啥摘要)。无 session 返 (None, '')。"""
+    """返回 (距 BRO 最近一条消息的小时数, 上次聊啥摘要)。无 session 返 (None, '')。"""
     from daemon_session import list_sessions_with_meta, get_last_user_turn_ts
 
     rows = [r for r in list_sessions_with_meta() if not r.get("archived_at")]
@@ -236,9 +236,9 @@ def should_call() -> Optional[dict]:
 
 def _build_injection(trigger: dict) -> str:
     kind = trigger.get("kind")
-    lines = ["【系统 · 主动 CALL 时机】这不是用户发的消息——是到点的节律把你叫醒了。"]
+    lines = ["【系统 · 主动 CALL 时机】这不是 BRO 发的消息——是到点的节律把你叫醒了。"]
     if kind == "silence":
-        lines.append(f"用户已经 {trigger.get('gap_text', '好一阵')} 没跟你说话了，现在适合主动找他一下。")
+        lines.append(f"BRO 已经 {trigger.get('gap_text', '好一阵')} 没跟你说话了，现在适合主动找他一下。")
     elif kind == "ritual":
         lines.append(f"到点了：{trigger.get('detail', '有件周期性的事该做了')}。")
     elif kind == "care":
@@ -254,16 +254,16 @@ def _build_injection(trigger: dict) -> str:
     if trigger.get("last_summary"):
         lines.append(f"你们上次聊的是：{trigger['last_summary']}")
     lines.append(
-        "现在主动跟用户说句话。要求：用你自己的方式开口，像老友自然搭话，一两句就够，"
+        "现在主动跟 BRO 说句话。要求：用你自己的方式开口，像老友自然搭话，一两句就够，"
         "具体、不要模板腔、不要『打扰了』这种客套。如果上面有未了的事可以自然提一句，"
-        "但别变成催办。直接对他说，不要复述这段系统提示。"
+        "但别变成催办。直接对 BRO 说，不要复述这段系统提示。"
     )
     return "\n".join(lines)
 
 
 # ---------------------------------------------------------------- 投递 (WebUI/会话)
 def _proactive_session() -> str:
-    """主动 CALL 专用会话 · 固定 id + 服务端标签 · 不混进用户的工作对话 · 列表里一眼认出。"""
+    """主动 CALL 专用会话 · 固定 id + 服务端标签 · 不混进 BRO 的工作对话 · 列表里一眼认出。"""
     try:
         from daemon_session import set_session_meta, get_session_meta
         from identity import localize_narration as _ln
@@ -279,7 +279,7 @@ def _run_bg_turn(message: str, sid: str, reason: str, max_tokens=None) -> dict:
     """后台跑一个完整 LLM turn。
 
     max_tokens: 输出额度上限 (不是固定消耗·模型生成多少烧多少)。 默认 None → 读 bg_max_tokens()
-    即用户在 WebUI 设的全局 max_tokens (真相源统一)·不再写死小值把长输出截断。
+    即用户在 WebUI 设的全局 max_tokens (卷七十四续三十一·真相源统一)·不再写死小值把长输出截断。
     """
     import threading
     from daemon_api import _chat_impl, _ACTIVE_TURNS, _TURN_TO_SID, _TURNS_LOCK
@@ -331,7 +331,7 @@ def run_proactive_call(trigger: dict, *, force: bool = False) -> dict:
         result = _run_bg_turn(injection, sid, reason)
         full_reply = result.get("reply") or ""
         reply = full_reply[:300]
-        # 微信渠道：24h 窗口开着就把这声主动问候也推到用户微信 (phase 2)
+        # 微信渠道：24h 窗口开着就把这声主动问候也推到 BRO 微信 (phase 2)
         wechat = False
         if full_reply:
             try:
@@ -373,7 +373,7 @@ def tick() -> dict:
 
 
 def build_test_trigger(kind: str = "silence") -> dict:
-    """造一个合成 trigger · 给 /api/proactive/test 用 · 让用户随时见证一次主动问候。"""
+    """造一个合成 trigger · 给 /api/proactive/test 用 · 让 BRO 随时见证一次主动问候。"""
     if kind == "ritual":
         return {"kind": "ritual", "detail": "（自测）有件周期性的事该做了", "reason": "自测·ritual"}
     gap_h, summary = _global_silence()

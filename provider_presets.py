@@ -7,7 +7,7 @@ provider_presets.py
 为啥要：
   - 之前换 provider 要改 .env 重启 daemon · BRO 很烦
   - aihubmix 欠费瞬间无感·这种事不该再发生
-  - 设计目标里有"开源后任何人下载都能跑"·得让用户在 UI 里选 provider
+  - Daemonkey 设计目标里有"开源后任何人下载都能跑"·得让用户在 UI 里选 provider
 
 预设清单：
   - DeepSeek 官方 (推荐 · 便宜 30 倍)
@@ -45,6 +45,7 @@ class ProviderPreset:
     recommended_models: list[dict] = field(default_factory=list)  # [{id, label, note, family}]
     key_hint: str = ""
     signup_url: str = ""
+    pricing_url: str = ""  # wish-bec4f3b9 · 官方定价页 (查价按钮用 · 空 = 无公开价走手填)
     note: str = ""
 
 
@@ -77,6 +78,7 @@ PRESETS: list[ProviderPreset] = [
         ],
         key_hint="sk-xxx · 32 位左右",
         signup_url="https://platform.deepseek.com/api_keys",
+        pricing_url="https://api-docs.deepseek.com/quick_start/pricing",  # wish-bec4f3b9 · 官方定价页
         note="实测便宜 aihubmix 30 倍 · 强烈推荐",
     ),
     ProviderPreset(
@@ -107,6 +109,7 @@ PRESETS: list[ProviderPreset] = [
         ],
         key_hint="智谱开放平台 API Key · 形如 xxxxx.yyyyy",
         signup_url="https://open.bigmodel.cn/usercenter/apikeys",
+        pricing_url="https://open.bigmodel.cn/pricing",  # wish-bec4f3b9
         note="官方直连 · GLM 全系 · 后端原生上下文缓存 (实测 glm-5.2 命中 99%)",
     ),
     ProviderPreset(
@@ -181,6 +184,7 @@ PRESETS: list[ProviderPreset] = [
         ],
         key_hint="sk-xxx · 40+ 位",
         signup_url="https://aihubmix.com/",
+        pricing_url="",  # wish-bec4f3b9 · 中转聚合渠道无统一价目 · 走手填
         note="多模型一个 key · 适合实验各家模型 · 日常用贵",
     ),
     ProviderPreset(
@@ -219,6 +223,7 @@ PRESETS: list[ProviderPreset] = [
         ],
         key_hint="sk-ant-api03-xxx",
         signup_url="https://console.anthropic.com/settings/keys",
+        pricing_url="https://www.anthropic.com/pricing",  # wish-bec4f3b9
         note="质量最顶 · 价格最贵 · 美国 IP 友好",
     ),
     ProviderPreset(
@@ -248,6 +253,7 @@ PRESETS: list[ProviderPreset] = [
         ],
         key_hint="sk-or-v1-xxx · 64 位",
         signup_url="https://openrouter.ai/keys",
+        pricing_url="https://openrouter.ai/models",  # wish-bec4f3b9 · 模型页有各家价
         note="300+ 模型一站通 · 国内可用 · 加价 5-10%",
     ),
     ProviderPreset(
@@ -271,6 +277,7 @@ PRESETS: list[ProviderPreset] = [
         ],
         key_hint="sk-xxx",
         signup_url="https://dashscope.console.aliyun.com/",
+        pricing_url="https://help.aliyun.com/zh/model-studio/models",  # wish-bec4f3b9
         note="国内云 · 速度快 · 不出墙",
     ),
     ProviderPreset(
@@ -297,6 +304,7 @@ def list_presets() -> list[dict]:
             "recommended_models": list(p.recommended_models),
             "key_hint": p.key_hint,
             "signup_url": p.signup_url,
+            "pricing_url": p.pricing_url,  # wish-bec4f3b9 · 查价按钮用
             "note": p.note,
         }
         for p in PRESETS
@@ -427,8 +435,8 @@ def max_output_for(model_id: str) -> int:
 def default_max_tokens_for(model_id: str) -> int:
     """按 model_id 查"正常一轮"的推荐输出额度 (max_tokens_default) · 找不到返 0。
 
-    后台 turn (定时任务/未来需长输出的自驱任务) 该用这个·而不是后台搭话的小常量——
-    搭话一句话 2048 够·但生成完整文档/报告 2048 会被截断。
+    后台 turn (定时任务/未来需长输出的自驱任务) 该用这个·而不是 proactive 搭话的小常量——
+    搭话一句话 2048 够·但生成完整文档/报告 2048 会被截断 (卷七十四续二十九事故)。
     """
     if not model_id:
         return 0

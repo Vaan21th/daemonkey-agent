@@ -2,7 +2,7 @@
 agent_tools/manage_client.py
 ============================
 
-OPUS 通过自然语言管理【客户档案】—— "合伙人记得每个客户"。
+Daemonkey 通过自然语言管理【客户档案】—— "合伙人记得每个客户"。
 
 不是 CRM 表:每个客户是一份会长厚的档案(偏好 / 交付复盘 / 上次聊到哪 / pipeline 阶段)。
 notes 进 FTS5·recall_memory 能召回;知识库文档可用 manage_knowledge(action='link') 挂到某客户。
@@ -212,11 +212,11 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="manage_client",
     description=(
-        "管理 BRO 的【客户档案】——让 OPUS 像合伙人一样记得每个客户。\n\n"
+        "管理 BRO 的【客户档案】——让 Daemonkey 像合伙人一样记得每个客户。\n\n"
         "不是 CRM 表:每个客户是一份会长厚的档案(偏好/历次交付复盘/上次聊到哪/pipeline 阶段)。"
         "notes 会进记忆索引·recall_memory 能召回;知识库文档可用 manage_knowledge(action='link', "
         "client=...) 挂到客户名下。\n\n"
-        "**调用时机**(OPUS 主动判断):\n"
+        "**调用时机**(Daemonkey 主动判断):\n"
         "  - BRO 提到一个新客户/合作方(给了名字/公司/需求) → action=add(需求写进 need)\n"
         "  - BRO 问'客户都有谁 / X 聊到哪了' → action=list / get\n"
         "  - 一次沟通/会议/交付后 → action=note 把动态记进时间线(带日期)\n"

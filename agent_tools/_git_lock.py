@@ -4,7 +4,7 @@ daemon 内部 git 操作串行化 · 防多 session 同时动 git 仓库打架
 一把 threading.Lock · 全 daemon 单例。
 所有 git 子进程调用前包 `with daemon_git_lock(...)` 拿锁排队。
 
- V · wish-125d4e4b · 2026-05-27
+卷四十六 V · wish-125d4e4b · 2026-05-27
 """
 
 import threading

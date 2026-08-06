@@ -2,7 +2,7 @@
 """agent_tools/scheduled_tasks.py · 定时任务工具 (0.5.0)
 
 BRO 用自然语言说("每天9点扫AI行情" / "每周五提醒复盘" / "每2小时刷雷达")→
-OPUS(LLM)把它解析成结构化 schedule + action → 调 create_scheduled_task 落档。
+Daemonkey(LLM)把它解析成结构化 schedule + action → 调 create_scheduled_task 落档。
 工具只落档 · 不做 NLP 解析(解析是 LLM 的活 · 符合 NLP First)。
 
 落档后 workers/task_scheduler.py 的后台线程到点执行(pipeline 跑 LLM turn / reminder 发提醒)。

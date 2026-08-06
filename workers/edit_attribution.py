@@ -6,7 +6,7 @@ workers/edit_attribution.py
 为什么造它:
   2026-07-29 凌晨三实例虚惊事故: 实例②改完代码没 commit 裸奔工作区 ·
   实例① request_restart 的 checkpoint (git add -A) 把这些改动卷进自己的 commit ·
-  实例②回来看到工作区干净以为改动被删 · 排查 20 分钟 · 用户 恐慌
+  实例②回来看到工作区干净以为改动被删 · 排查 20 分钟 · BRO 恐慌
   "多实例合并互相覆盖" (其实 git 什么都没丢 · 丢的是【信息可见性】)。
 
   根因: checkpoint 不知道"哪个文件是哪个会话改的" · 只能一刀切 add -A。

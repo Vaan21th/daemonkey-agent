@@ -18,7 +18,7 @@ logger = logging.getLogger("opus.feishu")
 
 _THREAD: Optional[threading.Thread] = None
 _FEISHU_SID = "api-feishu"
-_FEISHU_LABEL = "\u2708\ufe0f \u98de\u4e66 \u00b7 \u7528\u6237"
+_FEISHU_LABEL = "\u2708\ufe0f \u98de\u4e66 \u00b7 BRO"
 
 _STATE = {
     "started_at": None,

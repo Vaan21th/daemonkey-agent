@@ -2,7 +2,7 @@
 agent_tools/manage_knowledge.py
 ===============================
 
-OPUS 通过自然语言管理【私有文档知识库】——"合伙人的第二大脑"。
+Daemonkey 通过自然语言管理【私有文档知识库】——"合伙人的第二大脑"。
 
 把 BRO 的资料 / 合同 / PDF / Word / PPT 灌进来 → 抽成文本 → 进 FTS5 →
 之后 recall_memory(scope='docs') 或自动召回就能引用,并 cite 回原文。
@@ -231,7 +231,7 @@ SPEC = ToolSpec(
     description=(
         "管理 BRO 的私有文档知识库(第二大脑)——把资料/合同/PDF/Word/PPT 灌进来,"
         "之后能被召回并 cite 回原文。这是 recall_memory(scope='docs') 的数据来源。\n\n"
-        "**调用时机**(OPUS 主动判断):\n"
+        "**调用时机**(Daemonkey 主动判断):\n"
         "  - BRO 说'把这份文件/合同/资料加进知识库' / 给了本地文件路径要你记住 → action=add\n"
         "  - BRO 问'知识库里有啥' / '我存过哪些资料' → action=list\n"
         "  - BRO 说'那篇先别参考了 / 重新参考' → action=disable / enable\n"
@@ -265,7 +265,7 @@ SPEC = ToolSpec(
             "tag": {"type": "string", "description": "list 用:只列带此标签的文档"},
             "folder": {"type": "string", "description": "add/move 用:文件夹名(归类 · 空=未分类)。前端按文件夹分组显示"},
             "client": {"type": "string", "description": "add/link 用:挂到哪个客户(id 或名字)· link 时留空=解除关联"},
-            "pinned": {"type": "boolean", "description": "add 用:是否常驻上下文(标常驻的会优先递给 OPUS)"},
+            "pinned": {"type": "boolean", "description": "add 用:是否常驻上下文(标常驻的会优先递给 Daemonkey)"},
             "sensitive": {"type": "boolean", "description": "add 用:入库即标敏感(不自动进 prompt·仅显式 recall 可取)"},
             "value": {"type": "boolean", "description": "sensitive action 用:True=标敏感 / False=取消(默认 True)"},
             "top_k": {"type": "integer", "description": "search 用:返回条数(默认 5)"},

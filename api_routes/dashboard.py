@@ -360,7 +360,7 @@ def dashboard_cockpit(
         items = [
             {
                 "title": o.get("title", ""),
-                "domain": o.get("domain", _default_domain()),
+                "domain": o.get("domain", "wildcard"),
                 "fit": o.get("fit", "maybe"),
                 "recommend": o.get("recommend", 3),
                 "cost_effort": o.get("cost_effort", "?"),
@@ -652,7 +652,7 @@ def dashboard_capability_snapshot(
 def dashboard_closure(
     authorization: Optional[str] = Header(None),
 ):
-    """B·闭环温度计 · 哪些 OPUS 输出还在等用户的反应。
+    """B·闭环温度计 · 哪些 OPUS 输出还在等 BRO 的反应 (闭环范式·宪法②)。
 
     纯只读聚合·单个 gauge 出错不影响其他。
     必须注册在 /dashboard/{domain} catch-all 之前。
@@ -732,7 +732,7 @@ def dashboard_closure(
     except Exception as e:
         logger.debug("closure reflow gauge failed: %s", e)
 
-    # 能力发现 (节律层 · 每周一 · 入口 A)
+    # 5. 能力发现 (节律层 · 每周一 · 入口 A)
     try:
         from workers.rituals import get_rituals
         sd = next((r for r in get_rituals() if r.get("id") == "skill_discovery"), None)
@@ -803,6 +803,249 @@ async def dashboard_scheduled_tasks_delete(
     if not ts.delete_task(tid):
         raise HTTPException(404, f"task not found: {tid}")
     return {"ok": True, "deleted": tid}
+
+
+# ──────────────────────────────────────────────────────────
+# wish-bec4f3b9 · 计费聚合: usage 三本账 × 价格表 → 按模型成本
+# GET /dashboard/billing?range=7d|30d · 响应契约 = dashboard-billing-proto.html MOCK
+# ──────────────────────────────────────────────────────────
+@router.get("/dashboard/billing")
+async def dashboard_billing(
+    range: str = "7d",
+    authorization: Optional[str] = Header(None),
+):
+    """聚合 chat_turns_usage.jsonl + app_runs_usage.jsonl + advisor_wakes.jsonl × 价格表.
+
+    返回 (照 dashboard-billing-proto.html 契约):
+      {generated_at, kpis: {today_cost, month_cost, today_tokens, cache_hit_rate,
+                            cache_saved, currency, unpriced_models, deltas},
+       by_model: [{config_id, name, calls, input_tokens, output_tokens,
+                   cache_read_tokens, cache_creation_tokens, price|null}],
+       switches: [{ts, from, to, tokens_after, cost_after, diff_pct, advisor}],
+       app_runs: [{app_id, app_name, runs, avg_iterations, total_tokens, est_cost|null}]}
+    """
+    check_auth(authorization)
+    from pathlib import Path
+    import json as _json, datetime as _dt
+    from workers.pricing import calc_cost
+
+    root = Path(__file__).resolve().parent.parent
+    runtime_dir = root / "data" / "runtime"
+
+    now = _dt.datetime.now()
+    # range: today=今日 00:00 起 · 7d=近7天 · 30d=近30天
+    if range == "today":
+        cutoff = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        cutoff = now - _dt.timedelta(days=(30 if range == "30d" else 7))
+    # month_cutoff: 自然月 1 号 00:00 (month_cost 独立于 range · 不随切换变)
+    month_cutoff = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # ── 1. 读三本账 (只读近 range 天 · 另存本月全量算 month_cost) ──
+    chat_rows, app_rows, adv_rows = [], [], []
+    month_all = []   # ts >= month_cutoff 的全部行 (跨三账 · 算自然月花费)
+    for fname, bucket in (("chat_turns_usage.jsonl", chat_rows),
+                          ("app_runs_usage.jsonl", app_rows),
+                          ("advisor_wakes.jsonl", adv_rows)):
+        p = runtime_dir / fname
+        if not p.exists():
+            continue
+        try:
+            for line in p.read_text(encoding="utf-8").splitlines():
+                try:
+                    r = _json.loads(line)
+                except Exception:
+                    continue
+                try:
+                    ts = _dt.datetime.fromisoformat(r.get("ts") or "")
+                except Exception:
+                    ts = now
+                if ts >= cutoff:
+                    bucket.append(r)
+                if ts >= month_cutoff:
+                    month_all.append(r)
+        except Exception:
+            continue
+
+    # ── 2. 价格表: config_id → pricing (provider_configs) ──
+    price_map = {}   # config_id -> pricing
+    model_to_cfg = {}  # model -> (config_id, pricing)
+    try:
+        from workers.provider_configs import load_configs
+        for c in (load_configs().get("configs") or []):
+            if c.get("pricing"):
+                price_map[c["id"]] = c["pricing"]
+                model_to_cfg.setdefault(c.get("model") or "", (c["id"], c["pricing"]))
+    except Exception:
+        pass
+
+    # ── 3. 按模型聚合 (chat + app + advisor) ──
+    agg = {}   # model_id -> dict
+    def _acc(model_id, usage):
+        a = agg.setdefault(model_id, {
+            "model_id": model_id, "calls": 0, "input_tokens": 0, "output_tokens": 0,
+            "cache_read_tokens": 0, "cache_creation_tokens": 0,
+        })
+        a["calls"] += 1
+        a["input_tokens"] += int(usage.get("input_tokens") or 0)
+        a["output_tokens"] += int(usage.get("output_tokens") or 0)
+        a["cache_read_tokens"] += int(usage.get("cache_read_tokens") or 0)
+        a["cache_creation_tokens"] += int(usage.get("cache_creation_tokens") or 0)
+
+    for r in chat_rows:
+        _acc(r.get("model_id") or "unknown", r)
+    for r in app_rows:
+        _acc(r.get("model_id") or r.get("app_name") or "unknown", r)
+    for r in adv_rows:
+        _acc(r.get("advisor_model") or "advisor", r)
+
+    # ── 4. 组装 by_model (带 price · 未配价 null) ──
+    by_model = []
+    for model_id, a in agg.items():
+        price = None
+        cfg_id = ""
+        if model_id in model_to_cfg:
+            cfg_id, price = model_to_cfg[model_id]
+        # 名字: 优先 config name
+        name = model_id
+        try:
+            from workers.provider_configs import load_configs
+            for c in (load_configs().get("configs") or []):
+                if c.get("id") == cfg_id:
+                    name = c.get("name") or model_id
+                    break
+        except Exception:
+            pass
+        by_model.append({
+            "config_id": cfg_id, "name": name, "calls": a["calls"],
+            "input_tokens": a["input_tokens"], "output_tokens": a["output_tokens"],
+            "cache_read_tokens": a["cache_read_tokens"], "cache_creation_tokens": a["cache_creation_tokens"],
+            "price": price,
+        })
+    by_model.sort(key=lambda m: -(m["input_tokens"] + m["output_tokens"]))
+
+    # ── 5. KPI ──
+    total_cost = 0.0
+    total_cur = "CNY"
+    unpriced = 0
+    total_in = sum(m["input_tokens"] for m in by_model)
+    total_out = sum(m["output_tokens"] for m in by_model)
+    # 缓存统计只算 LLM 模型 (deepseek/glm/kimi/claude/qwen/gpt-*chat*) ·
+    # 图像/视频/音频类 (gpt-image/remotion/tts/sovits) 不走 prompt cache · 排除
+    _LLM_FAMILIES = ("deepseek", "glm", "kimi", "moonshot", "claude", "qwen", "gpt-4", "gpt-3.5", "gpt-5", "o1", "o3", "gemini", "minimax")
+    def _is_llm(mid: str) -> bool:
+        mid_l = (mid or "").lower()
+        return any(f in mid_l for f in _LLM_FAMILIES)
+    cache_models = [m for m in by_model if _is_llm(m.get("model_id") or m.get("name") or "")]
+    total_cr = sum(m["cache_read_tokens"] for m in cache_models)
+    cache_saved = 0.0
+    for m in cache_models:
+        if not m["price"]:
+            continue
+        # 缓存省钱 (命中价差 · 无缓存价按 0.1×输入价估)
+        p = m["price"]
+        pc = p.get("cache_read") if p.get("cache_read") is not None else (p.get("input") or 0) * 0.1
+        pi = p.get("input") or 0
+        cache_saved += m["cache_read_tokens"] * (pi - pc) / 1_000_000
+    # 总花费仍算所有配价模型 (含图像类 · 它们有 input/output 价)
+    for m in by_model:
+        if not m["price"]:
+            unpriced += 1
+            continue
+        r = calc_cost(m, m["price"])
+        if r and r["total"] is not None:
+            total_cost += r["total"]
+            total_cur = r["currency"] or total_cur
+
+    # 命中率分母用 LLM 模型 input (图像类/顾问冷启动不稀释 · 口径=LLM 模型缓存)
+    llm_in = sum(m["input_tokens"] for m in cache_models)
+    hit_rate = (total_cr / llm_in) if llm_in else 0
+
+    # ── 6. switches: 从 advisor_wakes 造 (主对话切模型日志 Phase 1 后补 · 先用顾问唤醒) ──
+    switches = []
+    for r in sorted(adv_rows, key=lambda x: x.get("ts", "")):
+        switches.append({
+            "ts": r.get("ts", ""),
+            "from": {"name": "主对话模型"},
+            "to": {"name": r.get("advisor_model") or "顾问"},
+            "tokens_after": int(r.get("input_tokens") or 0) + int(r.get("output_tokens") or 0),
+            "cost_after": None,
+            "diff_pct": None,
+            "advisor": True,
+            "mode": r.get("mode") or "",   # blueprint/unstick/review · 方案 B 胶囊展示
+        })
+
+    # ── 7. app_runs 用量 (est_cost 按该 app 的 model 价格表估) ──
+    app_agg = {}
+    for r in app_rows:
+        aid = r.get("app_id") or "?"
+        a = app_agg.setdefault(aid, {"app_id": aid, "app_name": r.get("app_name") or aid,
+                                     "runs": 0, "avg_iterations": 0.0, "total_tokens": 0, "iter_sum": 0,
+                                     "model_id": r.get("model_id") or "unknown", "in_tok": 0, "out_tok": 0,
+                                     "cr_tok": 0, "cc_tok": 0})
+        a["runs"] += 1
+        a["total_tokens"] += int(r.get("total_tokens") or 0)
+        a["iter_sum"] += float(r.get("iterations") or 0)
+        a["in_tok"] += int(r.get("input_tokens") or 0)
+        a["out_tok"] += int(r.get("output_tokens") or 0)
+        a["cr_tok"] += int(r.get("cache_read_tokens") or 0)
+        a["cc_tok"] += int(r.get("cache_creation_tokens") or 0)
+    app_runs = []
+    for aid, a in app_agg.items():
+        a["avg_iterations"] = round(a["iter_sum"] / a["runs"], 1) if a["runs"] else 0
+        del a["iter_sum"]
+        # est_cost: 按该 app 的 model pricing 估 (未配价 → None)
+        est = calc_cost({
+            "input_tokens": a["in_tok"], "output_tokens": a["out_tok"],
+            "cache_read_tokens": a["cr_tok"], "cache_creation_tokens": a["cc_tok"],
+        }, model_to_cfg.get(a["model_id"], (None, None))[1])
+        a["est_cost"] = est["total"] if est and est["total"] is not None else None
+        for kk in ("in_tok", "out_tok", "cr_tok", "cc_tok", "model_id"):
+            a.pop(kk, None)
+        app_runs.append(a)
+    app_runs.sort(key=lambda a: -a["total_tokens"])
+
+    # ── 7.5 month_cost: 自然月全量 (独立于 range · 不随切换变) ──
+    month_cost = 0.0
+    month_cur = "CNY"
+    m_agg = {}
+    def _macc(model_id, usage):
+        a = m_agg.setdefault(model_id, {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_creation_tokens": 0})
+        a["input_tokens"] += int(usage.get("input_tokens") or 0)
+        a["output_tokens"] += int(usage.get("output_tokens") or 0)
+        a["cache_read_tokens"] += int(usage.get("cache_read_tokens") or 0)
+        a["cache_creation_tokens"] += int(usage.get("cache_creation_tokens") or 0)
+    for r in month_all:
+        _macc(r.get("model_id") or r.get("advisor_model") or r.get("app_name") or "unknown", r)
+    for mid, a in m_agg.items():
+        p = model_to_cfg.get(mid, (None, None))[1]
+        if not p:
+            continue
+        rr = calc_cost(a, p)
+        if rr and rr["total"] is not None:
+            month_cost += rr["total"]
+            month_cur = rr["currency"] or month_cur
+
+    return {
+        "generated_at": now.isoformat(timespec="seconds"),
+        "kpis": {
+            "today_cost": round(total_cost, 2),
+            "month_cost": round(month_cost, 2),  # 自然月累计 · 不随 range 变
+            "today_tokens": total_in + total_out,
+            "cache_hit_rate": round(hit_rate, 3),
+            "cache_saved": round(cache_saved, 2),
+            "currency": total_cur,
+            "unpriced_models": unpriced,
+            "deltas": {"today_cost": None, "month_cost": None, "today_tokens": None, "cache_hit_rate": None},
+        },
+        "by_model": by_model,
+        "switches": switches,
+        "app_runs": app_runs,
+    }
+
+# ──────────────────────────────────────────────────────────
+# 卷四十四 K stage 2c · 出品工坊资产 endpoint · apps + flows
+# ──────────────────────────────────────────────────────────
 
 
 @router.get("/dashboard/{domain}")
@@ -1285,7 +1528,4 @@ async def dashboard(
 
     raise HTTPException(404, f"unknown domain: {domain}")
 
-# ──────────────────────────────────────────────────────────
-# 卷四十四 K stage 2c · 出品工坊资产 endpoint · apps + flows
-# ──────────────────────────────────────────────────────────
 

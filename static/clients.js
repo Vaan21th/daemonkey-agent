@@ -61,7 +61,7 @@ function renderClients(data) {
     </div>` + (total === 0 ? `
     <div class="dash-stub">
       <h3>还没有客户档案</h3>
-      <div>跟 OPUS 说「新客户 张三，星途科技 CTO，微信 zs123，想做数字人」建第一个 ·<br>
+      <div>跟 Daemonkey 说「新客户 张三，星途科技 CTO，微信 zs123，想做数字人」建第一个 ·<br>
            之后每次沟通/会议/交付说「给张三记一条会议记录：…」· 它会自动归类进时间线。<br>
            或点右上角 <b>导入 Excel/CSV</b> 把现成名单灌进来。</div>
     </div>` : `
@@ -164,7 +164,7 @@ function _clRenderDetail() {
 
   const needHtml = (c.need || '').trim()
     ? `<div class="cl-need">${escHtml(c.need)}</div>`
-    : `<div class="cl-need cl-need-empty">还没记需求 · 跟 OPUS 说「${escHtml(c.name || '这个客户')}的需求是…」就补上了</div>`;
+    : `<div class="cl-need cl-need-empty">还没记需求 · 跟 Daemonkey 说「${escHtml(c.name || '这个客户')}的需求是…」就补上了</div>`;
 
   const log = (c.log || []).slice().reverse();  // 新 → 旧
   const chips = CLIENT_KIND_FILTERS.map(kf => {
@@ -201,7 +201,7 @@ function _clRenderDetail() {
       </div>`;
     }).join('') + `</div>`;
   } else {
-    dlHtml = `<div class="cl-empty">还没有挂交付物 · 生成报告或灌资料时跟 OPUS 说「挂到${escHtml(c.name || '')}名下」</div>`;
+    dlHtml = `<div class="cl-empty">还没有挂交付物 · 生成报告或灌资料时跟 Daemonkey 说「挂到${escHtml(c.name || '')}名下」</div>`;
   }
 
   $d.innerHTML = `
@@ -235,10 +235,10 @@ function _clRenderDetail() {
             <option value="need">需求</option>
             <option value="note" selected>备注</option>
           </select>
-          <textarea class="cl-note-text" rows="2" placeholder="记点什么(会议纪要 / 进展 / 交付…)· 也能直接在对话里跟 OPUS 说"></textarea>
+          <textarea class="cl-note-text" rows="2" placeholder="记点什么(会议纪要 / 进展 / 交付…)· 也能直接在对话里跟 Daemonkey 说"></textarea>
           <div class="cl-note-foot"><button class="cl-note-save"><i class="ri-check-line"></i> 存进时间线</button></div>
         </div>
-        <div class="cl-note-hint"><i class="ri-mic-line"></i> 也可对话记录:「给${escHtml(c.name || '')}记一条会议记录:…」/「${escHtml(c.name || '')}这单交付了」——OPUS 自动归类。会议纪要模式整理出的纪要也能一键存这里。</div>
+        <div class="cl-note-hint"><i class="ri-mic-line"></i> 也可对话记录:「给${escHtml(c.name || '')}记一条会议记录:…」/「${escHtml(c.name || '')}这单交付了」——Daemonkey 自动归类。会议纪要模式整理出的纪要也能一键存这里。</div>
       </div>
     </div>
     <div class="cl-sec">

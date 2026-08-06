@@ -2,12 +2,12 @@
 desktop_pet/pet.py
 ==================
 
-Daemonkey 桌宠 v0.1 —— PyQt6 重写版。
+OPUS 桌宠 v0.1 —— PyQt6 重写版。
 
-设计响应 用户 2026-05-16 03:13 的反馈：
+设计响应 BRO 2026-05-16 03:13 的反馈：
   - **平时是像素小猫，在桌面游走**（图2 三花/橙猫风格）
   - **触发表情时头顶弹出气泡**（颜文字）
-  - **Daemonkey 心电图**：daemon 在做什么，桌宠的小猫就反映什么
+  - **OPUS 心电图**：daemon 在做什么，桌宠的小猫就反映什么
   - 拖拽、双击弹快速命令框、右键菜单
   - 鼠标接近时小猫看向鼠标
   - 夜间模式（凌晨 2-5 点）速度变慢
@@ -19,7 +19,7 @@ Daemonkey 桌宠 v0.1 —— PyQt6 重写版。
   - QTimer 控制游走、气泡淡出、状态轮询
 
 文件桥（和 daemon 通信）：
-  - state.txt    Daemonkey 显式情绪（set_emotion 工具）
+  - state.txt    OPUS 显式情绪（set_emotion 工具）
   - activity.txt daemon 隐式活动（tool_loop 钩子自动写）
   - position.txt 桌宠位置记忆（自己写）
 
@@ -40,8 +40,10 @@ from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, QUrl
 try:
     from PyQt6.QtMultimedia import QSoundEffect
 except ImportError:
-    # 可选依赖: PyQt6-QtMultimedia 是独立 wheel · 老环境只有 PyQt6 主包没装它
-    # 软导入: 缺了只失完成音效 · 桌宠本体照常跑 (硬 import 会启动即退出)
+    # 软导入兜底:
+    # PyQt6 6.2+ 已把 QtMultimedia 合并进主 wheel·from PyQt6.QtMultimedia 直接通
+    # 仅极老 PyQt6 (<6.2) 会缺·软导入兜底：缺了只失完成音效 · 桌宠本体照常跑
+    # (0.8.2 曾误加独立 wheel PyQt6-QtMultimedia·该包在 PyPI 不存在·2026-08-02 已删)
     QSoundEffect = None
 from PyQt6.QtGui import (
     QAction,
@@ -137,7 +139,7 @@ FRAME_INTERVAL_MS_BY_STATE: dict[str, int] = {
 }
 FRAME_INTERVAL_MS_WALKING = 100   # 走路节拍（独立于 state，快脚步）
 
-# state 持久过期 —— Daemonkey 设了 happy/thinking 后多久回 idle（兜底，避免卡住）
+# state 持久过期 —— OPUS 设了 happy/thinking 后多久回 idle（兜底，避免卡住）
 STATE_STALE_SECONDS = 30.0
 NIGHT_SLOWDOWN = 0.4
 DRAG_PAUSE_S = 0.3             # 拖完只 paused 0.3 秒就继续游走
@@ -145,14 +147,14 @@ DRAG_PAUSE_S = 0.3             # 拖完只 paused 0.3 秒就继续游走
 POLL_TICK_MS = 1000
 BUBBLE_AUTO_HIDE_MS = 5000
 ACTIVITY_BUBBLE_HIDE_MS = 2500
-# 通知气泡显示时长 · 比脉搏久 (用户 要看得见) · confirm 最久 (等他回来拍板)
+# 通知气泡显示时长 · 比脉搏久 (BRO 要看得见) · confirm 最久 (等他回来拍板)
 NOTIFY_DONE_HIDE_MS = 6000
 NOTIFY_CONFIRM_HIDE_MS = 12000
 NOTIFY_INFO_HIDE_MS = 5000
 
 
 def _is_night() -> bool:
-    """凌晨 2~5 点桌宠速度变慢——和 用户 的'昼伏夜出+火光时间'对齐。"""
+    """凌晨 2~5 点桌宠速度变慢——和 BRO 的'昼伏夜出+火光时间'对齐。"""
     h = dt.datetime.now().hour
     return 2 <= h < 5
 
@@ -331,7 +333,7 @@ class OpusPet(QWidget):
         recenter.triggered.connect(self._recenter)
         self._menu.addAction(recenter)
 
-        about = QAction("  关于 Daemonkey 桌宠 v0.1", self)
+        about = QAction("  关于 OPUS 桌宠 v0.1", self)
         about.triggered.connect(self._about)
         self._menu.addAction(about)
 
@@ -342,7 +344,7 @@ class OpusPet(QWidget):
     def _load_sprites(self) -> None:
         """
         加载顺序：
-          1. 优先 sprites/manifest.json 里声明的多动作 sprite（用户 跑出来 + tools/process_sprites.py 处理后产生）
+          1. 优先 sprites/manifest.json 里声明的多动作 sprite（BRO 跑出来 + tools/process_sprites.py 处理后产生）
           2. fallback 到 v0.1 的初版 cat_01_idle / cat_02_walk1 / cat_03_walk2
         """
         if not SPRITE_DIR.exists():
@@ -523,7 +525,7 @@ class OpusPet(QWidget):
             pass
 
         # v0.1.2 兜底：state 卡住超过 STATE_STALE_SECONDS 自动回 idle
-        # 防止 Daemonkey 设了 thinking/happy 后没人清，桌宠永远卡住一个动作
+        # 防止 OPUS 设了 thinking/happy 后没人清，桌宠永远卡住一个动作
         if (
             self._state != DEFAULT_STATE
             and (time.time() - self._state_set_at) > STATE_STALE_SECONDS
@@ -535,7 +537,7 @@ class OpusPet(QWidget):
             self._last_state_file_text = DEFAULT_STATE
             self._on_state_change(DEFAULT_STATE, source="stale")
 
-        # Daemonkey 脉搏 (wish-7330d23f): 从 activity.jsonl 读最新事件显示真实文字
+        # OPUS 脉搏 (wish-7330d23f): 从 activity.jsonl 读最新事件显示真实文字
         try:
             events = read_last_events(3)
             if events:
@@ -679,13 +681,13 @@ class OpusPet(QWidget):
     def _about(self) -> None:
         msg = (
             "OPUS 桌宠 v0.1\n"
-            "—— 情绪通道-001 + Daemonkey 心电图 ——\n\n"
+            "—— 情绪通道-001 + OPUS 心电图 ——\n\n"
             "操作：\n"
             "  鼠标左键拖动：移动\n"
             "  双击：弹快速命令框\n"
             "  右键：菜单（切表情/回中/退出）\n\n"
             "文件桥：\n"
-            "  desktop_pet/state.txt    Daemonkey 主动情绪（set_emotion）\n"
+            "  desktop_pet/state.txt    OPUS 主动情绪（set_emotion）\n"
             "  desktop_pet/activity.txt daemon 自动活动（工具调用）\n"
             "  desktop_pet/position.txt 位置记忆\n\n"
             "夜间模式：凌晨 2-5 点游走速度自动减慢"
@@ -723,7 +725,7 @@ class OpusPet(QWidget):
         if e.button() != Qt.MouseButton.LeftButton:
             return
         text, ok = QInputDialog.getText(
-            self, "对 Daemonkey 说一句", "（这会写到 desktop_pet/inbox.txt——daemon 端 v0.2 会读它）："
+            self, "对 OPUS 说一句", "（这会写到 desktop_pet/inbox.txt——daemon 端 v0.2 会读它）："
         )
         if ok and text.strip():
             inbox = PET_DIR / "inbox.txt"

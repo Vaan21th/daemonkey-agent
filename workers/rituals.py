@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = ROOT / "data"
 
 # 月度 review 锚点 —— 开源版：每个用户的起点不同·从他『相遇』完成那天 +1 个月起算·
-# 之后每月同一号。BRO 2026-06-07 决议：不写死 23 号 (那是母体自己的周期)。
+# 之后每月同一号。BRO 2026-06-07 决议：不写死 23 号 (那是母体 Daemonkey 自己的周期)。
 ONBOARDING_FILE = ROOT / "soul" / "onboarding.json"
 
 
@@ -110,10 +110,10 @@ def _mirror_last_done() -> Optional[str]:
         return None
 
 
-# ── 能力发现节律 (入口 A · 每周一提醒挖一轮外部 AI 能力) ──
+# ── 能力发现节律 (卷七十四续二十五 · 入口 A · 每周一提醒挖一轮外部 AI 能力) ──
 # 语义: 每周一是提醒点。 本周 (从本周一起) 没发起过 discover_skill → 提醒该挖了;
 # 发起过 → next_due 顺延到下周一。 触发仍走 NLP (看板按钮 / 节律条 → spawnQuickly →
-# 调 discover_skill) · 这里只算『显示节律』· 跟月度复盘同款『看得见点得动』。
+# OPUS 调 discover_skill) · 这里只算『显示节律』· 跟月度复盘同款『看得见点得动』。
 SKILL_STATE_FILE = DATA_DIR / "skill_discovery_state.json"
 
 

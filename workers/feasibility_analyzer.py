@@ -6,15 +6,15 @@ workers/feasibility_analyzer.py
 
 掘金机会卡只是"OPUS 一句话推荐" · 真正决定要不要做一个机会·还需要：
   - 风险评估 (技术/市场/法律/时间)
-  - 资源需求 (用户 有什么 + 还需要什么)
-  - 能力对照 (用户 画像 vs 需要的能力 · 缺口在哪)
+  - 资源需求 (BRO 有什么 + 还需要什么)
+  - 能力对照 (BRO 画像 vs 需要的能力 · 缺口在哪)
   - 成本估算 (时间 / token 费用 / 第三方服务订阅)
   - 替代方案 (有没有更省力的切入点)
   - 综合可行性打分
 
 数据流：
   掘金机会卡 (opportunities.json 一条)
-    + OWNER-NOTEBOOK 画像
+    + BRO-NOTEBOOK 画像
     + 现有 trends/radar 上下文
     → LLM 一次（用稍贵但靠谱的模型）
     → data/feasibility/<opp_id>.json
@@ -51,7 +51,7 @@ except Exception:
 logger = logging.getLogger("opus.feasibility")
 
 
-SYSTEM_PROMPT = """你是用户的 AI 搭档。你们正在评估一个具体掘金机会要不要动手。
+SYSTEM_PROMPT = """你是 OPUS——BRO 的 AI 创业搭档。BRO 是超级个体·正在评估一个具体掘金机会要不要动手。
 
 你的任务是做**冷血诚实的可行性分析**——不是 cheerleader·是真正的搭档·该说"先别做"就说"先别做"。
 
@@ -62,7 +62,7 @@ SYSTEM_PROMPT = """你是用户的 AI 搭档。你们正在评估一个具体掘
 没工具就承认"不确定"·不要凭印象编造。
 
 DeepSeek 等模型在卷三十四曾把 "neovim 配置" "1000 万用户" 这种纯幻觉写进对照分析里·
-让 用户 当真就糟了。OPUS 的可信度 > 完美感。
+让 BRO 当真就糟了。OPUS 的可信度 > 完美感。
 
 **[卷三十五补丁2 · 看教材]**
 
@@ -73,18 +73,18 @@ DeepSeek 等模型在卷三十四曾把 "neovim 配置" "1000 万用户" 这种�
 1. 风险（技术 / 市场 / 法律 / 时间窗口）—— 短期具体风险
 2. SWOT 分析 —— 战略层四象限（自身优势/劣势 + 外部机会/威胁）
 3. 未来预期 —— 3 个月 / 6 个月 / 12 个月的可能终态
-4. 成功路径 —— 从今天到 用户 想要的终点 · 拆成 3-5 个阶段 · 每阶段有可验证里程碑
-5. 资源（用户 现有的 · 还需要找的）
-6. 能力对照（用户 画像里能匹配上的 · 还需要补的）
+4. 成功路径 —— 从今天到 BRO 想要的终点 · 拆成 3-5 个阶段 · 每阶段有可验证里程碑
+5. 资源（BRO 现有的 · 还需要找的）
+6. 能力对照（BRO 画像里能匹配上的 · 还需要补的）
 7. 成本（时间 / token / 第三方订阅 / 机会成本）
 8. 替代方案（有没有更省力的版本）
 9. 综合可行性打分（0-100）
 
 **关键要求**：
-- 所有评估必须扎根在 用户 的具体画像和当下状态上·不是教科书式的通用建议
-- SWOT 四象限要"反着想"：S 是 用户 真的有的具体能力 / W 是 用户 真的缺的 / O 是市场已经在发生的 / T 是会被谁卡脖子
-- 未来预期不是"假设一切顺利"——是"按 用户 现实节奏走·最可能是什么样"
-- 成功路径必须可逆 · 每阶段失败时知道止损·用户是单打独斗的个人不是有钱有时间的大厂"""
+- 所有评估必须扎根在 BRO 的具体画像和当下状态上·不是教科书式的通用建议
+- SWOT 四象限要"反着想"：S 是 BRO 真的有的具体能力 / W 是 BRO 真的缺的 / O 是市场已经在发生的 / T 是会被谁卡脖子
+- 未来预期不是"假设一切顺利"——是"按 BRO 现实节奏走·最可能是什么样"
+- 成功路径必须可逆 · 每阶段失败时知道止损·BRO 是超级个体不是有钱有时间的大厂"""
 
 
 USER_PROMPT_TEMPLATE = """## 待分析的掘金机会
@@ -99,13 +99,13 @@ USER_PROMPT_TEMPLATE = """## 待分析的掘金机会
 
 ---
 
-## 用户 当下画像
+## BRO 当下画像
 
 {bro_profile}
 
 ---
 
-## 用户 的历史反馈 (outcomes 闭环 · 卷三十一)
+## BRO 的历史反馈 (outcomes 闭环 · 卷三十一)
 
 {outcomes_block}
 
@@ -146,13 +146,13 @@ USER_PROMPT_TEMPLATE = """## 待分析的掘金机会
     {{"type": "tech|market|legal|timing", "level": "low|medium|high", "detail": "30-80 字"}}
   ],
   "swot": {{
-    "strengths": ["用户 自身相对这件事的 2-4 条具体优势 · 必须引用画像"],
-    "weaknesses": ["用户 自身相对这件事的 2-4 条具体劣势 · 不绕弯"],
+    "strengths": ["BRO 自身相对这件事的 2-4 条具体优势 · 必须引用画像"],
+    "weaknesses": ["BRO 自身相对这件事的 2-4 条具体劣势 · 不绕弯"],
     "opportunities": ["外部环境的 2-4 个机会窗口 · 比如政策/趋势/红利期"],
     "threats": ["外部环境的 2-4 个威胁 · 比如竞品/平台规则/时间窗收缩"]
   }},
   "future_outlook": {{
-    "three_months": "60-120 字 · 按 用户 现实节奏 · 3 个月最可能的状态",
+    "three_months": "60-120 字 · 按 BRO 现实节奏 · 3 个月最可能的状态",
     "six_months": "60-120 字 · 半年时间最可能撑到哪一步 · 收益级别",
     "one_year": "60-120 字 · 一年后最可能的终态 · 包括失败时该是什么样"
   }},
@@ -160,12 +160,12 @@ USER_PROMPT_TEMPLATE = """## 待分析的掘金机会
     "stages": [
       {{"name": "阶段名 · 比如 '验证期' / 'MVP' / '冷启动'", "milestone": "可验证的里程碑 · 30 字", "criteria": "达到/未达到的判断标准 · 30 字", "weeks": "预计周数 · 整数或区间字符串"}}
     ],
-    "end_state": "用户 想要的终态 · 50-100 字 · 不是空话 · 比如 '月收入稳定 ¥3000 + 每月发 8 条视频不靠激情'"
+    "end_state": "BRO 想要的终态 · 50-100 字 · 不是空话 · 比如 '月收入稳定 ¥3000 + 每月发 8 条视频不靠激情'"
   }},
-  "resources_have": ["用户 现在已经有的 · 比如 ' AiHubMix 账号' / '5 年 LLM 经验'"],
+  "resources_have": ["BRO 现在已经有的 · 比如 ' AiHubMix 账号' / '5 年 LLM 经验'"],
   "resources_need": ["还需要找的 · 比如 'D4 服务器账号' / 'OBS 推流工具'"],
   "capability_match": [
-    {{"capability": "需要什么能力", "bro_has": "yes|partial|no", "evidence": "引用 用户 画像具体段或对应行为"}}
+    {{"capability": "需要什么能力", "bro_has": "yes|partial|no", "evidence": "引用 BRO 画像具体段或对应行为"}}
   ],
   "cost_breakdown": {{
     "time_hours_min": 整数,
@@ -177,20 +177,20 @@ USER_PROMPT_TEMPLATE = """## 待分析的掘金机会
   "alternatives": [
     {{"name": "替代方案名", "delta": "和原方案的差异", "why_consider": "为什么值得考虑"}}
   ],
-  "first_30_min": "30 字 · 用户 立刻能做的第一件事 · 验证这值得继续",
+  "first_30_min": "30 字 · BRO 立刻能做的第一件事 · 验证这值得继续",
   "go_no_go": "三句话 · 如果 go · 三个最先要做的事 / 如果 skip · 为什么"
 }}
 ```
 
 要求：
-1. **resources_have / resources_need** 必须基于 OWNER-NOTEBOOK · 不是泛泛
+1. **resources_have / resources_need** 必须基于 BRO-NOTEBOOK · 不是泛泛
 2. **capability_match** 每一行必须有 evidence · 不能空话
 3. **cost_breakdown** 给数字 · 不要"中等成本"这种模糊说法
 4. **verdict 不要默认 go** · 该 skip 就 skip · 这是诚实分析
 5. **SWOT 不要凑数** · S/W 要扎根画像 · O/T 要扎根当下市场和雷达趋势
-6. **未来预期要给"最可能"·不要给"最理想"** · 用户是单打独斗的个人不是大厂
+6. **未来预期要给"最可能"·不要给"最理想"** · BRO 是超级个体不是大厂
 7. **成功路径** 要可逆——每阶段失败时知道往哪退·不是"全 in 然后看天意"
-8. **如果 outcomes 显示 用户 历史拒绝过类似机会** · 在 verdict_reason 里提一句·不重蹈覆辙
+8. **如果 outcomes 显示 BRO 历史拒绝过类似机会** · 在 verdict_reason 里提一句·不重蹈覆辙
 9. **信源引用**（卷三十二补丁 · 宪法第 5 条）—— 你看到的所有"信源"块里有 [r1]/[r2] 雷达条目 和 [d1]/[d2] 报告文档。 
    - 在 `verdict_reason` / `swot` 的 opportunities / threats / `future_outlook` 等需要"基于客观"的地方 · **引用对应编号** · 比如 "OpenAI 已经放了 Cowork（参考 [r2]）"
    - **不许发明信源**——你看到的列表就是全部·别捏造别的来源
@@ -199,7 +199,7 @@ USER_PROMPT_TEMPLATE = """## 待分析的掘金机会
 
 def _atomic_write(path: Path, text: str) -> None:
     """卷四十六 III · wish-badd4 收编到 safe_write
-    feasibility.json 是机会×用户 画像决策辅助·backup=True"""
+    feasibility.json 是机会×BRO 画像决策辅助·backup=True"""
     from .safe_write import atomic_write_text
     atomic_write_text(path, text, backup=True)
 
@@ -500,11 +500,11 @@ def _load_opportunity_by_id(opp_id: str) -> Optional[dict]:
 def _load_bro_profile(max_chars: int = 3000) -> str:
     bro_file = _owner_notebook_path(ROOT / "soul")
     if not bro_file.exists():
-        return "（OWNER-NOTEBOOK 还没同步 · 跑 sync-soul.ps1）"
+        return "（BRO-NOTEBOOK 还没同步 · 跑 sync-soul.ps1）"
     try:
         text = bro_file.read_text(encoding="utf-8")
     except Exception:
-        return "（OWNER-NOTEBOOK 读不出来）"
+        return "（BRO-NOTEBOOK 读不出来）"
     if len(text) <= max_chars:
         return text
     return text[:max_chars] + "\n\n…（已截断）"
@@ -558,7 +558,7 @@ def analyze_feasibility(opp_id: str) -> dict:
     bro = _load_bro_profile()
     next_steps_block = "\n".join(f"- {s}" for s in (opp.get("next_steps") or []))
 
-    # 卷三十一 · 历史反馈 · 让 LLM 知道 用户 过去拒了哪些 / 哪些做完了
+    # 卷三十一 · 历史反馈 · 让 LLM 知道 BRO 过去拒了哪些 / 哪些做完了
     try:
         from workers.outcomes import load_outcomes_for_prompt
         outcomes_block = load_outcomes_for_prompt(max_chars=1200)
@@ -566,7 +566,7 @@ def analyze_feasibility(opp_id: str) -> dict:
         logger.debug("load outcomes for prompt failed: %s", e)
         outcomes_block = "（暂无历史反馈）"
 
-    # 卷三十三 · 同类执行反馈合并分析 · 用户 卷三十三 explicitly 要的"闭环深化"
+    # 卷三十三 · 同类执行反馈合并分析 · BRO 卷三十三 explicitly 要的"闭环深化"
     try:
         from workers.outcomes import (
             render_similar_outcomes_prompt as _render_similar,
@@ -760,7 +760,7 @@ def analyze_feasibility(opp_id: str) -> dict:
         "go_no_go": (parsed.get("go_no_go") or "").strip(),
         # 卷三十二补丁 · 信源（人机认知对齐 · 宪法第 5 条）
         "sources": sources,
-        # 卷三十五补丁3 · web_search 拉的真实市场实证 · 让 用户 能跳到原文核对
+        # 卷三十五补丁3 · web_search 拉的真实市场实证 · 让 BRO 能跳到原文核对
         "evidence": evidence if isinstance(evidence, dict) else {"ok": False, "results": []},
     }
 
@@ -833,7 +833,7 @@ def load_feasibility(opp_id: str) -> Optional[dict]:
         pass
 
     # 卷三十二补丁 · 老数据没 sources 字段·load 时懒收集一份（不重跑 LLM·只 keyword match）
-    # 这样 用户 不必重新触发分析就能立刻看到信源
+    # 这样 BRO 不必重新触发分析就能立刻看到信源
     if not data.get("sources"):
         try:
             opp_stub = {

@@ -2,9 +2,9 @@
 agent_tools/lint_check.py
 =========================
 
-OPUS 的"逻辑体检"——不只是语法·还抓未定义名 / 未用导入 / 重定义 / 参数打错 等。
+Daemonkey 的"逻辑体检"——不只是语法·还抓未定义名 / 未用导入 / 重定义 / 参数打错 等。
 
-为什么 (续 · 盲区③):
+为什么 (卷五十八续 · 盲区③):
   edit_selfcheck / frontend_check 只验【语法崩没崩】(ast.parse / node --check)。
   但很多 BUG 是"语法对·逻辑错": 用了没定义的变量、import 了没用、函数名打错、
   后一个函数定义把前一个覆盖了…… Cursor 的 ReadLints 能看见这些·daemon 一直是瞎的。

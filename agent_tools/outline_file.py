@@ -2,12 +2,12 @@
 agent_tools/outline_file.py
 ===========================
 
-OPUS 的"文件目录"——一秒看清一个大文件的骨架 (所有定义 + 行号)。
+Daemonkey 的"文件目录"——一秒看清一个大文件的骨架 (所有定义 + 行号)。
 
-为什么 (续 · 和 edit_file 配套的另一半):
+为什么 (卷五十八续 · 和 edit_file 配套的另一半):
   edit_file 给了精准凿子·但改 9500 行的 chat.js 前·得先知道"那段在哪一行"。
   read_file 一次只能看 40K (9%) · grep_files 又得先猜对名字。 outline_file 给一张目录:
-  所有函数 / 类 / 常量定义 + 行号·OPUS 看着目录直接跳到目标行·再 read_file 那一段·
+  所有函数 / 类 / 常量定义 + 行号·Daemonkey 看着目录直接跳到目标行·再 read_file 那一段·
   再 edit_file 精准改。 至此 "定位 → 看细节 → 精准改" 这条链对大文件彻底闭合·
   不用再"摸黑整文件覆盖"。
 
@@ -17,7 +17,7 @@ OPUS 的"文件目录"——一秒看清一个大文件的骨架 (所有定义 +
   - .md            → 标题 (#..######)
   - 其它           → 提示用 grep_files
 
-AUTO tier · 纯读 · 不需要 用户 介入。
+AUTO tier · 纯读 · 不需要 BRO 介入。
 """
 
 from __future__ import annotations

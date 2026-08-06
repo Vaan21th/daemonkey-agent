@@ -6,7 +6,7 @@ wish-ea8922f7 · 顾问在场感的两个只读端点:
   GET /api/advisor/trace?sub=<id> · 顾问过程回放 (解析 sessions/sub-<id>.jsonl 成时间线)
 
 主路径其实是 SSE (tool_progress / advisor_status 事件实时推) ·
-这两个端点是【兜底 + 回放】——用户 刷新页面 / 换设备 / 事后想看顾问怎么推的。
+这两个端点是【兜底 + 回放】——BRO 刷新页面 / 换设备 / 事后想看顾问怎么推的。
 """
 
 from __future__ import annotations

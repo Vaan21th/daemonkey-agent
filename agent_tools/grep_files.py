@@ -2,7 +2,7 @@
 agent_tools/grep_files.py
 =========================
 
-OPUS 的"找"——在项目里搜文本。
+Daemonkey 的"找"——在项目里搜文本。
 
 实现策略：
   1. 优先调外部 ripgrep (`rg`)——又快又懂 .gitignore

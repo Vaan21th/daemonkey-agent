@@ -1,15 +1,15 @@
 """agent_tools/create_workflow.py
 ================================
 
- K stage 2c · AI 给自己造一个 workflow
+卷四十四 K stage 2c · Daemonkey 给自己造一个 workflow
 
 什么是 workflow:
     把多个 app + 原子工具串起来的 LiteGraph 流程
-    用户 在出品工坊「工作流画布」点「加载已存工作流」就能拉出来跑
+    BRO 在出品工坊「工作流画布」点「加载已存工作流」就能拉出来跑
 
 调用时机:
-    - 用户 跟 AI 说「我想做 X · 你看怎么排工作流实现」
-    - AI 设计完 → 直接 create_workflow 落档 · 用户 在画布里看到节点就能微调
+    - BRO 跟 Daemonkey 说「我想做 X · 你看怎么排工作流实现」
+    - Daemonkey 设计完 → 直接 create_workflow 落档 · BRO 在画布里看到节点就能微调
 
 跟 create_app 的区别:
     create_app           ← 独立原子模块 · 一个能力
@@ -21,7 +21,7 @@ tier:
 数据格式:
     litegraph_json 必须是 LiteGraph.serialize() 的输出 ·
     最少有 {"nodes": [...], "links": [...], "last_node_id": N, "last_link_id": M}
-    AI 自己手写时按下面 schema 出: 每个 node 至少 id/type/pos/properties
+    Daemonkey 自己手写时按下面 schema 出: 每个 node 至少 id/type/pos/properties
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ def _run(args: dict) -> ToolResult:
 
     steps = args.get("steps")
     graph = args.get("litegraph_json")
-    # 允许 AI 输入字符串 (JSON 文本) · 自动 parse
+    # 允许 Daemonkey 输入字符串 (JSON 文本) · 自动 parse
     import json as _json
     if isinstance(steps, str):
         try:
@@ -75,7 +75,7 @@ def _run(args: dict) -> ToolResult:
             "description": args.get("description") or "",
             "steps": steps or [],
             "litegraph_json": graph if isinstance(graph, dict) else None,
-            "created_by": "AI",
+            "created_by": "Daemonkey",
         })
     except ValueError as e:
         return ToolResult(ok=False, output="", error=str(e))
@@ -93,11 +93,11 @@ def _run(args: dict) -> ToolResult:
         lines.append("")
         lines.append(format_steps(flow["steps"]))
         lines.append("")
-        lines.append(f"→ 用户 认了就 `run_flow(action=start, flow_id={flow['id']})` 沿轨道跑 · 状态落盘可断点续跑。")
+        lines.append(f"→ BRO 认了就 `run_flow(action=start, flow_id={flow['id']})` 沿轨道跑 · 状态落盘可断点续跑。")
     else:
         lines.append(f"  - 格式: litegraph (老画布) · 节点数: {flow.get('node_count', 0)}")
         lines.append("")
-        lines.append("→ 用户 去出品工坊 · 「工作流画布」tab · 「加载工作流」能看到这条新流程。")
+        lines.append("→ BRO 去出品工坊 · 「工作流画布」tab · 「加载工作流」能看到这条新流程。")
     return ToolResult(ok=True, output="\n".join(lines))
 
 
@@ -105,17 +105,17 @@ SPEC = ToolSpec(
     name="create_workflow",
     description=(
         "在出品工坊里造一个新 workflow · 把多个 app + 工具串起来的 LiteGraph 流程\n\n"
-        "**🔴 关键调用次序 · 用户 说『排个 X 工作流』时第一刀就是这个工具**:\n"
+        "**🔴 关键调用次序 · BRO 说『排个 X 工作流』时第一刀就是这个工具**:\n"
         "  1. **先 create_workflow 落档** · 把 name + description + litegraph_json 落到\n"
-        "     data/workshop/flows/<id>.json · 用户 在『⚛ 工作流画布』tab 点 📂 加载就能拉出来\n"
+        "     data/workshop/flows/<id>.json · BRO 在『⚛ 工作流画布』tab 点 📂 加载就能拉出来\n"
         "  2. 第二刀再去做实际事 (调试某个节点 / 验证某个 API / 测一段连线是否通)\n"
-        "  3. 哪怕节点功能还没跑通 · 流程图先在 · 用户 至少有一份『AI 帮我排好的图』可看\n\n"
+        "  3. 哪怕节点功能还没跑通 · 流程图先在 · BRO 至少有一份『Daemonkey 帮我排好的图』可看\n\n"
         "  跟 create_app 同理 — 不要把『落档』推到最后 · 推到最后碰上 typo / timeout 就丢图\n\n"
         "**什么时候调**:\n"
-        "  - 用户 说「我想做 X · 你看怎么排工作流实现」时 · 第一刀\n"
-        "  - AI 设计完一条多步骤管线 · create_workflow 落档让 用户 看图\n"
+        "  - BRO 说「我想做 X · 你看怎么排工作流实现」时 · 第一刀\n"
+        "  - Daemonkey 设计完一条多步骤管线 · create_workflow 落档让 BRO 看图\n"
         "  - 缺工具就先 create_app 把工具落档 · 再来 create_workflow 用上它\n\n"
-        "**🟢 推荐格式 · steps 线性步骤清单 (沉淀闭环 v2 刀② · 2026-06-10 用户 拍板)**:\n"
+        "**🟢 推荐格式 · steps 线性步骤清单 (沉淀闭环 v2 刀② · 2026-06-10 BRO 拍板)**:\n"
         "  flow 本体 = `[{app, goal, substeps?, on_fail?}]` 这种线性 list · 画布视图由 steps 自动投影。\n"
         "  执行器是 `run_flow` (workers/flow_runner) · 状态全程落盘 data/workshop/runs/<run_id>.json ·\n"
         "  支持断点续跑 (某步挂了改完对应 app · resume from_step=N · 不用整条重来)。\n\n"
@@ -148,15 +148,15 @@ SPEC = ToolSpec(
         '    {"app": "app-render", "goal": "FFmpeg 合成"}\n'
         '  ]\n'
         "  ```\n\n"
-        "**老 litegraph_json 格式 · 仅在 用户 明确要用画布版才用**:\n"
-        "  工坊里 workflow 的节点都是 **app 节点** · type 必须是 `opus/app/<aid>`\n"
+        "**老 litegraph_json 格式 · 仅在 BRO 明确要用画布版才用**:\n"
+        "  工坊里 workflow 的节点都是 **app 节点** · type 必须是 `Daemonkey/app/<aid>`\n"
         "  最简形态 · 每个 node 至少含 id/type/pos/size/properties · 节点之间用 links 串起来:\n"
         "  ```json\n"
         '  {\n'
         '    "last_node_id": 2, "last_link_id": 1,\n'
         '    "nodes": [\n'
-        '      {"id": 1, "type": "opus/app/app-66ac4190", "pos": [100, 100], "size": [220, 110], "properties": {}},\n'
-        '      {"id": 2, "type": "opus/app/app-b08ffda6", "pos": [400, 100], "size": [220, 110], "properties": {}}\n'
+        '      {"id": 1, "type": "Daemonkey/app/app-66ac4190", "pos": [100, 100], "size": [220, 110], "properties": {}},\n'
+        '      {"id": 2, "type": "Daemonkey/app/app-b08ffda6", "pos": [400, 100], "size": [220, 110], "properties": {}}\n'
         '    ],\n'
         '    "links": [[1, 1, 0, 2, 0, "string"]],\n'
         '    "groups": [], "config": {}, "version": 0.4\n'
@@ -164,8 +164,8 @@ SPEC = ToolSpec(
         "  ```\n\n"
         "**红线**:\n"
         "  - steps 里的 app 必须先存在 (load_app(<aid>) 能拿到) · 缺工具就先 create_app 把它落档再 create_workflow\n"
-        "  - 老 litegraph 走 workers/workflow_engine.py · 节点 type 只能是 `opus/app/<aid>` (用其他会被拒)\n"
-        "  - 不要在 description 里写「让 用户 自己来填充」 · 你设计完就给个能跑的 baseline · 用户 微调"
+        "  - 老 litegraph 走 workers/workflow_engine.py · 节点 type 只能是 `Daemonkey/app/<aid>` (用其他会被拒)\n"
+        "  - 不要在 description 里写「让 BRO 自己来填充」 · 你设计完就给个能跑的 baseline · BRO 微调"
     ),
     tier=TIER_AUTO,
     input_schema={
@@ -179,7 +179,7 @@ SPEC = ToolSpec(
             },
             "description": {
                 "type": "string",
-                "description": "工作流用途 · 用户 在卡片上看 · 1-3 句话",
+                "description": "工作流用途 · BRO 在卡片上看 · 1-3 句话",
                 "minLength": 4,
                 "maxLength": 400,
             },
@@ -216,7 +216,7 @@ SPEC = ToolSpec(
             "litegraph_json": {
                 "type": "object",
                 "description": (
-                    "**老画布格式 · 仅 用户 明确要画布版才传** · 否则用 steps · "
+                    "**老画布格式 · 仅 BRO 明确要画布版才传** · 否则用 steps · "
                     "LiteGraph.serialize() 出的图对象 · 含 nodes / links / last_node_id 等"
                 ),
             },

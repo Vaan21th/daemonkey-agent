@@ -1,7 +1,7 @@
 """
 agent_tools/update_core.py
 ==========================
-OPUS 通过对话拉取"内核(L1)升级" · 卷六十四续六 · 2026-06-08
+Daemonkey 通过对话拉取"内核(L1)升级" · 卷六十四续六 · 2026-06-08
 
 为什么有这个工具 (BRO 2026-06-08 拍板):
   Daemonkey 开源版没法做整包官方更新——每个用户的实例会随对话长出自己的功能(L2)和
@@ -145,11 +145,11 @@ def _run(args: dict) -> ToolResult:
                 # 本地跑的是旧版 apply(无自动补轮):新清单已就位但新增文件这轮没进来
                 lines.append("  ⚠ 本次更新了内核清单本身 · 请【再执行一次升级】把新增内核文件补齐。")
             if res["skipped_deleted"]:
-                lines.append(f"  跳过(中心库已删·没动你的): " + ", ".join(res["skipped_deleted"]))
+                lines.append("  跳过(中心库已删·没动你的): " + ", ".join(res["skipped_deleted"]))
             lines.append(f"\n  落袋: {res['checkpoint']}")
             if res["commit_sha"]:
                 lines.append(f"  本次更新已 commit · {res['commit_sha']} (想回退: git revert {res['commit_sha']})")
-            # 0.8.5 · 升级保护层 · 用户魔改备份报告
+            # 0.8.4 · 升级保护层 · 用户魔改备份报告
             uos = res.get("user_overrides") or []
             if uos:
                 lines.append("")

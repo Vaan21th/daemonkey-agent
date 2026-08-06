@@ -228,8 +228,14 @@ $("saveKeyBtn").addEventListener("click", async () => {
   $("saveKeyBtn").disabled = true;
   msg.className = "key-msg"; msg.textContent = "保存中…";
   try {
-    await api("/api/onboarding/save-key", { api_key, base_url, model });
+    const saveResp = await api("/api/onboarding/save-key", { api_key, base_url, model });
     msg.className = "key-msg ok"; msg.textContent = "已保存 · 正在唤醒它…";
+    // 初见保存 key 后 · 把后端生成的 API token 写进 localStorage (前端 UI token key) ·
+    // 否则相遇完跳 chat.html 时前端 token 为空 → 弹"第一次需要填 token"设置框
+    // (0.9.2 初见验收发现 · wish 修复)
+    if (saveResp && saveResp.token) {
+      try { localStorage.setItem("Daemonkey_ui_token", saveResp.token); } catch (_) {}
+    }
     $("keyCard").classList.add("hidden");
     showIntro(() => startChat());
   } catch (err) {

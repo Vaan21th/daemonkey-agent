@@ -1,10 +1,10 @@
 /*
- * workshop.js · OPUS 出品工坊 · LiteGraph 二栏内嵌 view
+ * workshop.js · Daemonkey 出品工坊 · LiteGraph 二栏内嵌 view
  *
  * 卷四十四 K stage 1b · 从独立页 /workshop 改成 /ui 中央 detail-pane 的 view
  *
  * 暴露:
- *   window.OPUS_WORKSHOP_VIEW = {
+ *   window.Daemonkey_WORKSHOP_VIEW = {
  *     mount(container)   - 把工坊 DOM 注入 container · 第一次会 init LiteGraph
  *     unmount()          - 切到别的 view 时清理 listener · graph 状态保留
  *     isMounted()        - 是否当前挂着
@@ -20,7 +20,7 @@
 
 (function () {
   'use strict';
-  if (window.OPUS_WORKSHOP_VIEW) return;  // 防双重加载
+  if (window.Daemonkey_WORKSHOP_VIEW) return;  // 防双重加载
 
   // ─── 工具节点 schema (跟未来 data/workflow/tools/*.json 对齐) ───
   const TOOL_SPECS = {
@@ -66,9 +66,9 @@
       outputs: [{ name: 'results', type: 'array' }],
       props: { top_k: 10 },
     },
-    'atomic/browser_fetch': {
+    'atomic/用户wser_fetch': {
       icon: '<i class="ri-global-fill"></i>', title: '浏览器抓取', group: 'atomic',
-      desc: 'agent_tools.browser_fetch', color: '#5DA3F0',
+      desc: 'agent_tools.用户wser_fetch', color: '#5DA3F0',
       inputs: [{ name: 'url', type: 'string' }],
       outputs: [{ name: 'content', type: 'string' }],
       props: {},
@@ -90,7 +90,7 @@
   };
   // custom/sovits 占位符已删除 (卷四十六续 13)
   // 自定义工具组现在从 _apps (kind='app') 动态生成 · 见 _renderToolGroup('custom') 分支
-  // GPT-SoVITS / GPT Image 2 等 OPUS 真造的 app 直接进 sidebar · 拖到画布生成 opus/app/<aid> 节点
+  // GPT-SoVITS / GPT Image 2 等 Daemonkey 真造的 app 直接进 sidebar · 拖到画布生成 Daemonkey/app/<aid> 节点
 
   // ─── LiteGraph 右键菜单中文化 (MENU_I18N) ───
   // 来源:阅读 LiteGraph.js 源码 · 内置菜单文案就这些
@@ -124,7 +124,7 @@
     'Group Selected Nodes': '把选中的节点分组',
   };
 
-  let _menuLang = localStorage.getItem('opus_workshop_lang') || 'zh';
+  let _menuLang = localStorage.getItem('Daemonkey_workshop_lang') || 'zh';
 
   // ─── HTML icon → emoji 映射 (canvas title 用 · LiteGraph 不解析 HTML) ───
   // workshop.js 里所有节点 title 走 canvas drawText · 任何 <i class="ri-...">
@@ -144,8 +144,8 @@
   }
 
   // ─── 内置应用 (跟 chat.js DOMAIN_META 4 老维度对齐 · 走 /dashboard/<dim>) ───
-  // stage 2c · OPUS 自己造的 app 从 /workshop/apps 拉 · 跟内置共存
-  // builtin-content 已被真 agentic app『内容制作』(app-46efb986) 顶位 · 移除 stub
+  // stage 2c · Daemonkey 自己造的 app 从 /workshop/apps 拉 · 跟内置共存
+  // 沉淀闭环 v2 刀⑤修正 (2026-06-10): builtin-content 已被真 agentic app『内容制作』(app-46efb986) 顶位 · 移除 stub
   const BUILTIN_APPS = [
     {
       id: 'builtin-design', icon: '<i class="ri-palette-fill"></i>', name: '产品设计', kind: 'builtin',
@@ -164,9 +164,9 @@
     },
   ];
 
-  // 当前的应用列表 (built-in + OPUS 造) · mount 时填充
+  // 当前的应用列表 (built-in + Daemonkey 造) · mount 时填充
   let _apps = BUILTIN_APPS.slice();
-  let _flows = [];  // workflow 列表 · 仅 OPUS 造
+  let _flows = [];  // workflow 列表 · 仅 Daemonkey 造
   // 卷七十二 v2 · 当前加载的 flow 完整对象 (含 steps) + 当前 active flow id (左侧高亮)
   let _currentFlowFull = null;
   let _activeFlowId = null;
@@ -174,7 +174,7 @@
   let _trash = { apps: [], flows: [] };
   let _trashLoaded = false;
 
-  function _getToken() { return localStorage.getItem('opus_ui_token') || ''; }
+  function _getToken() { return localStorage.getItem('Daemonkey_ui_token') || ''; }
 
   function tr(s) {
     if (_menuLang === 'en' || !s) return s;
@@ -205,9 +205,9 @@
   let _nodesRegistered = false;
   let _menuPatched = false;
   // 卷四十四 K stage 2a · tabs + 应用详情状态
-  // stage 2b · 砍 'create' tab (BRO: 跟右侧 OPUS 重复 · 自然语言已够) · 残留 'create' 回退 'apps'
+  // stage 2b · 砍 'create' tab (用户: 跟右侧 Daemonkey 重复 · 自然语言已够) · 残留 'create' 回退 'apps'
   // stage 2c++ · wish-6fd76512 · 加 'trash' tab
-  let _activeTab = localStorage.getItem('opus_workshop_tab') || 'apps';  // apps | canvas | trash
+  let _activeTab = localStorage.getItem('Daemonkey_workshop_tab') || 'apps';  // apps | canvas | trash
   if (_activeTab === 'create') _activeTab = 'apps';
   if (!['apps', 'canvas', 'trash'].includes(_activeTab)) _activeTab = 'apps';
   let _activeAppId = null;  // null = 看应用网格 · 否则 = 看应用详情
@@ -217,10 +217,10 @@
     if (_nodesRegistered) return;
     _nodesRegistered = true;
     for (const [key, spec] of Object.entries(TOOL_SPECS)) {
-      const fullType = 'opus/' + key;
+      const fullType = 'Daemonkey/' + key;
       const canvasTitle = iconToEmoji(spec.icon) + ' ' + spec.title;
 
-      function OpusNode() {
+      function DaemonkeyNode() {
         this.title = canvasTitle;
         this.color = spec.color;
         this.bgcolor = '#252525';
@@ -230,18 +230,18 @@
         this.properties = Object.assign({ _toolKey: key }, spec.props || {});
         this.size = [200, 24 + Math.max(spec.inputs.length, spec.outputs.length) * 20 + 8];
       }
-      OpusNode.title = canvasTitle;
-      OpusNode.desc = spec.desc;
-      OpusNode.prototype.onExecute = function () { /* phase B 由 daemon workflow_engine 真跑 · 前端不本地执行 */ };
-      OpusNode.prototype.onAdded = function () { if (/<i\s[^>]*>/i.test(this.title || '')) this.title = canvasTitle; };
-      OpusNode.prototype.onConfigure = function () { if (/<i\s[^>]*>/i.test(this.title || '')) this.title = canvasTitle; };
-      LiteGraph.registerNodeType(fullType, OpusNode);
+      DaemonkeyNode.title = canvasTitle;
+      DaemonkeyNode.desc = spec.desc;
+      DaemonkeyNode.prototype.onExecute = function () { /* phase B 由 daemon workflow_engine 真跑 · 前端不本地执行 */ };
+      DaemonkeyNode.prototype.onAdded = function () { if (/<i\s[^>]*>/i.test(this.title || '')) this.title = canvasTitle; };
+      DaemonkeyNode.prototype.onConfigure = function () { if (/<i\s[^>]*>/i.test(this.title || '')) this.title = canvasTitle; };
+      LiteGraph.registerNodeType(fullType, DaemonkeyNode);
     }
   }
 
-  // 卷四十六续 12 · wish-165ea1f6 phase B · 把 OPUS 造的 app 注册成 LiteGraph 节点
-  //   - 每张 OPUS app 卡片 → 一个 node type 'opus/app/<aid>'
-  //   - ui_form_schema → input ports (BRO 画布上可以连上游 outputs)
+  // 卷四十六续 12 · wish-165ea1f6 phase B · 把 Daemonkey 造的 app 注册成 LiteGraph 节点
+  //   - 每张 Daemonkey app 卡片 → 一个 node type 'Daemonkey/app/<aid>'
+  //   - ui_form_schema → input ports (用户 画布上可以连上游 outputs)
   //   - output_schema  → output ports (能接下游 inputs · 没声明默认单端口 'output')
   //   - 每次 _apps 更新都调一次 (idempotent · 已注册的同 type 跳过)
   const _registeredAppTypes = new Set();
@@ -260,7 +260,7 @@
     JoinNode.title = '⋔ 汇合';
     JoinNode.desc = '并行组汇合点 · 各分支产出在此合并后喂下一步';
     JoinNode.prototype.onExecute = function () { /* 只读投影 · 不本地执行 */ };
-    try { LiteGraph.registerNodeType('opus/flow_join', JoinNode); _joinRegistered = true; }
+    try { LiteGraph.registerNodeType('Daemonkey/flow_join', JoinNode); _joinRegistered = true; }
     catch (e) { /* 已注册 · 静默 */ }
   }
 
@@ -270,7 +270,7 @@
     for (const app of _apps) {
       if (!app || !app.id) continue;
       if (app.kind === 'builtin') continue;
-      const fullType = 'opus/app/' + app.id;
+      const fullType = 'Daemonkey/app/' + app.id;
       if (_registeredAppTypes.has(fullType)) continue;
 
       const inputs = (Array.isArray(app.ui_form_schema) ? app.ui_form_schema : []).map(f => ({
@@ -290,7 +290,7 @@
         this.boxcolor = '#48BB78';
         for (const inp of inputs) this.addInput(inp.name, inp.type);
         for (const out of outputs) this.addOutput(out.name, out.type);
-        this.properties = { _appId: app.id, _kind: 'opus_app' };
+        this.properties = { _appId: app.id, _kind: 'Daemonkey_app' };
         this.size = [220, 24 + Math.max(inputs.length, outputs.length) * 20 + 8];
       }
       AppNode.title = title;
@@ -305,13 +305,13 @@
     }
 
     // 兜底: 画布上已存在的节点 (老代码注册时 title 是裸 HTML)·in-place 修正
-    // 同时 cover OPUS app 节点和内置 TOOL_SPECS 节点 (两种都可能有裸 HTML title)
+    // 同时 cover Daemonkey app 节点和内置 TOOL_SPECS 节点 (两种都可能有裸 HTML title)
     if (_graph && Array.isArray(_graph._nodes)) {
       let touched = false;
       for (const n of _graph._nodes) {
         if (!n || !/<i\s[^>]*>/i.test(n.title || '')) continue;
         const kind = n.properties && n.properties._kind;
-        if (kind === 'opus_app') {
+        if (kind === 'Daemonkey_app') {
           const app = _apps.find(a => a && a.id === n.properties._appId);
           if (app) { n.title = iconToEmoji(app.icon) + ' ' + app.name; touched = true; }
         } else if (n.properties && n.properties._toolKey) {
@@ -389,7 +389,7 @@
             </div>
           </div>
 
-          <!-- ── canvas tab · 工作流列表 + 只读画布 (卷七十二 v2 · BRO 反馈: 左侧从工具集改成工作流列表) ── -->
+          <!-- ── canvas tab · 工作流列表 + 只读画布 (卷七十二 v2 · 用户 反馈: 左侧从工具集改成工作流列表) ── -->
           <div class="ws-pane ws-pane-canvas" data-pane="canvas">
             <aside class="ws-toolbox" id="wsToolbox">
               <div class="ws-tb-head">
@@ -402,11 +402,11 @@
               <div class="ws-tb-body">
                 <div class="ws-flows-list" id="wsFlowsList">
                   <div class="ws-flows-empty">
-                    <div class="ws-flows-empty-hint">还没有工作流 · 跟右边对话框跟 OPUS 说「帮我做一条 X 工作流」</div>
+                    <div class="ws-flows-empty-hint">还没有工作流 · 跟右边对话框跟 Daemonkey 说「帮我做一条 X 工作流」</div>
                   </div>
                 </div>
                 <div class="ws-tb-add">
-                  <button data-act="ask-opus-flow" title="跟右边对话框跟 OPUS 说想要的工作流">＋ 让 OPUS 排一条新工作流</button>
+                  <button data-act="ask-Daemonkey-flow" title="跟右边对话框跟 Daemonkey 说想要的工作流">＋ 让 Daemonkey 排一条新工作流</button>
                 </div>
               </div>
             </aside>
@@ -424,20 +424,20 @@
               <!-- 卷七十二 · steps-as-core · canvas-as-view · 画布只读说明带 -->
               <div class="ws-canvas-readonly-banner" id="wsCanvasReadonlyBanner">
                 <i class="ri-information-fill"></i>
-                <span><strong>画布 = 工作流的运行状态投影</strong> · 跑工作流 → 右侧对话框跟 OPUS 说「跑 X 工作流」 · 调整 → 「优化 step N 的 app」</span>
+                <span><strong>画布 = 工作流的运行状态投影</strong> · 跑工作流 → 右侧对话框跟 Daemonkey 说「跑 X 工作流」 · 调整 → 「优化 step N 的 app」</span>
               </div>
               <canvas id="wsCanvas"></canvas>
               <div class="ws-canvas-empty" id="wsCanvasEmpty">
                 <div class="ws-empty-icon">⚛</div>
                 <div class="ws-empty-title">画布为空</div>
-                <div class="ws-empty-hint">从左侧点一条工作流加载 · 或跟右边对话框跟 OPUS 说「做一份 X 工作流」</div>
+                <div class="ws-empty-hint">从左侧点一条工作流加载 · 或跟右边对话框跟 Daemonkey 说「做一份 X 工作流」</div>
               </div>
               <!-- 卷七十二 · steps 列表面板 · steps 是主 · 画布是投影 -->
               <div class="ws-steps-panel" id="wsStepsPanel" hidden>
                 <div class="ws-steps-header">
                   <i class="ri-list-ordered"></i> 步骤列表 <span class="ws-steps-count" id="wsStepsCount"></span>
                   <span class="ws-spacer"></span>
-                  <span class="ws-steps-hint">编辑请跟右边对话框跟 OPUS 说 · 不要直接改下面的卡</span>
+                  <span class="ws-steps-hint">编辑请跟右边对话框跟 Daemonkey 说 · 不要直接改下面的卡</span>
                 </div>
                 <div class="ws-steps-list" id="wsStepsList"></div>
               </div>
@@ -459,13 +459,13 @@
   function _renderAppCards() {
     const cards = _apps.map(app => {
       const isBuiltin = app.kind === 'builtin';
-      const isShipped = app.kind === 'opus' && app.shipped;  // 自带 agentic app · 随 DK 出厂 · 不可删
-      const kindLabel = isBuiltin ? '内置' : (isShipped ? '自带' : 'OPUS 造');
+      const isShipped = app.kind === 'Daemonkey' && app.shipped;  // 沉淀闭环 v2 刀⑤修正: 自带 agentic app · 随 DK 出厂 · 不可删
+      const kindLabel = isBuiltin ? '内置' : (isShipped ? '自带' : 'Daemonkey 造');
       let meta;
       if (isBuiltin) meta = '<span class="wac-stage">stage 2b 可配置</span>';
       else if (isShipped) meta = `<span class="wac-stage">📦 随 DK 出厂 · v${Number(app.version || 1)}</span>`;
-      else meta = `<span class="wac-stage">${_esc((app.created_at || '').slice(0, 10))} · OPUS 造</span>`;
-      // 删除按钮: 内置 / shipped 都不能删 · 只有纯 OPUS 临时造的 app 可删
+      else meta = `<span class="wac-stage">${_esc((app.created_at || '').slice(0, 10))} · Daemonkey 造</span>`;
+      // 删除按钮: 内置 / shipped 都不能删 · 只有纯 Daemonkey 临时造的 app 可删
       const canDelete = !isBuiltin && !isShipped;
       const trashBtn = canDelete ? `<button class="wac-trash-btn" data-act="app-delete-card" data-app-id="${_esc(app.id)}" title="移到回收站 (可恢复)">🗑</button>` : '';
       return `
@@ -484,11 +484,11 @@
       `;
     }).join('');
     const addCard = `
-      <div class="ws-app-card ws-app-add" data-act="ask-opus-app" title="跳到右侧 OPUS · 直接说想要什么应用">
+      <div class="ws-app-card ws-app-add" data-act="ask-Daemonkey-app" title="跳到右侧 Daemonkey · 直接说想要什么应用">
         <div class="wac-icon">＋</div>
         <div class="wac-body">
           <div class="wac-title">长一个新应用</div>
-          <div class="wac-desc">跟右侧 OPUS 说「我想要一个 X 应用」 · OPUS 自己查资料 / 写代码 / 启程序 · 长完落到这里</div>
+          <div class="wac-desc">跟右侧 Daemonkey 说「我想要一个 X 应用」 · Daemonkey 自己查资料 / 写代码 / 启程序 · 长完落到这里</div>
           <div class="wac-meta"><span class="wac-stage">点这里 → 跳右侧填模板</span></div>
         </div>
       </div>
@@ -504,7 +504,7 @@
     _assetsPromise = _doLoadAssetsFromDaemon().finally(() => { _assetsPromise = null; });
     return _assetsPromise;
   }
-  // 卷七十二 v5 · 2026-06-10 · BRO bug: 「刷新后应用先看不到 · 要再次刷新才能看到」
+  // 卷七十二 v5 · 2026-06-10 · 用户 bug: 「刷新后应用先看不到 · 要再次刷新才能看到」
   // 病根: _doLoadAssetsFromDaemon fetch 失败 (daemon 启动还没全 ready / 偶发 5xx / 网络抖)
   //      try/catch 静默吃了错 · _apps 不更新 · 用户只见 3 个 builtin · 必须二刷
   // 修法: 失败时退避重试 2 次 (500ms · 1500ms) · 还失败才放弃显示 builtin
@@ -530,14 +530,14 @@
     if (rApps && rApps.ok) {
       try {
         const data = await rApps.json();
-        const opusApps = (data.apps || []).map(a => Object.assign({}, a, { kind: 'opus' }));
-        // shipped app (自带·随 DK 出厂) 排在所有 opus app 之前
-        // 顺序: BUILTIN_APPS (产品设计/开发/文档撰写) → shipped (内容制作) → 其他 opus app (按 mtime desc)
-        const shippedApps = opusApps.filter(a => a.shipped);
-        const otherApps = opusApps.filter(a => !a.shipped);
+        const DaemonkeyApps = (data.apps || []).map(a => Object.assign({}, a, { kind: 'Daemonkey' }));
+        // 沉淀闭环 v2 刀⑤修正补丁 (2026-06-10): shipped app (自带·随 DK 出厂) 排在所有 Daemonkey app 之前
+        // 顺序: BUILTIN_APPS (产品设计/开发/文档撰写) → shipped (内容制作) → 其他 Daemonkey app (按 mtime desc)
+        const shippedApps = DaemonkeyApps.filter(a => a.shipped);
+        const otherApps = DaemonkeyApps.filter(a => !a.shipped);
         _apps = BUILTIN_APPS.concat(shippedApps, otherApps);
         // 卷七十二 v3 · 共享 _apps 给 chat.js 的 flow runs banner 用 (查 step.app id → 名字)
-        window._opusWorkshopApps = _apps.slice();
+        window._DaemonkeyWorkshopApps = _apps.slice();
         // 卷四十六续 12 · wish-165ea1f6 phase B · 每次拿到新 app 列表都注册成 LiteGraph node
         _registerAppNodes();
       } catch (e) { /* json parse · 静默走 builtin */ }
@@ -550,7 +550,7 @@
       } catch (e) { /* 静默 */ }
     }
     _rerenderToolbox();
-    // 卷七十二 v2 · BRO 反馈: app 名字显示错 → _apps 异步加载完后重渲染当前 steps panel
+    // 卷七十二 v2 · 用户 反馈: app 名字显示错 → _apps 异步加载完后重渲染当前 steps panel
     if (_currentFlowFull) _renderStepsPanel(_currentFlowFull);
     _renderFlowsSidebar();
     // 重渲染应用网格 (sidebar 内列表 · 卷四十六续 11)
@@ -586,10 +586,10 @@
         <div class="ws-apps-welcome-stats">
           <span class="wawm-stat"><b>${total}</b> 个应用</span>
           <span class="wawm-stat"><b>${_apps.filter(a => a.kind === 'builtin').length}</b> 个内置</span>
-          <span class="wawm-stat"><b>${_apps.filter(a => a.kind === 'opus').length}</b> 个 OPUS 造</span>
+          <span class="wawm-stat"><b>${_apps.filter(a => a.kind === 'Daemonkey').length}</b> 个 Daemonkey 造</span>
         </div>
         <div class="ws-apps-welcome-tips">
-          <div class="wawt-row"><i class="ri-lightbulb-fill"></i> 想要新应用 · 点左下「＋ 长一个新应用」 · 跟主对话区 OPUS 说想要什么</div>
+          <div class="wawt-row"><i class="ri-lightbulb-fill"></i> 想要新应用 · 点左下「＋ 长一个新应用」 · 跟主对话区 Daemonkey 说想要什么</div>
           <div class="wawt-row"><i class="ri-flash-fill"></i> 应用多了 · 左上搜索框可以快速过滤</div>
           <div class="wawt-row">« 折叠左侧 · 沉浸看详情 · 鼠标移到 icon 可以看名字</div>
         </div>
@@ -604,7 +604,7 @@
     if (!app) return '';
     const kindLabel = app.kind === 'builtin'
       ? '内置应用'
-      : (app.shipped ? '📦 自带应用 · 随 DK 出厂' : 'OPUS 造的应用');
+      : (app.shipped ? '📦 自带应用 · 随 DK 出厂' : 'Daemonkey 造的应用');
     return `
       <div class="ws-ad-head">
         <button class="ws-ad-back" data-act="back-to-apps" title="返回应用列表">← 应用</button>
@@ -612,12 +612,12 @@
         <span class="ws-ad-title">${_esc(app.name)}</span>
         <span class="ws-ad-kind">${kindLabel}</span>
         <span class="ws-spacer"></span>
-        ${app.kind === 'opus' && !app.shipped ? `<button class="ws-btn" data-act="ad-delete" data-app-id="${_esc(app.id)}" title="删除这个 OPUS 造的 app">🗑 删</button>` : ''}
+        ${app.kind === 'Daemonkey' && !app.shipped ? `<button class="ws-btn" data-act="ad-delete" data-app-id="${_esc(app.id)}" title="删除这个 Daemonkey 造的 app">🗑 删</button>` : ''}
         <button class="ws-btn" data-act="ad-refresh" title="刷新产物">⟳ 刷新</button>
       </div>
       <div class="ws-ad-tabs">
         <button class="ws-ad-tab active" data-ad-tab="output">📁 产出</button>
-        ${app.kind === 'opus' ? '<button class="ws-ad-tab" data-ad-tab="detail">📋 详情</button>' : ''}
+        ${app.kind === 'Daemonkey' ? '<button class="ws-ad-tab" data-ad-tab="detail">📋 详情</button>' : ''}
         <button class="ws-ad-tab" data-ad-tab="config">⚙ 配置</button>
         <button class="ws-ad-tab" data-ad-tab="test"><i class="ri-play-fill"></i> 测试</button>
       </div>
@@ -638,7 +638,7 @@
 
   // 卷四十六续 12 · wish-165ea1f6 phase A · 渲染 app 的测试表单 (NLP First 路径)
   //   - 有 ui_form_schema 时 · 渲染声明式表单 · 提交后拼 prompt 塞主对话框 (window.injectChat)
-  //   - 无 schema 时 · 显示提示 + 一键『让 OPUS 给这个 app 加表单』
+  //   - 无 schema 时 · 显示提示 + 一键『让 Daemonkey 给这个 app 加表单』
   function _renderAppTestForm(app) {
     if (!app) return '';
     const schema = Array.isArray(app.ui_form_schema) ? app.ui_form_schema : [];
@@ -650,11 +650,11 @@
           <p>声明 <code>ui_form_schema</code> 后 · 这里会出现一张表单 · 你填字段 → 点提交 → 拼成 prompt 塞到右侧对话框。 重复跑同一 app 不用每次打字 (典型场景 SOVITS / GPT-Image)。</p>
           <p class="ws-stub-hint">现在你可以:</p>
           <ul class="ws-form-empty-actions">
-            <li>对右侧 OPUS 说: <code>用 update_app 给 ${_esc(app.id)} 加个表单 · 字段是 …</code></li>
+            <li>对右侧 Daemonkey 说: <code>用 update_app 给 ${_esc(app.id)} 加个表单 · 字段是 …</code></li>
             <li>或者继续直接 NLP 调用: <code>用 ${_esc(app.name)} 帮我 …</code></li>
           </ul>
           <button class="ws-btn ws-btn-primary" data-act="ad-suggest-form" data-app-id="${_esc(app.id)}" type="button">
-            ✨ 让 OPUS 替我给这个 app 设计表单
+            ✨ 让 Daemonkey 替我给这个 app 设计表单
           </button>
         </div>
       `;
@@ -749,8 +749,8 @@
     `;
   }
 
-  // 把 form 字段拼成自然语言 prompt · 喂给主 OPUS
-  // 设计: 走 NLP First 路径 · 跟 BRO 用嘴说调这个 app 完全等价
+  // 把 form 字段拼成自然语言 prompt · 喂给主 Daemonkey
+  // 设计: 走 NLP First 路径 · 跟 用户 用嘴说调这个 app 完全等价
   function _buildPromptFromForm(app, values) {
     const lines = [
       `请用应用「${app.name}」(${app.id}) 处理我的请求 · 通过表单提供以下输入:`,
@@ -779,7 +779,7 @@
     return lines.join('\n');
   }
 
-  // 卷七十二 v2 · BRO 反馈: 左侧改成工作流列表 · 点击直接加载 (替代旧 toolbox)
+  // 卷七十二 v2 · 用户 反馈: 左侧改成工作流列表 · 点击直接加载 (替代旧 toolbox)
   function _rerenderToolbox() {
     _renderFlowsSidebar();
   }
@@ -796,7 +796,7 @@
     }
     if (flows.length === 0) {
       list.innerHTML = `<div class="ws-flows-empty">
-        <div class="ws-flows-empty-hint">${search ? '没有匹配 「' + _escapeHtml(search) + '」 的工作流' : '还没有工作流 · 跟右边对话框跟 OPUS 说「帮我做一条 X 工作流」'}</div>
+        <div class="ws-flows-empty-hint">${search ? '没有匹配 「' + _escapeHtml(search) + '」 的工作流' : '还没有工作流 · 跟右边对话框跟 Daemonkey 说「帮我做一条 X 工作流」'}</div>
       </div>`;
       return;
     }
@@ -820,8 +820,8 @@
     }).join('');
   }
 
-  // 卷七十二 v5 · 2026-06-10 · BRO 反馈: emoji 状态点 + ⭐ 在不同系统下渲染不一致 · 换 remix icon
-  // lvl 0-3 用 fill 实心圆 (已点亮) + line 空心圆 (未点亮) 拼出进度条 · lvl3 用 shield-star-fill (盾+星 · BRO 钦定)
+  // 卷七十二 v5 · 2026-06-10 · 用户 反馈: emoji 状态点 + ⭐ 在不同系统下渲染不一致 · 换 remix icon
+  // lvl 0-3 用 fill 实心圆 (已点亮) + line 空心圆 (未点亮) 拼出进度条 · lvl3 用 shield-star-fill (盾+星 · 用户 钦定)
   function _trustDotsHtml(lvl) {
     let html = '';
     for (let i = 0; i < 4; i++) {
@@ -833,8 +833,8 @@
   function _trustBadgeHtml(level, by, successRuns) {
     const lvl = Math.max(0, Math.min(3, parseInt(level || 0, 10)));
     const dots = _trustDotsHtml(lvl);
-    const label = ['未信任', '入口免审', '自动跑', 'BRO 钦定'][lvl];
-    const star = (by === 'BRO' && lvl === 3) ? '<i class="ri-shield-star-fill ws-trust-crown"></i>' : '';
+    const label = ['未信任', '入口免审', '自动跑', '用户 钦定'][lvl];
+    const star = (by === '用户' && lvl === 3) ? '<i class="ri-shield-star-fill ws-trust-crown"></i>' : '';
     const tip = `信任度 lvl ${lvl} · ${label} · 成功跑过 ${successRuns || 0} 次 · 点改`;
     return `<span class="ws-flow-trust trust-lvl-${lvl}" title="${tip}">${dots}${star}</span>`;
   }
@@ -852,7 +852,7 @@
     const f = _currentFlowFull;
     const lvl = Math.max(0, Math.min(3, parseInt(f.trust_level || 0, 10)));
     const dots = _trustDotsHtml(lvl);
-    const label = ['未信任', '入口免审', '自动跑 (CONFIRM 放行)', 'BRO 钦定'][lvl];
+    const label = ['未信任', '入口免审', '自动跑 (CONFIRM 放行)', '用户 钦定'][lvl];
     const crown = (lvl === 3) ? '<i class="ri-shield-star-fill ws-trust-crown"></i>' : '';
     const next = lvl >= 2 ? 0 : (lvl + 2);  // 0/1 → 2 (信任) · 2 → 0 (收回)
     const nextIcon = next >= 2 ? 'ri-shield-check-fill' : 'ri-shield-cross-fill';
@@ -876,7 +876,7 @@
       const r = await fetch('/workshop/flows/' + encodeURIComponent(_activeFlowId) + '/trust', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ level: nextLevel, by: 'BRO' }),
+        body: JSON.stringify({ level: nextLevel, by: '用户' }),
       });
       if (!r.ok) { _toast(`信任设置失败 [${r.status}]`); return; }
       const data = await r.json();
@@ -896,9 +896,9 @@
     }
   }
 
-  // 卷五十四 · 孪法第4条 · 画布引擎 (workflow_engine.run_workflow) 目前只实装 opus/app/<aid> 节点。
+  // 卷五十四 · 孪法第4条 · 画布引擎 (workflow_engine.run_workflow) 目前只实装 Daemonkey/app/<aid> 节点。
   // composite/* (生产线模板) 和 atomic/* (单步动作) 还没接执行器·拖进画布跑会被引擎跳过报错 =
-  // "UI 有按钮但 NLP 跑不通"。 在真接执行器之前·明标"未实装"+禁拖·不误导 BRO。
+  // "UI 有按钮但 NLP 跑不通"。 在真接执行器之前·明标"未实装"+禁拖·不误导 用户。
   const _UNIMPL_GROUPS = new Set(['composite', 'atomic']);
 
   function _renderToolGroup(group, label) {
@@ -930,7 +930,7 @@
         </div>
         <div class="ws-tg-body">
           ${items.map(([key, s]) => unimpl
-            ? `<div class="ws-tool ws-tool-unimpl" data-act="unimpl-tool" title="${_esc(s.desc)} · 画布执行器还没接这类节点·暂不能拖。目前画布只跑『自定义工具 · OPUS 长出来的』里的应用节点">
+            ? `<div class="ws-tool ws-tool-unimpl" data-act="unimpl-tool" title="${_esc(s.desc)} · 画布执行器还没接这类节点·暂不能拖。目前画布只跑『自定义工具 · Daemonkey 长出来的』里的应用节点">
                  <span class="ws-tool-ico">${s.icon}</span>
                  <span class="ws-tool-name">${_esc(s.title)}</span>
                  <span class="ws-tool-soon">未实装</span>
@@ -969,7 +969,7 @@
     const sidebar = _container.querySelector('#wsAppsSidebar');
     if (!sidebar) return;
     sidebar.classList.toggle('collapsed', collapsed);
-    // 卷四十六续 11 补丁 · 折叠态下复用同一个按钮 · 文字 + title 切换 (BRO 觉得外侧 » 多余)
+    // 卷四十六续 11 补丁 · 折叠态下复用同一个按钮 · 文字 + title 切换 (用户 觉得外侧 » 多余)
     const btn = sidebar.querySelector('.wash-collapse');
     if (btn) {
       btn.textContent = collapsed ? '»' : '«';
@@ -996,7 +996,7 @@
         }
       }
       else if (act === 'ad-delete') _onDeleteApp(tgt.dataset.appId);
-      // 配置 tab 资产填写按钮 → 弹 modal
+      // 沉淀闭环 v2 刀⑤b (2026-06-10) · 配置 tab 资产填写按钮 → 弹 modal
       else if (act === 'asset-edit') {
         _openAssetEditModal({
           aid: tgt.dataset.assetAid,
@@ -1009,7 +1009,7 @@
       }
       // 卷四十六续 12 · wish-165ea1f6 phase A/B · 应用测试表单
       else if (act === 'ad-form-clear') _onAppFormClear(tgt.dataset.appId);
-      else if (act === 'ad-suggest-form') _onAskOpusDesignForm(tgt.dataset.appId);
+      else if (act === 'ad-suggest-form') _onAskDaemonkeyDesignForm(tgt.dataset.appId);
       else if (act === 'ad-form-cancel') _onAppFormCancel(tgt.dataset.appId);
       // 卷四十四 K stage 2c++ · wish-6fd76512 · 卡片右上角 🗑 软删 · stopPropagation 不打开详情
       else if (act === 'app-delete-card') { e.stopPropagation(); _onDeleteApp(tgt.dataset.appId); }
@@ -1019,30 +1019,30 @@
       else if (act === 'trash-empty-one') _onEmptyTrashOne(tgt.dataset.trashId);
       else if (act === 'trash-empty-all') _onEmptyTrashAll();
       // 卷四十四 K stage 2b · ＋ 卡 / ＋ 工具 → focus 右侧主 chat 预填模板 (NLP First 闭环)
-      else if (act === 'ask-opus-app') _askOpusInChat('app');
-      else if (act === 'ask-opus-tool') _askOpusInChat('tool');
+      else if (act === 'ask-Daemonkey-app') _askDaemonkeyInChat('app');
+      else if (act === 'ask-Daemonkey-tool') _askDaemonkeyInChat('tool');
       // 卷四十六续 11 · sidebar 折叠 (« 收 / » 展)
       else if (act === 'toggle-apps-sidebar') _toggleAppsSidebar();
       // ── 卷四十四 K stage 1b · canvas 工具集 + 节点编辑 ──
       else if (act === 'hide-tb') _toggleToolbox(true);
-      else if (act === 'unimpl-tool') _toast('这类节点 (复合/原子) 画布执行器还没实装 · 暂不能拖到画布。目前画布只能跑「自定义工具 · OPUS 长出来的」里的应用节点 · 想要它跑就先让 OPUS 把它做成一个 app');
+      else if (act === 'unimpl-tool') _toast('这类节点 (复合/原子) 画布执行器还没实装 · 暂不能拖到画布。目前画布只能跑「自定义工具 · Daemonkey 长出来的」里的应用节点 · 想要它跑就先让 Daemonkey 把它做成一个 app');
       else if (act === 'toggle-tg') tgt.parentElement.classList.toggle('collapsed');
       else if (act === 'run') {
         // 卷七十二 v4 · 0.2.0 · 老"运行"按钮已删 · 这里兜底 · 万一有缓存版本点了给提示
-        _toast('🚀 工作流由对话启动 · 跟右侧 OPUS 说「跑这条 flow」 · 这里是状态投影');
+        _toast('🚀 工作流由对话启动 · 跟右侧 Daemonkey 说「跑这条 flow」 · 这里是状态投影');
       }
       else if (act === 'trust') _onTrustClick();
       else if (act === 'save') _onSave();
       else if (act === 'load') _onLoad();
       else if (act === 'clear') _onClear();
       else if (act === 'lang') _toggleLang();
-      // 卷七十二 v2 · BRO 反馈: 左侧工作流列表 · 点击直接加载
+      // 卷七十二 v2 · 用户 反馈: 左侧工作流列表 · 点击直接加载
       else if (act === 'load-flow') {
         const fid = tgt.dataset.flowId;
         const flow = _flows.find(f => f.id === fid);
         if (flow) _loadRemoteFlow(flow);
       }
-      else if (act === 'ask-opus-flow') _askOpusInChat('flow');
+      else if (act === 'ask-Daemonkey-flow') _askDaemonkeyInChat('flow');
     };
     _container.addEventListener('click', _delegated);
 
@@ -1099,7 +1099,7 @@
       const el = e.target.closest('.ws-tool[draggable="true"]');
       if (!el) return;
       el.classList.add('dragging');
-      e.dataTransfer.setData('text/opus-tool', el.dataset.tool);
+      e.dataTransfer.setData('text/Daemonkey-tool', el.dataset.tool);
       e.dataTransfer.effectAllowed = 'copy';
     };
     _container.addEventListener('dragstart', _dragHandler);
@@ -1115,7 +1115,7 @@
     // 卷七十二 · canvas-as-view · 工具集拖入禁用 · 编辑路径回 NLP
     _dropHandler = (e) => {
       e.preventDefault();
-      _toast('📌 画布是步骤的可视化投影 · 编辑请用 NLP (跟右侧 OPUS 说「做一个 X 工作流」)');
+      _toast('📌 画布是步骤的可视化投影 · 编辑请用 NLP (跟右侧 Daemonkey 说「做一个 X 工作流」)');
     };
     _canvasEl.addEventListener('dragover', _dragOverHandler);
     _canvasEl.addEventListener('drop', _dropHandler);
@@ -1159,7 +1159,7 @@
 
   function _toggleLang() {
     _menuLang = _menuLang === 'zh' ? 'en' : 'zh';
-    localStorage.setItem('opus_workshop_lang', _menuLang);
+    localStorage.setItem('Daemonkey_workshop_lang', _menuLang);
     const btn = _container.querySelector('#wsLangBtn');
     if (btn) btn.textContent = _menuLang === 'zh' ? '中' : 'EN';
   }
@@ -1168,7 +1168,7 @@
   function _switchTab(tab) {
     if (!['apps', 'canvas', 'trash'].includes(tab)) return;
     _activeTab = tab;
-    localStorage.setItem('opus_workshop_tab', tab);
+    localStorage.setItem('Daemonkey_workshop_tab', tab);
     const view = _container.querySelector('.workshop-view');
     if (view) view.dataset.tab = tab;
     _container.querySelectorAll('.ws-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -1176,9 +1176,9 @@
     if (tab === 'canvas') requestAnimationFrame(_renderCanvas);
     // 卷四十四 K stage 2c++ · wish-6fd76512 · 切到 trash tab 时 lazy load
     if (tab === 'trash') _loadTrashFromDaemon();
-    // 卷七十二 v5 · 2026-06-10 · BRO bug 第二层修复: 切回 apps tab 时强制重渲染 grid
+    // 卷七十二 v5 · 2026-06-10 · 用户 bug 第二层修复: 切回 apps tab 时强制重渲染 grid
     // 如果 mount 时 _activeTab 不是 apps · _doLoadAssetsFromDaemon 完成时跳过了重渲染 ·
-    // _apps 已更新但 grid 还停在 builtin 3 个 · BRO 切回 apps tab 看到的就是旧版
+    // _apps 已更新但 grid 还停在 builtin 3 个 · 用户 切回 apps tab 看到的就是旧版
     if (tab === 'apps' && _container) {
       const grid = _container.querySelector('#wsAppsGrid');
       if (grid) {
@@ -1223,18 +1223,18 @@
   function _switchAppDetailTab(tabName) {
     _container.querySelectorAll('.ws-ad-tab').forEach(b => b.classList.toggle('active', b.dataset.adTab === tabName));
     _container.querySelectorAll('.ws-ad-pane').forEach(p => { p.hidden = p.dataset.adPane !== tabName; });
-    // opus app · 切到详情 tab 时动态加载系统提示词
+    // Daemonkey app · 切到详情 tab 时动态加载系统提示词
     if (tabName === 'detail' && _activeAppId) {
       const app = _apps.find(a => a.id === _activeAppId);
-      if (app && app.kind === 'opus') {
+      if (app && app.kind === 'Daemonkey') {
         const pane = _container.querySelector('.ws-ad-pane[data-ad-pane="detail"]');
         if (pane && !pane.dataset.loaded) {
-          pane.innerHTML = _renderOpusAppConfigHTML(app);
+          pane.innerHTML = _renderDaemonkeyAppConfigHTML(app);
           pane.dataset.loaded = '1';
         }
       }
     }
-    // 切到配置 tab 时拉 asset registry 真值 + 渲染槽位卡片
+    // 沉淀闭环 v2 刀⑤ · 切到配置 tab 时拉 asset registry 真值 + 渲染槽位卡片
     if (tabName === 'config' && _activeAppId) {
       const app = _apps.find(a => a.id === _activeAppId);
       const pane = _container.querySelector('.ws-ad-pane[data-ad-pane="config"]');
@@ -1245,13 +1245,13 @@
     }
   }
 
-  // ─── 配置 tab 加载 + 渲染 (NLP First · 只读为主) ───
+  // ─── 沉淀闭环 v2 刀⑤ · 配置 tab 加载 + 渲染 (NLP First · 只读为主) ───
   async function _loadAppConfigPane(app, pane) {
     const token = _getToken();
     // 拉本 app + _shared 资产 (两份合并 · _shared 标识"跨 app")
     let myAssets = [];
     let sharedAssets = [];
-    if (token && app.kind === 'opus') {
+    if (token && app.kind === 'Daemonkey') {
       try {
         const [r1, r2] = await Promise.all([
           fetch(`/workshop/assets/${encodeURIComponent(app.id)}`, { headers: { 'Authorization': 'Bearer ' + token } }),
@@ -1266,7 +1266,7 @@
 
   function _renderAppConfigPane(app, myAssets, sharedAssets) {
     if (app.kind === 'builtin') {
-      return `<div class="ws-ad-stub"><div class="ws-stub-icon">⚙</div><h3>${_esc(app.name)} · 内置 app</h3><p>内置 app 没有可配置的资产槽 · 配置 = 真 OPUS-app 才用 (那些有 system_prompt / asset_slots / 表单 schema 的)。</p></div>`;
+      return `<div class="ws-ad-stub"><div class="ws-stub-icon">⚙</div><h3>${_esc(app.name)} · 内置 app</h3><p>内置 app 没有可配置的资产槽 · 配置 = 真 Daemonkey-app 才用 (那些有 system_prompt / asset_slots / 表单 schema 的)。</p></div>`;
     }
     const slots = Array.isArray(app.asset_slots) ? app.asset_slots : [];
     const tools = Array.isArray(app.tools) ? app.tools : [];
@@ -1280,7 +1280,7 @@
 
     const toolsHtml = tools.length
       ? tools.map(t => `<code>${_esc(t)}</code>`).join(' ')
-      : '<i>(全部 OPUS 工具都可用)</i>';
+      : '<i>(全部 Daemonkey 工具都可用)</i>';
 
     const schemaHtml = schema.length
       ? `<table class="ws-app-schema-table"><thead><tr><th>字段</th><th>类型</th><th>标签</th><th>必填</th></tr></thead><tbody>${schema.map(f => `<tr><td><code>${_esc(f.name)}</code></td><td>${_esc(f.type || 'text')}</td><td>${_esc(f.label || '')}</td><td>${f.required ? '是' : '—'}</td></tr>`).join('')}</tbody></table>`
@@ -1303,7 +1303,7 @@
 
         <div class="ws-app-section">
           <div class="ws-app-section-head"><i class="ri-archive-fill"></i> 资产槽位 (asset_slots) · ${slots.length} 个声明</div>
-          <div class="ws-app-section-hint">用户个性资产存这里 · 改值 → 主对话: <code>manage_app_asset(action=set, app_id=${_esc(app.id)}, name=..., value=...)</code></div>
+          <div class="ws-app-section-hint">沉淀闭环 v2 · 用户个性资产存这里 · 改值 → 主对话: <code>manage_app_asset(action=set, app_id=${_esc(app.id)}, name=..., value=...)</code></div>
           <div class="ws-app-slot-grid">${slotsHtml}</div>
         </div>
 
@@ -1345,7 +1345,7 @@
     const note = entry ? _esc(entry.note || '') : '';
     const historyN = entry ? Number(entry.history_count || 0) : 0;
     const filled = !!entry;
-    // asset_slot 卡片加"填资产/换资产"按钮 · 治"白说了"的痛
+    // 沉淀闭环 v2 刀⑤b (2026-06-10): asset_slot 卡片加"填资产/换资产"按钮 · 治"白说了"的痛
     const editTargetAid = fromShared ? '_shared' : appId;
     const editLabel = filled ? '📎 换' : '📎 填';
     return `
@@ -1373,8 +1373,8 @@
     `;
   }
 
-  // ─── 资产填写 modal · 治"白说了"的痛 ───
-  // BRO 之前必须打 manage_app_asset(...) 命令才能填资产 · 这是 NLP 优先的不在场证明
+  // ─── 沉淀闭环 v2 刀⑤b (2026-06-10) · 资产填写 modal · 治"白说了"的痛 ───
+  // 用户 之前必须打 manage_app_asset(...) 命令才能填资产 · 这是 NLP 优先的不在场证明
   // 现在: 配置 tab 点📎填 → modal 弹出 → 按 type 分支 → 提交直接 POST /workshop/assets/set (跟 NLP 同一咽喉)
   let _assetModalEl = null;
   let _assetModalActiveAid = null;  // 关 modal 后刷新当前 app 的配置 tab
@@ -1412,13 +1412,13 @@
             <input type="text" data-am-field="image_label" placeholder="例：白色小猪 IP · 戴红围巾的卡通形象" />
           ` : isJson ? `
             <label class="ws-am-label">JSON 值 (粘合法 JSON · 提交时解析)</label>
-            <textarea data-am-field="value_json" rows="8" placeholder='例: {"voice_id": "bro-final-v1", "speed": 1.0}'></textarea>
+            <textarea data-am-field="value_json" rows="8" placeholder='例: {"voice_id": "用户-final-v1", "speed": 1.0}'></textarea>
           ` : `
             <label class="ws-am-label">${_esc(opts.label || opts.name)}</label>
             <textarea data-am-field="value_text" rows="6" placeholder="${type === 'textarea' ? '多行文本 · 例:口播文风参考样例 ~200 字' : '单行/多行文本均可'}"></textarea>
           `}
           <label class="ws-am-label" style="margin-top:12px">这次写入的说明 (note · 强烈建议填 · 进 history 留痕)</label>
-          <input type="text" data-am-field="note" placeholder="例：第三版克隆·BRO 试听满意 · 取代 bro-clone-01" />
+          <input type="text" data-am-field="note" placeholder="例：第三版克隆·用户 试听满意 · 取代 用户-clone-01" />
         </div>
         <div class="ws-am-foot">
           <span class="ws-am-status" data-am-status></span>
@@ -1544,14 +1544,14 @@
 
   // ─── 拉应用历史产物 ───
   // builtin app: GET /dashboard/<domain>
-  // opus 造的 app: 暂时显示 stub (system_prompt + 工具白名单 + 推荐模型) · 产物历史留 stage 2d
+  // Daemonkey 造的 app: 暂时显示 stub (system_prompt + 工具白名单 + 推荐模型) · 产物历史留 stage 2d
   async function _loadAppOutputs(appId, refresh) {
     const app = _apps.find(a => a.id === appId);
     if (!app) return;
     const pane = _container.querySelector('.ws-ad-pane[data-ad-pane="output"]');
     if (!pane) return;
 
-    if (app.kind === 'opus') {
+    if (app.kind === 'Daemonkey') {
       const token2 = _getToken();
       if (!token2) {
         pane.innerHTML = '<div class="ws-ad-error">需要 token · 右上角 ⚙ 设置里填一下</div>';
@@ -1567,7 +1567,7 @@
           return;
         }
         const outData = await r2.json();
-        pane.innerHTML = _renderOpusOutputsHTML(app, outData);
+        pane.innerHTML = _renderDaemonkeyOutputsHTML(app, outData);
       } catch (e2) {
         pane.innerHTML = `<div class="ws-ad-error">网络出错: ${_esc(e2.message)}</div>`;
       }
@@ -1599,16 +1599,16 @@
     }
   }
 
-  // 卷四十六续 11 补丁 · BRO 反馈: 外框冗余 / 不自适应 / 系统提示词 markdown 没渲染
+  // 卷四十六续 11 补丁 · 用户 反馈: 外框冗余 / 不自适应 / 系统提示词 markdown 没渲染
   // 改造: 撤掉 max-width:580px auto · 用 padding 撑满 main 宽度
-  //       用 window.opusMdRender 真渲染 system_prompt (chat.js 那套表格/代码块/标题全套支持)
+  //       用 window.DaemonkeyMdRender 真渲染 system_prompt (chat.js 那套表格/代码块/标题全套支持)
   //       metadata (工具 / 模型 / 时间 / 调用) 压成 chip 行 · 不再一项一行
-  function _renderOpusAppConfigHTML(app) {
+  function _renderDaemonkeyAppConfigHTML(app) {
     const tools = (app.tools && app.tools.length)
       ? app.tools.map(t => `<code>${_esc(t)}</code>`).join(' ')
-      : '<i>(全部 OPUS 工具都可用)</i>';
+      : '<i>(全部 Daemonkey 工具都可用)</i>';
     const promptPreview = (app.system_prompt || '').trim();
-    const mdRender = window.opusMdRender || ((t) => `<pre>${_esc(t)}</pre>`);
+    const mdRender = window.DaemonkeyMdRender || ((t) => `<pre>${_esc(t)}</pre>`);
     const promptHtml = promptPreview
       ? `<div class="ws-app-md">${mdRender(promptPreview)}</div>`
       : '<div class="ws-app-empty">(未配置系统提示词)</div>';
@@ -1619,7 +1619,7 @@
       <div class="ws-app-stub">
         ${descHtml}
         <div class="ws-app-meta-chips">
-          <span class="wamc-chip" title="推荐模型"><i class="ri-brain-fill"></i> ${app.model_hint ? `<code>${_esc(app.model_hint)}</code>` : '<i>BRO 默认</i>'}</span>
+          <span class="wamc-chip" title="推荐模型"><i class="ri-brain-fill"></i> ${app.model_hint ? `<code>${_esc(app.model_hint)}</code>` : '<i>用户 默认</i>'}</span>
           <span class="wamc-chip" title="创建时间">🕐 ${_esc(app.created_at || '—')}</span>
           <span class="wamc-chip" title="调用次数"><i class="ri-play-fill"></i> ${Number(app.runs || 0)} 次</span>
         </div>
@@ -1631,7 +1631,7 @@
           <div class="ws-app-section-head">🧰 工具白名单</div>
           <div class="ws-app-tools">${tools}</div>
         </div>
-        <div class="ws-app-hint">stage 2d 上线后这里会有产物历史 · 现在跟主 OPUS 说「用 ${_esc(app.name)} 风格做 X」 · OPUS 调对应工具落产物</div>
+        <div class="ws-app-hint">stage 2d 上线后这里会有产物历史 · 现在跟主 Daemonkey 说「用 ${_esc(app.name)} 风格做 X」 · Daemonkey 调对应工具落产物</div>
       </div>
     `;
   }
@@ -1647,7 +1647,7 @@
     }
     html += `<div class="ws-ad-meta">${items.length} 份产出 · ${_esc(dir)}</div>`;
     if (items.length === 0) {
-      html += `<div class="ws-ad-empty">${_esc(data.empty_hint || '工坊还空 · 跟右侧 OPUS 说「做一份 X」 · OPUS 调 draft_studio 工具落 markdown')}</div>`;
+      html += `<div class="ws-ad-empty">${_esc(data.empty_hint || '工坊还空 · 跟右侧 Daemonkey 说「做一份 X」 · Daemonkey 调 draft_studio 工具落 markdown')}</div>`;
       return html;
     }
     html += '<div class="ws-ad-list">';
@@ -1680,11 +1680,11 @@
   }
 
   // 卷四十四 K stage 2b · NLP First 闭环 · ＋ 卡片不打开新 UI · 直接焦点到主 chat + 预填模板
-  // 卷七十三 P0-2 (2026-06-10) · BRO 痛点修补:
+  // 卷七十三 P0-2 (2026-06-10) · 用户 痛点修补:
   //   ① other (md/json/txt) 卡片**没有 onclick** = 哑卡片打不开 · 加 modal preview
   //   ② 文件名是 timestamp 看不懂 → 解析成人话标题 (`导演蓝图 · 6月10日 15:24`)
-  //   ③ 加"复制路径"按钮 · BRO 想去文件管理器自己定位
-  function _renderOpusOutputsHTML(app, data) {
+  //   ③ 加"复制路径"按钮 · 用户 想去文件管理器自己定位
+  function _renderDaemonkeyOutputsHTML(app, data) {
   const files = data.files || [];
   if (files.length === 0) {
     return `<div class="ws-ad-empty">
@@ -1850,7 +1850,7 @@ window._openOutputPreview = async function(url, name, type) {
     const text = await r.text();
     const lname = (name || '').toLowerCase();
     if (lname.endsWith('.md')) {
-      const md = (window.opusMdRender || ((t) => `<pre>${_esc(t)}</pre>`))(text);
+      const md = (window.DaemonkeyMdRender || ((t) => `<pre>${_esc(t)}</pre>`))(text);
       body.innerHTML = `<div class="opm-md">${md}</div>`;
     } else if (lname.endsWith('.json')) {
       let pretty = text;
@@ -1904,7 +1904,7 @@ async function _previewWorkshopInline(domain, name, cardEl) {
       return;
     }
     const data = await r.json();
-    const mdRender = window.opusMdRender || ((t) => `<pre>${_esc(t)}</pre>`);
+    const mdRender = window.DaemonkeyMdRender || ((t) => `<pre>${_esc(t)}</pre>`);
     previewEl.innerHTML = `<div class="ws-ad-preview-body"><div class="ws-ad-preview-md">${mdRender(data.markdown || '')}</div></div>`;
     previewEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (e) {
@@ -1936,7 +1936,7 @@ function _closeLightbox() {
 window._openLightbox = _openLightbox;
 window._closeLightbox = _closeLightbox;
 
-function _askOpusInChat(kind) {
+function _askDaemonkeyInChat(kind) {
     let tpl;
     if (kind === 'app') {
       tpl = '我想要一个 ___ 应用 · 功能是 ___ · 检索本地是否有现成的可调用 (例如 ___) · 没有就写代码 / 启程序 / 装依赖 · 完成后注册到工坊里给我看';
@@ -1947,12 +1947,12 @@ function _askOpusInChat(kind) {
     }
     const $input = document.getElementById('input');
     if (!$input) {
-      _toast('找不到主对话输入框 · 你可以直接跟右侧 OPUS 说想要的应用 / 工具');
+      _toast('找不到主对话输入框 · 你可以直接跟右侧 Daemonkey 说想要的应用 / 工具');
       return;
     }
     $input.value = tpl;
     $input.focus();
-    // 把光标停到第一个 ___ 处方便 BRO 直接打字
+    // 把光标停到第一个 ___ 处方便 用户 直接打字
     const idx = tpl.indexOf('___');
     if (idx >= 0) {
       try { $input.setSelectionRange(idx, idx + 3); } catch (e) {}
@@ -2000,7 +2000,7 @@ function _askOpusInChat(kind) {
       window.injectChat(prompt, { autosend });
       _toast(autosend
         ? `<i class="ri-play-fill"></i> 已发送 · 主对话区已用「${app.name}」处理`
-        : `→ 已塞到主对话框 · BRO 看一眼就按 Enter`);
+        : `→ 已塞到主对话框 · 用户 看一眼就按 Enter`);
     } else {
       _toast('找不到主对话输入框 · 复制下面的 prompt 自己粘:\n\n' + prompt.slice(0, 400));
     }
@@ -2119,7 +2119,7 @@ function _askOpusInChat(kind) {
   async function _runAppViaDaemon(form, app, values) {
     const token = _getToken();
     if (!token) {
-      _toast('需要 OPUS_API_TOKEN · 设置里填 · 这次跑不了');
+      _toast('需要 Daemonkey_API_TOKEN · 设置里填 · 这次跑不了');
       return;
     }
     const runBox = form.querySelector('[data-form-run]');
@@ -2295,16 +2295,16 @@ function _askOpusInChat(kind) {
     _toast('表单已清空');
   }
 
-  // 没有 schema 时 · 一键让 OPUS 给这个 app 设计表单
-  function _onAskOpusDesignForm(appId) {
+  // 没有 schema 时 · 一键让 Daemonkey 给这个 app 设计表单
+  function _onAskDaemonkeyDesignForm(appId) {
     const app = _apps.find(a => a.id === appId);
     if (!app) { _toast('找不到 app'); return; }
-    const tpl = `帮我给应用「${app.name}」(${app.id}) 设计一个 UI 表单 · 看下它的 description / system_prompt / tools · 推断出 BRO 重复用时需要填什么字段 · 然后调 update_app 把 ui_form_schema 塞进去。 设计原则: 字段数 ≤ 5 · 命名清晰 · 必填项最少。 设计完告诉我每个字段是啥意义。`;
+    const tpl = `帮我给应用「${app.name}」(${app.id}) 设计一个 UI 表单 · 看下它的 description / system_prompt / tools · 推断出 用户 重复用时需要填什么字段 · 然后调 update_app 把 ui_form_schema 塞进去。 设计原则: 字段数 ≤ 5 · 命名清晰 · 必填项最少。 设计完告诉我每个字段是啥意义。`;
     if (typeof window.injectChat === 'function') {
       window.injectChat(tpl, { autosend: false });
-      _toast('→ 已塞到主对话框 · BRO 按 Enter 让 OPUS 设计');
+      _toast('→ 已塞到主对话框 · 用户 按 Enter 让 Daemonkey 设计');
     } else {
-      _toast('没找到主对话输入框 · 直接跟 OPUS 说: ' + tpl);
+      _toast('没找到主对话输入框 · 直接跟 Daemonkey 说: ' + tpl);
     }
   }
 
@@ -2316,12 +2316,12 @@ function _askOpusInChat(kind) {
   function _onRun() {
     if (!_graph._nodes.length) { _toast('画布是空的 · 先拖个工具进来'); return; }
     const token = _getToken();
-    if (!token) { _toast('需要 OPUS_API_TOKEN · 设置里填'); return; }
+    if (!token) { _toast('需要 Daemonkey_API_TOKEN · 设置里填'); return; }
 
     const order = _graph.computeExecutionOrder(false);
-    const hasAppNode = _graph._nodes.some(n => (n.type || '').startsWith('opus/app/'));
+    const hasAppNode = _graph._nodes.some(n => (n.type || '').startsWith('Daemonkey/app/'));
     if (!hasAppNode) {
-      _toast('画布上还没有 OPUS app 节点 · phase B 仅支持 opus/app/<aid> 节点真跑');
+      _toast('画布上还没有 Daemonkey app 节点 · phase B 仅支持 Daemonkey/app/<aid> 节点真跑');
       return;
     }
 
@@ -2480,19 +2480,19 @@ function _askOpusInChat(kind) {
   async function _onSave() {
     if (!_graph._nodes.length) { _toast('画布是空的 · 没东西可存'); return; }
     const data = _graph.serialize();
-    localStorage.setItem('opus_workshop_draft', JSON.stringify(data));
+    localStorage.setItem('Daemonkey_workshop_draft', JSON.stringify(data));
 
-    if (typeof window.opusPrompt !== 'function') {
+    if (typeof window.DaemonkeyPrompt !== 'function') {
       _toast(`💾 已存到 localStorage · ${_graph._nodes.length} 节点 · ${(data.links || []).length} 连线\n(没找到对话框组件 · daemon 端没存)`);
       return;
     }
-    const name = await window.opusPrompt({
+    const name = await window.DaemonkeyPrompt({
       title: '保存工作流',
       message: '给这条工作流起个名字 (会落到 data/workshop/flows/)',
       placeholder: '比如: 内容选题 → 文稿 → SoVITS 转语音',
     });
     if (!name) return;  // 用户取消 · localStorage 已存
-    const desc = await window.opusPrompt({
+    const desc = await window.DaemonkeyPrompt({
       title: '一句话简介',
       message: `「${name}」 · 这条工作流是干啥的?`,
       placeholder: '比如: 一键产出短视频文案 + 配音 mp3',
@@ -2506,20 +2506,20 @@ function _askOpusInChat(kind) {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer ' + token,
         },
-        body: JSON.stringify({ name, description: desc, litegraph_json: data, created_by: 'BRO' }),
+        body: JSON.stringify({ name, description: desc, litegraph_json: data, created_by: '用户' }),
       });
       if (!r.ok) { _toast(`💾 localStorage 已存 · daemon 落档失败 [${r.status}]`); return; }
       const flow = await r.json();
-      _flows.unshift({ id: flow.id, name, description: desc, node_count: (data.nodes || []).length, created_at: flow.created_at, created_by: 'BRO' });
+      _flows.unshift({ id: flow.id, name, description: desc, node_count: (data.nodes || []).length, created_at: flow.created_at, created_by: '用户' });
       _toast(`💾 已落档 · ${flow.id}\n  - 名: ${name}\n  - ${_graph._nodes.length} 节点 · ${(data.links || []).length} 连线`);
     } catch (e) {
       _toast(`💾 localStorage 已存 · daemon 落档异常: ${e.message}`);
     }
   }
 
-  // 卷四十四 K stage 2c · 加载 · 弹列表 (用 opusPrompt 暂代 · stage 2d 换正经下拉)
+  // 卷四十四 K stage 2c · 加载 · 弹列表 (用 DaemonkeyPrompt 暂代 · stage 2d 换正经下拉)
   async function _onLoad() {
-    const localRaw = localStorage.getItem('opus_workshop_draft');
+    const localRaw = localStorage.getItem('Daemonkey_workshop_draft');
     const hasLocal = !!localRaw;
 
     // 拉远端 flow 列表 (mount 时已加载 · 这里再 refresh 一下保证最新)
@@ -2540,7 +2540,7 @@ function _askOpusInChat(kind) {
       _toast('还没存过工作流 · 先在画布上画一个 → 点 💾 保存');
       return;
     }
-    // 右侧抽屉点选 (BRO 2026-06-03 · 取代输入序号弹窗·跟 BI 下钻同款交互)
+    // 右侧抽屉点选 (用户 2026-06-03 · 取代输入序号弹窗·跟 BI 下钻同款交互)
     _showFlowLoadDrawer(remote, hasLocal, localRaw, token);
   }
 
@@ -2554,7 +2554,7 @@ function _askOpusInChat(kind) {
     if (!flow) return;
     token = token || _getToken();
     if (!token) { _toast('需要 token 才能加载远端工作流'); return; }
-    // 卷七十二 v3 · BRO 反馈"名字没正常过来" · _apps 还没拉就渲染 → 显示 app id 而非名字
+    // 卷七十二 v3 · 用户 反馈"名字没正常过来" · _apps 还没拉就渲染 → 显示 app id 而非名字
     // 修法: 渲染 steps 前先确保 _apps 加载完 (内部缓存 in-flight promise · 不会重复 fetch)
     if (_apps.length <= BUILTIN_APPS.length) {
       try { await _loadAssetsFromDaemon(); } catch (e) { /* 静默 · 走 fallback 显示 id */ }
@@ -2660,7 +2660,7 @@ function _askOpusInChat(kind) {
     // ── 单 app 串行步 (原逻辑) ──
     const appRef = step.app || step.app_id || step.app_name || '(?)';
     const m = _appMeta(appRef);
-    // "STEPS1 2-1 2-2 STEPS3 STEPS4" 二层结构 = substeps (内部 checklist · 不分裂执行)
+    // 卷六六 用户 提的"STEPS1 2-1 2-2 STEPS3 STEPS4"二层结构 = substeps (内部 checklist · 不分裂执行)
     const substeps = Array.isArray(step.substeps) ? step.substeps : [];
     const subList = substeps.length
       ? `<ul class="ws-step-substeps">${substeps.map((s, i) => `<li><span class="ws-step-subnum">${idx + 1}-${i + 1}</span>${_escapeHtml(s)}</li>`).join('')}</ul>`
@@ -2830,7 +2830,7 @@ function _askOpusInChat(kind) {
     }
   }
 
-  // ── 工作流加载抽屉 · 右侧滑出点选 (取代输入序号弹窗·BRO 2026-06-03) ──
+  // ── 工作流加载抽屉 · 右侧滑出点选 (取代输入序号弹窗·用户 2026-06-03) ──
   function _wfDrawerEsc(e) { if (e.key === 'Escape') _closeFlowLoadDrawer(); }
   function _closeFlowLoadDrawer() {
     const d = document.getElementById('wfLoadDrawer');
@@ -2895,16 +2895,16 @@ function _askOpusInChat(kind) {
   }
 
   function _showAddCustomToolModal() {
-    _toast('阶段 2 真接 · 那时候你跟右边 OPUS 说一句"我有 GPT-SOVITS 在 D:\\ai\\sovits"·OPUS 就给你长出来一个能拖的节点');
+    _toast('阶段 2 真接 · 那时候你跟右边 Daemonkey 说一句"我有 GPT-SOVITS 在 D:\\ai\\sovits"·Daemonkey 就给你长出来一个能拖的节点');
   }
 
-  // 卷四十四 K stage 2c · 删 OPUS 造的 app · 内置不允许删
+  // 卷四十四 K stage 2c · 删 Daemonkey 造的 app · 内置不允许删
   // 卷四十四 K stage 2c++ · wish-6fd76512 · 软删 · 移到回收站可恢复
   async function _onDeleteApp(appId) {
     const app = _apps.find(a => a.id === appId);
-    if (!app || app.kind !== 'opus') return;
-    if (typeof window.opusConfirm === 'function') {
-      const ok = await window.opusConfirm({
+    if (!app || app.kind !== 'Daemonkey') return;
+    if (typeof window.DaemonkeyConfirm === 'function') {
+      const ok = await window.DaemonkeyConfirm({
         title: '移到回收站?',
         message: `「${app.name}」 · 会移到回收站 · 30 天内可恢复 · 真删要再点 [永久删]`,
         danger: false,
@@ -3022,8 +3022,8 @@ function _askOpusInChat(kind) {
     const item = (kind === 'flow' ? _trash.flows : _trash.apps).find(it => it.id === trashId);
     const name = (item && item.name) || trashId;
 
-    if (typeof window.opusConfirm === 'function') {
-      const ok = await window.opusConfirm({
+    if (typeof window.DaemonkeyConfirm === 'function') {
+      const ok = await window.DaemonkeyConfirm({
         title: '恢复到应用列表?',
         message: `「${name}」 · ${kind === 'flow' ? '工作流' : '应用'} · 会从回收站移回到 active 列表`,
         danger: false,
@@ -3061,8 +3061,8 @@ function _askOpusInChat(kind) {
     const item = (kind === 'flow' ? _trash.flows : _trash.apps).find(it => it.id === trashId);
     const name = (item && item.name) || trashId;
 
-    if (typeof window.opusConfirm === 'function') {
-      const ok = await window.opusConfirm({
+    if (typeof window.DaemonkeyConfirm === 'function') {
+      const ok = await window.DaemonkeyConfirm({
         title: '<i class="ri-error-warning-fill"></i> 永久删除?',
         message: `「${name}」 · ${kind === 'flow' ? '工作流' : '应用'} · 真 unlink · 不可恢复 · 这次按下就再也找不回了`,
         danger: true,
@@ -3092,8 +3092,8 @@ function _askOpusInChat(kind) {
     const total = (_trash.apps || []).length + (_trash.flows || []).length;
     if (total === 0) { _toast('回收站已经是空的'); return; }
 
-    if (typeof window.opusConfirm === 'function') {
-      const ok = await window.opusConfirm({
+    if (typeof window.DaemonkeyConfirm === 'function') {
+      const ok = await window.DaemonkeyConfirm({
         title: '<i class="ri-error-warning-fill"></i><i class="ri-error-warning-fill"></i> 清空整个回收站?',
         message: `${total} 项 · 全部真 unlink · 不可恢复 · 这次按下就再也找不回任何一个了`,
         danger: true,
@@ -3121,8 +3121,8 @@ function _askOpusInChat(kind) {
   }
 
   function _toast(msg) {
-    if (typeof window.opusAlert === 'function') {
-      window.opusAlert({ icon: '✨', title: '工坊', message: msg });
+    if (typeof window.DaemonkeyAlert === 'function') {
+      window.DaemonkeyAlert({ icon: '✨', title: '工坊', message: msg });
     } else {
       console.log('[workshop]', msg);
       alert(msg);
@@ -3130,9 +3130,9 @@ function _askOpusInChat(kind) {
   }
 
   function _loadDemoFlow() {
-    // 卷五十四 · 原 demo 流用 opus/atomic/llm (未实装) + opus/custom/sovits (卷四十六续 13 已删除) 搭。
+    // 卷五十四 · 原 demo 流用 Daemonkey/atomic/llm (未实装) + Daemonkey/custom/sovits (卷四十六续 13 已删除) 搭。
     // sovits 节点 createNode 返 null → 下一行 .pos 抛 TypeError → mount() 半路崩 → 工坊首开白屏/卡死
-    // (localStorage 'seen_demo' 让它每浏览器只崩一次·正好是 BRO 说的"偶尔卡死")。
+    // (localStorage 'seen_demo' 让它每浏览器只崩一次·正好是 用户 说的"偶尔卡死")。
     // 这些节点画布执行器又跑不了 = 纯误导。 直接不铺 demo · 让空状态引导 (_updateEmpty) 接管。
     _updateEmpty();
   }
@@ -3213,7 +3213,7 @@ function _askOpusInChat(kind) {
     // _graph 不动 · 切回工坊 view 时复用
   }
 
-  window.OPUS_WORKSHOP_VIEW = {
+  window.Daemonkey_WORKSHOP_VIEW = {
     mount,
     unmount,
     isMounted: () => !!_container,
@@ -3221,7 +3221,7 @@ function _askOpusInChat(kind) {
     serialize: () => _graph ? _graph.serialize() : null,
     load: (data) => { if (_graph) { _graph.configure(data); _updateEmpty(); _renderCanvas(); } },
     // 卷五十四 · 让 MUTATING_TOOLS 刷新能穿透到工坊 · mount() 已挂载时会短路·不重拉资产·
-    // 所以 OPUS 造完 app/flow 后 scheduleDashboardRefresh 改调这个 · 真正重拉并重渲染。
+    // 所以 Daemonkey 造完 app/flow 后 scheduleDashboardRefresh 改调这个 · 真正重拉并重渲染。
     refresh: () => {
       if (!_container) return;
       _loadAssetsFromDaemon();

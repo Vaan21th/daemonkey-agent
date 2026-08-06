@@ -275,7 +275,12 @@ def acquire_pid_lock(host: str, port: int) -> tuple[bool, str]:
     if existing:
         old_pid = existing.get("pid", 0)
 
-        if takeover_pid > 0 and old_pid == takeover_pid:
+        if takeover_pid > 0:
+            # 卷八十四 · 社区 v4 对齐 (D:\dae-monkey-master · 2026-08-06):
+            #   v1 要求 old_pid == takeover_pid 才接管 · 但真实故障里 pid 文件可能滞后一代
+            #   (第一轮重启后 pid 文件写入时机与 spawn 时机有差异 → old_pid 读到上一轮的 pid)
+            #   → 只要 env 有 OPUS_DAEMON_TAKEOVER_PID 就信任接替者身份接管 ·
+            #     old_pid 不匹配只可能是 pid 文件 stale。无 env 时仍走下方 FATAL (防误接管)。
             print(f"[lifecycle] takeover 模式 · 等 parent pid={takeover_pid} 退出 ...", flush=True)
             wait_deadline = time.time() + 15
             while time.time() < wait_deadline:

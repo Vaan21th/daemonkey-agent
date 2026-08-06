@@ -1,10 +1,10 @@
 /*
- * workshop.css · OPUS 出品工坊 · 卷四十四 K stage 1b
+ * workshop.css · Daemonkey 出品工坊 · 卷四十四 K stage 1b
  *
  * 设计:
  *   - 全部样式 scope 在 .workshop-view 下 · 不污染主 chat.css
  *   - 二栏:左工具集 (固定 248px · 可隐藏) + 右工作台 (canvas 铺满)
- *   - 视觉跟主 UI 一致 (深色 + 紫 #9F7AEA · 复用 var(--opus) 等)
+ *   - 视觉跟主 UI 一致 (深色 + 紫 #9F7AEA · 复用 var(--Daemonkey) 等)
  *   - 在 detail-pane 里·继承 detail-pane 的 100% 高度
  */
 
@@ -55,7 +55,7 @@
 }
 .workshop-view .ws-tab.active {
   background: rgba(159, 122, 234, .14);
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   border-color: rgba(159, 122, 234, .3);
 }
 .workshop-view .ws-tabs-spacer { flex: 1; }
@@ -151,8 +151,8 @@
   flex-shrink: 0;
 }
 .workshop-view .wash-collapse:hover {
-  color: var(--opus, #9F7AEA);
-  border-color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
+  border-color: var(--Daemonkey, #9F7AEA);
 }
 .workshop-view .ws-apps-side-search {
   padding: 0 14px 8px;
@@ -171,7 +171,7 @@
   outline: none;
 }
 .workshop-view #wsAppsSideFilter:focus {
-  border-color: var(--opus, #9F7AEA);
+  border-color: var(--Daemonkey, #9F7AEA);
 }
 .workshop-view #wsAppsSideFilter::-webkit-search-cancel-button { display: none; }
 
@@ -256,11 +256,11 @@
   background: transparent;
 }
 .workshop-view .ws-apps-sidebar .ws-app-card.ws-app-add:hover {
-  border-color: var(--opus, #9F7AEA);
+  border-color: var(--Daemonkey, #9F7AEA);
   background: rgba(159,122,234,.08);
 }
 .workshop-view .ws-apps-sidebar .ws-app-card.ws-app-add .wac-icon {
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
 }
 
 /* 折叠态下卡片只显示 icon · 居中 */
@@ -323,7 +323,7 @@
   color: #888;
 }
 .workshop-view .wawm-stat b {
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   font-size: 22px;
   font-weight: 600;
   display: block;
@@ -366,7 +366,7 @@
   min-height: 110px;
 }
 .workshop-view .ws-app-card:hover {
-  border-color: var(--opus, #9F7AEA);
+  border-color: var(--Daemonkey, #9F7AEA);
   background: #232328;
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(0,0,0,.25);
@@ -403,7 +403,7 @@
 }
 .workshop-view .ws-app-card .wac-kind {
   background: rgba(159,122,234,.18);
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   padding: 2px 7px;
   border-radius: 4px;
 }
@@ -421,7 +421,7 @@
   background: linear-gradient(135deg, #232328, #2c2230);
 }
 .workshop-view .ws-app-card.ws-app-add .wac-icon {
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
 }
 
 /* ─── 卷四十四 K stage 2a · 应用详情 (产物历史 / 配置 / 测试) ─── */
@@ -449,12 +449,12 @@
   font-size: 12px;
   font-family: inherit;
 }
-.workshop-view .ws-ad-back:hover { background: #2c2c30; color: var(--opus, #9F7AEA); }
+.workshop-view .ws-ad-back:hover { background: #2c2c30; color: var(--Daemonkey, #9F7AEA); }
 .workshop-view .ws-ad-icon { font-size: 24px; line-height: 1; }
 .workshop-view .ws-ad-title { font-size: 16px; font-weight: 600; color: #e8e8e8; }
 .workshop-view .ws-ad-kind {
   background: rgba(159,122,234,.18);
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   padding: 2px 7px;
   border-radius: 4px;
   font-size: 10px;
@@ -486,8 +486,8 @@
 }
 .workshop-view .ws-ad-tab:hover { color: #ccc; }
 .workshop-view .ws-ad-tab.active {
-  color: var(--opus, #9F7AEA);
-  border-bottom-color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
+  border-bottom-color: var(--Daemonkey, #9F7AEA);
 }
 .workshop-view .ws-ad-pane {
   flex: 1;
@@ -561,7 +561,7 @@
   text-align: center;
 }
 .workshop-view .ws-ad-stub .ws-stub-icon { font-size: 40px; margin-bottom: 12px; opacity: .6; }
-.workshop-view .ws-ad-stub h3 { color: var(--opus, #9F7AEA); margin: 0 0 12px 0; font-size: 16px; }
+.workshop-view .ws-ad-stub h3 { color: var(--Daemonkey, #9F7AEA); margin: 0 0 12px 0; font-size: 16px; }
 .workshop-view .ws-ad-stub p { color: #aaa; line-height: 1.7; margin: 8px 0; font-size: 13px; }
 .workshop-view .ws-ad-stub ul { text-align: left; color: #bbb; line-height: 1.8; padding-left: 22px; margin: 12px 0; }
 .workshop-view .ws-ad-stub ul li b { color: #e8e8e8; }
@@ -573,8 +573,8 @@
   font-size: 11px;
 }
 
-/* ─── 卷四十六续 11 补丁 · OPUS 造的 app 产物历史样式重写 ─── */
-/* BRO 反馈: 外框冗余 / 不自适应 / 系统提示词 markdown 没渲染 */
+/* ─── 卷四十六续 11 补丁 · Daemonkey 造的 app 产物历史样式重写 ─── */
+/* 用户 反馈: 外框冗余 / 不自适应 / 系统提示词 markdown 没渲染 */
 /* 改用 .ws-app-stub · 撑满 main 宽度 · 章节式布局 · md 真渲染 */
 .workshop-view .ws-app-stub {
   max-width: none;
@@ -609,7 +609,7 @@
 }
 .workshop-view .wamc-chip code {
   background: rgba(159,122,234,.15);
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   padding: 1px 6px;
   border-radius: 3px;
   font-size: 11px;
@@ -659,15 +659,15 @@
   line-height: 1.6;
 }
 
-/* ─── 自带 app 卡片视觉 (shipped=true 时右上角"自带"角标) ─── */
-/* 2026-06-10 BRO 反馈补丁: 紫色边框 + box-shadow 去掉 · 只保留右上角小角标 (低调) */
+/* ─── 沉淀闭环 v2 刀⑤修正 · 自带 app 卡片视觉 (shipped=true 时右上角"自带"角标) ─── */
+/* 2026-06-10 用户 反馈补丁: 紫色边框 + box-shadow 去掉 · 只保留右上角小角标 (低调) */
 .workshop-view .ws-app-card.shipped::before {
   content: "自带";
   position: absolute;
   top: 8px;
   right: 8px;
   font-size: 10px;
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   background: rgba(159,122,234,.12);
   border: 1px solid rgba(159,122,234,.3);
   border-radius: 3px;
@@ -676,12 +676,12 @@
   pointer-events: none;
 }
 
-/* ─── 资产填写 modal + slot 卡片📎按钮 (2026-06-10) ─── */
+/* ─── 沉淀闭环 v2 刀⑤b · 资产填写 modal + slot 卡片📎按钮 (2026-06-10) ─── */
 .workshop-view .ws-app-slot-edit {
   margin-left: auto;
   background: rgba(159,122,234,.12);
   border: 1px solid rgba(159,122,234,.35);
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   border-radius: 4px;
   padding: 2px 10px;
   font-size: 12px;
@@ -725,7 +725,7 @@ dialog.ws-asset-modal::backdrop {
   background: rgba(159,122,234,.18);
   padding: 2px 6px;
   border-radius: 3px;
-  color: var(--opus, #B595EF);
+  color: var(--Daemonkey, #B595EF);
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
   font-size: 13px;
 }
@@ -746,7 +746,7 @@ dialog.ws-asset-modal::backdrop {
   display: inline-block;
   margin-left: 6px;
   background: rgba(159,122,234,.18);
-  color: var(--opus, #B595EF);
+  color: var(--Daemonkey, #B595EF);
   border: 1px solid rgba(159,122,234,.3);
   border-radius: 3px;
   padding: 0 5px;
@@ -835,8 +835,8 @@ dialog.ws-asset-modal::backdrop {
   background: rgba(255,255,255,.12);
 }
 .ws-asset-modal button.ws-am-primary {
-  background: var(--opus, #9F7AEA);
-  border-color: var(--opus, #9F7AEA);
+  background: var(--Daemonkey, #9F7AEA);
+  border-color: var(--Daemonkey, #9F7AEA);
   color: #fff;
   font-weight: 500;
 }
@@ -845,7 +845,7 @@ dialog.ws-asset-modal::backdrop {
   border-color: #b08fef;
 }
 
-/* ─── 配置 tab 新样式 (asset_slots 卡片 / 表单 schema 表格 / changelog) ─── */
+/* ─── 沉淀闭环 v2 刀⑤ · 配置 tab 新样式 (asset_slots 卡片 / 表单 schema 表格 / changelog) ─── */
 .workshop-view .ws-app-section-hint {
   font-size: 11px;
   color: #666;
@@ -854,7 +854,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-app-section-hint code {
   background: rgba(159,122,234,.1);
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   padding: 1px 5px;
   border-radius: 3px;
   font-size: 11px;
@@ -942,7 +942,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-app-slot-empty-hint code {
   background: rgba(159,122,234,.08);
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   font-style: normal;
   padding: 1px 5px;
   border-radius: 3px;
@@ -988,7 +988,7 @@ dialog.ws-asset-modal::backdrop {
   line-height: 1.5;
 }
 .workshop-view .ws-app-changelog li b {
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   margin-right: 6px;
 }
 
@@ -1007,7 +1007,7 @@ dialog.ws-asset-modal::backdrop {
   font-weight: 600;
 }
 .workshop-view .ws-app-md h1 { font-size: 17px; }
-.workshop-view .ws-app-md h2 { font-size: 15px; color: var(--opus, #9F7AEA); }
+.workshop-view .ws-app-md h2 { font-size: 15px; color: var(--Daemonkey, #9F7AEA); }
 .workshop-view .ws-app-md h3 { font-size: 14px; }
 .workshop-view .ws-app-md h4 { font-size: 13px; color: #ccc; }
 .workshop-view .ws-app-md p { margin: 8px 0; }
@@ -1067,7 +1067,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-app-md td { color: #bbb; }
 .workshop-view .ws-app-md tr:nth-child(even) td { background: #18181c; }
 .workshop-view .ws-app-md a {
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   text-decoration: none;
   border-bottom: 1px dashed rgba(159,122,234,.4);
 }
@@ -1100,7 +1100,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-form-app-icon { font-size: 22px; }
 .workshop-view .ws-form-app-name {
   font-size: 15px;
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   font-weight: 600;
 }
 .workshop-view .ws-form-app-desc {
@@ -1160,7 +1160,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-form-field textarea:focus,
 .workshop-view .ws-form-field select:focus {
   outline: none;
-  border-color: var(--opus, #9F7AEA);
+  border-color: var(--Daemonkey, #9F7AEA);
   background: #18181d;
 }
 .workshop-view .ws-form-field-bool {
@@ -1178,7 +1178,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-form-bool input[type="checkbox"] {
   width: 14px;
   height: 14px;
-  accent-color: var(--opus, #9F7AEA);
+  accent-color: var(--Daemonkey, #9F7AEA);
   cursor: pointer;
 }
 .workshop-view .ws-form-actions {
@@ -1201,7 +1201,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-form-autosend input[type="checkbox"] {
   width: 12px;
   height: 12px;
-  accent-color: var(--opus, #9F7AEA);
+  accent-color: var(--Daemonkey, #9F7AEA);
   cursor: pointer;
 }
 .workshop-view .ws-btn-primary {
@@ -1212,7 +1212,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-btn-primary:hover {
   background: rgba(159, 122, 234, .28);
-  border-color: var(--opus, #9F7AEA);
+  border-color: var(--Daemonkey, #9F7AEA);
   color: #f0e4ff;
 }
 .workshop-view .ws-form-preview {
@@ -1278,7 +1278,7 @@ dialog.ws-asset-modal::backdrop {
   margin-bottom: 8px;
 }
 .workshop-view .ws-form-run-title {
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   font-size: 13px;
   font-weight: 600;
 }
@@ -1322,7 +1322,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-fre-tool .ws-fre-kind { color: #5DA3F0; }
 .workshop-view .ws-fre-tool-ok .ws-fre-kind { color: #48BB78; }
-.workshop-view .ws-fre-llm .ws-fre-kind { color: var(--opus, #9F7AEA); }
+.workshop-view .ws-fre-llm .ws-fre-kind { color: var(--Daemonkey, #9F7AEA); }
 .workshop-view .ws-fre-err .ws-fre-kind,
 .workshop-view .ws-fre-err .ws-fre-text { color: #e07070; }
 .workshop-view .ws-form-run-outputs {
@@ -1418,12 +1418,12 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-btn-emphasis {
   background: rgba(159, 122, 234, .14);
   border-color: rgba(159, 122, 234, .35);
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   font-weight: 600;
 }
 .workshop-view .ws-btn-emphasis:hover {
   background: rgba(159, 122, 234, .22);
-  border-color: var(--opus, #9F7AEA);
+  border-color: var(--Daemonkey, #9F7AEA);
   color: #e0d0ff;
 }
 .workshop-view .ws-btn-divider {
@@ -1459,7 +1459,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-tb-title {
   font-weight: 600;
   font-size: 13px;
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
 }
 .workshop-view .ws-tb-toggle {
   background: transparent;
@@ -1477,7 +1477,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-tb-toggle:hover {
   background: #2c2c30;
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
 }
 
 .workshop-view .ws-tb-search {
@@ -1496,7 +1496,7 @@ dialog.ws-asset-modal::backdrop {
   outline: none;
 }
 .workshop-view .ws-tb-search input:focus {
-  border-color: var(--opus, #9F7AEA);
+  border-color: var(--Daemonkey, #9F7AEA);
 }
 
 .workshop-view .ws-tb-body {
@@ -1581,7 +1581,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-tg[data-group="atomic"] .ws-tool-name { color: #b8c8e0; }
 .workshop-view .ws-tg[data-group="custom"] .ws-tool-name { color: #b8e0c8; }
 
-/* 卷五十四 · 未实装节点 (composite/atomic) · 明标 + 禁拖 · 不误导 BRO (孪法第4条) */
+/* 卷五十四 · 未实装节点 (composite/atomic) · 明标 + 禁拖 · 不误导 用户 (孪法第4条) */
 .workshop-view .ws-tool-unimpl {
   cursor: not-allowed;
   opacity: .5;
@@ -1611,7 +1611,7 @@ dialog.ws-asset-modal::backdrop {
   width: 100%;
   background: linear-gradient(135deg, #2c2c30, #232328);
   border: 1px dashed #4a3a6c;
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   padding: 8px;
   border-radius: 5px;
   cursor: pointer;
@@ -1619,7 +1619,7 @@ dialog.ws-asset-modal::backdrop {
   transition: all .12s;
 }
 .workshop-view .ws-tb-add button:hover {
-  border-color: var(--opus, #9F7AEA);
+  border-color: var(--Daemonkey, #9F7AEA);
   background: #2c2230;
 }
 
@@ -1632,7 +1632,7 @@ dialog.ws-asset-modal::backdrop {
   z-index: 5;
   background: #2c2c30;
   border: 1px solid #3a3a40;
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   width: 22px;
   height: 60px;
   border-radius: 0 6px 6px 0;
@@ -1669,7 +1669,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-canvas-title {
   font-weight: 600;
-  color: var(--opus, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
   font-size: 13px;
   white-space: nowrap;
 }
@@ -1696,8 +1696,8 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-btn:hover {
   background: #3a2a4a;
-  border-color: var(--opus, #9F7AEA);
-  color: var(--opus, #9F7AEA);
+  border-color: var(--Daemonkey, #9F7AEA);
+  color: var(--Daemonkey, #9F7AEA);
 }
 .workshop-view .ws-lang-btn {
   width: 36px;
@@ -1734,7 +1734,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-empty-title { font-size: 16px; color: #555; margin-bottom: 4px; }
 .workshop-view .ws-empty-hint { font-size: 12px; color: #444; max-width: 360px; line-height: 1.6; }
 
-/* ─── 卷七十二 v2 · BRO 反馈: 左侧工具集 → 工作流列表 (主入口 · 直接点击加载) ─── */
+/* ─── 卷七十二 v2 · 用户 反馈: 左侧工具集 → 工作流列表 (主入口 · 直接点击加载) ─── */
 .workshop-view .ws-flows-list {
   display: flex;
   flex-direction: column;
@@ -2021,7 +2021,7 @@ dialog.ws-asset-modal::backdrop {
   line-height: 1.5;
   word-break: break-word;
 }
-/* substeps · BRO 卷六六提的"STEPS1 2-1 2-2 STEPS3"二层结构 · 内部 checklist 不分裂执行 */
+/* substeps · 用户 卷六六提的"STEPS1 2-1 2-2 STEPS3"二层结构 · 内部 checklist 不分裂执行 */
 .workshop-view .ws-step-substeps {
   list-style: none;
   margin: 4px 0 0 0;
@@ -2105,7 +2105,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .litecontextmenu .litemenu-entry:hover {
   background: #3a2a4a !important;
-  color: var(--opus, #9F7AEA) !important;
+  color: var(--Daemonkey, #9F7AEA) !important;
 }
 .litecontextmenu .litemenu-entry.separator {
   border-top: 1px solid #2c2c30 !important;
@@ -2113,7 +2113,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .litegraph.litesearchbox {
   background: #232328 !important;
-  border: 1px solid var(--opus, #9F7AEA) !important;
+  border: 1px solid var(--Daemonkey, #9F7AEA) !important;
   color: #e8e8e8 !important;
 }
 
@@ -2417,26 +2417,26 @@ dialog.ws-asset-modal::backdrop {
   margin-top: 6px;
 }
 
-/* opus app 产出 tab · 应用说明头 */
-.workshop-view .ws-opus-app-header {
+/* Daemonkey app 产出 tab · 应用说明头 */
+.workshop-view .ws-Daemonkey-app-header {
   background: #1a1a20;
   border: 1px solid #2c2c30;
   border-radius: 8px;
   padding: 14px 16px;
   margin-bottom: 14px;
 }
-.workshop-view .ws-opus-app-desc {
+.workshop-view .ws-Daemonkey-app-desc {
   font-size: 13px;
   color: #bbb;
   line-height: 1.6;
   margin-bottom: 10px;
 }
-.workshop-view .ws-opus-app-tools-label {
+.workshop-view .ws-Daemonkey-app-tools-label {
   font-size: 11px;
   color: #777;
   margin-top: 8px;
 }
-.workshop-view .ws-opus-app-tools-label code {
+.workshop-view .ws-Daemonkey-app-tools-label code {
   background: #2a2a30;
   padding: 1px 5px;
   border-radius: 3px;

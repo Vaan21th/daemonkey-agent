@@ -69,7 +69,7 @@ RUNTIME = DaemonRuntime()
 
 
 def bg_max_tokens(default: Optional[int] = None) -> int:
-    """后台任务 (proactive / scheduled / 各 worker) 的 max_tokens 真相源。
+    """后台任务 (proactive / scheduled / 各 worker) 的 max_tokens 真相源 (卷七十四续三十一)。
 
     病根: 用户在 WebUI 设的 max_tokens 只接进了主聊天 (_resolve_max_tokens)·后台 worker
       各写死小常量 (2000 / 2048 / 8000 …) → 用户设了大值·后台任务仍被截断。

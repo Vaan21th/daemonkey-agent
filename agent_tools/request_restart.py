@@ -2,11 +2,13 @@
 agent_tools/request_restart.py
 ==============================
 
-Daemonkey 让 daemon 重启的『正确姿势』( III · 2026-05-26 · wish-ed5553d5)
+Daemonkey 让 daemon 重启的『正确姿势』(卷四十六 III · 2026-05-26 · wish-ed5553d5)
 
 ----------------------------------------------------------------------
 为什么有这个工具
----------------------------------------------------------------------- II 反面: session api-...063247_e404f8 出过事 ——
+----------------------------------------------------------------------
+
+卷四十六 II 反面: session api-...063247_e404f8 出过事 ——
   Daemonkey 想"装上新代码" · 调 `shell_exec Stop-Process python`
   → daemon 进程被杀
   → 当前 tool_call 没 result
@@ -14,7 +16,7 @@ Daemonkey 让 daemon 重启的『正确姿势』( III · 2026-05-26 · wish-ed55
   → 下次加载该 session 直接 HTTP 500
 
 这工具是『官方重启路径』·让 Daemonkey 想重启时:
-  1. 调 request_restart(reason="...") — TIER_CONFIRM · 用户 'y' 才走
+  1. 调 request_restart(reason="...") — TIER_CONFIRM · BRO 'y' 才走
   2. daemon 立刻写 data/runtime/restart_request.json
   3. 当前 tool 立刻同步返 result · session 状态机干净
   4. 然后 daemon 自己做 graceful shutdown
@@ -23,12 +25,12 @@ Daemonkey 让 daemon 重启的『正确姿势』( III · 2026-05-26 · wish-ed55
      告诉 Daemonkey『刚才申请的重启完成 · 继续上次的任务』
 
 ----------------------------------------------------------------------
-工具是怎么真重启的 ( IV · 2026-05-26 改自原版『只自爆不自救』)
+工具是怎么真重启的 (卷四十六 IV · 2026-05-26 改自原版『只自爆不自救』)
 ----------------------------------------------------------------------
 
 **这工具会 spawn 替代子进程**·跟 `/restart-daemon` endpoint 同一套路径:
   1. 用 `subprocess.Popen` 起一个新 Python 进程·跑同样的 argv
-  2. 子进程 env 带 `OPUS_DAEMON_TAKEOVER_PID=<parent_pid>` · acquire_pid_lock 看到
+  2. 子进程 env 带 `Daemonkey_DAEMON_TAKEOVER_PID=<parent_pid>` · acquire_pid_lock 看到
      这个 env 就**等 parent 死再 acquire** (workers/daemon_lifecycle.py:197) ·
      不撞双 daemon 的拒启动
   3. parent (老 daemon) 等子进程 1.5s 绑端口窗口 · `mark_graceful_shutdown` · `os._exit(0)`
@@ -38,7 +40,7 @@ Daemonkey 让 daemon 重启的『正确姿势』( III · 2026-05-26 · wish-ed55
 **为什么改**: 原版 (2026-05-26 早 06:00 写) 假设有 launcher 监听 restart_request.json
 自动重启 · 当时还没 takeover 模式 · 怕 spawn 撞 pid_lock chicken-and-egg。 但实际
 launcher 没有这个 watcher · Daemonkey 调 request_restart → daemon 真死 → 没人接 ·
-用户 必须手动 start.bat (用户 2026-05-26 14:56 实测踩坑)。
+BRO 必须手动 start.bat (BRO 2026-05-26 14:56 实测踩坑)。
 
 takeover 模式已经 ready · /restart-daemon endpoint 跑通过 N 次·复制过来即可。
 
@@ -68,14 +70,18 @@ def _summarize(args: dict) -> str:
 
 
 def _trigger_shutdown_async(delay_sec: float = 2.0, reason: str = "request_restart_tool") -> None:
-    """延迟几秒后让 daemon 自杀·**并 spawn 替代子进程接管端口** ( IV · wish-后续 · 2026-05-26) III 补丁 · 自杀前显式 mark_graceful_shutdown · 否则下次启动会误判 crash IV · 2026-05-26 用户 测真实场景发现 GAP:
+    """延迟几秒后让 daemon 自杀·**并 spawn 替代子进程接管端口** (卷四十六 IV · wish-后续 · 2026-05-26)
+
+    卷四十六 III 补丁 · 自杀前显式 mark_graceful_shutdown · 否则下次启动会误判 crash
+
+    卷四十六 IV · 2026-05-26 BRO 测真实场景发现 GAP:
       原版只 mark_graceful + os._exit(0) · 假设有 launcher 监听 restart_request.json
       自动重启 (源码注释 line 31-41)。 但实际 launcher 没有这个 watcher · Daemonkey 调
       request_restart → daemon 真死 → 没人 spawn 子进程 → restart_request.json 没人
-      consume → follow_up turn 也跑不了 → 用户 端到端断链 12 min·必须手动 start.bat。
+      consume → follow_up turn 也跑不了 → BRO 端到端断链 12 min·必须手动 start.bat。
 
       解法: 跟 daemon_api.py /restart-daemon endpoint 一样 spawn 子进程 + 设
-      OPUS_DAEMON_TAKEOVER_PID env · 子进程 acquire_pid_lock 自动等 parent 死 ·
+      Daemonkey_DAEMON_TAKEOVER_PID env · 子进程 acquire_pid_lock 自动等 parent 死 ·
       重启完全自包含 · 不依赖外部 launcher。
     """
 
@@ -93,7 +99,7 @@ def _trigger_shutdown_async(delay_sec: float = 2.0, reason: str = "request_resta
 
         parent_pid = os.getpid()
         child_env = os.environ.copy()
-        child_env["OPUS_DAEMON_TAKEOVER_PID"] = str(parent_pid)
+        child_env["Daemonkey_DAEMON_TAKEOVER_PID"] = str(parent_pid)
 
         try:
             out_f = open(out_path, "ab")
@@ -108,7 +114,7 @@ def _trigger_shutdown_async(delay_sec: float = 2.0, reason: str = "request_resta
             )
             time.sleep(1.5)
         except Exception as e:
-            print(f"[request_restart] spawn 子进程失败 (用户 需手动 start.bat): "
+            print(f"[request_restart] spawn 子进程失败 (BRO 需手动 start.bat): "
                   f"{type(e).__name__}: {e}", flush=True)
 
         try:
@@ -126,21 +132,21 @@ def _trigger_shutdown_async(delay_sec: float = 2.0, reason: str = "request_resta
         except Exception:
             os._exit(1)
 
-    t = threading.Thread(target=_kill, daemon=True, name="opus-restart-killer")
+    t = threading.Thread(target=_kill, daemon=True, name="Daemonkey-restart-killer")
     t.start()
 
 
 def _run(args: dict) -> ToolResult:
     reason = (args.get("reason") or "").strip()
     if not reason:
-        return ToolResult(ok=False, output="", error="missing 'reason' (告诉 用户 为啥要重启)")
+        return ToolResult(ok=False, output="", error="missing 'reason' (告诉 BRO 为啥要重启)")
     if len(reason) > 500:
         return ToolResult(ok=False, output="", error="reason too long (max 500 chars)")
 
     session_id = (args.get("session_id") or "").strip() or None
     # 0.8.3 串台修复 (2026-07-31 实测事故) · 优先用会话级 ContextVar · 不再直接信任进程单例
     # 事故: 多 WebUI 标签并发时 · RUNTIME.session_id 被"最后发消息的会话"覆盖 · request_restart
-    #   fallback 取到别的会话 id → 重启续场注入错对话。
+    #   fallback 取到别的会话 id → 重启续场注入错对话 (机会#3 的续场跑到 745bcc 串台)。
     # ContextVar (_SESSION_CTX) 跟随每个 /chat 的执行上下文 (daemon_api 入口 set_session_context)
     #   · 同一 asyncio task 里工具执行时取值正确 · 并发会话互不覆盖。
     if not session_id:
@@ -164,16 +170,16 @@ def _run(args: dict) -> ToolResult:
     if style not in ("graceful", "dry_run"):
         return ToolResult(ok=False, output="", error="style must be 'graceful' or 'dry_run'")
 
-    # III 补丁 3 · 自动续场任务 (用户 反馈: 重启后不要让我手动发消息触发 Daemonkey 继续)
+    # 卷四十六 III 补丁 3 · 自动续场任务 (BRO 反馈: 重启后不要让我手动发消息触发 Daemonkey 继续)
     follow_up_message = (args.get("follow_up_message") or "").strip() or None
-    # · 防呆 (2026-07-28 用户 实测: DeepSeek 调 request_restart 不填 follow_up →
-    # 重启其实成功了但没续场消息 · 用户 以为没重启成 → 手动按 WebUI 重启按钮)
-    # 空了就按 reason 拼默认续场任务 · 保证新 daemon 起来后 Daemonkey 自动继续干活 · 不等 用户 手动触发
+    # 卷八十四 · 防呆 (2026-07-28 BRO 实测: DeepSeek 调 request_restart 不填 follow_up →
+    # 重启其实成功了但没续场消息 · BRO 以为没重启成 → 手动按 WebUI 重启按钮)
+    # 空了就按 reason 拼默认续场任务 · 保证新 daemon 起来后 Daemonkey 自动继续干活 · 不等 BRO 手动触发
     # (dry_run 也拼 · 预演就该看到真跑的完整行为 · 否则防呆没法低成本验证)
     if not follow_up_message:
         follow_up_message = (
             f"你之前调 request_restart 重启了 daemon (原因: {reason[:200]})。"
-            "请验证相关改动已生效 (端点 / 行为 / 日志任选其一以上), 然后用一两句话告诉 用户 结果。"
+            "请验证相关改动已生效 (端点 / 行为 / 日志任选其一以上), 然后用一两句话告诉 BRO 结果。"
         )
     if follow_up_message and len(follow_up_message) > 1000:
         return ToolResult(ok=False, output="", error="follow_up_message too long (max 1000 chars)")
@@ -184,7 +190,7 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(ok=False, output="", error=f"daemon_lifecycle import failed: {e}")
 
     try:
-        req = daemon_lifecycle.write_restart_request(
+        daemon_lifecycle.write_restart_request(
             reason=reason,
             session_id=session_id,
             tool_call_id=tool_call_id,
@@ -207,11 +213,11 @@ def _run(args: dict) -> ToolResult:
             ),
         )
 
-    # · 重启前『前端 JS 语法闸』(2026-06-03 事故根治)
+    # 卷五十四 · 重启前『前端 JS 语法闸』(2026-06-03 事故根治)
     # 病根: Daemonkey 用 python_exec 字符串切片改 chat.js · 边界算错把尾部 1660 行吞了 ·
     #   文件停在 `function loadMoreWishes() {` → JS 语法错 → 浏览器整个白屏。 而
     #   verify_daemon_endpoints 只验 Python 路由 · 坏前端顶着"82/82 全绿"被 commit + 重启 ·
-    #   用户 打开 WebUI 全死。 这里在 checkpoint + 自爆之前先验前端: 语法坏就拒绝重启 ·
+    #   BRO 打开 WebUI 全死。 这里在 checkpoint + 自爆之前先验前端: 语法坏就拒绝重启 ·
     #   连 checkpoint 都不做 · 逼 Daemonkey 先把 JS 修好。 (node 缺失会降级成启发式·绝不硬崩)
     try:
         from workers.frontend_check import check_static_js, format_report
@@ -231,8 +237,8 @@ def _run(args: dict) -> ToolResult:
     except ImportError:
         pass  # 校验器本身缺失不阻塞重启 · 降级放行
 
-    # · ①号机制 · 重启前自动 checkpoint commit
-    # 病根 (): 写完代码 request_restart · 改动是裸的工作区改动 · 一旦后续
+    # 卷四十八 · ①号机制 · 重启前自动 checkpoint commit
+    # 病根 (卷四十七): 写完代码 request_restart · 改动是裸的工作区改动 · 一旦后续
     # crash → rollback (stash) 就灰飞烟灭 (日历功能就是这么没的)。 这里在自爆前先把
     # 工作区落成一个 commit · 物理上保证"写完的活儿不会被任何重启/回退抹掉"。
     checkpoint_note = ""
@@ -260,7 +266,7 @@ def _run(args: dict) -> ToolResult:
         auto_resume_note = (
             f"\n  5. **自动续场**: 新 daemon 起来后会以 '{follow_up_message[:80]}...' 作为 user message\n"
             f"     触发一次 background LLM turn · 你在 background 跑完落档到 session jsonl\n"
-            f"     用户 不用手动发消息 · 进 WebUI 直接看你的验证结果\n"
+            f"     BRO 不用手动发消息 · 进 WebUI 直接看你的验证结果\n"
             f"     (后台 turn auto_confirm='confirm' · 跟主对话同级 · AUTO+CONFIRM 自动 go·\n"
             f"      能跑 read_file/curl/python_exec/write_file/git commit 等验证类 · 只 GUARD 会被后台 skip/deny)"
         )
@@ -275,12 +281,12 @@ def _run(args: dict) -> ToolResult:
             f"  pid: {os.getpid()}"
             f"{checkpoint_note}\n\n"
             f"接下来:\n"
-            f"  1. daemon 自爆 · 用户 的下一个请求会撞 connection refused\n"
-            f"  2. WebUI 自动重连新 daemon · 或 用户 点 🔄 重启按钮 · 或双击 start.bat\n"
+            f"  1. daemon 自爆 · BRO 的下一个请求会撞 connection refused\n"
+            f"  2. WebUI 自动重连新 daemon · 或 BRO 点 🔄 重启按钮 · 或双击 start.bat\n"
             f"  3. 新 daemon 启动时 consume 这条 request · 给你这条 session 注 system message\n"
             f"  4. 你看到那条 system message · 继续之前的任务"
             f"{auto_resume_note}\n\n"
-            f"判断成功的硬证据: 重启后 用户 截图里看到灰色 `[SYSTEM · 重启续场 · ...]` 那条 = 成功"
+            f"判断成功的硬证据: 重启后 BRO 截图里看到灰色 `[SYSTEM · 重启续场 · ...]` 那条 = 成功"
         ),
     )
 
@@ -291,11 +297,11 @@ SPEC = ToolSpec(
         "Request a graceful daemon restart. **Use this INSTEAD of `shell_exec Stop-Process python`** "
         "or `shell_exec taskkill python.exe` — those kill your own process and leave the session "
         "jsonl with dangling tool_calls (next session load → HTTP 500).\n\n"
-        "**⚡ 强烈推荐: 总是带上 `follow_up_message`** ( IV · 2026-05-26 用户 强调):\n"
+        "**⚡ 强烈推荐: 总是带上 `follow_up_message`** (卷四十六 IV · 2026-05-26 BRO 强调):\n"
         "  你调 request_restart 一定是为了『装新代码 / 装新工具 / 清状态』来达成某个目标。\n"
-        "  这个目标 = follow_up_message。 不填 = 重启完只 inject system notice · 用户 必须手动\n"
+        "  这个目标 = follow_up_message。 不填 = 重启完只 inject system notice · BRO 必须手动\n"
         "  发消息触发你继续 · 多一步操作 + 中断节奏。 填了 = 重启完新 daemon 自动 spawn\n"
-        "  background turn · 你在后台跑 follow_up 任务 · 落档到 session · 用户 进 WebUI 直接看结果。\n"
+        "  background turn · 你在后台跑 follow_up 任务 · 落档到 session · BRO 进 WebUI 直接看结果。\n"
         "  **规则**: 99% 场景都该填 · 留空只在『单纯清进程内存 · 没后续验证任务』时合理。\n\n"
         "  **填什么**: 用第一人称写给『重启后的自己』· 告诉它要干啥。 例子:\n"
         "    - 改了 daemon_api.py 加新 endpoint /foo → follow_up='跑 curl http://127.0.0.1:7860/foo 验证返回 200 + 字段对'\n"
@@ -307,13 +313,13 @@ SPEC = ToolSpec(
         "  - Next daemon start consumes the request and injects a system message into your session\n"
         "  - If follow_up_message 非空 · 新 daemon 自动以这条作为 user message 触发 background LLM turn · 你跑完落档 session\n"
         "  - You'll see '[SYSTEM · 重启续场]' on next message and know to continue\n\n"
-        "**重要 · 重启后你怎么判断成功 ( III 反面教材 2026-05-26)**:\n"
-        "  - 上根毛在端到端测试时 · daemon 真重启了 · 用户 看到了续场 system message · "
+        "**重要 · 重启后你怎么判断成功 (卷四十六 III 反面教材 2026-05-26)**:\n"
+        "  - 上根毛在端到端测试时 · daemon 真重启了 · BRO 看到了续场 system message · "
         "但 Daemonkey 复盘说『但你现在还能跟我说话 · 说明 daemon 没炸』 — **诊断完全反了**。\n"
         "  - 真相: 你能继续对话 · **恰恰是因为旧 daemon 真自爆 · 新 daemon 起来接力**。 session "
         "jsonl 持久化 · 新 daemon 读它 · 你的 context 看起来连续 · 但物理 daemon 已经换底座。\n"
         "  - 判断成功的硬证据 (任选其一):\n"
-        "    (a) 用户 截图里能看到灰色 `[SYSTEM · 重启续场 · ...] 你之前调 request_restart 申请...` "
+        "    (a) BRO 截图里能看到灰色 `[SYSTEM · 重启续场 · ...] 你之前调 request_restart 申请...` "
         "—— 这条只可能由新 daemon 注入 · 看到 = 端到端成功 · 不用再 grep 文件验证。\n"
         "    (b) 调 read_file('data/runtime/restart_history.jsonl') 看最近 1 min 内有没有 "
         "`daemon_stopped_graceful` + `daemon_started` + `restart_request_consumed` 三件套。\n"
@@ -323,7 +329,7 @@ SPEC = ToolSpec(
         "  - A new tool / app was registered and you want the LLM-side tool list refreshed\n"
         "  - You suspect daemon state corruption and want a clean restart\n\n"
         "**When NOT to use**:\n"
-        "  - You only changed static files (static/*.js, *.css, *.md) — those don't need restart, 用户 can refresh browser\n"
+        "  - You only changed static files (static/*.js, *.css, *.md) — those don't need restart, BRO can refresh browser\n"
         "  - You're not sure if the change needs restart — try without first; daemon_rules 铁律 5 says verify\n\n"
         "**Style**:\n"
         "  - graceful (default) — write request + trigger shutdown\n"
@@ -335,7 +341,7 @@ SPEC = ToolSpec(
         "properties": {
             "reason": {
                 "type": "string",
-                "description": "Why restart is needed (用户 sees this before saying yes). Required.",
+                "description": "Why restart is needed (BRO sees this before saying yes). Required.",
             },
             "session_id": {
                 "type": "string",
@@ -357,17 +363,17 @@ SPEC = ToolSpec(
             "follow_up_message": {
                 "type": "string",
                 "description": (
-                    "**自动续场任务** ( III 补丁 3 · 2026-05-26 用户 反馈加的)。 "
+                    "**自动续场任务** (卷四十六 III 补丁 3 · 2026-05-26 BRO 反馈加的)。 "
                     "重启完成后 · 新 daemon 自动以这条作为 user message 触发 background LLM turn。 "
                     "用于『重启完成后请你帮我验证 X / 跑一遍 Y / 检查 Z 是否生效』这种场景。 "
                     "BRO 不用手动发消息触发 · 进 WebUI 直接看你的验证结果。\n\n"
                     "**注意**: \n"
-                    "  - 后台 turn auto_confirm='confirm' (跟主对话 WebUI 同级) · AUTO + CONFIRM 自动 go·\n"
+                    "  - 后台 turn auto_confirm='confirm' (跟主对话 WebUI 同级 · 卷四十六续14) · AUTO + CONFIRM 自动 go·\n"
                     "    能跑 read_file / grep / curl / python_exec / write_file / git commit 等 (够你验证自己刚写的代码)\n"
                     "  - 只有 GUARD 工具 (rm / git push --force / 大改文件) 会被后台 skip/deny (没 SSE 接收方)·\n"
-                    "    那时把结论讲给 用户 由 用户 来确认下一步\n"
+                    "    那时把结论讲给 BRO 由 BRO 来确认下一步\n"
                     "  - max 1000 chars\n"
-                    "  - 留空 = 不自动续场 · 只注 system message · 用户 手动发消息触发"
+                    "  - 留空 = 不自动续场 · 只注 system message · BRO 手动发消息触发"
                 ),
             },
         },

@@ -3,7 +3,8 @@
 wish-413999da phase 1 · 2 路由 · 模型 list + 切换 (热重建 RUNTIME)
 
 (originally planned as models_providers.py · phase 1 当时误判 providers
-系列不存在 → 实际 baseline 有 6 个 /provider-configs · 已补到 providers.py 18)
+系列不存在 → 实际 baseline 有 6 个 /provider-configs · 已补到 providers.py
+卷四十六续 18)
 """
 from __future__ import annotations
 
@@ -19,7 +20,9 @@ router = APIRouter()
 
 @router.get("/models")
 async def list_models(authorization: Optional[str] = Header(None)):
-    """ · 给 WebUI 模型切换器用 · 返当前模型 + 可切换列表升级 · 从 provider_configs.json 拉 pinned configs 当选项 ·
+    """卷二十九 · 给 WebUI 模型切换器用 · 返当前模型 + 可切换列表
+
+    卷三十七升级 · 从 provider_configs.json 拉 pinned configs 当选项 ·
     切换时连 base_url / key 一起切 · 不再只切 model
     """
     check_auth(authorization)
@@ -45,7 +48,7 @@ async def list_models(authorization: Optional[str] = Header(None)):
                 "config_id": c["id"],
             })
         current_real = RUNTIME.model or ""
-        # 用户 2026-07-28 · 前端协同 toggle 禁用判断用: 当前模型=总监模型时协同无意义
+        # BRO 2026-07-28 · 前端协同 toggle 禁用判断用: 当前模型=总监模型时协同无意义
         director_info = None
         try:
             from workers.director import get_director_config as _get_dcfg
@@ -78,7 +81,9 @@ async def switch_model(
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """ · 切换当前模型升级 · 'model' 字段实际是 config_id (右上角 alias) ·
+    """卷二十九 · 切换当前模型
+
+    卷三十七升级 · 'model' 字段实际是 config_id (右上角 alias) ·
     切到一条完整 provider config · 不是单切 model 字段
     """
     check_auth(authorization)

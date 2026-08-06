@@ -4,7 +4,7 @@
   通用三条 (本文件 · 内核 · 随 update_core 同步给所有实例): 闭环 / NLP优先 / 可追溯——
     任何"AI 与人共生的 daemon"都成立的根本原则·这类产品的物理定律。
   实例宪法 (soul/CONSTITUTION.md · 实例私有 · never_sync · 从使用中沉淀):
-    实例可预填自己的宪法·开源实例从空白开始·随主人的使用长出自己的产品观。
+    母体预填Daemonkey六条·开源实例从空白开始·随主人的使用长出自己的产品观。
 
 为什么放代码层而不是 data/cognition/:
   data/** 是 never_sync 的实例私有层 (母体/纯净版的 daemon_rules.md 各不相同)。

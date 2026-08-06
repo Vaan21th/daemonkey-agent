@@ -814,27 +814,33 @@ async def _test_provider_inner(
     try:
         if provider_kind == "openai":
             from openai import OpenAI
-            client = OpenAI(api_key=api_key, base_url=base_url_)
-            extra_body: dict = {}
-            if base_url and "deepseek.com" in base_url.lower():
-                extra_body = {"thinking": {"type": "disabled"}}
-            resp = client.chat.completions.create(
-                model=model, max_tokens=200,
-                messages=[{"role": "user", "content": "reply with exactly 'pong'"}],
-                extra_body=extra_body if extra_body else None,
-            )
-            reply = (resp.choices[0].message.content or "").strip()
+            # 同步 SDK 调用包进线程 · 防网络慢时阻塞事件循环 (社区文档问题1)
+            # timeout 15s + max_retries 0 · 失败请求不被重试放大
+            def _openai_ping():
+                client = OpenAI(api_key=api_key, base_url=base_url_, timeout=15.0, max_retries=0)
+                extra_body: dict = {}
+                if base_url and "deepseek.com" in base_url.lower():
+                    extra_body = {"thinking": {"type": "disabled"}}
+                resp = client.chat.completions.create(
+                    model=model, max_tokens=200,
+                    messages=[{"role": "user", "content": "reply with exactly 'pong'"}],
+                    extra_body=extra_body if extra_body else None,
+                )
+                return (resp.choices[0].message.content or "").strip()
+            reply = await asyncio.to_thread(_openai_ping)
         elif provider_kind == "anthropic":
             from anthropic import Anthropic
-            kwargs: dict = {"api_key": api_key}
-            if base_url_:
-                kwargs["base_url"] = base_url_
-            client = Anthropic(**kwargs)
-            resp = client.messages.create(
-                model=model, max_tokens=200,
-                messages=[{"role": "user", "content": "reply with exactly 'pong'"}],
-            )
-            reply = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+            def _anthropic_ping():
+                kwargs: dict = {"api_key": api_key}
+                if base_url_:
+                    kwargs["base_url"] = base_url_
+                client = Anthropic(**kwargs, timeout=15.0, max_retries=0)
+                resp = client.messages.create(
+                    model=model, max_tokens=200,
+                    messages=[{"role": "user", "content": "reply with exactly 'pong'"}],
+                )
+                return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
+            reply = await asyncio.to_thread(_anthropic_ping)
         else:
             raise HTTPException(400, f"unknown provider_kind: {provider_kind}")
     except HTTPException:
@@ -846,6 +852,36 @@ async def _test_provider_inner(
             "hint": "key 不对 / base_url 错 / 网络不通 / 余额不足",
         }
     return {"ok": True, "reply_preview": reply[:80], "model": model}
+
+
+def _sink_advisor_wake(source: str, mode: str, advisor_model: str, sub_id: str = "", usage: dict | None = None) -> None:
+    """wish-bec4f3b9 · 顾问唤醒落盘一行 jsonl (billing 能看到顾问切换烧了多少).
+
+    source: coop_blueprint / replan_tool / coop_review
+    mode: blueprint / unstick / review
+    usage 拿不到就只记事件 · 至少 billing 能列唤醒次数.
+    """
+    import time as _AT
+    from pathlib import Path as _AP
+    try:
+        sink = _AP(__file__).resolve().parent / "data" / "runtime" / "advisor_wakes.jsonl"
+        sink.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": _AT.strftime("%Y-%m-%dT%H:%M:%S"),
+            "source": source,
+            "mode": mode,
+            "advisor_model": advisor_model,
+            "sub_id": sub_id,
+        }
+        if usage:
+            entry["input_tokens"] = int(usage.get("input_tokens") or 0)
+            entry["output_tokens"] = int(usage.get("output_tokens") or 0)
+            entry["cache_read_tokens"] = int(usage.get("cache_read_tokens") or 0)
+            entry["cache_creation_tokens"] = int(usage.get("cache_creation_tokens") or 0)
+        with open(sink, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
 
 
 # ---------- core handler (no HTTP framework dependency) ----------
@@ -1255,6 +1291,11 @@ def _chat_impl(
                             "ts": time.time(),
                         })
                     if _bp_ok:
+                        _sink_advisor_wake(
+                            "coop_blueprint", "blueprint",
+                            _adv_label, _bp_sub,
+                            getattr(_bp_res, "usage", None) or None,
+                        )
                         message = (
                             "[系统 · 顾问协同模式]\n"
                             "下面是顾问针对 BRO 这条需求出的【施工单】。你是执行者:\n"
@@ -1488,6 +1529,11 @@ def _chat_impl(
                         pass
                     _coop_review = {"ok": bool(_rv.ok), "verdict": _vd, "text": _rv_text[:3000],
                                     "round": _attempt, "model_label": _rv_label, "sub_id": _rv_sub}
+                    _sink_advisor_wake(
+                        "coop_review", "review",
+                        _rv_label, _rv_sub,
+                        getattr(_rv, "usage", None) or None,
+                    )
                     if progress:
                         progress("advisor_status", {"phase": "review_done", "mode": "review",
                                                     "verdict": _vd, "text": _rv_text[:3000],
@@ -1599,6 +1645,25 @@ def _chat_impl(
                 input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens,
             )
+        except Exception:
+            pass
+
+        # wish-bec4f3b9 · 主对话 usage 落盘 (billing 按模型聚合 · 含缓存明细)
+        try:
+            from pathlib import Path as _UP
+            import time as _UT
+            _sink = _UP(__file__).resolve().parent / "data" / "runtime" / "chat_turns_usage.jsonl"
+            _sink.parent.mkdir(parents=True, exist_ok=True)
+            with open(_sink, "a", encoding="utf-8") as _uf:
+                _uf.write(json.dumps({
+                    "ts": _UT.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "session_id": sid,
+                    "model_id": RUNTIME.model,
+                    "input_tokens": usage.input_tokens,
+                    "output_tokens": usage.output_tokens,
+                    "cache_read_tokens": usage.cache_read_tokens,
+                    "cache_creation_tokens": usage.cache_creation_tokens,
+                }, ensure_ascii=False) + "\n")
         except Exception:
             pass
 

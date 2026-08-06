@@ -2,7 +2,7 @@
 agent_tools/write_file.py
 =========================
 
-OPUS 的"写"——写或覆盖一个文本文件。
+Daemonkey 的"写"——写或覆盖一个文本文件。
 
 三档分类（动态）：
   - 默认 CONFIRM
@@ -10,7 +10,7 @@ OPUS 的"写"——写或覆盖一个文本文件。
       .env / .env.* （凭证）
       soul/ 下的任何文件 （灵魂副本）
       .git/ （仓库内部状态）
-      C:\\Users\\...\\opus-soul\\ 全局灵魂目录
+      C:\\Users\\...\\Daemonkey-soul\\ 全局灵魂目录
       .venv/ 下任何路径
 
 写策略：
@@ -19,7 +19,7 @@ OPUS 的"写"——写或覆盖一个文本文件。
   - mode='append' : 追加到末尾（适合写日志）
 
 精准改一段 → 用 edit_file (str_replace 局部替换)·不要用 overwrite。
-  教训: 大文件 (read_file 一次只能看 40K) 用 overwrite 改 = 凭残缺记忆
+  卷五十八教训: 大文件 (read_file 一次只能看 40K) 用 overwrite 改 = 凭残缺记忆
   重建整文件 = 悄悄碾掉没读到的部分 (chat.js 语音/文档/视觉就是这么没的)。
   本工具的 overwrite 现在带【缩水守卫】: 旧文件 >20K 且新内容掉到 <60% 直接拦·
   逼你改用 edit_file。 create / append / 小文件 overwrite 不受影响。
@@ -46,7 +46,7 @@ from ._edit_lock import guard as _edit_guard, note_write as _edit_note
 
 ROOT = Path(__file__).resolve().parent.parent
 
-#  F · daemon 核心代码目录 (改这些必须走 wish 分支)
+# 卷四十四 F · daemon 核心代码目录 (改这些必须走 wish 分支)
 # 修改这个列表 = 修改"什么算 daemon 改动" · 谨慎
 _DAEMON_CORE_DIRS = (
     "agent_tools",
@@ -57,7 +57,7 @@ _DAEMON_CORE_DIRS = (
 )
 _DAEMON_CORE_FILES = (
     "daemon_api.py",
-    "opus_daemon.py",
+    "Daemonkey_daemon.py",
     "soul_loader.py",
     "daemon_runtime.py",
     "tool_loop.py",
@@ -72,27 +72,28 @@ def _resolve(path_str: str) -> Path:
 
 
 def _is_guard_target(path: Path) -> bool:
-    """命中这些位置一律 GUARD。"""
+    """命中这些位置一律 GUARD。
+
+    2026-07-28 BRO 拍板 · GUARD 重新定界 = 只留「开不了机 / 不可逆」级:
+      - .env            KEY 泄露/丢失不可逆 (铁律 7)
+      - .git/           毁仓库历史不可逆
+      - .venv/          改坏虚拟环境 = daemon 起不来 = 自爆同级
+    以下从 GUARD 降到 CONFIRM (有 git 版本/副本冗余·可恢复·不该弹窗):
+      soul/ · Daemonkey-soul · skills-cursor  (灵魂层·写坏可从副本/git 恢复)
+    """
     name = path.name.lower()
     if name == ".env" or name.startswith(".env."):
         return True
     parts_lower = [p.lower() for p in path.parts]
-    if "soul" in parts_lower:
-        # soul/SKILL.md 或 soul/OPUS-MEMORIES.md
-        return True
     if ".git" in parts_lower:
         return True
     if ".venv" in parts_lower or "site-packages" in parts_lower:
-        return True
-    if "opus-soul" in "/".join(parts_lower):
-        return True
-    if "skills-cursor" in parts_lower:
         return True
     return False
 
 
 def _is_daemon_core(path: Path) -> bool:
-    """ F · 这个路径是不是 daemon 核心代码 (改这些要走 wish)。
+    """卷四十四 F · 这个路径是不是 daemon 核心代码 (改这些要走 wish)。
 
     judgement:
       - path 在 ROOT 下
@@ -115,7 +116,7 @@ def _is_daemon_core(path: Path) -> bool:
 def _current_git_branch() -> Optional[str]:
     """拿当前 git 分支名 · 拿不到返 None (没 git / 不在 repo / 异常)。
 
-    sub-process · 显式 utf-8 (Windows 默认 GBK 会崩 · 教训)。
+    sub-process · 显式 utf-8 (Windows 默认 GBK 会崩 · 卷四十二教训)。
     """
     if not (ROOT / ".git").exists():
         return None
@@ -135,9 +136,9 @@ def _current_git_branch() -> Optional[str]:
 
 
 def _branch_guard_warning(path: Path) -> Optional[str]:
-    """ F · master 上改 daemon 核心代码时返回一段 warn 文案。
+    """卷四十四 F · master 上改 daemon 核心代码时返回一段 warn 文案。
 
-    不阻止调用 · 只把 warn 拼进 ToolResult.output · OPUS 看到了就知道下次走 wish。
+    不阻止调用 · 只把 warn 拼进 ToolResult.output · Daemonkey 看到了就知道下次走 wish。
     返回 None 表示无需警告。
     """
     if not _is_daemon_core(path):
@@ -192,7 +193,7 @@ def _run(args: dict) -> ToolResult:
 
     # 卷七十四续二十四 · 两步法兜底 (补 __init__.py 第 84 行注释承诺却没实现的 "write_file.content 兜底")。
     # 痛点: DeepSeek 等弱模型 tool call 的长 content 经常丢成空壳 → 被门口 _validate_args 当
-    # "缺必填字段" 挡回 → 30+ 次空调用死循环 (弱模型做 word 翻车的现场)。
+    # "缺必填字段" 挡回 → 30+ 次空调用死循环 (BRO 手机做 word 翻车现场)。
     # 解法 (对齐 generate_report): content 没传 / 纯空白 → 抓 "LLM 本轮已写的回复正文" 当内容
     # (写文本流是弱模型强项·丢的只是结构化长参数)。 前沿模型照旧直接传 content·根本不进这条兜底。
     content = args.get("content")
@@ -241,7 +242,7 @@ def _run(args: dict) -> ToolResult:
         except Exception:
             pass
 
-    #  · 缩水守卫 · chat.js 444K 整文件覆盖丢功能事故的硬闸
+    # 卷五十八 · 缩水守卫 · chat.js 444K 整文件覆盖丢功能事故的硬闸
     #   "大文件 overwrite 暴跌" = 经典"没读全·凭记忆重建·碾掉看不见的部分"特征
     #   (read_file 一次只 40K · 9000 行文件你大概率没读全)。 拦下来逼用 edit_file 局部替换。
     #   阈值: 旧文件 > 20K 字符 (≈半个读窗) 且新内容掉到 < 60% → 拦。 有意大删传 allow_shrink=true。
@@ -358,12 +359,12 @@ def _run(args: dict) -> ToolResult:
     if _lock_note:
         base_output = f"{base_output}\n{_lock_note}"
 
-    #  F · branch guard
+    # 卷四十四 F · branch guard
     warn = _branch_guard_warning(path)
     if warn:
         base_output = f"{base_output}\n\n{warn}"
 
-    #  · B4 · 编辑后即时自检 (告警·不拦·"锁出口不锁动作")
+    # 卷五十四 · B4 · 编辑后即时自检 (告警·不拦·"锁出口不锁动作")
     try:
         from workers.edit_selfcheck import selfcheck
         sc_ok, sc_warn = selfcheck([str(path)])
@@ -379,9 +380,9 @@ SPEC = ToolSpec(
     name="write_file",
     description=(
         "Write text content to a file (create / overwrite / append). "
-        "用户 will be asked to confirm before writes. "
-        "Writes to .env, soul/, .git/, .venv/, or any opus-soul/skills-cursor path "
-        "require explicit 'do it' from 用户 (GUARD tier).\n"
+        "BRO will be asked to confirm before writes. "
+        "Writes to .env, soul/, .git/, .venv/, or any Daemonkey-soul/skills-cursor path "
+        "require explicit 'do it' from BRO (GUARD tier).\n"
         "做精排 word/docx 文档(带封面/排版/WebUI 可下载)请用 generate_report·不要用本工具写 .docx"
         "(写出来是假 docx 纯文本)。\n"
         "两步法(长文档/对长参数不稳的模型推荐): 先把完整内容写在你的回复正文里 · 再调本工具"

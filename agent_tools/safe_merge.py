@@ -5,7 +5,7 @@ agent_tools/safe_merge.py
 wish-e19edb92 三件套之③ · 2026-07-29 · 安全合主干工具。
 
 为什么造它:
-  用户 最怕的两件事之一: "合主干出问题直接崩"。 今天之前 Daemonkey 合主干只有两条路:
+  BRO 最怕的两件事之一: "合主干出问题直接崩"。 今天之前 Daemonkey 合主干只有两条路:
     - wish_update(status=live) 走内部 merge_wish_to_master (有闸但绑死 wish 流程)
     - shell_exec git merge (裸奔·没闸·冲突留半合状态·合完没人验跑不跑得起来)
   本工具把 merge_wish_to_master 的全套保护暴露成 Daemonkey 显式可调的第一选择:
@@ -16,7 +16,7 @@ wish-e19edb92 三件套之③ · 2026-07-29 · 安全合主干工具。
     ⑤ 任何一步失败自动回到干净 master · 不留半合状态
   一句话: 要么全绿落 commit · 要么当没发生过。
 
-档位: CONFIRM —— 合主干是有副作用的写操作 · 用户 点头一次才跑。
+档位: CONFIRM —— 合主干是有副作用的写操作 · BRO 点头一次才跑。
 """
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ SPEC = ToolSpec(
         "冲突在分支上预演·自动 abort 报告冲突清单·master 不被污染 ④上线闸 (建 app + 路由 smoke + "
         "前端 JS 哨兵)·过不了不合 ⑤任何失败自动回到干净 master·不留半合状态。"
         "一句话: 要么全绿落 commit·要么当没发生过。 allow_override=true 可跳过安全门和上线闸 "
-        "(仅 用户 明确知道自己在干嘛时用)。"
+        "(仅 BRO 明确知道自己在干嘛时用)。"
     ),
     tier=TIER_CONFIRM,
     input_schema={
@@ -104,7 +104,7 @@ SPEC = ToolSpec(
             },
             "allow_override": {
                 "type": "boolean",
-                "description": "跳过安全门+上线闸强合 · 默认 false · 仅 用户 明确知情时用",
+                "description": "跳过安全门+上线闸强合 · 默认 false · 仅 BRO 明确知情时用",
             },
         },
         "required": ["branch"],
