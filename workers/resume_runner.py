@@ -103,15 +103,33 @@ def _run_background_turn(message: str, session_id: str) -> dict:
         _ACTIVE_TURNS[turn_id] = cancel_event
         _TURN_TO_SID[turn_id] = session_id
     try:
-        return _chat_impl(
-            message=message,
-            session_id=session_id,
-            auto_confirm=_DEFAULT_AUTO_CONFIRM,
-            max_tokens=_MAX_TOKENS,
-            progress=None,
-            cancel_event=cancel_event,
-            turn_id=turn_id,
-        )
+        # wish-8914f90c · 墙钟熔断: 后台续场 turn 收紧预算 — 总墙钟 300s · 单次 LLM 60s。
+        # daemon_api._env_float 每次调用时读 os.environ · 同进程内设置即刻生效。
+        # 治: LLM 调用挂起 25min 占 session 锁 (墨言 08-09 16:47 第三次重启卡死事故)。
+        _prev_wall = os.environ.get("_RESUME_WALL_CLOCK_SEC")
+        _prev_llm = os.environ.get("_RESUME_LLM_TIMEOUT_SEC")
+        os.environ["_RESUME_WALL_CLOCK_SEC"] = "300.0"
+        os.environ["_RESUME_LLM_TIMEOUT_SEC"] = "60.0"
+        try:
+            return _chat_impl(
+                message=message,
+                session_id=session_id,
+                auto_confirm=_DEFAULT_AUTO_CONFIRM,
+                max_tokens=_MAX_TOKENS,
+                progress=None,
+                cancel_event=cancel_event,
+                turn_id=turn_id,
+            )
+        finally:
+            # 恢复现场 · 不污染同进程其它路径 (主对话不应被墙钟限制)
+            if _prev_wall is None:
+                os.environ.pop("_RESUME_WALL_CLOCK_SEC", None)
+            else:
+                os.environ["_RESUME_WALL_CLOCK_SEC"] = _prev_wall
+            if _prev_llm is None:
+                os.environ.pop("_RESUME_LLM_TIMEOUT_SEC", None)
+            else:
+                os.environ["_RESUME_LLM_TIMEOUT_SEC"] = _prev_llm
     finally:
         with _TURNS_LOCK:
             _ACTIVE_TURNS.pop(turn_id, None)

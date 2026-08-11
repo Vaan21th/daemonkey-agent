@@ -19,8 +19,8 @@
   flex-direction: column;
   width: 100%;
   height: 100%;
-  background: #1a1a1a;
-  color: #e8e8e8;
+  background: var(--bg, #16131f);
+  color: var(--text, #ece8f5);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13px;
   overflow: hidden;
@@ -32,15 +32,15 @@
   align-items: center;
   gap: 4px;
   padding: 8px 12px;
-  border-bottom: 1px solid #2c2c30;
-  background: #1e1e22;
+  border-bottom: 1px solid var(--border, #352c4d);
+  background: var(--bg2, #1f1a2c);
   flex-shrink: 0;
   height: 44px;
 }
 .workshop-view .ws-tab {
   background: transparent;
   border: 1px solid transparent;
-  color: #aaa;
+  color: var(--dim, #9a90b3);
   padding: 6px 14px;
   border-radius: 6px;
   cursor: pointer;
@@ -60,7 +60,7 @@
 }
 .workshop-view .ws-tabs-spacer { flex: 1; }
 .workshop-view .ws-tabs-hint {
-  color: #555;
+  color: var(--dim2, #6f6685);
   font-size: 11px;
   letter-spacing: .5px;
 }
@@ -113,8 +113,8 @@
 .workshop-view .ws-apps-sidebar {
   width: 240px;
   flex-shrink: 0;
-  background: #18181c;
-  border-right: 1px solid #2c2c30;
+  background: var(--bg2, #1f1a2c);
+  border-right: 1px solid var(--border, #352c4d);
   display: flex;
   flex-direction: column;
   transition: width .18s ease-out;
@@ -133,15 +133,15 @@
 .workshop-view .wash-title {
   font-size: 13px;
   font-weight: 600;
-  color: #ddd;
+  color: var(--text, #ece8f5);
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
 }
 .workshop-view .wash-collapse {
   background: transparent;
-  border: 1px solid #2c2c30;
-  color: #888;
+  border: 1px solid var(--border, #352c4d);
+  color: var(--dim2, #6f6685);
   width: 24px;
   height: 24px;
   border-radius: 4px;
@@ -160,9 +160,9 @@
 }
 .workshop-view #wsAppsSideFilter {
   width: 100%;
-  background: #232328;
-  border: 1px solid #2c2c30;
-  color: #ddd;
+  background: var(--bg3, #241e34);
+  border: 1px solid var(--border, #352c4d);
+  color: var(--text, #ece8f5);
   padding: 6px 9px;
   border-radius: 5px;
   font-size: 12px;
@@ -207,8 +207,8 @@
   position: relative;
 }
 .workshop-view .ws-apps-sidebar .ws-app-card:hover {
-  background: #232328;
-  border-color: #2c2c30;
+  background: var(--bg3, #241e34);
+  border-color: var(--border, #352c4d);
   transform: none;
   box-shadow: none;
 }
@@ -252,7 +252,7 @@
 /* + 长一个新应用 · sidebar 内底部 · dashed border */
 .workshop-view .ws-apps-sidebar .ws-app-card.ws-app-add {
   margin-top: 8px;
-  border: 1px dashed #3a3a40;
+  border: 1px dashed var(--border, #352c4d);
   background: transparent;
 }
 .workshop-view .ws-apps-sidebar .ws-app-card.ws-app-add:hover {
@@ -283,7 +283,7 @@
 .workshop-view .ws-apps-main {
   flex: 1;
   min-width: 0;
-  background: #16161a;
+  background: var(--bg, #16131f);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -304,12 +304,12 @@
 }
 .workshop-view .ws-apps-welcome-title {
   font-size: 20px;
-  color: #ddd;
+  color: var(--text, #ece8f5);
   margin: 0 0 6px;
   font-weight: 600;
 }
 .workshop-view .ws-apps-welcome-sub {
-  color: #888;
+  color: var(--dim2, #6f6685);
   font-size: 13px;
   margin: 0 0 24px;
 }
@@ -320,7 +320,7 @@
 }
 .workshop-view .wawm-stat {
   font-size: 12px;
-  color: #888;
+  color: var(--dim2, #6f6685);
 }
 .workshop-view .wawm-stat b {
   color: var(--Daemonkey, #9F7AEA);
@@ -336,12 +336,12 @@
 }
 .workshop-view .wawt-row {
   font-size: 12px;
-  color: #777;
+  color: var(--dim2, #6f6685);
   text-align: left;
   padding: 8px 14px;
   background: #1c1c20;
   border-radius: 6px;
-  border-left: 2px solid #2c2c30;
+  border-left: 2px solid var(--border, #352c4d);
 }
 
 /* 折叠态下复用 sidebar 头部的 « 按钮 (JS 切换 textContent 成 ») · 不再有 sidebar 外侧的展开按钮 */
@@ -354,8 +354,8 @@
   padding: 22px;
 }
 .workshop-view .ws-app-card {
-  background: #1e1e22;
-  border: 1px solid #2c2c30;
+  background: var(--bg2, #1f1a2c);
+  border: 1px solid var(--border, #352c4d);
   border-radius: 10px;
   padding: 18px;
   cursor: pointer;
@@ -367,7 +367,7 @@
 }
 .workshop-view .ws-app-card:hover {
   border-color: var(--Daemonkey, #9F7AEA);
-  background: #232328;
+  background: var(--bg3, #241e34);
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(0,0,0,.25);
 }
@@ -385,12 +385,12 @@
 .workshop-view .ws-app-card .wac-title {
   font-size: 15px;
   font-weight: 600;
-  color: #e8e8e8;
+  color: var(--text, #ece8f5);
   margin-bottom: 6px;
 }
 .workshop-view .ws-app-card .wac-desc {
   font-size: 12px;
-  color: #999;
+  color: var(--dim2, #6f6685);
   line-height: 1.5;
   margin-bottom: 10px;
 }
@@ -408,8 +408,8 @@
   border-radius: 4px;
 }
 .workshop-view .ws-app-card .wac-stage {
-  background: #2c2c30;
-  color: #888;
+  background: var(--border, #352c4d);
+  color: var(--dim2, #6f6685);
   padding: 2px 7px;
   border-radius: 4px;
 }
@@ -435,23 +435,23 @@
   align-items: center;
   gap: 10px;
   padding: 14px 22px;
-  border-bottom: 1px solid #2c2c30;
-  background: #1e1e22;
+  border-bottom: 1px solid var(--border, #352c4d);
+  background: var(--bg2, #1f1a2c);
   flex-shrink: 0;
 }
 .workshop-view .ws-ad-back {
   background: transparent;
-  border: 1px solid #3a3a40;
-  color: #aaa;
+  border: 1px solid var(--border, #352c4d);
+  color: var(--dim, #9a90b3);
   padding: 5px 12px;
   border-radius: 5px;
   cursor: pointer;
   font-size: 12px;
   font-family: inherit;
 }
-.workshop-view .ws-ad-back:hover { background: #2c2c30; color: var(--Daemonkey, #9F7AEA); }
+.workshop-view .ws-ad-back:hover { background: var(--border, #352c4d); color: var(--Daemonkey, #9F7AEA); }
 .workshop-view .ws-ad-icon { font-size: 24px; line-height: 1; }
-.workshop-view .ws-ad-title { font-size: 16px; font-weight: 600; color: #e8e8e8; }
+.workshop-view .ws-ad-title { font-size: 16px; font-weight: 600; color: var(--text, #ece8f5); }
 .workshop-view .ws-ad-kind {
   background: rgba(159,122,234,.18);
   color: var(--Daemonkey, #9F7AEA);
@@ -465,8 +465,8 @@
   display: flex;
   gap: 4px;
   padding: 0 22px;
-  border-bottom: 1px solid #2c2c30;
-  background: #18181c;
+  border-bottom: 1px solid var(--border, #352c4d);
+  background: var(--bg2, #1f1a2c);
   flex-shrink: 0;
   /* 卷四十六续 11 · sub-tab 永远可见 (sidebar+main 布局下 main 内部滚动) */
   position: sticky;
@@ -477,14 +477,14 @@
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
-  color: #777;
+  color: var(--dim2, #6f6685);
   padding: 10px 14px;
   cursor: pointer;
   font-size: 12px;
   font-family: inherit;
   font-weight: 500;
 }
-.workshop-view .ws-ad-tab:hover { color: #ccc; }
+.workshop-view .ws-ad-tab:hover { color: var(--dim, #9a90b3); }
 .workshop-view .ws-ad-tab.active {
   color: var(--Daemonkey, #9F7AEA);
   border-bottom-color: var(--Daemonkey, #9F7AEA);
@@ -499,11 +499,11 @@
 .workshop-view .ws-ad-empty {
   text-align: center;
   padding: 32px 18px;
-  color: #777;
+  color: var(--dim2, #6f6685);
   font-size: 13px;
 }
 .workshop-view .ws-ad-error { color: #fc8181; }
-.workshop-view .ws-ad-meta { font-size: 11px; color: #666; margin-bottom: 12px; }
+.workshop-view .ws-ad-meta { font-size: 11px; color: var(--dim2, #6f6685); margin-bottom: 12px; }
 .workshop-view .ws-ad-kinds {
   display: flex;
   flex-wrap: wrap;
@@ -511,10 +511,10 @@
   gap: 6px;
   margin-bottom: 12px;
 }
-.workshop-view .ws-ad-kinds .wkk-label { font-size: 11px; color: #666; margin-right: 4px; }
+.workshop-view .ws-ad-kinds .wkk-label { font-size: 11px; color: var(--dim2, #6f6685); margin-right: 4px; }
 .workshop-view .ws-ad-kinds .wkk-chip {
-  background: #2c2c30;
-  color: #aaa;
+  background: var(--border, #352c4d);
+  color: var(--dim, #9a90b3);
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 11px;
@@ -525,27 +525,27 @@
   gap: 10px;
 }
 .workshop-view .ws-ad-card {
-  background: #1e1e22;
-  border: 1px solid #2c2c30;
+  background: var(--bg2, #1f1a2c);
+  border: 1px solid var(--border, #352c4d);
   border-radius: 6px;
   padding: 12px 14px;
   transition: border-color .12s;
 }
-.workshop-view .ws-ad-card:hover { border-color: #3a3a40; }
+.workshop-view .ws-ad-card:hover { border-color: var(--border, #352c4d); }
 .workshop-view .ws-ad-c-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .workshop-view .ws-ad-c-title { font-size: 13px; font-weight: 500; color: #e0e0e0; flex: 1; }
 .workshop-view .ws-ad-c-meta {
   display: flex;
   gap: 12px;
   font-size: 11px;
-  color: #666;
+  color: var(--dim2, #6f6685);
   margin-bottom: 4px;
   flex-wrap: wrap;
 }
-.workshop-view .ws-ad-c-path { font-family: Consolas, 'Courier New', monospace; font-size: 10px; color: #555; }
+.workshop-view .ws-ad-c-path { font-family: Consolas, 'Courier New', monospace; font-size: 10px; color: var(--dim2, #6f6685); }
 .workshop-view .ws-ad-c-summary {
   font-size: 12px;
-  color: #999;
+  color: var(--dim2, #6f6685);
   line-height: 1.5;
   margin-top: 4px;
 }
@@ -555,21 +555,21 @@
   max-width: 580px;
   margin: 30px auto;
   padding: 28px;
-  background: #1e1e22;
-  border: 1px solid #2c2c30;
+  background: var(--bg2, #1f1a2c);
+  border: 1px solid var(--border, #352c4d);
   border-radius: 10px;
   text-align: center;
 }
 .workshop-view .ws-ad-stub .ws-stub-icon { font-size: 40px; margin-bottom: 12px; opacity: .6; }
 .workshop-view .ws-ad-stub h3 { color: var(--Daemonkey, #9F7AEA); margin: 0 0 12px 0; font-size: 16px; }
-.workshop-view .ws-ad-stub p { color: #aaa; line-height: 1.7; margin: 8px 0; font-size: 13px; }
-.workshop-view .ws-ad-stub ul { text-align: left; color: #bbb; line-height: 1.8; padding-left: 22px; margin: 12px 0; }
-.workshop-view .ws-ad-stub ul li b { color: #e8e8e8; }
+.workshop-view .ws-ad-stub p { color: var(--dim, #9a90b3); line-height: 1.7; margin: 8px 0; font-size: 13px; }
+.workshop-view .ws-ad-stub ul { text-align: left; color: var(--dim, #9a90b3); line-height: 1.8; padding-left: 22px; margin: 12px 0; }
+.workshop-view .ws-ad-stub ul li b { color: var(--text, #ece8f5); }
 .workshop-view .ws-ad-stub .ws-stub-hint {
   margin-top: 16px;
   padding-top: 14px;
-  border-top: 1px solid #2c2c30;
-  color: #777;
+  border-top: 1px solid var(--border, #352c4d);
+  color: var(--dim2, #6f6685);
   font-size: 11px;
 }
 
@@ -580,15 +580,15 @@
   max-width: none;
   /* 父容器 .ws-ad-pane 已经 padding: 22px · stub 自己不再叠加 */
   padding: 0;
-  color: #ccc;
+  color: var(--dim, #9a90b3);
 }
 .workshop-view .ws-app-desc {
   font-size: 13px;
-  color: #aaa;
+  color: var(--dim, #9a90b3);
   line-height: 1.6;
   margin-bottom: 14px;
   padding-bottom: 14px;
-  border-bottom: 1px dashed #2c2c30;
+  border-bottom: 1px dashed var(--border, #352c4d);
 }
 .workshop-view .ws-app-meta-chips {
   display: flex;
@@ -597,12 +597,12 @@
   margin-bottom: 18px;
 }
 .workshop-view .wamc-chip {
-  background: #1e1e22;
-  border: 1px solid #2c2c30;
+  background: var(--bg2, #1f1a2c);
+  border: 1px solid var(--border, #352c4d);
   border-radius: 5px;
   padding: 4px 10px;
   font-size: 11px;
-  color: #aaa;
+  color: var(--dim, #9a90b3);
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -614,20 +614,20 @@
   border-radius: 3px;
   font-size: 11px;
 }
-.workshop-view .wamc-chip i { color: #777; }
+.workshop-view .wamc-chip i { color: var(--dim2, #6f6685); }
 .workshop-view .ws-app-section {
   margin-bottom: 18px;
 }
 .workshop-view .ws-app-section-head {
   font-size: 12px;
   font-weight: 600;
-  color: #888;
+  color: var(--dim2, #6f6685);
   text-transform: uppercase;
   letter-spacing: .6px;
   margin-bottom: 8px;
 }
 .workshop-view .ws-app-empty {
-  color: #666;
+  color: var(--dim2, #6f6685);
   font-style: italic;
   font-size: 12px;
   padding: 8px 0;
@@ -637,12 +637,12 @@
   flex-wrap: wrap;
   gap: 6px;
   font-size: 12px;
-  color: #aaa;
+  color: var(--dim, #9a90b3);
 }
 .workshop-view .ws-app-tools code {
-  background: #1e1e22;
-  border: 1px solid #2c2c30;
-  color: #bbb;
+  background: var(--bg2, #1f1a2c);
+  border: 1px solid var(--border, #352c4d);
+  color: var(--dim, #9a90b3);
   padding: 2px 8px;
   border-radius: 3px;
   font-size: 11px;
@@ -654,7 +654,7 @@
   background: rgba(159,122,234,.06);
   border-left: 2px solid rgba(159,122,234,.5);
   border-radius: 0 4px 4px 0;
-  color: #888;
+  color: var(--dim2, #6f6685);
   font-size: 11px;
   line-height: 1.6;
 }
@@ -698,7 +698,7 @@ dialog.ws-asset-modal {
   border-radius: 8px;
   padding: 0;
   background: #1a1d24;
-  color: #e6e6e6;
+  color: var(--text, #ece8f5);
   max-width: 560px;
   width: 92vw;
   box-shadow: 0 12px 48px rgba(0,0,0,.5);
@@ -731,7 +731,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .ws-asset-modal .ws-am-sub {
   font-size: 12px;
-  color: #9ca0a8;
+  color: var(--dim2, #6f6685);
   display: flex;
   gap: 16px;
   flex-wrap: wrap;
@@ -774,7 +774,7 @@ dialog.ws-asset-modal::backdrop {
   width: 100%;
   background: #0f1217;
   border: 1px solid rgba(255,255,255,.12);
-  color: #e6e6e6;
+  color: var(--text, #ece8f5);
   border-radius: 4px;
   padding: 8px 10px;
   font-size: 13px;
@@ -803,7 +803,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .ws-asset-modal .ws-am-fname {
   font-size: 11px;
-  color: #9ca0a8;
+  color: var(--dim2, #6f6685);
   margin-top: 4px;
 }
 .ws-asset-modal .ws-am-foot {
@@ -816,7 +816,7 @@ dialog.ws-asset-modal::backdrop {
 .ws-asset-modal .ws-am-status {
   flex: 1;
   font-size: 12px;
-  color: #9ca0a8;
+  color: var(--dim2, #6f6685);
 }
 .ws-asset-modal .ws-am-status.error {
   color: #f87171;
@@ -824,7 +824,7 @@ dialog.ws-asset-modal::backdrop {
 .ws-asset-modal button {
   background: rgba(255,255,255,.06);
   border: 1px solid rgba(255,255,255,.12);
-  color: #e6e6e6;
+  color: var(--text, #ece8f5);
   border-radius: 4px;
   padding: 6px 14px;
   font-size: 13px;
@@ -848,7 +848,7 @@ dialog.ws-asset-modal::backdrop {
 /* ─── 沉淀闭环 v2 刀⑤ · 配置 tab 新样式 (asset_slots 卡片 / 表单 schema 表格 / changelog) ─── */
 .workshop-view .ws-app-section-hint {
   font-size: 11px;
-  color: #666;
+  color: var(--dim2, #6f6685);
   line-height: 1.55;
   margin-bottom: 8px;
 }
@@ -866,13 +866,13 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-app-slot-card {
   background: #1a1a1d;
-  border: 1px solid #2a2a2e;
+  border: 1px solid var(--bg3, #241e34);
   border-radius: 6px;
   padding: 12px 14px;
 }
 .workshop-view .ws-app-slot-card.empty {
   border-style: dashed;
-  border-color: #2a2a2e;
+  border-color: var(--bg3, #241e34);
 }
 .workshop-view .ws-app-slot-card.filled {
   border-color: rgba(159,122,234,.35);
@@ -886,14 +886,14 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-app-slot-name {
   font-size: 12px;
-  color: #ddd;
+  color: var(--text, #ece8f5);
   background: transparent;
   border: none;
   padding: 0;
 }
 .workshop-view .ws-app-slot-type {
   font-size: 10px;
-  color: #888;
+  color: var(--dim2, #6f6685);
   background: #232327;
   border-radius: 3px;
   padding: 1px 5px;
@@ -908,12 +908,12 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-app-slot-label {
   font-size: 13px;
-  color: #ccc;
+  color: var(--dim, #9a90b3);
   margin-bottom: 3px;
 }
 .workshop-view .ws-app-slot-help {
   font-size: 11px;
-  color: #777;
+  color: var(--dim2, #6f6685);
   line-height: 1.5;
   margin-bottom: 8px;
 }
@@ -923,7 +923,7 @@ dialog.ws-asset-modal::backdrop {
   border-radius: 4px;
   padding: 8px 10px;
   font-size: 11px;
-  color: #aaa;
+  color: var(--dim, #9a90b3);
   margin: 6px 0 4px;
   max-height: 100px;
   overflow: auto;
@@ -932,11 +932,11 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-app-slot-meta {
   font-size: 10px;
-  color: #666;
+  color: var(--dim2, #6f6685);
 }
 .workshop-view .ws-app-slot-empty-hint {
   font-size: 11px;
-  color: #666;
+  color: var(--dim2, #6f6685);
   line-height: 1.55;
   font-style: italic;
 }
@@ -956,21 +956,21 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-app-schema-table th {
   text-align: left;
   font-weight: 600;
-  color: #888;
+  color: var(--dim2, #6f6685);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .4px;
   padding: 6px 8px;
-  border-bottom: 1px solid #2a2a2e;
+  border-bottom: 1px solid var(--bg3, #241e34);
 }
 .workshop-view .ws-app-schema-table td {
   padding: 6px 8px;
   border-bottom: 1px solid #1f1f22;
-  color: #bbb;
+  color: var(--dim, #9a90b3);
 }
 .workshop-view .ws-app-schema-table code {
-  background: #1e1e22;
-  color: #ddd;
+  background: var(--bg2, #1f1a2c);
+  color: var(--text, #ece8f5);
   padding: 1px 5px;
   border-radius: 3px;
   font-size: 11px;
@@ -980,7 +980,7 @@ dialog.ws-asset-modal::backdrop {
   padding: 0;
   margin: 0 0 6px;
   font-size: 12px;
-  color: #aaa;
+  color: var(--dim, #9a90b3);
 }
 .workshop-view .ws-app-changelog li {
   padding: 5px 0;
@@ -996,29 +996,29 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-app-md {
   font-size: 13px;
   line-height: 1.65;
-  color: #ccc;
+  color: var(--dim, #9a90b3);
 }
 .workshop-view .ws-app-md h1,
 .workshop-view .ws-app-md h2,
 .workshop-view .ws-app-md h3,
 .workshop-view .ws-app-md h4 {
-  color: #e8e8e8;
+  color: var(--text, #ece8f5);
   margin: 16px 0 8px;
   font-weight: 600;
 }
 .workshop-view .ws-app-md h1 { font-size: 17px; }
 .workshop-view .ws-app-md h2 { font-size: 15px; color: var(--Daemonkey, #9F7AEA); }
 .workshop-view .ws-app-md h3 { font-size: 14px; }
-.workshop-view .ws-app-md h4 { font-size: 13px; color: #ccc; }
+.workshop-view .ws-app-md h4 { font-size: 13px; color: var(--dim, #9a90b3); }
 .workshop-view .ws-app-md p { margin: 8px 0; }
 .workshop-view .ws-app-md ul,
 .workshop-view .ws-app-md ol { padding-left: 22px; margin: 8px 0; }
 .workshop-view .ws-app-md li { margin: 3px 0; }
 .workshop-view .ws-app-md blockquote {
-  border-left: 3px solid #3a3a40;
+  border-left: 3px solid var(--border, #352c4d);
   margin: 8px 0;
   padding: 4px 0 4px 12px;
-  color: #999;
+  color: var(--dim2, #6f6685);
   background: #1a1a1e;
 }
 .workshop-view .ws-app-md code {
@@ -1030,8 +1030,8 @@ dialog.ws-asset-modal::backdrop {
   font-family: ui-monospace, monospace;
 }
 .workshop-view .ws-app-md pre {
-  background: #16161a;
-  border: 1px solid #2c2c30;
+  background: var(--bg, #16131f);
+  border: 1px solid var(--border, #352c4d);
   padding: 12px 14px;
   border-radius: 6px;
   overflow-x: auto;
@@ -1039,7 +1039,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-app-md pre code {
   background: transparent;
-  color: #ccc;
+  color: var(--dim, #9a90b3);
   padding: 0;
   border-radius: 0;
   font-size: 12px;
@@ -1054,18 +1054,18 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-app-md th,
 .workshop-view .ws-app-md td {
-  border: 1px solid #2c2c30;
+  border: 1px solid var(--border, #352c4d);
   padding: 6px 10px;
   text-align: left;
   vertical-align: top;
 }
 .workshop-view .ws-app-md th {
   background: #1c1c20;
-  color: #ddd;
+  color: var(--text, #ece8f5);
   font-weight: 600;
 }
-.workshop-view .ws-app-md td { color: #bbb; }
-.workshop-view .ws-app-md tr:nth-child(even) td { background: #18181c; }
+.workshop-view .ws-app-md td { color: var(--dim, #9a90b3); }
+.workshop-view .ws-app-md tr:nth-child(even) td { background: var(--bg2, #1f1a2c); }
 .workshop-view .ws-app-md a {
   color: var(--Daemonkey, #9F7AEA);
   text-decoration: none;
@@ -1074,7 +1074,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-app-md a:hover { border-bottom-style: solid; }
 .workshop-view .ws-app-md hr {
   border: none;
-  border-top: 1px solid #2c2c30;
+  border-top: 1px solid var(--border, #352c4d);
   margin: 14px 0;
 }
 
@@ -1083,58 +1083,85 @@ dialog.ws-asset-modal::backdrop {
   max-width: 640px;
   margin: 24px auto;
   padding: 24px 26px 22px;
-  background: #1e1e22;
-  border: 1px solid #2c2c30;
+  background: var(--bg2, #1f1a2c);
+  border: 1px solid var(--border, #352c4d);
   border-radius: 10px;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
+/* ─── 测试/运行 tab · UI 设计感统一 (2026-08-10 用户 拍板) ───
+   对齐 daemonkey 变量体系 (--Daemonkey 紫 / --bg 深底 / --text) ·
+   卡片层次 + 渐变 + 状态色 · 让每个 app 跑出来都清晰易用有说明 */
 .workshop-view .ws-form-head {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 12px;
   padding-bottom: 14px;
-  border-bottom: 1px solid #2c2c30;
+  border-bottom: 1px solid var(--border, #2c2c30);
+  margin: -4px -10px 14px -10px;
+  padding: 12px 10px 14px;
 }
-.workshop-view .ws-form-app-icon { font-size: 22px; }
+.workshop-view .ws-form-app-icon {
+  font-size: 22px;
+  width: 40px; height: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(159,122,234,.12);
+  border: 1px solid rgba(159,122,234,.28);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.workshop-view .ws-form-head-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
 .workshop-view .ws-form-app-name {
   font-size: 15px;
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--text, #ece8f5);
   font-weight: 600;
+  letter-spacing: .2px;
 }
 .workshop-view .ws-form-app-desc {
-  flex: 1;
   font-size: 12px;
-  color: #888;
-  margin-left: 8px;
+  color: var(--text-dim, #8a8f98);
+  line-height: 1.5;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  cursor: help;
 }
 .workshop-view .ws-form-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 .workshop-view .ws-form-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 .workshop-view .ws-form-label {
-  color: #d8d8d8;
-  font-size: 12px;
+  color: var(--text, #ece8f5);
+  font-size: 12.5px;
   letter-spacing: .2px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .workshop-view .ws-form-req {
   color: #e07070;
-  margin-left: 4px;
+  margin-left: 2px;
+  font-weight: 700;
 }
 .workshop-view .ws-form-help {
-  color: #777;
-  font-size: 11px;
-  line-height: 1.5;
+  color: var(--text-dim, #8a8f98);
+  font-size: 11.5px;
+  line-height: 1.55;
   margin-top: 2px;
 }
 .workshop-view .ws-form-field input[type="text"],
@@ -1142,14 +1169,14 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-form-field input[type="file"],
 .workshop-view .ws-form-field textarea,
 .workshop-view .ws-form-field select {
-  background: #15151a;
-  border: 1px solid #2e2e34;
-  color: #e8e8e8;
-  padding: 7px 10px;
-  border-radius: 5px;
+  background: var(--bg3, #1a1820);
+  border: 1px solid var(--border, #2e2e34);
+  color: var(--text, #e8e8e8);
+  padding: 8px 11px;
+  border-radius: 8px;
   font-size: 13px;
   font-family: inherit;
-  transition: border-color .08s, background .08s;
+  transition: border-color .12s, background .12s, box-shadow .12s;
 }
 .workshop-view .ws-form-field textarea {
   resize: vertical;
@@ -1161,7 +1188,8 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-form-field select:focus {
   outline: none;
   border-color: var(--Daemonkey, #9F7AEA);
-  background: #18181d;
+  background: #1c1a24;
+  box-shadow: 0 0 0 3px rgba(159, 122, 234, .12);
 }
 .workshop-view .ws-form-field-bool {
   flex-direction: row;
@@ -1172,7 +1200,7 @@ dialog.ws-asset-modal::backdrop {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  color: #d8d8d8;
+  color: var(--text, #ece8f5);
   font-size: 12px;
 }
 .workshop-view .ws-form-bool input[type="checkbox"] {
@@ -1186,7 +1214,7 @@ dialog.ws-asset-modal::backdrop {
   align-items: center;
   gap: 10px;
   padding-top: 14px;
-  border-top: 1px solid #2c2c30;
+  border-top: 1px solid var(--border, #352c4d);
   flex-wrap: wrap;
 }
 .workshop-view .ws-form-autosend {
@@ -1194,7 +1222,7 @@ dialog.ws-asset-modal::backdrop {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #888;
+  color: var(--dim2, #6f6685);
   font-size: 11px;
   cursor: pointer;
 }
@@ -1205,32 +1233,40 @@ dialog.ws-asset-modal::backdrop {
   cursor: pointer;
 }
 .workshop-view .ws-btn-primary {
-  background: rgba(159, 122, 234, .18);
-  border-color: rgba(159, 122, 234, .42);
-  color: #e0d0ff;
+  background: linear-gradient(135deg, var(--Daemonkey, #9F7AEA), var(--Daemonkey-dim, #b794f6));
+  border-color: transparent;
+  color: #fff;
   font-weight: 600;
+  border-radius: 10px;
+  padding: 7px 16px;
+  box-shadow: 0 2px 10px rgba(159, 122, 234, .22);
+  transition: filter .12s, transform .12s, box-shadow .12s;
 }
 .workshop-view .ws-btn-primary:hover {
-  background: rgba(159, 122, 234, .28);
-  border-color: var(--Daemonkey, #9F7AEA);
-  color: #f0e4ff;
+  background: linear-gradient(135deg, var(--Daemonkey-dim, #b794f6), var(--Daemonkey, #9F7AEA));
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(159, 122, 234, .32);
 }
 .workshop-view .ws-form-preview {
   margin-top: 4px;
   padding: 12px 14px;
-  background: #15151a;
-  border: 1px dashed #3a3a40;
-  border-radius: 6px;
+  background: var(--bg3, #18161e);
+  border: 1px dashed var(--border, #3a3a40);
+  border-radius: 8px;
 }
 .workshop-view .ws-form-preview-head {
   font-size: 11px;
-  color: #888;
+  color: var(--text-dim, #888);
   margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 .workshop-view .ws-form-preview-body {
   white-space: pre-wrap;
   word-wrap: break-word;
-  color: #c8c8c8;
+  color: var(--text, #c8c8c8);
   font-size: 12px;
   line-height: 1.55;
   margin: 0;
@@ -1245,13 +1281,13 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-form-empty .ws-form-empty-actions li {
   margin: 8px 0;
-  color: #aaa;
+  color: var(--dim, #9a90b3);
   font-size: 12px;
   line-height: 1.6;
 }
 .workshop-view .ws-form-empty .ws-form-empty-actions code {
-  background: #15151a;
-  border: 1px solid #2c2c30;
+  background: var(--bg, #16131f);
+  border: 1px solid var(--border, #352c4d);
   padding: 2px 6px;
   border-radius: 3px;
   font-size: 11px;
@@ -1261,34 +1297,56 @@ dialog.ws-asset-modal::backdrop {
   margin-top: 16px;
 }
 
-/* ─── 卷四十六续 12 · wish-165ea1f6 phase B · 真跑输出 + 浮层 ─── */
+/* ─── 卷四十六续 12 · wish-165ea1f6 phase B · 运行记录 + 浮层 ─── */
 .workshop-view .ws-form-run {
-  margin-top: 6px;
-  padding: 12px 14px;
-  background: #15151a;
-  border: 1px solid #2c2c30;
-  border-radius: 6px;
+  margin-top: 8px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, var(--bg3, #18161e), var(--bg, #14121a));
+  border: 1px solid var(--border, #2c2c30);
+  border-radius: 10px;
 }
 .workshop-view .ws-form-run-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #2c2c30;
-  margin-bottom: 8px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--border, #2c2c30);
+  margin-bottom: 9px;
 }
 .workshop-view .ws-form-run-title {
   color: var(--Daemonkey, #9F7AEA);
   font-size: 13px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 .workshop-view .ws-form-run-status {
-  color: #aaa;
+  color: var(--text-dim, #aaa);
   font-size: 11px;
-  background: #1e1e22;
-  border: 1px solid #2e2e34;
-  padding: 2px 8px;
-  border-radius: 10px;
+  background: var(--bg2, #1e1e22);
+  border: 1px solid var(--border, #2e2e34);
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+.workshop-view .ws-form-run-status[data-st="running"],
+.workshop-view .ws-form-run-status.running {
+  color: var(--Daemonkey, #9F7AEA);
+  border-color: rgba(159,122,234,.4);
+  background: rgba(159,122,234,.1);
+}
+.workshop-view .ws-form-run-status[data-st="ok"],
+.workshop-view .ws-form-run-status.ok {
+  color: #48BB78;
+  border-color: rgba(72,187,120,.4);
+  background: rgba(72,187,120,.1);
+}
+.workshop-view .ws-form-run-status[data-st="err"],
+.workshop-view .ws-form-run-status.err {
+  color: #e07070;
+  border-color: rgba(224,112,112,.4);
+  background: rgba(224,112,112,.1);
 }
 .workshop-view .ws-form-run-events {
   max-height: 320px;
@@ -1296,27 +1354,28 @@ dialog.ws-asset-modal::backdrop {
   font-family: 'Consolas', 'Menlo', monospace;
   font-size: 11px;
   line-height: 1.55;
-  background: #0e0e12;
-  border-radius: 4px;
-  padding: 8px 10px;
+  background: rgba(10,10,14,.6);
+  border: 1px solid var(--border, #23232a);
+  border-radius: 8px;
+  padding: 10px 12px;
 }
 .workshop-view .ws-form-run-event {
   display: grid;
   grid-template-columns: 60px 80px 1fr;
   gap: 8px;
-  padding: 2px 0;
-  border-bottom: 1px dashed #1f1f26;
+  padding: 3px 0;
+  border-bottom: 1px dashed #23232a;
 }
 .workshop-view .ws-form-run-event:last-child { border-bottom: none; }
-.workshop-view .ws-fre-ts { color: #555; }
+.workshop-view .ws-fre-ts { color: var(--dim2, #6f6685); }
 .workshop-view .ws-fre-kind {
-  color: #888;
+  color: var(--dim2, #6f6685);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .workshop-view .ws-fre-text {
-  color: #c8c8c8;
+  color: var(--text, #c8c8c8);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -1328,7 +1387,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-form-run-outputs {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid #2c2c30;
+  border-top: 1px solid var(--border, #352c4d);
 }
 .workshop-view .ws-run-media {
   display: flex;
@@ -1342,19 +1401,19 @@ dialog.ws-asset-modal::backdrop {
   gap: 4px;
   padding: 8px;
   background: #1a1a1f;
-  border: 1px solid #2c2c30;
+  border: 1px solid var(--border, #352c4d);
   border-radius: 6px;
 }
 .workshop-view .ws-run-media-label {
   font-size: 11px;
-  color: #888;
+  color: var(--dim2, #6f6685);
   font-family: 'JetBrains Mono', Consolas, monospace;
 }
 .workshop-view .ws-run-media-img {
   max-width: 100%;
   max-height: 480px;
   border-radius: 4px;
-  background: #0c0c10;
+  background: var(--bg, #16131f);
   object-fit: contain;
   display: block;
 }
@@ -1362,7 +1421,7 @@ dialog.ws-asset-modal::backdrop {
   max-width: 100%;
   max-height: 360px;
   border-radius: 4px;
-  background: #0c0c10;
+  background: var(--bg, #16131f);
 }
 .workshop-view .ws-run-media-item audio {
   width: 100%;
@@ -1381,8 +1440,8 @@ dialog.ws-asset-modal::backdrop {
   padding: 8px;
   font-size: 11px;
   font-family: 'JetBrains Mono', Consolas, monospace;
-  background: #0c0c10;
-  border: 1px solid #2c2c30;
+  background: var(--bg, #16131f);
+  border: 1px solid var(--border, #352c4d);
   border-radius: 4px;
   color: #cbd5e0;
   max-height: 280px;
@@ -1402,8 +1461,8 @@ dialog.ws-asset-modal::backdrop {
   max-height: 480px;
   display: flex;
   flex-direction: column;
-  background: #15151a;
-  border: 1px solid #2c2c30;
+  background: var(--bg, #16131f);
+  border: 1px solid var(--border, #352c4d);
   border-radius: 8px;
   box-shadow: 0 10px 40px rgba(0,0,0,0.5);
   z-index: 100;
@@ -1429,14 +1488,14 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-btn-divider {
   width: 1px;
   height: 18px;
-  background: #3a3a40;
+  background: var(--border, #352c4d);
   margin: 0 4px;
 }
 
 /* ─── 左:工具集 ─── */
 .workshop-view .ws-toolbox {
-  border-right: 1px solid #2c2c30;
-  background: #1e1e22;
+  border-right: 1px solid var(--border, #352c4d);
+  background: var(--bg2, #1f1a2c);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1453,8 +1512,8 @@ dialog.ws-asset-modal::backdrop {
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
-  border-bottom: 1px solid #2c2c30;
-  background: #232328;
+  border-bottom: 1px solid var(--border, #352c4d);
+  background: var(--bg3, #241e34);
 }
 .workshop-view .ws-tb-title {
   font-weight: 600;
@@ -1463,8 +1522,8 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-tb-toggle {
   background: transparent;
-  border: 1px solid #3a3a40;
-  color: #aaa;
+  border: 1px solid var(--border, #352c4d);
+  color: var(--dim, #9a90b3);
   width: 24px;
   height: 24px;
   border-radius: 4px;
@@ -1476,22 +1535,22 @@ dialog.ws-asset-modal::backdrop {
   justify-content: center;
 }
 .workshop-view .ws-tb-toggle:hover {
-  background: #2c2c30;
+  background: var(--border, #352c4d);
   color: var(--Daemonkey, #9F7AEA);
 }
 
 .workshop-view .ws-tb-search {
   padding: 8px 10px;
-  border-bottom: 1px solid #2c2c30;
+  border-bottom: 1px solid var(--border, #352c4d);
 }
 .workshop-view .ws-tb-search input {
   width: 100%;
-  background: #18181c;
-  border: 1px solid #2c2c30;
+  background: var(--bg2, #1f1a2c);
+  border: 1px solid var(--border, #352c4d);
   border-radius: 4px;
   padding: 5px 8px;
   font-size: 12px;
-  color: #e8e8e8;
+  color: var(--text, #ece8f5);
   font-family: inherit;
   outline: none;
 }
@@ -1508,8 +1567,8 @@ dialog.ws-asset-modal::backdrop {
 /* 滚动条美化 (跟 chat.css 风格一致) */
 .workshop-view .ws-tb-body::-webkit-scrollbar { width: 8px; }
 .workshop-view .ws-tb-body::-webkit-scrollbar-track { background: transparent; }
-.workshop-view .ws-tb-body::-webkit-scrollbar-thumb { background: #2c2c30; border-radius: 4px; }
-.workshop-view .ws-tb-body::-webkit-scrollbar-thumb:hover { background: #3a3a40; }
+.workshop-view .ws-tb-body::-webkit-scrollbar-thumb { background: var(--border, #352c4d); border-radius: 4px; }
+.workshop-view .ws-tb-body::-webkit-scrollbar-thumb:hover { background: var(--border, #352c4d); }
 
 .workshop-view .ws-tg {
   margin: 0 0 4px 0;
@@ -1521,19 +1580,19 @@ dialog.ws-asset-modal::backdrop {
   padding: 7px 12px;
   cursor: pointer;
   font-size: 11px;
-  color: #999;
+  color: var(--dim2, #6f6685);
   letter-spacing: .3px;
   text-transform: none;
   font-weight: 500;
   user-select: none;
 }
-.workshop-view .ws-tg-head:hover { background: #232328; color: #ccc; }
+.workshop-view .ws-tg-head:hover { background: var(--bg3, #241e34); color: var(--dim, #9a90b3); }
 .workshop-view .ws-tg-arrow { font-size: 10px; transition: transform .12s; }
 .workshop-view .ws-tg.collapsed .ws-tg-arrow { transform: rotate(-90deg); }
 .workshop-view .ws-tg-label { flex: 1; }
 .workshop-view .ws-tg-count {
-  background: #2c2c30;
-  color: #888;
+  background: var(--border, #352c4d);
+  color: var(--dim2, #6f6685);
   border-radius: 8px;
   padding: 1px 7px;
   font-size: 10px;
@@ -1556,7 +1615,7 @@ dialog.ws-asset-modal::backdrop {
   transition: background .08s;
 }
 .workshop-view .ws-tool:hover {
-  background: #2c2c30;
+  background: var(--border, #352c4d);
 }
 .workshop-view .ws-tool.dragging {
   opacity: .4;
@@ -1570,7 +1629,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-tool-name {
   font-size: 12px;
-  color: #d8d8d8;
+  color: var(--text, #ece8f5);
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -1604,7 +1663,7 @@ dialog.ws-asset-modal::backdrop {
 
 .workshop-view .ws-tb-add {
   padding: 8px 10px;
-  border-top: 1px solid #2c2c30;
+  border-top: 1px solid var(--border, #352c4d);
   margin-top: 6px;
 }
 .workshop-view .ws-tb-add button {
@@ -1630,8 +1689,8 @@ dialog.ws-asset-modal::backdrop {
   left: 4px;
   transform: translateY(-50%);
   z-index: 5;
-  background: #2c2c30;
-  border: 1px solid #3a3a40;
+  background: var(--border, #352c4d);
+  border: 1px solid var(--border, #352c4d);
   color: var(--Daemonkey, #9F7AEA);
   width: 22px;
   height: 60px;
@@ -1662,7 +1721,7 @@ dialog.ws-asset-modal::backdrop {
   padding: 6px 12px;
   height: 36px;
   background: rgba(30, 30, 34, .92);
-  border-bottom: 1px solid #2c2c30;
+  border-bottom: 1px solid var(--border, #352c4d);
   backdrop-filter: blur(6px);
   flex-shrink: 0;
   z-index: 2;
@@ -1674,7 +1733,7 @@ dialog.ws-asset-modal::backdrop {
   white-space: nowrap;
 }
 .workshop-view .ws-canvas-hint {
-  color: #666;
+  color: var(--dim2, #6f6685);
   font-size: 11px;
   white-space: nowrap;
   overflow: hidden;
@@ -1683,9 +1742,9 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-spacer { flex: 1; }
 
 .workshop-view .ws-btn {
-  background: #2c2c30;
-  border: 1px solid #3a3a40;
-  color: #d8d8d8;
+  background: var(--border, #352c4d);
+  border: 1px solid var(--border, #352c4d);
+  color: var(--text, #ece8f5);
   padding: 4px 10px;
   border-radius: 4px;
   cursor: pointer;
@@ -1731,7 +1790,7 @@ dialog.ws-asset-modal::backdrop {
    JS empty.hidden = true 必须配合这条作者级覆盖才真隐藏 (卷四十六续 19) */
 .workshop-view .ws-canvas-empty[hidden] { display: none; }
 .workshop-view .ws-empty-icon { font-size: 48px; opacity: .25; margin-bottom: 12px; }
-.workshop-view .ws-empty-title { font-size: 16px; color: #555; margin-bottom: 4px; }
+.workshop-view .ws-empty-title { font-size: 16px; color: var(--dim2, #6f6685); margin-bottom: 4px; }
 .workshop-view .ws-empty-hint { font-size: 12px; color: #444; max-width: 360px; line-height: 1.6; }
 
 /* ─── 卷七十二 v2 · 用户 反馈: 左侧工具集 → 工作流列表 (主入口 · 直接点击加载) ─── */
@@ -1747,19 +1806,19 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-flows-empty-hint {
   font-size: 11px;
-  color: #888;
+  color: var(--dim2, #6f6685);
   line-height: 1.6;
 }
 .workshop-view .ws-flow-item {
   padding: 8px 10px;
-  background: #222227;
+  background: var(--bg3, #241e34);
   border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s;
 }
 .workshop-view .ws-flow-item:hover {
-  background: #2a2a30;
+  background: var(--bg3, #241e34);
   border-color: rgba(159, 122, 234, 0.4);
 }
 .workshop-view .ws-flow-item.active {
@@ -1771,7 +1830,7 @@ dialog.ws-asset-modal::backdrop {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #e8e8e8;
+  color: var(--text, #ece8f5);
   margin-bottom: 4px;
   font-weight: 500;
 }
@@ -1794,7 +1853,7 @@ dialog.ws-asset-modal::backdrop {
   display: flex;
   gap: 10px;
   font-size: 10px;
-  color: #888;
+  color: var(--dim2, #6f6685);
 }
 .workshop-view .ws-flow-item-meta i { color: #b89ff0; font-size: 11px; margin-right: 2px; }
 
@@ -1827,7 +1886,7 @@ dialog.ws-asset-modal::backdrop {
   left: 0; right: 0; bottom: 0;
   max-height: 38%;
   background: #1a1a1f;
-  border-top: 1px solid #2c2c32;
+  border-top: 1px solid var(--border, #352c4d);
   display: flex;
   flex-direction: column;
   z-index: 4;
@@ -1839,7 +1898,7 @@ dialog.ws-asset-modal::backdrop {
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  border-bottom: 1px solid #2c2c32;
+  border-bottom: 1px solid var(--border, #352c4d);
   background: #161619;
   font-size: 12px;
   color: #d8c5ff;
@@ -1855,7 +1914,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-steps-hint {
   font-size: 11px;
-  color: #888;
+  color: var(--dim2, #6f6685);
   font-weight: 400;
 }
 .workshop-view .ws-steps-list {
@@ -1870,7 +1929,7 @@ dialog.ws-asset-modal::backdrop {
   display: flex;
   gap: 10px;
   padding: 8px 10px;
-  background: #222227;
+  background: var(--bg3, #241e34);
   border: 1px solid #2e2e35;
   border-radius: 6px;
   align-items: flex-start;
@@ -1960,7 +2019,7 @@ dialog.ws-asset-modal::backdrop {
   filter: drop-shadow(0 0 4px rgba(255, 215, 107, 0.55));
   font-size: 13px;
 }
-.workshop-view .ws-trust-badge.trust-lvl-0 { color: #888; }
+.workshop-view .ws-trust-badge.trust-lvl-0 { color: var(--dim2, #6f6685); }
 .workshop-view .ws-trust-badge.trust-lvl-1 { color: #a8d6a8; border-color: rgba(106, 207, 138, 0.25); }
 .workshop-view .ws-trust-badge.trust-lvl-2 {
   color: #6acf8a;
@@ -1997,7 +2056,7 @@ dialog.ws-asset-modal::backdrop {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #e8e8e8;
+  color: var(--text, #ece8f5);
 }
 .workshop-view .ws-step-app i { color: #b89ff0; font-size: 14px; }
 .workshop-view .ws-step-appid {
@@ -2011,8 +2070,8 @@ dialog.ws-asset-modal::backdrop {
   padding: 1px 6px;
   border-radius: 8px;
   margin-left: auto;
-  background: #2c2c32;
-  color: #888;
+  background: var(--border, #352c4d);
+  color: var(--dim2, #6f6685);
 }
 .workshop-view .ws-step-tag.warn { background: rgba(252, 211, 77, 0.15); color: #fcd34d; }
 .workshop-view .ws-step-goal {
@@ -2026,7 +2085,7 @@ dialog.ws-asset-modal::backdrop {
   list-style: none;
   margin: 4px 0 0 0;
   padding: 4px 0 0 0;
-  border-top: 1px dashed #2c2c32;
+  border-top: 1px dashed var(--border, #352c4d);
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -2044,7 +2103,7 @@ dialog.ws-asset-modal::backdrop {
   flex: 0 0 auto;
   font-family: ui-monospace, monospace;
   font-size: 10px;
-  color: #888;
+  color: var(--dim2, #6f6685);
   background: #1f1f24;
   padding: 0 5px;
   border-radius: 3px;
@@ -2090,9 +2149,9 @@ dialog.ws-asset-modal::backdrop {
 /* ─── LiteGraph 自带的 contextmenu / dialogs 样式覆盖 ─── */
 /* (LiteGraph 的菜单是 fixed 渲染到 body 里·不在 .workshop-view 下) */
 .litecontextmenu {
-  background: #232328 !important;
-  border: 1px solid #3a3a40 !important;
-  color: #d8d8d8 !important;
+  background: var(--bg3, #241e34) !important;
+  border: 1px solid var(--border, #352c4d) !important;
+  color: var(--text, #ece8f5) !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
   font-size: 12px !important;
   border-radius: 5px !important;
@@ -2101,20 +2160,20 @@ dialog.ws-asset-modal::backdrop {
 }
 .litecontextmenu .litemenu-entry {
   padding: 6px 14px !important;
-  color: #d8d8d8 !important;
+  color: var(--text, #ece8f5) !important;
 }
 .litecontextmenu .litemenu-entry:hover {
   background: #3a2a4a !important;
   color: var(--Daemonkey, #9F7AEA) !important;
 }
 .litecontextmenu .litemenu-entry.separator {
-  border-top: 1px solid #2c2c30 !important;
+  border-top: 1px solid var(--border, #352c4d) !important;
   margin: 2px 0 !important;
 }
 .litegraph.litesearchbox {
-  background: #232328 !important;
+  background: var(--bg3, #241e34) !important;
   border: 1px solid var(--Daemonkey, #9F7AEA) !important;
-  color: #e8e8e8 !important;
+  color: var(--text, #ece8f5) !important;
 }
 
 /* ─── 响应式:窄屏自动收起工具集 ─── */
@@ -2181,7 +2240,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-trash-empty {
   text-align: center;
   padding: 60px 20px;
-  color: #888;
+  color: var(--dim2, #6f6685);
 }
 .workshop-view .ws-trash-empty .ws-empty-icon {
   font-size: 48px;
@@ -2189,12 +2248,12 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-trash-empty .ws-empty-title {
   font-size: 16px;
-  color: #c8c8c8;
+  color: var(--text, #ece8f5);
   margin-bottom: 6px;
 }
 .workshop-view .ws-trash-empty .ws-empty-hint {
   font-size: 12px;
-  color: #888;
+  color: var(--dim2, #6f6685);
   max-width: 540px;
   margin: 0 auto;
   line-height: 1.6;
@@ -2204,19 +2263,19 @@ dialog.ws-asset-modal::backdrop {
   align-items: center;
   gap: 10px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #2c2c30;
+  border-bottom: 1px solid var(--border, #352c4d);
   margin-bottom: 6px;
 }
 .workshop-view .ws-trash-title {
   font-size: 14px;
   font-weight: 600;
-  color: #d8d8d8;
+  color: var(--text, #ece8f5);
 }
 .workshop-view .ws-trash-section-title {
   font-size: 12px;
-  color: #888;
+  color: var(--dim2, #6f6685);
   padding: 12px 4px 4px;
-  border-bottom: 1px dashed #2c2c30;
+  border-bottom: 1px dashed var(--border, #352c4d);
   margin-top: 6px;
 }
 .workshop-view .ws-trash-row {
@@ -2225,12 +2284,12 @@ dialog.ws-asset-modal::backdrop {
   gap: 10px;
   padding: 9px 12px;
   background: #1d1d20;
-  border: 1px solid #2a2a2e;
+  border: 1px solid var(--bg3, #241e34);
   border-radius: 6px;
   font-size: 12px;
 }
 .workshop-view .ws-trash-row:hover {
-  background: #232328;
+  background: var(--bg3, #241e34);
 }
 .workshop-view .ws-trash-icon {
   font-size: 18px;
@@ -2238,24 +2297,24 @@ dialog.ws-asset-modal::backdrop {
   text-align: center;
 }
 .workshop-view .ws-trash-name {
-  color: #d8d8d8;
+  color: var(--text, #ece8f5);
   font-weight: 500;
   min-width: 140px;
 }
 .workshop-view .ws-trash-kind {
   font-size: 10px;
   padding: 2px 6px;
-  background: #2c2c30;
+  background: var(--border, #352c4d);
   border-radius: 3px;
-  color: #aaa;
+  color: var(--dim, #9a90b3);
 }
 .workshop-view .ws-trash-id {
   font-family: monospace;
-  color: #777;
+  color: var(--dim2, #6f6685);
   font-size: 11px;
 }
 .workshop-view .ws-trash-deleted {
-  color: #888;
+  color: var(--dim2, #6f6685);
   font-size: 11px;
 }
 .workshop-view .ws-spacer { flex: 1; }
@@ -2301,24 +2360,24 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-btn-sm {
   font-size: 11px;
   padding: 3px 10px;
-  background: #2a2a30;
-  border: 1px solid #3a3a40;
-  color: #bbb;
+  background: var(--bg3, #241e34);
+  border: 1px solid var(--border, #352c4d);
+  color: var(--dim, #9a90b3);
   border-radius: 4px;
   cursor: pointer;
   transition: background .12s;
 }
-.workshop-view .ws-btn-sm:hover { background: #3a3a40; color: #e0e0e0; }
+.workshop-view .ws-btn-sm:hover { background: var(--border, #352c4d); color: #e0e0e0; }
 
 /* 内嵌预览展开区 */
 .workshop-view .ws-ad-c-preview {
   margin-top: 10px;
-  border-top: 1px solid #2c2c30;
+  border-top: 1px solid var(--border, #352c4d);
   padding-top: 10px;
 }
 .workshop-view .ws-ad-preview-body {
-  background: #16161a;
-  border: 1px solid #2c2c30;
+  background: var(--bg, #16131f);
+  border: 1px solid var(--border, #352c4d);
   border-radius: 6px;
   padding: 14px 18px;
   max-height: 600px;
@@ -2327,18 +2386,18 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-ad-preview-md {
   font-size: 13px;
   line-height: 1.7;
-  color: #ccc;
+  color: var(--dim, #9a90b3);
 }
 .workshop-view .ws-ad-preview-md h1 { font-size: 18px; color: #e0e0e0; margin: 0 0 10px; }
-.workshop-view .ws-ad-preview-md h2 { font-size: 15px; color: #d0d0d0; margin: 16px 0 6px; border-bottom: 1px solid #2c2c30; padding-bottom: 4px; }
+.workshop-view .ws-ad-preview-md h2 { font-size: 15px; color: var(--text, #ece8f5); margin: 16px 0 6px; border-bottom: 1px solid var(--border, #352c4d); padding-bottom: 4px; }
 .workshop-view .ws-ad-preview-md h3 { font-size: 13px; color: #c0c0c0; margin: 10px 0 4px; }
 .workshop-view .ws-ad-preview-md p { margin: 6px 0; }
-.workshop-view .ws-ad-preview-md code { background: #2a2a30; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+.workshop-view .ws-ad-preview-md code { background: var(--bg3, #241e34); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
 .workshop-view .ws-ad-preview-md pre { background: #12121a; padding: 10px; border-radius: 5px; overflow-x: auto; font-size: 12px; }
-.workshop-view .ws-ad-preview-md blockquote { border-left: 3px solid #9F7AEA; margin: 8px 0; padding: 4px 12px; color: #999; }
+.workshop-view .ws-ad-preview-md blockquote { border-left: 3px solid #9F7AEA; margin: 8px 0; padding: 4px 12px; color: var(--dim2, #6f6685); }
 .workshop-view .ws-ad-preview-md table { border-collapse: collapse; margin: 8px 0; font-size: 12px; width: 100%; }
-.workshop-view .ws-ad-preview-md th, .workshop-view .ws-ad-preview-md td { border: 1px solid #2c2c30; padding: 4px 8px; text-align: left; }
-.workshop-view .ws-ad-preview-md th { background: #1e1e22; color: #bbb; }
+.workshop-view .ws-ad-preview-md th, .workshop-view .ws-ad-preview-md td { border: 1px solid var(--border, #352c4d); padding: 4px 8px; text-align: left; }
+.workshop-view .ws-ad-preview-md th { background: var(--bg2, #1f1a2c); color: var(--dim, #9a90b3); }
 .workshop-view .ws-ad-preview-md img {
   max-width: 100%;
   width: auto;
@@ -2347,7 +2406,7 @@ dialog.ws-asset-modal::backdrop {
   object-fit: contain;
   margin: 10px 0;
   border-radius: 8px;
-  border: 1px solid #2c2c30;
+  border: 1px solid var(--border, #352c4d);
   background: #12121a;
   cursor: zoom-in;
 }
@@ -2359,8 +2418,8 @@ dialog.ws-asset-modal::backdrop {
   gap: 12px;
 }
 .workshop-view .ws-gallery-card {
-  background: #1e1e22;
-  border: 1px solid #2c2c30;
+  background: var(--bg2, #1f1a2c);
+  border: 1px solid var(--border, #352c4d);
   border-radius: 8px;
   overflow: hidden;
   transition: border-color .12s;
@@ -2382,7 +2441,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-gallery-name {
   font-size: 11px;
-  color: #bbb;
+  color: var(--dim, #9a90b3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2390,7 +2449,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-gallery-size {
   font-size: 10px;
-  color: #666;
+  color: var(--dim2, #6f6685);
   flex-shrink: 0;
 }
 .workshop-view .ws-gallery-audio,
@@ -2413,31 +2472,31 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-ad-hint {
   font-size: 11px;
-  color: #666;
+  color: var(--dim2, #6f6685);
   margin-top: 6px;
 }
 
 /* Daemonkey app 产出 tab · 应用说明头 */
 .workshop-view .ws-Daemonkey-app-header {
   background: #1a1a20;
-  border: 1px solid #2c2c30;
+  border: 1px solid var(--border, #352c4d);
   border-radius: 8px;
   padding: 14px 16px;
   margin-bottom: 14px;
 }
 .workshop-view .ws-Daemonkey-app-desc {
   font-size: 13px;
-  color: #bbb;
+  color: var(--dim, #9a90b3);
   line-height: 1.6;
   margin-bottom: 10px;
 }
 .workshop-view .ws-Daemonkey-app-tools-label {
   font-size: 11px;
-  color: #777;
+  color: var(--dim2, #6f6685);
   margin-top: 8px;
 }
 .workshop-view .ws-Daemonkey-app-tools-label code {
-  background: #2a2a30;
+  background: var(--bg3, #241e34);
   padding: 1px 5px;
   border-radius: 3px;
   font-size: 11px;
@@ -2485,7 +2544,7 @@ dialog.ws-asset-modal::backdrop {
   border-radius: 6px;
 }
 .ws-lightbox .ws-lightbox-name {
-  color: #999;
+  color: var(--dim2, #6f6685);
   font-size: 12px;
   margin-top: 8px;
   max-width: 90vw;

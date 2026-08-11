@@ -154,6 +154,7 @@ def _init_entry(st: dict, from_step: int) -> dict:
             "status": base,
             "summary": "",
             "error": None,
+            "outputs": {},  # wish-fix #3 · 跑完落盘 · 供断点续跑累积 upstream
         }
     return {
         "idx": st["idx"],
@@ -163,6 +164,7 @@ def _init_entry(st: dict, from_step: int) -> dict:
         "status": base,
         "summary": "",
         "error": None,
+        "outputs": {},  # wish-fix #3 · 跑完落盘 · 供断点续跑累积 upstream
     }
 
 
@@ -190,6 +192,7 @@ def _init_state(flow: dict, *, from_step: int = 1) -> tuple[dict, list[dict]]:
         "run_id": run_id,
         "flow_id": flow.get("id") or "",
         "flow_name": flow.get("name") or "",
+        "flow_concurrency": flow.get("concurrency") or 0,  # wish-fix #5 · flow 声明的并行并发上限 (0=默认3)
         "status": "running",
         "current_step": from_step,
         "total_steps": len(steps),
@@ -288,9 +291,14 @@ def _prep_resume(run_id: str, *, from_step: Optional[int]) -> tuple[dict, list[d
         if entry["idx"] >= target:
             entry["status"] = "pending"
             entry["error"] = None
+            entry["summary"] = ""          # wish-fix #4 · 重跑前清残留状态
+            entry["finished_at"] = None    # wish-fix #4
+            entry["outputs"] = {}          # wish-fix #4 · 重跑前清旧 outputs (防残留污染 upstream)
             for be in entry.get("branches") or []:
                 be["status"] = "pending"
                 be["error"] = None
+                be["summary"] = ""         # wish-fix #4
+                be["finished_at"] = None   # wish-fix #4
     state["status"] = "running"
     state["current_step"] = target
     _save_state(state)
@@ -441,6 +449,11 @@ def _run_parallel_group(
         )
 
     workers = min(len(branches), _PARALLEL_CONCURRENCY)
+    # wish-fix #5 · flow 可声明 concurrency 覆盖默认并发上限 (默认 3 防 token 爆 ·
+    # 高级用户 flow 显式声明 concurrency: N 可放开到最多 6 · 仍受 _MAX_PARALLEL 兜底)
+    _flow_conc = int(state.get("flow_concurrency") or 0)
+    if _flow_conc > 0:
+        workers = min(len(branches), _flow_conc, 6)
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix=f"flow-par-{st['idx']}") as pool:
         futs = {pool.submit(_work, j): j for j in range(len(branches))}
         for fut in futs:
@@ -474,11 +487,18 @@ def _run_parallel_group(
         return False, {}
 
     merged: dict = {}
+    _alias_set = False  # wish-fix #1 · 无前缀别名只设一次 (首个产出 output 的分支)
     for j, res in enumerate(results):
         name = br_entries[j].get("app_name") or br_entries[j]["app"]
         label = f"{name}#{j + 1}"  # 同 app 并行时靠 #序号 保证 key 不撞
         for k, v in (res.get("outputs") or {}).items():
             merged[f"{label}.{k}"] = v
+            # wish-fix #1 · 并行组 upstream key 契约对齐: 单步产出是 {output: ...} ·
+            # 并行组是 {AppName#1.output: ...} → 下游写 ${upstream:output} 读不到。
+            # 修: 首个产出 output 的分支同时设无前缀别名 → 下游统一写 ${upstream:output} 对串行/并行都有效
+            if k == "output" and not _alias_set:
+                merged["output"] = v
+                _alias_set = True
     return True, merged
 
 
@@ -497,6 +517,11 @@ def _execute_body(
         entry = by_idx.get(st["idx"])
         if entry is None or entry["status"] in ("done", "skipped"):
             # 已跑过/明确跳过的步 · 不重跑 (断点续跑语义)
+            # wish-fix #3 · 续跑 upstream 丢失修复: done 步跳过时把它的 outputs 累积进
+            # upstream (之前只 continue 不累积 → 目标步读不到前面步骤结果 · 实测 upstream=None)
+            _done_out = entry.get("outputs") if entry else None
+            if isinstance(_done_out, dict) and _done_out:
+                upstream = _trim_outputs(_done_out)
             continue
         if cancel_check and cancel_check():
             state["status"] = "failed"
@@ -529,6 +554,7 @@ def _execute_body(
             entry["status"] = "done"
             entry["summary"] = f"并行 {len(st['parallel'])} 路完成"
             entry["finished_at"] = _iso_now()
+            entry["outputs"] = _trim_outputs(merged)  # wish-fix #3 · 落盘供续跑累积
             upstream = _trim_outputs(merged)
             _save_state(state)
             if progress:
@@ -548,6 +574,23 @@ def _execute_body(
         if not result.get("ok"):
             entry["status"] = "failed"
             entry["error"] = result.get("error") or "(未知错误)"
+            # wish-fix #2 · on_fail goto:N 执行 (validate 允许但原 runner 从不执行 → 死配置)
+            # 语义: 失败时不终止整个 flow · 标 failed 记录 error · 跳到第 N 步继续 (N > 当前步)
+            on_fail = st.get("on_fail") or "stop"
+            if on_fail.startswith("goto:"):
+                _gt = int(on_fail.split(":")[1])
+                if _gt > st["idx"]:
+                    state["goto_target"] = _gt
+                    entry["status"] = "skipped"  # 失败步跳过 · 不终止 flow
+                    entry["error"] = f"{entry['error']} · on_fail goto:{_gt} 跳去第 {_gt} 步"
+                    state["status"] = "running"
+                    _save_state(state)
+                    if progress:
+                        try:
+                            progress("flow_step_done", {"run_id": state["run_id"], "step": st["idx"], "note": f"失败跳转 goto:{_gt}"})
+                        except Exception:
+                            pass
+                    continue
             state["status"] = "failed"
             _save_state(state)
             return state
@@ -556,6 +599,7 @@ def _execute_body(
         entry["status"] = "done"
         entry["summary"] = text[:300] + ("…" if len(text) > 300 else "")
         entry["finished_at"] = _iso_now()
+        entry["outputs"] = _trim_outputs(result.get("outputs") or {})  # wish-fix #3 · 落盘供续跑累积
         upstream = _trim_outputs(result.get("outputs") or {})
         _save_state(state)
         if progress:

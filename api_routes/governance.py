@@ -637,22 +637,20 @@ async def api_update_status(authorization: Optional[str] = Header(None)):
         cache["ts"] = now
         return result
 
-    # 拉远程 (官方 Gitee 仓库 raw manifest · 超时 5s · 失败静默)
-    # 0.8.4 · 必须 async 执行 (asyncio.to_thread) · 同步 httpx 会阻塞 event loop 5s
-    # (缓存未命中时所有请求卡住 · BRO 实测反馈"会不会拖慢性能" → 这是唯一的性能隐患点)
+    # 拉远程 (官方 Gitee 仓库 raw manifest · 超时 8s · 失败静默)
+    # 2026-08-11 修: httpx.get 在这台 Win 上卡死 (trust_env 读死代理 7890 · 12s+ 不返回 ·
+    # timeout=5.0 都不生效) → remote_version 恒空 → 升级胶囊永不亮 (母体 0.9.1-beta-hf2 vs
+    # 远程 0.9.2 该亮不亮)。改 urllib 显式直连 (同 info_radar) · 顺带 utf-8-sig 解 BOM。
     try:
-        import asyncio, httpx
+        import asyncio
 
         async def _fetch_remote():
             return await asyncio.to_thread(
-                lambda: httpx.get(
-                    "https://gitee.com/vaan21th/dae-monkey/raw/master/core_manifest.json",
-                    timeout=5.0, follow_redirects=True,
-                )
+                lambda: _http_get_manifest(
+                    "https://gitee.com/vaan21th/dae-monkey/raw/master/core_manifest.json")
             )
 
-        r = await _fetch_remote()
-        remote_mf = r.json()
+        remote_mf = await _fetch_remote()
         remote_ver = str(remote_mf.get("core_version") or "")
         result["remote_version"] = remote_ver
         if remote_ver and _remote_newer(result["local_version"], remote_ver):
@@ -669,6 +667,20 @@ async def api_update_status(authorization: Optional[str] = Header(None)):
     cache["result"] = result
     cache["ts"] = now
     return result
+
+
+def _http_get_manifest(url: str) -> dict:
+    """urllib 直连拉 manifest · 返回 dict · 失败抛异常 (调用方兜底)。
+
+    2026-08-11 (同 info_radar 修法): httpx 在这台 Win 上卡死 (读系统代理死端口 7890) ·
+    换 urllib + ProxyHandler({}) 显式直连 · 不读系统代理 · 8s 超时。
+    gitee raw 返回 UTF-8 BOM · 用 utf-8-sig 解 (否则 json.loads 炸 JSONDecodeError)。
+    """
+    import json as _json, urllib.request
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    opener.addheaders = [("User-Agent", "Mozilla/5.0 (Daemonkey update-check)")]
+    with opener.open(url, timeout=8.0) as r:
+        return _json.loads(r.read().decode("utf-8-sig"))
 
 
 def json_load(p):

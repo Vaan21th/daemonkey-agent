@@ -87,9 +87,9 @@
   setTimeout(check, 12000);   // 绝对兜底 · 防 load 因脚本卡住迟迟不触发
 })();
 </script>
-<link rel="stylesheet" href="/static/chat.css">
+<link rel="stylesheet" href="/static/chat.css?v=20260810">
 <link rel="stylesheet" href="/static/lib/litegraph.core.css">
-<link rel="stylesheet" href="/static/workshop.css">
+<link rel="stylesheet" href="/static/workshop.css?v=20260810">
 <link rel="stylesheet" href="/static/lib/remixicon/remixicon.css">
 </head>
 <body>
@@ -231,7 +231,8 @@
 
   <section class="chat-pane">
     <div class="chat-pane-head">
-      <button class="chat-history-btn" onclick="openDrawer()" title="历史会话">☰</button>
+      <button class="chat-history-btn" onclick="openDrawer()" title="历史会话"><i class="ri-menu-line"></i></button>
+      <button class="chat-docs-btn" id="chatDocsBtn" onclick="toggleDocsView()" title="本会话产物"><i class="ri-file-list-3-fill"></i></button>
       <span class="chat-session-name" id="currentSessionLabel">新对话</span>
       <button class="chat-pane-new" onclick="newConversation()" title="新建会话">+</button>
     </div>
@@ -304,6 +305,11 @@
     <div id="voicePanel" class="voice-panel" hidden>
       <div class="voice-panel-head">
         <span class="voice-panel-title"><i class="ri-mic-fill"></i> <span id="voicePanelMode">语音对话</span></span>
+        <label class="voice-tts-toggle" id="voiceTtsWrap" hidden title="AI 回复自动用温暖少女声朗读 (语音对话模式)">
+          <span class="voice-tts-label"><i class="ri-volume-up-line"></i> TTS</span>
+          <input type="checkbox" id="voiceTtsToggle">
+          <span class="sw"></span>
+        </label>
         <span class="voice-timer" id="voiceTimer">00:00</span>
         <span class="voice-panel-spacer"></span>
         <button type="button" class="voice-close" id="voiceClose" title="关闭"><i class="ri-close-line"></i></button>
@@ -455,10 +461,10 @@
      Chart 只在 BI 看板用·主界面加载不需要 → 改本地 + defer·主界面 0 等待·BI 照常。 -->
 <script defer src="/static/lib/chart.umd.min.js"></script>
 <script src="/static/lib/litegraph.core.js"></script>
-<script src="/static/workshop.js"></script>
-<script src="/static/depot.js"></script>
-<script src="/static/clients.js"></script>
-<script src="/static/chat.js"></script>
+<script src="/static/workshop.js?v=20260810"></script>
+<script src="/static/depot.js?v=20260810"></script>
+<script src="/static/clients.js?v=20260810"></script>
+<script src="/static/chat.js?v=20260810"></script>
 
 </body>
 </html>

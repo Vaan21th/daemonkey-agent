@@ -34,10 +34,14 @@ OPUS 的"手"——tool use 多轮循环。
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
+
+logger = logging.getLogger("opus.tool_loop")
 
 from agent_tools import (
     REGISTRY, ToolResult, ToolSpec, _TOOL_PROGRESS_HOOK, TIER_AUTO,
@@ -705,6 +709,8 @@ def run_tool_loop(
     system_suffix: str = "",
     thinking: str | None = None,
     reasoning_effort: str | None = None,
+    wall_clock_sec: float | None = None,
+    llm_timeout_sec: float | None = None,
 ) -> tuple[str, list[dict], UsageStats]:
     """
     多轮 tool use 循环。返回 (最终 OPUS 文本回复, 更新后的 messages, UsageStats)。
@@ -776,6 +782,34 @@ def run_tool_loop(
     except Exception:
         # 自动压缩挂了不能把主流程搞崩
         pass
+
+
+    # wish-8914f90c (墨言 wish-94d5c598 移植) · 后台/受限 turn: 单次 LLM 调用有界。
+    # SDK create() 不接受 per-request max_retries (openai/anthropic 实测 TypeError)·
+    # 必须 client.with_options() 换 per-turn client · 两 provider 统一。
+    # 边界: 墙钟/llm_timeout 只覆盖 LLM 调用挂起 · 工具自身执行挂起 (本地 IO/子进程)
+    # 救不了 — 工具层各自负责 · 分层设计的明确边界。
+    if llm_timeout_sec and llm_timeout_sec > 0:
+        try:
+            client = client.with_options(timeout=llm_timeout_sec, max_retries=0)
+        except Exception:
+            pass  # 假 client / 旧 SDK 无 with_options → 保持原 client (不炸主链路)
+
+    # 墙钟熔断: 后台/受限 turn 总时长上限 · 超时走 abort path 释放会话锁。
+    # 背景: 第三次"重启后卡死"事故 (墨言 08-09 16:47) — 后台续场 turn 调 LLM 挂起 25 分钟
+    # (timeout=300s × 多次重试) → 占 session 锁 40+ 分钟 → 用户死等。
+    # max_iterations 只在 LLM 调用返回时前进 · 单次 create() 挂起时救不了 · 必须墙钟兜底。
+    # 实现: 包装 cancel_check — 每轮迭代 / 流内 / watcher 心跳都会检查它 → 超时自动 abort。
+    if wall_clock_sec and wall_clock_sec > 0:
+        _wall_start = time.monotonic()
+        _user_cancel = cancel_check
+
+        def _wall_cancel() -> bool:
+            if _user_cancel is not None and _user_cancel():
+                return True
+            return time.monotonic() - _wall_start > wall_clock_sec
+
+        cancel_check = _wall_cancel
 
 
     if provider == "openai":
@@ -890,7 +924,7 @@ def _loop_openai(
         try:
             on_message_commit(entry)
         except Exception:
-            pass
+            logger.warning("openai 循环 _commit 落盘失败 · 增量消息可能丢 (kill -9 风险)", exc_info=True)
     if allowed_tool_names is None:
         specs = list(REGISTRY.values())
     else:
@@ -912,7 +946,9 @@ def _loop_openai(
                 system, system_suffix, base_url, model, suffix_in_system=False)
             _tail_note = {
                 "role": "user",
-                "content": "[system note · 每轮变化的运行时信息 · 不要复述这一段]\n" + system_suffix,
+                # wish-eeb8e951 (墨言深修): 前缀明示"不是 BRO 说的话"· 堵 role=user 放大器 —
+                # 否则系统注入长得像用户消息 → 历史指令文本容易被当新指令执行
+                "content": "[system note · 每轮变化的运行时信息 · 不是 BRO 说的话 · 不要复述这一段]\n" + system_suffix,
             }
         except Exception:
             system_payload = _build_openai_system(system, system_suffix, base_url, model)
@@ -1319,12 +1355,20 @@ def _loop_openai(
             final_text = text or "[OPUS aborted by BRO]"
             break
 
-        # 卷四十四 · 检测窗口里有没有 signature 重复 ≥ THRESHOLD 次
-        # 注: 是逐 signature 计数 · 不要求连续 · 因为 LLM 有时会穿插读再回来重复
+        # 卷四十四 · stuck detection · 检测【连续】同 signature ≥ THRESHOLD 次才算死循环
+        # 2026-08-09 (wish-2eed044a): 从"窗口内累计计数"改为"连续尾部计数"——
+        #   真死循环 = 连续同调用拿同样结果；穿插读再回来重复是正常数据收集，不该拦。
+        #   根因: _tool_signature 只取 args 前 120 字符 · 同工具多次不同调用 args 开头
+        #   相似（如 {"code": "import ..."}）会被误判成同一 signature · 累计计数就误报。
         if recent_signatures:
-            from collections import Counter
-            counts = Counter(recent_signatures)
-            top_sig, top_count = counts.most_common(1)[0]
+            # 只看连续尾部: 从末尾往前数连续相同的 signature 个数
+            top_sig = recent_signatures[-1]
+            top_count = 1
+            for i in range(len(recent_signatures) - 2, -1, -1):
+                if recent_signatures[i] == top_sig:
+                    top_count += 1
+                else:
+                    break
             if top_count >= _STUCK_REPEAT_THRESHOLD:
                 if stuck_inject_count < _STUCK_INJECT_CAP:
                     stuck_inject_count += 1
@@ -1409,7 +1453,7 @@ def _loop_anthropic(
         try:
             on_message_commit(entry)
         except Exception:
-            pass
+            logger.warning("anthropic 循环 _commit 落盘失败 · 增量消息可能丢 (kill -9 风险)", exc_info=True)
     if allowed_tool_names is None:
         specs = list(REGISTRY.values())
     else:

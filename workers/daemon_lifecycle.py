@@ -195,6 +195,42 @@ def _pid_looks_like_daemon(pid: int, port: int) -> bool:
     return False
 
 
+def _is_graceful_broadcast_enabled() -> bool:
+    """wish-425d242f · 开关: OPUS_AUTO_RESUME_ON_BOOT=0 关 · 默认开"""
+    return (os.environ.get("OPUS_AUTO_RESUME_ON_BOOT") or "1").strip() != "0"
+
+
+def _last_shutdown_was_graceful(max_age_min: int = 15) -> bool:
+    """读 restart_history 最近一条关停事件 · 判断上次是不是 graceful 关停 (且不久)
+
+    只认 'daemon_stopped_graceful' · crash / kill / 断电都不算。
+    max_age_min=15: 超过 15min 前的关停不算"刚被重启" (避免开机很久后误判)。
+    """
+    try:
+        if not RESTART_HISTORY_FILE.exists():
+            return False
+        lines = RESTART_HISTORY_FILE.read_text(encoding="utf-8").strip().splitlines()
+        for ln in reversed(lines[-20:]):
+            try:
+                rec = json.loads(ln)
+            except Exception:
+                continue
+            if rec.get("event") != "daemon_stopped_graceful":
+                continue
+            at = rec.get("at") or rec.get("ts") or ""
+            if not at:
+                return False
+            # ISO → epoch
+            try:
+                t = datetime.fromisoformat(at.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                return False
+            return (time.time() - t) <= max_age_min * 60
+        return False
+    except Exception:
+        return False
+
+
 def _classify_active_sessions(window_min: int = 30) -> list[Path]:
     """找出最近 N 分钟内被改过的 session 文件 · 这些是"可能正活跃"的 session"""
     if not SESSIONS_DIR.exists():
@@ -485,9 +521,13 @@ def inject_resume_notices(restart_req: Optional[dict],
     - restart_req 非空 → 给 session_id 注『主动重启已完成』
       (session_id 是 None 时 fallback 到所有最近 30 min 活跃 session)
     - crash_marker 非空 → 给所有最近活跃 session 注『daemon 上次异常退出·已自动重启』
-    - 两个都没 → 啥也不干
+    - 两个都没有但上次是 graceful 关停 (wish-425d242f) → 给所有最近活跃 session 注
+      『daemon 被重启 · 你之前可能正在做事』· 轻量提醒不强制 · 治手动/外部重启后
+      其他实例静默断头 (BRO 2026-08-11 痛点: 一个实例 request_restart · 其他实例
+      正在跑的任务被杀掉无提示 · 前端停在生成中永远不动)
+    - 两个都没有且上次非 graceful → 啥也不干 (首次启动 / 正常流程)
     """
-    stats = {"restart_resumed": 0, "crash_resumed": 0}
+    stats = {"restart_resumed": 0, "crash_resumed": 0, "graceful_broadcast": 0}
 
     if restart_req:
         sid = restart_req.get("session_id")
@@ -527,7 +567,26 @@ def inject_resume_notices(restart_req: Optional[dict],
             if _inject_system_notice(session_path, notice):
                 stats["crash_resumed"] += 1
 
-    if stats["restart_resumed"] or stats["crash_resumed"]:
+    # ── wish-425d242f · graceful 广播 (2026-08-11) ──
+    # 手动 / 外部 / WebUI 按钮重启 = 没有 restart_request + 没有 crash_marker →
+    # 其他正在跑任务的实例静默断头 (turn 被进程杀掉 · 无提示 · 前端停在生成中)。
+    # 只在"上次是 graceful 关停"时广播轻量提醒 (不是强制续跑 · LLM 自己判断) ·
+    # 天然防雪崩 (多个实例同时自动开跑)。 OPUS_AUTO_RESUME_ON_BOOT=0 可关。
+    if not restart_req and not crash_marker and _is_graceful_broadcast_enabled():
+        if _last_shutdown_was_graceful():
+            active_sessions = _classify_active_sessions(window_min=30)
+            for session_path in active_sessions:
+                notice = (
+                    f"[SYSTEM · daemon 重启广播 · {_now_iso()}]\n"
+                    f"daemon 刚刚被重启 (不是通过 request_restart 工具 · 是手动/外部/按钮触发)。\n"
+                    f"你之前可能正在做事 · 如果进行到一半被打断 · 检查一下要不要继续。\n"
+                    f"这是轻量提醒 · 不强制 · 如果没在做任何事可以忽略。\n"
+                    f"详情查 data/runtime/restart_history.jsonl"
+                )
+                if _inject_system_notice(session_path, notice):
+                    stats["graceful_broadcast"] += 1
+
+    if stats["restart_resumed"] or stats["crash_resumed"] or stats["graceful_broadcast"]:
         _append_history({
             "event": "resume_notices_injected",
             "stats": stats,

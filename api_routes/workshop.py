@@ -46,7 +46,7 @@ import subprocess
 import sys
 import threading
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional
 
 from fastapi import APIRouter, Body, File, Form, Header, HTTPException, UploadFile
@@ -58,7 +58,7 @@ from daemon_runtime import RUNTIME
 
 
 ROOT = Path(__file__).resolve().parent.parent
-_WORKSHOP_DOMAINS = {"content", "design", "dev", "docs"}
+_WORKSHOP_DOMAINS = {"content", "design", "dev", "docs", "reports"}
 
 
 router = APIRouter()
@@ -70,6 +70,80 @@ def _resolve_workshop_md(domain: str, filename: str) -> "Path":
         raise HTTPException(400, f"invalid workshop domain: {domain}")
     if not filename.lower().endswith(".md"):
         raise HTTPException(400, "only .md files allowed")
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(400, "invalid filename")
+    if filename.startswith(".") or filename.startswith("~"):
+        raise HTTPException(400, "hidden / temp files forbidden")
+    base = (ROOT / "data" / domain).resolve()
+    path = (base / filename).resolve()
+    try:
+        path.relative_to(base)
+    except ValueError:
+        raise HTTPException(403, "path escapes workshop directory")
+    if not path.exists() or not path.is_file():
+        raise HTTPException(404, f"workshop file not found: {domain}/{filename}")
+    return path
+
+
+# 卷八十一 · 通用文件解析 (reveal 本机打开用) · 支持 data/{domain}/ 下所有白名单类型
+_WORKSHOP_FILE_EXTS = {
+    ".md", ".txt",
+    ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf",
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg",
+    ".wav", ".mp3", ".ogg", ".flac", ".m4a",
+    ".mp4", ".webm", ".mov",
+    ".zip",
+}
+
+# 卷八十一续 · 下载端点 MIME 表 · 覆盖 _WORKSHOP_FILE_EXTS 全部类型 (Office 全家桶含)
+_DOWNLOAD_MIME = {
+    ".md": "text/markdown; charset=utf-8",
+    ".txt": "text/plain; charset=utf-8",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".pdf": "application/pdf",
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp", ".svg": "image/svg+xml",
+    ".wav": "audio/wav", ".mp3": "audio/mpeg", ".ogg": "audio/ogg",
+    ".flac": "audio/flac", ".m4a": "audio/mp4",
+    ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+    ".zip": "application/zip",
+}
+
+
+def _resolve_workshop_file(domain: str, filename: str) -> "Path":
+    """reveal 用 · 通用类型解析 · 白名单 + 防越权 (同 _resolve_workshop_md 的安全约束)
+
+    卷八十一 · 支持 outputs 产物: domain='outputs' 时 filename 为 app_id/子路径/文件名
+    (multi-segment · 走 data/workshop/outputs/ 树 · 由 /workshop/outputs/{path} 的
+    _OUTPUT_MIME 白名单约束类型)
+    """
+    if domain == "outputs":
+        if "/" not in filename:
+            raise HTTPException(400, "outputs reveal needs app_id/filename")
+        suffix = PurePosixPath(filename).suffix.lower()
+        if f".{suffix}" not in _WORKSHOP_FILE_EXTS:
+            raise HTTPException(400, f"unsupported output type: {suffix}")
+        if ".." in filename or filename.startswith("/") or filename.startswith("\\") or "\x00" in filename:
+            raise HTTPException(400, "invalid filename")
+        full = (ROOT / "data" / "workshop" / "outputs" / filename).resolve()
+        outputs_root = (ROOT / "data" / "workshop" / "outputs").resolve()
+        try:
+            full.relative_to(outputs_root)
+        except ValueError:
+            raise HTTPException(403, "path escapes workshop outputs")
+        if not full.exists() or not full.is_file():
+            raise HTTPException(404, f"workshop output not found: {filename}")
+        return full
+    if domain not in _WORKSHOP_DOMAINS:
+        raise HTTPException(400, f"invalid workshop domain: {domain}")
+    suffix = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    if f".{suffix}" not in _WORKSHOP_FILE_EXTS:
+        raise HTTPException(400, f"unsupported file type: .{suffix}")
     if "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(400, "invalid filename")
     if filename.startswith(".") or filename.startswith("~"):
@@ -136,7 +210,7 @@ async def workshop_set_asset(
 ):
     """写一个资产 · 配置 tab"📎填资产"按钮调这条 (走和 NLP manage_app_asset 同一咽喉)
 
-    沉淀闭环 v2 刀⑤b (2026-06-10): 把 用户 端资产填入口从"打 NLP 命令"提升到"点选可见可改"
+    沉淀闭环 v2 刀⑤b (2026-06-10): 把 BRO 端资产填入口从"打 NLP 命令"提升到"点选可见可改"
     body: {app_id, name, value, type?, label?, note?}
       - app_id: app-xxxxxxxx 或 _shared
       - value: str / list / dict (大文件先 /upload 再传路径)
@@ -422,7 +496,7 @@ async def workshop_run_flow_inline(
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """跑一条还没落盘的 workflow · 用户 在画布编辑时点 ▶ 真跑 · 不强迫先 save"""
+    """跑一条还没落盘的 workflow · BRO 在画布编辑时点 ▶ 真跑 · 不强迫先 save"""
     check_auth(authorization)
     if not isinstance(payload, dict):
         raise HTTPException(400, "request body must be a JSON object")
@@ -647,7 +721,7 @@ async def workshop_delete_flow(
     return {"ok": True, "id": fid, "moved_to_trash": True}
 
 
-# ─── Flow Runs · 跑时实时进度可视化 (用户 图2 的诉求) ───
+# ─── Flow Runs · 卷七十二 v3 · 跑时实时进度可视化 (BRO 图2 的诉求) ───
 
 @router.get("/workshop/runs")
 async def workshop_list_runs(
@@ -656,7 +730,7 @@ async def workshop_list_runs(
     authorization: Optional[str] = Header(None),
 ):
     """列最近的 flow runs · 按 mtime 倒序 · 含每条 摘要 (status/current_step/total_steps)
-
+    
     query:
         status: running / done / failed / aborted · 不传 = 全部
         limit:  最多返回多少条 · 默认 10 上限 50
@@ -684,14 +758,14 @@ async def workshop_load_run(
     return state
 
 
-# 0.2.0 · 信任账本 API (用户 在 WebUI flow 卡上一键信任)
+# 卷七十二 v4 · 0.2.0 · 信任账本 API (BRO 在 WebUI flow 卡上一键信任)
 @router.post("/workshop/flows/{flow_id}/trust")
 async def workshop_set_trust(
     flow_id: str,
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """用户 WebUI 点 flow 卡 trust badge · level=0/1/2/3"""
+    """BRO WebUI 点 flow 卡 trust badge · level=0/1/2/3"""
     check_auth(authorization)
     from workers.workshop_assets import set_flow_trust, load_flow
     if not load_flow(flow_id):
@@ -702,7 +776,7 @@ async def workshop_set_trust(
         raise HTTPException(400, "level must be int 0-3")
     if level < 0 or level > 3:
         raise HTTPException(400, "level must be 0-3")
-    by = (payload.get("by") or "用户").strip() or "用户"
+    by = (payload.get("by") or "BRO").strip() or "BRO"
     updated = set_flow_trust(flow_id, level=level, by=by)
     return {"ok": True, "flow": updated}
 
@@ -778,7 +852,7 @@ async def workshop_empty_trash_all(
     return {"ok": True, "kind": kind, "deleted_count": n}
 
 
-# ─── Files preview / download / reveal ( 8) ───
+# ─── Files preview / download / reveal (卷四十六续 8) ───
 
 @router.get("/workshop/preview/{domain}/{filename}")
 async def preview_workshop_file(
@@ -822,14 +896,16 @@ async def download_workshop_file(
     authorization: Optional[str] = Header(None),
     token: Optional[str] = None,
 ):
-    """原始 .md 下载 · 浏览器拿到后系统默认应用 (Typora / VSCode / 记事本) 打开"""
+    """下载原始文件 · data/{domain}/ 下所有白名单类型 (md/docx/pdf/图片/音视频) · 浏览器拿到后系统默认应用打开"""
     if token and not authorization:
         authorization = f"Bearer {token}"
     check_auth(authorization)
-    path = _resolve_workshop_md(domain, filename)
+    path = _resolve_workshop_file(domain, filename)
+    suffix = path.suffix.lower()
+    media_type = _DOWNLOAD_MIME.get(suffix, "application/octet-stream")
     return FileResponse(
         path,
-        media_type="text/markdown; charset=utf-8",
+        media_type=media_type,
         filename=filename,
     )
 
@@ -841,11 +917,11 @@ async def reveal_workshop_file(
     authorization: Optional[str] = Header(None),
     token: Optional[str] = None,
 ):
-    """本机调系统外部应用打开 · 仅 daemon 跟 用户 在同一台机器时有意义 (Day 0 阶段)"""
+    """本机调系统外部应用打开 · 支持 data/{domain}/ 下所有白名单类型 (md/docx/pdf/图片/音视频) · 仅 daemon 跟 BRO 同一台机器时有意义"""
     if token and not authorization:
         authorization = f"Bearer {token}"
     check_auth(authorization)
-    path = _resolve_workshop_md(domain, filename)
+    path = _resolve_workshop_file(domain, filename)
     try:
         if os.name == "nt":
             os.startfile(str(path))  # type: ignore[attr-defined]
@@ -860,7 +936,7 @@ async def reveal_workshop_file(
             "domain": domain,
             "name": filename,
             "error": f"{type(e).__name__}: {e}",
-            "fallback_hint": "前端可改用下载按钮 · 浏览器拿到 .md 后系统会用默认应用打开",
+            "fallback_hint": "前端可改用下载按钮 · 浏览器拿到文件后系统会用默认应用打开",
         }
 
 
@@ -911,7 +987,7 @@ async def list_workshop_outputs(
             "mtime": f.stat().st_mtime,
             "type": ft,
             "url": f"/workshop/outputs/{app_id}/{name}",
-            #  P0-2 (2026-06-10) · 加本地绝对路径 · 前端"复制路径"按钮用 · 用户 自己去文件管理器
+            # 卷七十三 P0-2 (2026-06-10) · 加本地绝对路径 · 前端"复制路径"按钮用 · BRO 自己去文件管理器
             "path": str(f),
         })
 

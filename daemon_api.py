@@ -84,6 +84,17 @@ from tool_loop import UsageStats, run_tool_loop
 from fastapi import HTTPException
 
 
+def _env_float(name: str) -> Optional[float]:
+    """读环境变量转 float · 不存在/非法返回 None (wish-8914f90c 墙钟熔断用)。"""
+    v = os.environ.get(name)
+    if not v:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 ROOT = Path(__file__).resolve().parent
 
 # in-memory cache of API-side session messages
@@ -1386,11 +1397,14 @@ def _chat_impl(
             from workers import closure_check as _cc
             _cc.begin_turn()
             _closure_observe = _cc.make_observe()
-            _pb_hint = _cc.relevant_playbooks(message)
+            _pb_hint = _cc.relevant_playbooks(message, session_id=sid)  # wish-599c46bd · 注入冷却+统计
             # ① 记忆自动注入 (保守版) · 相关 BRO 画像命中即递到 OPUS 手边
-            _mem_hint = _cc.relevant_memories(message)
+            _mem_hint = _cc.relevant_memories(message, session_id=sid)
             # ①b 知识库自动注入 · 私有文档目录/命中片段递到 OPUS 手边 (产品观第5条可追溯)
-            _docs_hint = _cc.relevant_docs(message)
+            _docs_hint = _cc.relevant_docs(message, session_id=sid)
+            # wish-88b4dcdc (墨言 02) · RIF 抑制记账 · 每轮调·内部 30min 节流只真跑一次·
+            # 注入未用→bump 抑制分·被 load→clear · 治"每次带出来、从不被用"的慢性噪音
+            _cc.try_update_suppression()
             # ①c 显式"记住"意图 → 本轮硬提醒 update_bro_note 落盘 (堵"嘴上记住了·实际没记")
             _memwrite_hint = _cc.memory_write_hint(message)
             # ①d 客户对话侧写 (B-P1/P2) · 命中已知客户/交易信号 → 软提醒记进客户档案
@@ -1441,6 +1455,9 @@ def _chat_impl(
                 on_message_commit=_persist_entry,
                 thinking=thinking,
                 reasoning_effort=reasoning_effort,
+                # wish-8914f90c · 墙钟熔断: 后台续场 turn 传环境变量收紧预算 (resume_runner 设置)
+                wall_clock_sec=_env_float("_RESUME_WALL_CLOCK_SEC"),
+                llm_timeout_sec=_env_float("_RESUME_LLM_TIMEOUT_SEC"),
             )
         except Exception as e:
             # 失败时回滚那条 user msg（不让 stale 状态污染下次）
@@ -1583,6 +1600,9 @@ def _chat_impl(
                         on_message_commit=_persist_entry,
                         thinking=thinking,
                         reasoning_effort=reasoning_effort,
+                        # wish-8914f90c · 墙钟熔断 (同主调用点)
+                        wall_clock_sec=_env_float("_RESUME_WALL_CLOCK_SEC"),
+                        llm_timeout_sec=_env_float("_RESUME_LLM_TIMEOUT_SEC"),
                     )
                     try:
                         usage.input_tokens += _u2.input_tokens
@@ -1779,6 +1799,11 @@ def build_app():
     from api_routes import vision as _routes_vision
     from api_routes import notifications as _routes_notifications
     from api_routes import advisor as _routes_advisor
+    # 2026-08-08 · /api/tts 语音回复 (商业化 TTS · 归属待决 · 优雅降级: 纯净版无 voice.py 不崩)
+    try:
+        from api_routes import voice as _routes_voice
+    except Exception:
+        _routes_voice = None
     app.include_router(_routes_core.router)
     app.include_router(_routes_lifecycle.router)
     app.include_router(_routes_governance.router)
@@ -1798,6 +1823,8 @@ def build_app():
     app.include_router(_routes_vision.router)  # wish-4a6331b2 · /vision-config (曾漏注册→404)
     app.include_router(_routes_notifications.router)  # wish-fb6b7427 · /notification-config
     app.include_router(_routes_advisor.router)  # wish-ea8922f7 · /api/advisor/status + trace
+    if _routes_voice is not None:
+        app.include_router(_routes_voice.router)  # 2026-08-08 · /api/tts 语音回复 (有 voice 才挂)
 
     # 形态 Z · 相遇初始化路由 (开源版 Daemonkey 有·母体 OPUS 无此模块 → 守卫跳过)
     try:

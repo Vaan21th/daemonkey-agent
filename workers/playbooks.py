@@ -25,14 +25,21 @@ import hashlib
 import json
 import logging
 import re
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
+
+from workers.safe_write import atomic_write_json, _do_backup
 
 logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[1]
 PLAYBOOK_DIR = ROOT / "data" / "playbooks"
 INDEX_PATH = PLAYBOOK_DIR / "_index.json"
+
+# wish-a1c5f147 (墨言模块 12) · 复合操作锁: _load_index→改→_save_index 读改写三段·
+# 多 session 并行丢更新 → 公开写函数整体持锁
+_INDEX_LOCK = threading.Lock()
 
 
 def _ensure_dir() -> None:
@@ -49,13 +56,18 @@ def _load_index() -> dict:
     try:
         return json.loads(INDEX_PATH.read_text(encoding="utf-8"))
     except Exception:
+        # wish-a1c5f147 (墨言模块 12) · 损坏 → 先备份现场再返空壳 (防静默覆盖清空索引)
+        try:
+            _do_backup(INDEX_PATH)
+        except Exception:
+            pass
         return {"playbooks": {}, "updated_at": None}
 
 
 def _save_index(index: dict) -> None:
-    """保存索引"""
+    """保存索引 · wish-a1c5f147 · 原子写 + 写前备份 (safe_write 复用)"""
     index["updated_at"] = datetime.now(timezone.utc).isoformat()
-    INDEX_PATH.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write_json(INDEX_PATH, index)
 
 
 def _slugify(text: str, max_len: int = 60) -> str:
@@ -85,63 +97,67 @@ def save_playbook(
     """
     _ensure_dir()
 
-    slug = _slugify(title)
-    # 防重名：如果 slug 已存在，加短 hash
-    existing = PLAYBOOK_DIR / f"{slug}.md"
-    if existing.exists():
-        short_hash = hashlib.md5(title.encode()).hexdigest()[:6]
-        slug = f"{slug}-{short_hash}"
+    # wish-a1c5f147 (墨言模块 12) · 整体持锁: slug 检测 + .md 写 + index 写 ·
+    # 防并发同 title 覆盖 / index 读改写竞态 (锁内全包)
+    with _INDEX_LOCK:
+        slug = _slugify(title)
+        # 防重名：如果 slug 已存在，加短 hash
+        existing = PLAYBOOK_DIR / f"{slug}.md"
+        if existing.exists():
+            short_hash = hashlib.md5(title.encode()).hexdigest()[:6]
+            slug = f"{slug}-{short_hash}"
 
-    filepath = PLAYBOOK_DIR / f"{slug}.md"
-    now = datetime.now(timezone.utc)
-    now_str = now.strftime("%Y-%m-%d %H:%M UTC")
+        filepath = PLAYBOOK_DIR / f"{slug}.md"
+        now = datetime.now(timezone.utc)
+        now_str = now.strftime("%Y-%m-%d %H:%M UTC")
 
-    tags_yaml = ""
-    if tags:
-        tags_yaml = "tags: [" + ", ".join(tags) + "]\n"
+        tags_yaml = ""
+        if tags:
+            tags_yaml = "tags: [" + ", ".join(tags) + "]\n"
 
-    # 卷四十六 II · wish-1c229865 · agentskills.io 兼容 frontmatter (phase C)
-    # 给 LLM 调 recall_memory(scope='skill') 时 · 头部 metadata 帮助判断相关性
-    frontmatter = (
-        "---\n"
-        f"title: {title}\n"
-        f"task_type: {task_type}\n"
-        f"created_at: {now.isoformat()}\n"
-        f"used_count: 0\n"
-        f"agentskills_version: 1\n"
-        f"{tags_yaml}"
-        "---\n\n"
-    )
+        # 卷四十六 II · wish-1c229865 · agentskills.io 兼容 frontmatter (phase C)
+        # 给 LLM 调 recall_memory(scope='skill') 时 · 头部 metadata 帮助判断相关性
+        frontmatter = (
+            "---\n"
+            f"title: {title}\n"
+            f"task_type: {task_type}\n"
+            f"created_at: {now.isoformat()}\n"
+            f"used_count: 0\n"
+            f"agentskills_version: 1\n"
+            f"{tags_yaml}"
+            "---\n\n"
+        )
 
-    # 写 markdown 文件
-    content = (
-        frontmatter
-        + f"# {title}\n\n"
-        f"<!-- playbook · 由 OPUS 在 {now_str} 抽取 -->\n\n"
-        f"## 前置条件\n\n{prerequisites or '无特殊前置条件'}\n\n"
-        f"## 步骤\n\n{steps}\n\n"
-        f"## 常见坑\n\n{pitfalls or '暂无记录'}\n\n"
-        f"## 经验教训\n\n{lessons or '暂无记录'}\n"
-    )
-    filepath.write_text(content, encoding="utf-8")
+        # 写 markdown 文件
+        content = (
+            frontmatter
+            + f"# {title}\n\n"
+            f"<!-- playbook · 由 OPUS 在 {now_str} 抽取 -->\n\n"
+            f"## 前置条件\n\n{prerequisites or '无特殊前置条件'}\n\n"
+            f"## 步骤\n\n{steps}\n\n"
+            f"## 常见坑\n\n{pitfalls or '暂无记录'}\n\n"
+            f"## 经验教训\n\n{lessons or '暂无记录'}\n"
+        )
+        filepath.write_text(content, encoding="utf-8")
 
-    # 更新索引
-    index = _load_index()
-    playbook_id = f"pb-{slug[:40]}"
-    index["playbooks"][playbook_id] = {
-        "id": playbook_id,
-        "title": title,
-        "slug": slug,
-        "task_type": task_type,
-        "tags": tags or [],
-        "created_at": now.isoformat(),
-        "used_count": 0,
-        "last_used_at": None,
-        "file_size": len(content.encode("utf-8")),
-    }
-    _save_index(index)
+        # 更新索引
+        index = _load_index()
+        playbook_id = f"pb-{slug[:40]}"
+        index["playbooks"][playbook_id] = {
+            "id": playbook_id,
+            "title": title,
+            "slug": slug,
+            "task_type": task_type,
+            "tags": tags or [],
+            "created_at": now.isoformat(),
+            "used_count": 0,
+            "last_used_at": None,
+            "file_size": len(content.encode("utf-8")),
+            "suppression": 0.0,   # wish-88b4dcdc (墨言 02) · RIF 式抑制分 · 慢性干扰项降权用
+        }
+        _save_index(index)
 
-    logger.info("playbook saved: %s → %s", title, filepath)
+        logger.info("playbook saved: %s → %s", title, filepath)
 
     # 卷四十六 II · wish-1c229865 · 新增 playbook 后触发 FTS5 增量索引
     # 这样 recall_memory(scope='skill') 能立刻搜到新 skill · 不用等下次 daemon 启动 rebuild
@@ -237,26 +253,95 @@ def list_playbooks() -> list[dict]:
 
 def mark_used(playbook_id: str) -> bool:
     """标记 playbook 被使用（used_count += 1）"""
-    index = _load_index()
-    playbooks = index.get("playbooks", {})
-    if playbook_id not in playbooks:
-        return False
-    playbooks[playbook_id]["used_count"] = playbooks[playbook_id].get("used_count", 0) + 1
-    playbooks[playbook_id]["last_used_at"] = datetime.now(timezone.utc).isoformat()
-    _save_index(index)
-    return True
+    with _INDEX_LOCK:  # wish-a1c5f147 · 复合操作锁
+        index = _load_index()
+        playbooks = index.get("playbooks", {})
+        if playbook_id not in playbooks:
+            return False
+        playbooks[playbook_id]["used_count"] = playbooks[playbook_id].get("used_count", 0) + 1
+        playbooks[playbook_id]["last_used_at"] = datetime.now(timezone.utc).isoformat()
+        _save_index(index)
+        return True
 
 
 def delete_playbook(playbook_id: str) -> bool:
-    """删一份 playbook（文件 + 索引）"""
-    index = _load_index()
-    playbooks = index.get("playbooks", {})
-    if playbook_id not in playbooks:
-        return False
-    meta = playbooks[playbook_id]
-    filepath = PLAYBOOK_DIR / f"{meta['slug']}.md"
-    if filepath.exists():
-        filepath.unlink()
-    del playbooks[playbook_id]
-    _save_index(index)
+    """删一份 playbook（文件 + 索引 + FTS5）。
+
+    R1-P3 (墨言三审) · 补 FTS5 rebuild: 原实现只删 md + _index.json · 不重建 FTS5 →
+    已删 playbook 的 skill chunk 仍被 recall_memory(scope='skill') 搜到 (该路径不走 slug_map
+    校验 · 绕过退役防护) · 实测删除后 FTS5 残留 3 条。与 save_playbook 对称触发 rebuild。
+    """
+    with _INDEX_LOCK:  # wish-a1c5f147 · 复合操作锁
+        index = _load_index()
+        playbooks = index.get("playbooks", {})
+        if playbook_id not in playbooks:
+            return False
+        meta = playbooks[playbook_id]
+        filepath = PLAYBOOK_DIR / f"{meta['slug']}.md"
+        if filepath.exists():
+            filepath.unlink()
+        del playbooks[playbook_id]
+        _save_index(index)
+
+    # R1-P3 · 删除后触发 FTS5 增量重建 · 清掉已删 playbook 的 skill chunk (与 save 对称)
+    try:
+        from workers.memory_index import rebuild as _rebuild_memory_index
+        _rebuild_memory_index()
+    except Exception as e:
+        logger.warning("playbook deleted 后 FTS5 重建失败: %s · 等 daemon 重启时 rebuild", e)
     return True
+
+
+# ── RIF 式抑制记账 (wish-88b4dcdc · 墨言 02) ──────────────────────
+# 治"慢性干扰项": 注入 ≥2 次从未 load 的 playbook 记 suppression · 下次召回时降权/不占名额。
+# 参考 lethe 的 RIF (retrieval-induced forgetting) · 只惩罚"反复被带出但从未被用"的条目。
+
+# 阈值: 注入多少次未用才开始抑制 · 抑制增量 (learning_rate) · 抑制上限 (防彻底消失)
+_SUPPRESS_MIN_INJECT = 2        # 注入 ≥2 次且 0 load → 开始记
+_SUPPRESS_LR = 0.3              # 每次触发 +0.3
+_SUPPRESS_MAX = 3.0             # bump 硬上限 · 防御性封顶 (cutoff 1.0 已先拦截·实际到不了)
+_SUPPRESS_CUTOFF = 1.0          # 抑制分达到此值 → 不再注入 (closure_check 消费侧用)
+
+
+def get_suppression(playbook_id: str) -> float:
+    """读单份 playbook 的抑制分 (旧索引无字段 → 0)"""
+    index = _load_index()
+    return index.get("playbooks", {}).get(playbook_id, {}).get("suppression", 0.0)
+
+
+def bump_suppression(playbook_id: str, delta: float = _SUPPRESS_LR) -> float:
+    """给一份 playbook 加抑制分 (注入未用记账) · 返回新值"""
+    with _INDEX_LOCK:
+        index = _load_index()
+        playbooks = index.get("playbooks", {})
+        if playbook_id not in playbooks:
+            return 0.0
+        cur = float(playbooks[playbook_id].get("suppression", 0.0))
+        new = min(cur + delta, _SUPPRESS_MAX)
+        playbooks[playbook_id]["suppression"] = new
+        _save_index(index)
+    return new
+
+
+def clear_suppression(playbook_id: str) -> None:
+    """清零一份 playbook 的抑制分 (被 load 过 = 证明有用 · 撤销抑制)"""
+    with _INDEX_LOCK:
+        index = _load_index()
+        playbooks = index.get("playbooks", {})
+        if playbook_id not in playbooks:
+            return
+        if playbooks[playbook_id].get("suppression", 0.0) != 0.0:
+            playbooks[playbook_id]["suppression"] = 0.0
+            _save_index(index)
+
+
+def top_suppressed(limit: int = 5) -> list[dict]:
+    """返回抑制分最高的 playbook 清单 (慢性干扰项 · 供 inject_stats 展示)"""
+    index = _load_index()
+    rows = []
+    for pid, m in index.get("playbooks", {}).items():
+        s = float(m.get("suppression", 0.0))
+        if s > 0:
+            rows.append({"id": pid, "title": m.get("title", ""), "suppression": s})
+    rows.sort(key=lambda x: -x["suppression"])
+    return rows[:limit]

@@ -463,7 +463,7 @@
       const kindLabel = isBuiltin ? '内置' : (isShipped ? '自带' : 'Daemonkey 造');
       let meta;
       if (isBuiltin) meta = '<span class="wac-stage">stage 2b 可配置</span>';
-      else if (isShipped) meta = `<span class="wac-stage">📦 随 DK 出厂 · v${Number(app.version || 1)}</span>`;
+      else if (isShipped) meta = `<span class="wac-stage"><i class="ri-box-3-fill"></i> 随 DK 出厂 · v${Number(app.version || 1)}</span>`;
       else meta = `<span class="wac-stage">${_esc((app.created_at || '').slice(0, 10))} · Daemonkey 造</span>`;
       // 删除按钮: 内置 / shipped 都不能删 · 只有纯 Daemonkey 临时造的 app 可删
       const canDelete = !isBuiltin && !isShipped;
@@ -582,7 +582,7 @@
       <div class="ws-apps-welcome">
         <div class="ws-apps-welcome-icon"><i class="ri-magic-fill"></i></div>
         <h2 class="ws-apps-welcome-title">出品工坊 · 应用</h2>
-        <p class="ws-apps-welcome-sub">左侧选一个应用 · 看产物历史 / 配置 / 测试它</p>
+        <p class="ws-apps-welcome-sub">左侧选一个应用 · 看产物历史 / 配置 / 测试/运行它</p>
         <div class="ws-apps-welcome-stats">
           <span class="wawm-stat"><b>${total}</b> 个应用</span>
           <span class="wawm-stat"><b>${_apps.filter(a => a.kind === 'builtin').length}</b> 个内置</span>
@@ -604,7 +604,7 @@
     if (!app) return '';
     const kindLabel = app.kind === 'builtin'
       ? '内置应用'
-      : (app.shipped ? '📦 自带应用 · 随 DK 出厂' : 'Daemonkey 造的应用');
+      : (app.shipped ? '<i class="ri-box-3-fill"></i> 自带应用 · 随 DK 出厂' : 'Daemonkey 造的应用');
     return `
       <div class="ws-ad-head">
         <button class="ws-ad-back" data-act="back-to-apps" title="返回应用列表">← 应用</button>
@@ -616,12 +616,15 @@
         <button class="ws-btn" data-act="ad-refresh" title="刷新产物">⟳ 刷新</button>
       </div>
       <div class="ws-ad-tabs">
-        <button class="ws-ad-tab active" data-ad-tab="output">📁 产出</button>
-        ${app.kind === 'Daemonkey' ? '<button class="ws-ad-tab" data-ad-tab="detail">📋 详情</button>' : ''}
-        <button class="ws-ad-tab" data-ad-tab="config">⚙ 配置</button>
-        <button class="ws-ad-tab" data-ad-tab="test"><i class="ri-play-fill"></i> 测试</button>
+        <button class="ws-ad-tab active" data-ad-tab="test"><i class="ri-play-fill"></i> 测试/运行</button>
+        <button class="ws-ad-tab" data-ad-tab="output"><i class="ri-folder-2-fill"></i> 产出</button>
+        ${app.kind === 'Daemonkey' ? '<button class="ws-ad-tab" data-ad-tab="detail"><i class="ri-file-list-3-fill"></i> 详情</button>' : ''}
+        <button class="ws-ad-tab" data-ad-tab="config"><i class="ri-settings-3-fill"></i> 配置</button>
       </div>
-      <div class="ws-ad-pane" data-ad-pane="output">
+      <div class="ws-ad-pane" data-ad-pane="test">
+        ${_renderAppTestForm(app)}
+      </div>
+      <div class="ws-ad-pane" data-ad-pane="output" hidden>
         <div class="ws-ad-loading"><i class="ri-radar-fill"></i> 拉产出中…</div>
       </div>
       <div class="ws-ad-pane" data-ad-pane="detail" hidden>
@@ -629,9 +632,6 @@
       </div>
       <div class="ws-ad-pane" data-ad-pane="config" hidden>
         <div class="ws-ad-loading"><i class="ri-radar-fill"></i> 加载配置中…</div>
-      </div>
-      <div class="ws-ad-pane" data-ad-pane="test" hidden>
-        ${_renderAppTestForm(app)}
       </div>
     `;
   }
@@ -646,7 +646,7 @@
       return `
         <div class="ws-ad-stub ws-form-empty">
           <div class="ws-stub-icon"><i class="ri-play-fill"></i></div>
-          <h3>测试运行 · 这个 app 还没声明 UI 表单</h3>
+          <h3>测试/运行 · 这个 app 还没声明 UI 表单</h3>
           <p>声明 <code>ui_form_schema</code> 后 · 这里会出现一张表单 · 你填字段 → 点提交 → 拼成 prompt 塞到右侧对话框。 重复跑同一 app 不用每次打字 (典型场景 SOVITS / GPT-Image)。</p>
           <p class="ws-stub-hint">现在你可以:</p>
           <ul class="ws-form-empty-actions">
@@ -664,8 +664,10 @@
       <form class="ws-ad-form" data-app-id="${_esc(app.id)}" data-act="ad-form-submit" novalidate>
         <div class="ws-form-head">
           <span class="ws-form-app-icon">${app.icon || '<i class="ri-puzzle-fill"></i>'}</span>
-          <span class="ws-form-app-name">${_esc(app.name)}</span>
-          <span class="ws-form-app-desc">${_esc(app.description || '')}</span>
+          <div class="ws-form-head-main">
+            <span class="ws-form-app-name">${_esc(app.name)}</span>
+            <span class="ws-form-app-desc" title="${_esc(app.description || '')}">${_esc(app.description || '')}</span>
+          </div>
         </div>
         <div class="ws-form-body">
           ${fieldsHtml}
@@ -676,11 +678,11 @@
             <span>填完直接发送 (走主对话路径时生效)</span>
           </label>
           <button type="button" class="ws-btn" data-act="ad-form-clear" data-app-id="${_esc(app.id)}">清空</button>
-          <button type="submit" class="ws-btn" data-form-target="chat" title="拼成 prompt 塞主对话框 · NLP First 路径">
-            → 塞主对话框
+          <button type="submit" class="ws-btn ws-btn-primary" data-form-target="run" title="后端 daemon 直接运行这个 app · SSE 流式输出 · 不污染主对话">
+            <i class="ri-play-fill"></i> 运行
           </button>
-          <button type="submit" class="ws-btn ws-btn-primary" data-form-target="run" title="后端 daemon 直接跑这个 app · SSE 流式输出 · 不污染主对话">
-            <i class="ri-play-fill"></i> 后端真跑
+          <button type="submit" class="ws-btn" data-form-target="chat" title="拼成 prompt 塞主对话框 · 走 LLM 对话路径">
+            塞主对话框
           </button>
         </div>
         <div class="ws-form-preview" data-form-preview hidden>
@@ -689,7 +691,7 @@
         </div>
         <div class="ws-form-run" data-form-run hidden>
           <div class="ws-form-run-head">
-            <span class="ws-form-run-title"><i class="ri-play-fill"></i> 真跑输出</span>
+            <span class="ws-form-run-title"><i class="ri-play-fill"></i> 运行记录</span>
             <span class="ws-form-run-status" data-run-status>等待…</span>
             <span class="ws-spacer"></span>
             <button type="button" class="ws-btn" data-act="ad-form-cancel" data-app-id="${_esc(app.id)}" hidden>取消</button>
@@ -1266,7 +1268,7 @@
 
   function _renderAppConfigPane(app, myAssets, sharedAssets) {
     if (app.kind === 'builtin') {
-      return `<div class="ws-ad-stub"><div class="ws-stub-icon">⚙</div><h3>${_esc(app.name)} · 内置 app</h3><p>内置 app 没有可配置的资产槽 · 配置 = 真 Daemonkey-app 才用 (那些有 system_prompt / asset_slots / 表单 schema 的)。</p></div>`;
+      return `<div class="ws-ad-stub"><div class="ws-stub-icon"><i class="ri-settings-3-fill"></i></div><h3>${_esc(app.name)} · 内置 app</h3><p>内置 app 没有可配置的资产槽 · 配置 = 真 Daemonkey-app 才用 (那些有 system_prompt / asset_slots / 表单 schema 的)。</p></div>`;
     }
     const slots = Array.isArray(app.asset_slots) ? app.asset_slots : [];
     const tools = Array.isArray(app.tools) ? app.tools : [];
@@ -1284,7 +1286,7 @@
 
     const schemaHtml = schema.length
       ? `<table class="ws-app-schema-table"><thead><tr><th>字段</th><th>类型</th><th>标签</th><th>必填</th></tr></thead><tbody>${schema.map(f => `<tr><td><code>${_esc(f.name)}</code></td><td>${_esc(f.type || 'text')}</td><td>${_esc(f.label || '')}</td><td>${f.required ? '是' : '—'}</td></tr>`).join('')}</tbody></table>`
-      : '<div class="ws-app-empty">这个 app 没声明 ui_form_schema · 测试 tab 没表单</div>';
+      : '<div class="ws-app-empty">这个 app 没声明 ui_form_schema · 测试/运行 tab 没表单</div>';
 
     const changelog = Array.isArray(app.changelog) ? app.changelog.slice(-5).reverse() : [];
     const changelogHtml = changelog.length
@@ -1294,8 +1296,8 @@
     return `
       <div class="ws-app-stub">
         <div class="ws-app-meta-chips">
-          <span class="wamc-chip" title="版本号">📦 v${version}</span>
-          <span class="wamc-chip" title="规格版本 · v2=六段校验严格模式">⚙ spec_v${specV}</span>
+          <span class="wamc-chip" title="版本号"><i class="ri-box-3-fill"></i> v${version}</span>
+          <span class="wamc-chip" title="规格版本 · v2=六段校验严格模式"><i class="ri-settings-3-fill"></i> spec_v${specV}</span>
           <span class="wamc-chip" title="exec_kind">${(app.exec_kind || 'agentic') === 'scripted' ? '⚡ scripted' : '🧠 agentic'}</span>
           <span class="wamc-chip" title="推荐模型"><i class="ri-brain-fill"></i> ${app.model_hint ? `<code>${_esc(app.model_hint)}</code>` : '<i>RUNTIME 默认</i>'}</span>
           <span class="wamc-chip" title="跑过几次"><i class="ri-play-fill"></i> ${Number(app.runs || 0)}</span>
@@ -1314,9 +1316,9 @@
         </div>
 
         <div class="ws-app-section">
-          <div class="ws-app-section-head">📋 表单字段 (ui_form_schema) · ${schema.length} 个字段</div>
+          <div class="ws-app-section-head"><i class="ri-list-check-3"></i> 表单字段 (ui_form_schema) · ${schema.length} 个字段</div>
           ${schemaHtml}
-          <div class="ws-app-section-hint">测试 tab 的表单按这个渲染 · 改 → 主对话说 <code>update_app</code> 改字段</div>
+          <div class="ws-app-section-hint">测试/运行 tab 的表单按这个渲染 · 改 → 主对话说 <code>update_app</code> 改字段</div>
         </div>
 
         <div class="ws-app-section">
@@ -1688,9 +1690,9 @@
   const files = data.files || [];
   if (files.length === 0) {
     return `<div class="ws-ad-empty">
-      <div style="font-size:32px;margin-bottom:12px">📁</div>
+      <div style="font-size:32px;margin-bottom:12px"><i class="ri-folder-2-fill"></i></div>
       <div>还没有产出</div>
-      <div class="ws-ad-hint">去「▶ 测试」tab 跑一次 ${_esc(app.name || app.id)} · 产物会出现在这里</div>
+      <div class="ws-ad-hint">去「▶ 测试/运行」tab 跑一次 ${_esc(app.name || app.id)} · 产物会出现在这里</div>
     </div>`;
   }
   let html = `<div class="ws-ad-meta">${files.length} 个文件 · 点卡片打开预览 · 路径按钮复制本地路径到剪贴板</div>`;

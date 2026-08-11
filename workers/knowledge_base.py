@@ -18,9 +18,12 @@ workers/knowledge_base.py
 from __future__ import annotations
 
 import json
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+from workers.safe_write import atomic_write_json, _do_backup
 
 ROOT = Path(__file__).resolve().parent.parent
 KB_DIR = ROOT / "data" / "knowledge"
@@ -28,6 +31,10 @@ DOCS_DIR = KB_DIR / "docs"
 MANIFEST_PATH = KB_DIR / "manifest.json"
 
 DOC_SOURCE_PREFIX = "doc:"
+
+# wish-a1c5f147 (墨言模块 10) · 复合操作锁: load→改→save 是读改写三段·
+# 多 session 并行 (BRO 多开实例) 时丢更新 → 公开写函数整体持锁
+_MANIFEST_LOCK = threading.Lock()
 
 
 def _now() -> str:
@@ -43,12 +50,22 @@ def _doc_md_path(doc_id: str) -> Path:
 
 
 def load_manifest() -> dict:
-    """读 manifest · 缺文件/损坏都退回空壳(绝不抛)。"""
+    """读 manifest · 缺文件/损坏都退回空壳(绝不抛)。
+
+    wish-a1c5f147 (墨言模块 10) · 损坏备份: JSON 解析失败时先把损坏文件备份为
+    manifest.json.corrupt-<ts> 保留现场 → 再返空壳。防"写操作静默覆盖清空用户元数据"
+    (红线: 升级绝不覆盖用户资料 · 一旦 manifest 损坏且被写覆盖 · 全部文档元数据丢失)。
+    """
     if not MANIFEST_PATH.exists():
         return {"docs": {}}
     try:
         data = json.loads(MANIFEST_PATH.read_text(encoding="utf-8")) or {}
     except Exception:
+        # 损坏 → 先备份现场 (safe_write._do_backup 到 data/_backups/) · 再返空壳
+        try:
+            _do_backup(MANIFEST_PATH)
+        except Exception:
+            pass
         return {"docs": {}}
     if not isinstance(data.get("docs"), dict):
         data["docs"] = {}
@@ -57,9 +74,8 @@ def load_manifest() -> dict:
 
 def _save_manifest(data: dict) -> None:
     _ensure_dirs()
-    MANIFEST_PATH.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    # wish-a1c5f147 · 原子写 + 写前备份 (safe_write 复用 · 断电半写不再损坏 JSON)
+    atomic_write_json(MANIFEST_PATH, data)
 
 
 def _new_doc_id() -> str:
@@ -127,31 +143,32 @@ def add_document(
 
     title, text, doc_type = extract(path)
     _ensure_dirs()
-    data = load_manifest()
-    doc_id = _new_doc_id()
-    _doc_md_path(doc_id).write_text(text, encoding="utf-8")
+    with _MANIFEST_LOCK:  # wish-a1c5f147 · 复合操作锁 (读改写整体持锁)
+        data = load_manifest()
+        doc_id = _new_doc_id()
+        _doc_md_path(doc_id).write_text(text, encoding="utf-8")
 
-    chunks = _index(doc_id, text)
-    meta = {
-        "id": doc_id,
-        "title": title,
-        "orig_path": str(Path(path)),
-        "type": doc_type,
-        "enabled": True,
-        "pinned": bool(pinned),
-        "sensitive": bool(sensitive),
-        "tags": list(tags or []),
-        "folder": (folder or "").strip(),
-        "client_id": (client_id or "").strip(),
-        "summary": _auto_summary(text),
-        "chars": len(text),
-        "chunks": chunks,
-        "added_at": _now(),
-        "updated_at": _now(),
-    }
-    data["docs"][doc_id] = meta
-    _save_manifest(data)
-    return meta
+        chunks = _index(doc_id, text)
+        meta = {
+            "id": doc_id,
+            "title": title,
+            "orig_path": str(Path(path)),
+            "type": doc_type,
+            "enabled": True,
+            "pinned": bool(pinned),
+            "sensitive": bool(sensitive),
+            "tags": list(tags or []),
+            "folder": (folder or "").strip(),
+            "client_id": (client_id or "").strip(),
+            "summary": _auto_summary(text),
+            "chars": len(text),
+            "chunks": chunks,
+            "added_at": _now(),
+            "updated_at": _now(),
+        }
+        data["docs"][doc_id] = meta
+        _save_manifest(data)
+        return meta
 
 
 def list_documents(tag: str | None = None) -> list[dict]:
@@ -183,48 +200,51 @@ def read_document_text(doc_id: str) -> str:
 
 def remove_document(doc_id: str) -> dict:
     """删档:出 manifest + 删 .md + 从 FTS5 清索引。找不到抛 KeyError。"""
-    data = load_manifest()
-    meta = data["docs"].pop(doc_id, None)
-    if meta is None:
-        raise KeyError(doc_id)
-    _deindex(doc_id)
-    p = _doc_md_path(doc_id)
-    if p.exists():
-        p.unlink()
-    _save_manifest(data)
-    return meta
+    with _MANIFEST_LOCK:  # wish-a1c5f147 · 复合操作锁
+        data = load_manifest()
+        meta = data["docs"].pop(doc_id, None)
+        if meta is None:
+            raise KeyError(doc_id)
+        _deindex(doc_id)
+        p = _doc_md_path(doc_id)
+        if p.exists():
+            p.unlink()
+        _save_manifest(data)
+        return meta
 
 
 def set_enabled(doc_id: str, enabled: bool) -> dict:
     """参考开关:关掉 → 从 FTS5 删索引(静音)· 打开 → 从原文重建索引。"""
-    data = load_manifest()
-    meta = data["docs"].get(doc_id)
-    if meta is None:
-        raise KeyError(doc_id)
-    meta["enabled"] = bool(enabled)
-    meta["updated_at"] = _now()
-    if enabled:
-        meta["chunks"] = _index(doc_id, read_document_text(doc_id))
-    else:
-        _deindex(doc_id)
-        meta["chunks"] = 0
-    _save_manifest(data)
-    return meta
+    with _MANIFEST_LOCK:  # wish-a1c5f147 · 复合操作锁
+        data = load_manifest()
+        meta = data["docs"].get(doc_id)
+        if meta is None:
+            raise KeyError(doc_id)
+        meta["enabled"] = bool(enabled)
+        meta["updated_at"] = _now()
+        if enabled:
+            meta["chunks"] = _index(doc_id, read_document_text(doc_id))
+        else:
+            _deindex(doc_id)
+            meta["chunks"] = 0
+        _save_manifest(data)
+        return meta
 
 
 def update_document(doc_id: str, **changes) -> dict:
     """改元数据(tags/pinned/sensitive/summary/title/folder/client_id)· 不动索引。"""
     allowed = {"tags", "pinned", "sensitive", "summary", "title", "folder", "client_id"}
-    data = load_manifest()
-    meta = data["docs"].get(doc_id)
-    if meta is None:
-        raise KeyError(doc_id)
-    for key, val in changes.items():
-        if key in allowed:
-            meta[key] = val
-    meta["updated_at"] = _now()
-    _save_manifest(data)
-    return meta
+    with _MANIFEST_LOCK:  # wish-a1c5f147 · 复合操作锁
+        data = load_manifest()
+        meta = data["docs"].get(doc_id)
+        if meta is None:
+            raise KeyError(doc_id)
+        for key, val in changes.items():
+            if key in allowed:
+                meta[key] = val
+        meta["updated_at"] = _now()
+        _save_manifest(data)
+        return meta
 
 
 def search_documents(query: str, top_k: int = 5, context_window: int = 8000) -> list:

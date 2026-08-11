@@ -16,6 +16,7 @@ api_routes/sessions.py · session 管理路由 (wish-413999da · phase 1)
 """
 from __future__ import annotations
 
+from pathlib import Path, PurePosixPath
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
@@ -40,6 +41,7 @@ router = APIRouter()
 async def sessions(
     authorization: Optional[str] = Header(None),
     limit: int = 50,
+    offset: int = 0,
     api_only: bool = False,
     include_archived: bool = False,
     archived_only: bool = False,
@@ -50,6 +52,7 @@ async def sessions(
       api_only=true       · 只返 api- 前缀 (WebUI 默认 · 避免污染终端 session)
       include_archived    · 是否包含已归档 · 默认不包含
       archived_only       · 只列已归档 (做"已归档"切换视图用)
+      offset              · 分页偏移 · 配合 limit 做"加载更多" (卷八十一 · BRO: 老会话被 50 条挤掉)
 
     排序：pinned 在前 (pinned_at desc) → unpinned 按 mtime desc。
     """
@@ -58,6 +61,7 @@ async def sessions(
     items = list_sessions_with_meta()
     out = []
     archived_count = 0
+    skipped = 0
     for row in items:
         sid = row["session_id"]
         is_api = sid.startswith("api-")
@@ -72,6 +76,10 @@ async def sessions(
         else:
             if is_archived and not include_archived:
                 continue
+        # 分页: 先跳过 offset 条已过滤结果
+        if skipped < offset:
+            skipped += 1
+            continue
         out.append({
             "session_id": sid,
             "mtime": row["mtime"].isoformat(timespec="seconds"),
@@ -88,6 +96,7 @@ async def sessions(
         "sessions": out,
         "total": len(items),
         "returned": len(out),
+        "offset": offset,
         "archived_count": archived_count,
     }
 
@@ -222,6 +231,142 @@ async def session_messages(sid: str, authorization: Optional[str] = Header(None)
         "turns": turns,
         "count": len(turns),
     }
+
+
+@router.get("/sessions/{sid}/artifacts")
+async def session_artifacts(sid: str, authorization: Optional[str] = Header(None)):
+    """卷八十一 · 本会话真实产物列表 (压缩/折叠也不丢)
+
+    收集逻辑: 扫 session 主 jsonl + sessions/archive/ 下该 sid 的所有归档文件
+    (compact/prune 折叠原件), 从 content + tool_calls.arguments 里抽产物路径,
+    过滤示例占位符 (X.md / xxx.docx / x.png 这类), 只返回磁盘上真实存在的文件。
+
+    前端「本会话产物」视图数据源 · 不依赖 DOM (懒加载/压缩都不影响)。
+    """
+    check_auth(authorization)
+
+    import json
+    import re
+
+    sid_file = session_path(sid)
+    if not sid_file.exists():
+        raise HTTPException(404, f"session not found: {sid}")
+
+    # 所有要扫的行: 主文件 + 归档 (compact/prune)
+    lines: list[str] = []
+    for f in sorted(sid_file.parent.glob("archive/*" + sid + "*.jsonl")):
+        try:
+            lines.extend(f.read_text(encoding="utf-8", errors="replace").splitlines())
+        except Exception:
+            pass
+    try:
+        lines.extend(sid_file.read_text(encoding="utf-8", errors="replace").splitlines())
+    except Exception:
+        pass
+    # 产物路径正则 (白名单类型)
+    # 防路径穿越: 第二分支整段负向前瞻 (?!.*\.\.) 拒绝含 .. 的路径 · 字符类去掉 % (避免 %2e%2e 编码穿越)
+    RE_DOCPATH = re.compile(
+        r"(?:data/(?:docs|content|design|dev|presentations)/[\w\u4e00-\u9fa5\-（）()·\.]+\.(?:docx?|md|pdf|xlsx?|pptx?|png|jpe?g|gif|webp|mp3|wav|mp4|webm|zip))"
+        r"|(?:(?!.*\.\.)(?:/reports/|/workshop/(?:outputs|preview|file)/|/presentations/)[\w\u4e00-\u9fa5\-（）()·\./]+\.(?:docx?|md|pdf|xlsx?|pptx?|png|jpe?g|gif|webp|mp3|wav|mp4|webm|zip))",
+        re.IGNORECASE,
+    )
+    # 占位符/示例过滤: X.md / xxx.docx / x.png / xxx.md 等
+    RE_PLACEHOLDER = re.compile(r"(^|/)(x|xxx|test|tmp|sample|example|placeholder|demo)(\.|/|$)", re.IGNORECASE)
+    _FAKE = {"x", "xxx", "test", "tmp", "sample", "example", "placeholder", "demo"}
+
+    def _is_fake(p: str) -> bool:
+        base = PurePosixPath(p.split("?")[0]).name  # 文件名
+        stem = base.rsplit(".", 1)[0].lower()
+        if stem in _FAKE or stem.endswith((".x", ".xxx")):
+            return True
+        return bool(RE_PLACEHOLDER.search(p))
+
+    ROOT = Path(__file__).resolve().parent.parent
+
+    def _exists_on_disk(p: str) -> bool:
+        # 归一化到绝对路径验证真实存在
+        cands = []
+        if p.startswith("data/"):
+            cands.append(ROOT / p)
+        elif p.startswith("/reports/"):
+            cands.append(ROOT / "data" / "reports" / p[len("/reports/"):])
+        elif p.startswith("/workshop/preview/"):
+            rel = p[len("/workshop/preview/"):]
+            if "/" in rel:
+                d, f = rel.split("/", 1)
+                cands.append(ROOT / "data" / d / f)
+        elif p.startswith("/workshop/file/"):
+            rel = p[len("/workshop/file/"):]
+            if "/" in rel:
+                d, f = rel.split("/", 1)
+                cands.append(ROOT / "data" / d / f)
+        elif p.startswith("/workshop/outputs/"):
+            cands.append(ROOT / "data" / "workshop" / "outputs" / p[len("/workshop/outputs/"):])
+        for c in cands:
+            try:
+                if c.resolve().is_file():
+                    return True
+            except Exception:
+                pass
+        return False
+
+    def _norm_url(p: str) -> str:
+        if p.startswith("data/docs/"): return "/workshop/preview/docs/" + p[len("data/docs/"):]
+        if p.startswith("data/content/"): return "/workshop/preview/content/" + p[len("data/content/"):]
+        if p.startswith("data/design/"): return "/workshop/preview/design/" + p[len("data/design/"):]
+        if p.startswith("data/dev/"): return "/workshop/preview/dev/" + p[len("data/dev/"):]
+        if p.startswith("data/workshop/outputs/"): return "/workshop/outputs/" + p[len("data/workshop/outputs/"):]
+        return p
+
+    seen: set[str] = set()
+    artifacts: list[dict] = []
+    for line in lines:
+        try:
+            msg = json.loads(line)
+        except Exception:
+            continue
+        texts: list[str] = []
+        c = msg.get("content")
+        if isinstance(c, str):
+            texts.append(c)
+        elif isinstance(c, list):
+            for it in c:
+                if isinstance(it, dict) and it.get("text"):
+                    texts.append(it["text"])
+        tc = msg.get("tool_calls")
+        if tc:
+            for x in tc:
+                a = None
+                if isinstance(x, dict):
+                    if "arguments" in x:
+                        a = x.get("arguments")
+                    elif isinstance(x.get("function"), dict):
+                        a = x["function"].get("arguments")
+                if isinstance(a, str):
+                    texts.append(a)
+                elif a:
+                    try:
+                        texts.append(json.dumps(a, ensure_ascii=False))
+                    except Exception:
+                        pass
+        for txt in texts:
+            if not txt:
+                continue
+            for m in RE_DOCPATH.finditer(txt):
+                raw = m.group(0)
+                if _is_fake(raw):
+                    continue
+                url = _norm_url(raw)
+                if url in seen:
+                    continue
+                seen.add(url)
+                if not _exists_on_disk(raw):
+                    continue
+                ext = PurePosixPath(url.split("?")[0]).suffix.lower().lstrip(".")
+                name = PurePosixPath(url.split("?")[0]).name
+                artifacts.append({"name": name, "url": url, "ext": ext})
+
+    return {"session_id": sid, "artifacts": artifacts, "count": len(artifacts)}
 
 
 @router.get("/sessions/{sid}/active_turn")

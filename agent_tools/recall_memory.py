@@ -13,6 +13,7 @@ Daemonkey 跨会话记忆检索工具——调用 workers/memory_index.py 的 FT
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from . import TIER_AUTO, ToolResult, ToolSpec, register_tool
@@ -56,9 +57,28 @@ def _label_for(source: str) -> str:
     return _SCOPE_LABELS.get(source, source)
 
 
-def _snippet(text: str, limit: int = 140) -> str:
-    """把一块内容压成单行摘要 · 给 list 阶段省 token。"""
+def _snippet(text: str, limit: int = 140, hit_word: str = "") -> str:
+    """把一块内容压成单行摘要 · 给 list 阶段省 token。
+
+    wish-6ff9d89b · I2: 命中定位 — 传 hit_word 时·围绕首个命中词取窗口 (前 60 + 后 80)
+    · 命中词中后部也能看见 (原来纯取开头·命中词在中后部时摘要零痕迹·选 id 会跳过真相关块)。
+    hit_word 取 FTS5 查询词·多词时取第一个·找不到则退回首段。
+    """
     one_line = " ".join((text or "").split())
+    if hit_word and hit_word in one_line:
+        idx = one_line.find(hit_word)
+        start = max(0, idx - 60)
+        end = min(len(one_line), idx + len(hit_word) + 80)
+        seg = one_line[start:end]
+        if start > 0:
+            seg = "…" + seg
+        if end < len(one_line):
+            seg = seg + "…"
+        # 高亮命中词 (单条内出现多次全标)
+        seg = seg.replace(hit_word, f"**{hit_word}**")
+        if len(seg) > limit + 20:
+            seg = seg[: limit + 20] + "…"
+        return seg
     return one_line[:limit] + ("…" if len(one_line) > limit else "")
 
 
@@ -86,7 +106,9 @@ def _run(args: dict) -> ToolResult:
         ids = args.get("ids") or []
         if not isinstance(ids, list):
             return ToolResult(ok=False, output="", error="ids 必须是 id 数组，例如 [12, 47]")
-        chunks = get_chunks_by_ids(ids)
+        # I3 (wish-6ff9d89b) · full 阶段透传 context_window · 不再默认 12000
+        _ctx = int(args.get("context_window", 8000))
+        chunks = get_chunks_by_ids(ids, context_window=_ctx)
         if not chunks:
             return ToolResult(ok=True, output=f"没找到 id={ids} 对应的记忆块（可能已过期，重新 mode=list 搜一次）。")
         lines = [f"取到 {len(chunks)} 条全文：\n"]
@@ -117,13 +139,22 @@ def _run(args: dict) -> ToolResult:
             error=f"无效 scope: {scope!r}; 合法值: all, bro, self, sessions, skill, docs, clients",
         )
 
-    results = search(query, top_k=top_k, scope=scope, context_window=context_window)
+    # I1 (wish-6ff9d89b) · list 模式用摘要窗口 (window_by='snippet') · 不被全文窗口压制条数
+    results = search(query, top_k=top_k, scope=scope, context_window=context_window,
+                     window_by="snippet" if mode != "full" else "content")
 
     if not results:
         return ToolResult(
             ok=True,
             output=f"没有找到与 '{query}' 相关的记忆片段 (scope={scope})。",
         )
+
+    # I2 (wish-6ff9d89b) · 摘要命中定位: 取查询第一个实词做 hit_word · 摘要围绕它取窗口
+    _hit = ""
+    for _w in re.split(r"[\s,，。、]+", query or ""):
+        if len(_w) >= 2 and _w.upper() not in ("AND", "OR", "NOT"):
+            _hit = _w
+            break
 
     # full 兜底 (没 ids 但 mode=full): 直接给全文 · 兼容老用法
     if mode == "full":
@@ -150,7 +181,7 @@ def _run(args: dict) -> ToolResult:
         section_info = f" · {chunk.section}" if chunk.section else ""
         when = f"  ({chunk.updated_at})" if chunk.updated_at else ""
         lines.append(f"{i}. [id={chunk.id}] [{label}{section_info}]{when}")
-        lines.append(f"   {_snippet(chunk.content)}")
+        lines.append(f"   {_snippet(chunk.content, hit_word=_hit)}")
 
     return ToolResult(ok=True, output="\n".join(lines))
 

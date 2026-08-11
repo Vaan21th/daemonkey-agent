@@ -173,9 +173,12 @@ def _classify_command(cmd: str) -> str:
             return TIER_AUTO
 
     if head_base in ("python", "py", "python3", "python.exe", "py.exe"):
-        if len(tokens) >= 2 and tokens[1] in ("-c", "--version", "-V"):
+        # 2026-08-11 · 墨言 P2 修复: 原逻辑 --version 被第一个 if 拦成 CONFIRM ·
+        # 第二分支永远死 + 裸 python 时 tokens[1] IndexError。
+        # 正确分级: -c 写脚本 CONFIRM / --version -V 只读查询 AUTO / 其余 CONFIRM · 全部 len>=2 守卫
+        if len(tokens) >= 2 and tokens[1] == "-c":
             return TIER_CONFIRM
-        if tokens[1] in ("--version", "-V"):
+        if len(tokens) >= 2 and tokens[1] in ("--version", "-V"):
             return TIER_AUTO
         return TIER_CONFIRM
 

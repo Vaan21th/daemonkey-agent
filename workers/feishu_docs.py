@@ -27,7 +27,7 @@ from workers.feishu_client import get_tenant_token
 
 logger = logging.getLogger("opus.feishu.docs")
 
-_BASE = "https://open.feishu.cn"
+_BASE = "https://open.feishu.cn/open-apis"
 
 # 限制拉取量 · 防大文档/大表把上下文撑爆
 _MAX_BLOCKS = 200       # 文档最多展开 200 个 block
@@ -275,6 +275,73 @@ def fetch_file(message_id: str, file_key: str, file_name: str, max_chars: int = 
 
 
 # ── 统一入口 ──────────────────────────────────────────────
+
+def fetch_image(message_id: str, image_key: str, save_dir: str = "data/cache/feishu_img") -> dict:
+    """下载飞书消息里的图片存本地文件 (发图给 AI 看场景)。
+
+    下载: GET /im/v1/messages/{message_id}/resources/{image_key}?type=image
+      (消息资源接口 · 用户发来的图走这个 · im/v1/images/{key} 只能下机器人自己传的)
+    权限: im:resource (获取与上传图片或文件资源) · 未开返回可读提示。
+    返回: {"ok", "path", "ext"} · path 给 look_at 用。
+    """
+    if not image_key or not message_id:
+        return {"ok": False, "error": "缺 image_key/message_id"}
+    tok = get_tenant_token()
+    if not tok:
+        return {"ok": False, "error": "飞书未配置或 token 获取失败"}
+    try:
+        r = requests.get(
+            f"{_BASE}/im/v1/messages/{message_id}/resources/{image_key}",
+            params={"type": "image"},
+            headers={"Authorization": f"Bearer {tok}"},
+            timeout=30,
+        )
+    except Exception as e:
+        logger.warning("feishu 图片下载异常: %s", e)
+        return {"ok": False, "error": f"下载网络异常: {e}"}
+    if r.status_code != 200:
+        return {"ok": False, "error": f"下载失败 HTTP {r.status_code} · 需 im:resource 权限(去权限管理批量导入并发布)"}
+    data = r.content
+    if len(data) > _FILE_MAX_BYTES:
+        return {"ok": False, "error": f"图片 {len(data)//1024//1024}MB 超 20MB 上限"}
+    # 用 PIL 验证真实格式 → 按真实格式定扩展名 (content-type/magic 猜会漏 webp 等)
+    ext = ".bin"
+    try:
+        from PIL import Image
+        import io
+        img = Image.open(io.BytesIO(data))
+        img.load()  # 真解码 · 防"能打开但损坏"
+        fmt = (img.format or "").upper()
+        ext = {
+            "PNG": ".png", "JPEG": ".jpg", "JPG": ".jpg", "GIF": ".gif",
+            "WEBP": ".webp", "BMP": ".bmp",
+        }.get(fmt, ".bin")
+    except Exception as e:
+        # 诊断: 飞书返回 200 但内容不是图片 (可能 JSON 错误/HTML) · dump 前 128 字节
+        head = data[:128]
+        logger.warning("feishu 图片解码失败: %s · ct=%s · head=%s",
+                       e, r.headers.get("content-type"), head.hex())
+        try:
+            from pathlib import Path
+            d = Path("data/cache/feishu_img")
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "_debug_download.bin").write_bytes(data[:4096])
+        except Exception:
+            logger.warning("feishu_docs 解析异常失败 (L329)", exc_info=True)
+        return {"ok": False, "error": f"图片解码失败: {type(e).__name__}: {e}"}
+    if ext == ".bin":
+        return {"ok": False, "error": f"不支持的图片格式: {img.format} · 支持 png/jpg/gif/webp/bmp"} if img else {"ok": False, "error": "无法识别图片格式"}
+    try:
+        from pathlib import Path
+        d = Path(save_dir)
+        d.mkdir(parents=True, exist_ok=True)
+        p = d / f"{image_key.replace('/', '_')}{ext}"
+        p.write_bytes(data)
+    except Exception as e:
+        logger.warning("feishu 图片存盘异常: %s", e)
+        return {"ok": False, "error": f"存盘失败: {type(e).__name__}: {e}"}
+    return {"ok": True, "path": str(p), "ext": ext, "size": len(data)}
+
 
 def fetch_by_link(text: str) -> dict:
     """消息文本里若有飞书链接 → 自动识别并拉取内容。没有链接返回 None。"""

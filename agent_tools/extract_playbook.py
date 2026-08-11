@@ -23,6 +23,10 @@ actions:
 """
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
+
 from . import TIER_CONFIRM, ToolResult, ToolSpec, register_tool
 
 
@@ -147,6 +151,30 @@ def _run(args: dict) -> ToolResult:
 
             meta = result.get("meta", {})
             mark_used(result["id"])
+
+            # wish-599c46bd (墨言 wish-bf460f7b) · 注入→使用转化追踪: load 即记一条 ·
+            # 供 closure_check.inject_stats join 算转化率
+            # I4: 绝对路径 (Path(__file__) 锚定项目根·不依赖 cwd) · current_session_id 拿不到记空
+            try:
+                from workers.safe_write import robust_open_append
+                from agent_tools import current_session_id
+                _used_path = Path(__file__).resolve().parents[1] / "data" / "runtime" / "inject_used.jsonl"
+                _used_path.parent.mkdir(parents=True, exist_ok=True)
+                _sid = ""
+                try:
+                    _sid = str(current_session_id() or "")
+                    if _sid.startswith("t"):   # 线程 id 退化值不是真 session · 不记
+                        _sid = ""
+                except Exception:
+                    _sid = ""
+                with robust_open_append(_used_path) as _f:
+                    _f.write(json.dumps(
+                        {"ts": datetime.now(timezone.utc).isoformat(),
+                         "playbook_id": result["id"], "session_id": _sid},
+                        ensure_ascii=False,
+                    ) + "\n")
+            except Exception:
+                pass
 
             return ToolResult(
                 ok=True,

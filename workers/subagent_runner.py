@@ -114,6 +114,7 @@ def run_subagent(
     inject_budget_mandate: bool = True,
     persist: bool = False,
     parent_session_id: Optional[str] = None,
+    wall_clock_sec: Optional[float] = None,
 ) -> SubagentResult:
     """跑一个子执行器 · 返回结构化结果。
 
@@ -190,6 +191,7 @@ def run_subagent(
             cancel_check=cancel_check,
             on_message_commit=on_commit,
             allowed_tool_names=tools_whitelist,
+            wall_clock_sec=wall_clock_sec,
         )
     except Exception as e:
         return SubagentResult(
@@ -219,6 +221,31 @@ def run_subagent(
         warning = f"接近预算上限 ({iterations}/{max_iterations}) · 下次注意 token 消耗"
 
     text = text or ""
+
+    # wish 协同 (墨言子代理包 2026-08-10 · 撞顶保留产出) ·
+    # 撞 max_iterations 时 tool_loop 返回的 text 是固定提示"撞了上限"· 分身已产出的中间文字
+    # (边查边输出产生的) 被丢弃了。 现在: 从 messages 提取所有 assistant 正文拼进 text ·
+    # 让预算耗尽也能拿到部分发现 —— 配合 dispatch 的"边查边输出"是一对: 一个负责写·一个负责捞。
+    if hit_budget:
+        _salvaged = []
+        for _m in messages:
+            _c = _m.get("content") if isinstance(_m, dict) else None
+            if isinstance(_c, str) and _c.strip():
+                # 只捞 assistant 的正文 · 且跳过 tool_loop 撞顶/卡死注入的固定提示块
+                if _m.get("role") == "assistant" and not _c.startswith("[OPUS") and not _c.startswith("[SYSTEM"):
+                    _salvaged.append(_c.strip())
+        if _salvaged:
+            _prev = text
+            text = (
+                "【预算耗尽 · 以下是从已产出内容中保留的部分发现 (可能不完整)】\n\n"
+                + "\n\n".join(_salvaged[-3:])  # 最近 3 段 assistant 正文 (一般是中间结论+收尾)
+            )
+            warning = (
+                f"撞 max_iterations 上限 ({iterations}/{max_iterations}) · "
+                f"已从分身已产出内容中保留 {len(_salvaged)} 段中间结论 · "
+                f"如需完整结论建议提高 max_iterations 或拆更小的子任务"
+            )
+
     return SubagentResult(
         ok=True,
         text=text,

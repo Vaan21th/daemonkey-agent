@@ -21,6 +21,7 @@ workers/memory_compression.py
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import datetime
@@ -664,7 +665,8 @@ def _persist_rewrite(messages: list[dict]) -> None:
         from daemon_session import rewrite_session
         rewrite_session(_current_sid, messages)
     except Exception:
-        pass
+        logging.getLogger("opus.memcomp").warning(
+            "压缩重写 session jsonl 失败 · 磁盘仍是旧版 · 重启会回退到压缩前", exc_info=True)
 
 
 def auto_compress(

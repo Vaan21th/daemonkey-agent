@@ -248,15 +248,15 @@ def try_auto_revert(reason: str) -> bool:
     try:
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         # 社区 7/31 · Bug #8 · Defender 瞬态锁防护 (revert marker)
+        # 2026-08-11 · 墨言 P1 修复: robust 成功后不要提前 return ·
+        # 必须落到 _spawn_replacement_and_exit() (否则成功不 spawn · 失败才 spawn · 行为颠倒)
         try:
             from workers.safe_write import robust_write_json
             robust_write_json(REVERT_MARKER, {"from": head, "to": lg, "at": _now_iso(), "reason": reason}, backup=False)
-            return
         except ImportError:
-            pass
-        REVERT_MARKER.write_text(json.dumps(
-            {"from": head, "to": lg, "at": _now_iso(), "reason": reason}, ensure_ascii=False, indent=2),
-            encoding="utf-8")
+            REVERT_MARKER.write_text(json.dumps(
+                {"from": head, "to": lg, "at": _now_iso(), "reason": reason}, ensure_ascii=False, indent=2),
+                encoding="utf-8")
     except Exception:
         pass
     _log_event({"event": "auto_revert", "from": head, "to": lg, "trigger": reason})

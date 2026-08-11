@@ -27,6 +27,8 @@ import contextvars
 import json
 import logging
 import re
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -143,12 +145,53 @@ _TOKEN_SPLIT = re.compile(r"[\s·,，、/。.:：;；()（）\[\]\-_]+")
 
 
 def _index_by_slug() -> dict:
-    """slug → playbook meta (id/title/used_count)·给 FTS5 命中映射回可 load 的 playbook。"""
+    """slug → playbook meta (id/title/used_count)·给 FTS5 命中映射回可 load 的 playbook。
+
+    R1-P2 (墨言三审) · 直读 _load_index() 全量索引 (不走 list_playbooks → search_playbooks(limit=200))。
+    原实现 list_playbooks 有 200 条硬上限 · playbook 库超过 200 份时老 playbook 不在 slug_map →
+    被误判"已退役/已删"跳过注入 (当前 ~60 份未触发 · 库在涨是隐藏雷)。
+    连带防护: 直读索引会绕过 search_playbooks 的退役过滤 (wish-e3db429f) · 补 status=="retired" 排除。
+    """
     try:
-        from workers.playbooks import list_playbooks
-        return {pb.get("slug", ""): pb for pb in list_playbooks() if pb.get("slug")}
+        from workers.playbooks import _load_index as _pl_index
+        index = _pl_index()
+        pbs = index.get("playbooks", {}) if isinstance(index, dict) else {}
+        result = {}
+        for pb in pbs.values():
+            if not isinstance(pb, dict) or not pb.get("slug"):
+                continue
+            if pb.get("status") == "retired":
+                continue
+            result[pb["slug"]] = pb
+        return result
     except Exception:
         return {}
+
+
+def _has_retrieval_intent(message: str) -> bool:
+    """wish-fec0e2f6 (墨言 03 思路自研) · 查询意图门槛: 消息是否有可检索的任务意图。
+
+    停用词 + 纯应答/语气/通用动作词过滤后·还剩 >=1 个词 → 有主题可检索 → True。
+    纯应答 ("可以" "好") / 纯流程确认 ("收尾日记跑一轮" "改吧观察留着") → 全被滤 → False。
+    查询动词 ("看看/查/找/搜/问") 天然放行 (不在白名单) · "看看这个 token 命中率" → True。
+    比"必须命中 playbook 标题"安全: 拦截过松只是注入 0 条 (无害) · 拦截过紧会漏真命中。
+    """
+    msg = (message or "").strip()
+    if len(msg) < 4:
+        return False
+    try:
+        from workers.memory_index import _query_real_terms
+        terms = _query_real_terms(msg)
+    except Exception:
+        # 切词故障时 fail-open · 宁多注入不漏注入
+        # (fail-closed 会让真任务消息全被拦 → playbook 注入整体静默失效)
+        return True
+    if not terms:
+        return False
+    for t in terms:
+        if t.lower() not in _PB_UTTERANCE_ONLY:
+            return True
+    return False
 
 
 def _keyword_playbooks(message: str, limit: int) -> list[dict]:
@@ -184,6 +227,54 @@ def _keyword_playbooks(message: str, limit: int) -> list[dict]:
 #   注: 库变大后 bm25 绝对值会漂·按真实命中率重校 (跟 relevant_memories 同款调味位)。
 _PB_INJECT_MIN_SCORE = -10.0
 
+# wish-fec0e2f6 (墨言 03 思路自研) · 查询意图门槛 + 泛词剔除 + 三态分级
+# 实测误差根因 (下午统计): 纯应答/语气短消息 ("改吧""可以""ok") 占弱+误差 51% · 无主题词可检索
+# 硬门槛误杀真命中 (bm25 对高频词天然低分 · "记忆系统晋升" score -3.06 overlap=3 被 -10 挡掉)
+# → 治本方案: ① 意图门槛 (无主题词不检索) ② min_score 降为防底噪 + min_overlap=2 实词闸 ③ 三态分级
+_PB_UTTERANCE_ONLY = frozenset({
+    "ok", "好", "嗯", "哦", "行", "可", "改", "推", "落", "发", "弄",
+    "做", "搞", "试", "跑", "合", "删", "清", "标", "验", "测", "等", "先", "再",
+    "然后", "可以", "继续", "留着", "手动", "没有", "不是", "没错", "对", "就这样",
+    "收尾", "日记", "观察", "一轮", "加", "记录",
+    "了", "吧", "啊", "呀", "哦", "嗯", "哈", "呵呵",
+})
+# 高频泛词 (检索时不计入 overlap · 防"应用/做/帮我"这类词撞库产生误差)
+# 例: "翻译应用帮我做一个" → "应用/帮我/做" 泛词剔除后剩 "翻译" → overlap 难 ≥2 → 不注入
+_PB_GENERIC_WORDS = frozenset({
+    "应用", "帮我", "一个", "一些", "这种", "那种", "什么", "怎么", "如何",
+    "东西", "事情", "任务", "问题", "看看", "查看", "查询", "搜索", "找找",
+    "要做", "想要", "需要", "希望", "能不能", "可不可以", "帮我", "一下",
+    "写", "做", "搞", "弄", "搞一个", "做一个",
+})
+# 三态分级弱区间上限: score > 此值 (更接近 0) = 弱命中 → 注入行标 [弱相关]
+# (校准: 真命中 top bm25 ∈ [-30,-12] · 弱噪音 ∈ [-9.8,-1] · 取 -12 分界)
+_PB_WEAK_SCORE_MAX = -12.0
+
+# wish-3f1068e8 (墨言 04) · 能力门槛: debug 类注入行附加"前置检查清单"提示
+# debug/diagnose 类 21 注入 0 load (转化率实证) · 模型基线能自调 · 注入预算留给真超基线任务
+# 但排序仍走 FTS5 相关度 (不过度重排 — 混合场景里高权重类会挤掉真正核心的 debug 类)。
+# 这里的落地: ① debug 类注入行加 [排查类] 前置检查清单标记 ② inject_stats 分档统计 (数据驱动调权)。
+_PB_DEBUG_TYPES = {"debug", "diagnose", "refactor", "maintenance", "audit"}
+
+# wish-3f1068e8 · task_type 分档权重 (转化率实证校准 · 数据底座)
+# 流程类 (review/deliver/setup/optimize) 转化率 50-100% → 高权重
+# debug/diagnose 类 21 注入 0 load → 低权重 (模型基线能自调 · 注入预算留给真超基线任务)
+# 注: 当前只用于 inject_stats 分档统计 + debug 标记判定的数据底座 · 未来调权靠统计说话
+_PB_TASK_WEIGHT = {
+    "review": 3, "deliver": 3, "setup": 2, "optimize": 2, "code-review": 2,
+    "planning": 2, "workflow": 2, "write": 1, "research": 1,
+    "deploy": 1, "implement": 1, "verify": 1, "automate": 1, "feishu-ui": 1,
+    "移植": 1, "fetch": 1,
+    "debug": 0, "diagnose": 0, "refactor": 0, "maintenance": 0, "audit": 0,
+    "?": 0,
+}
+
+# wish-599c46bd (墨言 wish-bf460f7b) · playbook 重复注入抑制
+# 同一 session 10 分钟内已注入过的 playbook 不重复注入 (连续同类问题 = 已在上下文里)
+_PB_INJECT_COOLDOWN_SEC = 600.0
+_PB_INJECTED_RECENT: dict[str, list[tuple[str, float]]] = {}
+_PB_LOCK = threading.Lock()   # M6 · 多 session 并发时 检查-更新 段串行
+
 # 0.9.0 · 注入日志 (wish 注入收敛样本收集) · 只写不改行为
 # 每次注入追加一行 jsonl 到 data/runtime/inject_log.jsonl · 供重校注入量/阈值用
 # 隐私: 只记消息前 200 字 + 注入项摘要 · 数据留 L3 本地 · 永不 sync / 永不回传
@@ -201,7 +292,7 @@ def _inject_log_path() -> Path:
     return _INJECT_LOG_PATH
 
 
-def _log_injection(message: str, kind: str, items: list, *, hit_score: float | None = None) -> None:
+def _log_injection(message: str, kind: str, items: list, *, hit_score: float | None = None, session_id: str = "", item_kind: str = "", weak: list | None = None) -> None:
     """追加一条注入日志 · 失败静默 (日志绝不能影响注入主流程)。"""
     try:
         entry = {
@@ -210,6 +301,9 @@ def _log_injection(message: str, kind: str, items: list, *, hit_score: float | N
             "msg": (message or "")[:200],
             "hit_score": round(hit_score, 3) if hit_score is not None else None,
             "items": [str(x)[:120] for x in items][:5],
+            "session_id": (session_id or "")[:64],   # wish-599c46bd · 按会话统计注入
+            "item_kind": (item_kind or "")[:16],     # playbook 记 "id" (新格式) · 旧日志空 (title)
+            "weak": [str(x)[:120] for x in (weak or [])][:5],   # wish-fec0e2f6 · 弱命中 pb id 列表
         }
         with open(_inject_log_path(), "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
@@ -217,37 +311,287 @@ def _log_injection(message: str, kind: str, items: list, *, hit_score: float | N
         pass
 
 
-def relevant_playbooks(message: str, *, limit: int = 2) -> str:
+# wish-88b4dcdc (墨言 02) · RIF 式抑制 (慢性干扰项降权)
+# 对齐 workers/playbooks.py 的 _SUPPRESS_* 阈值 · 这里只留注入侧消费用的 cutoff:
+# suppression >= 1.0 (≈ 注入 4 次从未 load) 的 pb 不再注入 · 避免"每次带出来、从不被用"的噪音
+_SUPPRESS_CUTOFF = 1.0
+
+
+def _update_suppression() -> dict:
+    """跑一轮抑制记账 · 返回本轮变更 {"bumped": [id...], "cleared": [id...]}。
+
+    只在注入日志有数据时有效 · 失败静默。
+    增量口径: 只统计自上次记账以来新增的注入 (时间戳落盘 data/runtime/suppression_last_run.ts)。
+    对"新增注入 ≥ _SUPPRESS_MIN_INJECT 且从未 load"的 pb 加一次 _SUPPRESS_LR ·
+    直到 suppression 到 _SUPPRESS_CUTOFF 不再注入 (收敛)。被 load 过的 pb 清零。
+    """
+    from workers.playbooks import bump_suppression, clear_suppression, _SUPPRESS_MIN_INJECT, _SUPPRESS_LR
+    bumped: list[str] = []
+    cleared: list[str] = []
+    try:
+        # 上次记账时间 (落盘 · 重启后接续 · 首次=纪元 0 → 全量统计一次可接受)
+        last_ts = ""
+        ts_file = ROOT / "data" / "runtime" / "suppression_last_run.ts"
+        try:
+            if ts_file.exists():
+                last_ts = ts_file.read_text(encoding="utf-8").strip()
+        except Exception:
+            pass
+        # ① 统计每个 pb 自上次记账以来的新增注入 (新格式 item_kind=id)
+        inject_cnt: dict[str, int] = {}
+        max_ts = last_ts
+        p = _inject_log_path()
+        if p.exists():
+            for line in p.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                if r.get("kind") != "playbook" or r.get("item_kind") != "id":
+                    continue
+                ts = r.get("ts", "")
+                if last_ts and ts and ts < last_ts:
+                    continue   # 旧注入不参与本轮 (增量口径)
+                if ts and ts > max_ts:
+                    max_ts = ts
+                for it in r.get("items", []) or []:
+                    if it:
+                        inject_cnt[str(it)] = inject_cnt.get(str(it), 0) + 1
+        # 记录本轮时间戳 (无论有没有注入 · 防止漏记导致下次全量重算)
+        if max_ts:
+            try:
+                ts_file.parent.mkdir(parents=True, exist_ok=True)
+                ts_file.write_text(max_ts, encoding="utf-8")
+            except Exception:
+                pass
+        if not inject_cnt:
+            return {"bumped": [], "cleared": []}
+        # ② 统计 load 过的 pb (inject_used.jsonl)
+        used_ids: set[str] = set()
+        up = ROOT / "data" / "runtime" / "inject_used.jsonl"
+        if up.exists():
+            for line in up.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    u = json.loads(line)
+                except Exception:
+                    continue
+                if u.get("playbook_id"):
+                    used_ids.add(str(u.get("playbook_id")))
+        # ③ 记账
+        for pid, cnt in inject_cnt.items():
+            if pid in used_ids:
+                # 被用过 = 证明有用 → 撤销抑制 (防误杀)
+                clear_suppression(pid)
+                cleared.append(pid)
+            elif cnt >= _SUPPRESS_MIN_INJECT:
+                # 已到 cutoff 不再加 · 避免无意义深层累积 (1.0 后已不注入)
+                cur = 0.0
+                try:
+                    from workers.playbooks import get_suppression as _get_supp
+                    cur = _get_supp(pid)
+                except Exception:
+                    pass
+                if cur < _SUPPRESS_CUTOFF:
+                    bump_suppression(pid, _SUPPRESS_LR)
+                    bumped.append(pid)
+    except Exception as e:
+        logger.debug("_update_suppression 失败: %s", e)
+    return {"bumped": bumped, "cleared": cleared}
+
+
+# 节流包装: daemon_api 每轮调 · 但记账只每 30 分钟最多跑一次 (有注入时才调到这里)
+_LAST_SUPPRESSION_TS = 0.0
+_SUPPRESSION_INTERVAL_SEC = 1800.0
+
+
+def try_update_suppression() -> dict:
+    """带节流的抑制记账入口 · daemon_api 每轮调用 · 30min 内只真跑一次。
+
+    返回本轮实际执行的结果 (节流未执行返回空 dict) · 失败静默。
+    """
+    global _LAST_SUPPRESSION_TS
+    now = time.time()
+    if now - _LAST_SUPPRESSION_TS < _SUPPRESSION_INTERVAL_SEC:
+        return {}
+    _LAST_SUPPRESSION_TS = now
+    return _update_suppression()
+
+
+def inject_stats(session_id: str = "", since_ts: str = "") -> str:
+    """注入命中率摘要 (wish-599c46bd · 墨言 wish-bf460f7b) · 只读 · 失败静默返回空串。
+
+    按 session_id (留空=全部) + since_ts (可选·UTC ISO 前缀·如 "2026-08-09") 过滤 inject_log.jsonl →
+    各 kind 注入次数 / score 区间 / playbook 注入→使用转化率 (join inject_used.jsonl)。
+    inject_used 由 extract_playbook load 时写入 (见 agent_tools/extract_playbook.py)。
+    转化率口径 (子代理审查 I1/I2): 只统计新格式 (item_kind=id) 的注入行 ·
+    且只算同 session 的 load 记录 · 且 load 时间 >= 注入时间。
+    返回 markdown 文本。
+    """
+    rows: list[dict] = []
+    try:
+        p = _inject_log_path()
+        if p.exists():
+            for line in p.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except Exception:
+                    continue
+    except Exception:
+        rows = []
+    if session_id:
+        rows = [r for r in rows if r.get("session_id") == session_id]
+    if since_ts:
+        rows = [r for r in rows if r.get("ts", "") >= since_ts]
+    if not rows:
+        return "inject_log 无匹配记录 (可能还没有带 session_id 的新日志)"
+    kinds: dict[str, list[dict]] = {}
+    for r in rows:
+        kinds.setdefault(r.get("kind", "?"), []).append(r)
+    lines = [f"注入命中率摘要 · session={session_id or '(全部)'} · 共 {len(rows)} 条"]
+    for k in ("playbook", "memory", "docs", "graph"):
+        rs = kinds.get(k)
+        if not rs:
+            continue
+        scores = [r.get("hit_score") for r in rs if r.get("hit_score") is not None]
+        score_s = f" · score {min(scores):.2f}~{max(scores):.2f}" if scores else ""
+        lines.append(f"- {k}: {len(rs)} 次{score_s}")
+    # playbook 注入→使用转化率 (注入后 load 才算转化·防"之前就 load 过"高估)
+    pb_inject_ts: dict[str, str] = {}
+    for r in kinds.get("playbook", []):
+        if r.get("item_kind") != "id":
+            continue   # I2 · 旧日志 items=title 会稀释分母 · 只统计新格式 (id)
+        ts = r.get("ts", "")
+        for it in r.get("items", []) or []:
+            if it:
+                pid = str(it)
+                if pid not in pb_inject_ts or ts < pb_inject_ts[pid]:
+                    pb_inject_ts[pid] = ts
+    used_ids: set[str] = set()
+    try:
+        up = ROOT / "data" / "runtime" / "inject_used.jsonl"
+        if up.exists():
+            for line in up.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    u = json.loads(line)
+                    pid = str(u.get("playbook_id", ""))
+                    if session_id and str(u.get("session_id", "")) != session_id:
+                        continue   # I1 · 只算同 session 的 load (旧记录无 session 时仅"全部"统计可见)
+                    if pid in pb_inject_ts and u.get("ts", "") >= pb_inject_ts[pid]:
+                        used_ids.add(pid)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    if pb_inject_ts:
+        rate = len(used_ids) / len(pb_inject_ts) * 100
+        lines.append(
+            f"- playbook 注入→使用: 注入 {len(pb_inject_ts)} 条 · 注入后 load {len(used_ids)} 条 · 转化率 {rate:.0f}%"
+        )
+    # wish-fec0e2f6 (墨言 03) · 三态分布: 强命中 / 弱命中 ([弱相关] 标注) 各多少条
+    try:
+        strong_n = weak_n = 0
+        for r in kinds.get("playbook", []):
+            if r.get("item_kind") != "id":
+                continue
+            wk = r.get("weak") or []
+            strong_n += max(0, len(r.get("items") or []) - len(wk))
+            weak_n += len(wk)
+        if strong_n or weak_n:
+            lines.append(f"  - 三态: 强命中 {strong_n} 条 · 弱命中([弱相关]) {weak_n} 条 · 弱占比 {weak_n/(strong_n+weak_n)*100:.0f}%")
+    except Exception:
+        pass
+    # wish-88b4dcdc (墨言 02) · 慢性干扰项清单 (抑制分最高的 top 5 · 数据驱动后续调权)
+    try:
+        from workers.playbooks import top_suppressed
+        supps = top_suppressed(5)
+        if supps:
+            lines.append("  - 慢性干扰项 (suppression top 5):")
+            for s in supps:
+                lines.append(f"    · {s['title'][:40]} · {s['suppression']:.1f}")
+    except Exception:
+        pass
+    return "\n".join(lines)
+
+
+def relevant_playbooks(message: str, *, limit: int = 2, session_id: str = "") -> str:
     """用户消息命中已有 playbook → 返回一段拼进 system 的提示;无匹配返回空串。
 
     主路径走 FTS5 (memory_index · jieba 分词 · 高召回·跟 recall_memory(scope='skill') 同源);
     FTS5 不可用退化到关键词匹配 (tag / 标题词)。
     目的: 把『下次类似任务自动想起 playbook』从 OPUS 自觉挪成 daemon 确定性注入 (堵断点 B)。
+    wish-599c46bd (墨言 wish-bf460f7b) · 重复注入抑制: 同一 session 10 分钟内已注入过的 playbook
+    不重复注入 (连续同类问题 = playbook 已在上下文里·再注入只是稀释)。session_id 同时进注入日志
+    供命中率统计。
     """
     msg = (message or "").strip()
-    if len(msg) < 4:
+    # wish-fec0e2f6 (墨言 03 思路自研) · 意图门槛: 纯应答/语气短消息不触发检索
+    # (下午实测: "改吧""可以""ok" 占弱+误差 51% · 无主题词可检索 · 检索=浪费 + 塞噪音)
+    if not _has_retrieval_intent(msg):
         return ""
 
     top: list[dict] = []
+    best_score: float | None = None   # I3 · playbook 注入记 score 区间 (FTS5 有 chunk.score)
+    content_map: dict[str, tuple[str, float]] = {}   # slug → (全文, 最负score) · 供弱标注 (wish-fec0e2f6)
     # 主路径 · FTS5 检索 skill 源 · section = "<slug>:<task_type>"
     try:
         from workers.memory_index import search as _fts_search
+        from workers.memory_index import _query_real_terms as _qrt
+        # wish-fec0e2f6 · 泛词剔除: 高频泛词 (应用/做/帮我/看看) 不参与检索 ·
+        # 防"翻译应用帮我做一个"因"应用"撞上无关 playbook (min_score 放宽后的副作用)
+        _q = " ".join(t for t in _qrt(msg) if t not in _PB_GENERIC_WORDS) or msg
         slug_map = _index_by_slug()
         seen: set[str] = set()
         for chunk in _fts_search(
-            msg, top_k=4, scope="skill", context_window=2000,
-            min_score=_PB_INJECT_MIN_SCORE,
+            _q, top_k=4, scope="skill",
+            # R1-P1 (墨言三审) · 候选池不该被 content 窗口截断: 这里只消费 section/score
+            # 不看 content · 2000 会把超长 playbook 挤出候选池 (实测 2000→3 条 · 20000→4 条完整)
+            context_window=20000,
+            # wish-fec0e2f6 (墨言 03) · min_score 从硬门槛降为防底噪 (-10 → -1.0) ·
+            # bm25 对高频词天然低分 (记忆/系统/三审三修 在 44 条 playbook 普遍出现 → IDF 低 ·
+            # score -3 也强相关) · 硬门槛会误杀真命中 ("记忆系统晋升" -3.06 被 -10 挡掉)
+            # 实词重叠交给 min_overlap=2 把关 — overlap 比 bm25 更可靠的语义信号
+            min_score=-1.0,
+            min_overlap=2,
         ):
+            _sc = getattr(chunk, "score", None)
+            if _sc is not None and (best_score is None or _sc < best_score):
+                best_score = _sc
             slug = (getattr(chunk, "section", "") or "").split(":", 1)[0]
             if not slug or slug in seen:
                 continue
             seen.add(slug)
+            # wish-fec0e2f6 (墨言 03) · content_map 存 (全文, 最负score) · 供弱标注
+            # 同一 slug 多个 chunk 时存最负 (最强) 的 score · 防"先强后弱"误标弱
+            _prev = content_map.get(slug)
+            if _prev is None or (_sc is not None and _sc < _prev[1]):
+                content_map[slug] = (getattr(chunk, "content", "") or "", _sc if _sc is not None else 0.0)
             meta = slug_map.get(slug)
             if meta is None:
                 # 0.8.8 续 · 注入收敛: FTS5 命中但 list_playbooks 查不到 = 已退役/已删 · 不注入
                 # (否则 retired playbook 在 FTS5 还有索引 → fallback 用 slug 当 title 照样注入)
                 logger.info("relevant_playbooks 跳过已退役/已删 playbook: %s", slug)
                 continue
+            # wish-88b4dcdc (墨言 02) · RIF 抑制: 抑制分过高的慢性干扰项不占注入名额
+            # (注入 ≥2 次从未 load 的 pb · 见 playbooks.bump_suppression 记账)
+            try:
+                from workers.playbooks import get_suppression as _get_supp
+                if _get_supp(meta.get("id", "")) >= _SUPPRESS_CUTOFF:
+                    logger.info("relevant_playbooks 跳过慢性干扰项 (suppression≥%.1f): %s", _SUPPRESS_CUTOFF, slug)
+                    continue
+            except Exception:
+                pass   # 抑制查询失败不阻断注入主流程
             top.append(meta)
             if len(top) >= limit:
                 break
@@ -256,17 +600,72 @@ def relevant_playbooks(message: str, *, limit: int = 2) -> str:
 
     if not top:
         top = _keyword_playbooks(msg, limit)
+        # 终审 N-6 · fallback 路径也做抑制过滤 · 口径与主路径一致
+        if top:
+            try:
+                from workers.playbooks import get_suppression as _get_supp
+                top = [pb for pb in top if _get_supp(pb.get("id", "")) < _SUPPRESS_CUTOFF]
+            except Exception:
+                pass
     if not top:
+        return ""
+
+    # wish-599c46bd · 重复注入抑制 (10 分钟冷却 · 内存态 · 重启即重置可接受)
+    fresh: list[dict] = []
+    if session_id:
+        with _PB_LOCK:   # M6 · 多 session 并发时 setdefault/检查/extend 串行
+            if len(_PB_INJECTED_RECENT) > 500:
+                _PB_INJECTED_RECENT.clear()   # M5 · key 上限清理 · 防长跑无界增长
+            _recent = _PB_INJECTED_RECENT.setdefault(session_id, [])
+            now = datetime.now(timezone.utc).timestamp()
+            _recent[:] = [(s, t) for s, t in _recent if now - t < _PB_INJECT_COOLDOWN_SEC]
+            for pb in top:
+                slug = pb.get("slug") or pb.get("id") or ""
+                if slug in {s for s, _ in _recent}:
+                    continue
+                fresh.append(pb)
+            if fresh:
+                _recent.extend((pb.get("slug") or pb.get("id") or "", now) for pb in fresh)
+    else:
+        fresh = top
+    if not fresh:
         return ""
 
     lines = [
         "\n\n=== 相关 playbook · daemon 自动检索 (之前沉淀过类似任务·不要复述这一段) ===\n",
-        "下面是你 / 前几根毛沉淀的、跟这次请求命中的操作手册。",
-        "**先扫一眼 · 命中就 `extract_playbook(action=load, playbook_id=...)` 看全文照着做** · 别从零摸索:\n",
+        # wish-3f1068e8 (墨言 04) · 措辞行动化: 被动"先扫一眼" → 硬推"命中即相关·加载全文"
+        # 下午实测转化率 0% 根因 = 模型觉得"我自己能干"不 load · 改措辞推它真的看全文
+        "下面是跟你这次请求命中的操作手册。 **命中即相关 · `extract_playbook(action=load, playbook_id=...)` 加载全文照着做** · 别只凭摘要就开干 (摘要会漏关键步骤/坑)。",
+        "加载全文只需一次工具调用 · 比从零摸索省得多:\n",
     ]
-    for pb in top:
-        lines.append(f"- `{pb.get('id', '')}` · {pb.get('title', '')} (复用过 {pb.get('used_count', 0)} 次)")
-    _log_injection(msg, "playbook", [pb.get("title", "") for pb in top])
+    weak_ids: list[str] = []
+    for pb in fresh:
+        # wish-3f1068e8 · debug 类注入行附加"前置检查清单"提示 (ZORO 实证: 强制触发+要求证据)
+        # 引导模型看全文里的环境门/最小复现/诊断命令 · 而非只看摘要就自己从头调
+        debug_s = ""
+        if pb.get("task_type") in _PB_DEBUG_TYPES:
+            debug_s = " · [排查类 · load 后先走前置检查清单: 环境门 → 最小复现 → 诊断命令]"
+        # wish-fec0e2f6 (墨言 03) · 三态分级: 强命中正常注入 · 弱命中 (score 浅 且 重叠少) 标 [弱相关]
+        # (只标注不删除 · 模型看到"为什么弱"自行判断 · 不误杀真命中)
+        _cm = content_map.get(pb.get("slug", ""))
+        _content, pb_score = (_cm if _cm else ("", 0.0))
+        _overlap_n = 0
+        try:
+            from workers.memory_index import _query_real_terms, _overlap_count
+            _terms = _query_real_terms(msg)
+            _hay = f"{pb.get('title', '')} {_content}"
+            _overlap_n = _overlap_count(_terms, _hay)
+        except Exception:
+            _overlap_n = 2   # 退化: 重叠计数失败按强命中处理 (宁不标弱·不误标弱)
+        weak_s = ""
+        if pb_score > _PB_WEAK_SCORE_MAX and _overlap_n < 2:
+            weak_s = " · **[弱相关 · 相关性弱 · 不确定是否适用]**"
+            weak_ids.append(pb.get("id", ""))
+        lines.append(
+            f"- `{pb.get('id', '')}` · {pb.get('title', '')} (复用过 {pb.get('used_count', 0)} 次){debug_s}{weak_s}"
+        )
+    _log_injection(msg, "playbook", [pb.get("id", "") for pb in fresh],
+                   hit_score=best_score, session_id=session_id, item_kind="id", weak=weak_ids)
     return "\n".join(lines)
 
 
@@ -287,7 +686,7 @@ _MEM_INJECT_MIN_MSG_LEN = 8     # 消息太短不触发 (画像注入比 playboo
 _MEM_SNIPPET_CHARS = 180
 
 
-def relevant_memories(message: str, *, limit: int = _MEM_INJECT_LIMIT) -> str:
+def relevant_memories(message: str, *, limit: int = _MEM_INJECT_LIMIT, session_id: str = "") -> str:
     """用户消息强命中 BRO 画像 → 返回一段拼进 system 的背景提示;无强命中返回空串。
 
     保守版: 只搜 scope=bro · 卡 bm25 高门槛 (_MEM_INJECT_MIN_SCORE) · 最多 limit 条 ·
@@ -327,7 +726,8 @@ def relevant_memories(message: str, *, limit: int = _MEM_INJECT_LIMIT) -> str:
         pass
     _log_injection(msg, "memory",
                    [(getattr(c, "section", "") or "")[:60] for c in top],
-                   hit_score=getattr(top[0], "score", None) if top else None)
+                   hit_score=getattr(top[0], "score", None) if top else None,
+                   session_id=session_id, item_kind="")
     return "\n".join(lines)
 
 
@@ -344,7 +744,7 @@ _DOC_SNIPPET_CHARS = 220
 _DOC_CATALOG_MAX = 24            # 目录最多列几个标题·防知识库很大时炸 token
 
 
-def relevant_docs(message: str) -> str:
+def relevant_docs(message: str, *, session_id: str = "") -> str:
     """私有知识库自动注入:非空 → 告知 OPUS 有哪些资料 + 本轮命中片段·引导查证再答并 cite。
 
     catalog(标题目录)每轮都给·让 OPUS 知道『用户有这些资料·可查』;命中片段只在
@@ -411,7 +811,7 @@ def relevant_docs(message: str) -> str:
         pass
     _log_injection(msg, "docs",
                    [d.get("title", "") for d in docs[:5]],
-                   hit_score=None)
+                   hit_score=None, session_id=session_id, item_kind="")
     return "\n".join(lines)
 
 

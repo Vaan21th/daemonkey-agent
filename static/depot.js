@@ -23,6 +23,7 @@ const DEPOT_TABS = [
   { id: 'diary',     label: 'Daemonkey 日记', icon: 'ri-brain-fill' },
   { id: 'wishlist',  label: 'Daemonkey 心愿', icon: 'ri-lightbulb-fill' },
   { id: 'playbooks', label: '技能库',    icon: 'ri-tools-fill' },
+  { id: 'reviews',   label: '月度复盘',  icon: 'ri-calendar-check-fill' },
   { id: 'sinks',     label: '沉淀位',    icon: 'ri-archive-drawer-fill' },
 ];
 let _depotActive = 'cognition';
@@ -486,42 +487,15 @@ async function _pbPreview(id) {
   } catch (e) { alert('网络出错: ' + e.message); }
 }
 
-// 复用知识库预览弹窗的样式 (.kb-modal-*) · 只是 meta 行换成 playbook 语义
+// 复用统一弹框渲染器 (chat.js _showPreviewModal · 卷八十一续 · 不再手写骨架)
 function _showPbModal(data) {
   const meta = (data && data.meta) || {};
   const text = (data && data.content) || '';
-  let host = document.getElementById('kbModalHost');
-  if (!host) {
-    host = document.createElement('div');
-    host.id = 'kbModalHost';
-    host.className = 'kb-modal-host';
-    document.body.appendChild(host);
-  }
-  const tags = (meta.tags || []).map(t => `<span class="rc-src-badge">#${escHtml(t)}</span>`).join(' ');
   const bodyHtml = (typeof mdRender === 'function')
     ? mdRender(text) : ('<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>');
   const metaLine = [meta.task_type, meta.used_count ? ('用过 ' + meta.used_count + ' 次') : '',
     (meta.created_at || '').slice(0, 10)].filter(Boolean).join(' · ');
-  host.innerHTML = `
-    <div class="kb-modal-mask"></div>
-    <div class="kb-modal" role="dialog" aria-modal="true">
-      <div class="kb-modal-head">
-        <span class="kb-modal-title">${escHtml(data.title || meta.title || '技能')}</span>
-        <span class="kb-modal-meta">${escHtml(metaLine)}</span>
-        <button class="kb-modal-close" title="关闭 (Esc)">✕</button>
-      </div>
-      ${tags ? `<div class="kb-modal-tags">${tags}</div>` : ''}
-      <div class="kb-modal-body markdown-body">${bodyHtml}</div>
-    </div>`;
-  host.classList.add('show');
-  const close = () => {
-    host.classList.remove('show');
-    document.removeEventListener('keydown', onKey);
-  };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
-  document.addEventListener('keydown', onKey);
-  host.querySelector('.kb-modal-close').onclick = close;
-  host.querySelector('.kb-modal-mask').onclick = close;
+  _showPreviewModal({ title: data.title || meta.title || '技能', metaLine, bodyHtml, tags: meta.tags || [] });
 }
 
 async function _pbAction(url, body) {
@@ -700,6 +674,87 @@ function renderSinks(data) {
       <div class="dash-head-sub">${items.length} 个文档 · 点卡片预览或本机打开</div>
     </div>
     <div class="sink-panel">${sectionsHtml}</div>`;
+}
+
+// ── 月度复盘 (独立 tab · 2026-08-11 用户 拍板 · 走 /reviews 端点 · 样式对齐沉淀位卡片) ──
+function renderReviews(data) {
+  if (!data || data.error || data.ok === false) {
+    $dashView.innerHTML = `<div class="dash-head"><h2><i class="ri-calendar-check-fill"></i> 月度复盘</h2></div>
+      <div class="dash-empty">${escHtml((data && data.error) || '还没有月度复盘 · 跟 Daemonkey 说「跑一份月度复盘」')}</div>`;
+    return;
+  }
+  const items = data.items || [];
+  const sorted = items.slice().sort((a, b) => (b.period_end || '').localeCompare(a.period_end || ''));
+  let html = `
+    <div class="dash-head">
+      <h2><i class="ri-calendar-check-fill"></i> 月度复盘</h2>
+      <div class="dash-head-sub">${sorted.length} 份 · 周期从近到远 · 点卡片预览 / 下载 / 打开文件夹</div>
+      <button onclick="loadDashboard('reviews', {silent:true})">刷新</button>
+    </div>
+    <div class="sink-panel">`;
+  if (!sorted.length) {
+    html += `<div class="dash-empty">还没有月度复盘 · 跟 Daemonkey 说「跑一份月度复盘」</div></div>`;
+    $dashView.innerHTML = html;
+    return;
+  }
+  const statusMeta = {
+    final:  { label: '已定稿', cls: 'review-final',  icon: 'ri-check-double-fill' },
+    draft:  { label: '草稿',   cls: 'review-draft',  icon: 'ri-file-edit-fill' },
+  };
+  for (const it of sorted) {
+    const st = statusMeta[it.status] || { label: it.status || '未知', cls: '', icon: 'ri-file-fill' };
+    const sizeStr = it.size_bytes > 102400 ? (it.size_bytes / 1024).toFixed(0) + ' KB' : (it.size_bytes / 1024).toFixed(1) + ' KB';
+    html += `
+      <div class="sink-card review-card ${st.cls}">
+        <span class="sink-card-label"><i class="${st.icon}"></i> ${escHtml(it.period_end || it.filename)}</span>
+        <span class="sink-card-role review-status ${st.cls}">${st.label}</span>
+        <span class="sink-card-meta">${sizeStr} · ${escHtml((it.mtime || '').slice(0, 10))}</span>
+        <span class="sink-card-actions">
+          <button class="wb" onclick="reviewPreview('${escHtml(it.filename)}')"><i class="ri-eye-fill"></i> 预览</button>
+          <button class="wb" onclick="reviewDownload('${escHtml(it.filename)}')"><i class="ri-download-fill"></i> 下载</button>
+          <button class="wb" onclick="reviewReveal('${escHtml(it.filename)}')"><i class="ri-external-link-fill"></i> 打开文件夹</button>
+        </span>
+      </div>`;
+  }
+  html += `</div>`;
+  $dashView.innerHTML = html;
+}
+
+// 月度复盘预览 · 复用沉淀位通用 md 弹框骨架 (_spmEl)
+async function reviewPreview(filename) {
+  if (!_spmEl) { _spmEl = document.createElement('div'); _spmEl.id = 'sinkPreviewModal'; _spmEl.hidden = true;
+    _spmEl.innerHTML = `<div class="spm-box"><div class="spm-head"><span class="spm-title"></span><div class="spm-head-actions"></div></div><div class="spm-body"></div></div>`;
+    _spmEl.addEventListener('click', e => { if (e.target === _spmEl) _spmEl.hidden = true; });
+    document.body.appendChild(_spmEl);
+  }
+  const box = _spmEl.querySelector('.spm-box');
+  const titleEl = box.querySelector('.spm-title');
+  const actionsEl = box.querySelector('.spm-head-actions');
+  const bodyEl = box.querySelector('.spm-body');
+  titleEl.textContent = '加载中…'; actionsEl.innerHTML = ''; bodyEl.innerHTML = '<div class="dash-empty">加载中…</div>';
+  _spmEl.hidden = false;
+  try {
+    const r = await fetch(`/reviews/preview/${encodeURIComponent(filename)}`, { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    titleEl.textContent = '月度复盘 · ' + filename;
+    bodyEl.innerHTML = (typeof mdRender === 'function') ? mdRender(data.markdown || '') : escHtml((data.markdown || '').slice(0, 4000));
+    actionsEl.innerHTML = `<a class="wb" href="/reviews/file/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}" target="_blank"><i class="ri-external-link-fill"></i> 新标签打开</a>`;
+  } catch (e) { bodyEl.innerHTML = `<div class="dash-empty">加载失败: ${escHtml(e.message)}</div>`; }
+}
+
+// 月度复盘下载 · 浏览器系统默认应用打开 (docx/md)
+function reviewDownload(filename) {
+  window.open(`/reviews/file/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`, '_blank');
+}
+
+// 月度复盘打开所在文件夹
+async function reviewReveal(filename) {
+  try {
+    const r = await fetch(`/reviews/file/${encodeURIComponent(filename)}?reveal=1`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
+    const data = await r.json();
+    if (!data.ok) alert('打开文件夹失败 · ' + (data.error || 'unknown'));
+  } catch (e) { alert('网络出错: ' + e.message); }
 }
 
 function renderSinkCard(it) {

@@ -71,6 +71,39 @@ def _resolve(path_str: str) -> Path:
     return p.resolve()
 
 
+def _detect_eol(path: Path, content: str) -> str:
+    """检测目标换行风格 (wish-21c3ec8b · 换行保真)。
+
+    已存在文件 → 跟随原文件的换行风格 (CRLF 文件写回 CRLF · LF 文件写回 LF)；
+    新建文件 → 用内容自带的换行 (content 里 \r\n 多则 CRLF · 否则 LF)。
+
+    返回 '\r\n' 或 '\n'。
+    """
+    if path.exists():
+        try:
+            with open(path, "rb") as f:
+                raw = f.read(65536)
+            if b"\r\n" in raw:
+                return "\r\n"
+        except Exception:
+            pass
+    crlf = content.count("\r\n")
+    lf = content.count("\n") - crlf
+    return "\r\n" if crlf > lf else "\n"
+
+
+def _normalize_eol(content: str, eol: str) -> str:
+    """把内容统一成目标换行 (wish-21c3ec8b)。
+
+    - 先把所有 \r\n / \r 统一成 \n
+    - 再按目标 eol 替换 (目标是 \n 就不动 · 目标是 \r\n 就全转)
+    """
+    norm = content.replace("\r\n", "\n").replace("\r", "\n")
+    if eol == "\r\n":
+        norm = norm.replace("\n", "\r\n")
+    return norm
+
+
 def _is_guard_target(path: Path) -> bool:
     """命中这些位置一律 GUARD。
 
@@ -281,21 +314,27 @@ def _run(args: dict) -> ToolResult:
             return ToolResult(ok=False, output="", error=_lock_note or "编辑锁冲突")
 
     try:
+        # wish-21c3ec8b · 换行保真: 先定目标 eol (已存在文件跟随原风格) · 内容归一化 · newline="" 禁止 Python 转换
+        _eol = _detect_eol(path, content)
+        _payload = _normalize_eol(content, _eol)
         if mode == "append":
-            with path.open("a", encoding="utf-8") as f:
-                f.write(content)
+            with path.open("a", encoding="utf-8", newline="") as f:
+                f.write(_payload)
         else:
-            path.write_text(content, encoding="utf-8")
+            with path.open("w", encoding="utf-8", newline="") as f:
+                f.write(_payload)
     except Exception as e:
         return ToolResult(ok=False, output="", error=f"{type(e).__name__}: {e}")
 
     try:
-        written = path.read_text(encoding="utf-8")
+        # wish-21c3ec8b · 校验也用 newline="" 保留原始字节 · 换行差异不再被归一化掩盖
+        with open(path, encoding="utf-8", newline="") as f:
+            written = f.read()
     except Exception as e:
         rolled = False
         if can_rollback and old_content is not None:
             try:
-                path.write_text(old_content, encoding="utf-8")
+                path.write_text(old_content, encoding="utf-8", newline="")
                 rolled = True
             except Exception:
                 pass
@@ -310,14 +349,14 @@ def _run(args: dict) -> ToolResult:
 
     if mode == "append":
         mismatch_detail = (
-            f"appended {len(content)} chars but file does not end with them"
-            if not written.endswith(content)
+            f"appended {len(_payload)} chars but file does not end with them"
+            if not written.endswith(_payload)
             else ""
         )
     else:
         mismatch_detail = (
             f"expected {len(content)} chars exact match but got {len(written)} chars on disk"
-            if written != content
+            if written != _payload
             else ""
         )
 
@@ -325,7 +364,7 @@ def _run(args: dict) -> ToolResult:
         rolled = False
         if can_rollback and old_content is not None:
             try:
-                path.write_text(old_content, encoding="utf-8")
+                path.write_text(old_content, encoding="utf-8", newline="")
                 rolled = True
             except Exception:
                 pass

@@ -1214,8 +1214,7 @@ header {
 .tl-round {
   align-self: stretch;
   margin: 6px 0;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: none; border-radius: 10px;
   background: rgba(155, 89, 182, 0.05);
   overflow: hidden;
   /* 2026-07-28 用户 · 入场质感跟聊天气泡一致 · 轻微上浮出现 */
@@ -2479,6 +2478,142 @@ header {
 .attach-doc-card.用户-attach-doc i { font-size: 20px; }
 .attach-doc-card.用户-attach-doc .doc-name { max-width: none; font-size: 12px; }
 
+/* 卷八十一 · C 方案 · 流内嵌文档卡片 (Daemonkey 产出的 docx/md/pdf 等 · 替代裸链接) */
+.md-doc-card {
+  display: inline-flex; align-items: center; gap: 10px;
+  max-width: 100%; margin: 6px 0;
+  padding: 8px 10px;
+  border: none; border-radius: 10px;
+  background: transparent;
+  text-decoration: none; color: var(--text);
+  transition: background .15s;
+  vertical-align: middle;
+  cursor: default;
+}
+.md-doc-card:hover { background: var(--bg3); }
+.md-doc-card .mdc-ic { font-size: 20px; flex-shrink: 0; opacity: .9; }
+.md-doc-card .mdc-body { display: flex; flex-direction: column; min-width: 0; }
+.md-doc-card .mdc-name {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px;
+}
+.md-doc-card .mdc-meta { font-size: 10px; color: var(--dim); margin-top: 1px; }
+.md-doc-card .mdc-open { margin-left: auto; color: var(--dim); font-size: 13px; flex-shrink: 0; }
+.md-doc-card:hover .mdc-open { color: var(--Daemonkey); }
+
+/* 卷八十一 · 文档卡按类型着色 (Remix 图标上色) */
+.mdc-ic i, .dvi-ic i { font-size: inherit; }
+.md-doc-card[data-ext="pdf"] .mdc-ic i { color: #e05d5d; }
+.md-doc-card[data-ext="docx"] .mdc-ic i, .md-doc-card[data-ext="doc"] .mdc-ic i { color: #4a8fe0; }
+.md-doc-card[data-ext="xlsx"] .mdc-ic i, .md-doc-card[data-ext="xls"] .mdc-ic i { color: #4aa86b; }
+.md-doc-card[data-ext="pptx"] .mdc-ic i, .md-doc-card[data-ext="ppt"] .mdc-ic i { color: #e07b3a; }
+.docs-view-item[data-ext="pdf"] .dvi-ic i { color: #e05d5d; }
+.docs-view-item[data-ext="docx"] .dvi-ic i, .docs-view-item[data-ext="doc"] .dvi-ic i { color: #4a8fe0; }
+.docs-view-item[data-ext="xlsx"] .dvi-ic i, .docs-view-item[data-ext="xls"] .dvi-ic i { color: #4aa86b; }
+.docs-view-item[data-ext="pptx"] .dvi-ic i, .docs-view-item[data-ext="ppt"] .dvi-ic i { color: #e07b3a; }
+
+/* 卷八十一 · A 方案 · 本会话文档聚合视图 */
+.chat-docs-btn {
+  background: transparent; border: none; color: var(--dim);
+  font-size: 15px; cursor: pointer; padding: 4px 6px; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color .15s, background .15s;
+}
+.chat-docs-btn:hover { color: var(--Daemonkey); }  /* 卷八十一 · hover 只变色 · 不要背景底框 */
+.chat-docs-btn.active { color: var(--Daemonkey); }  /* 选中态同样只变色 */
+
+.docs-view {
+  flex: 1; min-height: 0; z-index: 20;
+  background: var(--bg); flex-direction: column;
+  display: flex; /* closeDocsView 时内联 display:none 覆盖 */
+}
+.docs-view-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg2); flex-shrink: 0;
+}
+.docs-view-title { font-size: 14px; font-weight: 700; color: var(--text); }
+.docs-view-title i { color: var(--Daemonkey); margin-right: 4px; }
+.docs-view-sub { font-size: 11px; color: var(--dim); }
+.docs-view-close {
+  margin-left: auto; background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text); border-radius: 8px; padding: 5px 12px; font-size: 12px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+  transition: border-color .15s;
+}
+.docs-view-close:hover { border-color: var(--Daemonkey); }
+.docs-view-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+.docs-view-loading, .docs-view-empty {
+  color: var(--dim); font-size: 13px; text-align: center;
+  padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.docs-view-empty i { color: var(--dim); }
+.docs-view-hint { font-size: 11px; color: var(--muted); }
+.docs-sec-title {
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em;
+  margin: 14px 4px 8px; display: flex; align-items: center; gap: 6px;
+}
+.docs-sec-title:first-child { margin-top: 0; }
+.docs-sec-title i { color: var(--Daemonkey); }
+.docs-view-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px; margin-bottom: 6px;
+  background: transparent;
+  border: none; border-radius: 10px;
+  text-decoration: none; color: var(--text);
+  transition: background .15s;
+  cursor: default;
+}
+.docs-view-item:hover { background: var(--bg3); }
+.docs-view-item .dvi-ic { font-size: 22px; flex-shrink: 0; opacity: .9; }
+.docs-view-item .dvi-body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.docs-view-item .dvi-name {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.docs-view-item .dvi-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
+.docs-view-item .dvi-open { color: var(--dim); font-size: 15px; flex-shrink: 0; }
+.docs-view-item:hover .dvi-open { color: var(--Daemonkey); }
+
+/* 卷八十一 · 产物卡片操作按钮 (预览 / 应用打开) · CSS 变量 → 皮肤换色自适应 */
+.docs-view-item { cursor: default; }
+.docs-view-item .dvi-actions {
+  display: flex; gap: 6px; flex-shrink: 0; margin-left: 8px;
+}
+.dvi-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px;
+  font-size: 11px; font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text);
+  cursor: pointer;
+  transition: all .15s ease;
+  white-space: nowrap;
+}
+.dvi-btn i { font-size: 13px; color: var(--dim); transition: color .15s; }
+.dvi-btn:hover { border-color: var(--Daemonkey); color: var(--Daemonkey); background: var(--Daemonkey-soft); }
+.dvi-btn:hover i { color: var(--Daemonkey); }
+
+/* 消息流内嵌文档卡片的按钮 */
+.mdc-actions { display: flex; gap: 6px; margin-top: 6px; }
+.mdc-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px;
+  font-size: 10px; font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg2);
+  color: var(--text);
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.mdc-btn i { font-size: 11px; color: var(--dim); }
+.mdc-btn:hover { border-color: var(--Daemonkey); color: var(--Daemonkey); background: var(--Daemonkey-soft); }
+.mdc-btn:hover i { color: var(--Daemonkey); }
+
 /* wish-7c579a20 · 长会话渲染性能: 屏外消息跳过 layout/paint
  * (用户 反馈: 展开折叠后整个窗口滚动+输入持续卡顿 · 几万字可见文本每次重排重绘太贵)
  * Chromium 标准做法 (Discord/Slack 同款) · auto = 渲染过的记住真实高度 · 未渲染按 90px 估 */
@@ -3165,18 +3300,17 @@ header {
 
 .drawer {
   /* 卷三十一补丁 · 历史会话抽屉改从右侧弹出 · 跟 chat-pane 同侧 · 减少视线跨度 */
+  /* 卷八十一 · 扁平化对齐产物视图 · 去 border/阴影 · 纯层次 */
   position: fixed;
   top: 0; right: 0; bottom: 0;
   width: 85%;
   max-width: 360px;
   background: var(--bg2);
-  border-left: 1px solid var(--border);
   transform: translateX(100%);
   transition: transform 0.22s ease;
   z-index: 50;
   display: flex; flex-direction: column;
   padding-top: env(safe-area-inset-top);
-  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.35);
 }
 .drawer.open { transform: translateX(0); }
 .drawer-backdrop {
@@ -3191,7 +3325,6 @@ header {
 .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
 .drawer-head {
   padding: 14px 16px;
-  border-bottom: 1px solid var(--border);
   display: flex; justify-content: space-between; align-items: center;
 }
 .drawer-head h2 { margin: 0; font-size: 14px; color: var(--Daemonkey); }
@@ -3210,6 +3343,19 @@ header {
   overflow-y: auto;
   padding: 8px;
 }
+.drawer-loadmore {
+  padding: 10px;
+  margin: 6px 0 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--dim);
+  border-radius: 8px;
+  cursor: pointer;
+  background: transparent;
+  transition: color .15s, background .15s;
+  user-select: none;
+}
+.drawer-loadmore:hover { color: var(--Daemonkey); background: var(--bg3); }
 .drawer-empty {
   color: var(--dim2);
   text-align: center;
@@ -3220,13 +3366,16 @@ header {
   padding: 10px 12px 8px 12px;
   border-radius: 8px;
   cursor: pointer;
-  border: 1px solid transparent;
   margin-bottom: 4px;
   display: flex; flex-direction: column; gap: 3px;
   position: relative;
 }
 .session-item:hover { background: var(--bg3); }
-.session-item.active { background: var(--bg3); border-color: var(--Daemonkey); }
+.session-item.active {
+  background: var(--Daemonkey-soft);
+  border-left: 2px solid var(--Daemonkey);
+  padding-left: 10px;
+}
 .session-item.pinned {
   /* 置顶的 · 左边贴一根金色细条 */
   border-left: 2px solid #ffd166;
@@ -3696,19 +3845,19 @@ header {
 /* 卷二十九 · chat-pane 顶部三件套：☰ 历史 / 中间会话名 / + 新建 */
 .chat-history-btn {
   flex: 0 0 auto;
-  background: var(--bg3);
-  border: 1px solid var(--border);
+  background: transparent;  /* 卷八十一 · 去外框 · 跟 📄 产物按钮扁平一致 */
+  border: none;
   color: var(--dim);
   border-radius: 8px;
-  padding: 6px 10px;
-  font-size: 14px;
+  padding: 4px 6px;
+  font-size: 15px;
   cursor: pointer;
   font-family: inherit;
-  transition: border-color 0.15s, color 0.15s;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: color 0.15s, background 0.15s;
 }
 .chat-history-btn:hover {
-  border-color: var(--Daemonkey);
-  color: var(--Daemonkey);
+  color: var(--Daemonkey);  /* 卷八十一 · hover 只变色 · 不要背景底框 */
 }
 .chat-session-name {
   flex: 1;
@@ -4065,6 +4214,20 @@ header {
 .kb-modal-body {
   padding: 16px 20px; overflow-y: auto; line-height: 1.7;
   color: var(--text); font-size: 14px;
+}
+/* 卷八十一续 · 统一预览弹框 · 媒体/PDF 内嵌 (raw 模式: 居中 + 自适应) */
+.kb-modal-body.kb-modal-raw {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-height: 120px;
+}
+.kb-modal-raw .pv-img {
+  max-width: 100%; max-height: 68vh; object-fit: contain; border-radius: 8px;
+}
+.kb-modal-raw .pv-media {
+  max-width: 100%; max-height: 68vh; border-radius: 8px; background: #000;
+}
+.kb-modal-raw .pv-pdf {
+  width: min(900px, 86vw); height: 70vh; border: none; border-radius: 8px; background: #fff;
 }
 /* 知识库 · 文件夹分组 */
 .kb-folders { display: flex; flex-direction: column; gap: 10px; }
@@ -9339,4 +9502,82 @@ a.bi-sig-title:hover { color: var(--Daemonkey); text-decoration: underline; }
   border: none;
   font-weight: 600;
   cursor: pointer;
+}
+
+/* ========== 提问轨道（Message Index Rail）· 社区贡献 · 2026-08-10 ==========
+   右侧一列集中连在一起的标记 · 只列用户消息（全部）
+   点击标记 → 平滑滚动定位到对应消息 · 悬停 → 预览该消息文字（截断 ~12 字）
+   滚动聊天区 → 当前可见消息对应标记高亮 · 主题色走 --Daemonkey 系 (铁律 10) */
+.msg-rail {
+  position: fixed;          /* 2026-08-10 修复 v4: 视口定位 · 不被 .chat-pane overflow:hidden 裁掉 */
+  right: 5px;               /* JS _repositionRail 会覆盖 (随消息区右缘走) */
+  top: 120px;               /* JS _repositionRail 会覆盖 */
+  width: auto !important;   /* 抗父容器通配撑宽规则（如 .chat-pane > * { width:100% }）→ 否则标记居中 */
+  max-width: none !important;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;    /* 所有条子右边缘齐平 */
+  justify-content: flex-start;
+  gap: 6px; /* v8 顾问方案 C: 8→6px · 相同高度内可见刻度更多 */
+  padding: 8px 1px;
+  pointer-events: auto;
+  /* 2026-08-10 修复 v3: 消息多时 (200+ 提问) rail 总高超 maxHeight → 内容被截断看不见 ·
+     加内部滚动 · 轨道自己可滚 · 不丢刻度 */
+  overflow-y: auto;
+  scrollbar-width: none;    /* 隐藏滚动条 · 视觉干净 */
+}
+.msg-rail::-webkit-scrollbar { display: none; }
+.rail-mark {
+  /* width 由 JS 统一设置（磁性拉伸用 transform scaleX） */
+  height: 4px;              /* v8 顾问方案 C: 3→4px 加粗 */
+  border: none;
+  border-radius: 2px;
+  padding: 0;
+  background: var(--Daemonkey, #b794f6);   /* v8 顾问方案 B: --Daemonkey-dim 暗紫 → --Daemonkey 亮紫 · 深紫黑底上对比够 */
+  cursor: pointer;
+  transform-origin: right; /* 磁性拉伸向右伸长 */
+  transition: width 0.16s ease, height 0.16s ease, transform 0.16s ease, opacity 0.12s ease, background 0.12s ease;
+}
+.rail-mark:hover {
+  width: 52px !important;   /* 悬停统一展开到最长（抗 JS inline width） */
+  height: 4.5px !important;
+  opacity: 1 !important;
+  background: var(--Daemonkey, #b794f6);
+  transform: scaleX(1) !important; /* hover 时磁性让位 */
+}
+.rail-mark.active {
+  opacity: 1 !important;
+  background: var(--Daemonkey, #b794f6);
+  box-shadow: 0 0 5px var(--Daemonkey, #b794f6); /* v8 顾问方案 D: 紫晕微光 · 当前位置一眼可见 */
+}
+.rail-mark:focus-visible {
+  outline: 2px solid var(--Daemonkey, #b794f6);
+  outline-offset: 2px;
+}
+.rail-tooltip {
+  position: fixed;
+  z-index: 100;
+  width: 220px;               /* 固定宽度 · 不再靠内容撑 (内容短时不会窄成一条) */
+  max-width: 60vw;
+  background: rgba(22, 22, 30, 0.95);
+  color: #eee;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  pointer-events: auto; /* safe zone: 鼠标可进入预览卡 · 取消延迟隐藏防闪烁 */
+  white-space: normal;
+  /* 2026-08-10 修复 v2: break-all 对中文逐字断行 = 一行一个字 (用户 报"只有一列") ·
+     改 break-word: 中文按词/字自然换行 · 只有超长英文/URL 才强制断 */
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+.rail-jump-flash {
+  animation: railJumpFlash 1.2s ease;
+}
+@keyframes railJumpFlash {
+  0%   { box-shadow: 0 0 0 3px rgba(159, 122, 234, 0.55); }
+  100% { box-shadow: 0 0 0 3px rgba(159, 122, 234, 0); }
 }

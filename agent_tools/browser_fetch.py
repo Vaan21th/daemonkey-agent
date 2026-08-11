@@ -178,9 +178,15 @@ def _run(args: dict) -> ToolResult:
     if not (url.startswith("http://") or url.startswith("https://")):
         return ToolResult(ok=False, output="", error=f"only http(s) urls allowed, got: {url!r}")
 
-    wait_seconds = int(args.get("wait_seconds") or DEFAULT_WAIT_SECONDS)
+    try:
+        wait_seconds = int(args.get("wait_seconds") or DEFAULT_WAIT_SECONDS)
+    except (TypeError, ValueError):
+        wait_seconds = DEFAULT_WAIT_SECONDS
     wait_seconds = max(1, min(wait_seconds, 30))
-    max_chars = int(args.get("max_chars") or DEFAULT_MAX_CHARS)
+    try:
+        max_chars = int(args.get("max_chars") or DEFAULT_MAX_CHARS)
+    except (TypeError, ValueError):
+        max_chars = DEFAULT_MAX_CHARS
     max_chars = max(500, min(max_chars, 50000))
     visible = bool(args.get("visible", False))
     mode = (args.get("mode") or "auto").lower()

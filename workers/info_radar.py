@@ -825,20 +825,27 @@ def update_source(source_id: str, **changes) -> dict:
 
 
 def _fetch(url: str) -> Optional[str]:
-    """抓单个 URL · 失败返回 None · **绝不抛异常**"""
-    if httpx is None:
-        logger.error("httpx not installed; cannot fetch %s", url)
-        return None
+    """抓单个 URL · 失败返回 None · **绝不抛异常**
+
+    2026-08-11 重构 (BRO 实测驱动 · 两宗罪):
+    1. httpx 0.28.1 在这台 Windows 上卡死 (即使 trust_env=False 也 12s+ 不返回·
+       卡在 proxy detection/TLS) — urllib 直连同 URL 0.9s 就通。radar 之前"偶发很慢"
+       的根因之一。
+    2. httpx 默认 trust_env=True 读系统代理 (Windows 注册表 ProxyEnable=1 → 127.0.0.1:7890)·
+       Clash core 没跑时 (系统代理指向死端口) · 所有源全部超时 → 雷达全空 (08-11 事故·27源0条)。
+
+    → 改用 urllib.request + ProxyHandler({}) 显式直连 (标准库·零依赖·不读系统代理):
+       arxiv/GitHub/TheDecoder 海外源实测 200 · 只有 HN 这类被墙死的需代理。
+       雷达是后台定时任务 · 不能依赖 Clash GUI 活着 → 抓取层永远直连。
+    """
     try:
-        with httpx.Client(
-            timeout=DEFAULT_TIMEOUT,
-            follow_redirects=True,
-            headers={"User-Agent": USER_AGENT},
-        ) as client:
-            r = client.get(url)
-            if r.status_code == 200:
-                return r.text
-            logger.warning("%s returned %s", url, r.status_code)
+        import urllib.request
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        opener.addheaders = [("User-Agent", USER_AGENT)]
+        with opener.open(url, timeout=DEFAULT_TIMEOUT) as r:
+            if r.status == 200:
+                return r.read().decode("utf-8", errors="replace")
+            logger.warning("%s returned %s", url, r.status)
     except Exception as e:
         logger.warning("fetch %s failed: %s", url, e)
     return None

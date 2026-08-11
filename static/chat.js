@@ -728,6 +728,54 @@ if ($attachBtn && $attachFile) {
   if (!MODES[mode]) mode = 'dictation';
   if (!SR) { $micBtn.classList.add('unsupported'); $micBtn.title = '语音功能需 Chrome / Edge 浏览器'; }
 
+  // ── 2026-08-08 · TTS 开关 (语音对话模式: AI 回复自动朗读) ──
+  // 能力探测: /api/tts 端点存在才显示开关 (纯净版无 voice.py → 探测 404 → 开关隐藏 · 优雅降级)
+  // 挂到 window 上让 finalizeStreamingAssistant 能触发 (它在 initVoice 闭包外)
+  window.__voiceTtsEnabled = false;
+  const $ttsToggle = document.getElementById('voiceTtsToggle');
+  const $ttsWrap = document.getElementById('voiceTtsWrap');
+  if ($ttsToggle && $ttsWrap) {
+    fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '' }) })
+      .then(r => {
+        if (r.status === 404 || r.status === 405) return; // 端点不存在/未注册 → 保持隐藏
+        $ttsWrap.hidden = false;
+        window.__voiceTtsEnabled = localStorage.getItem('Daemonkey_voice_tts') === '1';
+        $ttsToggle.checked = !!window.__voiceTtsEnabled;
+        $ttsToggle.addEventListener('change', () => {
+          window.__voiceTtsEnabled = $ttsToggle.checked;
+          localStorage.setItem('Daemonkey_voice_tts', $ttsToggle.checked ? '1' : '0');
+          if (typeof _setRecNote === 'function' && _listening && mode === 'transcribe') {
+            _setRecNote($ttsToggle.checked
+              ? '<i class="ri-volume-up-line"></i> TTS 已开 · Daemonkey 回复会朗读'
+              : '<i class="ri-volume-mute-line"></i> TTS 已关', 'wait');
+          }
+        });
+      })
+      .catch(() => { /* 网络异常 → 保持隐藏 */ });
+  }
+  // 播放一条语音回复: 调 /api/tts 合成 → <audio> 播放 → 播完回调 (恢复收音)
+  window.__speakReply = function (text, onDone) {
+    if (!window.__voiceTtsEnabled || !(text || '').trim()) { if (onDone) onDone(); return; }
+    const body = JSON.stringify({ text: (text || '').slice(0, 1500) });
+    fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    }).then(r => {
+      if (!r.ok) throw new Error('TTS HTTP ' + r.status);
+      return r.blob();
+    }).then(blob => {
+      const url = URL.createObjectURL(blob);
+      const au = new Audio(url);
+      au.onended = () => { URL.revokeObjectURL(url); if (onDone) onDone(); };
+      au.onerror = () => { URL.revokeObjectURL(url); if (onDone) onDone(); };
+      au.play().catch(() => { if (onDone) onDone(); });
+    }).catch(e => {
+      console.warn('TTS 播放失败:', e);
+      if (onDone) onDone();
+    });
+  };
+
   let _rec = null;              // SpeechRecognition 实例
   let _listening = false;
   let _manualStop = false;      // true = 用户主动停 · 阻止 onend 自动重启
@@ -1436,7 +1484,38 @@ function _stopTitleFlash() {
 
 // 用户 切回 tab 自动停闪 (有把 tab 切走的场景才需要闪 · 看了就不闪)
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) _stopTitleFlash();
+  if (!document.hidden) {
+    _stopTitleFlash();
+    // 卷 · 2026-08-09 · 用户 反馈: 人离开标签页在后台时 daemon 重启 · 回来看到旧画面 ·
+    // F5 才出后台续场结果。根因: 恢复路径 A(在场重启 SSE 检测) 被后台节流拖住 · B(页面加载)
+    // 需 F5 才触发 · 缺一条『切回前台自动探测』。补: 回前台时查当前 session 有无后台 turn 在跑
+    // /刚跑完 · 有就启 3s 轮询拉结果 (跟 _probeAndStartPoll 同一套) · 让 用户 不用 F5。
+    try {
+      const st = activeSession();
+      if (st && st.sessionId && !st.sessionId.startsWith('tmp-') && !st.pending && !st.pollIntervalId) {
+        // 查后台 turn 状态: scheduled/running = 续场在跑 → 起轮询等结果;
+        // completed = 已跑完但可能 UI 没跟上 → 重载历史把结果显示出来 (用户 这次场景)
+        fetch(`/sessions/${encodeURIComponent(st.sessionId)}/background_turn_status`, {
+          headers: { 'Authorization': 'Bearer ' + token },
+        }).then(r => r.ok ? r.json() : { status: 'none' }).then(j => {
+          const s = (j && j.status) || 'none';
+          if (s === 'scheduled' || s === 'running') {
+            _maybeStartPoll(st);   // 单次探测: 有 active turn 就起轮询
+          } else if (s === 'completed') {
+            // 后台续场已跑完 · 重载历史把结果刷出来 · 解锁 (跟 L13363 同逻辑)
+            _loadSessionHistory(st.sessionId).then(() => {
+              if (st && sessionId === st.sessionId) {
+                pending = false;
+                setSendButtonState('idle');
+                setInputLocked(false);
+                showToolProgress(false);
+              }
+            }).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    } catch (_) {}
+  }
 });
 
 // ─── wish-fb6b7427 事项C · 标签闪烁通道 · 客户端配置缓存 ───
@@ -1589,7 +1668,7 @@ function renderFlowRunCard(state) {
   const runId = state.run_id || '';
   // 卷七十三 P0 · done/failed 给一个"知道了"按钮 · 用户 看完撤掉 banner (running 不给)
   const dismissBtn = (status === 'done' || status === 'failed')
-    ? `<button class="flow-run-dismiss" type="button" onclick="dismissFlowRun('${escAttr(runId)}')" title="收到 · 撤掉这条 banner 通知">知道了</button>`
+    ? `<button class="flow-run-dismiss" type="button" onclick="dismissFlowRun('${jsStr(runId)}')" title="收到 · 撤掉这条 banner 通知">知道了</button>`
     : '';
   return `
     <div class="flow-run-card" data-run-id="${escAttr(runId)}">
@@ -1923,7 +2002,9 @@ function _loadOnboardingTemplates() {
     const raw = localStorage.getItem('Daemonkey.onboarding.templates');
     if (raw) {
       const parsed = JSON.parse(raw);
-      return Object.assign({}, _ONBOARD_DEFAULT_TEMPLATES, parsed);
+      // 2026-08-11 修 (墨言贡献评估 #1): Object.assign 合并 localStorage 数据有 __proto__
+      // 原型污染风险 (恶意 localStorage 可污染对象原型链) → 改 spread (浅拷贝语义相同 · 无原型污染面)
+      return { ..._ONBOARD_DEFAULT_TEMPLATES, ...parsed };
     }
   } catch (e) {}
   return _ONBOARD_DEFAULT_TEMPLATES;
@@ -2468,11 +2549,11 @@ function renderLlmConfigCard(c) {
       <div class="lc-row3">
         <span class="lc-key">${escHtml(c.api_key || '(未设)')}</span>
         <div class="lc-actions">
-          ${isActive ? '' : `<button onclick="activateConfig('${escHtml(c.id)}')" title="切换 Daemonkey 用这个跑">激活</button>`}
-          <button onclick="testConfig('${escHtml(c.id)}')" title="ping 一下试通不通">测试</button>
-          <button class="lc-director-btn${c.director ? ' on' : ''}" onclick="toggleDirectorConfig('${escHtml(c.id)}', ${c.director ? 'false' : 'true'})" title="${c.director ? '取消这个配置的顾问身份' : '把它设为顾问 · 蓝图/破局/验收时被召唤（全局只能有一个顾问）'}"><i class="ri-vip-crown-${c.director ? 'fill' : 'line'}"></i> ${c.director ? '取消顾问' : '设为顾问'}</button><i class="ri-question-line lc-director-help" onclick="showDirectorHelp()" title="顾问模型是干啥的？点我"></i>
-          <button onclick="openLlmConfigEditForm('${escHtml(c.id)}')" title="改名 / 改 key / 改 model">编辑</button>
-          <button class="btn-danger-mini" onclick="deleteConfig('${escHtml(c.id)}')" title="删除">删除</button>
+          ${isActive ? '' : `<button onclick="activateConfig('${jsStr(c.id)}')" title="切换 Daemonkey 用这个跑">激活</button>`}
+          <button onclick="testConfig('${jsStr(c.id)}')" title="ping 一下试通不通">测试</button>
+          <button class="lc-director-btn${c.director ? ' on' : ''}" onclick="toggleDirectorConfig('${jsStr(c.id)}', ${c.director ? 'false' : 'true'})" title="${c.director ? '取消这个配置的顾问身份' : '把它设为顾问 · 蓝图/破局/验收时被召唤（全局只能有一个顾问）'}"><i class="ri-vip-crown-${c.director ? 'fill' : 'line'}"></i> ${c.director ? '取消顾问' : '设为顾问'}</button><i class="ri-question-line lc-director-help" onclick="showDirectorHelp()" title="顾问模型是干啥的？点我"></i>
+          <button onclick="openLlmConfigEditForm('${jsStr(c.id)}')" title="改名 / 改 key / 改 model">编辑</button>
+          <button class="btn-danger-mini" onclick="deleteConfig('${jsStr(c.id)}')" title="删除">删除</button>
         </div>
       </div>
       <div class="lc-test-result" id="lcTestResult_${escHtml(c.id)}"></div>
@@ -3207,7 +3288,7 @@ async function refreshTrustedCommands() {
       const reasonStr = it.reason ? ' · ' + escHtml(it.reason) : '';
       return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-bottom:1px solid #2a2f3a">
         <span><code>${escHtml(it.pattern)}</code> · ${remainStr}${reasonStr}</span>
-        <button onclick="removeTrustedCommand('${escHtml(it.id)}')" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:2px 8px;border-radius:4px;cursor:pointer">删除</button>
+        <button onclick="removeTrustedCommand('${jsStr(it.id)}')" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:2px 8px;border-radius:4px;cursor:pointer">删除</button>
       </div>`;
     }).join('');
     target.innerHTML = rows;
@@ -3221,11 +3302,11 @@ async function addTrustedCommand() {
   const dur = parseInt(document.getElementById('accTrustDuration').value, 10);
   const reason = document.getElementById('accTrustReason').value.trim();
   if (!pat) {
-    om.alert({ title: '空 pattern', message: '请填命令头 (例如 "pip install")' });
+    DaemonkeyAlert({ title: '空 pattern', message: '请填命令头 (例如 "pip install")' });
     return;
   }
   if (!token) {
-    om.alert({ title: '缺 token', message: '请先填 API token' });
+    DaemonkeyAlert({ title: '缺 token', message: '请先填 API token' });
     return;
   }
   try {
@@ -3240,14 +3321,14 @@ async function addTrustedCommand() {
     });
     if (!r.ok) {
       const txt = await r.text();
-      om.alert({ title: '加入失败', message: 'HTTP ' + r.status + '\n' + txt });
+      DaemonkeyAlert({ title: '加入失败', message: 'HTTP ' + r.status + '\n' + txt });
       return;
     }
     document.getElementById('accTrustPattern').value = '';
     document.getElementById('accTrustReason').value = '';
     await refreshTrustedCommands();
   } catch (e) {
-    om.alert({ title: '加入失败', message: e.message });
+    DaemonkeyAlert({ title: '加入失败', message: e.message });
   }
 }
 
@@ -3260,12 +3341,12 @@ async function removeTrustedCommand(itemId) {
     });
     if (!r.ok) {
       const txt = await r.text();
-      om.alert({ title: '删除失败', message: 'HTTP ' + r.status + '\n' + txt });
+      DaemonkeyAlert({ title: '删除失败', message: 'HTTP ' + r.status + '\n' + txt });
       return;
     }
     await refreshTrustedCommands();
   } catch (e) {
-    om.alert({ title: '删除失败', message: e.message });
+    DaemonkeyAlert({ title: '删除失败', message: e.message });
   }
 }
 
@@ -3541,7 +3622,7 @@ async function wechatLoadStatus() {
 
 async function wechatGenQr() {
   const box = document.getElementById('wechatQrBox');
-  if (!token) { om.alert({ title: '缺 token', message: '先在『访问 & 会话』填 API Token' }); return; }
+  if (!token) { DaemonkeyAlert({ title: '缺 token', message: '先在『访问 & 会话』填 API Token' }); return; }
   if (_wechatQrPoll) { clearInterval(_wechatQrPoll); _wechatQrPoll = null; }
   box.style.display = 'block';
   box.innerHTML = '<div class="field-hint">取二维码中…</div>';
@@ -3648,7 +3729,7 @@ async function wechatSetFrequency(presetId) {
     const d = await r.json();
     wechatRenderFreq(d.current);
   } catch (e) {
-    om.alert({ title: '设置失败', message: e.message });
+    DaemonkeyAlert({ title: '设置失败', message: e.message });
   }
 }
 
@@ -3964,16 +4045,328 @@ function closeDrawer() {
   $drawerBackdrop.classList.remove('open');
 }
 
+// ─── 卷八十一 · A 方案 · 本会话文档聚合视图 (聊天头 📄 按钮) ───
+let _docsViewActive = false;
+
+function toggleDocsView() {
+  if (_docsViewActive) {
+    closeDocsView();
+  } else {
+    openDocsView();
+  }
+}
+
+function openDocsView() {
+  if (!token) {
+    addSys('⚠ 还没填 token —— 点右上角 ⚙ 设置');
+    openSettings();
+    return;
+  }
+  _docsViewActive = true;
+  document.getElementById('chatDocsBtn').classList.add('active');
+  const msgs = document.getElementById('messages');
+  // 新会话无消息时 onboarding 引导卡是显示的 · 一并隐藏避免叠屏 (卷八十一 K3 施工单②)
+  const ob = document.getElementById('onboardingPanel');
+  if (ob && !ob.hidden) { ob.dataset.dvHidden = '1'; ob.hidden = true; }
+  let dv = document.getElementById('docsView');
+  if (!dv) {
+    dv = document.createElement('div');
+    dv.id = 'docsView';
+    dv.className = 'docs-view';
+    msgs.insertAdjacentElement('afterend', dv);
+  }
+  msgs.style.display = 'none';
+  dv.style.display = 'flex';
+  renderDocsView();
+}
+
+function closeDocsView() {
+  _docsViewActive = false;
+  document.getElementById('chatDocsBtn').classList.remove('active');
+  const msgs = document.getElementById('messages');
+  const dv = document.getElementById('docsView');
+  if (msgs) msgs.style.display = '';
+  if (dv) dv.style.display = 'none';
+  const ob = document.getElementById('onboardingPanel');
+  if (ob && ob.dataset.dvHidden === '1') { ob.hidden = false; delete ob.dataset.dvHidden; }
+}
+
+// 聚合本会话产物: 主数据源 = /sessions/{sid}/artifacts (后端扫主文件+归档 · 过滤占位符 · 验证存在)
+async function collectSessionDocs() {
+  const docs = [];       // [{name, url, ext, kind}]
+  const seen = new Set();
+
+  // 1. 主数据源: 后端 artifacts 端点 (扫 session 主 jsonl + 归档 compact/prune 文件 · 压缩也不丢)
+  try {
+    if (sessionId) {
+      const r = await fetch(`/sessions/${encodeURIComponent(sessionId)}/artifacts`, {
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+      if (r.ok) {
+        const data = await r.json();
+        for (const a of (data.artifacts || [])) {
+          if (!a || !a.url || seen.has(a.url)) continue;
+          seen.add(a.url);
+          docs.push({ name: a.name || '产物', url: a.url, ext: a.ext || '', kind: 'workshop' });
+        }
+      }
+    }
+  } catch (e) { console.warn('collectSessionDocs artifacts api:', e); }
+
+  // 2. 兜底: DOM 扫描 (SSE 实时流未落盘时也能抓到 · 新产物未进归档时)
+  try {
+    const msgs = document.querySelectorAll('#messages .md-body, #messages .msg-text, #messages .assistant');
+    msgs.forEach(m => {
+      const html = m.innerHTML || '';
+      const reDoc = /(?:href|src)="([^"]+\.(?:docx?|md|pdf|xlsx?|pptx?|txt|zip)(?:\?[^"]*)?)"/gi;
+      let mm;
+      while ((mm = reDoc.exec(html)) !== null) {
+        const u = mm[1];
+        if (seen.has(u)) continue;
+        seen.add(u);
+        docs.push({ name: _safeDecode(u.split('/').pop() || '产物'), url: u, ext: (u.match(/\.([a-z0-9]+)$/i) || [,''])[1].toLowerCase(), kind: 'workshop' });
+      }
+      const reMedia = /(?:href|src)="([^"]+\.(?:png|jpe?g|gif|webp|mp4|webm|wav|mp3)(?:\?[^"]*)?)"/gi;
+      let mm2;
+      while ((mm2 = reMedia.exec(html)) !== null) {
+        const url = mm2[1];
+        if (!url.includes('/workshop/') && !url.includes('/reports/')) continue;
+        if (seen.has(url)) continue;
+        seen.add(url);
+        docs.push({ name: _safeDecode(url.split('/').pop() || '产物'), url, ext: (url.match(/\.([a-z0-9]+)$/i) || [,''])[1].toLowerCase(), kind: 'workshop' });
+      }
+    });
+  } catch (e) { console.warn('collectSessionDocs dom scan:', e); }
+
+  return docs;
+}
+
+// Remix 图标映射 (卷八十一 · 铁律10: 不用 emoji 当图标)
+const _DOC_ICON_MAP = {
+  docx:'ri-file-word-2-fill', doc:'ri-file-word-2-fill',
+  xlsx:'ri-file-excel-2-fill', xls:'ri-file-excel-2-fill',
+  pptx:'ri-file-ppt-2-fill', ppt:'ri-file-ppt-2-fill',
+  pdf:'ri-file-pdf-2-fill', md:'ri-markdown-fill',
+  png:'ri-image-fill', jpg:'ri-image-fill', jpeg:'ri-image-fill', gif:'ri-image-fill', webp:'ri-image-fill',
+  mp3:'ri-file-music-fill', wav:'ri-file-music-fill',
+  mp4:'ri-file-video-fill', webm:'ri-file-video-fill',
+};
+function _docIcon(ext) { return `<i class="${_DOC_ICON_MAP[ext] || 'ri-file-fill'}"></i>`; }
+
+// 分类组: 办公文档 / 文本·报告 / 图片 / 音频 / 视频
+const _DOC_CATS = [
+  { key:'office', label:'办公文档',   icon:'ri-briefcase-4-fill', exts:['docx','doc','xlsx','xls','pptx','ppt'] },
+  { key:'text',   label:'文本 · 报告', icon:'ri-file-text-fill',   exts:['md','pdf'] },
+  { key:'image',  label:'图片',       icon:'ri-image-fill',       exts:['png','jpg','jpeg','gif','webp'] },
+  { key:'audio',  label:'音频',       icon:'ri-music-2-fill',     exts:['mp3','wav'] },
+  { key:'video',  label:'视频',       icon:'ri-movie-fill',       exts:['mp4','webm'] },
+];
+function _docCategory(ext) {
+  for (const c of _DOC_CATS) if (c.exts.includes(ext)) return c;
+  return _DOC_CATS[1]; // 兜底进文本组
+}
+
+async function renderDocsView() {
+  const dv = document.getElementById('docsView');
+  if (!dv) return;
+  dv.innerHTML = `
+    <div class="docs-view-head">
+      <span class="docs-view-title"><i class="ri-file-list-3-fill"></i> 本会话产物</span>
+      <span class="docs-view-sub" id="docsViewSub">收集…</span>
+      <button class="docs-view-close" onclick="closeDocsView()" title="返回对话"><i class="ri-arrow-left-line"></i> 返回对话</button>
+    </div>
+    <div class="docs-view-body" id="docsViewBody"><div class="docs-view-loading">扫描会话中的文档…</div></div>
+  `;
+  const docs = await collectSessionDocs();
+  const body = document.getElementById('docsViewBody');
+  const sub = document.getElementById('docsViewSub');
+  if (sub) sub.textContent = `${docs.length} 个文档`;
+  if (!docs.length) {
+    body.innerHTML = `<div class="docs-view-empty">
+      <i class="ri-file-list-3-line" style="font-size:34px;opacity:.3"></i>
+      <div>本会话还没有产出</div>
+      <div class="docs-view-hint">让 Daemonkey 生成报告 / 口播稿 / 周报后 · 文档会出现在这里</div>
+    </div>`;
+    return;
+  }
+  // 按类型分类: 办公文档 / 文本·报告 / 图片 / 音频 / 视频
+  let html = '';
+  for (const cat of _DOC_CATS) {
+    const group = docs.filter(d => _docCategory(d.ext).key === cat.key);
+    if (!group.length) continue;
+    html += `<div class="docs-sec-title"><i class="${cat.icon}"></i> ${cat.label} <span style="opacity:.6;font-weight:400">(${group.length})</span></div>`;
+    html += group.map(d => _docCardHtml(d)).join('');
+  }
+  body.innerHTML = html;
+  // 流式生成中打开可能扫不全 · 提示重开刷新
+  if (typeof _streaming !== 'undefined' && _streaming && sub) {
+    sub.textContent += ' · 生成中 · 完成后重开刷新';
+  }
+}
+
+// 2026-08-11 F4 (墨言审查): decodeURIComponent 遇畸形 % 序列抛 URIError ·
+// 统一安全包裹 (解码失败就返回原文) · 治"产物名含畸形 %"不崩页面
+function _safeDecode(s) {
+  try { return decodeURIComponent(s); } catch (e) { return s; }
+}
+
+function _docCardHtml(d) {
+  const safeUrl = String(d.url || '#').replace(/"/g, '%22');
+  // 从 URL 解析 domain/filename (给 preview/reveal 端点用)
+  // 卷八十一 · outputs 产物是 /workshop/outputs/app_id/子路径/文件名 · 无 domain 语义 · 特判直链
+  const isOutputs = safeUrl.startsWith('/workshop/outputs/');
+  let domain = '', filename = '';
+  if (isOutputs) {
+    domain = 'outputs';
+    filename = _safeDecode(safeUrl.slice('/workshop/outputs/'.length));
+  } else {
+    const m = safeUrl.match(/^\/(?:workshop\/(?:preview|file)\/|reports\/)?([^/]+)\/([^/?]+)/);
+    domain = m ? m[1] : '';
+    filename = m ? m[2] : '';
+  }
+  const isPreviewable = ['md','txt','png','jpg','jpeg','gif','webp','mp3','wav','mp4','webm','pdf'].includes(d.ext);
+  const btn = (ic, label, fn, cls) => `<button class="dvi-btn ${cls}" onclick="event.stopPropagation();${fn}('${domain}','${filename}','${d.ext}')" title="${label}"><i class="${ic}"></i><span>${label}</span></button>`;
+  return `<div class="docs-view-item" data-ext="${d.ext}" data-url="${safeUrl}" data-domain="${domain}" data-filename="${filename}">
+    <span class="dvi-ic">${_docIcon(d.ext)}</span>
+    <span class="dvi-body">
+      <span class="dvi-name">${escHtml(d.name)}</span>
+      <span class="dvi-meta">${String(d.ext).toUpperCase()} · ${_docCategory(d.ext).label}</span>
+    </span>
+    <span class="dvi-actions">
+      ${isPreviewable ? btn('ri-eye-line','预览','_docOpenIn用户wser') : btn('ri-download-2-line','下载','_docDownload')}
+      ${btn('ri-mac-line','应用打开','_docOpenLocal')}
+    </span>
+  </div>`;
+}
+
+// 浏览器打开 → 统一弹框预览 (卷八十一续 · 用户 拍板: 复用知识库弹框骨架 · 不再新标签)
+// md/txt → fetch preview 渲染 markdown; 图片/音频/视频/pdf → 弹框内嵌; docx/xlsx/pptx → 下载
+async function _docOpenIn用户wser(domain, filename, ext) {
+  try {
+    const t = token ? `?token=${encodeURIComponent(token)}` : '';
+    const dispName = _safeDecode(filename.split('/').pop() || filename);
+    if (domain === 'outputs') {
+      // outputs 产物直链 (后端 /workshop/outputs/{path} 带 MIME)
+      const url = `/workshop/outputs/${encodeURIComponent(filename)}${t}`;
+      if (['md','txt'].includes(ext)) {
+        const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!r.ok) throw new Error('预览拉取失败 ' + r.status);
+        const text = await r.text();
+        const bodyHtml = (typeof mdRender === 'function') ? mdRender(text) : ('<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>');
+        _showPreviewModal({ title: dispName, metaLine: ext.toUpperCase() + ' · outputs 产物', bodyHtml });
+      } else if (['png','jpg','jpeg','gif','webp'].includes(ext)) {
+        _showPreviewModal({ title: dispName, metaLine: '图片', raw: true, bodyHtml: `<img src="${url}" alt="${escHtml(dispName)}" class="pv-img">` });
+      } else if (['mp3','wav'].includes(ext)) {
+        _showPreviewModal({ title: dispName, metaLine: '音频', raw: true, bodyHtml: `<audio controls preload="metadata" src="${url}" class="pv-media" style="width:100%"></audio>` });
+      } else if (['mp4','webm'].includes(ext)) {
+        _showPreviewModal({ title: dispName, metaLine: '视频', raw: true, bodyHtml: `<video controls preload="metadata" src="${url}" class="pv-media"></video>` });
+      } else if (ext === 'pdf') {
+        _showPreviewModal({ title: dispName, metaLine: 'PDF', raw: true, bodyHtml: `<iframe src="${url}" class="pv-pdf"></iframe>` });
+      } else {
+        // docx/xlsx/pptx 浏览器不能内嵌 → 下载
+        await _docDownload(domain, filename);
+      }
+      return;
+    }
+    if (['md','txt'].includes(ext)) {
+      // reports 目录的 md 走 /reports/preview/{filename} · 其余走 /workshop/preview
+      const previewUrl = domain === 'reports'
+        ? `/reports/preview/${encodeURIComponent(filename)}${t}`
+        : `/workshop/preview/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
+      const r = await fetch(previewUrl, { headers: { 'Authorization': 'Bearer ' + token } });
+      if (!r.ok) throw new Error('预览拉取失败 ' + r.status);
+      const data = await r.json();
+      const text = data.markdown || '';
+      const bodyHtml = (typeof mdRender === 'function') ? mdRender(text) : ('<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>');
+      _showPreviewModal({ title: dispName, metaLine: ext.toUpperCase() + ' · ' + domain, bodyHtml });
+    } else if (['png','jpg','jpeg','gif','webp'].includes(ext)) {
+      const url = domain === 'reports'
+        ? `/reports/${encodeURIComponent(filename)}${t}`
+        : `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
+      _showPreviewModal({ title: dispName, metaLine: '图片', raw: true, bodyHtml: `<img src="${url}" alt="${escHtml(dispName)}" class="pv-img">` });
+    } else if (['mp3','wav'].includes(ext)) {
+      const url = domain === 'reports'
+        ? `/reports/${encodeURIComponent(filename)}${t}`
+        : `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
+      _showPreviewModal({ title: dispName, metaLine: '音频', raw: true, bodyHtml: `<audio controls preload="metadata" src="${url}" class="pv-media" style="width:100%"></audio>` });
+    } else if (['mp4','webm'].includes(ext)) {
+      const url = domain === 'reports'
+        ? `/reports/${encodeURIComponent(filename)}${t}`
+        : `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
+      _showPreviewModal({ title: dispName, metaLine: '视频', raw: true, bodyHtml: `<video controls preload="metadata" src="${url}" class="pv-media"></video>` });
+    } else if (ext === 'pdf') {
+      const url = domain === 'reports'
+        ? `/reports/${encodeURIComponent(filename)}${t}`
+        : `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
+      _showPreviewModal({ title: dispName, metaLine: 'PDF', raw: true, bodyHtml: `<iframe src="${url}" class="pv-pdf"></iframe>` });
+    } else {
+      // docx/xlsx/pptx 浏览器不能内嵌 → 下载
+      await _docDownload(domain, filename);
+    }
+  } catch (e) {
+    alert('打开失败: ' + e.message);
+  }
+}
+
+// 下载原始文件
+async function _docDownload(domain, filename) {
+  try {
+    const t = token ? `?token=${encodeURIComponent(token)}` : '';
+    // outputs 产物直链下载 (后端 /workshop/outputs/{path} 已带全类型 MIME)
+    let url;
+    if (domain === 'outputs') {
+      url = `/workshop/outputs/${encodeURIComponent(filename)}${t}`;
+    } else if (domain === 'reports') {
+      // reports 目录产物走 /reports/{filename} (download_report 端点)
+      url = `/reports/${encodeURIComponent(filename)}${t}`;
+    } else {
+      url = `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
+    }
+    const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) throw new Error('下载失败 ' + r.status);
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename.split('/').pop() || filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  } catch (e) {
+    alert('下载失败: ' + e.message);
+  }
+}
+
+// 本机软件打开: 调 reveal 端点 → os.startfile
+async function _docOpenLocal(domain, filename, ext) {
+  try {
+    const t = token ? `?token=${encodeURIComponent(token)}` : '';
+    const r = await fetch(`/workshop/reveal/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || '本机打开失败');
+    addSys(`📄 已用本机软件打开 ${filename}`);
+  } catch (e) {
+    alert('本机打开失败: ' + e.message + ' · 仅本机可用');
+  }
+}
+
 function updateCurrentLabel() {
   $currentLabel.textContent = sessionId ? aliasFor(sessionId) : '新对话';
 }
 
-async function refreshSessionList() {
-  $sessionList.innerHTML = '<div class="drawer-empty">加载中…</div>';
+let _sessionListOffset = 0;
+const SESSION_PAGE = 50;
+
+async function refreshSessionList(reset = true) {
+  if (reset) {
+    _sessionListOffset = 0;
+    $sessionList.innerHTML = '<div class="drawer-empty">加载中…</div>';
+  }
   // 关掉可能开着的菜单
   closeSessionMenu();
   try {
-    const params = new URLSearchParams({ api_only: 'true', limit: '50' });
+    const params = new URLSearchParams({ api_only: 'true', limit: String(SESSION_PAGE), offset: String(_sessionListOffset) });
     if (showArchivedSessions) params.set('archived_only', 'true');
     else params.set('include_archived', 'false');
     const r = await fetch('/sessions?' + params.toString(), {
@@ -3994,7 +4387,7 @@ async function refreshSessionList() {
         last_model_cfg: s.last_model_cfg || null,
       };
     }
-    if (!data.sessions || data.sessions.length === 0) {
+    if (reset && (!data.sessions || data.sessions.length === 0)) {
       const empty = showArchivedSessions
         ? '归档区是空的 · 已归档的对话会跑这儿'
         : '还没有对话 · 点 + 新对话开始';
@@ -4002,15 +4395,27 @@ async function refreshSessionList() {
       renderArchivedToggle();
       return;
     }
-    $sessionList.innerHTML = '';
+    if (reset) $sessionList.innerHTML = '';
     for (const s of data.sessions) {
       $sessionList.appendChild(buildSessionRow(s));
+    }
+    // 还有更多 → 底部加载更多按钮
+    const hasMore = (data.sessions || []).length >= SESSION_PAGE;
+    const loadMoreEl = document.getElementById('sessionLoadMore');
+    if (loadMoreEl) loadMoreEl.remove();
+    if (hasMore) {
+      const btn = document.createElement('div');
+      btn.id = 'sessionLoadMore';
+      btn.className = 'drawer-loadmore';
+      btn.textContent = '加载更早的会话';
+      btn.onclick = () => { _sessionListOffset += SESSION_PAGE; refreshSessionList(false); };
+      $sessionList.appendChild(btn);
     }
     renderArchivedToggle();
     // 当前 session label 可能从服务端拿到了 · 刷新顶部 pill
     updateCurrentLabel();
   } catch (e) {
-    $sessionList.innerHTML = '<div class="drawer-empty">网络出错: ' + e.message + '</div>';
+    if (reset) $sessionList.innerHTML = '<div class="drawer-empty">网络出错: ' + e.message + '</div>';
   }
 }
 
@@ -4397,6 +4802,7 @@ async function _maybeRestoreSessionModel(sid) {
 
 async function switchToSession(sid) {
   if (!sid) return;
+  if (_docsViewActive) closeDocsView();  // 卷八十一 · 切会话自动关文档视图 (防显示上一会话列表)
   if (sid === sessionId) {
     closeDrawer();
     return;
@@ -5086,9 +5492,30 @@ async function _pollSession(state) {
     }
   } catch {}
   // 3) 没 active turn 了 · 停 polling (这是收尾 · _pollSession 不再触发)
+  // 2026-08-11 修 (wish-bec4f3b9 续): 后台 turn 完成瞬间 · /messages 可能还没包含
+  // 刚落盘的最终结果 (落盘延迟) → 上面那次重画可能"画了个寂寞" → 立即停轮询后
+  // 结果才落盘 · 前端没被告知 → 用户 只能 F5 才看到。
+  // → 延迟 800ms 做一次"最终确认加载" (期间没被新 turn 接管才执行) · 拉到新结果
+  //   再停 · 让"后台 turn 完成"也变成前端自动刷新触发点 (不只切前台/刷新/本实例重启)。
   if (!hasActive) {
     _stopBgProgressTicker();
-    _stopSessionPoll(state);
+    const _sid = state.sessionId;
+    const _pollId = state.pollIntervalId;
+    setTimeout(async () => {
+      // 期间轮询已被 stop/重启 (用户手动停 / 新 turn 接管) → 不越权加载
+      if (!state || state.pollIntervalId !== _pollId) return;
+      // 再查一次 active_turn · 若已有新 turn 跑起来 → 交给它的轮询自己处理
+      let _stillIdle = true;
+      try {
+        const rr = await fetch(`/sessions/${encodeURIComponent(_sid)}/active_turn`, {
+          headers: { 'Authorization': 'Bearer ' + token },
+        });
+        if (rr.ok) { const jj = await rr.json(); if (jj && jj.turn_id) _stillIdle = false; }
+      } catch {}
+      if (!_stillIdle) return;
+      try { await _loadSessionHistory(_sid); } catch (e) {}
+      _stopSessionPoll(state);
+    }, 800);
   }
 }
 
@@ -5235,6 +5662,7 @@ function _showProactiveToast(it) {
 
 function newConversation() {
   clearAttachments();
+  if (_docsViewActive) closeDocsView();  // 卷八十一 · 新建会话自动关文档视图
   // wish-3fef4bc7 · 真并行 · 不杀旧对话 · 先 save 当前 state · 再切到新 cid
   _saveActiveStateToCurrentSession();
   // 给新对话临时 cid · 立刻切 active container 到它 (空 container)
@@ -5404,6 +5832,28 @@ function mdRender(text, opts) {
     }
     if (/\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/.test(lower)) {
       return _streaming ? _mediaPending('img', safeUrl) : `<img src="${safeUrl}" alt="" loading="lazy" class="md-img" data-full="${safeUrl}">`;
+    }
+    // 卷八十一 · C 方案 · 文档卡片 (docx/md/pdf/xlsx/pptx/txt/zip) · 内嵌 预览/应用打开 按钮
+    const docM = lower.match(/\.(docx?|md|pdf|xlsx?|pptx?|txt|zip)(\?|$)/);
+    if (docM) {
+      const ext = docM[1];
+      const name = _safeDecode(url.split('?')[0].split('/').pop() || '文档');
+      const dm = url.match(/^\/(?:workshop\/(?:preview|file|outputs)\/|reports\/)?([^/]+)\/([^/?]+)/);
+      const domain = dm ? dm[1] : '';
+      const filename = dm ? dm[2] : '';
+      const isPreviewable = ['md','txt','png','jpg','jpeg','gif','webp','mp3','wav','mp4','webm','pdf'].includes(ext);
+      const btn = (ic, label, fn) => `<button class="mdc-btn" onclick="event.stopPropagation();${fn}('${domain}','${filename}','${ext}')" title="${label}"><i class="${ic}"></i>${label}</button>`;
+      return `<div class="md-doc-card" data-ext="${ext}" data-url="${safeUrl}" data-domain="${domain}" data-filename="${filename}">
+        <span class="mdc-ic">${_docIcon(ext)}</span>
+        <span class="mdc-body">
+          <span class="mdc-name">${escHtml(name)}</span>
+          <span class="mdc-meta">${ext.toUpperCase()}</span>
+          <span class="mdc-actions">
+            ${isPreviewable ? btn('ri-eye-line','预览','_docOpenIn用户wser') : btn('ri-download-2-line','下载','_docDownload')}
+            ${btn('ri-mac-line','应用打开','_docOpenLocal')}
+          </span>
+        </span>
+      </div>`;
     }
     return `<a href="${safeUrl}" target="_blank" rel="noopener">${url}</a>`;
   }
@@ -6000,6 +6450,18 @@ function finalizeStreamingAssistant(state, finalText) {
   state.streamingAssistantRaw = '';
   state._assistantRerenderScheduled = false;
   _trimRenderedMessages(_finCont);
+
+  // 2026-08-08 · 语音对话模式 TTS 回复: 回完自动朗读 (温暖少女声) · 只影响语音对话
+  //   条件: TTS 开关开 + 语音对话模式活跃 (transcribe + 正在听) · 其他模式不打扰
+  try {
+    if (window.__voiceTtsEnabled && typeof window.__speakReply === 'function') {
+      const vMode = localStorage.getItem('Daemonkey_voice_mode');
+      if (vMode === 'transcribe') {
+        const speakText = (finalText || state.streamingAssistantRaw || '').trim();
+        if (speakText) window.__speakReply(speakText);
+      }
+    }
+  } catch (_e) { /* TTS 播放失败不影响对话主流程 */ }
 }
 
 // 卷三十六 · DeepSeek thinking mode · 渲染一条 reasoning 气泡
@@ -8463,7 +8925,7 @@ function renderModelMenuList() {
   // 卷三十八 · 主标题用 cfg.name · 副标题用 model id · cfg-xxx 不再显示 (太丑)
   list.innerHTML = _modelOptions.map(opt => `
     <button class="model-menu-item${opt.current ? ' current' : ''}"
-            onclick="switchModel('${escHtml(opt.alias)}')"
+            onclick="switchModel('${jsStr(opt.alias)}')"
             data-family="${escHtml(opt.family)}">
       <div class="mmi-row1">
         <span class="mmi-alias">${escHtml(opt.name || opt.real_id)}</span>
@@ -9837,7 +10299,7 @@ function renderBIDigest(data) {
   const tilesHtml = items.map(it => {
     const n = it.new_count || 0;
     const isHot = n > 0;
-    const click = isHot ? `onclick="switchView('${escHtml(it.domain)}')"` : '';
+    const click = isHot ? `onclick="switchView('${jsStr(it.domain)}')"` : '';
     const cls = isHot ? 'bi-digest-tile bi-digest-hot' : 'bi-digest-tile bi-digest-cold';
     const hl = it.highlight ? `<div class="bi-digest-hl" title="${escHtml(it.highlight)}">${escHtml(it.highlight)}</div>` : '<div class="bi-digest-hl bi-digest-hl-empty">无更新</div>';
     return `
@@ -10010,6 +10472,17 @@ async function loadDashboard(domain, opts = {}) {
       const data = await r.json();
       renderSinks(data);
       _depotTabs('sinks');
+    } catch (e) { $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`; }
+    return;
+  }
+  // 月度复盘 tab · 走 /reviews 端点 · 不是 /dashboard/reviews (list_reviews 在 intelligence.py)
+  if (domain === 'reviews') {
+    try {
+      const r = await fetch('/reviews', { headers: { 'Authorization': 'Bearer ' + token } });
+      if (!r.ok) { $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`; return; }
+      const data = await r.json();
+      if (typeof renderReviews === 'function') renderReviews(data); else return _splitMissing('月度复盘');
+      _depotTabs('reviews');
     } catch (e) { $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`; }
     return;
   }
@@ -10328,8 +10801,8 @@ function renderWorkshopPreview(domain, d) {
   $dashView.innerHTML = `
     <div class="dash-head">
       <h2>📖 ${escHtml(meta.title || name)}</h2>
-      <button onclick="loadDashboard('${escHtml(domain)}')">← 返回 ${escHtml(m.label || domain)}</button>
-      <button onclick="revealWorkshopFile('${escHtml(domain)}', '${escHtml(name)}')" title="本机用默认应用打开"><i class="ri-external-link-line"></i> 外部打开</button>
+      <button onclick="loadDashboard('${jsStr(domain)}')">← 返回 ${escHtml(m.label || domain)}</button>
+      <button onclick="revealWorkshopFile('${jsStr(domain)}', '${jsStr(name)}')" title="本机用默认应用打开"><i class="ri-external-link-line"></i> 外部打开</button>
       <a class="rp-dl-btn" href="${escHtml(dlUrl)}" download="${escHtml(name)}">下载 .md ↓</a>
     </div>
     <div class="rp-meta-strip">
@@ -10523,7 +10996,7 @@ function renderFeasibility(data) {
     const st = it.status || 'not_started';
     const stb = _STATUS_BADGE[st] || { lbl: st, cls: '' };
     html += `
-      <div class="feas-card" onclick="loadFeasibilityDetail('${escHtml(it.opp_id)}')">
+      <div class="feas-card" onclick="loadFeasibilityDetail('${jsStr(it.opp_id)}')">
         <div class="feas-card-head">
           <span class="feas-verdict" style="background:${v.color}22;color:${v.color}">
             ${v.label}
@@ -10537,7 +11010,7 @@ function renderFeasibility(data) {
         <div class="feas-card-domain">领域: ${escHtml(it.opp_domain || '?')}</div>
         ${it.verdict_reason ? `<div class="feas-card-reason">${escHtml(it.verdict_reason)}</div>` : ''}
         <div class="feas-card-actions">
-          <button class="feas-act" onclick="event.stopPropagation();loadFeasibilityDetail('${escHtml(it.opp_id)}')">
+          <button class="feas-act" onclick="event.stopPropagation();loadFeasibilityDetail('${jsStr(it.opp_id)}')">
             <i class="ri-search-fill"></i> 查看完整分析
           </button>
         </div>
@@ -10603,7 +11076,7 @@ async function renderFeasibilityDetail(d) {
     <div class="dash-head">
       <h2><i class="ri-bar-chart-fill"></i> 可行性分析</h2>
       <button onclick="loadDashboard('feasibility')">← 返回列表</button>
-      <button onclick="loadFeasibilityDetail('${escHtml(d.opp_id)}')">刷新</button>
+      <button onclick="loadFeasibilityDetail('${jsStr(d.opp_id)}')">刷新</button>
       <button class="feas-star-btn ${isFav ? 'starred' : ''}"
               data-ref="${escHtml(d.opp_id)}"
               data-title="${escHtml(d.opp_title || '')}"
@@ -10692,7 +11165,7 @@ async function renderFeasibilityDetail(d) {
           <div class="feas-src-item feas-src-doc" title="${escHtml(dc.snippet || '')}">
             <span class="feas-src-ref">[${escHtml(dc.ref_id || '?')}]</span>
             <span class="feas-src-source">资料</span>
-            <a class="feas-src-link" href="javascript:void(0)" onclick="_kbPreview('${escHtml(dc.doc_id || '')}')">${escHtml((dc.title || '?').slice(0, 80))}</a>
+            <a class="feas-src-link" href="javascript:void(0)" onclick="_kbPreview('${jsStr(dc.doc_id || '')}')">${escHtml((dc.title || '?').slice(0, 80))}</a>
           </div>`;
       }
       html += `</div></div>`;
@@ -10957,7 +11430,7 @@ async function renderFeasibilityDetail(d) {
       ${_STATUS_BTN.map(b => `
         <button class="feas-fb-btn ${b.cls} ${curStatus === b.v ? 'active' : ''}"
                 data-status="${b.v}"
-                onclick="submitOutcomeStatus('${escHtml(d.opp_id)}', '${b.v}')">
+                onclick="submitOutcomeStatus('${jsStr(d.opp_id)}', '${b.v}')">
           ${b.label}
         </button>
       `).join('')}
@@ -10996,7 +11469,7 @@ async function renderFeasibilityDetail(d) {
 
     <div class="feas-fb-save-row">
       <button class="feas-fb-save-btn"
-              onclick="submitOutcomeFull('${escHtml(d.opp_id)}')">
+              onclick="submitOutcomeFull('${jsStr(d.opp_id)}')">
         <i class="ri-save-fill"></i> 保存反馈
       </button>
       <div class="feas-fb-save-hint" id="fbSaveHint"></div>
@@ -12055,6 +12528,16 @@ function escHtml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// wish-b199c9fa · inline onclick JS 字符串参数专用转义 (双层·顺序不能反):
+//   1) JS 层: \ → \\ · ' → \' · 换行 → \n 字面量 (防 JS 字符串被提前闭合)
+//   2) HTML 层: & < > " → 实体 (防属性本身被截断)
+// 为什么不能只用 escHtml: escHtml 把 ' 转 &#39; 但浏览器解析属性时解码回 ' → onclick="fn('${jsStr(x)}')" 仍会断。
+function jsStr(v) {
+  var s = String(v == null ? '' : v);
+  s = s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, '\\n');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function formatRadarTime(iso) {
   if (!iso) return '';
   try {
@@ -12321,16 +12804,16 @@ function renderRadar(data) {
         <div class="ri-fb-actions" data-iid="${escHtml(iid)}">
           <button class="ri-fb-btn ${fb === 'thumbs_up' ? 'active' : ''}"
                   title="👍 多关注这类"
-                  onclick="event.stopPropagation();toggleRadarFeedback('${escHtml(iid)}', 'thumbs_up', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-thumb-up-fill"></i></button>
+                  onclick="event.stopPropagation();toggleRadarFeedback('${jsStr(iid)}', 'thumbs_up', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-thumb-up-fill"></i></button>
           <button class="ri-fb-btn ${fb === 'thumbs_down' ? 'active' : ''}"
                   title="👎 别再抓这种"
-                  onclick="event.stopPropagation();toggleRadarFeedback('${escHtml(iid)}', 'thumbs_down', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-thumb-down-fill"></i></button>
+                  onclick="event.stopPropagation();toggleRadarFeedback('${jsStr(iid)}', 'thumbs_down', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-thumb-down-fill"></i></button>
           <button class="ri-fb-btn ${fb === 'starred' ? 'active' : ''}"
                   title="⭐ 收藏"
-                  onclick="event.stopPropagation();toggleRadarFeedback('${escHtml(iid)}', 'starred', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-star-fill"></i></button>
+                  onclick="event.stopPropagation();toggleRadarFeedback('${jsStr(iid)}', 'starred', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-star-fill"></i></button>
           <button class="ri-fb-btn ${fb === 'hidden' ? 'active' : ''}"
                   title="🗑 隐藏 · 下次刷新不再出现"
-                  onclick="event.stopPropagation();toggleRadarFeedback('${escHtml(iid)}', 'hidden', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-delete-bin-fill"></i></button>
+                  onclick="event.stopPropagation();toggleRadarFeedback('${jsStr(iid)}', 'hidden', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-delete-bin-fill"></i></button>
           <button class="ri-fb-btn ri-deep-btn"
                   title="🔍 深挖 · Daemonkey 用 web_search 拓展这个话题"
                   onclick="event.stopPropagation();deepDiveRadar(${JSON.stringify(showTitle).replace(/"/g, '&quot;')})"><i class="ri-search-fill"></i></button>
@@ -12766,9 +13249,19 @@ async function _kbPreview(docId) {
   } catch (e) { alert('网络出错: ' + e.message); }
 }
 
-function _showKbModal(data) {
-  const meta = (data && data.meta) || {};
-  const text = (data && data.text) || '';
+// 卷八十一续 · 统一预览弹框渲染器 · 知识库/playbook/文件产物 共用一套骨架
+// (用户 拍板: 别各处重写预览逻辑 · 弹框统一 · 以后改一处全生效)
+// 2026-08-11 F1 (墨言审查): _showPreviewModal 的 keydown 防堆积 · 模块级单例
+let _previewModalKeyBound = false;
+function _previewModalKeyHandler(e) {
+  if (e.key === 'Escape') {
+    const host = document.getElementById('kbModalHost');
+    if (host && host.classList.contains('show')) host.classList.remove('show');
+  }
+}
+
+function _showPreviewModal(opts) {
+  const { title, metaLine, bodyHtml, tags, raw } = opts || {};
   let host = document.getElementById('kbModalHost');
   if (!host) {
     host = document.createElement('div');
@@ -12776,31 +13269,40 @@ function _showKbModal(data) {
     host.className = 'kb-modal-host';
     document.body.appendChild(host);
   }
-  const tags = (meta.tags || []).map(t => `<span class="rc-src-badge">#${escHtml(t)}</span>`).join(' ');
-  const bodyHtml = (typeof mdRender === 'function')
-    ? mdRender(text) : ('<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>');
-  const metaLine = [meta.type, (meta.chars || 0) + ' 字', (meta.chunks || 0) + ' 块',
-    data && data.truncated ? '预览已截断' : ''].filter(Boolean).join(' · ');
+  const tagHtml = (tags || []).map(t => `<span class="rc-src-badge">#${escHtml(t)}</span>`).join(' ');
   host.innerHTML = `
     <div class="kb-modal-mask"></div>
     <div class="kb-modal" role="dialog" aria-modal="true">
       <div class="kb-modal-head">
-        <span class="kb-modal-title">${escHtml(meta.title || '文档')}</span>
-        <span class="kb-modal-meta">${escHtml(metaLine)}</span>
+        <span class="kb-modal-title">${escHtml(title || '文档')}</span>
+        ${metaLine ? `<span class="kb-modal-meta">${escHtml(metaLine)}</span>` : ''}
         <button class="kb-modal-close" title="关闭 (Esc)">✕</button>
       </div>
-      ${tags ? `<div class="kb-modal-tags">${tags}</div>` : ''}
-      <div class="kb-modal-body markdown-body">${bodyHtml}</div>
+      ${tagHtml ? `<div class="kb-modal-tags">${tagHtml}</div>` : ''}
+      <div class="kb-modal-body ${raw ? 'kb-modal-raw' : 'markdown-body'}">${bodyHtml || ''}</div>
     </div>`;
   host.classList.add('show');
+  // 2026-08-11 F1 (墨言审查): 每次打开 add keydown · 连续开多个弹框会堆积 listener。
+  // 改成"模块级标志"——只注册一次 · close 只清当前 · 多次开叠弹框不重复挂。
+  if (!_previewModalKeyBound) {
+    document.addEventListener('keydown', _previewModalKeyHandler);
+    _previewModalKeyBound = true;
+  }
   const close = () => {
     host.classList.remove('show');
-    document.removeEventListener('keydown', onKey);
   };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
-  document.addEventListener('keydown', onKey);
   host.querySelector('.kb-modal-close').onclick = close;
   host.querySelector('.kb-modal-mask').onclick = close;
+}
+
+function _showKbModal(data) {
+  const meta = (data && data.meta) || {};
+  const text = (data && data.text) || '';
+  const bodyHtml = (typeof mdRender === 'function')
+    ? mdRender(text) : ('<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>');
+  const metaLine = [meta.type, (meta.chars || 0) + ' 字', (meta.chunks || 0) + ' 块',
+    data && data.truncated ? '预览已截断' : ''].filter(Boolean).join(' · ');
+  _showPreviewModal({ title: meta.title || '文档', metaLine, bodyHtml, tags: meta.tags || [] });
 }
 
 async function _kbAction(url, body) {
@@ -13094,7 +13596,7 @@ function renderOppFullCard(o, idx) {
           <i class="ri-draft-fill"></i> 展开成方案
         </button>
         <button class="opp-act-btn opp-act-feas"
-                onclick="runFeasibilityFromOpp('${escHtml(o.id || '')}', ${idx + 1})"
+                onclick="runFeasibilityFromOpp('${jsStr(o.id || '')}', ${idx + 1})"
                 title="跳到 📊 可行性分析维度 · Daemonkey 跑一次深度评估">
           <i class="ri-bar-chart-fill"></i> 跑可行性
         </button>
@@ -13555,6 +14057,272 @@ function switchSessionById(sid) {
 }
 function showSpawnBanner() { /* no-op · spawnTask 自动切标签无需 banner */ }
 window.switchSessionById = switchSessionById;
+
+// ========== 提问轨道（Message Index Rail）· 社区贡献 · 2026-08-10 ==========
+// 右侧一列集中连在一起的标记 · 只列用户消息（全部，无上限）
+// 点击标记 → 平滑滚动定位到对应消息（闪烁高亮）· 悬停/聚焦 → 预览文字（截断 ~12 字）
+// 磁性拉伸: 光标在轨道移动 → 影响半径内刻度按距离连续变长（smoothstep）· 离开回弹
+// 滚动聊天区 → 当前可见消息对应标记高亮
+// 适配母体: 主题色用 --Daemonkey 系 (非社区 --accent) · 父容器补 position:relative (chat-pane 无定位)
+const _RAIL_PREVIEW_LEN = 12;
+const _RAIL_MAGNET_RADIUS = 72;   // 磁性影响半径
+const _RAIL_MAX_STRETCH = 52;     // 磁性拉伸最宽
+const _RAIL_TOP_OFFSET = 120;     // rail 距消息区顶部
+const _RAIL_BOTTOM_PAD = 16;      // 底部留白
+let _railEl = null;
+let _railTip = null;
+let _railMarks = []; // [{ el, msgEl, baseW }]
+let _railCenters = []; // 每个刻度相对 rail 顶的中心 y（缓存 · 磁性拉伸免每帧读布局）
+let _railPointerY = null;         // 最近一次光标 y（视口坐标）
+let _railRAF = null;              // 磁性拉伸 RAF 句柄
+let _railHideTimer = null;        // safe zone 隐藏定时器
+let _railSelfHealTimer = null;    // 兜底自愈轮询句柄 (2026-08-10 v3 · 防误隐藏后无事件恢复)
+
+function _ensureMsgRail() {
+  if (_railEl) return _railEl;
+  const panel = document.getElementById('messages');
+  if (!panel) return null;
+  _railEl = document.createElement('div');
+  _railEl.className = 'msg-rail';
+  _railEl.setAttribute('aria-label', '对话中的提问');
+  _railEl.hidden = true;
+  // 2026-08-10 修复 v4: rail 挂 body · position:fixed 视口定位 ·
+  // 不再挂 .chat-pane (overflow:hidden 窗口变小时裁掉 rail)
+  document.body.appendChild(_railEl);
+  _railTip = document.createElement('div');
+  _railTip.className = 'rail-tooltip';
+  _railTip.hidden = true;
+  document.body.appendChild(_railTip);
+  // 悬停安全区: 鼠标进入预览卡取消隐藏 · 移出立即隐藏（防刻度→预览卡闪烁）
+  _railTip.addEventListener('mouseenter', function() {
+    if (_railHideTimer) { clearTimeout(_railHideTimer); _railHideTimer = null; }
+  });
+  _railTip.addEventListener('mouseleave', function() { _hideRailPreview(); });
+  panel.addEventListener('scroll', _updateRailActive, { passive: true });
+  window.addEventListener('resize', _repositionRail);
+  // 磁性拉伸: rail 只绑一次 pointermove · RAF 消费（免每帧写 DOM）
+  _railEl.addEventListener('pointermove', function(e) {
+    _railPointerY = e.clientY;
+    if (!_railRAF) _railRAF = requestAnimationFrame(_applyRailMagnet);
+  });
+  _railEl.addEventListener('pointerleave', function() {
+    _railPointerY = null;
+    if (_railRAF) { cancelAnimationFrame(_railRAF); _railRAF = null; }
+    _railMarks.forEach(function(item) { item.el.style.transform = 'scaleX(1)'; }); // 回弹
+  });
+  if (window.MutationObserver) {
+    // 2026-08-11 F2 (墨言审查): 监听 #messages 全子树 class 变化 → 每条消息渲染/折叠
+    // 都触发全量重建。加 debounce (150ms) —— 高频变更只取最后一次状态重建 · 性能友好。
+    let _railObsTimer = null;
+    const obs = new MutationObserver(function() {
+      if (_railObsTimer) return; // 已有排队 · 等 debounce 落地
+      _railObsTimer = setTimeout(function() {
+        _railObsTimer = null;
+        _refreshMsgRail();
+      }, 150);
+    });
+    // 2026-08-10 修复 v2: 展开折叠消息/加载全部 = 切 hidden 属性 + 换子节点 ·
+    // 只监听 childList 抓不到属性变化 → 加 attributes:true + attributeFilter:['hidden']
+    // (session 容器 hidden 切换 / 消息自身折叠都会触发 · 不再漏)
+    obs.observe(panel, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class'] });
+    _railEl._obs = obs;
+  }
+  _refreshMsgRail();
+  // 2026-08-10 修复 v3: 兜底自愈 · 每 1.5s 检查一次 ·
+  // 任何事件漏监/瞬间状态导致 rail 误隐藏 → 有用户消息就强制恢复 (治"展开折叠后消失")
+  // 2026-08-10 修复 v5: 自愈检查条件从 `.session-msgs .msg.用户` (限容器内) 放宽为
+  // `#messages` 全量 `.msg.用户` · 展开折叠/加载全部重建后容器 class 若变化 ·
+  // 旧条件查不到 → 永不恢复 · 只能等对话触发 observer (用户: "要再对话一次才出现")
+  if (!_railSelfHealTimer) {
+    _railSelfHealTimer = setInterval(function() {
+      if (!_railEl) return;
+      if (_railEl.hidden) {
+        const panel = document.getElementById('messages');
+        if (panel && panel.querySelector('.msg.用户')) {
+          _refreshMsgRail();  // 有用户消息但 rail 隐藏 → 重建恢复
+        }
+      }
+    }, 1500);
+  }
+  return _railEl;
+}
+
+// 当前可见会话的消息容器（多会话场景只渲染当前会话的刻度）
+function _visibleMsgContainer() {
+  const panel = document.getElementById('messages');
+  if (!panel) return null;
+  return panel.querySelector(':scope > .session-msgs:not([hidden])') || panel;
+}
+
+function _refreshMsgRail() {
+  if (!_railEl) return;
+  const container = _visibleMsgContainer();
+  // 2026-08-10 修复 v3: 容器切换瞬间 (:not([hidden]) 选不到) 不隐藏 rail ·
+  // 用 panel 全量兜底找 .msg.用户 · 只要有用户消息就显示 · 不因瞬间状态误隐藏
+  const src = container || document.getElementById('messages');
+  if (!src) { _railEl.hidden = true; return; }
+  const userMsgs = src.querySelectorAll('.msg.用户'); // 用户消息 = msg 用户 (角色类)
+  // 2026-08-10 修复 v9 (用户 拍板): rail 只显示最近 N 条 · 不随折叠/展开爆炸 ·
+  // 展开折叠加载全部后 DOM 224+ 条 → 刻度挤爆看不见 (用户: "200多轮根本显示不全")
+  // 上限: 最近 28 条 · 不折叠/展开折叠都完整显示 · 无需内部滚动 · 1080P/2K 都装得下
+  const RAIL_MAX_MARKS = 28;
+  const startIdx = Math.max(0, userMsgs.length - RAIL_MAX_MARKS);
+  const railMsgs = [];
+  for (let _ri = startIdx; _ri < userMsgs.length; _ri++) railMsgs.push(userMsgs[_ri]);
+  const total = railMsgs.length;
+  // 间距固定 6px（CSS 控制）· 不动态压缩
+  _railEl.innerHTML = '';
+  _railMarks = [];
+  // 2026-08-10 修复 v9 (用户 拍板): 顺序恢复老的在上·新的在下 (跟聊天记录一致) ·
+  // v6 曾因 224 刻度爆炸倒序(最新在上) · 现在有数量上限不再需要 · 恢复直觉顺序
+  for (let i = 0; i < total; i++) {
+    const msgEl = railMsgs[i];
+    const mark = document.createElement('button');
+    mark.className = 'rail-mark';
+    mark.type = 'button';
+    mark.setAttribute('aria-label', '跳转到用户消息');
+    mark.title = '跳转到该消息';
+    // 宽度统一 · 最新(底部)最深 · 越老越浅 · 保底 0.55 可见 (v8 顾问方案 B: 0.4→0.55)
+    const idxFromBottom = total - 1 - i; // 0 = 最新 (在底部)
+    const baseW = 18;                  // v8 顾问方案 C: 11→18px · 加宽更好感知
+    mark.style.width = baseW + 'px';
+    mark.style.opacity = Math.max(0.55, 0.95 - idxFromBottom * 0.05).toFixed(2);
+    mark.addEventListener('click', function() { _jumpToMsg(msgEl); });
+    mark.addEventListener('mouseenter', function() { _showRailPreview(mark, msgEl); });
+    mark.addEventListener('mouseleave', function() { _scheduleHidePreview(); });
+    // 键盘可达: Tab 聚焦同样显示预览
+    mark.addEventListener('focus', function() { _showRailPreview(mark, msgEl); });
+    mark.addEventListener('blur', function() { _scheduleHidePreview(); });
+    _railEl.appendChild(mark);
+    _railMarks.push({ el: mark, msgEl: msgEl, baseW: baseW });
+  }
+  _railEl.hidden = _railMarks.length === 0;
+  _railEl.scrollTop = 0; // v9: 28 条以内无需内部滚动 · 归零防残留滚动位置
+  _repositionRail();
+  _updateRailActive();
+}
+
+// 缓存每个刻度相对 rail 顶的中心 y（flex-start + gap 线性排列 · 免每帧读布局）
+function _updateRailCenters() {
+  _railCenters = [];
+  if (!_railEl || !_railMarks.length) return;
+  const gap = 6; // v8 顾问方案 C: 8→6 与 .msg-rail gap 同步
+  const markH = 4; // v8 顾问方案 C: 3→4 与 .rail-mark height 同步
+  for (let i = 0; i < _railMarks.length; i++) {
+    _railCenters.push(8 + i * (markH + gap) + markH / 2);
+  }
+}
+
+function _jumpToMsg(msgEl) {
+  if (!msgEl) return;
+  try { msgEl.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  catch (e) { msgEl.scrollIntoView(); }
+  msgEl.classList.remove('rail-jump-flash');
+  void msgEl.offsetWidth; // 重置动画
+  msgEl.classList.add('rail-jump-flash');
+  setTimeout(function() { msgEl.classList.remove('rail-jump-flash'); }, 1300);
+}
+
+function _showRailPreview(mark, msgEl) {
+  if (!_railTip) return;
+  if (_railHideTimer) { clearTimeout(_railHideTimer); _railHideTimer = null; }
+  // 2026-08-10 修复 v2: 预览文本只取正文 (跳过 .time 时间戳) · 纯文本节点直接用
+  let txt = '';
+  const bodyEl = msgEl.querySelector && msgEl.querySelector('.md-body');
+  if (bodyEl) {
+    txt = (bodyEl.innerText || bodyEl.textContent || '').replace(/\s+/g, ' ').trim();
+  } else {
+    for (let i = 0; i < msgEl.childNodes.length; i++) {
+      const n = msgEl.childNodes[i];
+      if (n.nodeType === 3) { txt += n.textContent; }            // 文本节点
+      else if (n.nodeType === 1 && !(n.classList && n.classList.contains('time'))) {
+        txt += (n.innerText || n.textContent || '');
+      }
+    }
+    txt = txt.replace(/\s+/g, ' ').trim();
+  }
+  if (txt.length > _RAIL_PREVIEW_LEN) txt = txt.slice(0, _RAIL_PREVIEW_LEN) + '…';
+  _railTip.textContent = txt || '（空消息）';
+  // 2026-08-10 修复 v2: 不用 translateX(-100%) (刻度靠右时会把卡推出屏幕) ·
+  // 直接 right 定位: 卡右边缘 = 刻度左边缘 - 10px · 稳稳在视口内
+  const r = mark.getBoundingClientRect();
+  _railTip.style.right = Math.max(8, window.innerWidth - r.left + 10) + 'px';
+  _railTip.style.top = r.top + 'px';
+  _railTip.style.transform = 'none';
+  _railTip.style.left = 'auto';
+  _railTip.hidden = false;
+}
+
+function _scheduleHidePreview() {
+  if (_railHideTimer) clearTimeout(_railHideTimer);
+  _railHideTimer = setTimeout(function() {
+    _railHideTimer = null;
+    if (_railTip) _railTip.hidden = true;
+  }, 120); // safe zone: 延迟关闭, 允许鼠标横向进入预览卡
+}
+
+function _hideRailPreview() {
+  if (_railHideTimer) { clearTimeout(_railHideTimer); _railHideTimer = null; }
+  if (_railTip) _railTip.hidden = true;
+}
+
+function _repositionRail() {
+  if (!_railEl) return;
+  const panel = document.getElementById('messages');
+  if (!panel) return;
+  // 2026-08-10 修复 v4: rail 改用 position:fixed (挂 body · 视口定位) ·
+  // 原 absolute 挂 .chat-pane 下 → .chat-pane overflow:hidden 在窗口变小时把 rail 裁掉 (用户: 吃分辨率)
+  // fixed 定位直接用视口坐标 · 不随父容器裁切 · 窗口怎么变都在聊天区右侧
+  const prect = panel.getBoundingClientRect();
+  _railEl.style.top = (prect.top + _RAIL_TOP_OFFSET) + 'px';
+  // 2026-08-10 修复 v8 (顾问 KIMI K3 方案 A): 刻度从滚动条带上挪开 ·
+  // 原 right = innerWidth - prect.right + 5 → rail 右缘 1583 紧贴滚动条左缘 1584 (8px 宽) ·
+  // 人眼把 rail 归并成"滚动条的一部分" = 视觉消失 · +16 让刻度右缘落到 ~1576 ·
+  // 正好在 #messages padding 右侧空白带里 · 独立成一条
+  _railEl.style.right = Math.max(8, window.innerWidth - prect.right + 16) + 'px';
+  // rail 高度: 内容自适应 · 封顶消息区剩余（不铺满 → 刻度紧凑排列）
+  _railEl.style.height = 'auto';
+  _railEl.style.maxHeight = Math.max(40, panel.clientHeight - _RAIL_TOP_OFFSET - _RAIL_BOTTOM_PAD) + 'px';
+  _updateRailCenters();
+}
+
+function _applyRailMagnet() {
+  _railRAF = null;
+  if (_railPointerY == null || !_railMarks.length || !_railEl) return;
+  const railTop = _railEl.getBoundingClientRect().top; // 每帧只读一次布局
+  _railMarks.forEach(function(item, i) {
+    const centerY = _railCenters[i] != null ? railTop + _railCenters[i] : null;
+    if (centerY == null) return;
+    const dist = Math.abs(_railPointerY - centerY);
+    const t = Math.max(0, 1 - dist / _RAIL_MAGNET_RADIUS);
+    const influence = t * t * (3 - 2 * t); // smoothstep
+    if (influence <= 0.01) {
+      item.el.style.transform = 'scaleX(1)';
+    } else {
+      const w = item.baseW + (_RAIL_MAX_STRETCH - item.baseW) * influence;
+      item.el.style.transform = 'scaleX(' + (w / item.baseW) + ')';
+    }
+  });
+}
+
+function _updateRailActive() {
+  const panel = document.getElementById('messages');
+  if (!panel || !_railMarks.length) return;
+  const viewTop = panel.getBoundingClientRect().top;
+  const midY = viewTop + panel.clientHeight / 2;
+  let activeIdx = -1;
+  for (let i = 0; i < _railMarks.length; i++) {
+    const r = _railMarks[i].msgEl.getBoundingClientRect();
+    if (r.top <= midY && r.bottom >= viewTop) activeIdx = i;
+  }
+  _railMarks.forEach(function(item, i) {
+    item.el.classList.toggle('active', i === activeIdx);
+  });
+}
+
+// 初始化: DOM 就绪后建 rail · 之后靠 MutationObserver 自动刷新
+if (document.body) _ensureMsgRail();
+else document.addEventListener('DOMContentLoaded', function() { _ensureMsgRail(); }, { once: true });
 
 // 卷五十五 · 2026-06-03 · P1 前端错误边界的就绪信标。
 // chat.js 顶层执行到这里 = 解析成功 + 没在顶层抛错 → 标记 app 已就绪。

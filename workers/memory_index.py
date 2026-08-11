@@ -85,7 +85,19 @@ _QUERY_SYNONYMS = {
     "前端": ["frontend", "ui"], "界面": ["ui"], "页面": ["ui"],
     "换行": ["linebreak"], "乱码": ["encoding"], "编码": ["encoding"],
     "重启": ["restart"], "崩溃": ["crash"], "假死": ["hang"],
+    # wish-fec0e2f6 实测补: 中英混排时 jieba 把"飞书"切成"飞"+"书" (cut_for_search HMM 猜词失败)
+    # → 显式加自定义词 + 同义词映射 · "飞书"在消息里永远切为完整词 · 不再碎成单字
+    "飞书": ["feishu", "lark"], "群聊": ["group"],
 }
+
+# wish-fec0e2f6 · 自定义词典: 让 jieba 把专有名词当完整词切 · 治中英混排猜词失败
+# ("验证飞书 0.9.0 BETA" → 无此表时切 '飞'+'书' · 有则切 '飞书')
+if _JIEBA_AVAILABLE:
+    try:
+        for _word in ("飞书", "daemonkey", "Daemonkey", "playbook", "webui", "WebUI", "gitee", "Gitee", "github", "GitHub"):
+            jieba.add_word(_word)
+    except Exception:
+        pass
 
 
 def _tokenize_for_query(query: str) -> str:
@@ -95,11 +107,35 @@ def _tokenize_for_query(query: str) -> str:
     case 2: 'hermes-agent' 切完是 'hermes - agent' · '-' 是 FTS5 操作符 → 过滤
     case 3: 去重 · 同词出现多次没必要 (jieba 切 '工作模式 工作节奏' 会有 '工作' 两次)
     case 4 (0.8.9): 停用词过滤 (虚词污染 bm25 排名) + 中英同义词扩展 (词面不重合漏召回)
+    case 5 (wish-6ff9d89b · C1): 显式 FTS5 语法透传 — query 含 FTS5 操作符
+        (AND/OR/NOT/NEAR/引号短语/前缀*/括号分组/排除-) 时·不再拆成宽松 OR·
+        原样交给 FTS5 原生解析·让 SPEC 承诺的 AND/NOT/"短语"/前缀 语法真实生效。
+        纯自然语言 (无操作符) 才走上面的宽松 OR 分词 (记忆检索的实际用法)。
+        注意: 中文 query 透传时 FTS5 按索引词 (jieba 切过的) 匹配·短语/排除对中文
+        词同样有效 (索引时已分词·FTS5 在 token 序列上做邻接/排除)。
     """
-    if not _JIEBA_AVAILABLE:
-        return query
     if not query:
         return ""
+    # M5 (wish-6ff9d89b) · 超长 query 防御: >500 字截断 (防 jieba 切 5000 字全丢成空 / 烧时间)
+    if len(query) > 500:
+        query = query[:500]
+    # C1 · 显式 FTS5 语法检测: 引号短语 / 大写操作符 / 前缀* / 括号分组 / 排除-
+    _has_fts_syntax = (
+        '"' in query
+        or re.search(r"\b(AND|OR|NOT|NEAR)\b", query, re.IGNORECASE) is not None
+        or "*" in query
+        or "(" in query or ")" in query
+        or re.search(r"(^|\s)-[\w\u4e00-\u9fff]", query) is not None
+    )
+    if _has_fts_syntax:
+        # C1 · 透传前做安全清洗 (wish-6ff9d89b):
+        #   FTS5 query 层排除符 (-) 有语法限制 (单独 -X 或 * -X 都不合法)。
+        #   'NOT 缓存' → 这里只标记出排除词·真排除在 search 的 SQL 层做
+        #   (WHERE ... AND c.content NOT LIKE '%缓存%') · 因为 FTS5 MATCH 是"找出匹配"·
+        #   "排除"是 SQL 层语义。见 search() 的 _exclude 处理。
+        return query
+    if not _JIEBA_AVAILABLE:
+        return query
     raw = [w.strip() for w in jieba.cut_for_search(query) if w and w.strip()]
     seen = set()
     safe = []
@@ -108,8 +144,10 @@ def _tokenize_for_query(query: str) -> str:
         # 停用词 (虚词/语气词) · 只含它们的 chunk 不该参与排名
         if w in _QUERY_STOPWORDS or w_low in _QUERY_STOPWORDS:
             continue
-        # 单字符中文/符号 (jieba cut_for_search 的碎片) · 实词如 "丢" 也多为噪音
-        if len(w) == 1 and not w_low.isalnum():
+        # 单字符碎片全滤 (wish-fec0e2f6 实测同根因): 中英混排时 jieba 把"飞书"切成"飞"+"书" ·
+        # "验证飞书 0.9.0 BETA" → 单字"飞/书/新/上"污染 FTS5 候选池 (top_k=4 被噪音占位·真 playbook 挤不进)
+        # 英文单字 (a/i) / 数字单字 (0/9) 同样滤 · 只有多字符 token 才有语义
+        if len(w) == 1:
             continue
         if w.upper() in _FTS5_RESERVED:
             continue  # 去 'OR'/'AND'/'NOT'/'NEAR' (含小写)
@@ -125,13 +163,83 @@ def _tokenize_for_query(query: str) -> str:
                 seen.add(syn)
                 safe.append(syn)
     if not safe:
-        return '"' + query.replace('"', '""') + '"'
+        # wish-189cab52 (墨言模块 8) · 纯停用词 query 归零修复。
+        # 原逻辑: return '"<query>"' 当短语 → 但索引侧 jieba 把 '怎么了' 切成 '怎么'+'了'
+        # 两个 token · FTS5 里根本没有 '怎么了' 连续 token → 短语必然 0 命中。
+        # 修法: 回退宽松 OR (不过滤停用词) · 用 jieba 切出的原始词 (含虚词) OR 连 →
+        # '怎么'/'了' 能分别命中 → 纯虚词查询不再静默归零。
+        # 注意: 这是"尽力召回"兜底 · 停用词仍留在 _QUERY_STOPWORDS 正常路径过滤·
+        # 只有 query 全是停用词时才走到这 (正常查询不受影响)。
+        fallback = [w.strip() for w in jieba.cut_for_search(query) if w and w.strip()]
+        fallback = list(dict.fromkeys(fallback))  # 去重保序
+        if fallback:
+            return " OR ".join(fallback)
+        return query
     return " OR ".join(safe)
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
 DB_PATH = DATA_DIR / "memory_index.db"
+
+
+def _query_real_terms(query: str) -> list[str]:
+    """wish-fec0e2f6 (墨言 03 · 自研) · 返回 query 的实词列表 (jieba 精确切 + 停用词/泛词过滤 + 同义词展开)。
+
+    跟 _tokenize_for_query 同源 (同一套 jieba + 停用词 + 同义词) · 但返回词数组而非 OR 串:
+    - 供 _overlap_count 做"实词重叠闸" (min_overlap=2) — overlap 比 bm25 更可靠的语义信号
+    - 供 _has_retrieval_intent 判断"消息有没有可检索的主题词" (纯应答/语气词滤光 → 空列表 → 不检索)
+    - 供 _PB_GENERIC_WORDS 泛词剔除 (应用/做/帮我 不参与检索)
+    切词故障 → 返回空列表 (调用侧 fail-open: 意图门槛放行 · 重叠闸退化)
+    """
+    if not query:
+        return []
+    if len(query) > 500:
+        query = query[:500]
+    if not _JIEBA_AVAILABLE:
+        # 无 jieba → 用空格分词兜底 (英文场景)
+        return [w for w in query.replace(",", " ").split() if w.strip()][:20]
+    raw = [w.strip() for w in jieba.cut_for_search(query) if w and w.strip()]
+    seen: set[str] = set()
+    terms: list[str] = []
+    for w in raw:
+        w_low = w.lower()
+        if w in _QUERY_STOPWORDS or w_low in _QUERY_STOPWORDS:
+            continue
+        # 单字符碎片全滤 (wish-fec0e2f6 实测: 中英混排时 jieba 把"飞书"切成"飞"+"书"·
+        # "验证飞书 0.9.0 BETA" → 单字"飞/书/新/上"污染 overlap 计数 → 真 playbook 被 min_overlap 挡掉)
+        # 英文单字 (a/i) 也滤 · 数字单字 (0/9) 也滤 · 只有多字符 token 才有语义
+        if len(w) == 1:
+            continue
+        if w.upper() in _FTS5_RESERVED:
+            continue
+        if not _FTS5_SAFE_RE.match(w):
+            continue
+        if w in seen:
+            continue
+        seen.add(w)
+        terms.append(w)
+        for syn in _QUERY_SYNONYMS.get(w, []):
+            if syn not in seen:
+                seen.add(syn)
+                terms.append(syn)
+    return terms
+
+
+def _overlap_count(query_terms: list[str], text: str) -> int:
+    """wish-fec0e2f6 (墨言 03 · 自研) · 实词重叠计数: query 实词里有多少个出现在 text 里。
+
+    与检索闸同口径 (不去子串): "转化率提升" 切出 [转化率, 提升] · 两个都出现 = overlap 2。
+    比 len(_hit_terms) 可靠: _hit_terms 去子串后 "转化率提升"→[转化率] 长度 1 · 会误标弱。
+    """
+    if not query_terms or not text:
+        return 0
+    t_low = text.lower()
+    n = 0
+    for t in query_terms:
+        if t.lower() in t_low:
+            n += 1
+    return n
 
 SOUL_DIR = ROOT / "soul"
 SESSIONS_DIR = ROOT / "sessions"
@@ -377,7 +485,13 @@ def _get_conn() -> sqlite3.Connection:
     """获取可写连接 · 自动建表。"""
     conn = sqlite3.connect(str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")  # wish-93b0cabf 残留修复 · 连接都等锁不炸
     conn.execute("PRAGMA synchronous=NORMAL")
+    # wish-93b0cabf 残留修复 (2026-08-10 BRO 报 database is locked) ·
+    # 缺 busy_timeout = 默认 0 → 并发写一撞立刻抛 "database is locked" (rebuild 后台重建撞
+    # 主对话写入) → 新 session 首次 load_soul 触发重建 → 挂起/空回复。
+    # 加 30s 等待: WAL 下写写冲突排队而不是立即炸 · 30s 足够前一个写完成。
+    conn.execute("PRAGMA busy_timeout=30000")
     _ensure_tables(conn)
     return conn
 
@@ -792,6 +906,8 @@ def search(
     scope: str = "all",
     context_window: int = 8000,
     min_score: float | None = None,
+    window_by: str = "content",
+    min_overlap: int | None = None,
 ) -> list[MemoryChunk]:
     """FTS5 全文检索。
 
@@ -803,21 +919,41 @@ def search(
         min_score: bm25 相关性门槛 · 只留 score <= min_score 的块 (越负越相关)。
             None = 不过滤 (recall_memory 工具走高召回)。
             自动注入 (relevant_memories) 传一个负阈值·把弱命中挡在外面·防每轮塞噪音。
+        window_by (wish-6ff9d89b · I1): 截断窗口口径。
+            'content' (默认) = 按全文累计截断 (full 模式·取原文看细节)
+            'snippet' = 按单条摘要 140 chars 截断·不累计 (list 模式·给摘要省 token·
+                        不被全文窗口压制条数·top_k 多少就回多少摘要)
+        min_overlap (wish-fec0e2f6 · 墨言 03 思路自研): 实词重叠闸。
+            query 实词 (jieba 切 + 停用词/泛词滤 + 同义词) 里至少 N 个出现在 chunk 内容里才保留。
+            overlap 比 bm25 更可靠的语义信号 — 防"单虚词/泛词撞标题"误召回 (min_score 放宽后的副作用)。
+            None = 不过滤 (recall_memory 工具走高召回)。
 
     Returns:
         按 BM25 排名的 MemoryChunk 列表
     """
     top_k = max(1, min(top_k, 20))
+    # M3 (wish-6ff9d89b) · context_window 无上限 → clamp 500-20000 (对齐 SPEC)
+    context_window = max(500, min(int(context_window or 8000), 20000))
 
     if not DB_PATH.exists():
         return []
 
     conn = sqlite3.connect(str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")  # wish-93b0cabf 残留修复 · 连接都等锁不炸
 
     # 卷四十六 II · wish-43f705b8 jieba tokenizer · 修中文 0 命中
     # 切 query (jieba.cut_for_search) → " OR " 连接 · 任一词命中即算 hit
     # 切完是 "工作 OR 模式 OR 工作模式" 这种形式 · FTS5 能用 BM25 排序
+    # wish-189cab52 · 显式 FTS5 语法检测 (跟 _tokenize_for_query 内同款逻辑) ·
+    # 供 MATCH 列限定判断: 显式语法透传路径不加列前缀 (语法会错) · 普通 OR 路径加。
+    _has_fts_syntax = (
+        '"' in query
+        or re.search(r"\b(AND|OR|NOT|NEAR)\b", query, re.IGNORECASE) is not None
+        or "*" in query
+        or "(" in query or ")" in query
+        or re.search(r"(^|\s)-[\w\u4e00-\u9fff]", query) is not None
+    )
     fts_query = _tokenize_for_query(query)
     if not fts_query.strip():
         conn.close()
@@ -840,36 +976,89 @@ def search(
         # 客户档案 notes · 每个 source = client:<id>
         scope_filter_c = "AND c.source LIKE 'client:%'"
 
+    # wish-6ff9d89b · C1: FTS5 的 NOT 排除语义转到 SQL 层实现。
+    # FTS5 query 层 'NOT X' / 'A -B' 有语法限制 (单独排除不合法 · 中间 - 也易 syntax error) ·
+    # 且 MATCH 是"找出匹配"·"排除"本质是 SQL 层 NOT LIKE。这里解析出排除词·
+    # 生成 AND c.content NOT LIKE '%词%' (多词 AND 连) · 转义 LIKE 通配符 (M2)。
+    exclude_terms: list[str] = []
+    q_parse = query
+    m_not = re.search(r"\bNOT\s+([\w\u4e00-\u9fff]+)", q_parse, re.IGNORECASE)
+    if m_not:
+        exclude_terms.append(m_not.group(1))
+        # 从 query 里去掉 NOT 段 · 剩余当正向匹配
+        q_parse = q_parse[:m_not.start()] + " " + q_parse[m_not.end():]
+    # 也处理 'A -B' 形态 (FTS5 排除符)
+    m_neg = re.findall(r"(?:^|\s)-([\w\u4e00-\u9fff]+)", q_parse)
+    if m_neg:
+        exclude_terms.extend(m_neg)
+    if exclude_terms:
+        for term in exclude_terms:
+            _esc = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            scope_filter_c += f" AND c.content NOT LIKE '%{_esc}%' ESCAPE '\\'"
+        # 去掉 query 里的 -B 排除段 (FTS5 query 层不处理了)
+        q_parse = re.sub(r"(?:^|\s)-[\w\u4e00-\u9fff]+", " ", q_parse)
+    if q_parse.strip():
+        fts_query = _tokenize_for_query(q_parse.strip())
+    else:
+        # query 只剩排除词 (如 "NOT 缓存" 无正向词) → 不跑 FTS5 MATCH · 纯 NOT LIKE 全扫
+        fts_query = ""
+
     has_score = True
     try:
-        rows = conn.execute(
-            f"SELECT memory_fts.rowid, c.source, c.section, c.chunk_index, "
-            f"       c.content, c.token_count, c.updated_at, memory_fts.rank "
-            f"FROM memory_fts "
-            f"JOIN memory_chunks c ON memory_fts.rowid = c.id "
-            f"WHERE memory_fts MATCH ? {scope_filter_c} "
-            f"ORDER BY memory_fts.rank LIMIT ?",
-            (fts_query, top_k),
-        ).fetchall()
+        if fts_query:
+            # wish-189cab52 (墨言模块 8) · MATCH 列限定。
+            # FTS5 表 3 列 (content_tok/source/section) · 裸 MATCH 扫全列 → source/section
+            # 元数据词 ('assistant'/'tool'/'session') 污染召回。列限定 'content_tok : q' 只扫正文。
+            # 但显式语法透传 (C1 · NOT/AND/短语/前缀) 不能加列前缀 (语法会错) ·
+            # 只在宽松 OR 普通路径加限定 · 显式语法本来就是用户精确意图·元数据污染风险低。
+            if _has_fts_syntax:
+                _match_expr = fts_query
+            else:
+                _match_expr = f"content_tok : {fts_query}"
+            rows = conn.execute(
+                f"SELECT memory_fts.rowid, c.source, c.section, c.chunk_index, "
+                f"       c.content, c.token_count, c.updated_at, memory_fts.rank "
+                f"FROM memory_fts "
+                f"JOIN memory_chunks c ON memory_fts.rowid = c.id "
+                f"WHERE memory_fts MATCH ? {scope_filter_c} "
+                f"ORDER BY memory_fts.rank LIMIT ?",
+                (_match_expr, top_k),
+            ).fetchall()
+        else:
+            # 只剩排除词 (NOT 缓存 无正向词) → 跳过 MATCH · 纯 SQL NOT LIKE 全扫 (rank 无意义)
+            rows = conn.execute(
+                f"SELECT c.id, c.source, c.section, c.chunk_index, c.content, "
+                f"       c.token_count, c.updated_at, 0.0 "
+                f"FROM memory_chunks c "
+                f"WHERE 1=1 {scope_filter_c} "
+                f"ORDER BY c.id DESC LIMIT ?",
+                (top_k,),
+            ).fetchall()
     except sqlite3.OperationalError as e:
         logger.warning("FTS5 search failed (%s) · 退化 LIKE · 用原 query", e)
         has_score = False  # LIKE 路径没 bm25 分数 · min_score 过滤跳过
         try:
+            # M2 (wish-6ff9d89b) · LIKE 通配符转义: query 含 % _ 会当通配符爆炸 → 转义字面量
+            _like_q = q_parse.strip() or query  # 用排除后的 (不含 NOT 段)
+            _like_esc = _like_q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             like_sql = f"""
                 SELECT c.id, c.source, c.section, c.chunk_index, c.content,
                        c.token_count, c.updated_at
                 FROM memory_chunks c
-                WHERE c.content LIKE ? {scope_filter_c}
+                WHERE c.content LIKE ? ESCAPE '\\' {scope_filter_c}
                 ORDER BY c.id DESC
                 LIMIT ?
             """
-            rows = conn.execute(like_sql, (f"%{query}%", top_k)).fetchall()
+            rows = conn.execute(like_sql, (f"%{_like_esc}%", top_k)).fetchall()
         except sqlite3.OperationalError:
             conn.close()
             return []
 
     results: list[MemoryChunk] = []
     total_chars = 0
+    # wish-fec0e2f6 (墨言 03 思路自研) · 实词重叠闸: 检索前算一次 query 实词 ·
+    # min_overlap=None (recall_memory 高召回) 不启用 · 自动注入传 2 (防单虚词/泛词撞标题)
+    _ov_terms = _query_real_terms(query) if min_overlap else []
 
     for row in rows:
         score = float(row[7]) if has_score and len(row) > 7 else 0.0
@@ -877,6 +1066,12 @@ def search(
         # LIKE 退化路径没分数·不过滤 (has_score=False)。
         if min_score is not None and has_score and score > min_score:
             continue
+        # wish-fec0e2f6 · min_overlap 闸: query 实词里至少 N 个出现在 chunk 内容 (含 section) 才留
+        # overlap 比 bm25 更可靠的语义信号 — bm25 对高频词天然低分 (记忆/系统/三审三修 IDF 低 ·
+        # score -3 也强相关) · min_score 放宽后必须靠 overlap 挡"单词撞库"
+        if min_overlap and _ov_terms:
+            if _overlap_count(_ov_terms, (row[4] or "") + " " + (row[2] or "")) < min_overlap:
+                continue
         chunk = MemoryChunk(
             id=row[0],
             source=row[1],
@@ -887,22 +1082,31 @@ def search(
             updated_at=row[6],
             score=score,
         )
-        if total_chars + len(chunk.content) > context_window:
-            chunk.content = chunk.content[: context_window - total_chars] + "..."
+        if window_by == "snippet":
+            # I1 (wish-6ff9d89b) · list 模式: 每块只留 140 chars 摘要 · 不累计
+            # (不被全文窗口压制条数 · top_k 多少就回多少摘要)
+            if len(chunk.content) > 140:
+                chunk.content = chunk.content[:139] + "…"
             results.append(chunk)
-            break
-        results.append(chunk)
-        total_chars += len(chunk.content)
+        else:
+            # 默认 full 模式: 按全文累计截断 · 超出 break (保留前面的完整块)
+            if total_chars + len(chunk.content) > context_window:
+                chunk.content = chunk.content[: max(0, context_window - total_chars)] + "…"
+                results.append(chunk)
+                break
+            results.append(chunk)
+            total_chars += len(chunk.content)
 
     conn.close()
     return results
 
 
-def get_chunks_by_ids(ids: list[int], context_window: int = 12000) -> list[MemoryChunk]:
+def get_chunks_by_ids(ids: list[int], context_window: int = 8000) -> list[MemoryChunk]:
     """按 chunk id 批量取全文 · 给 recall_memory 两段式的 fetch 阶段用。
 
     第一阶段 (mode=list) 返回 id + 摘要让 OPUS 挑·这里按挑中的 id 取原文。
     保持入参 ids 的顺序返回 (OPUS 挑的优先级)·超 context_window 截断尾部。
+    wish-6ff9d89b · I3: 默认 8000 对齐 SPEC (原 12000 文档-行为不一致) · 截断加提示。
     """
     if not ids:
         return []
@@ -915,6 +1119,7 @@ def get_chunks_by_ids(ids: list[int], context_window: int = 12000) -> list[Memor
 
     conn = sqlite3.connect(str(DB_PATH))
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")  # wish-93b0cabf 残留修复 · 连接都等锁不炸
     placeholders = ",".join("?" for _ in safe_ids)
     try:
         rows = conn.execute(
@@ -939,7 +1144,10 @@ def get_chunks_by_ids(ids: list[int], context_window: int = 12000) -> list[Memor
             content=row[4], token_count=row[5], updated_at=row[6],
         )
         if total_chars + len(chunk.content) > context_window:
-            chunk.content = chunk.content[: max(0, context_window - total_chars)] + "..."
+            # I3 (wish-6ff9d89b) · 截断加明确提示 (不只 ...) · 让 OPUS 知道这是截断版不是全文
+            _room = max(0, context_window - total_chars)
+            _truncated = len(chunk.content) - _room
+            chunk.content = chunk.content[:_room] + f"\n…[截断 {_truncated} 字符]"
             results.append(chunk)
             break
         results.append(chunk)

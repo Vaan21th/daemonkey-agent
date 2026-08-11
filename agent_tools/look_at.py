@@ -32,7 +32,12 @@ Daemonkey 的"眼睛"——看图然后回文字描述。
 from __future__ import annotations
 
 import base64
+import concurrent.futures
+import hashlib
 import io
+import json
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -76,6 +81,41 @@ def _get_vision_fallback() -> tuple[str | None, str | None, str | None]:
     """
     from workers.vision_config import get_vision_model
     return get_vision_model()
+
+
+# ── 磁盘缓存（wish-18f08ccc · 同图同问零调用） ──────────────
+
+_CACHE_DIR = Path("data/cache/vision")
+_CACHE_TTL_SEC = 30 * 24 * 3600  # 30 天
+
+
+def _cache_key(image_sha: str, question: str) -> str:
+    """缓存 key = sha256(图片sha + prompt)。同图同问 → 同 key → 命中零调用。"""
+    return hashlib.sha256(f"{image_sha}|{question}".encode("utf-8")).hexdigest()
+
+
+def _cache_get(image_sha: str, question: str) -> dict | None:
+    try:
+        p = _CACHE_DIR / f"{_cache_key(image_sha, question)}.json"
+        if not p.exists():
+            return None
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if time.time() - data.get("ts", 0) > _CACHE_TTL_SEC:
+            p.unlink(missing_ok=True)
+            return None
+        return data
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def _cache_set(image_sha: str, question: str, payload: dict) -> None:
+    try:
+        p = _CACHE_DIR / f"{_cache_key(image_sha, question)}.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        payload["ts"] = time.time()
+        p.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        pass  # 缓存写失败不阻塞主流程
 
 # 看图 system prompt（给视觉模型的指令）
 _LOOK_SYSTEM_PROMPT = (
@@ -200,6 +240,50 @@ def _vision_subcall(
     return text.strip()
 
 
+# ── 竞速池（wish-18f08ccc · first-success） ──────────────
+
+def _vision_race(mime: str, b64: str, question: str, channels: list[dict], timeout: int = 90) -> tuple[dict | None, list[dict]]:
+    """并发调所有可用视觉通道，first-success 赢家。
+
+    返回 (winner, attempts)：
+      - winner: {"name", "model", "text"} · 全挂为 None
+      - attempts: 每个通道的执行结果 {name, ok, text/error, secs}
+    图片 payload 只编码一次，各通道共享（不重复 base64）。
+    """
+    attempts: list[dict] = []
+    lock = threading.Lock()
+
+    def _call_one(ch: dict) -> dict:
+        t0 = time.time()
+        try:
+            text = _vision_subcall(mime, b64, question, ch["model"], ch["base_url"], ch["api_key"])
+            secs = round(time.time() - t0, 2)
+            with lock:
+                attempts.append({"name": ch["name"], "ok": True, "secs": secs})
+            return {"name": ch["name"], "model": ch["model"], "text": text, "ok": True}
+        except Exception as e:
+            secs = round(time.time() - t0, 2)
+            with lock:
+                attempts.append({"name": ch["name"], "ok": False, "error": f"{type(e).__name__}: {e}", "secs": secs})
+            return {"name": ch["name"], "model": ch["model"], "ok": False, "error": str(e)}
+
+    # 并发提交；first-success 直接返回，其余 future 取消（尽力而为，线程已发的请求让它自然结束）
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(channels)) as ex:
+        futs = {ex.submit(_call_one, ch): ch["name"] for ch in channels}
+        try:
+            for fut in concurrent.futures.as_completed(futs, timeout=timeout):
+                r = fut.result()
+                if r.get("ok"):
+                    for other in futs:
+                        if other is not fut:
+                            other.cancel()
+                    return r, attempts
+        except concurrent.futures.TimeoutError:
+            pass
+
+    return None, attempts
+
+
 # ── 工具入口 ──────────────────────────────────────────
 
 def _summarize(args: dict) -> str:
@@ -236,42 +320,83 @@ def _run(args: dict) -> ToolResult:
     if supports_vision(current_model):
         use_vision_model = current_model
         path_label = f"路径 A · 当前模型 ({current_model}) 直接看图"
-    else:
-        # 读取独立视觉模型配置
-        vis_model, vis_url, vis_key = _get_vision_fallback()
-        if not vis_model:
+
+        # 3. 路径 A：主模型自己看图（不缓存——主模型要看到原图本身）
+        try:
+            description = _vision_subcall(mime, b64, question, use_vision_model)
+        except Exception as e:
             return ToolResult(
                 ok=False, output="",
-                error=(
-                    f"当前模型 ({current_model}) 不支持视觉，且未配置视觉模型。\n"
-                    "去 WebUI 设置面板 → 👁 视觉模型 → 配一个支持图片的模型即可。\n"
-                    "推荐 Google AI Studio (免费): https://aistudio.google.com"
-                ),
+                error=f"视觉模型调用失败: {type(e).__name__}: {e}",
             )
-        use_vision_model = vis_model
-        path_label = (
-            f"路径 B · 当前模型 ({current_model}) 不支持视觉 · "
-            f"fallback → {vis_model}"
+        b64_len_kb = len(b64) * 3 // 4 // 1024
+        output = (
+            f"{path_label}\n"
+            f"图片: {mime} · ~{b64_len_kb} KB (base64)\n"
+            f"───\n"
+            f"{description}"
         )
+        return ToolResult(ok=True, output=output)
 
-    # 3. 调视觉模型
-    try:
-        # 路径 A: 无独立 key → 走主 client；路径 B: 有独立 key → 传独立 client 参数
-        if use_vision_model == current_model:
-            description = _vision_subcall(mime, b64, question, use_vision_model)
-        else:
-            _, vis_url, vis_key = _get_vision_fallback()
-            description = _vision_subcall(mime, b64, question, use_vision_model, vis_url, vis_key)
-    except Exception as e:
+    # 路径 B：纯文本模型 → 缓存 + 竞速池 + 降级链
+    no_cache = bool(args.get("no_cache"))
+    from workers.vision_config import get_vision_channels
+    channels = get_vision_channels()
+    if not channels:
         return ToolResult(
             ok=False, output="",
-            error=f"视觉模型调用失败: {type(e).__name__}: {e}",
+            error=(
+                f"当前模型 ({current_model}) 不支持视觉，且未配置视觉通道。\n"
+                "去 WebUI 设置面板 → 👁 视觉模型 → 配一个支持图片的模型即可。\n"
+                "推荐 Google AI Studio (免费): https://aistudio.google.com"
+            ),
         )
 
-    # 4. 返回
-    b64_len_kb = len(b64) * 3 // 4 // 1024  # base64 → 原始字节 ≈ 3/4
+    image_sha = hashlib.sha256(b64.encode("utf-8")).hexdigest()
+
+    # 3a. 缓存命中 → 零调用直接返回
+    if not no_cache:
+        cached = _cache_get(image_sha, question)
+        if cached:
+            b64_len_kb = len(b64) * 3 // 4 // 1024
+            via = cached.get("tool_used") or "cache"
+            output = (
+                f"路径 B · 当前模型 ({current_model}) 不支持视觉 · 命中缓存 (via {via})\n"
+                f"图片: {mime} · ~{b64_len_kb} KB (base64)\n"
+                f"───\n"
+                f"{cached.get('result', '')}"
+            )
+            return ToolResult(ok=True, output=output)
+
+    # 3b. 竞速池：并发调所有通道，first-success
+    winner, attempts = _vision_race(mime, b64, question, channels)
+    if not winner:
+        err_lines = "\n".join(
+            f"  - {a['name']}: {a.get('error', 'timeout')}" for a in attempts
+        )
+        return ToolResult(
+            ok=False, output="",
+            error=f"所有视觉通道失败 ({len(attempts)} 个尝试):\n{err_lines}",
+        )
+
+    description = winner["text"]
+
+    # 3c. 写缓存（同图同问第二次零调用）
+    if not no_cache:
+        _cache_set(image_sha, question, {
+            "tool_used": f"{winner['name']}:{winner['model']}",
+            "confidence": "high",
+            "result": description,
+        })
+
+    # 4. 返回（带路由信息 · 可追溯）
+    b64_len_kb = len(b64) * 3 // 4 // 1024
+    attempts_summary = ", ".join(
+        f"{a['name']}={a.get('secs', '?')}s" for a in attempts
+    )
     output = (
-        f"{path_label}\n"
+        f"路径 B · 当前模型 ({current_model}) 不支持视觉\n"
+        f"竞速池 winner → {winner['name']} ({winner['model']}) · attempts: {attempts_summary}\n"
         f"图片: {mime} · ~{b64_len_kb} KB (base64)\n"
         f"───\n"
         f"{description}"
@@ -283,16 +408,17 @@ SPEC = ToolSpec(
     name="look_at",
     description=(
         "让 Daemonkey 看一张图片并返回文字描述。双路径：当前模型支持多模态（Claude/GPT/"
-        "Gemini/Qwen）→ 直接看图；当前模型纯文本（DeepSeek/Kimi/GLM）→ 调 Gemini "
-        "Flash Lite fallback 看图。\n\n"
+        "Gemini/Qwen）→ 直接看图；当前模型纯文本（DeepSeek/Kimi/GLM）→ 多通道竞速池"
+        "（Gemini/GLM 等并发 first-success + 磁盘缓存）看图。\n\n"
         "**调用时机**：\n"
         "  - 截屏后想看屏幕内容（配合 take_screenshot）\n"
         "  - BRO 在 WebUI 上传了图片\n"
         "  - BRO 让你看某张图片 / 截图 / 照片\n"
         "  - 需要从图片中提取文字 / 错误信息\n\n"
-        "**参数**：path（图片路径·必填），question（想问什么·可选·默认描述整张图）\n"
+        "**参数**：path（图片路径·必填），question（想问什么·可选·默认描述整张图），"
+        "no_cache（可选·true 跳过磁盘缓存强制重识别）\n"
         "**返回**：纯文本描述。多模态模型看到的是原图（更精确），纯文本模型看到的是"
-        "fallback 文字描述（够用）。"
+        "竞速池 winner 的文字描述（够用）。同图同问二次命中缓存零调用。"
     ),
     tier=TIER_AUTO,
     input_schema={
@@ -305,6 +431,10 @@ SPEC = ToolSpec(
             "question": {
                 "type": "string",
                 "description": "想问这张图片什么。默认'请描述这张图片的内容'。提示：'这张截图里有什么错误信息'/'图中文字是什么'/'识别图片中的物体'"
+            },
+            "no_cache": {
+                "type": "boolean",
+                "description": "可选。true = 跳过磁盘缓存强制重新识别（默认 false 同图同问命中缓存零调用）。"
             },
         },
         "required": ["path"],

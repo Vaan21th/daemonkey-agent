@@ -20,15 +20,22 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+from workers.safe_write import atomic_write_json, _do_backup
 
 ROOT = Path(__file__).resolve().parent.parent
 CLIENTS_DIR = ROOT / "data" / "clients"
 MANIFEST_PATH = CLIENTS_DIR / "manifest.json"
 
 CLIENT_SOURCE_PREFIX = "client:"
+
+# wish-a1c5f147 (墨言模块 11) · 复合操作锁: load→改→save 读改写三段·
+# 多 session 并行丢更新 → 公开写函数整体持锁
+_MANIFEST_LOCK = threading.Lock()
 
 # pipeline 阶段 · lead(线索) → active(在合作) → paused(暂停) → done(结束/交付完)
 STATUSES = ("lead", "active", "paused", "done")
@@ -57,6 +64,11 @@ def load_manifest() -> dict:
     try:
         data = json.loads(MANIFEST_PATH.read_text(encoding="utf-8")) or {}
     except Exception:
+        # wish-a1c5f147 (墨言模块 11) · 损坏 → 先备份现场再返空壳 (防静默覆盖清空)
+        try:
+            _do_backup(MANIFEST_PATH)
+        except Exception:
+            pass
         return {"clients": {}}
     if not isinstance(data.get("clients"), dict):
         data["clients"] = {}
@@ -65,9 +77,8 @@ def load_manifest() -> dict:
 
 def _save_manifest(data: dict) -> None:
     _ensure_dir()
-    MANIFEST_PATH.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    # wish-a1c5f147 · 原子写 + 写前备份 (safe_write 复用)
+    atomic_write_json(MANIFEST_PATH, data)
 
 
 def _new_client_id() -> str:
@@ -149,44 +160,46 @@ def add_client(
         raise ValueError("客户档案需要 name")
     status = status if status in STATUSES else "lead"
     _ensure_dir()
-    data = load_manifest()
-    cid = _new_client_id()
-    meta = {
-        "id": cid,
-        "name": name,
-        "company": (company or "").strip(),
-        "role": (role or "").strip(),
-        "contact": (contact or "").strip(),
-        "status": status,
-        "tags": list(tags or []),
-        "need": (need or "").strip(),
-        "intent": (intent or "").strip(),
-        "quote": (quote or "").strip(),
-        "next": (next or "").strip(),
-        "notes": notes or "",
-        "log": [],
-        "created_at": _now(),
-        "updated_at": _now(),
-    }
-    data["clients"][cid] = meta
-    _save_manifest(data)
+    with _MANIFEST_LOCK:  # wish-a1c5f147 · 复合操作锁
+        data = load_manifest()
+        cid = _new_client_id()
+        meta = {
+            "id": cid,
+            "name": name,
+            "company": (company or "").strip(),
+            "role": (role or "").strip(),
+            "contact": (contact or "").strip(),
+            "status": status,
+            "tags": list(tags or []),
+            "need": (need or "").strip(),
+            "intent": (intent or "").strip(),
+            "quote": (quote or "").strip(),
+            "next": (next or "").strip(),
+            "notes": notes or "",
+            "log": [],
+            "created_at": _now(),
+            "updated_at": _now(),
+        }
+        data["clients"][cid] = meta
+        _save_manifest(data)
     _reindex(cid, meta)
     return meta
 
 
 def update_client(client_id: str, **changes) -> dict:
-    data = load_manifest()
-    meta = data["clients"].get(client_id)
-    if meta is None:
-        raise KeyError(client_id)
-    for key, val in changes.items():
-        if key not in _ALLOWED or val is None:
-            continue
-        if key == "status" and val not in STATUSES:
-            continue
-        meta[key] = val
-    meta["updated_at"] = _now()
-    _save_manifest(data)
+    with _MANIFEST_LOCK:  # wish-a1c5f147 · 复合操作锁
+        data = load_manifest()
+        meta = data["clients"].get(client_id)
+        if meta is None:
+            raise KeyError(client_id)
+        for key, val in changes.items():
+            if key not in _ALLOWED or val is None:
+                continue
+            if key == "status" and val not in STATUSES:
+                continue
+            meta[key] = val
+        meta["updated_at"] = _now()
+        _save_manifest(data)
     _reindex(client_id, meta)
     return meta
 
@@ -201,29 +214,31 @@ def append_note(client_id: str, text: str, kind: str = "note") -> dict:
     if not text:
         raise ValueError("动态内容不能为空")
     kind = kind if kind in KINDS else "note"
-    data = load_manifest()
-    meta = data["clients"].get(client_id)
-    if meta is None:
-        raise KeyError(client_id)
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    entry = {"ts": _now(), "date": stamp, "kind": kind, "text": text}
-    log = meta.get("log")
-    if not isinstance(log, list):
-        log = []
-    log.append(entry)
-    meta["log"] = log
-    meta["updated_at"] = _now()
-    _save_manifest(data)
+    with _MANIFEST_LOCK:  # wish-a1c5f147 · 复合操作锁
+        data = load_manifest()
+        meta = data["clients"].get(client_id)
+        if meta is None:
+            raise KeyError(client_id)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        entry = {"ts": _now(), "date": stamp, "kind": kind, "text": text}
+        log = meta.get("log")
+        if not isinstance(log, list):
+            log = []
+        log.append(entry)
+        meta["log"] = log
+        meta["updated_at"] = _now()
+        _save_manifest(data)
     _reindex(client_id, meta)
     return meta
 
 
 def remove_client(client_id: str) -> dict:
-    data = load_manifest()
-    meta = data["clients"].pop(client_id, None)
-    if meta is None:
-        raise KeyError(client_id)
-    _save_manifest(data)
+    with _MANIFEST_LOCK:  # wish-a1c5f147 · 复合操作锁
+        data = load_manifest()
+        meta = data["clients"].pop(client_id, None)
+        if meta is None:
+            raise KeyError(client_id)
+        _save_manifest(data)
     _reindex(client_id, None)  # 撤索引
     return meta
 
@@ -442,56 +457,57 @@ def import_rows(rows: list, mapping: dict, *, dedupe: bool = True) -> dict:
     if mapping.get("name") is None:
         raise ValueError("必须指定「客户名(name)」是哪一列")
     _ensure_dir()
-    data = load_manifest()
-    clients = data["clients"]
-    existing = {(m.get("name") or "").strip().lower() for m in clients.values()}
-    created = 0
-    skipped = 0
-    errors: list[str] = []
-    to_index: list[str] = []
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    with _MANIFEST_LOCK:  # wish-a1c5f147 · 复合操作锁 (整批读改写整体持锁)
+        data = load_manifest()
+        clients = data["clients"]
+        existing = {(m.get("name") or "").strip().lower() for m in clients.values()}
+        created = 0
+        skipped = 0
+        errors: list[str] = []
+        to_index: list[str] = []
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    for i, row in enumerate(rows or []):
-        try:
-            if not isinstance(row, (list, tuple)):
-                skipped += 1
-                continue
-            name = _cell(row, mapping, "name")
-            if not name:
-                skipped += 1
-                continue
-            if dedupe and name.lower() in existing:
-                skipped += 1
-                continue
-            tags_raw = _cell(row, mapping, "tags")
-            tags = [t.strip() for t in re.split(r"[,，;；、/\s]+", tags_raw) if t.strip()] if tags_raw else []
-            notes = _cell(row, mapping, "notes")
-            cid = _new_client_id()
-            # 导入的备注/进度列 → 落成初始时间线条(kind=note)· 这样导入客户在新详情里直接有动态
-            log = [{"ts": _now(), "date": stamp, "kind": "note", "text": notes.strip()}] if notes.strip() else []
-            meta = {
-                "id": cid,
-                "name": name,
-                "company": _cell(row, mapping, "company"),
-                "role": _cell(row, mapping, "role"),
-                "contact": _cell(row, mapping, "contact"),
-                "status": _norm_status(_cell(row, mapping, "status")),
-                "tags": tags,
-                "need": "",
-                "notes": "",
-                "log": log,
-                "created_at": _now(),
-                "updated_at": _now(),
-            }
-            clients[cid] = meta
-            existing.add(name.lower())
-            if log:
-                to_index.append(cid)
-            created += 1
-        except Exception as e:  # noqa: BLE001 — 单行坏不连累整批
-            errors.append(f"第 {i + 1} 行: {e}")
+        for i, row in enumerate(rows or []):
+            try:
+                if not isinstance(row, (list, tuple)):
+                    skipped += 1
+                    continue
+                name = _cell(row, mapping, "name")
+                if not name:
+                    skipped += 1
+                    continue
+                if dedupe and name.lower() in existing:
+                    skipped += 1
+                    continue
+                tags_raw = _cell(row, mapping, "tags")
+                tags = [t.strip() for t in re.split(r"[,，;；、/\s]+", tags_raw) if t.strip()] if tags_raw else []
+                notes = _cell(row, mapping, "notes")
+                cid = _new_client_id()
+                # 导入的备注/进度列 → 落成初始时间线条(kind=note)· 这样导入客户在新详情里直接有动态
+                log = [{"ts": _now(), "date": stamp, "kind": "note", "text": notes.strip()}] if notes.strip() else []
+                meta = {
+                    "id": cid,
+                    "name": name,
+                    "company": _cell(row, mapping, "company"),
+                    "role": _cell(row, mapping, "role"),
+                    "contact": _cell(row, mapping, "contact"),
+                    "status": _norm_status(_cell(row, mapping, "status")),
+                    "tags": tags,
+                    "need": "",
+                    "notes": "",
+                    "log": log,
+                    "created_at": _now(),
+                    "updated_at": _now(),
+                }
+                clients[cid] = meta
+                existing.add(name.lower())
+                if log:
+                    to_index.append(cid)
+                created += 1
+            except Exception as e:  # noqa: BLE001 — 单行坏不连累整批
+                errors.append(f"第 {i + 1} 行: {e}")
 
-    _save_manifest(data)
+        _save_manifest(data)
     for cid in to_index:
         _reindex(cid, clients.get(cid))  # 存盘后再补 FTS·失败也不回滚已建档
     return {"created": created, "skipped": skipped, "errors": errors[:20]}
