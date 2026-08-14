@@ -9059,12 +9059,16 @@ body.compact .compact-sessions {
 .compact-sessions-list .session-item:hover .session-actions { opacity: 1; }
 .compact-sessions-list .sa-menu { background: transparent; border: none; color: var(--dim); cursor: pointer; font-size: 14px; padding: 2px 4px; }
 .compact-sessions-list .sa-menu:hover { color: var(--text); }
-.compact-sessions-foot { flex: 0 0 auto; padding: 6px 10px; border-top: 1px solid var(--border); }
-.compact-sessions-foot .archived-toggle { display: flex; justify-content: center; }
-.compact-sessions-foot .archived-toggle button {
-  background: transparent; border: none; color: var(--dim); font-size: 11px; cursor: pointer; padding: 4px 8px;
+.compact-sessions-foot { flex: 0 0 auto; padding: 8px 10px 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.compact-foot-row { display: flex; justify-content: center; }
+/* 尾部三个按钮统一: 无边框轻量链接样式 (用户: 带边框很丑 · 归档/返回/加载更早全统一) */
+.compact-sessions-foot .compact-foot-more {
+  font-size: 12px; padding: 4px 10px; border: none; background: transparent; color: var(--dim);
+  cursor: pointer; transition: color 0.15s; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 5px;
 }
-.compact-sessions-foot .archived-toggle button:hover { color: var(--Daemonkey); }
+.compact-sessions-foot .compact-foot-more:hover { color: var(--Daemonkey); }
+.compact-sessions-foot .compact-foot-more i { font-size: 13px; }
 
 /* 中间对话栏 · 简洁版仍居中限宽 (max-width 从 900 收窄 · 给侧栏让位) */
 

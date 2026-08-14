@@ -98,11 +98,12 @@ def _download_model(model_name: str) -> bool:
         return True  # 已下载
     try:
         from huggingface_hub import snapshot_download
-        os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-        os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+        # 强制 hf-mirror + 禁 xet (大陆直连 HF 被墙 · setdefault 会被系统代理/已有 env 顶掉 → 直接赋值)
+        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+        os.environ["HF_HUB_DISABLE_XET"] = "1"
         repo = f"Systran/faster-whisper-{model_name}"
-        logger.info("STT 下载模型 %s → %s ...", repo, local_dir)
-        snapshot_download(repo_id=repo, local_dir=str(local_dir))
+        logger.info("STT 下载模型 %s → %s (hf-mirror)...", repo, local_dir)
+        snapshot_download(repo_id=repo, local_dir=str(local_dir), max_workers=2)
         return (local_dir / "model.bin").is_file()
     except Exception as e:
         logger.error("STT 模型下载失败: %s", e)

@@ -331,6 +331,7 @@ function _syncCompactSidebars(on) {
 
 // 左侧会话清单 (复用 /sessions API + buildSessionRow · 与抽屉同源 · 排序交给服务端 mtime desc)
 let _compactSessionOffset = 0;
+let _compactShowArchived = false;   // 专注版归档视图开关 (跟工作台抽屉的 showArchivedSessions 各自独立)
 const _COMPACT_PAGE = 30;
 async function renderCompactSessions(reset = true) {
   const list = document.getElementById('compactSessionList');
@@ -340,10 +341,12 @@ async function renderCompactSessions(reset = true) {
   if (reset) _compactSessionOffset = 0;
   try {
     const params = new URLSearchParams({ api_only: 'true', limit: String(_COMPACT_PAGE), offset: String(_compactSessionOffset) });
+    if (_compactShowArchived) params.set('archived_only', 'true');
+    else params.set('include_archived', 'false');
     const r = await fetch('/sessions?' + params.toString(), { headers: { 'Authorization': 'Bearer ' + token } });
     if (!r.ok) { if (reset) list.innerHTML = '<div class="docs-view-empty">加载失败 [' + r.status + ']</div>'; return; }
     const data = await r.json();
-    // 同步 meta 缓存 (label / pinned)
+    // 同步 meta 缓存 (label / pinned / archived)
     for (const s of (data.sessions || [])) {
       sessionMetaCache[s.session_id] = {
         label: s.label || null,
@@ -361,6 +364,11 @@ async function renderCompactSessions(reset = true) {
   }
 }
 function loadMoreCompactSessions() { _compactSessionOffset += _COMPACT_PAGE; renderCompactSessions(false); }
+// 专注版归档视图切换 (用户: 工作台有归档入口 · 专注版也该有)
+function toggleCompactArchived() {
+  _compactShowArchived = !_compactShowArchived;
+  renderCompactSessions(true);
+}
 // 会话运行状态轮询 · wish-xxx · 5s 一次轻拉 /sessions · 只 toggle .session-running + .sp-run 图标
 // 不重建列表 (不闪 / 不丢滚动位置) · 专注版 + 工作台抽屉共用 .session-item[data-sid] → 一处轮询两处受益
 let _sessionRunPollTimer = null;
@@ -416,15 +424,16 @@ async function _refreshSessionRunningStates() {
   } catch (e) { /* 静默 · 下轮再试 */ }
 }
 
-// 列表尾部: 有更多才显示"加载更早" · 无更多不画横线 (用户: 意义不明的横线)
+// 列表尾部: 归档 toggle + 有更多才显示"加载更早" · 按钮统一 btn-ghost (铁律 10) · 居中
 function _renderCompactFoot(list, sessions) {
   const foot = document.getElementById('compactSessionsFoot');
   if (!foot) return;
   const hasMore = sessions && sessions.length >= _COMPACT_PAGE;
-  foot.innerHTML = hasMore
-    ? '<div class="archived-toggle"><button onclick="loadMoreCompactSessions()">加载更早的会话</button></div>'
-    : '';
-  foot.style.borderTop = hasMore ? '' : 'none';  // 没更多时不画横线
+  const archBtn = _compactShowArchived
+    ? '<button class="compact-foot-more" onclick="toggleCompactArchived()"><i class="ri-arrow-left-line"></i> 返回会话列表</button>'
+    : '<button class="compact-foot-more" onclick="toggleCompactArchived()"><i class="ri-archive-line"></i> 查看已归档</button>';
+  const moreBtn = hasMore ? '<button class="compact-foot-more" onclick="loadMoreCompactSessions()">加载更早的会话</button>' : '';
+  foot.innerHTML = `<div class="compact-foot-row">${archBtn}</div>` + (moreBtn ? `<div class="compact-foot-row">${moreBtn}</div>` : '');
 }
 
 // 右侧产物面板 (复用 collectSessionDocs + _docCardHtml · 与 docsView 同源)
@@ -3467,14 +3476,14 @@ function pollSttProgress() {
         clearInterval(timer);
         $res.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 语音识别增强已就绪 · 微信语音现在能转文字了</span>';
         loadSttConfig();
-      } else if (n > 180) {  // 3 分钟超时
+      } else if (n > 600) {  // 10 分钟超时 (small 模型 ~460MB · hf-mirror 下载可能要几分钟)
         clearInterval(timer);
         $res.innerHTML = '<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> 安装超时 · 查看 daemon 日志 · 可重试</span>';
       } else {
-        $res.innerHTML = `<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 安装中 (${Math.min(n, 180)}s) · 依赖/模型下载中…</span>`;
+        $res.innerHTML = `<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 安装中 (${Math.min(n, 600)}s) · 依赖/模型下载中…</span>`;
       }
     } catch (_) {
-      if (n > 180) { clearInterval(timer); }
+      if (n > 600) { clearInterval(timer); }
     }
   }, 1000);
 }
@@ -4513,7 +4522,7 @@ function openDrawer() {
   }
   $drawer.classList.add('open');
   $drawerBackdrop.classList.add('open');
-  refreshSessionList();
+  _refreshSessionLists();
 }
 function closeDrawer() {
   $drawer.classList.remove('open');
@@ -4988,7 +4997,7 @@ function renderArchivedToggle() {
 
 function toggleArchivedView() {
   showArchivedSessions = !showArchivedSessions;
-  refreshSessionList();
+  _refreshSessionLists();
 }
 
 // ── session 行的 ⋯ popover 菜单 ───────────────────────────
@@ -6195,7 +6204,7 @@ async function _checkProactiveInbox() {
         if (st) st.hasUnreadCompletion = true;
       }
     }
-    if (typeof refreshSessionList === 'function') { try { refreshSessionList(); } catch (e) {} }
+    if (typeof _refreshSessionLists === 'function') { try { _refreshSessionLists(); } catch (e) {} }  // 工作台 + 专注版一起刷
   } catch (e) { /* 静默 · 收件箱失败不影响主功能 */ }
 }
 
@@ -7443,8 +7452,8 @@ async function send() {
       localStorage.setItem(STORAGE.session, newSid);
       updateCurrentLabel();
     }
-    if (typeof refreshSessionList === 'function') {
-      try { refreshSessionList(); } catch {}
+    if (typeof _refreshSessionLists === 'function') {
+      try { _refreshSessionLists(); } catch {}
     }
   }
 
@@ -7983,10 +7992,11 @@ function setSendButtonState(state) {
 function setInputLocked(locked) {
   $input.readOnly = !!locked;
   $input.classList.toggle('is-locked', !!locked);
+  const aiName = window.AI_NAME || 'Daemonkey';
   if (locked) {
-    $input.placeholder = 'Daemonkey 还在跑 · 点 ⏹ 停止才能发新消息';
+    $input.placeholder = aiName + ' 还在跑 · 点 ⏹ 停止才能发新消息';
   } else {
-    $input.placeholder = '跟 Daemonkey 说点什么…  (Shift+回车换行)';
+    $input.placeholder = '跟 ' + aiName + ' 说点什么…  (Shift+回车换行)';
   }
 }
 

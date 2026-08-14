@@ -28,9 +28,9 @@ import tempfile
 import threading
 from pathlib import Path
 
-# 模型从 HF 下载 · 大陆直连慢 + xet 被墙 → 默认走 hf-mirror + 禁用 xet (08-14 实测)
-os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
+# 模型从 HF 下载 · 大陆直连慢 + xet 被墙 → 强制 hf-mirror + 禁用 xet (08-14 实测 · setdefault 会被系统代理顶掉 → 直接赋值)
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+os.environ["HF_HUB_DISABLE_XET"] = "1"
 
 logger = logging.getLogger("opus.stt")
 
