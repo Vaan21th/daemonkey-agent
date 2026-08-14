@@ -183,7 +183,8 @@
     ],
     "语音识别增强(L1·可选更新·设置页开关驱动安装[默认不装·不用的用户零负担]。转写引擎[silk→pilk→wav→faster-whisper·Hermes同款防幻觉参数·懒加载+超时降级]+安装/下载/状态API[依赖走requirements-stt.txt[清华源]·模型走hf-mirror·后台线程+安装锁]。模型与依赖在data/runtime[L3·never_sync]·本组只同步机制代码。设置页视觉tab已拆独立whisper区)": [
       "workers/stt_transcribe.py",
-      "api_routes/stt.py"
+      "api_routes/stt.py",
+      "requirements-stt.txt"
     ],
     "通知体系(L1·完成/确认三通道通知[桌宠气泡+完成音效+Windows toast]+设置页通知开关+浏览器标签闪烁。notification_config=配置单例[读 data/notification_config.json·L3 never_sync]·windows_toast=系统 toast[winotify 可选依赖·缺了优雅降级不炸]·notifications 路由=双端读写配置 API。桌宠音效文件 ding/manbo.wav 随发布包全量下发不进白名单·notify.jsonl 运行时状态 never_sync)": [
       "workers/notification_config.py",

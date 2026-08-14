@@ -1,0 +1,8 @@
+# requirements-stt.txt · 语音识别增强 whisper 可选依赖 (wish-241e0014)
+# BRO 拍板: STT 是可选更新 · 只有用户在设置页打开「语音识别增强 whisper」才安装。
+# 不进主 requirements.txt · run.ps1 启动器不装 · 不用的用户零负担。
+# 安装: 设置页开关触发 pip install -r requirements-stt.txt (清华源)
+
+pilk==0.2.4            # .silk 解码 (微信语音原生格式 → wav)
+faster-whisper==1.2.1  # 本地转写 (ctranslate2 加速 · 无需 GPU)
+huggingface_hub>=0.23.0  # 模型下载 (hf-mirror 国内镜像)
