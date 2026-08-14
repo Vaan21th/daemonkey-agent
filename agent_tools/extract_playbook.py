@@ -38,6 +38,8 @@ def _summarize(args: dict) -> str:
     if action == "import":
         src = args.get("source_url") or args.get("source_path") or "粘贴全文"
         return f"导入外部 skill → playbook · {str(src)[:50]}"
+    if action == "revise":
+        return f"修订 playbook · {args.get('playbook_id', '?')}"
     return f"extract_playbook · {action}"
 
 
@@ -47,7 +49,6 @@ def _run(args: dict) -> ToolResult:
         search_playbooks,
         load_playbook,
         list_playbooks,
-        delete_playbook,
         mark_used,
     )
 
@@ -201,8 +202,88 @@ def _run(args: dict) -> ToolResult:
                 )
             return ToolResult(ok=True, output="\n".join(lines))
 
+        if action == "feedback":
+            # wish-0ecdbbd8 (墨言 094 wish-b6a837da) · 执行反馈闭环:
+            #  命中即用后模型反馈结果 → 更新可信度 (success 刷新 verified_at · 失败 stale_hits+1)
+            pid = str(args.get("playbook_id") or "").strip()
+            success = bool(args.get("success"))
+            note = str(args.get("note") or "").strip()
+            if not pid:
+                return ToolResult(ok=False, output="", error="feedback 需要 playbook_id")
+            try:
+                from workers.playbooks import record_playbook_result
+                res = record_playbook_result(pid, success, note)
+                if not res:
+                    return ToolResult(ok=False, output="", error=f"playbook {pid} 不存在")
+                st = res.get("stale_state", "正常")
+                return ToolResult(
+                    ok=True,
+                    output=(f"✅ 已记录反馈 · {pid} · success={success} · 当前状态 [{st}] · "
+                            f"stale_hits={res.get('stale_hits', 0)} · use_success={res.get('use_success', 0)} · "
+                            f"use_fail={res.get('use_fail', 0)}" + (f" · note: {note}" if note else "")),
+                )
+            except Exception as e:
+                return ToolResult(ok=False, output="", error=f"feedback 失败: {type(e).__name__}: {e}")
+
+        # ── revise (墨言 094-2 · wish-2b43ffe7 · 反馈闭环内容链路 · 走通新路 → 修订原册) ──
+        if action == "revise":
+            pid_raw = args.get("playbook_id")
+            if pid_raw is not None and not isinstance(pid_raw, str):
+                return ToolResult(ok=False, output="", error=f"playbook_id 必须是字符串 · 收到 {pid_raw!r}")
+            pid = (pid_raw or "").strip()
+            if not pid:
+                return ToolResult(ok=False, output="", error="playbook_id 必填")
+
+            # 可改字段逐个校验类型
+            for _k in ("title", "task_type", "steps", "confidence"):
+                _v = args.get(_k)
+                if _v is not None and not isinstance(_v, str):
+                    return ToolResult(ok=False, output="", error=f"{_k} 必须是字符串 · 收到 {_v!r}")
+            tags_raw = args.get("tags")
+            if tags_raw is not None and not isinstance(tags_raw, list):
+                return ToolResult(ok=False, output="", error=f"tags 必须是数组 · 收到 {tags_raw!r}")
+            if tags_raw and not all(isinstance(x, str) for x in tags_raw):
+                return ToolResult(ok=False, output="", error="tags 元素必须全是字符串")
+
+            # 显式传空值 = 明确报错 · 防静默忽略让用户以为已清空 (P2-1)
+            for _k in ("title", "task_type", "steps", "prerequisites", "pitfalls", "lessons", "confidence"):
+                _v = args.get(_k)
+                if _v is not None and (isinstance(_v, str) and not _v.strip()):
+                    return ToolResult(ok=False, output="", error=f"{_k} 不能传空字符串 · 不支持'清空字段'语义 · 想清空请手动编辑 .md")
+
+            # 至少传一个可改字段
+            if all(args.get(k) is None for k in ("title", "task_type", "steps", "prerequisites", "pitfalls", "lessons", "tags", "confidence")):
+                return ToolResult(ok=False, output="", error="revise 至少要传一个要改的字段 (title/task_type/steps/prerequisites/pitfalls/lessons/tags/confidence)")
+
+            try:
+                from workers.playbooks import revise_playbook
+                res = revise_playbook(
+                    playbook_id=pid,
+                    title=args.get("title"),
+                    task_type=args.get("task_type"),
+                    steps=args.get("steps"),
+                    prerequisites=args.get("prerequisites"),
+                    pitfalls=args.get("pitfalls"),
+                    lessons=args.get("lessons"),
+                    tags=args.get("tags"),
+                    confidence=args.get("confidence"),
+                )
+                if not res:
+                    return ToolResult(ok=False, output="", error=f"playbook {pid} 不存在")
+                if "error" in res:
+                    return ToolResult(ok=False, output="", error=f"revise 中止: {res['error']}")
+                prev = res.get("prev_stale_state", "正常")
+                note_prev = f" · 状态 {prev} → {res.get('stale_state', '正常')}" if prev != res.get("stale_state", "正常") else ""
+                return ToolResult(
+                    ok=True,
+                    output=(f"✅ 已修订 {res.get('title', pid)} · v{res.get('agentskills_version')} · "
+                            f"状态 {res.get('stale_state', '正常')}{note_prev}"),
+                )
+            except Exception as e:
+                return ToolResult(ok=False, output="", error=f"revise 失败: {type(e).__name__}: {e}")
+
         return ToolResult(
-            ok=False, output="", error=f"unknown action: {action}. options: extract / import / search / load / list"
+            ok=False, output="", error=f"unknown action: {action}. options: extract / import / search / load / list / feedback / revise"
         )
 
     except Exception as e:
@@ -222,6 +303,8 @@ SPEC = ToolSpec(
         "discover -> import -> recall loop. Use when you found a useful skill (e.g. a GitHub SKILL.md / README) "
         "and want daemon to absorb it. Runs at CONFIRM tier, so the user nods before each import.\n"
         "  - search (find by query/task_type/tag), load (read full content), list (all playbooks).\n"
+        "  - feedback: report execution result of a playbook (playbook_id + success + note) → \n"
+        "    updates confidence (wish-0ecdbbd8): success refreshes verified_at · failure bumps stale_hits → stale state.\n"
         "Once saved or imported, memory_index auto-indexes it and closure_check auto-recalls it on relevant "
         "tasks (no manual search needed). Output is plain markdown files, not new tool infrastructure."
     ),
@@ -231,8 +314,8 @@ SPEC = ToolSpec(
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["extract", "import", "search", "load", "list"],
-                "description": "extract=save your own summary / import=absorb external skill MD / search=find / load=read / list=all",
+                "enum": ["extract", "import", "revise", "search", "load", "list", "feedback"],
+                "description": "extract=save your own summary / import=absorb external skill MD / revise=update an existing playbook's content / search=find / load=read / list=all / feedback=report execution result",
             },
             "title": {
                 "type": "string",

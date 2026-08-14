@@ -115,6 +115,8 @@ def run_subagent(
     persist: bool = False,
     parent_session_id: Optional[str] = None,
     wall_clock_sec: Optional[float] = None,
+    initial_messages: Optional[list] = None,
+    meta_extra: Optional[dict] = None,
 ) -> SubagentResult:
     """跑一个子执行器 · 返回结构化结果。
 
@@ -133,6 +135,9 @@ def run_subagent(
         inject_budget_mandate: True → 追加通用预算纪律 (dispatch 用) · False → 上层自带 (run_app 用)。
         persist: True → 落 sessions/sub-<id>.jsonl 可观测。
         parent_session_id: 派发者 session (溯源 · 落进子会话首行 meta)。
+        initial_messages: 起始 messages · None → 单条 user_msg (默认)。
+            (wish-48566053 · resume 续跑: 恢复的历史消息 + 新 user 指令)
+        meta_extra: 额外元数据 (goal / whitelist 等) · 落进 _meta 首行 · 血缘可追溯。
 
     Returns:
         SubagentResult
@@ -158,7 +163,7 @@ def run_subagent(
     except Exception:
         pass
 
-    messages: list[dict] = [{"role": "user", "content": user_msg}]
+    messages: list[dict] = list(initial_messages) if initial_messages else [{"role": "user", "content": user_msg}]
     initial_len = len(messages)
 
     on_commit = None
@@ -171,6 +176,8 @@ def run_subagent(
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "model": used_model,  # wish-8ffb9d65 · 总监链路佐证 (查 sub session 知顾问真身)
                 "system_preview": (system or "")[:200],
+                "system_full": system or "",  # wish-48566053 · resume 需完整 system 重建上下文
+                "extra_meta": meta_extra or {},  # goal / whitelist (血缘)
             })
         except Exception:
             pass

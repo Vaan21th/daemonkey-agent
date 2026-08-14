@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import random
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -171,7 +172,12 @@ def send_text(
     context_token: Optional[str] = None,
 ) -> dict:
     """给 BRO 发文本。默认 to=token 里的 ilink_user_id·context 用缓存最新一枚。
-    返回 {ok, ret, ...}。ret:-2 = 没 context / 窗口外。空 {} = 成功。"""
+    返回 {ok, ret, ...}。ret:-2 = 没 context / 窗口外。空 {} = 成功。
+
+    v2 (BRO 实测 2026-08-14): iLink 间歇性 ret:-2 'prepare failed' 导致回复丢失
+    (A/B 正式回复都撞失败窗口没送达)。加指数退避重试: 失败 → 等 1s 重试 → 等 3s
+    再重试 → 仍失败才返回 (最多 3 次尝试 · 总耗时 ~4s · 对间歇性故障救回率高)。
+    """
     token, base, user = load_token()
     to = to_user_id or user
     ctx = context_token or latest_context_token()
@@ -179,26 +185,93 @@ def send_text(
         return {"ok": False, "error": "no_to_user_id"}
     chunk = 3000
     chunks = [text[i : i + chunk] for i in range(0, len(text), chunk)] or [""]
-    for c in chunks:
+    total = len(chunks)
+    for idx, c in enumerate(chunks, 1):
+        # P2 · 多块时带 (N/M) 标记 (Hermes 同款) · 单块不带·保持原样
+        body = c
+        if total > 1:
+            body = f"({idx}/{total}) {c}"
         msg = {
             "to_user_id": to,
             "message_type": 2,
             "message_state": 2,
             "client_id": str(uuid.uuid4()),
-            "item_list": [{"type": 1, "text_item": {"text": c}}],
+            "item_list": [{"type": 1, "text_item": {"text": body}}],
         }
         if ctx:
             msg["context_token"] = ctx
         resp = _post("sendmessage", {"msg": msg}, token, base, 20)
-        if resp.get("ret") not in (0, None):  # -2 等 = 失败
+        if resp.get("ret") not in (0, None):  # -2 等 = 失败 → 指数退避重试
+            for delay in (1.0, 3.0):
+                time.sleep(delay)
+                resp = _post("sendmessage", {"msg": msg}, token, base, 20)
+                if resp.get("ret") in (0, None):
+                    break
+        if resp.get("ret") not in (0, None):
             return {"ok": False, "ret": resp.get("ret"), "resp": resp}
-    return {"ok": True, "chunks": len(chunks)}
+    return {"ok": True, "chunks": total}
 
 
 def get_upload_url(params: dict, *, timeout: float = 30) -> dict:
     """拿 CDN 预签名上传地址 (getuploadurl)。params 见 GetUploadUrlReq。媒体上传第一步。"""
     token, base, _ = load_token()
     return _post("getuploadurl", params, token, base, timeout)
+
+
+# ---------------------------------------------------------------- typing 存活反馈 (P0 · 卷八十一续)
+def get_typing_ticket(
+    to_user_id: Optional[str] = None,
+    context_token: Optional[str] = None,
+) -> str:
+    """拿 typing_ticket (getconfig)。cc-connect weixin 通道同款。失败返回空串·调用方静默跳过。
+
+    移植自墨言微信链路包 (2026-08-09) · 供 _TypingTicker 心跳用。"""
+    try:
+        token, base, user = load_token()
+        to = to_user_id or user
+        ctx = context_token or latest_context_token()
+        if not to:
+            return ""
+        resp = _post(
+            "getconfig",
+            {"ilink_user_id": to, "context_token": ctx or ""},
+            token, base, 12,
+        )
+        if resp.get("ret") not in (0, None):
+            logger.debug("getconfig failed: ret=%s", resp.get("ret"))
+            return ""
+        return str(resp.get("typing_ticket") or "")
+    except Exception as e:
+        logger.debug("get_typing_ticket failed: %s", e)
+        return ""
+
+
+def send_typing(
+    status: int,
+    *,
+    to_user_id: Optional[str] = None,
+    context_token: Optional[str] = None,
+    typing_ticket: Optional[str] = None,
+) -> bool:
+    """发『对方正在输入』状态 (sendtyping · status 1=start 2=stop)。失败静默·不打断主流程。
+
+    移植自墨言微信链路包 (2026-08-09) · 对标 cc-connect StartTyping。"""
+    try:
+        token, base, user = load_token()
+        to = to_user_id or user
+        ctx = context_token or latest_context_token()
+        ticket = typing_ticket or get_typing_ticket(to, ctx)
+        if not to or not ticket:
+            return False
+        resp = _post(
+            "sendtyping",
+            {"ilink_user_id": to, "typing_ticket": ticket, "status": status},
+            token, base, 10,
+        )
+        return resp.get("ret") in (0, None)
+    except Exception as e:
+        logger.debug("send_typing failed: %s", e)
+        return False
 
 
 def send_media_item(

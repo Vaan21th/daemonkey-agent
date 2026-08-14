@@ -19,7 +19,6 @@ OPUS 灵魂加载器 + 运行环境上下文。
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -668,34 +667,38 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
         pass
 
     # --- FTS5 记忆索引 · 启动时自动检查 (卷三十五 · wish-273374f6) ---
-    # 索引不存在或过期 (低频源: 灵魂/playbook/知识库/客户档案 比 db 新) → 后台重建。
+    # 索引不存在或过期 (低频源: 灵魂/playbook/知识库/客户档案 比 db 新) → 后台刷新。
     # wish-93b0cabf (2026-08-06) · 真后台: 之前"注释说非阻塞·代码同步跑"→ rebuild 30-40s
     # 阻塞 FastAPI 事件循环 → 对话卡死。现在包 threading.Thread fire-and-forget。
+    # 2026-08-12 (wish-ba84aa18) · 换 refresh_stale: 全量 rebuild → 分层单源增量。
+    #   事故根源: 灵魂文件 mtime 变 → check_stale True → 全量 rebuild 2 万条 (含逐条 embedding)
+    #   → 300s+ 卡死 → 用户强杀 → DROP 后留空表。refresh_stale 只增量重灌过期源 (几十条·秒级)。
+    #   rebuild() 只在 db 不存在时 fallback (首次建库)。
     # sqlite 连接每次新建 (check_same_thread 天然满足跨线程) · WAL 支持并发读写 ·
-    # search 有 OperationalError 兜底退化 LIKE · 重建瞬时空表不崩。
+    # search 有 OperationalError 兜底退化 LIKE · 增量刷新不动 session chunks 不瞬时空表。
     try:
-        from workers.memory_index import check_stale, rebuild as _rebuild_index
+        from workers.memory_index import check_stale, refresh_stale as _refresh_index
         if check_stale():
             import logging as _logging
             import threading as _threading
             _logger = _logging.getLogger('opus.soul_loader')
-            _logger.info('记忆索引过期或不存在，后台重建...')
-            # 模块级锁防并发重建 (多会话/多线程同时 load_soul 时只建一次)
-            if not hasattr(_rebuild_index, '_running'):
-                _rebuild_index._running = _threading.Lock()
-            if _rebuild_index._running.acquire(blocking=False):
-                def _bg_rebuild():
+            _logger.info('记忆索引过期，后台分层增量刷新...')
+            # 模块级锁防并发刷新 (多会话/多线程同时 load_soul 时只刷一次)
+            if not hasattr(_refresh_index, '_running'):
+                _refresh_index._running = _threading.Lock()
+            if _refresh_index._running.acquire(blocking=False):
+                def _bg_refresh():
                     try:
-                        _n = _rebuild_index()
-                        _logger.info('记忆索引重建完成: %d chunks', _n)
+                        _n = _refresh_index()
+                        _logger.info('记忆索引增量刷新完成: %d chunks', _n)
                     except Exception as _e:
-                        _logger.warning('记忆索引后台重建失败: %s', _e)
+                        _logger.warning('记忆索引后台刷新失败: %s', _e)
                     finally:
                         try:
-                            _rebuild_index._running.release()
+                            _refresh_index._running.release()
                         except Exception:
                             pass
-                _threading.Thread(target=_bg_rebuild, daemon=True, name='memory-index-rebuild').start()
+                _threading.Thread(target=_bg_refresh, daemon=True, name='memory-index-refresh').start()
     except Exception:
         pass
 

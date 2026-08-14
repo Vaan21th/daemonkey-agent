@@ -107,7 +107,12 @@ def t_read_file(args: dict) -> str:
         return f"[读失败] {type(e).__name__}: {e}"
     lines = text.splitlines()
     width = len(str(len(lines)))
-    return "\n".join(f"{i+1:>{width}}|{ln}" for i, ln in enumerate(lines))[:24000]
+    text = "\n".join(f"{i+1:>{width}}|{ln}" for i, ln in enumerate(lines))
+    if len(text) > 24000:
+        # 墨言 094 维修台加固: 截断明示 (之前静默截断 → AI 基于残缺信息下判断)
+        print(f"[repair] ⚠ read_file 截断: 原 {len(lines)} 行 {len(text)} 字符 · 只显示前 24000 字符")
+        return text[:24000]
+    return text
 
 
 def t_write_file(args: dict) -> str:
@@ -258,7 +263,14 @@ def _system_prompt(ai: str, owner: str, has_git: bool) -> str:
 def run_openai_loop(prov: dict, messages: list, auto: bool, ai: str = "Daemonkey") -> None:
     from openai import OpenAI
     client = OpenAI(api_key=prov["api_key"], base_url=prov["base_url"] or None)
+    # 墨言 094 维修台加固: 迭代熔断 max_iter=30 (LLM 假调用循环不再无限跑)
+    _max_iter = 30
+    _iter = 0
     while True:
+        _iter += 1
+        if _iter > _max_iter:
+            print(f"\n[repair] ⛔ 超过 {_max_iter} 轮工具调用仍无产出 · 已自动终止 · 重新打开维修台告诉 AI 接着修到哪一步")
+            return
         resp = client.chat.completions.create(model=prov["model"], messages=messages,
                                                tools=TOOLS_OPENAI, max_tokens=prov["max_tokens"])
         msg = resp.choices[0].message
@@ -285,7 +297,14 @@ def run_anthropic_loop(prov: dict, sys_prompt: str, messages: list, auto: bool, 
     client = anthropic.Anthropic(api_key=prov["api_key"])
     tools = [{"name": t["function"]["name"], "description": t["function"]["description"],
               "input_schema": t["function"]["parameters"]} for t in TOOLS_OPENAI]
+    # 墨言 094 维修台加固: 迭代熔断 max_iter=30
+    _max_iter = 30
+    _iter = 0
     while True:
+        _iter += 1
+        if _iter > _max_iter:
+            print(f"\n[repair] ⛔ 超过 {_max_iter} 轮工具调用仍无产出 · 已自动终止 · 重新打开维修台告诉 AI 接着修到哪一步")
+            return
         resp = client.messages.create(model=prov["model"], system=sys_prompt, messages=messages,
                                        tools=tools, max_tokens=prov["max_tokens"])
         blocks, tool_uses = [], []

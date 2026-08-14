@@ -212,6 +212,7 @@ function _cogEntryHtml(e) {
 let _cogDims = [];
 function _cogDimModal(dim) {
   if (!dim) return;
+  if (typeof _closeAllKbModals === 'function') _closeAllKbModals();  // 2026-08-14 · 单例互斥 (墨言094-2)
   let host = document.getElementById('kbModalHost');
   if (!host) { host = document.createElement('div'); host.id = 'kbModalHost'; host.className = 'kb-modal-host'; document.body.appendChild(host); }
   const rows = (dim.entries || []).map(_cogEntryHtml).join('');

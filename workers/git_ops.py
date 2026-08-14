@@ -348,6 +348,36 @@ def _branch_already_in_master(branch: str) -> bool:
     return False
 
 
+def _sibling_wish_branches(branch: str, wish_id: Optional[str] = None, _cwd: Optional[str] = None) -> list[str]:
+    """同 wish 的其他本地分支 (含未合入 master 的独有 commit)。
+
+    wish-1d9e6378 事故 (2026-08-11): 开发实例手动 checkout -b dev-<wishid>/... 开发·
+    但 dev_branch 记录还指向 wish_update 自动建的空分支 (wish-<id>/<slug>) → 空分支是
+    master 祖先被 _branch_already_in_master 判"已合" · 空分支被清 · 真代码分支漏合 → live 谎报。
+    此函数用于识破: 放行"已在 master"前 · 检查有没有同 wish 的别的分支带着没进 master 的提交。
+    _cwd (测试钩子 · 对齐 branch_from_master): 临时仓库隔离跑 · 生产不传。
+    """
+    if not wish_id:
+        return []
+    if _cwd is not None:
+        # 测试钩子: 临时仓库用 subprocess 直接跑 (母体 _run_git 固定 ROOT·不支持 cwd)
+        import subprocess
+        def _rg(cmd, timeout=8):
+            r = subprocess.run(cmd, cwd=_cwd, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace", timeout=timeout)
+            return r.returncode, r.stdout or "", r.stderr or ""
+    else:
+        _rg = _run_git
+    _, out, _ = _rg(["for-each-ref", "--format=%(refname:short)", "refs/heads"], timeout=8)
+    cands = [b for b in out.splitlines() if wish_id in b and b != branch]
+    res: list[str] = []
+    for b in cands:
+        rc, c, _ = _rg(["rev-list", "--count", f"master..{b}"], timeout=8)
+        if rc == 0 and c.strip().isdigit() and int(c.strip()) > 0:
+            res.append(b)
+    return res
+
+
 def _delete_merged_branch(branch: str) -> bool:
     """合入后清掉 wish 分支书签 (调用方已持锁) · 用 -d (git 只删已合并的·安全) · 返是否删成。
 

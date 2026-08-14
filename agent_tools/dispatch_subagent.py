@@ -22,8 +22,11 @@
 from __future__ import annotations
 
 import concurrent.futures
+import json
 import threading
+import time
 import uuid
+from typing import Optional
 
 from . import (
     REGISTRY,
@@ -42,6 +45,8 @@ _MAX_TASKS = 6             # 一次最多派 6 个
 _DEFAULT_MAX_ITER = 12     # 每分身默认迭代预算
 _MAX_ITER_CAP = 24         # 单分身迭代硬顶
 _TEXT_CLIP = 2500          # 每份分身产出汇总时截断 (防爆父上下文 · 全文在 sub-*.jsonl)
+_RESULT_FILE_THRESHOLD = 2500  # wish-48566053 · 长结果落盘阈值: 分身文本超此长度 → sessions/sub-<id>-result.md
+                             #   (产物文件化 · 主上下文只带路径+摘要 · 全文可 read_file)
 _SUBAGENT_WALL_CLOCK_SEC = 600.0  # 墙钟熔断 (2026-08-11 · 墨言贡献评估 · 08-09 卡死事故同源):
                                    # 分身 LLM 挂起时 fut.result 裸等会永久占线程 · 硬墙钟到点判超时释放
 
@@ -283,6 +288,7 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None) 
             inject_budget_mandate=True,
             cancel_check=_cancel,
             wall_clock_sec=_SUBAGENT_WALL_CLOCK_SEC,  # 2026-08-11 · 分身内部 LLM 挂起熔断 (外层 fut.result 兜底 · 内层真中断)
+            meta_extra={"goal": goal, "whitelist": sorted(wl)},
         )
     finally:
         # 生命状态机收尾 · 不管成功失败都更新注册表
@@ -290,13 +296,194 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None) 
         _update_subagent(subagent_id, status=status)
 
     push_tool_progress("✓ 分身完成", f"#{idx} · {r.iterations} 轮 · {status}")
+    # wish-48566053 · 血缘落库 (谁派的 → 哪个分身 → 状态 · 不读 sub-*.jsonl 就能查全局)
+    _append_lineage(subagent_id, parent_sid, goal, sorted(wl),
+                    (agent_cfg or {}).get("model") or getattr(runtime, "model", ""), status)
+    # wish-48566053 · 产物文件化: 长结果落盘 · 汇总只带路径+摘要 (省主上下文 · 全文可 read_file)
+    result_file = _write_result_file(subagent_id, r.text) if (r.text and len(r.text) > _RESULT_FILE_THRESHOLD) else None
     return {
         "idx": idx, "goal": goal, "ok": r.ok, "text": r.text,
         "iterations": r.iterations, "usage": r.usage, "warning": r.warning,
         "error": r.error, "sub_session_id": r.sub_session_id,
         "subagent_id": subagent_id, "status": status,
-        "whitelist": sorted(wl),
+        "whitelist": sorted(wl), "result_file": result_file,
     }
+
+
+# ── wish-48566053 · 子代理三件套: 血缘落库 + 产物文件化 + resume 续跑 ──
+# 墨言 094 wish-0627f33e 移植 · 2026-08-14 · 基于 zcode/codex/claude code 四家子代理链路对比落地。
+
+def _load_subagent_archive(subagent_id: str) -> tuple:
+    """读 sessions/sub-<id>.jsonl → (meta, messages)。
+
+    血缘恢复 (resume 前置): meta 是 _meta 首行 (parent_session_id/system_full/extra_meta) ·
+    messages 是按 role 过滤的历史消息 (user/assistant · 含 tool_call 完整结构)。
+    文件不存在 / 无 _meta / 解析失败 → (None, []) · resume 会拒绝。
+    """
+    from pathlib import Path
+
+    core = subagent_id.split("-", 1)[-1] if subagent_id else ""
+    path = Path(__file__).resolve().parent.parent / "sessions" / f"sub-{core}.jsonl"
+    if not path.exists():
+        return None, []
+    meta, messages = None, []
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("role") == "_meta":
+                meta = entry
+            elif entry.get("role") in ("user", "assistant", "tool"):
+                # 保留 tool 消息 (tool_loop 提交 {role:"tool", tool_call_id, content}) ·
+                # 否则 resume 恢复的序列悬空 · 分身对之前工具返回的事实失忆
+                messages.append(entry)
+    except Exception:
+        return None, []
+    return meta, messages
+
+
+def _write_result_file(subagent_id: str, text: str) -> Optional[str]:
+    """长结果落盘 sessions/sub-<id>-result.md · 返回相对路径 (read_file 可读) 或 None。"""
+    from pathlib import Path
+
+    try:
+        core = subagent_id.split("-", 1)[-1] if subagent_id else ""
+        path = Path(__file__).resolve().parent.parent / "sessions" / f"sub-{core}-result.md"
+        path.write_text(text or "", encoding="utf-8")
+        return f"sessions/sub-{core}-result.md"
+    except Exception:
+        return None
+
+
+def _append_lineage(subagent_id: str, parent_sid: str, goal: str,
+                    whitelist: list, model: str, status: str, op: str = "dispatch") -> None:
+    """血缘索引: 每次派发/续跑追加一条到 sessions/sub-agent-index.jsonl。
+
+    全局血缘视图 (谁派的 → 哪个分身 → 状态) · 不读每个 sub-*.jsonl 就能查。
+    轻量尽力写: 失败不阻断主流程。
+    """
+    from pathlib import Path
+
+    try:
+        path = Path(__file__).resolve().parent.parent / "sessions" / "sub-agent-index.jsonl"
+        entry = {
+            "subagent_id": subagent_id, "parent_session_id": parent_sid,
+            "goal": goal[:120], "whitelist": whitelist, "model": model,
+            "status": status, "op": op, "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _resume_one(task: dict, runtime, parent_sid: str, cancel_check=None) -> dict:
+    """续跑一个已结束/中断的分身 · 恢复 sub-<id>.jsonl 上下文 + 追加一条消息再跑一轮。
+
+    不是新派发: 复用原 sub_session_id / system / whitelist / model / messages (含全部历史) ·
+    只追加一条新 user 消息。 返回结构与 _run_one 一致 (idx=0 · goal=恢复的 goal)。
+    """
+    from workers.subagent_runner import run_subagent
+
+    subagent_id = str(task.get("subagent_id") or "").strip()
+    message = str(task.get("message") or "").strip()
+
+    def fail(err):
+        return {
+            "idx": 0, "goal": "", "ok": False, "text": "", "iterations": 0,
+            "usage": {}, "warning": None, "error": err,
+            "sub_session_id": None, "subagent_id": subagent_id,
+            "status": "failed", "whitelist": [], "result_file": None,
+        }
+    if not subagent_id or not message:
+        return fail("resume 需要 subagent_id + message")
+
+    meta, messages = _load_subagent_archive(subagent_id)
+    if meta is None:
+        return fail(f"分身 {subagent_id} 的会话档案不存在或缺少 _meta · 无法 resume "
+                    "(只有本次升级后派发的分身体血缘可恢复)")
+    goal = str((meta.get("extra_meta") or {}).get("goal") or "resume")
+    wl = set((meta.get("extra_meta") or {}).get("whitelist") or [])
+    model = meta.get("model") or None
+    system = meta.get("system_full") or ""
+    if not system:
+        return fail(f"分身 {subagent_id} 的 _meta 缺 system_full · 无法重建上下文")
+
+    # 原子: 锁内先查 running 再注册 (同 key 覆盖) · 防并发双 resume 同一分身
+    with _ACTIVE_LOCK:
+        _rec = _ACTIVE_SUBAGENTS.get(subagent_id)
+        if _rec is not None and _rec.get("status") == "running":
+            return fail(f"分身 {subagent_id} 正在跑 · 不能 resume (先 cancel 或等完成)")
+        _ACTIVE_SUBAGENTS[subagent_id] = {
+            "subagent_id": subagent_id, "idx": 0, "goal": goal,
+            "status": "running", "tool_calls": 0, "usage": {}, "cancel_requested": False,
+        }
+    _rec_cancel = {"requested": False}
+
+    def _progress(event_type: str, data: dict) -> None:
+        try:
+            if event_type == "tool_call":
+                with _ACTIVE_LOCK:
+                    rec = _ACTIVE_SUBAGENTS.get(subagent_id)
+                    if rec is not None:
+                        rec["tool_calls"] += 1
+        except Exception:
+            pass
+
+    def _cancel() -> bool:
+        with _ACTIVE_LOCK:
+            rec = _ACTIVE_SUBAGENTS.get(subagent_id)
+            if rec and rec.get("cancel_requested"):
+                _rec_cancel["requested"] = True
+                return True
+        return bool(cancel_check() if callable(cancel_check) else False)
+
+    user_msg = f"[resume 续跑] 主对话追加了新的子任务指令:\n{message}"
+    push_tool_progress("🔁 分身续跑", f"{subagent_id} · {goal[:30]}")
+    r = None
+    try:
+        r = run_subagent(
+            system=system, user_msg=user_msg, runtime=runtime,
+            tools_whitelist=wl, max_iterations=_DEFAULT_MAX_ITER,
+            wall_clock_sec=_SUBAGENT_WALL_CLOCK_SEC, model=model,
+            progress=_progress, persist=True,
+            parent_session_id=meta.get("parent_session_id"),
+            sub_session_id=subagent_id.split("-", 1)[-1] if subagent_id else None,
+            initial_messages=messages + [{"role": "user", "content": user_msg}],
+            inject_budget_mandate=True, cancel_check=_cancel,
+        )
+    finally:
+        status = "cancelled" if _rec_cancel["requested"] else ("success" if r is not None and r.ok else "failed")
+        _update_subagent(subagent_id, status=status)
+
+    push_tool_progress("✓ 分身续跑完成", f"{subagent_id} · {r.iterations if r else 0} 轮 · {status}")
+    # 血缘记 resume 发起方 (当前会话) · 回退到原派发方
+    _append_lineage(subagent_id, parent_sid or (meta.get("parent_session_id") or ""), goal, sorted(wl),
+                    model or "", status, op="resume")
+    result_file = _write_result_file(subagent_id, r.text) if (r is not None and r.text and len(r.text) > _RESULT_FILE_THRESHOLD) else None
+    return {
+        "idx": 0, "goal": goal, "ok": r.ok if r else False, "text": r.text if r else "",
+        "iterations": r.iterations if r else 0, "usage": r.usage if r else {},
+        "warning": r.warning if r else None, "error": r.error if r else None,
+        "sub_session_id": subagent_id.split("-", 1)[-1] if subagent_id else None,
+        "subagent_id": subagent_id, "status": status,
+        "whitelist": sorted(wl), "result_file": result_file,
+    }
+
+
+def _format_results(results: list, resume: bool = False) -> ToolResult:
+    """汇总分身结果 · 长结果落盘展示 (路径+摘要) · 全挂 → 工具级失败。
+
+    resume=True 时标题用「续跑」· 其余展示逻辑与新派发一致。
+    """
+    # wish-48566053 · 统一走 _format_results 汇总 (含 result_file 落盘展示 · 全挂→失败)
+    return _format_results(results, resume=False)
 
 
 def _run(args: dict) -> ToolResult:
@@ -306,6 +493,23 @@ def _run(args: dict) -> ToolResult:
     raw = args.get("tasks")
     if not isinstance(raw, list) or not raw:
         return ToolResult(ok=False, output="", error="tasks 必填 · 是一个数组 · 每项 {goal, tools?, max_iter?}")
+
+    # wish-48566053 · resume 续跑分支: tasks 传 [{subagent_id, message}] → 恢复分身历史上下文续跑
+    #  (非新派发 · 复用原 system/whitelist/model/messages · 只追加一条新指令)
+    _is_resume = all(isinstance(t, dict) and str(t.get("subagent_id") or "").strip() and str(t.get("message") or "").strip()
+                     for t in raw)
+    if _is_resume:
+        if len(raw) > _MAX_TASKS:
+            return ToolResult(ok=False, output="",
+                              error=f"一次最多续跑 {_MAX_TASKS} 个分身 (你给了 {len(raw)})")
+        if RUNTIME.client is None:
+            return ToolResult(ok=False, output="", error="RUNTIME.client 未就绪 (daemon 未完全启动?)")
+        parent_sid = current_session_id()
+        push_tool_progress("🔁 续跑分身", f"{len(raw)} 个 · 恢复历史上下文")
+        results = []
+        for t in raw:
+            results.append(_resume_one(t, RUNTIME, parent_sid))
+        return _format_results(results, resume=True)
 
     tasks = [t for t in raw if isinstance(t, dict) and str(t.get("goal") or "").strip()]
     if not tasks:

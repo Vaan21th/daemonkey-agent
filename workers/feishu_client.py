@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -18,7 +19,20 @@ import requests
 
 logger = logging.getLogger("opus.feishu")
 
-_CONFIG_PATH = Path("data/runtime/feishu_config.json")
+def _config_path() -> Path:
+    """feishu 配置路径 · cwd 兜底 (fix-log 20260814-1 ②):
+    从错误 cwd 启动时 `data/runtime/feishu_config.json` 相对路径读不到 → 静默判定未配置。
+    先试 cwd 相对 · 失败回退到项目根 (daemon 所在目录) · 保证无论从哪启动都能读到。
+    """
+    p = Path("data/runtime/feishu_config.json")
+    if p.exists():
+        return p
+    # 项目根兜底: 从当前文件位置向上找 (workers/feishu_client.py → 项目根)
+    here = Path(__file__).resolve().parent.parent
+    alt = here / "data" / "runtime" / "feishu_config.json"
+    return alt if alt.exists() else p
+
+
 _BASE = "https://open.feishu.cn"
 
 _TOKEN_CACHE: dict = {"token": None, "exp": 0.0}  # tenant_access_token + 到期时间
@@ -27,10 +41,11 @@ _TOKEN_CACHE: dict = {"token": None, "exp": 0.0}  # tenant_access_token + 到期
 # ── 配置 ──────────────────────────────────────────────────
 
 def load_config() -> dict:
-    if not _CONFIG_PATH.exists():
+    cp = _config_path()
+    if not cp.exists():
         return {}
     try:
-        return json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+        return json.loads(cp.read_text(encoding="utf-8"))
     except Exception:
         return {}
 
@@ -38,8 +53,9 @@ def load_config() -> dict:
 def save_config(app_id: str, app_secret: str, enabled: bool = True) -> None:
     cfg = load_config()
     cfg.update({"app_id": app_id.strip(), "app_secret": app_secret.strip(), "enabled": bool(enabled)})
-    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    cp = _config_path()
+    cp.parent.mkdir(parents=True, exist_ok=True)
+    cp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info("feishu config saved · app_id=%s · enabled=%s", cfg["app_id"], cfg["enabled"])
 
 
@@ -64,8 +80,9 @@ def set_enabled(on: bool) -> None:
 def save_webhook(url: str) -> None:
     cfg = load_config()
     cfg["webhook_url"] = url.strip()
-    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    cp = _config_path()
+    cp.parent.mkdir(parents=True, exist_ok=True)
+    cp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     logger.info("feishu webhook saved · %s", cfg["webhook_url"][:40] + "***" if cfg["webhook_url"] else "")
 
 
@@ -93,6 +110,13 @@ def send_webhook(text: str) -> dict:
 
 # ── 认证 ──────────────────────────────────────────────────
 
+# 2026-08-14 · 系统代理直连豁免 (同 info_radar 修复模式):
+# 系统代理残留死端口 (Clash 没开但 ProxyEnable=1 → 127.0.0.1:7890 无监听) 会让 requests 全灭。
+# trust_env=False → requests 忽略系统代理 · 飞书通道直连 (飞书国内可达·不需要代理)。
+_session = requests.Session()
+_session.trust_env = False
+
+
 def get_tenant_token() -> Optional[str]:
     """app_id+app_secret → tenant_access_token · 缓存到到期前 5 分钟。"""
     if _TOKEN_CACHE["token"] and time.time() < _TOKEN_CACHE["exp"] - 300:
@@ -101,7 +125,7 @@ def get_tenant_token() -> Optional[str]:
     if not is_configured():
         return None
     try:
-        r = requests.post(
+        r = _session.post(
             f"{_BASE}/open-apis/auth/v3/tenant_access_token/internal",
             json={"app_id": cfg["app_id"], "app_secret": cfg["app_secret"]},
             timeout=15,
@@ -187,7 +211,7 @@ def _api_request(method: str, url: str, *, token: Optional[str] = None, headers:
     delay = _TRANSIENT_INITIAL
     for attempt in range(_MAX_TRANSIENT_RETRIES + 1):
         try:
-            resp = requests.request(method, url, headers=hdrs, json=json_body, params=params,
+            resp = _session.request(method, url, headers=hdrs, json=json_body, params=params,
                                     files=files, data=data, timeout=timeout)
         except requests.exceptions.RequestException as e:
             if not _is_transient_error(e) or attempt >= _MAX_TRANSIENT_RETRIES:
@@ -209,7 +233,7 @@ def _api_request(method: str, url: str, *, token: Optional[str] = None, headers:
                         hdrs["Authorization"] = f"Bearer {fresh}"
                         _rewind_files(files)
                         try:
-                            resp2 = requests.request(method, url, headers=hdrs, json=json_body,
+                            resp2 = _session.request(method, url, headers=hdrs, json=json_body,
                                                      params=params, files=files, data=data, timeout=timeout)
                         except requests.exceptions.RequestException:
                             resp2 = None
@@ -514,6 +538,104 @@ def batch_recall(message_ids: list) -> dict:
             results.append({"message_id": mid, "ok": False, "error": str(e)})
     failed = [x for x in results if not x["ok"]]
     return {"ok": not failed, "results": results, "failed": len(failed), "truncated": truncated}
+
+
+# ── 名字解析 (对标 cc-connect resolveUserName / resolveChatName · 墨言 094 移植) ─────
+
+_USER_NAME_CACHE: dict = {}
+_CHAT_NAME_CACHE: dict = {}
+_NAME_CACHE_MAX = 512  # LRU 上限 · 防无限涨
+_NAME_FAIL_TTL = 3600  # 失败降级值缓存 1h · 防反复调 API 打爆限流 (R1) · 过期后重试
+_NAME_CACHE_LOCK = threading.Lock()  # review B: 并发 miss 单飞 · 防惊群调 API + 失败值覆盖成功值
+
+
+def _cache_get(cache: dict, key: str) -> Optional[str]:
+    v = cache.get(key)
+    if not isinstance(v, dict):
+        return None
+    val = v.get("name") or ""
+    if not val:
+        return None
+    # 失败降级值带 expiry · 过期后重新解析 (成功值永不过期)
+    if v.get("exp") and time.time() > v["exp"]:
+        cache.pop(key, None)
+        return None
+    return val
+
+
+def _cache_put(cache: dict, key: str, val: str, fail: bool = False) -> None:
+    if len(cache) >= _NAME_CACHE_MAX:
+        # 简单淘汰: 清掉一半最旧的 (dict 保持插入序)
+        for k in list(cache.keys())[: len(cache) // 2]:
+            cache.pop(k, None)
+    cache[key] = {"name": val, "exp": (time.time() + _NAME_FAIL_TTL) if fail else 0}
+
+
+def resolve_user_name(open_id: str) -> str:
+    """open_id → 用户显示名 (Contact API · 带缓存 · 对标 cc resolveUserName)。
+
+    失败/无权限 → 原样返回 open_id (cc 同构降级) · 不抛异常不阻塞主链路。
+    review B: 锁内双重检查 · 并发 miss 只调一次 API · 失败值不覆盖已成功写入的真名。
+    """
+    if not open_id or len(open_id) > 64:
+        return open_id
+    cached = _cache_get(_USER_NAME_CACHE, open_id)
+    if cached:
+        return cached
+    with _NAME_CACHE_LOCK:
+        cached = _cache_get(_USER_NAME_CACHE, open_id)
+        if cached:
+            return cached
+        token = get_tenant_token()
+        if not token:
+            return open_id
+        try:
+            import urllib.parse as _up
+            url = f"{_BASE}/open-apis/contact/v3/users/{_up.quote(open_id)}"
+            status, d = _api_request("GET", url, token=token, params={"user_id_type": "open_id"}, timeout=10)
+            if status == 200:
+                user = ((d.get("data") or {}).get("user")) or {}
+                name = user.get("name") or ""
+                if name:
+                    _cache_put(_USER_NAME_CACHE, open_id, name)
+                    return name
+            logger.debug("feishu resolve_user_name 无数据: %s http=%s", open_id, status)
+            _cache_put(_USER_NAME_CACHE, open_id, open_id, fail=True)  # R1: 失败也缓存防重复 API
+        except Exception as e:
+            logger.warning("feishu resolve_user_name 异常: %s", e)
+            _cache_put(_USER_NAME_CACHE, open_id, open_id, fail=True)
+        return open_id
+
+
+def resolve_chat_name(chat_id: str) -> str:
+    """chat_id → 群名 (IM API · 带缓存 · 对标 cc resolveChatName)。失败 → 原样返回。"""
+    if not chat_id or len(chat_id) > 64:
+        return chat_id
+    cached = _cache_get(_CHAT_NAME_CACHE, chat_id)
+    if cached:
+        return cached
+    with _NAME_CACHE_LOCK:  # review B: 锁内双重检查
+        cached = _cache_get(_CHAT_NAME_CACHE, chat_id)
+        if cached:
+            return cached
+        token = get_tenant_token()
+        if not token:
+            return chat_id
+        try:
+            import urllib.parse as _up
+            url = f"{_BASE}/open-apis/im/v1/chats/{_up.quote(chat_id)}"
+            status, d = _api_request("GET", url, token=token, timeout=10)
+            if status == 200:
+                name = ((d.get("data") or {}).get("chat") or {}).get("name") or ""
+                if name:
+                    _cache_put(_CHAT_NAME_CACHE, chat_id, name)
+                    return name
+            logger.debug("feishu resolve_chat_name 无数据: %s http=%s", chat_id, status)
+            _cache_put(_CHAT_NAME_CACHE, chat_id, chat_id, fail=True)  # R1: 失败也缓存防重复 API
+        except Exception as e:
+            logger.warning("feishu resolve_chat_name 异常: %s", e)
+            _cache_put(_CHAT_NAME_CACHE, chat_id, chat_id, fail=True)
+        return chat_id
 
 
 # ── 状态 ──────────────────────────────────────────────────

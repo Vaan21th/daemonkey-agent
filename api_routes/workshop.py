@@ -87,7 +87,7 @@ def _resolve_workshop_md(domain: str, filename: str) -> "Path":
 
 # 卷八十一 · 通用文件解析 (reveal 本机打开用) · 支持 data/{domain}/ 下所有白名单类型
 _WORKSHOP_FILE_EXTS = {
-    ".md", ".txt",
+    ".md", ".txt", ".html",
     ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf",
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg",
     ".wav", ".mp3", ".ogg", ".flac", ".m4a",
@@ -99,6 +99,7 @@ _WORKSHOP_FILE_EXTS = {
 _DOWNLOAD_MIME = {
     ".md": "text/markdown; charset=utf-8",
     ".txt": "text/plain; charset=utf-8",
+    ".html": "text/html; charset=utf-8",
     ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ".xls": "application/vnd.ms-excel",

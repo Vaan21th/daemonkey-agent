@@ -81,8 +81,15 @@ def _read_changelog(log_ref: str, max_chars: int = 2500) -> str:
                 text = text[:max_chars].rstrip() + "\n…(完整版见 " + log_ref + ")"
             return text
         # 累积日志文本: 取最后一个版本号段 (版本间/段内都混用 " · " · 按版本号模式切才稳)
+        # 2026-08-14 修 (BRO: 升级胶囊显示旧内容): 旧正则 \d+\.\d+\.\d+[a-zA-Z0-9]*\(
+        # 只认 "0.8.6(" 紧跟括号 · 不认 "卷(0.8.9)" / "0.9.1+ (2026-08-12" (+ 后空格)
+        # → 匹配不到最新段 → 回退显示 0.8.6 老内容。改三态兼容:
+        #   · "0.8.6("          → 版本号紧跟括号 (标准)
+        #   · "0.9.1+ ("        → 版本号带 + 后缀 + 空格再括号 (2026-08-12 起格式)
+        #   · "卷(0.8.9):"      → 卷+版本号段 (0.8.9 特例)
         import re
-        matches = list(re.finditer(r"\d+\.\d+\.\d+[a-zA-Z0-9]*\(", log_ref))
+        matches = list(re.finditer(
+            r"(?:\d+\.\d+\.\d+[a-zA-Z0-9+]*\s*\(|卷\(\d+\.\d+\.\d+\))", log_ref))
         if matches:
             text = log_ref[matches[-1].start():].strip()
         else:

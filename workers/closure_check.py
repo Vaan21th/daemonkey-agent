@@ -337,9 +337,23 @@ def _update_suppression() -> dict:
                 last_ts = ts_file.read_text(encoding="utf-8").strip()
         except Exception:
             pass
-        # ① 统计每个 pb 自上次记账以来的新增注入 (新格式 item_kind=id)
+        # ① 统计每个 pb 自上次记账以来的新增注入 (新格式 item_kind=id · 旧格式 items 存 title)
         inject_cnt: dict[str, int] = {}
         max_ts = last_ts
+        # 墨言 094 suppression 记账 bug 修复: 旧格式注入日志 items 字段存的是 title (占 78%)
+        # 而非 id → 旧格式行永不参与记账 → 重复注入的 playbook 无法被抑制 (suppression 失效)。
+        # 修法: 先构建 title→pb-id 映射 · pb- 前缀直通 · 无 ts 行跳过 · title[:120] 截断兜底。
+        _title2id: dict[str, str] = {}
+        try:
+            from workers.playbooks import list_playbooks as _lp
+            for _pb in (_lp() or []):
+                _t = str(_pb.get("title") or "").strip()
+                _pid = str(_pb.get("id") or "").strip()
+                if _t and _pid:
+                    _title2id[_t] = _pid
+                    _title2id.setdefault(_t[:120], _pid)   # 截断兜底 (若被 [:120] 截断仍可映射)
+        except Exception:
+            _title2id = {}
         p = _inject_log_path()
         if p.exists():
             for line in p.read_text(encoding="utf-8").splitlines():
@@ -350,16 +364,26 @@ def _update_suppression() -> dict:
                     r = json.loads(line)
                 except Exception:
                     continue
-                if r.get("kind") != "playbook" or r.get("item_kind") != "id":
+                if r.get("kind") != "playbook":
                     continue
                 ts = r.get("ts", "")
-                if last_ts and ts and ts < last_ts:
+                if not ts:
+                    continue   # 墨言 C2-③: 无 ts 行跳过 · 防每轮重复累计反复 bump
+                if last_ts and ts < last_ts:
                     continue   # 旧注入不参与本轮 (增量口径)
                 if ts and ts > max_ts:
                     max_ts = ts
+                is_new = r.get("item_kind") == "id"
                 for it in r.get("items", []) or []:
-                    if it:
-                        inject_cnt[str(it)] = inject_cnt.get(str(it), 0) + 1
+                    if not it:
+                        continue
+                    key = str(it)
+                    if not is_new:
+                        # C1 (墨言终审): pb- 前缀 = id · 直接参与 (旧格式也有存 id 的行)
+                        if not key.startswith("pb-"):
+                            key = _title2id.get(key.strip(), "")
+                    if key:
+                        inject_cnt[key] = inject_cnt.get(key, 0) + 1
         # 记录本轮时间戳 (无论有没有注入 · 防止漏记导致下次全量重算)
         if max_ts:
             try:
@@ -661,8 +685,31 @@ def relevant_playbooks(message: str, *, limit: int = 2, session_id: str = "") ->
         if pb_score > _PB_WEAK_SCORE_MAX and _overlap_n < 2:
             weak_s = " · **[弱相关 · 相关性弱 · 不确定是否适用]**"
             weak_ids.append(pb.get("id", ""))
+        # wish-0ecdbbd8 (墨言 094 wish-b6a837da) · 可信度四级标注: 注入端分级 (退休/确认/疑似/正常)
+        #  退休🗄 = 内容已废 · 只提示不注入正文 (防错误当指令执行)
+        #  确认⚠ = 已确认失效 · 只提示不注入正文
+        #  疑似? = 可能失效 · 正常注入但带警示
+        #  正常 = 正常注入 (不加标记)
+        _stale_s = ""
+        _stale_state = pb.get("stale_state", "")
+        if not _stale_state:
+            try:
+                from workers.playbooks import get_playbook_meta as _gpm
+                _stale_state = (_gpm(pb.get("id", "")).get("stale_state") or "")
+            except Exception:
+                _stale_state = ""
+        if _stale_state == "退休":
+            _stale_s = " · 🗄**[已退休 · 内容已失效 · 仅作索引 · 勿当执行指令]**"
+        elif _stale_state == "确认":
+            _stale_s = " · ⚠**[已确认失效 · 内容不可靠 · 仅作索引]**"
+        elif _stale_state == "疑似":
+            _stale_s = " · ?**[疑似失效 · 用前核实]**"
+        # 失败反馈累计 (use_fail>0) 也带警示 · 但不改注入 (仅提示)
+        _fail_n = pb.get("use_fail", 0)
+        if not _stale_s and _fail_n:
+            _stale_s = f" · ⚠[曾失败 {_fail_n} 次]"
         lines.append(
-            f"- `{pb.get('id', '')}` · {pb.get('title', '')} (复用过 {pb.get('used_count', 0)} 次){debug_s}{weak_s}"
+            f"- `{pb.get('id', '')}` · {pb.get('title', '')} (复用过 {pb.get('used_count', 0)} 次){debug_s}{weak_s}{_stale_s}"
         )
     _log_injection(msg, "playbook", [pb.get("id", "") for pb in fresh],
                    hit_score=best_score, session_id=session_id, item_kind="id", weak=weak_ids)

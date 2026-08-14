@@ -308,6 +308,7 @@ async function pickClient(onPick) {
     const r = await fetch('/dashboard/clients', { headers: { 'Authorization': 'Bearer ' + token } });
     if (r.ok) items = (await r.json()).items || [];
   } catch (e) { /* 拉不到就给空列表提示 */ }
+  if (typeof _closeAllKbModals === 'function') _closeAllKbModals();  // 2026-08-14 · 单例互斥 (墨言094-2)
   let host = document.getElementById('kbModalHost');
   if (!host) { host = document.createElement('div'); host.id = 'kbModalHost'; host.className = 'kb-modal-host'; document.body.appendChild(host); }
   const list = items.length
@@ -392,6 +393,7 @@ async function _clientImportUpload(e) {
 
 function _showClientImportModal(data) {
   _clImportData = data;
+  if (typeof _closeAllKbModals === 'function') _closeAllKbModals();  // 2026-08-14 · 单例互斥 (墨言094-2)
   const headers = data.headers || [];
   const rows = data.rows || [];
   const sugg = data.suggested_mapping || {};

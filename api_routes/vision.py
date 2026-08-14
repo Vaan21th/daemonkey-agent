@@ -1,7 +1,9 @@
-"""api_routes/vision.py · 视觉模型配置 2 路由 (wish-4a6331b2)
+"""api_routes/vision.py · 视觉模型配置 + Embedding 语义检索配置 (wish-4a6331b2 + wish-b313583b)
 
 GET  /vision-config  · 读当前视觉模型配置 (api_key 掩码)
 POST /vision-config  · 写 + 可选烟测 (传 test=true)
+GET  /embed-config   · 读 embedding 语义检索状态 (开关/覆盖/模型 · 复用智谱 provider)
+POST /embed-config   · 写 embedding 开关 / 触发回填
 """
 
 from __future__ import annotations
@@ -77,7 +79,6 @@ async def set_vision_config(
         try:
             from openai import OpenAI
             # 测试连接 · 给慢视觉/thinking 模型 buffer · 比主超时短让 key 错时快失败
-            # 用去尾后的 _clean_url(否则贴了完整端点时·测试会拼成 .../chat/completions/chat/completions → 404)
             client = OpenAI(api_key=api_key, base_url=_clean_url, timeout=60)
             resp = client.chat.completions.create(
                 model=model,
@@ -102,3 +103,111 @@ async def set_vision_config(
         "api_key_masked": _mask(api_key),
         "test": test_result,
     }
+
+
+# ──────────────────────────────────────────────────────────────
+# Embedding 语义检索配置 (wish-b313583b · BRO 拍板放视觉 tab 一起 · 改名"视觉 & Embedding")
+# 配置存 data/embedding_config.json · 可自定义 model/base_url/api_key · 兼容开源纯净版
+# 优先级: 用户自配 → 智谱 provider fallback (母体开箱即用) → .env
+# ──────────────────────────────────────────────────────────────
+
+@router.get("/embed-config")
+async def get_embed_config(authorization: Optional[str] = Header(None)):
+    """读 embedding 语义检索状态 + 配置。api_key 掩码。"""
+    check_auth(authorization)
+
+    from workers.memory_embed import load_config, stats
+    from workers.memory_index import _get_conn
+
+    conn = _get_conn()
+    st = stats(conn)
+    conn.close()
+
+    cfg = load_config()
+    masked = {
+        "enabled": cfg.get("enabled", True),
+        "configured": cfg.get("configured", False),
+        "source": cfg.get("source", ""),          # user / zhipu-provider / env / ''
+        "model": cfg.get("model", ""),
+        "base_url": cfg.get("base_url", ""),
+        "api_key": _mask(cfg["api_key"]) if cfg.get("api_key") else "",
+        "covered": st["covered"],
+        "total": st["total"],
+    }
+    return masked
+
+
+@router.post("/embed-config")
+async def set_embed_config(
+    payload: dict = Body(...),
+    authorization: Optional[str] = Header(None),
+):
+    """写 embedding 配置。payload: { model?, base_url?, api_key?, enabled?, action?: 'backfill'|'test' }"""
+    check_auth(authorization)
+
+    from workers.memory_embed import save_config, load_config
+
+    result = {}
+
+    # 保存配置 (model/base_url/api_key/enabled 任一存在即写)
+    save_keys = [k for k in ("model", "base_url", "api_key", "enabled") if k in payload]
+    if save_keys:
+        cfg = {}
+        for k in save_keys:
+            cfg[k] = payload[k]
+        if "api_key" in cfg and ("****" in str(cfg["api_key"]) or not str(cfg["api_key"]).strip()):
+            # 掩码回传 / 空 → 保留原 key (不覆盖)
+            cfg.pop("api_key")
+        ok = save_config(cfg)
+        result["config_saved"] = ok
+        result["saved_keys"] = save_keys
+
+    if payload.get("action") == "backfill":
+        import threading
+
+        def _do_backfill():
+            try:
+                from workers.memory_embed import backfill_all
+                from workers.memory_index import _get_conn
+                conn = _get_conn()
+                ok, fail = backfill_all(conn)
+                conn.close()
+                import logging
+                logging.getLogger("memory_embed").info("backfill done ok=%s fail=%s", ok, fail)
+            except Exception:
+                pass
+
+        threading.Thread(target=_do_backfill, daemon=True).start()
+        result["backfill_started"] = True
+
+    if payload.get("action") == "test":
+        # 烟测: 用提交的 (或已存) 配置试 embed 一次
+        # 掩码 key (sk-****xxxx) 不能当真 key 测 → 忽略用已存
+        _pk = payload.get("api_key") or ""
+        _use_key = "" if "****" in str(_pk) else _pk
+        test_key = _use_key or load_config().get("api_key") or ""
+        test_model = payload.get("model") or load_config().get("model") or ""
+        test_base = payload.get("base_url") or load_config().get("base_url") or ""
+        if not (test_key and test_model and test_base):
+            result["test"] = {"ok": False, "error": "model/base_url/api_key 都要有才能测试"}
+        else:
+            try:
+                import requests
+                r = requests.post(
+                    f"{test_base.rstrip('/')}/embeddings",
+                    headers={"Authorization": f"Bearer {test_key}"},
+                    json={"model": test_model, "input": ["连接测试"]},
+                    timeout=60,
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    dim = len((data.get("data") or [{}])[0].get("embedding", []))
+                    result["test"] = {"ok": True, "dim": dim, "ms": r.elapsed.total_seconds() * 1000}
+                else:
+                    result["test"] = {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:150]}"}
+            except Exception as e:
+                result["test"] = {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+    if not result:
+        raise HTTPException(400, "no valid payload (model/base_url/api_key/enabled/action)")
+    return result

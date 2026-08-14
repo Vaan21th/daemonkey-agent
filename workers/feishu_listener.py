@@ -153,6 +153,13 @@ def _make_feishu_progress(chat_id: str):
                     _update_progress_card(chat_id, {
                         "kind": "assistant", "text": txt[:220],
                     })
+            elif kind == "thinking":
+                # 2026-08-14 · 思考过程上卡 (墨言 094 飞书对齐 cc): tool_loop 推 thinking 事件 → 灰字思考面板
+                txt = (data.get("text") or "").strip()
+                if txt:
+                    _update_progress_card(chat_id, {
+                        "kind": "thinking", "text": txt[:220],
+                    })
             elif kind == "confirm_request":
                 _show_confirm_card(chat_id, data)
             elif kind == "confirm_resolved":
@@ -171,6 +178,9 @@ def _render_tool_line(rec) -> str:
         return rec
     if rec.get("kind") == "assistant":
         return f"<text_tag color='purple'>{_ln('OPUS')}</text_tag> {(rec.get('text') or '')[:200]}"
+    if rec.get("kind") == "thinking":
+        # 对标 cc-connect renderProgressEntryElement thinking: 💭 + 灰字小字
+        return f"<text_tag color='grey'>💭 {(rec.get('text') or '')[:200]}</text_tag>"
     name = rec.get("name", "?")
     status = rec.get("status", "running")
     if status == "done":
@@ -240,8 +250,8 @@ def _update_progress_card(chat_id: str, line) -> None:
         chat_id, {"message_id": "", "lines": [], "thoughts": [], "lock": threading.Lock(),
                   "confirming_tool_call_id": "", "chat_id": chat_id})
     with st["lock"]:
-        if line.get("kind") == "assistant":
-            # 思考过程独立存 thoughts · 与工具调用分开
+        if line.get("kind") in ("assistant", "thinking"):
+            # 思考过程独立存 thoughts · 与工具调用分开 (assistant=正文片段 · thinking=推理内容)
             st.setdefault("thoughts", []).append(line)
             if len(st["thoughts"]) > 6:
                 st["thoughts"] = st["thoughts"][-6:]
@@ -1014,7 +1024,15 @@ def _fetch_single_message(message_id: str) -> Optional[dict]:
         if sender_type == "app":
             sender_name = f"{_ln('OPUS')}(机器人)" if "cli_" in sender_id else f"机器人[{sender_id[:20]}]"
         elif sender_id:
-            sender_name = sender_id if len(sender_id) <= 12 else f"{sender_id[:6]}…{sender_id[-4:]}"
+            # 2026-08-14 · 名字解析 (墨言 094 飞书对齐 cc): open_id → 真名 (Contact API + 缓存) ·
+            # 失败降级 open_id 截断 (cc 同构) · 需 contact:user.base:readonly 权限 (未开通自动降级)
+            try:
+                from workers.feishu_client import resolve_user_name as _run
+                sender_name = _run(sender_id)
+                if not sender_name or sender_name == sender_id:
+                    sender_name = sender_id if len(sender_id) <= 12 else f"{sender_id[:6]}…{sender_id[-4:]}"
+            except Exception:
+                sender_name = sender_id if len(sender_id) <= 12 else f"{sender_id[:6]}…{sender_id[-4:]}"
         else:
             sender_name = "用户"
         return {
@@ -1313,7 +1331,15 @@ def _format_merge_forward_tree(parent_id: str, children_map: dict, sb: list, dep
         if sender.get("sender_type") == "app":
             sender_name = "机器人"
         elif sender_id:
-            sender_name = sender_id if len(sender_id) <= 12 else f"{sender_id[:6]}…{sender_id[-4:]}"
+            # 2026-08-14 · 名字解析 (墨言 094 飞书对齐 cc): open_id → 真名 (Contact API + 缓存) ·
+            # 失败降级 open_id 截断 (cc 同构) · 需 contact:user.base:readonly 权限 (未开通自动降级)
+            try:
+                from workers.feishu_client import resolve_user_name as _run
+                sender_name = _run(sender_id)
+                if not sender_name or sender_name == sender_id:
+                    sender_name = sender_id if len(sender_id) <= 12 else f"{sender_id[:6]}…{sender_id[-4:]}"
+            except Exception:
+                sender_name = sender_id if len(sender_id) <= 12 else f"{sender_id[:6]}…{sender_id[-4:]}"
         else:
             sender_name = "用户"
         # 时间戳 HH:MM
@@ -1566,7 +1592,9 @@ def _event_handler_builder():
     """构建 lark-oapi 事件分发器 · 注册 im.message.receive_v1 + card.action.trigger。"""
     try:
         import lark_oapi as lark
-        from lark_oapi.api.im.v1 import P2ImMessageReceiveV1Data, P2ImMessageReactionCreatedV1Data
+        from lark_oapi.api.im.v1 import (
+            P2ImMessageReceiveV1Data, P2ImMessageReactionCreatedV1Data, P2ImMessageReactionDeletedV1Data,
+        )
         from lark_oapi.api.im.v1.model import P2ImMessageRecalledV1Data
         from lark_oapi.event.callback.model.p2_card_action_trigger import (
             P2CardActionTrigger, P2CardActionTriggerResponse,
@@ -1580,6 +1608,10 @@ def _event_handler_builder():
         def do_p2_im_message_reaction_created_v1(data: P2ImMessageReactionCreatedV1Data) -> None:
             _STATE["last_event_ts"] = time.time()  # reaction 也刷 · 证明 ws 活着
             return None  # 忽略 reaction 事件 (我们自己的 ✅ 触发 · 消日志噪音)
+
+        def do_p2_im_message_reaction_deleted_v1(data: P2ImMessageReactionDeletedV1Data) -> None:
+            _STATE["last_event_ts"] = time.time()  # reaction.deleted 同样刷看门狗 · 证明 ws 活着
+            return None  # 忽略 · 无 processor 时 SDK 会刷 ERROR (fix-log 20260814-1 ④)
 
         def do_p2_im_message_recalled_v1(data: P2ImMessageRecalledV1Data) -> None:
             _STATE["last_event_ts"] = time.time()
@@ -1598,6 +1630,7 @@ def _event_handler_builder():
             lark.EventDispatcherHandler.builder("", "")
             .register_p2_im_message_receive_v1(do_p2_im_message_receive_v1)
             .register_p2_im_message_reaction_created_v1(do_p2_im_message_reaction_created_v1)
+            .register_p2_im_message_reaction_deleted_v1(do_p2_im_message_reaction_deleted_v1)
             .register_p2_im_message_recalled_v1(do_p2_im_message_recalled_v1)
             .register_p2_card_action_trigger(do_p2_card_action_trigger)
             .build()

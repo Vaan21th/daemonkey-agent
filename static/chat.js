@@ -287,6 +287,8 @@ function toggleCompact(force, animate) {
     }
   }
   document.body.classList.toggle('compact', on);
+  // 卷八十三 · 简洁版三栏: 进入时挂载会话清单 + 产物面板 · 退出时收起
+  _syncCompactSidebars(on);
   // 进入简洁版时给对话栏一个上浮淡入(掩盖布局瞬切·加载恢复态不放[animate=false])
   if (animate !== false && on) {
     var cp = document.querySelector('.chat-pane');
@@ -302,9 +304,154 @@ function toggleCompact(force, animate) {
   var label = document.getElementById('compactLabel');
   var btn = document.getElementById('compactBtn');
   if (icon) icon.className = on ? 'ri-layout-masonry-line' : 'ri-focus-3-line';
-  if (label) label.textContent = on ? '工作台' : '简洁版';
-  if (btn) btn.title = on ? '回工作台 (Alt+Z)' : '简洁版 · 只留对话框 (Alt+Z)';
+  if (label) label.textContent = on ? '工作台' : '专注版';
+  if (btn) btn.title = on ? '回工作台 (Alt+Z)' : '专注版 · 只留对话框 (Alt+Z)';
   localStorage.setItem('Daemonkey_ui_compact', on ? '1' : '');
+}
+
+/* ═══ 卷八十三 · 简洁版三栏 (用户 2026-08-14 拍板 · 会话清单左常驻 + 产物右折叠) ═══
+   复用现成函数: buildSessionRow(会话行) / collectSessionDocs + _docCardHtml(产物卡) ·
+   零新增后端 · 工作台模式(body 无 compact)三栏 display:none · 视觉零变化。 */
+function _syncCompactSidebars(on) {
+  const s = document.getElementById('compactSessions');
+  const t = document.getElementById('compactArtToggle');
+  const a = document.getElementById('compactArtifacts');
+  if (!s || !t || !a) return;
+  if (on) {
+    s.hidden = false; t.hidden = false; a.hidden = false;
+    renderCompactSessions();
+    renderCompactArtifacts();
+  } else {
+    // 退出简洁版: 隐藏三栏 + 收起产物面板(下次进入干净)
+    s.hidden = true; t.hidden = true; a.hidden = true;
+    a.classList.remove('open');
+    t.classList.remove('opened');
+  }
+}
+
+// 左侧会话清单 (复用 /sessions API + buildSessionRow · 与抽屉同源)
+let _compactSessionOffset = 0;
+let _compactListCache = null;   // {sessions, ts} · 进简洁版不重复拉取 (用户: 加载慢)
+const _COMPACT_PAGE = 30;
+const _COMPACT_CACHE_TTL = 30000;  // 30s 内复用缓存
+async function renderCompactSessions(reset = true) {
+  const list = document.getElementById('compactSessionList');
+  if (!list) return;
+  if (!token) { list.innerHTML = '<div class="docs-view-empty">还没填 token</div>'; return; }
+  // 有缓存且未过期 → 直接渲染缓存 · 不闪"加载中" (治加载慢)
+  if (_compactListCache && _compactListCache.sessions.length > 0
+      && (Date.now() - _compactListCache.ts) < _COMPACT_CACHE_TTL) {
+    try {
+      list.innerHTML = '';
+      for (const s of _compactListCache.sessions) list.appendChild(buildSessionRow(s));
+      _renderCompactFoot(list);
+      return;
+    } catch (e) {
+      console.warn('compact cache render fail, refetch:', e);
+      _compactListCache = null;  // 缓存渲染失败 → 清缓存走正常拉取
+    }
+  }
+  if (reset) { _compactSessionOffset = 0; list.innerHTML = '<div class="docs-view-loading">加载…</div>'; }
+  try {
+    const params = new URLSearchParams({ api_only: 'true', limit: String(_COMPACT_PAGE), offset: String(_compactSessionOffset) });
+    const r = await fetch('/sessions?' + params.toString(), { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) { list.innerHTML = '<div class="docs-view-empty">加载失败 [' + r.status + ']</div>'; return; }
+    const data = await r.json();
+    if (reset) list.innerHTML = '';
+    const sessions = data.sessions || [];
+    for (const s of sessions) list.appendChild(buildSessionRow(s));
+    if (sessions.length > 0) _compactListCache = { sessions: sessions, ts: Date.now() };  // 空不缓存
+    _renderCompactFoot(list);
+    _startSessionRunPoll();  // 运行状态轮询 · 专注版列表可见即启动
+  } catch (e) {
+    if (reset) list.innerHTML = '<div class="docs-view-empty">网络出错: ' + e.message + '</div>';
+  }
+}
+function loadMoreCompactSessions() { _compactSessionOffset += _COMPACT_PAGE; _compactListCache = null; renderCompactSessions(false); }
+// 会话运行状态轮询 · wish-xxx · 5s 一次轻拉 /sessions · 只 toggle .session-running + .sp-run 图标
+// 不重建列表 (不闪 / 不丢滚动位置) · 专注版 + 工作台抽屉共用 .session-item[data-sid] → 一处轮询两处受益
+let _sessionRunPollTimer = null;
+const _SESSION_RUN_POLL_MS = 5000;
+function _startSessionRunPoll() {
+  if (_sessionRunPollTimer) return;
+  _sessionRunPollTimer = setInterval(_refreshSessionRunningStates, _SESSION_RUN_POLL_MS);
+  _refreshSessionRunningStates();  // 立即刷一次
+}
+async function _refreshSessionRunningStates() {
+  if (!token || document.hidden) return;   // 没 token / 标签页不可见 → 不刷
+  try {
+    const r = await fetch('/sessions?api_only=true&limit=50', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) return;
+    const data = await r.json();
+    const activeSet = new Set((data.sessions || []).filter(s => s.active).map(s => s.session_id));
+    document.querySelectorAll('.session-item[data-sid]').forEach(el => {
+      const isRun = activeSet.has(el.dataset.sid);
+      el.classList.toggle('session-running', isRun);
+      const nameEl = el.querySelector('.session-name');
+      if (!nameEl) return;
+      let runIcon = nameEl.querySelector('.sp-run');
+      if (isRun && !runIcon) {
+        runIcon = document.createElement('span');
+        runIcon.className = 'sp-run';
+        runIcon.title = '正在运行';
+        runIcon.innerHTML = '<i class="ri-loader-4-line spin"></i>';
+        nameEl.insertBefore(runIcon, nameEl.querySelector('.sp-label'));
+      } else if (!isRun && runIcon) {
+        runIcon.remove();
+      }
+    });
+  } catch (e) { /* 静默 · 下轮再试 */ }
+}
+
+// 列表尾部: 有更多才显示"加载更早" · 无更多不画横线 (用户: 意义不明的横线)
+function _renderCompactFoot(list) {
+  const foot = document.getElementById('compactSessionsFoot');
+  if (!foot) return;
+  const hasMore = _compactListCache && _compactListCache.sessions.length >= _COMPACT_PAGE;
+  foot.innerHTML = hasMore
+    ? '<div class="archived-toggle"><button onclick="loadMoreCompactSessions()">加载更早的会话</button></div>'
+    : '';
+  foot.style.borderTop = hasMore ? '' : 'none';  // 没更多时不画横线
+}
+
+// 右侧产物面板 (复用 collectSessionDocs + _docCardHtml · 与 docsView 同源)
+async function renderCompactArtifacts() {
+  const body = document.getElementById('compactArtBody');
+  const sub = document.getElementById('compactArtSub');
+  if (!body) return;
+  if (!token) { body.innerHTML = '<div class="docs-view-empty">还没填 token</div>'; return; }
+  body.innerHTML = '<div class="docs-view-loading">扫描产物…</div>';
+  try {
+    const docs = await collectSessionDocs();
+    if (sub) sub.textContent = docs.length ? `${docs.length} 项` : '';
+    if (!docs.length) {
+      body.innerHTML = `<div class="docs-view-empty">
+        <i class="ri-file-list-3-line"></i>
+        <div>本会话还没有产出</div>
+      </div>`;
+      return;
+    }
+    let html = '';
+    for (const cat of _DOC_CATS) {
+      const group = docs.filter(d => _docCategory(d.ext).key === cat.key);
+      if (!group.length) continue;
+      html += `<div class="docs-sec-title"><i class="${cat.icon}"></i> ${cat.label} <span style="opacity:.6;font-weight:400">(${group.length})</span></div>`;
+      html += group.map(d => _docCardHtml(d)).join('');
+    }
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = '<div class="docs-view-empty">扫描出错: ' + e.message + '</div>';
+  }
+}
+
+// 产物折叠条: 点击展开/收起 (用户 要"产物列表"文字 + 向左展开图标)
+function toggleCompactArtifacts() {
+  const a = document.getElementById('compactArtifacts');
+  const t = document.getElementById('compactArtToggle');
+  if (!a) return;
+  const open = a.classList.toggle('open');
+  if (t) t.classList.toggle('opened', open);
+  if (open) renderCompactArtifacts();  // 每次展开刷新 (产物可能刚生成)
 }
 // 点面板外 → 关换肤弹层
 document.addEventListener('click', function (e) {
@@ -319,6 +466,9 @@ document.addEventListener('keydown', function (e) {
 });
 
 // 页面加载时初始化主题
+// token 必须先于简洁版恢复初始化 —— 否则简洁版刷新时 _go()→renderCompactSessions
+// 访问到 TDZ 里的 token 抛 ReferenceError · 列表静默空白 (用户 2026-08-14 会话列表空白根因)
+let token = localStorage.getItem(STORAGE.token) || '';
 initTheme();
 // 换肤色板预建 + 恢复上次的简洁版状态
 (function initCompactAndThemeUI() {
@@ -329,9 +479,6 @@ initTheme();
   if (document.getElementById('compactBtn')) _go();
   else document.addEventListener('DOMContentLoaded', _go, { once: true });
 })();
-let token = localStorage.getItem(STORAGE.token) || '';
-// sessionId = 当前 visible 的 session id (UI 焦点)
-// 后台跑的对话仍然有 state 在 _sessions[sid] 里·不被这一变量影响
 let sessionId = localStorage.getItem(STORAGE.session) || '';
 let autoConfirm = localStorage.getItem(STORAGE.autoConfirm) || 'confirm';
 // 卷六十 · 主动 CALL 收件箱游标 · 初始化为本次开页时刻 · 只提示开页后 Daemonkey 主动开口的消息 (不回放历史)
@@ -1811,7 +1958,7 @@ async function showGitDebtPanel() {
   const body = document.getElementById('gitDebtPanelBody');
   if (!modal || !body) return;
   modal.classList.add('open');
-  body.innerHTML = '<div class="git-debt-loading"><i class="ri-loader-4-line ri-spin"></i> 正在查 git 状态…</div>';
+  body.innerHTML = '<div class="git-debt-loading"><i class="ri-loader-4-line spin"></i> 正在查 git 状态…</div>';
   try {
     const r = await fetch('/api/git-debt/detail', { headers: { 'Authorization': 'Bearer ' + token } });
     const d = await r.json();
@@ -1930,7 +2077,7 @@ async function collectGitDebt() {
   const res = document.getElementById('gitDebtResult');
   if (!btn || btn.disabled) return;
   btn.disabled = true;
-  btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> 正在收…(分支合并要跑验证·别关页面)';
+  btn.innerHTML = '<i class="ri-loader-4-line spin"></i> 正在收…(分支合并要跑验证·别关页面)';
   try {
     const r = await fetch('/api/git-collect', {
       method: 'POST',
@@ -2202,7 +2349,8 @@ function openSettingsView() {
 function renderSettingsView() {
   const tabs = [
     { id: 'llm', label: '<i class="ri-brain-fill"></i> LLM 模型', hint: 'Provider + Model + API Key 多配置管理' },
-    { id: 'vision', label: '<i class="ri-eye-fill"></i> 视觉模型', hint: '看图 fallback · 纯文本模型自动调用' },
+    { id: 'vision', label: '<i class="ri-cpu-fill"></i> 多模态', hint: '看图 + 微信语音识别 · 主模型不支持时自动走这里的 fallback' },
+    { id: 'embedding', label: '<i class="ri-brain-line"></i> Embedding', hint: '记忆语义检索 · 词面召回之外的语义通道' },
     { id: 'access', label: '<i class="ri-key-fill"></i> 访问 & 会话', hint: 'API Token / Session / Auto-confirm' },
     { id: 'wechat', label: '<i class="ri-wechat-fill"></i> 微信 & 飞书', hint: '扫码连微信 · 配飞书机器人 · 主动找你的频率 (猫系↔犬系)' },
     { id: 'notify', label: '<i class="ri-notification-3-fill"></i> 通知', hint: '干完/等你拍板时怎么提醒你 · 音效 / Windows 通知 / 标签闪烁' },
@@ -2232,7 +2380,7 @@ function switchSettingsTab(tabId) {
   _settingsTab = tabId;
   document.querySelectorAll('.settings-tab').forEach(b => {
     b.classList.toggle('active', b.textContent.includes(
-      { llm: 'LLM 模型', vision: '视觉模型', access: '访问', wechat: '微信 & 飞书', notify: '通知', data: '本地数据' }[tabId]
+      { llm: 'LLM 模型', vision: '多模态', embedding: 'Embedding', access: '访问', wechat: '微信 & 飞书', notify: '通知', data: '本地数据' }[tabId]
     ));
   });
   renderSettingsBody();
@@ -2241,6 +2389,7 @@ function switchSettingsTab(tabId) {
 function renderSettingsBody() {
   if (_settingsTab === 'llm') renderSettingsLLM();
   else if (_settingsTab === 'vision') renderSettingsVision();
+  else if (_settingsTab === 'embedding') renderSettingsEmbedding();
   else if (_settingsTab === 'access') renderSettingsAccess();
   else if (_settingsTab === 'wechat') renderSettingsWechat();
   else if (_settingsTab === 'notify') renderSettingsNotify();
@@ -3143,6 +3292,15 @@ async function renderSettingsVision() {
       </div>
       <div id="visResult" style="margin-top:8px;font-size:13px"></div>
     </div>
+
+    <!-- wish-241e0014 · 语音识别增强 whisper (可选更新 · 设置页开关驱动安装) -->
+    <div class="llm-section" style="margin-top:18px">
+      <div class="llm-section-head">
+        <h3><i class="ri-mic-fill"></i> 语音识别增强 (whisper) · <span id="sttStatusLabel" style="color:var(--dim)">加载中…</span></h3>
+        <span class="llm-hint">微信语音转文字 · 可选功能 · 打开开关才下载依赖+模型 (~500MB) · 不需要就不装 · 装好前语音自动降级存证</span>
+      </div>
+      <div id="sttBody" style="min-height:60px"><span class="field-hint">加载中…</span></div>
+    </div>
   `;
 
   async function doSave(testOnly) {
@@ -3185,6 +3343,310 @@ async function renderSettingsVision() {
 
   document.getElementById('visSave').onclick = () => doSave(false);
   document.getElementById('visTest').onclick = () => doSave(true);
+
+  loadSttConfig();
+}
+
+// ─── wish-241e0014 · 语音识别增强 whisper (可选更新 · 开关驱动安装) ───
+async function loadSttConfig() {
+  const $status = document.getElementById('sttStatusLabel');
+  const $body = document.getElementById('sttBody');
+  if (!$status || !$body) return;
+  let st = { deps_installed: false, model_name: 'small', model_downloaded: false, ready: false, model_dir: '', expected_size_mb: 460 };
+  try {
+    const resp = await fetch('/stt/status', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (resp.ok) st = await resp.json();
+  } catch (_) {}
+  const stateLabel = st.ready
+    ? '<span style="color:#6ed27a">已就绪 ✓</span>'
+    : (st.deps_installed && !st.model_downloaded)
+      ? '<span style="color:var(--sys)">依赖已装 · 模型未下载</span>'
+      : '<span style="color:var(--red)">未安装</span>';
+  $status.innerHTML = stateLabel;
+  $body.innerHTML = `
+    <div class="field">
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="sttEnable" ${st.ready ? 'checked' : ''} style="width:auto">
+        启用语音识别增强 (whisper)
+      </label>
+      <div class="field-hint">开启后：①安装转写依赖 (pilk + faster-whisper) ②下载模型 (~${st.expected_size_mb}MB · 国内镜像) · 装好微信语音自动转文字</div>
+    </div>
+    <div class="field">
+      <label>模型大小</label>
+      <select id="sttModelSize" style="max-width:220px">
+        <option value="tiny" ${st.model_name === 'tiny' ? 'selected' : ''}>tiny · ~75MB · 最快最省</option>
+        <option value="base" ${st.model_name === 'base' ? 'selected' : ''}>base · ~150MB · 均衡</option>
+        <option value="small" ${st.model_name === 'small' ? 'selected' : ''}>small · ~460MB · 最准 (默认)</option>
+      </select>
+      <div class="field-hint">切换大小后需重新下载对应模型</div>
+    </div>
+    <div class="field">
+      <label>随 daemon 启动加载模型</label>
+      <div class="field-hint">开启后启动即加载 (~1-2s) · 微信语音首条秒回 · 关掉则首次语音时懒加载 (多等几秒)</div>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="sttBootLoad" ${st.boot_load ? 'checked' : ''} style="width:auto">
+        启动时预加载
+      </label>
+    </div>
+    <div class="actions" style="margin-top:12px">
+      <button class="btn-primary" id="sttSetup"><i class="ri-download-fill"></i> ${st.ready ? '重新安装' : '下载并启用'}</button>
+      ${st.model_downloaded ? '<button class="btn-ghost" id="sttRemove"><i class="ri-delete-bin-line"></i> 删除模型</button>' : ''}
+    </div>
+    <div id="sttResult" style="margin-top:10px;font-size:13px"></div>
+  `;
+  document.getElementById('sttSetup').onclick = () => setupStt();
+  const rmBtn = document.getElementById('sttRemove');
+  if (rmBtn) rmBtn.onclick = () => removeSttModel();
+  document.getElementById('sttModelSize').onchange = async (e) => {
+    try {
+      await fetch('/stt/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ model_name: e.target.value }),
+      });
+    } catch (_) {}
+  };
+  document.getElementById('sttBootLoad').onchange = async (e) => {
+    try {
+      await fetch('/stt/boot-load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ enabled: e.target.checked }),
+      });
+    } catch (_) {}
+  };
+}
+
+// 安装依赖 + 下载模型 (后台 · 轮询进度)
+async function setupStt() {
+  const $res = document.getElementById('sttResult');
+  if (!$res) return;
+  $res.innerHTML = '<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 开始安装依赖 (pilk + faster-whisper ~100MB) · 需 1-3 分钟…</span>';
+  try {
+    const resp = await fetch('/stt/setup', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      $res.innerHTML = `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.detail || '安装失败')}</span>`;
+      return;
+    }
+    // 依赖装完 → 开始下载模型 → 轮询进度
+    $res.innerHTML = '<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 依赖已装 · 开始下载模型…</span>';
+    pollSttProgress();
+  } catch (e) {
+    $res.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
+  }
+}
+
+// 轮询安装进度
+function pollSttProgress() {
+  const $res = document.getElementById('sttResult');
+  if (!$res) return;
+  let n = 0;
+  const timer = setInterval(async () => {
+    n++;
+    try {
+      const resp = await fetch('/stt/status', { headers: { 'Authorization': 'Bearer ' + token } });
+      const st = await resp.json();
+      if (st.ready) {
+        clearInterval(timer);
+        $res.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 语音识别增强已就绪 · 微信语音现在能转文字了</span>';
+        loadSttConfig();
+      } else if (n > 180) {  // 3 分钟超时
+        clearInterval(timer);
+        $res.innerHTML = '<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> 安装超时 · 查看 daemon 日志 · 可重试</span>';
+      } else {
+        $res.innerHTML = `<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 安装中 (${Math.min(n, 180)}s) · 依赖/模型下载中…</span>`;
+      }
+    } catch (_) {
+      if (n > 180) { clearInterval(timer); }
+    }
+  }, 1000);
+}
+
+async function removeSttModel() {
+  const $res = document.getElementById('sttResult');
+  if (!$res) return;
+  if (!confirm('删除 whisper 模型文件 (~几百 MB)？依赖保留，可重新下载。')) return;
+  try {
+    const resp = await fetch('/stt/remove-model', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const data = await resp.json();
+    $res.innerHTML = data.ok
+      ? '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 模型已删除</span>'
+      : `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.error || '删除失败')}</span>`;
+    loadSttConfig();
+  } catch (e) {
+    $res.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
+  }
+}
+
+// ─── wish-b313583b · Embedding 语义检索配置卡 (独立 tab · wish-241e0014 拆分) ───
+async function renderSettingsEmbedding() {
+  const body = document.getElementById('settingsBody');
+  body.innerHTML = `
+    <div class="llm-section">
+      <div class="llm-section-head">
+        <h3><i class="ri-brain-line"></i> 记忆语义检索 (Embedding) · <span id="embStatusLabel" style="color:var(--dim)">加载中…</span></h3>
+        <span class="llm-hint">给记忆检索加语义理解：用近义词、换种说法也能搜到相关记忆（纯字面匹配做不到）· 未配置时自动复用已配的智谱 key · 也可自定义任意兼容 API</span>
+      </div>
+      <div id="embBody" style="min-height:60px"><span class="field-hint">加载中…</span></div>
+    </div>
+  `;
+  loadEmbedConfig();
+}
+
+// ─── wish-b313583b · Embedding 语义检索配置卡 ───
+async function loadEmbedConfig() {
+  const $status = document.getElementById('embStatusLabel');
+  const $body = document.getElementById('embBody');
+  if (!$status || !$body) return;
+
+  let cfg = { enabled: true, configured: false, source: '', model: 'embedding-3', base_url: '', api_key: '', covered: 0, total: 0 };
+  try {
+    const resp = await fetch('/embed-config', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (resp.ok) cfg = await resp.json();
+  } catch (_) {}
+
+  const pct = cfg.total > 0 ? Math.round(cfg.covered / cfg.total * 100) : 0;
+  const srcLabel = cfg.source === 'user' ? '自定义配置' : (cfg.source === 'zhipu-provider' ? '自动复用智谱' : (cfg.source === 'env' ? '.env' : '未配置'));
+  $status.innerHTML = cfg.enabled
+    ? '<span style="color:#6ed27a">已开启 ✓</span>'
+    : '<span style="color:var(--red)">已关闭</span>';
+
+  $body.innerHTML = `
+    <div class="field">
+      <label>模型名</label>
+      <input id="embModel" type="text" value="${escHtml(cfg.model || '')}" placeholder="embedding-3">
+      <div class="field-hint">任意兼容 Embedding API 的模型名 · 如智谱 embedding-3 / OpenAI text-embedding-3-small</div>
+    </div>
+    <div class="field">
+      <label>API 地址</label>
+      <input id="embBaseUrl" type="text" value="${escHtml(cfg.base_url || '')}" placeholder="https://open.bigmodel.cn/api/paas/v4">
+      <div class="field-hint">OpenAI 兼容的 API 根地址 (不带 /embeddings)</div>
+    </div>
+    <div class="field">
+      <label>API Key</label>
+      <input id="embApiKey" type="password" value="${escHtml(cfg.api_key || '')}" placeholder="${cfg.configured ? '已存 key · 不改就留空' : 'sk-xxx'}">
+      <div class="field-hint">${cfg.configured ? `当前来源: ${srcLabel} · 改配置请粘贴新 key` : '未配置 · 填 key 保存后即可用'}</div>
+    </div>
+    <div class="field">
+      <label>语义增强开关</label>
+      <label class="switch" style="margin-left:0">
+        <input type="checkbox" id="embToggle" ${cfg.enabled ? 'checked' : ''} onchange="toggleEmbed()">
+        <span class="slider"></span>
+      </label>
+      <div class="field-hint">关 = 记忆检索退化为纯字面匹配 · 开 = 补语义命中 (推荐)</div>
+    </div>
+    <div class="field">
+      <label>覆盖状态</label>
+      <div class="field-hint" style="font-size:13px">
+        ${cfg.total > 0
+          ? `高信号记忆向量覆盖 <b>${cfg.covered}</b>/${cfg.total} (<b>${pct}%</b>)`
+          : '尚无记忆向量'}
+      </div>
+      <div class="field-hint" style="font-size:12px;color:#888;margin-top:2px">
+        语义索引只覆盖摘要 / 操作手册 / 知识库等高质量源 · 历史对话原文走字面检索 (FTS5) 不计入向量
+      </div>
+    </div>
+    <div class="actions" style="margin-top:8px;gap:8px">
+      <button class="btn-primary" id="embSave"><i class="ri-save-fill"></i> 保存配置</button>
+      <button class="btn-ghost" id="embTest"><i class="ri-flashlight-fill"></i> 测试连接</button>
+      <button class="btn-ghost" id="embBackfill" ${cfg.covered >= cfg.total ? 'disabled' : ''}>
+        <i class="ri-refresh-fill"></i> 回填缺失向量 (${Math.max(cfg.total - cfg.covered, 0)} 条)
+      </button>
+    </div>
+    <div id="embResult" style="margin-top:8px;font-size:13px"></div>
+  `;
+  document.getElementById('embSave').onclick = () => doEmbedSave(false);
+  document.getElementById('embTest').onclick = () => doEmbedSave(true);
+  const $bf = document.getElementById('embBackfill');
+  if ($bf) $bf.onclick = () => doEmbedBackfill();
+}
+
+async function doEmbedSave(testOnly) {
+  const m = document.getElementById('embModel').value.trim();
+  const u = document.getElementById('embBaseUrl').value.trim();
+  const k = document.getElementById('embApiKey').value.trim();
+  const resEl = document.getElementById('embResult');
+  if (!m || !u) {
+    if (resEl) resEl.innerHTML = '<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> 模型名和 API 地址必填</span>';
+    return;
+  }
+  const body = { model: m, base_url: u, action: testOnly ? 'test' : undefined };
+  // 掩码回传检测: 输入框还是掩码 (sk-****xxxx) 说明用户没改 → 不传 key · 后端用已存
+  if (k && !k.includes('****')) body.api_key = k;
+  if (resEl) resEl.innerHTML = `<span style="color:var(--sys)"><i class="ri-loader-fill"></i> ${testOnly ? '测试中…' : '保存中…'}</span>`;
+  try {
+    const resp = await fetch('/embed-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.detail || '失败')}</span>`;
+      return;
+    }
+    if (testOnly && data.test) {
+      if (data.test.ok) {
+        if (resEl) resEl.innerHTML = `<span style="color:#6ed27a"><i class="ri-check-fill"></i> 连接成功 · 维度 ${data.test.dim} · ${Math.round(data.test.ms)}ms</span>`;
+      } else {
+        if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> 连接失败: ${escHtml(data.test.error)}</span>`;
+      }
+    } else {
+      if (resEl) resEl.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 已保存</span>';
+      setTimeout(() => loadEmbedConfig(), 600);
+    }
+  } catch (e) {
+    if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
+  }
+}
+
+async function toggleEmbed() {
+  const $on = document.getElementById('embToggle');
+  const enabled = $on.checked;
+  const resEl = document.getElementById('embResult');
+  try {
+    const resp = await fetch('/embed-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ enabled }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.detail || '保存失败')}</span>`;
+      return;
+    }
+    if (resEl) resEl.innerHTML = `<span style="color:#6ed27a"><i class="ri-check-fill"></i> 语义增强已${enabled ? '开启' : '关闭'} · 下次记忆查询生效</span>`;
+    loadEmbedConfig();
+  } catch (e) {
+    if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
+  }
+}
+
+async function doEmbedBackfill() {
+  const resEl = document.getElementById('embResult');
+  if (resEl) resEl.innerHTML = '<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 回填启动… 后台跑 · 刷新此页看进度</span>';
+  try {
+    const resp = await fetch('/embed-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ action: 'backfill' }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.detail || '启动失败')}</span>`;
+      return;
+    }
+    if (resEl) resEl.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 后台回填已启动 · 稍后刷新看覆盖增长</span>';
+  } catch (e) {
+    if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
+  }
 }
 
 function renderSettingsAccess() {
@@ -4113,30 +4575,34 @@ async function collectSessionDocs() {
     }
   } catch (e) { console.warn('collectSessionDocs artifacts api:', e); }
 
-  // 2. 兜底: DOM 扫描 (SSE 实时流未落盘时也能抓到 · 新产物未进归档时)
-  try {
-    const msgs = document.querySelectorAll('#messages .md-body, #messages .msg-text, #messages .assistant');
-    msgs.forEach(m => {
-      const html = m.innerHTML || '';
-      const reDoc = /(?:href|src)="([^"]+\.(?:docx?|md|pdf|xlsx?|pptx?|txt|zip)(?:\?[^"]*)?)"/gi;
-      let mm;
-      while ((mm = reDoc.exec(html)) !== null) {
-        const u = mm[1];
-        if (seen.has(u)) continue;
-        seen.add(u);
-        docs.push({ name: _safeDecode(u.split('/').pop() || '产物'), url: u, ext: (u.match(/\.([a-z0-9]+)$/i) || [,''])[1].toLowerCase(), kind: 'workshop' });
-      }
-      const reMedia = /(?:href|src)="([^"]+\.(?:png|jpe?g|gif|webp|mp4|webm|wav|mp3)(?:\?[^"]*)?)"/gi;
-      let mm2;
-      while ((mm2 = reMedia.exec(html)) !== null) {
-        const url = mm2[1];
-        if (!url.includes('/workshop/') && !url.includes('/reports/')) continue;
-        if (seen.has(url)) continue;
-        seen.add(url);
-        docs.push({ name: _safeDecode(url.split('/').pop() || '产物'), url, ext: (url.match(/\.([a-z0-9]+)$/i) || [,''])[1].toLowerCase(), kind: 'workshop' });
-      }
-    });
-  } catch (e) { console.warn('collectSessionDocs dom scan:', e); }
+  // 2. 兜底: DOM 扫描 (仅后端 artifacts 失败时才做 · 后端已扫主 jsonl+归档 · 正常不重复劳动)
+  //    卷八十一续二: 原每次全扫 DOM 500+ turns 的 innerHTML 同步正则 → 阻塞主线程几秒
+  //    (用户: 会话列表/产物都慢的隐藏根因) · 现仅在后端异常时兜底
+  if (!docs.length) {
+    try {
+      const msgs = document.querySelectorAll('#messages .md-body, #messages .msg-text, #messages .assistant');
+      msgs.forEach(m => {
+        const html = m.innerHTML || '';
+        const reDoc = /(?:href|src)="([^"]+\.(?:docx?|md|pdf|xlsx?|pptx?|txt|zip)(?:\?[^"]*)?)"/gi;
+        let mm;
+        while ((mm = reDoc.exec(html)) !== null) {
+          const u = mm[1];
+          if (seen.has(u)) continue;
+          seen.add(u);
+          docs.push({ name: _safeDecode(u.split('/').pop() || '产物'), url: u, ext: (u.match(/\.([a-z0-9]+)$/i) || [,''])[1].toLowerCase(), kind: 'workshop' });
+        }
+        const reMedia = /(?:href|src)="([^"]+\.(?:png|jpe?g|gif|webp|mp4|webm|wav|mp3)(?:\?[^"]*)?)"/gi;
+        let mm2;
+        while ((mm2 = reMedia.exec(html)) !== null) {
+          const url = mm2[1];
+          if (!url.includes('/workshop/') && !url.includes('/reports/')) continue;
+          if (seen.has(url)) continue;
+          seen.add(url);
+          docs.push({ name: _safeDecode(url.split('/').pop() || '产物'), url, ext: (url.match(/\.([a-z0-9]+)$/i) || [,''])[1].toLowerCase(), kind: 'workshop' });
+        }
+      });
+    } catch (e) { console.warn('collectSessionDocs dom scan:', e); }
+  }
 
   return docs;
 }
@@ -4233,8 +4699,9 @@ function _docCardHtml(d) {
       <span class="dvi-meta">${String(d.ext).toUpperCase()} · ${_docCategory(d.ext).label}</span>
     </span>
     <span class="dvi-actions">
-      ${isPreviewable ? btn('ri-eye-line','预览','_docOpenIn用户wser') : btn('ri-download-2-line','下载','_docDownload')}
+      ${isPreviewable ? btn('ri-eye-line','预览','_docOpenIn用户wser') : ''}
       ${btn('ri-mac-line','应用打开','_docOpenLocal')}
+      ${btn('ri-save-3-line','另存为','_docSaveAs')}
     </span>
   </div>`;
 }
@@ -4262,9 +4729,12 @@ async function _docOpenIn用户wser(domain, filename, ext) {
         _showPreviewModal({ title: dispName, metaLine: '视频', raw: true, bodyHtml: `<video controls preload="metadata" src="${url}" class="pv-media"></video>` });
       } else if (ext === 'pdf') {
         _showPreviewModal({ title: dispName, metaLine: 'PDF', raw: true, bodyHtml: `<iframe src="${url}" class="pv-pdf"></iframe>` });
+      } else if (ext === 'html') {
+        // html 预览用 sandbox iframe · 禁脚本/弹窗 · 防恶意 html (卷八十一 产物 html 支持)
+        _showPreviewModal({ title: dispName, metaLine: 'HTML · outputs 产物', raw: true, bodyHtml: `<iframe src="${url}" class="pv-html" sandbox="allow-same-origin" loading="lazy"></iframe>` });
       } else {
         // docx/xlsx/pptx 浏览器不能内嵌 → 下载
-        await _docDownload(domain, filename);
+        await _docSaveAs(domain, filename);
       }
       return;
     }
@@ -4299,9 +4769,15 @@ async function _docOpenIn用户wser(domain, filename, ext) {
         ? `/reports/${encodeURIComponent(filename)}${t}`
         : `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
       _showPreviewModal({ title: dispName, metaLine: 'PDF', raw: true, bodyHtml: `<iframe src="${url}" class="pv-pdf"></iframe>` });
+    } else if (ext === 'html') {
+      // html 预览用 sandbox iframe · 禁脚本/弹窗 · 防恶意 html (卷八十一 产物 html 支持)
+      const url = domain === 'reports'
+        ? `/reports/${encodeURIComponent(filename)}${t}`
+        : `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
+      _showPreviewModal({ title: dispName, metaLine: 'HTML · ' + domain, raw: true, bodyHtml: `<iframe src="${url}" class="pv-html" sandbox="allow-same-origin" loading="lazy"></iframe>` });
     } else {
       // docx/xlsx/pptx 浏览器不能内嵌 → 下载
-      await _docDownload(domain, filename);
+      await _docSaveAs(domain, filename);
     }
   } catch (e) {
     alert('打开失败: ' + e.message);
@@ -4309,7 +4785,8 @@ async function _docOpenIn用户wser(domain, filename, ext) {
 }
 
 // 下载原始文件
-async function _docDownload(domain, filename) {
+// 另存为: 优先系统保存对话框 (showSaveFilePicker · 让用户选目录) · 不支持时回退浏览器下载
+async function _docSaveAs(domain, filename) {
   try {
     const t = token ? `?token=${encodeURIComponent(token)}` : '';
     // outputs 产物直链下载 (后端 /workshop/outputs/{path} 已带全类型 MIME)
@@ -4323,15 +4800,35 @@ async function _docDownload(domain, filename) {
       url = `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
     }
     const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) throw new Error('下载失败 ' + r.status);
+    if (!r.ok) throw new Error('获取失败 ' + r.status);
     const blob = await r.blob();
+    const name = filename.split('/').pop() || filename;
+
+    // 优先: 系统另存为对话框 (Chromium 系 Edge/Chrome 支持 · 本地 daemon 场景)
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: name,
+          types: [{ description: '文件', accept: { 'application/octet-stream': ['.' + (name.split('.').pop() || '')] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+      } catch (e) {
+        // 用户取消 (AbortError) 静默返回 · 其它错误回退浏览器下载
+        if (e && e.name === 'AbortError') return;
+        console.warn('showSaveFilePicker fallback:', e);
+      }
+    }
+    // 回退: 浏览器默认下载
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = filename.split('/').pop() || filename;
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   } catch (e) {
-    alert('下载失败: ' + e.message);
+    alert('另存为失败: ' + e.message);
   }
 }
 
@@ -4414,6 +4911,7 @@ async function refreshSessionList(reset = true) {
     renderArchivedToggle();
     // 当前 session label 可能从服务端拿到了 · 刷新顶部 pill
     updateCurrentLabel();
+    _startSessionRunPoll();  // 运行状态轮询 · 工作台抽屉列表可见即启动
   } catch (e) {
     if (reset) $sessionList.innerHTML = '<div class="drawer-empty">网络出错: ' + e.message + '</div>';
   }
@@ -4423,16 +4921,19 @@ function buildSessionRow(s) {
   const div = document.createElement('div');
   const isPinned = !!s.pinned_at;
   const isArchived = !!s.archived_at;
+  const isActive = !!s.active;
   div.className = 'session-item' + (s.session_id === sessionId ? ' active' : '')
                  + (isPinned ? ' pinned' : '')
-                 + (isArchived ? ' archived' : '');
+                 + (isArchived ? ' archived' : '')
+                 + (isActive ? ' session-running' : '');
   div.dataset.sid = s.session_id;
 
   const name = document.createElement('div');
   name.className = 'session-name';
   const pinIcon = isPinned ? '<span class="sp-pin" title="置顶">📌</span>' : '';
   const archIcon = isArchived ? '<span class="sp-arch" title="已归档">📁</span>' : '';
-  name.innerHTML = pinIcon + archIcon + '<span class="sp-label">' + escHtml(aliasFor(s.session_id)) + '</span>';
+  const runIcon = isActive ? '<span class="sp-run" title="正在运行"><i class="ri-loader-4-line spin"></i></span>' : '';
+  name.innerHTML = pinIcon + archIcon + runIcon + '<span class="sp-label">' + escHtml(aliasFor(s.session_id)) + '</span>';
 
   const meta = document.createElement('div');
   meta.className = 'session-meta';
@@ -4496,17 +4997,17 @@ function openSessionMenu(sid, anchorEl) {
   menu.className = 'session-menu';
   menu.innerHTML = `
     <button class="sm-item" onclick="event.stopPropagation();togglePinSession('${sid}')">
-      ${isPinned ? '📌 取消置顶' : '📌 置顶'}
+      <i class="ri-pushpin-${isPinned ? 'fill' : 'line'}"></i> ${isPinned ? '取消置顶' : '置顶'}
     </button>
     <button class="sm-item" onclick="event.stopPropagation();renameSession('${sid}')">
-      ✏️ 重命名
+      <i class="ri-edit-2-line"></i> 重命名
     </button>
     <button class="sm-item" onclick="event.stopPropagation();toggleArchiveSession('${sid}')">
-      ${isArchived ? '📂 取消归档' : '📁 归档'}
+      <i class="ri-${isArchived ? 'folder-open' : 'folder'}-line"></i> ${isArchived ? '取消归档' : '归档'}
     </button>
     <div class="sm-sep"></div>
     <button class="sm-item danger" onclick="event.stopPropagation();deleteSession('${sid}')">
-      🗑️ 删除
+      <i class="ri-delete-bin-6-line"></i> 删除
     </button>
   `;
   document.body.appendChild(menu);
@@ -4796,6 +5297,14 @@ async function _maybeRestoreSessionModel(sid) {
       body: JSON.stringify({ model: cfg }),
     });
     if (!r.ok) return;                          // config 可能已删 → 保持当前模型
+    // 卷八十一续 · 用户"莫名跳模型"= 切会话自动恢复模型但无提示 · 补视觉提示让行为可预期
+    try {
+      const tip = document.createElement('div');
+      tip.className = 'model-switch-tip';
+      tip.textContent = `已切到该对话记忆的模型 · 下一轮生效`;
+      document.body.appendChild(tip);
+      setTimeout(() => tip.remove(), 2800);
+    } catch (e) { /* 提示失败不影响切换 */ }
     setTimeout(loadCurrentModel, 300);          // 刷新右上角 label + _currentConfigId
   } catch (e) { /* 静默 */ }
 }
@@ -4839,6 +5348,7 @@ async function switchToSession(sid) {
       try { _renderTabBar(); } catch {}
     }
     refreshCtxRing();  // wish-bec4f3b9 · 切对话实例 → 圆圈跟着走
+    _refreshCompactAfterSwitch();  // 卷八十三 · 简洁版侧栏跟会话走
     return;
   }
 
@@ -4863,6 +5373,20 @@ async function switchToSession(sid) {
   if (typeof _renderTabBar === 'function') {
     try { _renderTabBar(); } catch {}
   }
+  _refreshCompactAfterSwitch();  // 卷八十三 · 简洁版侧栏跟会话走
+}
+
+// 卷八十三 · 切会话后: 简洁版左侧清单高亮 + 右侧产物面板跟着换会话
+// (用户 2026-08-14: 切对话时列表整表重载会闪空白 → 只更新 active 高亮 · 不重拉列表)
+function _refreshCompactAfterSwitch() {
+  if (!document.body.classList.contains('compact')) return;
+  // 只改高亮: 遍历现有行 · data-sid 匹配 sessionId 的加 active · 其余去掉
+  const rows = document.querySelectorAll('#compactSessionList .session-item');
+  for (const r of rows) {
+    r.classList.toggle('active', r.dataset.sid === sessionId);
+  }
+  // 产物面板跟会话走 (这个轻量 · 每次都刷)
+  if (typeof renderCompactArtifacts === 'function') renderCompactArtifacts();
 }
 
 /* ═══ wish-5256d2a4 · 工具时间线 + 人话翻译层（方案 D · 用户 2026-07-27 验收 demo 拍板） ═══
@@ -5684,6 +6208,7 @@ function newConversation() {
   if (typeof _renderTabBar === 'function') {
     try { _renderTabBar(); } catch {}
   }
+  _refreshCompactAfterSwitch();  // 卷八十三 · 新建会话后简洁版侧栏归零
 }
 
 function formatTime(ts) {
@@ -5849,8 +6374,9 @@ function mdRender(text, opts) {
           <span class="mdc-name">${escHtml(name)}</span>
           <span class="mdc-meta">${ext.toUpperCase()}</span>
           <span class="mdc-actions">
-            ${isPreviewable ? btn('ri-eye-line','预览','_docOpenIn用户wser') : btn('ri-download-2-line','下载','_docDownload')}
+            ${isPreviewable ? btn('ri-eye-line','预览','_docOpenIn用户wser') : ''}
             ${btn('ri-mac-line','应用打开','_docOpenLocal')}
+            ${btn('ri-save-3-line','另存为','_docSaveAs')}
           </span>
         </span>
       </div>`;
@@ -7903,7 +8429,9 @@ function advisorCardFinish(card, info) {
   if (!info.suppressAnswer) {
     const answer = document.createElement('div');
     answer.className = 'advisor-answer';
-    answer.textContent = (info.preview || '').trim() || '(顾问输出为空)';
+    // 卷八十一续 · replan 输出是 markdown (施工单: 标题/表格/列表) · mdRender 渲染不裸 textContent
+    const raw = (info.preview || '').trim() || '(顾问输出为空)';
+    answer.innerHTML = (typeof mdRender === 'function') ? mdRender(raw) : escHtml(raw);
     card.appendChild(answer);
   }
   const actions = document.createElement('div');
@@ -13262,6 +13790,7 @@ function _previewModalKeyHandler(e) {
 
 function _showPreviewModal(opts) {
   const { title, metaLine, bodyHtml, tags, raw } = opts || {};
+  _closeAllKbModals();  // 2026-08-14 · 单例互斥 (墨言094-2) · 开新弹框前先关旧的
   let host = document.getElementById('kbModalHost');
   if (!host) {
     host = document.createElement('div');
@@ -13293,6 +13822,17 @@ function _showPreviewModal(opts) {
   };
   host.querySelector('.kb-modal-close').onclick = close;
   host.querySelector('.kb-modal-mask').onclick = close;
+}
+
+// 2026-08-14 · kbModalHost 单例互斥 (墨言 094-2 审查 · wish-2b43ffe7):
+// depot.js(_cogDimModal) / clients.js(pickClient + _showClientImportModal) 各自
+// getElementById('kbModalHost') → 不存在则建 → innerHTML 覆盖 —— 共用同一 DOM 节点，
+// 先后打开会静默互相覆盖 (先开的状态丢失)。
+// 修法: 每个弹框打开前先调用 _closeAllKbModals() 关掉当前已开的 → 再开新的。
+// 用户心智: "打开新弹框 = 旧的先关掉" · 不再静默覆盖。
+function _closeAllKbModals() {
+  const host = document.getElementById('kbModalHost');
+  if (host) host.classList.remove('show');
 }
 
 function _showKbModal(data) {

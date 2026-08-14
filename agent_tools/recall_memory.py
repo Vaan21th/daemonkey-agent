@@ -93,13 +93,38 @@ def _summarize(args: dict) -> str:
 
 def _run(args: dict) -> ToolResult:
     mode = (args.get("mode") or "list").strip().lower()
-    if mode not in ("list", "full"):
-        return ToolResult(ok=False, output="", error=f"无效 mode: {mode!r}; 合法值: list, full")
+    if mode not in ("list", "full", "agent"):
+        return ToolResult(ok=False, output="", error=f"无效 mode: {mode!r}; 合法值: list, full, agent")
 
     try:
         from workers.memory_index import search, get_chunks_by_ids
     except ImportError as e:
         return ToolResult(ok=False, output="", error=f"无法加载 FTS5 引擎: {e}")
+
+    # === 阶段零 · agent: 多轮自主检索 (wish-b8bd0c01 · ATM 41.9% 落地母体) ===
+    if mode == "agent":
+        question = (args.get("query") or "").strip()
+        if not question:
+            return ToolResult(ok=False, output="", error="mode=agent 需要 query 字段写检索问题")
+        try:
+            from workers.memory_agent import run_agent
+            try:
+                from workers.provider_configs import get_active_config
+                cfg = get_active_config()
+            except Exception:
+                cfg = None
+            if not cfg:
+                return ToolResult(ok=False, output="", error="无可用模型配置 (provider_configs)")
+            res = run_agent(
+                question, cfg=cfg, lang="zh",
+                use_embedding=bool(args.get("use_embedding", True)),
+                max_tool_rounds=min(int(args.get("max_rounds", 15) or 15), 15),
+            )
+            out = res["answer"] + (f"\n\n---\n`agent 检索: {res['rounds']} 轮 · "
+                                   f"prompt {res['prompt_tokens']} tok · completion {res['completion_tokens']} tok`")
+            return ToolResult(ok=True, output=out[:16000])
+        except Exception as e:
+            return ToolResult(ok=False, output="", error=f"agent 检索失败: {e}")
 
     # === 阶段二 · full + ids: 按上一步 list 给的 id 取全文 ===
     if mode == "full" and args.get("ids"):
@@ -140,8 +165,10 @@ def _run(args: dict) -> ToolResult:
         )
 
     # I1 (wish-6ff9d89b) · list 模式用摘要窗口 (window_by='snippet') · 不被全文窗口压制条数
+    # wish-45b8ff04 · use_embedding=True: FTS5 漏掉的语义命中补进 (embedding 不可用自动退化)
     results = search(query, top_k=top_k, scope=scope, context_window=context_window,
-                     window_by="snippet" if mode != "full" else "content")
+                     window_by="snippet" if mode != "full" else "content",
+                     use_embedding=True)
 
     if not results:
         return ToolResult(
@@ -212,10 +239,11 @@ SPEC = ToolSpec(
         "properties": {
             "mode": {
                 "type": "string",
-                "enum": ["list", "full"],
+                "enum": ["list", "full", "agent"],
                 "description": (
                     "list(默认)=只返 id+单行摘要·省 token·先用这个; "
-                    "full=取全文·需配合 ids=[...] (上一步 list 给的 id)·或不给 ids 时按 query 直接全文搜(兼容老用法)。"
+                    "full=取全文·需配合 ids=[...] (上一步 list 给的 id)·或不给 ids 时按 query 直接全文搜(兼容老用法); "
+                    "agent=多轮自主检索 (问题驱动·自动多工具循环·适合复杂/参照性提问·贵·日常先用 list)。"
                 ),
                 "default": "list",
             },
@@ -251,6 +279,18 @@ SPEC = ToolSpec(
                 "minimum": 500,
                 "maximum": 20000,
                 "default": 8000,
+            },
+            "use_embedding": {
+                "type": "boolean",
+                "description": "仅 mode=agent 用 · 检索是否启用 embedding 语义通道 (默认 true)。",
+                "default": True,
+            },
+            "max_rounds": {
+                "type": "integer",
+                "description": "仅 mode=agent 用 · 工具调用轮次上限 (1-15, 默认 15)。",
+                "minimum": 1,
+                "maximum": 15,
+                "default": 15,
             },
         },
         "required": [],

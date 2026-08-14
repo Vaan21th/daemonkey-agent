@@ -87,7 +87,7 @@
   setTimeout(check, 12000);   // 绝对兜底 · 防 load 因脚本卡住迟迟不触发
 })();
 </script>
-<link rel="stylesheet" href="/static/chat.css?v=20260810">
+<link rel="stylesheet" href="/static/chat.css?v=20260814f">
 <link rel="stylesheet" href="/static/lib/litegraph.core.css">
 <link rel="stylesheet" href="/static/workshop.css?v=20260810">
 <link rel="stylesheet" href="/static/lib/remixicon/remixicon.css">
@@ -154,7 +154,7 @@
       <div class="theme-grid" id="themeGrid"></div>
     </div>
   </div>
-  <button class="compact-toggle" id="compactBtn" onclick="toggleCompact()" title="简洁版 · 只留对话框 (Alt+Z)"><i class="ri-focus-3-line" id="compactIcon"></i><span class="lab" id="compactLabel">简洁版</span></button>
+  <button class="compact-toggle" id="compactBtn" onclick="toggleCompact()" title="专注版 · 只留对话框 (Alt+Z)"><i class="ri-focus-3-line" id="compactIcon"></i><span class="lab" id="compactLabel">专注版</span></button>
   <div class="model-switch" id="modelSwitch">
     <button class="model-btn" onclick="toggleModelMenu()" title="切换模型">
       <span class="model-dot">●</span>
@@ -236,6 +236,16 @@
       <span class="chat-session-name" id="currentSessionLabel">新对话</span>
       <button class="chat-pane-new" onclick="newConversation()" title="新建会话">+</button>
     </div>
+    <div class="compact-row">
+    <div class="compact-sessions" id="compactSessions" hidden>
+      <div class="compact-sessions-head">
+        <span class="csh-title"><i class="ri-history-line"></i> 会话</span>
+        <button class="csh-new" onclick="newConversation()" title="新建会话"><i class="ri-add-line"></i></button>
+      </div>
+      <div class="compact-sessions-list" id="compactSessionList"></div>
+      <div class="compact-sessions-foot" id="compactSessionsFoot"></div>
+    </div>
+    <div class="chat-main">
     <div id="chatTabBar" class="chat-tab-bar" hidden></div>
     <!-- 卷七十二 v3 · 工作流跑时进度 banner (用户 图2 诉求) · 轮询 /workshop/runs 实时显示 active flows -->
     <!-- v5 (2026-06-10): 🚀 emoji → ri-rocket-fill · 用户 铁律: 这个项目里 Daemonkey 写的图标必须 remix -->
@@ -382,6 +392,20 @@
       </div>
       <input type="file" id="attachFile" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,.pdf,.txt,.md,.docx,.pptx,.json,.csv" multiple hidden>
     </div>
+    </div>
+    <div class="compact-art-toggle" id="compactArtToggle" hidden onclick="toggleCompactArtifacts()" title="产物列表 · 点击向左展开">
+      <i class="ri-arrow-left-s-line"></i>
+      <span class="cat-label">产物列表</span>
+    </div>
+    <div class="compact-artifacts" id="compactArtifacts" hidden>
+      <div class="compact-art-head">
+        <span class="cah-title"><i class="ri-archive-fill"></i> 本会话产物</span>
+        <span class="cah-sub" id="compactArtSub"></span>
+        <span class="cah-close" onclick="toggleCompactArtifacts()" title="收起"><i class="ri-close-line"></i></span>
+      </div>
+      <div class="compact-art-body" id="compactArtBody"></div>
+    </div>
+    </div>
   </section>
 
 </div>
@@ -464,7 +488,7 @@
 <script src="/static/workshop.js?v=20260810"></script>
 <script src="/static/depot.js?v=20260810"></script>
 <script src="/static/clients.js?v=20260810"></script>
-<script src="/static/chat.js?v=20260810"></script>
+<script src="/static/chat.js?v=20260814f"></script>
 
 </body>
 </html>

@@ -36,6 +36,10 @@ from daemon_session import (
 
 router = APIRouter()
 
+# 卷八十一续 · artifacts 端点 LRU 缓存 · sid+mtime 签名 → 产物列表
+# 会话上下文大时全量重扫 jsonl 很慢 · 文件没变就秒回缓存
+_ARTIFACTS_CACHE: dict[str, list] = {}
+
 
 @router.get("/sessions")
 async def sessions(
@@ -58,6 +62,15 @@ async def sessions(
     """
     check_auth(authorization)
 
+    # wish-xxx · 全局活跃 turn 集合 (daemon 正在为哪些 session 跑 LLM)
+    # 真相源: daemon_api._TURN_TO_SID (turn_id → session_id) · 前端历史列表据此显示运行状态
+    try:
+        from daemon_api import _TURNS_LOCK, _TURN_TO_SID
+        with _TURNS_LOCK:
+            _active_sids = set(_TURN_TO_SID.values())
+    except Exception:
+        _active_sids = set()
+
     items = list_sessions_with_meta()
     out = []
     archived_count = 0
@@ -76,7 +89,7 @@ async def sessions(
         else:
             if is_archived and not include_archived:
                 continue
-        # 分页: 先跳过 offset 条已过滤结果
+    # 分页: 先跳过 offset 条已过滤结果
         if skipped < offset:
             skipped += 1
             continue
@@ -89,6 +102,7 @@ async def sessions(
             "pinned_at": row.get("pinned_at"),
             "archived_at": row.get("archived_at"),
             "last_model_cfg": row.get("last_model_cfg"),
+            "active": sid in _active_sids,   # wish-xxx · 会话是否正在被 daemon 跑 (历史列表运行状态点)
         })
         if len(out) >= limit:
             break
@@ -242,6 +256,12 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
     过滤示例占位符 (X.md / xxx.docx / x.png 这类), 只返回磁盘上真实存在的文件。
 
     前端「本会话产物」视图数据源 · 不依赖 DOM (懒加载/压缩都不影响)。
+
+    性能 (卷八十一续 · BRO 反馈打开产物每次卡): 会话上下文大时主 jsonl + 归档
+    几万行 · 每次全量 json.loads + 磁盘 stat 很慢。加模块级缓存:
+      - 缓存键 = sid + 所有相关文件 (主 + archive) 的 (size, mtime)
+      - 内容没变 (无新消息/新压缩) → 直接返回缓存 · 秒开
+      - 有变化 → 重扫 + 更新缓存
     """
     check_auth(authorization)
 
@@ -251,6 +271,24 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
     sid_file = session_path(sid)
     if not sid_file.exists():
         raise HTTPException(404, f"session not found: {sid}")
+
+    # ---- 缓存键: sid + 所有相关文件的 (size, mtime) ----
+    def _cache_key() -> str:
+        parts = [sid]
+        for f in sorted(sid_file.parent.glob("archive/*" + sid + "*.jsonl")) + [sid_file]:
+            try:
+                st = f.stat()
+                parts.append(f"{f.name}:{st.st_size}:{int(st.st_mtime)}")
+            except Exception:
+                pass
+        return "|".join(parts)
+
+    ck = _cache_key()
+    _ARTIFACTS_CACHE.get(sid)  # touch (简单 LRU: 命中就更新顺序)
+    if ck in _ARTIFACTS_CACHE:
+        hit = _ARTIFACTS_CACHE.pop(ck)
+        _ARTIFACTS_CACHE[ck] = hit  # 移到末尾 (最近使用)
+        return {"session_id": sid, "artifacts": hit, "count": len(hit), "cached": True}
 
     # 所有要扫的行: 主文件 + 归档 (compact/prune)
     lines: list[str] = []
@@ -266,8 +304,8 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
     # 产物路径正则 (白名单类型)
     # 防路径穿越: 第二分支整段负向前瞻 (?!.*\.\.) 拒绝含 .. 的路径 · 字符类去掉 % (避免 %2e%2e 编码穿越)
     RE_DOCPATH = re.compile(
-        r"(?:data/(?:docs|content|design|dev|presentations)/[\w\u4e00-\u9fa5\-（）()·\.]+\.(?:docx?|md|pdf|xlsx?|pptx?|png|jpe?g|gif|webp|mp3|wav|mp4|webm|zip))"
-        r"|(?:(?!.*\.\.)(?:/reports/|/workshop/(?:outputs|preview|file)/|/presentations/)[\w\u4e00-\u9fa5\-（）()·\./]+\.(?:docx?|md|pdf|xlsx?|pptx?|png|jpe?g|gif|webp|mp3|wav|mp4|webm|zip))",
+        r"(?:data/(?:docs|content|design|dev|presentations)/[\w\u4e00-\u9fa5\-（）()·\.]+\.(?:docx?|md|pdf|xlsx?|pptx?|html?|png|jpe?g|gif|webp|mp3|wav|mp4|webm|zip))"
+        r"|(?:(?!.*\.\.)(?:/reports/|/workshop/(?:outputs|preview|file)/|/presentations/)[\w\u4e00-\u9fa5\-（）()·\./]+\.(?:docx?|md|pdf|xlsx?|pptx?|html?|png|jpe?g|gif|webp|mp3|wav|mp4|webm|zip))",
         re.IGNORECASE,
     )
     # 占位符/示例过滤: X.md / xxx.docx / x.png / xxx.md 等
@@ -320,6 +358,11 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
 
     seen: set[str] = set()
     artifacts: list[dict] = []
+    # 粗筛关键词 (卷八十一续二 · BRO 反馈产物首次 6s 慢 · 根因是 RE_DOCPATH 在超长 HTML/代码上
+    # 灾难性回溯 · 每段 10K+ 字符的文本跑正则要 0.06-0.28s。先用零回溯的 in 判断跳过
+    # 不含任何产物路径关键词的文本 · 命中才跑正则 · 6s → 秒级)
+    _DOC_HINTS = ("/workshop/", "/reports/", "/presentations/",
+                  "data/docs/", "data/content/", "data/design/", "data/dev/", "data/presentations/")
     for line in lines:
         try:
             msg = json.loads(line)
@@ -352,6 +395,8 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
         for txt in texts:
             if not txt:
                 continue
+            if not any(h in txt for h in _DOC_HINTS):
+                continue  # 粗筛: 无产物路径关键词 → 跳过正则 (防回溯)
             for m in RE_DOCPATH.finditer(txt):
                 raw = m.group(0)
                 if _is_fake(raw):
@@ -366,7 +411,11 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
                 name = PurePosixPath(url.split("?")[0]).name
                 artifacts.append({"name": name, "url": url, "ext": ext})
 
-    return {"session_id": sid, "artifacts": artifacts, "count": len(artifacts)}
+    # 更新缓存 (LRU 上限 64 会话 · 超了弹最老的)
+    if len(_ARTIFACTS_CACHE) >= 64:
+        _ARTIFACTS_CACHE.pop(next(iter(_ARTIFACTS_CACHE)))
+    _ARTIFACTS_CACHE[ck] = artifacts
+    return {"session_id": sid, "artifacts": artifacts, "count": len(artifacts), "cached": False}
 
 
 @router.get("/sessions/{sid}/active_turn")

@@ -599,6 +599,11 @@ def prune_stale_tool_results(messages: list[dict]) -> tuple[list[dict], dict]:
     流程: 先归档原件 (失败 → 原样返回 + stats error · 绝不动历史) → 替换 content 为占位符
     只换 content · 不删消息 · 不动 tool_call_id (配对不断)
 
+    v3 (2026-08-14 · DeepSeek Harness compaction-tool-result-pruner 对比升级):
+      整条替换占位符 → **head+tail 中间裁剪**。 Harness 的核心改进: 工具结果的"头"
+      (通常是结构化输出/结论) 和"尾" (错误信息/补充) 都在·只删中间冗长部分 →
+      裁剪后 LLM 仍能从残留读到关键信息·不用重新调用。 保留我们的错误保护+归档+幂等。
+
     返回 (新 messages, stats{pruned, saved_chars, archive})
     """
     candidates: list[tuple[int, str]] = []
@@ -627,6 +632,10 @@ def prune_stale_tool_results(messages: list[dict]) -> tuple[list[dict], dict]:
     except Exception as e:
         return messages, {"pruned": 0, "saved_chars": 0, "archive": None, "error": str(e)}
 
+    # v3 · head/tail 预算 (Harness: head 4096 + tail 1024 · 我们按中文密度收紧 + 对齐 PRUNE_MIN_CHARS=1024)
+    # 阈值 = head+tail+200 ≈ 1480 → 覆盖 1480+ 的内容走 head/tail · 1024-1480 之间内容本身不大整条替换
+    _head_chars = 1024
+    _tail_chars = 256
     new_msgs = list(messages)
     saved = 0
     for i, orig in candidates:
@@ -642,13 +651,29 @@ def prune_stale_tool_results(messages: list[dict]) -> tuple[list[dict], dict]:
                         break
                 if name != "?":
                     break
-        placeholder = (
-            f"{PRUNED_MARKER}{name} · 原 {len(content)} 字符 · "
-            f"已归档 {archive_path} · 需要原文请重新调用该工具或读归档]"
-        )
-        new_msgs[i] = dict(orig)
-        new_msgs[i]["content"] = placeholder
-        saved += len(content)
+        # v3 · head + marker + tail (中间裁剪 · 保留开头关键结论 + 结尾错误/补充)
+        if len(content) > _head_chars + _tail_chars + 200:
+            _h = content[:_head_chars]
+            _t = content[-_tail_chars:]
+            placeholder = (
+                f"{PRUNED_MARKER}{name} · 原 {len(content)} 字符 · "
+                f"保留头 {_head_chars}+尾 {_tail_chars} · 已归档 {archive_path} · "
+                f"需要更全请 read_file 归档或重新调用该工具]\n\n"
+                f"── 头部 (关键结论) ──\n{_h}\n\n"
+                f"── 尾部 (错误/补充) ──\n{_t}"
+            )
+            new_msgs[i] = dict(orig)
+            new_msgs[i]["content"] = placeholder
+            saved += len(content) - len(placeholder)
+        else:
+            # 不够剪 (只比阈值多一点) · 仍整条替换占位符 (保留归档路径)
+            placeholder = (
+                f"{PRUNED_MARKER}{name} · 原 {len(content)} 字符 · "
+                f"已归档 {archive_path} · 需要原文请重新调用该工具或读归档]"
+            )
+            new_msgs[i] = dict(orig)
+            new_msgs[i]["content"] = placeholder
+            saved += len(content)
 
     return new_msgs, {"pruned": len(candidates), "saved_chars": saved, "archive": archive_path}
 

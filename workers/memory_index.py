@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -120,9 +121,13 @@ def _tokenize_for_query(query: str) -> str:
     if len(query) > 500:
         query = query[:500]
     # C1 · 显式 FTS5 语法检测: 引号短语 / 大写操作符 / 前缀* / 括号分组 / 排除-
+    # wish-0d021aea · 操作符检测只认大写 (AND|OR|NOT|NEAR) ·
+    #   根因: 英文普通句 "I like X and Y" 里的小写 "and" 被 IGNORECASE 误判为 FTS5 操作符
+    #   → 整句透传 → 句尾句点触发 fts5 syntax error。FTS5 语法是用户显式写的 ·
+    #   正常英文句子操作符必小写 · 所以只认大写 = 不误伤英文句子。
     _has_fts_syntax = (
         '"' in query
-        or re.search(r"\b(AND|OR|NOT|NEAR)\b", query, re.IGNORECASE) is not None
+        or re.search(r"\b(?:AND|OR|NOT|NEAR)\b", query) is not None
         or "*" in query
         or "(" in query or ")" in query
         or re.search(r"(^|\s)-[\w\u4e00-\u9fff]", query) is not None
@@ -252,6 +257,53 @@ KNOWLEDGE_MANIFEST = KNOWLEDGE_DIR / "manifest.json"
 # 客户档案 notes (workers/clients.py 写入)· source = client:<id> · 让"客户档案=记忆延伸"
 CLIENTS_MANIFEST = ROOT / "data" / "clients" / "manifest.json"
 
+# ---- 分层 embedding (2026-08-12 · wish-ba84aa18 · BRO 拷问出) ----
+# session 原文 (source='session') 只走 FTS5 不算向量 (占 97.6% · 大而杂 · FTS5 字面召回已够硬)。
+# 高信号源 (摘要/playbook/SELF-EVOLUTION 日记) + doc: 前缀才保留 embedding (小而精 · 语义补漏)。
+# client: 按 BRO 规格不进向量层 (FTS-only · 以后要加只需把 'client:' 加进前缀)。
+#
+# 2026-08-12 (wish-ba84aa18 迭代 · BRO 拍板精粒度): 灵魂层按"信息会不会被压缩掉"分:
+#   - SELF-EVOLUTION 全进: 只注入末尾几条 · 历史全靠 recall_memory 语义召回 (唯一真正需要向量的灵魂文件)
+#   - BRO-NOTEBOOK 只进"关键事件流"板块 (section 含 '事件流'): 全量注入但无限增长 · 给未来压缩铺路
+#   - OPUS-MEMORIES / SKILL / CONSTITUTION 不进: 自传/入口/宪法全量注入 system prompt · embedding 冗余
+#   - session_summary / skill / doc: 本来就不注入 → 保持全进
+EMBED_SOURCES = frozenset({
+    "session_summary", "skill", "SELF-EVOLUTION",
+})
+EMBED_SOURCE_PREFIXES = ("doc:",)
+# 只进特定板块的灵魂文件: source 在 SET + section 必须含关键词才进向量
+EMBED_SOURCES_SECTION_ONLY = {
+    "BRO-NOTEBOOK": ("事件流",),
+}
+EMBED_SECTION_KEYWORDS = tuple(
+    kw for kws in EMBED_SOURCES_SECTION_ONLY.values() for kw in kws
+)
+
+
+def _should_embed(source: str, section: str = "") -> bool:
+    """这个 (source, section) 要不要算 embedding (分层闸 · 单源真理 · 板块级)。"""
+    if source in EMBED_SOURCES:
+        return True
+    if source.startswith(EMBED_SOURCE_PREFIXES):
+        return True
+    if source in EMBED_SOURCES_SECTION_ONLY:
+        return any(kw in section for kw in EMBED_SOURCES_SECTION_ONLY[source])
+    return False
+
+
+def embed_where_sql(column: str = "source") -> str:
+    """分层源的 SQL WHERE 片段 · backfill/cosine_topk/迁移脚本共用 · 防口径漂移。
+
+    板块级: source 全进源 或 doc: 前缀 或 (source∈板块限定源 AND section 含关键词)。
+    """
+    exact = ",".join(f"'{s}'" for s in sorted(EMBED_SOURCES))
+    likes = " OR ".join(f"{column} LIKE '{p}%'" for p in EMBED_SOURCE_PREFIXES)
+    section_conds = " OR ".join(
+        f"({column} = '{src}' AND section LIKE '%{kw}%')"
+        for src, kws in EMBED_SOURCES_SECTION_ONLY.items() for kw in kws
+    )
+    return f"({column} IN ({exact}) OR {likes} OR {section_conds})"
+
 # ---- 切块参数 ----
 MAX_CHUNK_CHARS = 2000       # 单块上限（超出按段落边界切）
 TOKEN_ESTIMATE_DIVISOR = 3.5  # 英文 4、中文 1.5，3.5 是混合折衷
@@ -374,9 +426,17 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
             chunk_index INTEGER DEFAULT 0,
             content TEXT NOT NULL,
             token_count INTEGER DEFAULT 0,
-            updated_at TEXT DEFAULT ''
+            updated_at TEXT DEFAULT '',
+            embedding BLOB
         )
     """)
+    # wish-45b8ff04 · 老库 ALTER 补列 (幂等) · rebuild 后新表自带列 · 老表迁移补列
+    _cols = [r[1] for r in conn.execute("PRAGMA table_info(memory_chunks)").fetchall()]
+    if "embedding" not in _cols:
+        try:
+            conn.execute("ALTER TABLE memory_chunks ADD COLUMN embedding BLOB")
+        except Exception:
+            pass
     # standalone FTS5 · 不是 external content · content_tok 是 jieba 切词后版
     conn.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
@@ -405,7 +465,10 @@ def _insert_chunk_with_fts(
     token_count: int,
     updated_at: str,
 ) -> int:
-    """插一条 chunk 到 chunks 表 + 同步 jieba 切词版到 fts。 返新 chunk id。"""
+    """插一条 chunk 到 chunks 表 + 同步 jieba 切词版到 fts。 返新 chunk id。
+
+    wish-45b8ff04 · 顺带补 embedding (best-effort · 失败静默不阻塞主索引)。
+    """
     cur = conn.execute(
         "INSERT INTO memory_chunks (source, section, chunk_index, content, token_count, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
@@ -417,6 +480,15 @@ def _insert_chunk_with_fts(
         "INSERT INTO memory_fts(rowid, content_tok, source, section) VALUES (?, ?, ?, ?)",
         (new_id, content_tok, source, section),
     )
+    # wish-45b8ff04 · embedding 增量补算 (单条 · best-effort · 失败静默)
+    # 2026-08-12 修复: rebuild() 全量重建期间跳过逐条 API 调用 (2 万条 × HTTP = 300s 跑不完 + 烧钱)
+    # rebuild 完成后由 backfill_all() 批量回填 (32 条/次 · 快 30 倍)
+    if not os.environ.get("MEMORY_INDEX_SKIP_EMBED") and _should_embed(source, section):
+        try:
+            from .memory_embed import embed_chunk
+            embed_chunk(conn, new_id, content)
+        except Exception:
+            pass  # embedding 失败不影响主索引
     return new_id
 
 
@@ -427,13 +499,13 @@ def _insert_chunk_with_fts(
 
 def _chunk_markdown(text: str, source: str, updated_at: str) -> list[dict]:
     """按 ## 标题分块，超 MAX_CHUNK_CHARS 的再按段落切。"""
-    blocks = re.split(r"\n(?=## )", text)
+    blocks = re.split(r"\n(?=##(?!#))", text)  # P3-3: 分块也允许 ##标题 (无空格) · (?!#) 防 ###
 
     chunks: list[dict] = []
     section = ""
 
     for block in blocks:
-        m = re.match(r"^##\s+(.+)", block)
+        m = re.match(r"^##(?!#)\s*(.*)", block)  # P3-3 修复: ##标题(无空格)也识别 · (?!#) 防 ### 误吞 · \s* 吃可选空白
         if m:
             section = m.group(1).strip()
 
@@ -520,6 +592,32 @@ def rebuild() -> int:
     _drop_tables(conn)
     _ensure_tables(conn)
 
+    # 2026-08-12: 全量重建期间跳过逐条 embedding (由 backfill_all 批量回填)
+    os.environ["MEMORY_INDEX_SKIP_EMBED"] = "1"
+    try:
+        n = _rebuild_core(conn, now)
+    finally:
+        os.environ.pop("MEMORY_INDEX_SKIP_EMBED", None)
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    # 分层回填: 只补 allowlist 源 (~480 条 · 15 批 · 秒级) · 未配置 embedding 时静默返 (0,0)
+    # 2026-08-12 (wish-ba84aa18) · 不再全表回填 2 万 session · session 原文只走 FTS5
+    try:
+        from .memory_embed import backfill_all
+        c2 = _get_conn()
+        ok, fail = backfill_all(c2)
+        c2.close()
+        logger.info("rebuild 后分层 embedding 回填: ok=%d fail=%d", ok, fail)
+    except Exception as e:
+        logger.warning("rebuild 后分层回填失败: %s", e)
+
+    return n
+
+
+def _rebuild_core(conn, now) -> int:
     total = 0
 
     # ---- 索引 soul/ 下的 md 文件 ----
@@ -686,40 +784,79 @@ def rebuild() -> int:
     return total
 
 
-def incremental_update(source: str, full_text: str) -> int:
-    """增量更新单个源：删旧 chunks + 删旧 fts → 重新分块插入 (含 fts 同步)。"""
+def incremental_update(source: str, full_text: str, section: str | None = None) -> int:
+    """增量更新单个源：删旧 chunks + 删旧 fts → 重新分块插入 (含 fts 同步)。
+
+    section 可选: 传了则只更新该 source 下匹配 section 的 chunks (2026-08-12 加 ·
+    playbook 增量用 · 全库 playbook 共用 source='skill' · 靠 section 精准定位单篇)。
+    """
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     conn = _get_conn()
 
     # 删旧 chunks 时同步删 fts 里对应 rowid (standalone fts 不会自动删)
-    old_ids = [
-        r[0]
-        for r in conn.execute(
-            "SELECT id FROM memory_chunks WHERE source = ?", (source,)
-        ).fetchall()
-    ]
+    if section is not None:
+        # P2-5 修复 (墨言审查): section 精确匹配 → 前缀级清理。
+        # section 格式 "{slug}:{task_type}" · slug 或 task_type 变了旧 section 匹配不到 → 死数据永不删。
+        # 用 "{slug}:" 前缀删 → slug 变 / task_type 变都能清掉旧 chunk。
+        slug_prefix = section.split(":")[0] + ":"
+        old_ids = [
+            r[0]
+            for r in conn.execute(
+                "SELECT id FROM memory_chunks WHERE source = ? AND section LIKE ?",
+                (source, slug_prefix + "%"),
+            ).fetchall()
+        ]
+    else:
+        old_ids = [
+            r[0]
+            for r in conn.execute(
+                "SELECT id FROM memory_chunks WHERE source = ?", (source,)
+            ).fetchall()
+        ]
     if old_ids:
         placeholders = ",".join("?" * len(old_ids))
         conn.execute(f"DELETE FROM memory_fts WHERE rowid IN ({placeholders})", old_ids)
-        conn.execute("DELETE FROM memory_chunks WHERE source = ?", (source,))
+        if section is not None:
+            # P2-5 · 同步前缀级删除 (与上面 SELECT 一致)
+            conn.execute(
+                "DELETE FROM memory_chunks WHERE source = ? AND section LIKE ?",
+                (source, section.split(":")[0] + ":%"),
+            )
+        else:
+            conn.execute("DELETE FROM memory_chunks WHERE source = ?", (source,))
 
-    chunks = _chunk_markdown(full_text, source, now)
-    for c in chunks:
+    # P2-5 修复: section 传入时整篇存一个 chunk (section 一致 · 与全量 rebuild L667 对齐)。
+    # 不传 section 的通用路径 (灵魂文件/知识库) 保持 _chunk_markdown 标题分块。
+    if section is not None:
         _insert_chunk_with_fts(
             conn,
-            source=c["source"],
-            section=c["section"],
-            chunk_index=c["chunk_index"],
-            content=c["content"],
-            token_count=c["token_count"],
-            updated_at=c["updated_at"],
+            source=source,
+            section=section,
+            chunk_index=0,
+            content=full_text,
+            token_count=_estimate_tokens(full_text),
+            updated_at=now,
         )
+        total_inserted = 1
+    else:
+        chunks = _chunk_markdown(full_text, source, now)
+        for c in chunks:
+            _insert_chunk_with_fts(
+                conn,
+                source=c["source"],
+                section=c["section"],
+                chunk_index=c["chunk_index"],
+                content=c["content"],
+                token_count=c["token_count"],
+                updated_at=c["updated_at"],
+            )
+        total_inserted = len(chunks)
 
     conn.commit()
     conn.close()
 
-    logger.info("增量更新 %s: %d chunks", source, len(chunks))
-    return len(chunks)
+    logger.info("增量更新 %s: %d chunks", source, total_inserted)
+    return total_inserted
 
 
 def index_session_turn(session_id: str, role: str, content: str, ts: str = "") -> bool:
@@ -900,6 +1037,65 @@ def check_stale() -> bool:
     return False
 
 
+def refresh_stale() -> int:
+    """分层单源增量刷新 (2026-08-12 · wish-ba84aa18) · 替代 check_stale→全量 rebuild。
+
+    不 drop 表 · 不碰 session chunks (占 97.6% · 只 FTS5 无向量)。
+    只有 db 不存在才 fallback 全量 rebuild()。返回刷新的 chunk 总数。
+    每个 incremental_update 写完触发 WAL checkpoint → db mtime 前进 → 刷新后
+    check_stale() 自然变 False (自愈 · 不再每分钟全量 rebuild)。
+    """
+    if not DB_PATH.exists():
+        return rebuild()
+
+    base_mtime = DB_PATH.stat().st_mtime  # P1-1 修复 · 循环外取一次快照 · 循环内不滚动推进 (同轮后文件漏刷)
+    total = 0
+
+    # 灵魂文件 · 逐文件单源增量 (几十条 chunk · 秒级)
+    for fn, label in [
+        ("OWNER-NOTEBOOK.md", "OWNER-NOTEBOOK"), ("BRO-NOTEBOOK.md", "BRO-NOTEBOOK"),
+        ("SELF-EVOLUTION.md", "SELF-EVOLUTION"), ("OPUS-MEMORIES.md", "OPUS-MEMORIES"),
+        ("SKILL.md", "SKILL"),
+    ]:
+        p = SOUL_DIR / fn
+        if p.exists() and p.stat().st_mtime > base_mtime:
+            total += incremental_update(label, p.read_text(encoding="utf-8"))
+
+    # playbooks · 逐篇 section 级增量 (task_type 从 _index.json 查 · 逻辑同 _rebuild_core)
+    if PLAYBOOKS_DIR.exists():
+        for pb in sorted(PLAYBOOKS_DIR.glob("*.md")):
+            if pb.stat().st_mtime > base_mtime:
+                task_type = "general"
+                try:
+                    idx_path = PLAYBOOKS_DIR / "_index.json"
+                    if idx_path.exists():
+                        idx_data = json.loads(idx_path.read_text(encoding="utf-8"))
+                        for pid, meta in idx_data.get("playbooks", {}).items():
+                            if meta.get("slug") == pb.stem:
+                                task_type = meta.get("task_type", "general")
+                                break
+                except Exception:
+                    pass
+                total += incremental_update(
+                    "skill", pb.read_text(encoding="utf-8"), section=f"{pb.stem}:{task_type}"
+                )
+
+    # 知识库 · 逐 doc 增量 (有界 ~86 chunks)
+    if (KNOWLEDGE_MANIFEST.exists() and KNOWLEDGE_MANIFEST.stat().st_mtime > base_mtime) or \
+       (KNOWLEDGE_DOCS_DIR.exists() and any(m.stat().st_mtime > base_mtime
+                                            for m in KNOWLEDGE_DOCS_DIR.glob("*.md"))):
+        for doc_id, text in _enabled_knowledge_docs():
+            total += incremental_update(f"doc:{doc_id}", text)
+
+    # 客户档案 · 逐 client 增量 (有界 ~15 chunks)
+    if CLIENTS_MANIFEST.exists() and CLIENTS_MANIFEST.stat().st_mtime > base_mtime:
+        for cid, text in _client_notes():
+            total += incremental_update(f"client:{cid}", text)
+
+    logger.info("分层增量刷新完成: %d chunks (未触发全量 rebuild)", total)
+    return total
+
+
 def search(
     query: str,
     top_k: int = 5,
@@ -908,6 +1104,7 @@ def search(
     min_score: float | None = None,
     window_by: str = "content",
     min_overlap: int | None = None,
+    use_embedding: bool = False,
 ) -> list[MemoryChunk]:
     """FTS5 全文检索。
 
@@ -949,7 +1146,7 @@ def search(
     # 供 MATCH 列限定判断: 显式语法透传路径不加列前缀 (语法会错) · 普通 OR 路径加。
     _has_fts_syntax = (
         '"' in query
-        or re.search(r"\b(AND|OR|NOT|NEAR)\b", query, re.IGNORECASE) is not None
+        or re.search(r"\b(?:AND|OR|NOT|NEAR)\b", query) is not None
         or "*" in query
         or "(" in query or ")" in query
         or re.search(r"(^|\s)-[\w\u4e00-\u9fff]", query) is not None
@@ -982,7 +1179,10 @@ def search(
     # 生成 AND c.content NOT LIKE '%词%' (多词 AND 连) · 转义 LIKE 通配符 (M2)。
     exclude_terms: list[str] = []
     q_parse = query
-    m_not = re.search(r"\bNOT\s+([\w\u4e00-\u9fff]+)", q_parse, re.IGNORECASE)
+    # wish-0d021aea · NOT 排除检测只认大写: 英文普通句 "I do not like X" 里的小写 "not like"
+    # 会被 IGNORECASE 误判为排除 → 把 like 从 query 删掉 → 漏召回。FTS5 语法排除是用户
+    # 显式写的 "NOT X" (大写) · 小写 not 是英文普通词 · 不该触发。
+    m_not = re.search(r"\bNOT\s+([\w\u4e00-\u9fff]+)", q_parse)
     if m_not:
         exclude_terms.append(m_not.group(1))
         # 从 query 里去掉 NOT 段 · 剩余当正向匹配
@@ -1096,6 +1296,20 @@ def search(
                 break
             results.append(chunk)
             total_chars += len(chunk.content)
+
+    # wish-45b8ff04 · 可选 embedding 语义增强: FTS5 漏掉的语义命中补进结果。
+    # 默认 False (老行为不变) · 显式开启时若 embedding 不可用自动跳过 (不炸)。
+    # P1-3 修复 (墨言审查): 去掉 `and results` — 零命中时 embedding 补漏也要跑。
+    # FTS5 漏掉的语义命中恰恰是最该补的 (词面零命中 = 语义补漏核心场景)。
+    # hybrid_rerank 空 fts_hits 天然安全 (fts_scores 空 → span=1e-9 · 纯语义命中 cos>0.25 才进)。
+    if use_embedding:
+        try:
+            from .memory_embed import hybrid_rerank
+            reranked = hybrid_rerank(query, results, conn, top_k=top_k, scope=scope)  # P1-4: scope 透传
+            if reranked is not None:
+                results = reranked
+        except Exception as e:
+            logger.warning("embedding rerank failed (%s) · 保持 FTS5 结果", e)
 
     conn.close()
     return results

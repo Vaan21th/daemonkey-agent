@@ -651,6 +651,24 @@ def _settle_trust(state: dict) -> None:
             reset_flow_trust(fid, reason=str(err or ""))
     except Exception:
         pass
+    # 墨言 094 wish-68f35226 · 后台任务钩子: 工作流完成/失败 → 主动唤醒 daemon (不再失联)
+    try:
+        from .background_notify import task_done
+        _st = state.get("status")
+        if _st in ("done", "failed"):
+            _fails = [e for e in state.get("steps") or [] if e.get("status") == "failed"]
+            _sum = ""
+            if _st == "done":
+                _sum = f"{state.get('total_steps')} 步完成"
+            else:
+                _sum = "; ".join(f"STEP{e['idx']} {str(e.get('error'))[:80]}" for e in _fails[:3]) or str(state.get("error") or "")[:200]
+            task_done(
+                f"工作流 {state.get('flow_name') or fid}",
+                status="success" if _st == "done" else "failed",
+                summary=f"run_id={state.get('run_id')} · {_sum}",
+            )
+    except Exception:
+        pass
 
 
 def format_run(state: dict) -> str:

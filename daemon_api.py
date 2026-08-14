@@ -57,11 +57,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import subprocess
-import sys
 import threading
 import time
-import uuid
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -69,14 +66,10 @@ from agent_tools import TIER_AUTO, TIER_CONFIRM, TIER_GUARD, ToolSpec
 from daemon_runtime import RUNTIME
 from daemon_session import (
     append_turn,
-    get_last_user_turn_ts,
-    list_sessions,
     load_session,
-    load_session_for_ui,
     new_session_id,
-    session_path,
 )
-from tool_loop import UsageStats, run_tool_loop
+from tool_loop import run_tool_loop
 
 # 供本文件遗留辅助函数 (_activate_provider_config / _test_provider_inner) 的
 # raise HTTPException 使用 · 路由拆分重构时全局 import 被清掉 → F821 潜伏 bug
@@ -1165,6 +1158,21 @@ def _chat_impl(
             except Exception:
                 pass
 
+        # 会话自动记住模型 (卷八十一续 · BRO 2026-08-14 反馈"模型没跟着对话切"):
+        #   之前只在【手动切模型】时写 meta · 从没手动切过的会话(一直用默认 flash)没有记录
+        #   → 切回这种会话时 last_model_cfg 为空 → 不恢复 → 全局保留上一个会话的模型 (pro)。
+        #   现在每个 turn 都自动把当前 active config_id 写进会话 meta · 每会话天然记住
+        #   "我最后跑的时候用的模型" · 切回来就恢复。手动切(前端 switchModel)仍会覆盖。
+        try:
+            from workers.provider_configs import get_active_config
+            _ac = get_active_config(include_key=False)
+            _ac_id = (_ac or {}).get("id") or ""
+            if _ac_id:
+                from daemon_session import set_session_meta
+                set_session_meta(sid, last_model_cfg=_ac_id)
+        except Exception:
+            pass
+
         # 写入新 user turn
         # wish-58af621e · 让压缩层知道当前 session id，摘要落盘用
         from workers.memory_compression import set_session_id
@@ -1731,8 +1739,6 @@ def build_app():
 
     # wish-413999da phase 1 · closure helpers 提到 api_routes/_deps.py
     # 保留同名 local 绑定让旧路由 closure 调用照常工作
-    from api_routes._deps import check_auth as _check_auth
-    from api_routes._deps import check_rate_limit as _check_rate_limit
 
     # wish-bb84a386 · loopback 鉴权豁免 (卷四十六续 V) · 同机 127.0.0.1 自动信任
     # 关闭办法: env OPUS_LOOPBACK_TRUST=false (远程部署用)
@@ -1799,6 +1805,7 @@ def build_app():
     from api_routes import vision as _routes_vision
     from api_routes import notifications as _routes_notifications
     from api_routes import advisor as _routes_advisor
+    from api_routes import stt as _routes_stt  # wish-241e0014 · /stt/* 语音识别增强
     # 2026-08-08 · /api/tts 语音回复 (商业化 TTS · 归属待决 · 优雅降级: 纯净版无 voice.py 不崩)
     try:
         from api_routes import voice as _routes_voice
@@ -1823,6 +1830,26 @@ def build_app():
     app.include_router(_routes_vision.router)  # wish-4a6331b2 · /vision-config (曾漏注册→404)
     app.include_router(_routes_notifications.router)  # wish-fb6b7427 · /notification-config
     app.include_router(_routes_advisor.router)  # wish-ea8922f7 · /api/advisor/status + trace
+    app.include_router(_routes_stt.router)  # wish-241e0014 · /stt/* 语音识别增强 (可选更新)
+
+    # wish-241e0014 · 随 daemon 启动预加载 whisper 模型 (设置页开关 OPUS_STT_BOOT_LOAD=1)
+    # 后台线程加载 · 不阻塞启动 · 缺依赖/模型静默跳过 (可选功能零负担)
+    @app.on_event("startup")
+    def _stt_boot_preload():
+        try:
+            if (os.environ.get("OPUS_STT_BOOT_LOAD") or "0").strip() != "1":
+                return
+            import threading as _th
+            def _load():
+                try:
+                    from workers.stt_transcribe import _load_model
+                    _load_model()
+                except Exception as e:
+                    import logging
+                    logging.getLogger("opus.stt").warning("启动预加载 STT 失败: %s", e)
+            _th.Thread(target=_load, name="stt-boot-preload", daemon=True).start()
+        except Exception:
+            pass
     if _routes_voice is not None:
         app.include_router(_routes_voice.router)  # 2026-08-08 · /api/tts 语音回复 (有 voice 才挂)
 
@@ -1904,12 +1931,13 @@ def start_api_in_background(
         print(f"[opus-api] WARN · daemon_lifecycle init 出错 (不阻塞启动): {type(e).__name__}: {e}")
 
     # 卷四十六 III 补丁 3 · 自动续场 turn (start_api_in_background 路径 · 走 opus_daemon.py 入口)
-    if lc and lc.get("restart_request"):
+    # 墨言 094 wish-db293e5f · 统一入口 maybe_schedule_resume: 有 restart_request → follow_up 续场 ·
+    # 无 (手动/外部重启) → schedule_auto_boot_verify 对最近 30min 活跃飞书会话自动报平安。
+    if lc:
         try:
-            from workers.resume_runner import schedule_resume_turn
-            if schedule_resume_turn(lc["restart_request"]):
-                fu = (lc["restart_request"].get("follow_up_message") or "")[:80]
-                print(f"[opus-api] 自动续场 turn 已 schedule · follow_up='{fu}...'")
+            from workers.resume_runner import maybe_schedule_resume
+            if maybe_schedule_resume(lc):
+                print("[opus-api] 自动续场 turn 已 schedule")
         except Exception as e:
             print(f"[opus-api] WARN · 自动续场 schedule 失败 (不阻塞): {type(e).__name__}: {e}")
 

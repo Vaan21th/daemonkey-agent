@@ -33,13 +33,15 @@ OPUS 的"手"——tool use 多轮循环。
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger("opus.tool_loop")
 
@@ -69,13 +71,18 @@ _NARRATION_TOOLS = frozenset({
 
 
 def _localize_tool_content(name: str, content: str) -> str:
-    """叙述型工具的 tool_result 文本去母体化(母体 no-op)。透传类工具不在白名单·原样返回。"""
+    """叙述型工具的 tool_result 文本去母体化(母体 no-op)。透传类工具不在白名单·原样返回。
+    2026-08-14 · spill 输出溢出 (Harness spill-policy 借鉴): 超大工具输出落盘 + 替换 head/tail 预览。
+    """
     if name in _NARRATION_TOOLS:
         try:
-            return _localize_narration(content)
+            content = _localize_narration(content)
         except Exception:
             pass
-    return content
+    try:
+        return _spill_oversized_tool_output(name, content)
+    except Exception:
+        return content  # spill 失败不影响工具结果
 
 try:
     from desktop_pet.activities import write_activity as _pet_write_activity
@@ -85,6 +92,51 @@ except Exception:
         pass
     def _pet_write_pulse_end(_name: str, _ok: bool, _summary: str = "") -> None:
         pass
+
+
+# ── spill 输出溢出 (2026-08-14 · Harness spill-policy 借鉴) ────────
+# 治"超大工具输出整段塞上下文" (read_file 大文件 / shell 长输出 / web_fetch 超长正文)。
+# 超阈值 → 完整文本落盘 data/runtime/spill/ · 替换成 head/tail 预览 + read_file 定位提示。
+# 保留 head/tail (开头结论 + 结尾错误/补充) · 只删中间冗长 · 模型仍能从预览读到关键信息。
+_SPILL_MAX_INLINE = int(os.environ.get("OPUS_SPILL_MAX_INLINE") or "12000")   # 超此字符数触发 spill
+_SPILL_HEAD = 4000        # 预览保留头部
+_SPILL_TAIL = 1000        # 预览保留尾部
+_spill_lock = threading.Lock()
+
+
+def _spill_oversized_tool_output(name: str, content: str) -> str:
+    """超大工具输出 → 落盘 + head/tail 预览。 返回 (新 content 或原 content)。
+    幂等: 已是 spill 预览 (含 "已落盘" marker) 不再处理。 错误内容不 spill (排障线索保命)。
+    落盘失败 → 原样返回 (不阻塞工具链路)。
+    """
+    if not isinstance(content, str) or not content:
+        return content
+    if len(content) <= _SPILL_MAX_INLINE:
+        return content
+    if "[已落盘 · 工具输出溢出]" in content[:200]:
+        return content  # 幂等
+    low = content.lstrip().lower()
+    if low.startswith(("error", "blocked", "[error", "traceback")):
+        return content  # 错误保命
+    try:
+        import hashlib
+        import pathlib
+        _spill_dir = pathlib.Path("data/runtime/spill")
+        _spill_dir.mkdir(parents=True, exist_ok=True)
+        _h = hashlib.md5((name + content[:500]).encode()).hexdigest()[:10]
+        _p = _spill_dir / f"{name}-{_h}.txt"
+        with _spill_lock:
+            _p.write_text(content, encoding="utf-8")
+        _h2 = content[:_SPILL_HEAD]
+        _t2 = content[-_SPILL_TAIL:]
+        return (
+            f"[已落盘 · 工具输出溢出] 工具 {name} 输出 {len(content)} 字符 · 超 {_SPILL_MAX_INLINE} 上限 · "
+            f"完整内容已存 `{_p.as_posix()}` · 用 read_file 读该路径拿全文\n\n"
+            f"── 头部 (开头结论) ──\n{_h2}\n\n── 尾部 (结尾/错误) ──\n{_t2}"
+        )
+    except Exception:
+        return content  # 落盘失败不阻塞
+
 
 def _pulse_summary(result) -> str:
     '''Extract a short human-readable summary from a ToolResult for the pulse.'''
@@ -134,6 +186,23 @@ _STUCK_WINDOW = 6
 _STUCK_REPEAT_THRESHOLD = 3
 _STUCK_INJECT_CAP = 2
 
+# 读型工具 (2026-08-14 方案 B · BRO 拍板): 参数用完整哈希 · 治 python_exec/read_file 前 120 字样板撞车
+# 误判案例: 连续几次 python_exec code 都是 'import os,re\nroot=...\nc=open(...)' 前 120 字相同 → 误判死循环
+# 读型 = 无副作用 · 参数不同即不同意图 · 完整哈希区分; 写型 = 有副作用 · 保持前 120 字截断保守
+_READ_TOOLS = frozenset({
+    "read_file", "grep_files", "glob_files", "search_code", "outline_file",
+    "python_exec", "web_search", "web_fetch", "browser_fetch", "browser_act",
+    "recall_memory", "session_search", "look_at", "read_clipboard",
+    "list_apps", "list_flows", "list_iron_rules", "read_dashboard",
+    "manage_info_source", "manage_knowledge", "take_screenshot", "pdf_read",
+    "service_list", "service_status", "worktree_status", "app_versions",
+    "app_list_secrets", "track_task", "verify_claim", "verify_daemon_endpoints",
+    "mcp_list", "mcp_describe_tool", "client_handoff", "tag_radar_item",
+    "propose_next_move", "mirror_capability", "monthly_review", "list_scheduled_tasks",
+    "dispatch_subagent_status", "analyze_feasibility", "mine_opportunities",
+    "recall_memory", "list_scheduled_tasks",
+})
+
 _STUCK_NUDGE_PROMPT = (
     "你刚才连续 {repeat} 次调用 `{signature}` (窗口内 {window} 次 tool calls 里)。\n"
     "**这很像死循环** —— 同样的工具、同样的 args、可能拿同样的结果。\n\n"
@@ -148,11 +217,18 @@ _STUCK_NUDGE_PROMPT = (
 def _tool_signature(name: str, args_str: str) -> str:
     """生成稳定 tool call signature · 给 stuck detection 用.
 
-    args_str 是 LLM 给的原始 JSON 字符串 · 我们取前 120 字 (够区分大多数 args 差异)
-    + 去掉空白差异 · 保证语义相同的调用给出相同签名."""
+    2026-08-14 方案 B (BRO 拍板 · 治误判):
+      - 读型工具 (无副作用): 参数完整 MD5 哈希 → 参数不同即不同签名 ·
+        治 python_exec/read_file 前 120 字样板 (import/root/open) 撞车误判死循环
+      - 写型工具 (有副作用): 保持前 120 字截断 · 保守防真死循环 (改文件/删东西不能浪)
+    """
     snippet = (args_str or "").strip()
-    # 压缩多余空白
     snippet = " ".join(snippet.split())
+    if name in _READ_TOOLS:
+        # 读型: 完整哈希 · 只要参数有任何差异就不算重复
+        h = hashlib.md5(snippet.encode("utf-8")).hexdigest()[:12]
+        return f"{name}#{h}"
+    # 写型: 前 120 字截断 (原逻辑)
     if len(snippet) > 120:
         snippet = snippet[:120] + "…"
     return f"{name}({snippet})"
@@ -198,6 +274,115 @@ _EXPLAIN_PROMPT = (
 )
 
 
+# ── 失败熔断器 (墨言 094 wish-d2c2aa9a 移植 · 治"工具连续失败同类错误 → 换花样再撞"死磕) ──
+# 同一错误类别连续失败 ≥ _FAIL_CIRCUIT_AT 次 → 注入 nudge 停手 · 再撞 1 次 → 硬 break (带部分产出)。
+# 单次 run 内 break 即天然冷却 (run 结束) · 跨 turn 冷却不做 (环境性失败 30 分钟冷却易误伤)。
+_FAIL_CIRCUIT_AT = 2          # 连续同类失败 N 次 → nudge (停手汇报)
+_FAIL_CIRCUIT_BREAK_AT = 3    # nudge 后同类再失败第 N 次 → 硬 break
+_FAIL_CIRCUIT_NUDGE_PROMPT = (
+    "你连续 {count} 次调工具都返回同一类错误 (`{category}`)。\n"
+    "**这像在死磕同一条失败路径** —— 换 URL / 换关键词 / 换工具花样再撞大概率还是同一个错误。\n\n"
+    "请立即停手:\n"
+    "  - 用文字汇报当前能拿到的部分（哪怕只有一半也算）\n"
+    "  - 说清这个错误类别 ({category}) 是哪来的·你卡在哪\n"
+    "  - 如果必须继续·换**不同类别**的方向·不要再撞同类错误\n"
+    "不要无视这条提示再调同类工具——我会硬拦下你。"
+)
+_FAIL_CIRCUIT_BREAK_PROMPT = (
+    "[OPUS 失败熔断 · 同类错误连续失败 {count} 次·已自动停下]\n\n"
+    "错误类别: `{category}`\n"
+    "这是死磕同一失败路径 · 已按熔断器硬停（防止继续烧 token 换花样再撞）。\n"
+    "建议: 看上面的部分产出 + session jsonl · 告诉我换思路或放弃。"
+)
+# 错误类别判定 (error 字符串粗分类 · 命中即归类 · 未命中按异常类型名 / other)
+_ERR_CAT_RULES = (
+    # 数字状态码只匹配带上下文强信号 (http/status 前缀 / 错误名后缀) · 防 traceback 行号 "line 403" 误命中
+    ("http_4xx", ("unauthorized", "forbidden", "not found", "rate limit",
+                  "too many requests", "too many request", "client error",
+                  "http 401", "http 403", "http 404", "http 405", "http 429",
+                  "status 401", "status 403", "status 404", "status 405", "status 429",
+                  "status code 401", "status code 403", "status code 404",
+                  "status code 405", "status code 429", "http_status", "4xx")),
+    ("timeout", ("timeout", "timed out", "timedout")),
+    ("network", ("connection", "connect error", "dns", "read error",
+                 "remoteprotocolerror", "protocol error", "连接失败", "网络错误", "网络异常")),
+    ("anti_bot", ("验证码", "安全验证", "异常访问", "请求异常", "滑动验证", "人机验证",
+                  "captcha", "recaptcha")),
+    ("not_allowed", ("not allowed", "unknown tool", "not in this app scope")),
+)
+_ERR_CAT_FALLBACK = "other"
+# 业务拒绝类 (用户取消/解释) 不参与熔断 —— 那是 confirm 层的语义反馈·不是技术失败
+_ERR_CAT_NON_CIRCUIT = ("declined", "explain", "reject:")
+
+
+def _classify_error(result) -> Optional[str]:
+    """把一次工具失败归一化成错误类别 · None=不参与熔断 (成功 / 业务拒绝 / 无错误信息)。"""
+    if getattr(result, "ok", True):
+        return None
+    err = (getattr(result, "error", "") or "").strip()
+    if not err:
+        return None
+    low = err.lower()
+    if any(k in low for k in _ERR_CAT_NON_CIRCUIT):
+        return None
+    for cat, kws in _ERR_CAT_RULES:
+        for kw in kws:
+            if kw in low:
+                return cat
+    # 工具异常类型名 (TypeError / ValueError / FileNotFoundError …) · 按异常类型归类
+    if ": " in err:
+        maybe = err.split(": ", 1)[0].strip()
+        if maybe and maybe[0].isupper() and maybe.replace("_", "").isalnum():
+            return f"exc:{maybe}"
+    return _ERR_CAT_FALLBACK
+
+
+class _FailCircuit:
+    """失败熔断器状态机 (单次 run 内) · 同类错误连续失败 → nudge → 再撞硬 break。
+
+    喂每次工具结果 (observe) · 返回 None=继续 / "nudge"=该注入提示 / "break"=该硬停。
+    连续计数按【调用序列】· 成功或类别变化或业务拒绝 → 重置。
+    """
+    __slots__ = ("streak", "current", "nudged")
+
+    def __init__(self) -> None:
+        self.streak = 0
+        self.current: Optional[str] = None
+        self.nudged = False
+
+    def observe(self, result) -> Optional[str]:
+        cat = _classify_error(result)
+        if cat is None:
+            # 成功 / 业务拒绝 → 重置连续计数 + 重置 nudge 机会 (下次同类失败仍会先提醒)
+            self.streak = 0
+            self.current = None
+            self.nudged = False
+            return None
+        if cat == self.current:
+            self.streak += 1
+        else:
+            self.streak = 1
+            self.current = cat
+            self.nudged = False
+        if self.streak >= _FAIL_CIRCUIT_BREAK_AT:
+            return "break"
+        if self.streak == _FAIL_CIRCUIT_AT and not self.nudged:
+            self.nudged = True
+            return "nudge"
+        return None
+
+
+def _collect_partial_output(messages: list[dict], max_parts: int = 3, max_chars_per: int = 600) -> str:
+    """撞顶/卡死时从 messages 提取已有 assistant 文本 (治本 C: 不白跑)。"""
+    parts: list[str] = []
+    for m in messages:
+        if m.get("role") == "assistant" and m.get("content"):
+            t = str(m["content"])
+            if t and t not in parts:
+                parts.append(t)
+    return "\n\n".join(parts)[-max_parts * max_chars_per:]
+
+
 def _call_confirm(
     confirm: ConfirmCallback,
     spec: ToolSpec,
@@ -230,8 +415,11 @@ def _push(hook: ProgressHook | None, event_type: str, data: dict) -> None:
         pass
 
 
-def _result_preview(result: ToolResult, max_chars: int = 300) -> str:
+def _result_preview(result: ToolResult, max_chars: int = 300, tool_name: str = "") -> str:
     out = result.output or ""
+    # replan (顾问施工单/验收) 是决策依据 · 用户要完整看 · 不截断 (卷八十一续 · BRO 反馈)
+    if tool_name == "replan":
+        return out
     if len(out) > max_chars:
         out = out[:max_chars] + f" … (+{len(result.output) - max_chars} chars)"
     return out
@@ -848,32 +1036,12 @@ def _extract_openai_cache_usage(usage: Any) -> tuple[int, int]:
        - prompt_tokens_details.cached_tokens                     (OpenAI / LiteLLM 归一风格)
        - prompt_cache_hit_tokens / prompt_cache_miss_tokens      (DeepSeek 自动 disk cache)
     按优先级摸一遍，返回 (creation, read)。read 走我们的计费估算 10% 那档。
+    2026-08-14 · 从墨言 094 移植 workers.cache_usage 唯一真源 (含 miss 提取) · 这里委托它·
+    保留二元组签名兼容 (调用方 L1252 只取前两个)。
     """
-    # Anthropic-style flat fields (AiHubMix 经常用这套)
-    creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
-    read = getattr(usage, "cache_read_input_tokens", 0) or 0
-    if creation or read:
-        return creation, read
-
-    # DeepSeek 自动 disk cache (卷? · 3a · 补抓·之前 0 命中是看不见不是没省)
-    # DeepSeek 不区分 creation/read·命中即按 hit 价 (~1/50 miss 价)·映射成 read 这档。
-    # 字段可能直接挂 usage·也可能被 openai SDK 收进 model_extra·两处都摸。
-    ds_hit = getattr(usage, "prompt_cache_hit_tokens", None)
-    if ds_hit is None:
-        extra = getattr(usage, "model_extra", None) or {}
-        if isinstance(extra, dict):
-            ds_hit = extra.get("prompt_cache_hit_tokens")
-    if ds_hit:
-        return 0, int(ds_hit)
-
-    # OpenAI-style nested cached_tokens (no creation distinction here)
-    details = getattr(usage, "prompt_tokens_details", None)
-    if details is not None:
-        cached = getattr(details, "cached_tokens", 0) or 0
-        if cached:
-            return 0, cached
-
-    return 0, 0
+    from workers.cache_usage import extract_openai_cache_usage as _ext
+    creation, read, _miss = _ext(usage)
+    return creation, read
 
 
 def _apply_openai_reasoning(kwargs: dict, model: str, base_url: str | None,
@@ -975,6 +1143,11 @@ def _loop_openai(
     # 注入累计 ≥ CAP 次还在重复 · break (此时是真死循环 · 烧 token 没意义)
     recent_signatures: list[str] = []
     stuck_inject_count = 0
+
+    # 失败熔断器状态 (墨言 094 wish-d2c2aa9a)
+    fail_circuit = _FailCircuit()
+    circuit_break = False
+    _fc_nudge_pending = False
 
     iteration = 0
     while iteration < max_iterations:
@@ -1176,6 +1349,12 @@ def _loop_openai(
         # 段落完成事件 · 让前端把流式 bubble "锁定"·准备下一段
         if reasoning:
             _push(progress, "assistant_reasoning_done", {"text": reasoning})
+            # 2026-08-14 · 思考过程上卡 (墨言 094 飞书对齐 cc): 飞书卡片接 thinking 事件
+            #  (对标 cc-connect EventThinking → ProgressEntryThinking) · 限 1500 字符省 token
+            try:
+                _push(progress, "thinking", {"text": reasoning[:1500], "has_tool_calls": bool(tool_calls)})
+            except Exception:
+                pass
 
         # 卷三十八 · 兜底: reasoning 非空 + content 空 + 无 tool_calls = LLM 想完了没说话
         # 不让前端拿不到 final_text · 给一句解释 · BRO 至少知道发生了什么
@@ -1329,7 +1508,7 @@ def _loop_openai(
                 "name": name,
                 "ok": result.ok,
                 "error": result.error or "",
-                "preview": _result_preview(result),
+                "preview": _result_preview(result, tool_name=name),
                 "open_path": _open_path,
                 "images": _imgs,
             })
@@ -1345,6 +1524,14 @@ def _loop_openai(
             oai_messages.append(tool_entry)
             _commit(tool_entry)
 
+            # 失败熔断器 (墨言 094 wish-d2c2aa9a) · 同类错误连续失败 → nudge → 再撞硬 break
+            _fc_action = fail_circuit.observe(result)
+            if _fc_action == "nudge":
+                _fc_nudge_pending = True
+            elif _fc_action == "break":
+                circuit_break = True
+                break
+
             # 卷四十四 · stuck detection · 把这次 tool call signature 加进滚动窗口
             sig = _tool_signature(name, tc.get("arguments", ""))
             recent_signatures.append(sig)
@@ -1354,6 +1541,34 @@ def _loop_openai(
         if aborted:
             final_text = text or "[OPUS aborted by BRO]"
             break
+        if circuit_break:
+            # 补齐 batch 中未执行的 tool_call 响应 (防消息序列违规 · 跨 turn resume 400)
+            _seen = {m.get("tool_call_id") for m in oai_messages if m.get("role") == "tool"}
+            for _m in oai_messages:
+                if _m.get("role") == "assistant" and _m.get("tool_calls"):
+                    for _tc in _m["tool_calls"]:
+                        _tid = (_tc.get("id") or "") if isinstance(_tc, dict) else ""
+                        if _tid and _tid not in _seen:
+                            _tm = {"role": "tool", "tool_call_id": _tid,
+                                   "content": f"[失败熔断器] 未执行: 同类错误已连续失败 {fail_circuit.streak} 次·已熔断停手"}
+                            oai_messages.append(_tm)
+                            _commit(_tm)
+                            _seen.add(_tid)
+            final_text = _collect_partial_output(oai_messages) + _FAIL_CIRCUIT_BREAK_PROMPT.format(
+                count=fail_circuit.streak, category=fail_circuit.current)
+            _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
+            _ce = {"role": "assistant", "content": final_text}
+            oai_messages.append(_ce)
+            _commit(_ce)
+            break
+        if _fc_nudge_pending:
+            _fc_nudge_pending = False
+            # streak 已被成功/换类重置 → nudge 过期 · 丢弃 (防 "连续 0 次错误 (None)" 错误文案)
+            if fail_circuit.streak >= _FAIL_CIRCUIT_AT:
+                _fn = {"role": "user", "content": _FAIL_CIRCUIT_NUDGE_PROMPT.format(
+                    count=fail_circuit.streak, category=fail_circuit.current)}
+                oai_messages.append(_fn)
+                _commit(_fn)
 
         # 卷四十四 · stuck detection · 检测【连续】同 signature ≥ THRESHOLD 次才算死循环
         # 2026-08-09 (wish-2eed044a): 从"窗口内累计计数"改为"连续尾部计数"——
@@ -1473,6 +1688,11 @@ def _loop_anthropic(
     ant_messages: list[dict] = list(messages)
     total = UsageStats()
     final_text = ""
+
+    # 失败熔断器状态 (墨言 094 wish-d2c2aa9a · 对称 OpenAI 路径)
+    fail_circuit = _FailCircuit()
+    circuit_break = False
+    _fc_nudge_pending = False
 
     iteration = 0
     while iteration < max_iterations:
@@ -1620,7 +1840,7 @@ def _loop_anthropic(
                 "name": tu.name,
                 "ok": result.ok,
                 "error": result.error or "",
-                "preview": _result_preview(result),
+                "preview": _result_preview(result, tool_name=tu.name),
                 "open_path": _open_path,
                 "images": _imgs,
             })
@@ -1635,11 +1855,69 @@ def _loop_anthropic(
                 "is_error": not result.ok,
             })
 
+            # 失败熔断器 (墨言 094 wish-d2c2aa9a) · 同类错误连续失败 → nudge 合并进 tool_results → 再撞硬 break
+            _fc_action = fail_circuit.observe(result)
+            if _fc_action == "nudge":
+                _fc_nudge_pending = True
+            elif _fc_action == "break":
+                circuit_break = True
+                break
+
         if aborted:
+            # 附带修 (墨言 094 wish-d2c2aa9a ①): Anthropic 无 session_repair 兜底 · 回填已收集结果 + 补未执行 tool_use 防悬空
+            _used = {tr.get("tool_use_id") for tr in tool_results}
+            for _tu in tool_use_blocks:
+                _bid = getattr(_tu, "id", "") or ""
+                if _bid and _bid not in _used:
+                    tool_results.append({
+                        "type": "tool_result", "tool_use_id": _bid,
+                        "content": "[OPUS aborted by BRO]",
+                        "is_error": True,
+                    })
+                    _used.add(_bid)
+            if tool_results:
+                _ab_entry = {"role": "user", "content": tool_results}
+                ant_messages.append(_ab_entry)
+                _commit(_ab_entry)
             final_text = text or "[OPUS aborted by BRO]"
+            break
+        if circuit_break:
+            # 补齐 batch 中未执行的 tool_use 的 tool_result block (防消息序列违规 · 跨 turn resume 400)
+            _used = {tr.get("tool_use_id") for tr in tool_results}
+            for _m in ant_messages:
+                if _m.get("role") == "assistant" and isinstance(_m.get("content"), list):
+                    for _b in _m["content"]:
+                        if isinstance(_b, dict) and _b.get("type") == "tool_use":
+                            _bid = _b.get("id") or ""
+                            if _bid and _bid not in _used:
+                                tool_results.append({
+                                    "type": "tool_result", "tool_use_id": _bid,
+                                    "content": f"[失败熔断器] 未执行: 同类错误已连续失败 {fail_circuit.streak} 次·已熔断停手",
+                                    "is_error": True,
+                                })
+                                _used.add(_bid)
+            ant_tool_entry = {"role": "user", "content": tool_results}
+            ant_messages.append(ant_tool_entry)
+            _commit(ant_tool_entry)
+            final_text = _collect_partial_output(ant_messages) + _FAIL_CIRCUIT_BREAK_PROMPT.format(
+                count=fail_circuit.streak, category=fail_circuit.current)
+            _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
+            _ce = {"role": "assistant", "content": final_text}
+            ant_messages.append(_ce)
+            _commit(_ce)
             break
 
         ant_tool_entry = {"role": "user", "content": tool_results}
+        if _fc_nudge_pending:
+            _fc_nudge_pending = False
+            # streak 已被成功/换类重置 → nudge 过期 · 丢弃 (防 "连续 0 次错误 (None)" 错误文案)
+            if fail_circuit.streak >= _FAIL_CIRCUIT_AT:
+                # Anthropic 消息要求 role 交替 · nudge 必须与 tool_results 合并进同一条 user (不能单独插 user)
+                ant_tool_entry["content"] = tool_results + [{
+                    "type": "text",
+                    "text": _FAIL_CIRCUIT_NUDGE_PROMPT.format(
+                        count=fail_circuit.streak, category=fail_circuit.current),
+                }]
         ant_messages.append(ant_tool_entry)
         _commit(ant_tool_entry)
     else:
