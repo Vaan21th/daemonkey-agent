@@ -329,45 +329,38 @@ function _syncCompactSidebars(on) {
   }
 }
 
-// 左侧会话清单 (复用 /sessions API + buildSessionRow · 与抽屉同源)
+// 左侧会话清单 (复用 /sessions API + buildSessionRow · 与抽屉同源 · 排序交给服务端 mtime desc)
 let _compactSessionOffset = 0;
-let _compactListCache = null;   // {sessions, ts} · 进简洁版不重复拉取 (用户: 加载慢)
 const _COMPACT_PAGE = 30;
-const _COMPACT_CACHE_TTL = 30000;  // 30s 内复用缓存
 async function renderCompactSessions(reset = true) {
   const list = document.getElementById('compactSessionList');
   if (!list) return;
   if (!token) { list.innerHTML = '<div class="docs-view-empty">还没填 token</div>'; return; }
-  // 有缓存且未过期 → 直接渲染缓存 · 不闪"加载中" (治加载慢)
-  if (_compactListCache && _compactListCache.sessions.length > 0
-      && (Date.now() - _compactListCache.ts) < _COMPACT_CACHE_TTL) {
-    try {
-      list.innerHTML = '';
-      for (const s of _compactListCache.sessions) list.appendChild(buildSessionRow(s));
-      _renderCompactFoot(list);
-      return;
-    } catch (e) {
-      console.warn('compact cache render fail, refetch:', e);
-      _compactListCache = null;  // 缓存渲染失败 → 清缓存走正常拉取
-    }
-  }
-  if (reset) { _compactSessionOffset = 0; list.innerHTML = '<div class="docs-view-loading">加载…</div>'; }
+  // 无快照缓存 · 直接拉最新 (排序实时性 > 加载微快) · 保留旧 DOM 顶住不闪 loading
+  if (reset) _compactSessionOffset = 0;
   try {
     const params = new URLSearchParams({ api_only: 'true', limit: String(_COMPACT_PAGE), offset: String(_compactSessionOffset) });
     const r = await fetch('/sessions?' + params.toString(), { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) { list.innerHTML = '<div class="docs-view-empty">加载失败 [' + r.status + ']</div>'; return; }
+    if (!r.ok) { if (reset) list.innerHTML = '<div class="docs-view-empty">加载失败 [' + r.status + ']</div>'; return; }
     const data = await r.json();
+    // 同步 meta 缓存 (label / pinned)
+    for (const s of (data.sessions || [])) {
+      sessionMetaCache[s.session_id] = {
+        label: s.label || null,
+        pinned_at: s.pinned_at || null,
+        archived_at: s.archived_at || null,
+        last_model_cfg: s.last_model_cfg || null,
+      };
+    }
     if (reset) list.innerHTML = '';
-    const sessions = data.sessions || [];
-    for (const s of sessions) list.appendChild(buildSessionRow(s));
-    if (sessions.length > 0) _compactListCache = { sessions: sessions, ts: Date.now() };  // 空不缓存
-    _renderCompactFoot(list);
-    _startSessionRunPoll();  // 运行状态轮询 · 专注版列表可见即启动
+    for (const s of data.sessions) list.appendChild(buildSessionRow(s));
+    _renderCompactFoot(list, data.sessions);
+    _startSessionRunPoll();  // 运行状态轮询 · 专注版列表可见即启动 (也会顺带重排)
   } catch (e) {
     if (reset) list.innerHTML = '<div class="docs-view-empty">网络出错: ' + e.message + '</div>';
   }
 }
-function loadMoreCompactSessions() { _compactSessionOffset += _COMPACT_PAGE; _compactListCache = null; renderCompactSessions(false); }
+function loadMoreCompactSessions() { _compactSessionOffset += _COMPACT_PAGE; renderCompactSessions(false); }
 // 会话运行状态轮询 · wish-xxx · 5s 一次轻拉 /sessions · 只 toggle .session-running + .sp-run 图标
 // 不重建列表 (不闪 / 不丢滚动位置) · 专注版 + 工作台抽屉共用 .session-item[data-sid] → 一处轮询两处受益
 let _sessionRunPollTimer = null;
@@ -384,6 +377,26 @@ async function _refreshSessionRunningStates() {
     if (!r.ok) return;
     const data = await r.json();
     const activeSet = new Set((data.sessions || []).filter(s => s.active).map(s => s.session_id));
+    const order = (data.sessions || []).map(s => s.session_id);   // 服务端已按 mtime desc 排好
+    // 同步 meta 缓存 (label / pinned 变化时 buildSessionRow 重渲才拿得到)
+    for (const s of (data.sessions || [])) {
+      sessionMetaCache[s.session_id] = {
+        label: s.label || null,
+        pinned_at: s.pinned_at || null,
+        archived_at: s.archived_at || null,
+        last_model_cfg: s.last_model_cfg || null,
+      };
+    }
+    // 专注版列表: 按服务端最新顺序重排 (复用后端排序 · 不另写排序逻辑)
+    const compactList = document.getElementById('compactSessionList');
+    if (compactList && !compactList.hidden) {
+      const bySid = {};
+      compactList.querySelectorAll('.session-item[data-sid]').forEach(el => { bySid[el.dataset.sid] = el; });
+      // 已加载的节点按 order 重排 · 没加载的不动 (分页加载时)
+      const frag = document.createDocumentFragment();
+      for (const sid of order) { if (bySid[sid]) frag.appendChild(bySid[sid]); }
+      compactList.appendChild(frag);  // appendChild 已存在的节点 = 移动到末尾 · 按 order 序完成重排
+    }
     document.querySelectorAll('.session-item[data-sid]').forEach(el => {
       const isRun = activeSet.has(el.dataset.sid);
       el.classList.toggle('session-running', isRun);
@@ -404,10 +417,10 @@ async function _refreshSessionRunningStates() {
 }
 
 // 列表尾部: 有更多才显示"加载更早" · 无更多不画横线 (用户: 意义不明的横线)
-function _renderCompactFoot(list) {
+function _renderCompactFoot(list, sessions) {
   const foot = document.getElementById('compactSessionsFoot');
   if (!foot) return;
-  const hasMore = _compactListCache && _compactListCache.sessions.length >= _COMPACT_PAGE;
+  const hasMore = sessions && sessions.length >= _COMPACT_PAGE;
   foot.innerHTML = hasMore
     ? '<div class="archived-toggle"><button onclick="loadMoreCompactSessions()">加载更早的会话</button></div>'
     : '';
@@ -5060,12 +5073,20 @@ async function _patchSessionMeta(sid, patch) {
   }
 }
 
+// 会话元数据变更后统一刷新两个列表 (工作台抽屉 + 专注版) · 改一处四处受益 (rename/pin/archive/delete 共用)
+function _refreshSessionLists() {
+  refreshSessionList();              // 工作台抽屉
+  if (typeof renderCompactSessions === 'function' && !document.getElementById('compactSessionList')?.hidden) {
+    renderCompactSessions(true);     // 专注版重拉 (无缓存 · 直接拿最新排序)
+  }
+}
+
 async function togglePinSession(sid) {
   closeSessionMenu();
   const cur = sessionMetaCache[sid] || {};
   const want = !cur.pinned_at;
   const ok = await _patchSessionMeta(sid, { pinned: want });
-  if (ok) refreshSessionList();
+  if (ok) _refreshSessionLists();
 }
 
 async function toggleArchiveSession(sid) {
@@ -5078,7 +5099,7 @@ async function toggleArchiveSession(sid) {
     if (want && sid === sessionId) {
       newConversation();
     } else {
-      refreshSessionList();
+      _refreshSessionLists();
     }
   }
 }
@@ -5114,7 +5135,7 @@ async function deleteSession(sid) {
     if (sid === sessionId) {
       newConversation();
     } else {
-      refreshSessionList();
+      _refreshSessionLists();
     }
   } catch (e) {
     await DaemonkeyAlert({ title: '网络出错', message: e.message, icon: '<i class="ri-error-warning-fill"></i>' });
@@ -5138,7 +5159,7 @@ async function renameSession(sid) {
     if (trimmed) sessionAliases[sid] = trimmed;
     else delete sessionAliases[sid];
     saveAliases();
-    refreshSessionList();
+    _refreshSessionLists();
     if (sid === sessionId) updateCurrentLabel();
   }
 }
