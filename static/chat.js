@@ -5498,6 +5498,11 @@ const TL_HUMAN = {
     const name = aid ? appNameOf(aid[0]) : '';
     return { action: `调用工坊应用 <b>${escHtml(name || tlFileName(c.s))}</b>`, result: c.ok ? '应用跑完了' : (c.r || '应用失败') };
   },
+  update_app: c => {
+    const aid = String(c.s || '').match(/app-[0-9a-f]{6,}/i);
+    const name = aid ? appNameOf(aid[0]) : '';
+    return { action: `更新工坊应用 <b>${escHtml(name || tlFileName(c.s))}</b>`, result: c.ok ? '应用已更新' : (c.r || '更新失败') };
+  },
   create_app: c => ({ action: '在工坊造了一个新应用', result: '已落档，工坊卡片可见' }),
   request_restart: c => ({ action: '申请重启 daemon 装新代码', result: '即将优雅重启，几秒后自动接上' }),
   take_screenshot: c => ({ action: '看了一眼你的屏幕', result: '已截屏' }),
@@ -5507,33 +5512,67 @@ function tlHumanize(tool, summary, resultText, ok) {
   const c = { t: tool, s: summary || '', r: resultText || '', ok: ok ? 1 : 0 };
   const f = TL_HUMAN[tool];
   if (f) { try { return f(c); } catch (e) {} }
-  return { action: `<b>${escHtml(tool)}</b> ${escHtml(String(summary || '').slice(0, 60))}`, result: String(resultText || '') };
+  // 默认兜底: 统一把 app-xxx / flow-xxx 换成名字 (所有 workshop 工具自动覆盖 · 不漏)
+  let s = String(summary || '').slice(0, 60);
+  s = s.replace(/app-[0-9a-f]{6,}/gi, m => { const n = appNameOf(m); return n ? n : m; })
+        .replace(/flow-[0-9a-f]{6,}/gi, m => { const n = flowNameOf(m); return n ? n : m; });
+  return { action: `<b>${escHtml(tool)}</b> ${escHtml(s)}`, result: String(resultText || '') };
 }
 
-// app_id → 名字 映射缓存 · run_app 工具卡片显示 app 名 (用户: 别显示 app-ddfd7d92)
+// app_id → 名字 映射缓存 · 工具卡片显示 app 名 (用户: 别显示 app-ddfd7d92)
 let _appNameMap = null;   // {aid: name} · null = 还没拉
 let _appNameMapT = 0;
 const _APP_NAME_TTL = 60000;   // 60s 内不重复拉
 function appNameOf(aid) {
-  if (!_appNameMap) { _loadAppNameMap(); return ''; }   // 没拉到先返回空 · 渲染用 id 兜底
+  if (!_appNameMap) { _loadNameMaps(); return ''; }   // 没拉到先返回空 · 渲染用 id 兜底
   return _appNameMap[aid] || '';
 }
-async function _loadAppNameMap() {
-  if (_appNameMap && (Date.now() - _appNameMapT) < _APP_NAME_TTL) return;
-  try {
-    const r = await fetch('/workshop/apps', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) return;
-    const data = await r.json();
-    const m = {};
-    for (const a of (data.apps || [])) if (a.id) m[a.id] = a.name || a.id;
-    _appNameMap = m;
-    _appNameMapT = Date.now();
-    // 已渲染的 run_app 卡片补名字 (id → 名字) · summary 里含 app-xxx
-    document.querySelectorAll('.tl-step[data-tool="run_app"] .tl-step-action').forEach(el => {
-      const mm = String(el.textContent || '').match(/app-[0-9a-f]{6,}/i);
-      if (mm && mm[0] && m[mm[0]]) el.innerHTML = '调用工坊应用 <b>' + escHtml(m[mm[0]]) + '</b>';
-    });
-  } catch (e) { /* 静默 · 下轮再试 */ }
+// flow_id → 名字 映射缓存 · 同 appNameOf (run_flow 等)
+let _flowNameMap = null;
+let _flowNameMapT = 0;
+const _FLOW_NAME_TTL = 60000;
+function flowNameOf(fid) {
+  if (!_flowNameMap) { _loadNameMaps(); return ''; }
+  return _flowNameMap[fid] || '';
+}
+async function _loadNameMaps() {
+  // app 映射 (60s TTL)
+  if (!_appNameMap || (Date.now() - _appNameMapT) >= _APP_NAME_TTL) {
+    try {
+      const r = await fetch('/workshop/apps', { headers: { 'Authorization': 'Bearer ' + token } });
+      if (r.ok) {
+        const data = await r.json();
+        const m = {};
+        for (const a of (data.apps || [])) if (a.id) m[a.id] = a.name || a.id;
+        _appNameMap = m;
+        _appNameMapT = Date.now();
+      }
+    } catch (e) { /* 静默 · 下轮再试 */ }
+  }
+  // flow 映射 (60s TTL)
+  if (!_flowNameMap || (Date.now() - _flowNameMapT) >= _FLOW_NAME_TTL) {
+    try {
+      const r = await fetch('/workshop/flows', { headers: { 'Authorization': 'Bearer ' + token } });
+      if (r.ok) {
+        const data = await r.json();
+        const m = {};
+        const flows = data.flows || (Array.isArray(data) ? data : []);
+        for (const f of flows) {
+          if (f && f.id) m[f.id] = f.name || f.id;
+          else if (f && f.flow_id) m[f.flow_id] = f.name || f.flow_id;
+        }
+        _flowNameMap = m;
+        _flowNameMapT = Date.now();
+      }
+    } catch (e) { /* 静默 · 下轮再试 */ }
+  }
+  // 已渲染的卡片统一补名字 (覆盖所有 workshop 工具)
+  document.querySelectorAll('.tl-step-action').forEach(el => {
+    const mm = String(el.textContent || '').match(/(app|flow)-[0-9a-f]{6,}/i);
+    if (!mm || !mm[0]) return;
+    const n = /^app-/.test(mm[0]) ? appNameOf(mm[0]) : flowNameOf(mm[0]);
+    if (n) el.innerHTML = el.innerHTML.split(mm[0]).join('<b>' + escHtml(n) + '</b>');
+  });
 }
 
 /* 整轮容器：一轮工具调用 = 一个可折叠块（默认展开）· 内含时间线步骤卡 */
