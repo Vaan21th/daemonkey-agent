@@ -5493,7 +5493,11 @@ const TL_HUMAN = {
   extract_playbook: c => ({ action: '沉淀经验成操作手册', result: '已存档，下次同类任务直接照着做' }),
   recall_memory: c => ({ action: '翻长期记忆', result: c.r }),
   replan: c => ({ action: '请顾问出方案/破局/验收', result: c.ok ? '顾问已给出结论' : (c.r || '未通过') }),
-  run_app: c => ({ action: `调用工坊应用 <b>${tlFileName(c.s)}</b>`, result: c.ok ? '应用跑完了' : (c.r || '应用失败') }),
+  run_app: c => {
+    const aid = String(c.s || '').match(/app-[0-9a-f]{6,}/i);
+    const name = aid ? appNameOf(aid[0]) : '';
+    return { action: `调用工坊应用 <b>${escHtml(name || tlFileName(c.s))}</b>`, result: c.ok ? '应用跑完了' : (c.r || '应用失败') };
+  },
   create_app: c => ({ action: '在工坊造了一个新应用', result: '已落档，工坊卡片可见' }),
   request_restart: c => ({ action: '申请重启 daemon 装新代码', result: '即将优雅重启，几秒后自动接上' }),
   take_screenshot: c => ({ action: '看了一眼你的屏幕', result: '已截屏' }),
@@ -5504,6 +5508,32 @@ function tlHumanize(tool, summary, resultText, ok) {
   const f = TL_HUMAN[tool];
   if (f) { try { return f(c); } catch (e) {} }
   return { action: `<b>${escHtml(tool)}</b> ${escHtml(String(summary || '').slice(0, 60))}`, result: String(resultText || '') };
+}
+
+// app_id → 名字 映射缓存 · run_app 工具卡片显示 app 名 (用户: 别显示 app-ddfd7d92)
+let _appNameMap = null;   // {aid: name} · null = 还没拉
+let _appNameMapT = 0;
+const _APP_NAME_TTL = 60000;   // 60s 内不重复拉
+function appNameOf(aid) {
+  if (!_appNameMap) { _loadAppNameMap(); return ''; }   // 没拉到先返回空 · 渲染用 id 兜底
+  return _appNameMap[aid] || '';
+}
+async function _loadAppNameMap() {
+  if (_appNameMap && (Date.now() - _appNameMapT) < _APP_NAME_TTL) return;
+  try {
+    const r = await fetch('/workshop/apps', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) return;
+    const data = await r.json();
+    const m = {};
+    for (const a of (data.apps || [])) if (a.id) m[a.id] = a.name || a.id;
+    _appNameMap = m;
+    _appNameMapT = Date.now();
+    // 已渲染的 run_app 卡片补名字 (id → 名字) · summary 里含 app-xxx
+    document.querySelectorAll('.tl-step[data-tool="run_app"] .tl-step-action').forEach(el => {
+      const mm = String(el.textContent || '').match(/app-[0-9a-f]{6,}/i);
+      if (mm && mm[0] && m[mm[0]]) el.innerHTML = '调用工坊应用 <b>' + escHtml(m[mm[0]]) + '</b>';
+    });
+  } catch (e) { /* 静默 · 下轮再试 */ }
 }
 
 /* 整轮容器：一轮工具调用 = 一个可折叠块（默认展开）· 内含时间线步骤卡 */
@@ -5544,6 +5574,7 @@ function tlAddStep(state, name, summary, tier) {
   const h = tlHumanize(name, summary, '', 1);
   const card = document.createElement('div');
   card.className = 'tl-step';
+  card.dataset.tool = name;   // 供补名字等按工具查卡
   card.innerHTML =
     `<div class="tl-step-dot" style="--tlc:${cat.color}"><i class="${cat.icon}"></i></div>` +
     `<div class="tl-step-main">` +
