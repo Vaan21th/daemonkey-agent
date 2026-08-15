@@ -616,30 +616,70 @@ try {
     $script:splash = New-Object System.Windows.Forms.Form
     $script:splash.FormBorderStyle = 'None'
     $script:splash.StartPosition = 'CenterScreen'
-    $script:splash.Size = Sz 440 320
-    $script:splash.BackColor = $cBg
+    $script:splash.Size = Sz 480 320   # 3:2 匹配 banner 1536×1024 · 满幅无灰边
+    $script:splash.BackColor = [System.Drawing.Color]::FromArgb(15, 16, 24)
     $script:splash.TopMost = $true
     $script:splash.ShowInTaskbar = $false
+    # 圆角 (无边框窗 Region)
+    try {
+        if (-not ('SplashRgn' -as [type])) {
+            Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class SplashRgn { [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int a,int b,int c,int d,int e,int f); }' -ErrorAction Stop
+        }
+        $script:splash.Region = [System.Drawing.Region]::FromHrgn([SplashRgn]::CreateRoundRectRgn(0, 0, 480, 320, 18, 18))
+    } catch {}
 
     $bannerPath = Join-Path $script:Root 'assets\banner.png'
     if (Test-Path $bannerPath) {
         $pb = New-Object System.Windows.Forms.PictureBox
         $pb.Image = [System.Drawing.Image]::FromFile($bannerPath)
-        $pb.SizeMode = 'Zoom'
-        $pb.Size = Sz 440 240
+        $pb.SizeMode = 'StretchImage'    # 满幅铺底 · 无灰边
+        $pb.Size = Sz 480 320
         $pb.Location = P 0 0
-        $pb.BackColor = $cBg
+        $pb.BackColor = [System.Drawing.Color]::FromArgb(15, 16, 24)
         $script:splash.Controls.Add($pb)
     }
+
+    # 底部半透明遮罩 + 白字
+    $mask = New-Object System.Windows.Forms.Panel
+    $mask.Size = Sz 480 58
+    $mask.Location = P 0 262
+    $mask.BackColor = [System.Drawing.Color]::FromArgb(140, 8, 9, 14)
+    $script:splash.Controls.Add($mask)
+    $mask.BringToFront()
+
     $stxt = New-Object System.Windows.Forms.Label
     $stxt.Text = '正在启动 Daemonkey · 首次使用自动安装运行环境'
     $stxt.Font = F 10
-    $stxt.ForeColor = $cText
-    $stxt.BackColor = $cBg
+    $stxt.ForeColor = [System.Drawing.Color]::White
+    $stxt.BackColor = [System.Drawing.Color]::Transparent
     $stxt.TextAlign = 'MiddleCenter'
-    $stxt.Size = Sz 440 30
-    $stxt.Location = P 0 250
+    $stxt.Size = Sz 480 30
+    $stxt.Location = P 0 267
     $script:splash.Controls.Add($stxt)
+    $stxt.BringToFront()
+
+    # 底部细进度条 (Marquee 往返动画 · Timer 100ms)
+    $barTrack = New-Object System.Windows.Forms.Panel
+    $barTrack.Size = Sz 480 3
+    $barTrack.Location = P 0 317
+    $barTrack.BackColor = [System.Drawing.Color]::FromArgb(60, 70, 110)
+    $script:splash.Controls.Add($barTrack)
+    $script:barFill = New-Object System.Windows.Forms.Panel
+    $script:barFill.Size = Sz 96 3
+    $script:barFill.Location = P 0 0
+    $script:barFill.BackColor = [System.Drawing.Color]::FromArgb(124, 108, 240)
+    $script:barTrack.Controls.Add($script:barFill)
+    $script:barDir = 1
+    $script:barPos = 0
+    $script:splashBarTimer = New-Object System.Windows.Forms.Timer
+    $script:splashBarTimer.Interval = 100
+    $script:splashBarTimer.Add_Tick({
+        $script:barPos += $script:barDir * 32
+        if ($script:barPos -ge 384) { $script:barPos = 384; $script:barDir = -1 }
+        if ($script:barPos -le 0) { $script:barPos = 0; $script:barDir = 1 }
+        try { $script:barFill.Location = P $script:barPos 0 } catch {}
+    })
+    $script:splashBarTimer.Start()
 
     $script:splash.Show()
     $script:splash.Refresh()
@@ -786,7 +826,7 @@ if (Test-Path $icoFile) {
             # 2026-08-15 · BRO 清单 #7 · 关闭联动: 退出前让用户选 daemon 命运
             $script:quitDlg = New-Object System.Windows.Forms.Form
             $script:quitDlg.Text = '退出 Daemonkey'
-            $script:quitDlg.FormBorderStyle = 'FixedDialog'
+            $script:quitDlg.FormBorderStyle = 'None'          # 无边框 (2026-08-15 BRO: 弹窗也要无边框)
             $script:quitDlg.StartPosition = 'CenterScreen'
             $script:quitDlg.ClientSize = Sz 420 250
             $script:quitDlg.BackColor = $cBg
@@ -796,19 +836,34 @@ if (Test-Path $icoFile) {
             $script:quitDlg.ShowInTaskbar = $false
             $script:quitDlg.MaximizeBox = $false
             $script:quitDlg.MinimizeBox = $false
+            try {
+                if (-not ('QuitDlgRgn' -as [type])) {
+                    Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class QuitDlgRgn { [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int a,int b,int c,int d,int e,int f); }' -ErrorAction Stop
+                }
+                $script:quitDlg.Region = [System.Drawing.Region]::FromHrgn([QuitDlgRgn]::CreateRoundRectRgn(0, 0, 420, 250, 14, 14))
+            } catch {}
 
             $t1 = New-Object System.Windows.Forms.Label
-            $t1.Text = '退出 Daemonkey 启动器?'
-            $t1.Font = F 11
-            $t1.Location = P 20 18
-            $t1.Size = Sz 380 24
+            $t1.Text = '退出 Daemonkey'
+            $t1.Font = F 12
+            $t1.Location = P 24 22
+            $t1.Size = Sz 380 26
             $t1.BackColor = $cBg
             $t1.ForeColor = $cText
             $script:quitDlg.Controls.Add($t1)
 
+            $t2 = New-Object System.Windows.Forms.Label
+            $t2.Text = 'daemon 服务可以继续在后台运行'
+            $t2.Font = F 8.5
+            $t2.Location = P 24 50
+            $t2.Size = Sz 380 18
+            $t2.BackColor = $cBg
+            $t2.ForeColor = [System.Drawing.Color]::FromArgb(150, 156, 180)
+            $script:quitDlg.Controls.Add($t2)
+
             $b1 = New-Object System.Windows.Forms.Button
             $b1.Text = '全部退出 · 停止 daemon + 关闭启动器'
-            $b1.Location = P 20 58
+            $b1.Location = P 24 84
             $b1.Size = Sz 380 34
             $b1.BackColor = $cDanger
             $b1.ForeColor = [System.Drawing.Color]::White
@@ -828,7 +883,7 @@ if (Test-Path $icoFile) {
 
             $b2 = New-Object System.Windows.Forms.Button
             $b2.Text = '仅关闭启动器 · daemon 继续运行'
-            $b2.Location = P 20 100
+            $b2.Location = P 24 126
             $b2.Size = Sz 380 34
             $b2.BackColor = $cBtn
             $b2.ForeColor = [System.Drawing.Color]::White
@@ -842,7 +897,7 @@ if (Test-Path $icoFile) {
 
             $b3 = New-Object System.Windows.Forms.Button
             $b3.Text = '取消'
-            $b3.Location = P 20 142
+            $b3.Location = P 24 168
             $b3.Size = Sz 380 34
             $b3.BackColor = $cCard
             $b3.ForeColor = $cText
