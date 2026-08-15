@@ -627,6 +627,20 @@ $form.ForeColor = $cText
 $form.Font = F 9
 $form.FormBorderStyle = 'None'
 $form.MaximizeBox = $false
+# ── 任务栏按钮图标 = 进程 exe 图标 (powershell=`>_`) · 设进程级 AppUserModelID 让按钮跟随窗口图标 ──
+try {
+    if (-not ('DkAppId' -as [type])) {
+        Add-Type -TypeDefinition @"
+using System.Runtime.InteropServices;
+public class DkAppId {
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    public static extern int SetCurrentProcessExplicitAppUserModelID(string AppID);
+}
+"@ -ErrorAction Stop
+    }
+    [void][DkAppId]::SetCurrentProcessExplicitAppUserModelID('Daemonkey')
+} catch { Add-Log "AppUserModelID 设置失败: $_" 'warn' }
+
 # 任务栏 / Alt-Tab 图标 (窗口图标和 exe 文件图标都对齐到同一个 .ico)
 # 2026-08-15 · 双保险: ico 加载失败 → ExtractAssociatedIcon 从 exe 提取 · 任务栏图标跟随
 # 2026-08-15 19:10 · 治本: 无边框窗口任务栏按钮图标走窗口类图标 · WinForms $form.Icon 对无边框窗口不生效
@@ -2929,14 +2943,30 @@ function New-MainWebView {
             Push-MainState
             Add-Log '月光操作台界面已加载' 'ok'
         }
+        # 闪屏修复: WebView2 加载完成 → 显示窗口 (GDI 旧界面永远不会被用户看到)
+        try { $form.Opacity = 1 } catch {}
+        try { if ($script:MainFadeTimer) { $script:MainFadeTimer.Stop(); $script:MainFadeTimer.Dispose(); $script:MainFadeTimer = $null } } catch {}
     })
 
     $script:mainWv = $wv
     return $wv
 }
 
-# ── Activation · 覆盖式 Overlay: 窗口先显示 GDI · Shown 后盖 WebView2 (启动不卡死等 8s) ──
+# ── Activation · 覆盖式 Overlay: 窗口先隐藏 (Opacity=0) · WebView2 盖层完成后显示 · 4s 兑底 ──
 # 2026-08-15 · 卡顿修复: 原 Application.Run 前同步初始化 WebView2 (8s 死等 → 窗口"不响应")
-#                → 移 Shown 事件: 窗口立刻显示 GDI · WebView2 初始化完盖层 (1-3s) · 失败 GDI 自然露出
-$form.Add_Shown({ try { $script:mainWv = New-MainWebView } catch { Add-Log "主界面 WebView2 异常: $_" 'warn' } })
+# 2026-08-15 · 闪屏修复: Shown 后 Opacity=0 隐藏窗口 → WebView2 NavigationCompleted → Opacity=1
+#                (用户永远看不到 GDI 旧三栏 · 4s 兑底: WebView2 失败/超时也强制显示 GDI 兜底)
+$form.Add_Shown({
+    try { $form.Opacity = 0 } catch {}
+    try {
+        $script:MainFadeTimer = New-Object System.Windows.Forms.Timer
+        $script:MainFadeTimer.Interval = 4000
+        $script:MainFadeTimer.Add_Tick({
+            try { $form.Opacity = 1 } catch {}
+            try { $script:MainFadeTimer.Stop(); $script:MainFadeTimer.Dispose(); $script:MainFadeTimer = $null } catch {}
+        })
+        $script:MainFadeTimer.Start()
+    } catch {}
+    try { $script:mainWv = New-MainWebView } catch { Add-Log "主界面 WebView2 异常: $_" 'warn' }
+})
 [System.Windows.Forms.Application]::Run($form)
