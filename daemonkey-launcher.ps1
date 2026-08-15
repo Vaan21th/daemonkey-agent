@@ -2750,6 +2750,12 @@ function Test-NeedSetup {
     # 2026-08-02 · 双条件判定 (防半成品 venv): python.exe + pyvenv.cfg 都在才算装好
     if (-not (Test-Path $script:VenvPython)) { return $true }
     if (-not (Test-Path (Join-Path $script:Root '.venv\pyvenv.cfg'))) { return $true }
+    # 2026-08-15 · 第三条件 (防"假就绪"): 依赖必须真能 import。
+    #   事故: 095test 的 .venv 复制损坏 (anthropic 缺 types/beta/sessions)·
+    #   python.exe + pyvenv.cfg 都在 → 旧逻辑判定"已装" → 不自动重装 →
+    #   点启动也起不来 → 看起来"自动一条龙失效"。实测 import 兜住。
+    & $script:VenvPython -c "import fastapi, uvicorn, openai, anthropic" 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { return $true }
     return $false
 }
 
