@@ -1,0 +1,53 @@
+# Daemonkey · macOS 启动器云构建 (GitHub Actions)
+# ─────────────────────────────────────────────────────────────
+# 为什么存在: BRO 没有 Mac · PyInstaller 不支持交叉编译 ·
+#   Mac .app 必须在 macOS 上构建 → 用 GitHub Actions 免费 macOS runner。
+# 触发: ① push tag v* (发版自动) ② workflow_dispatch (手动)
+# 产物: dist/Daemonkey-<ver>-x86_64.dmg → Release 附件
+# 架构: x86_64 (免费 runner 是 Intel) · Intel Mac 原生 ·
+#   Apple Silicon 走 Rosetta 2 可跑 (首次弹提示装 Rosetta)。
+#   arm64 原生包: 等 GitHub arm64 runner 免费 / 云 Mac / 社区贡献者再补。
+# ─────────────────────────────────────────────────────────────
+name: Build macOS Launcher
+
+on:
+  workflow_dispatch:            # 手动触发 (Actions 页点 Run workflow)
+  push:
+    tags: ['v*']                # 发版 tag (如 v0.9.5) 自动触发
+
+jobs:
+  build-mac:
+    runs-on: macos-14           # 免费 Intel runner (x86_64)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build deps
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pyinstaller pywebview pyinstaller-hooks-contrib
+
+      - name: Build .app + dmg
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          case "$VER" in master|main|develop|"") VER="0.9.5" ;; esac   # 手动触发 (ref=分支) → 默认版本
+          echo "==> 打包版本: $VER"
+          bash tools/build_mac_app.sh "$VER"
+
+      - name: Upload artifact (工作流产物)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Daemonkey-mac
+          path: |
+            dist/Daemonkey.app
+            dist/Daemonkey-*.dmg
+          if-no-files-found: error
+
+      - name: Attach dmg to Release (发版时自动挂附件)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Daemonkey-*.dmg
