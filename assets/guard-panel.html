@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daemonkey 守护</title>
+<style>
+  :root {
+    --bg: #1e2230;
+    --panel: #1e2230;
+    --panel-2: #242938;
+    --accent: #7c6cf0;
+    --ok: #3ddc84;
+    --warn: #f5b942;
+    --err: #f0524d;
+    --err-txt: #ff8f8a;
+    --text: #e8eaf0;
+    --muted: #8a8fa3;
+    --border: #2e3345;
+    --toggle-off: #3a3f52;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    overflow: hidden;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+  }
+  /* 卡片 = 面板主体 (窗体即卡片 · 无边缘) */
+  .card {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    position: relative;
+  }
+
+  /* ── 头部 (原型 pv-head 精确 padding) ── */
+  .head {
+    flex-shrink: 0;
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 18px 12px;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel));
+    border-bottom: 1px solid var(--border);
+  }
+  .logo {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: var(--accent); display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .logo svg { width: 20px; height: 20px; fill: #fff; }
+  .head-txt { flex: 1; min-width: 0; }
+  .head-title { font-size: 14px; font-weight: 600; line-height: 1.2; }
+  .head-sub { font-size: 11px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .close {
+    width: 30px; height: 30px; border-radius: 8px; border: none;
+    background: transparent; color: var(--muted); cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .close:hover { background: var(--err); color: #fff; }
+  .close:active { filter: brightness(0.9); }
+  .close svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 2; fill: none; stroke-linecap: round; }
+  .close:focus { outline: none; }
+
+  /* ── 状态区 (原型 pv-status) ── */
+  .status {
+    flex-shrink: 0;
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .ring {
+    width: 46px; height: 46px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ring.ok { background: rgba(61,220,132,0.14); }
+  .ring.warn { background: rgba(245,185,66,0.14); }
+  .ring.err { background: rgba(240,82,77,0.14); }
+  .ring .core {
+    width: 22px; height: 22px; border-radius: 50%;
+  }
+  .ring.ok .core { background: var(--ok); box-shadow: 0 0 12px var(--ok); }
+  .ring.warn .core { background: var(--warn); box-shadow: 0 0 12px var(--warn); animation: pulse 1.2s infinite; }
+  .ring.err .core { background: var(--err); box-shadow: 0 0 12px var(--err); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .st-main { font-size: 15px; font-weight: 600; }
+  .st-detail { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+  .st-detail b { color: var(--text); font-weight: 600; }
+
+  /* ── 开关行 (原型 pv-row) ── */
+  .row {
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .lbl { font-size: 13px; }
+  .lbl .hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .toggle {
+    width: 42px; height: 23px; border-radius: 99px; background: var(--toggle-off);
+    position: relative; cursor: pointer; flex-shrink: 0;
+  }
+  .toggle::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 19px; height: 19px; border-radius: 50%; background: #fff;
+    transition: transform .15s ease;
+  }
+  .toggle.on { background: var(--accent); }
+  .toggle.on::after { transform: translateX(19px); }
+
+  /* ── 事件区 (原型 pv-events) ── */
+  .events { flex: 1; min-height: 0; padding: 10px 0 6px; overflow: hidden; }
+  .ev-title {
+    font-size: 11px; color: var(--muted); letter-spacing: 1px;
+    padding: 0 18px 8px;
+  }
+  .ev {
+    display: flex; gap: 10px; align-items: center;
+    padding: 6px 18px; font-size: 12px;
+    white-space: nowrap; overflow: hidden;
+  }
+  .ev .t { color: var(--muted); flex-shrink: 0; font-family: Consolas, monospace; font-size: 11px; font-variant-numeric: tabular-nums; }
+  .ev .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .ev .msg { line-height: 1.45; overflow: hidden; text-overflow: ellipsis; }
+  .ev.ok .msg { color: var(--text); }
+  .ev.ok .dot { background: var(--ok); }
+  .ev.warn .msg { color: var(--warn); }
+  .ev.warn .dot { background: var(--warn); }
+  .ev.err .msg { color: var(--err-txt); }
+  .ev.err .dot { background: var(--err); }
+
+  /* ── 按钮区 (原型 pv-actions) · hover 纯背景色 · 无 filter/transition = 不闪烁 ── */
+  .actions {
+    flex-shrink: 0;
+    display: flex; gap: 8px; align-items: center;
+    padding: 12px 18px 16px;
+  }
+  .btn {
+    flex: 1; min-width: 0; height: 34px; border-radius: 8px; border: none;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    font-family: inherit; white-space: nowrap;
+  }
+  .btn:focus { outline: none; }
+  .btn svg { width: 13px; height: 13px; fill: currentColor; flex-shrink: 0; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #8d7df5; }
+  .btn-primary:active { background: #6a5ae0; }
+  .btn-ghost { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: #2b3142; }
+  .btn-ghost:active { background: #202638; }
+  .btn-danger { background: rgba(240,82,77,0.16); color: var(--err-txt); border: 1px solid rgba(240,82,77,0.35); }
+  .btn-danger:hover { background: rgba(240,82,77,0.28); }
+  .btn-danger:active { background: rgba(240,82,77,0.38); }
+  .btn-ghost svg { fill: var(--text); }
+  .btn-danger svg { fill: var(--err-txt); }
+</style>
+</head>
+<body>
+  <div class="card">
+  <!-- 头部 -->
+  <div class="head">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M13 2 L4.5 13.5 H11 L9.5 22 L19 9.5 H12.5 Z"/></svg>
+    </div>
+    <div class="head-txt">
+      <div class="head-title">Daemonkey 守护</div>
+      <div class="head-sub" id="headSub">daemonkey-launcher · 守护进程</div>
+    </div>
+    <button class="close" id="btnClose" title="关闭">
+      <svg viewBox="0 0 24 24"><path d="M6 6 L18 18 M18 6 L6 18"/></svg>
+    </button>
+  </div>
+
+  <!-- 状态 -->
+  <div class="status">
+    <div class="ring ok" id="ring"><div class="core"></div></div>
+    <div>
+      <div class="st-main" id="stMain">守护中 · daemon 运行正常</div>
+      <div class="st-detail" id="stDetail">端口 7860 · 等待 daemon 启动</div>
+    </div>
+  </div>
+
+  <!-- 开关行 -->
+  <div class="row">
+    <div class="lbl">崩溃自动拉起
+      <div class="hint">daemon 异常退出后 90 秒自动恢复</div>
+    </div>
+    <div class="toggle" id="toggle"></div>
+  </div>
+
+  <!-- 事件 -->
+  <div class="events">
+    <div class="ev-title">最近事件</div>
+    <div id="evList"></div>
+  </div>
+
+  <!-- 按钮 -->
+  <div class="actions">
+    <button class="btn btn-primary" id="btnOpen">
+      <svg viewBox="0 0 24 24"><path d="M4 4 H20 V20 H4 Z M7 9 H12 M7 13 H10"/><path d="M16 8 L20 12 L16 16" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      打开控制台
+    </button>
+    <button class="btn btn-ghost" id="btnRestart">
+      <svg viewBox="0 0 24 24"><path d="M20 12 a8 8 0 1 1 -3 -6.2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 3 v4 h-4"/></svg>
+      重启
+    </button>
+    <button class="btn btn-danger" id="btnStop">
+      <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+      停止
+    </button>
+  </div>
+
+<script>
+// ── 桥接协议 (跨平台: Windows=WebView2 chrome.webview · Mac=pywebview window.opBridge) ──
+function send(type, data) {
+  var msg = Object.assign({ type: type }, data || {});
+  if (window.chrome && window.chrome.webview) {
+    window.chrome.webview.postMessage(msg);
+  } else if (window.opBridge && window.opBridge.send) {
+    window.opBridge.send(msg);
+  }
+}
+
+// WebView2 通道: ps1 PostWebMessageAsJson → 这里收
+if (window.chrome && window.chrome.webview) {
+  window.chrome.webview.addEventListener('message', function (e) {
+    var data = (typeof e.data === 'string') ? JSON.parse(e.data) : e.data;
+    window.opBridge.pushState(data);
+  });
+}
+
+window.opBridge = window.opBridge || {};
+window.opBridge.pushState = function (s) {
+  // st: running/stopped/restarting → CSS 类 ok/err/warn (ps1 推的是 running 不是 ok · 必须映射)
+  var stCls = s.st === 'stopped' ? 'err' : s.st === 'restarting' ? 'warn' : 'ok';
+  var ring = document.getElementById('ring');
+  ring.className = 'ring ' + stCls;
+  if (s.main) document.getElementById('stMain').textContent = s.main;
+  document.getElementById('stMain').style.color = s.st === 'stopped' ? 'var(--err)' : s.st === 'restarting' ? 'var(--warn)' : 'var(--ok)';
+  if (s.detail) {
+    document.getElementById('stDetail').innerHTML = (s.detail || '').replace(/(PID \d+|端口 \d+|已运行 [^·]+)/g, '<b>$1</b>');
+  }
+  if (typeof s.auto === 'boolean') {
+    document.getElementById('toggle').classList.toggle('on', s.auto);
+  }
+  if (s.sub) document.getElementById('headSub').textContent = s.sub;
+  if (s.events) {
+    var list = document.getElementById('evList');
+    list.innerHTML = '';
+    s.events.slice(0, 3).forEach(function (ev) {
+      var div = document.createElement('div');
+      div.className = 'ev ' + (ev.kind || 'ok');
+      // "·" 前面的关键词用 <b> 包裹 → kind 色 (原型: .ev.ok .msg b 绿色)
+      var parts = (ev.msg || '').split(' · ');
+      var msgHtml = parts.length > 1 ? '<b>' + parts[0] + '</b> · ' + parts.slice(1).join(' · ') : ev.msg;
+      div.innerHTML = '<span class="t">' + ev.t + '</span><span class="dot"></span><span class="msg">' + msgHtml + '</span>';
+      list.appendChild(div);
+    });
+  }
+};
+
+// ── 交互 ──
+document.getElementById('btnClose').addEventListener('click', function () { send('close'); });
+document.getElementById('toggle').addEventListener('click', function () {
+  var on = !this.classList.contains('on');
+  this.classList.toggle('on', on);
+  send('toggle', { on: on });
+});
+document.getElementById('btnOpen').addEventListener('click', function () { send('open'); });
+document.getElementById('btnRestart').addEventListener('click', function () { send('restart'); });
+document.getElementById('btnStop').addEventListener('click', function () { send('stop'); });
+</script>
+  </div>
+</body>
+</html>

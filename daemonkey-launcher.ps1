@@ -196,6 +196,57 @@ function Get-RoundPath {
     return $path
 }
 
+# ── 自绘开关 ToggleSwitch (纯 WinForms 拼装 · 不走 Add-Type · 冷启动不慢) ──
+# 轨道 Panel + 滑块 Panel · ScriptProperty 暴露 .Checked 兼容旧 CheckBox 引用
+# 移植自蟹子合并包 (wish-1b8e141b 崩溃自启配套 · 2026-08-15)
+function Update-ToggleVisual {
+    param($track)
+    if (-not $track -or -not $track.Tag) { return }
+    $on = [bool]$track.Tag.checked
+    $knob = $track.Controls[0]
+    if ($on) {
+        $track.BackColor = $cOk
+        $knob.Location = P ($track.Width - $knob.Width - 2) 2
+    } else {
+        $track.BackColor = $cDim
+        $knob.Location = P 2 2
+    }
+}
+function New-ToggleSwitch {
+    param([int]$x, [int]$y, [scriptblock]$onChange)
+    $track = New-Object System.Windows.Forms.Panel
+    $track.Location = P $x $y
+    $track.Size = Sz 44 24
+    $track.BackColor = $cDim
+    $track.Region = New-Object System.Drawing.Region((Get-RoundPath 44 24 12))
+    $track.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $knob = New-Object System.Windows.Forms.Panel
+    $knob.Size = Sz 20 20
+    $knob.BackColor = [System.Drawing.Color]::White
+    $knob.Region = New-Object System.Drawing.Region((Get-RoundPath 20 20 10))
+    $knob.Location = P 2 2
+    $track.Controls.Add($knob)
+    $track.Tag = @{ checked = $false; onChange = $onChange }
+    $track | Add-Member -MemberType ScriptProperty -Name 'Checked' -Value {
+        if ($this.Tag) { return [bool]$this.Tag.checked } else { return $false }
+    } -SecondValue {
+        param($v)
+        if ($this.Tag) {
+            $this.Tag.checked = [bool]$v
+            Update-ToggleVisual $this
+            if ($this.Tag.onChange) { & $this.Tag.onChange }
+        }
+    }
+    $track.Add_Click({
+        if ($this.Tag) {
+            $this.Tag.checked = -not $this.Tag.checked
+            Update-ToggleVisual $this
+            if ($this.Tag.onChange) { & $this.Tag.onChange }
+        }
+    })
+    return $track
+}
+
 # ───── Remix Icon 字体加载 (本地 static/lib/remixicon/remixicon.ttf · 与 WebUI 同版) ─────
 # 注意: 这个字体只有图标字形 · 绝不能拿去渲染中文/英文 · 否则吐 .notdef (一条横/方块)
 $script:IconFamily = $null
@@ -253,6 +304,256 @@ function Get-DaemonProcessInfo {
     if (-not $proc) { return @{ Pid = $pid_; StartTime = $null; AgeMin = -1 } }
     $age = if ($proc.StartTime) { [int]((Get-Date) - $proc.StartTime).TotalMinutes } else { -1 }
     return @{ Pid = $pid_; StartTime = $proc.StartTime; AgeMin = $age; Process = $proc }
+}
+
+# ── wish-1b8e141b · 崩溃自动拉起 (三条件判定 + 熔断 + 状态持久化) ──
+# 移植自蟹子合并包 (2026-08-15) · 引用纯净版已有变量 ($script:Root/$script:VenvPython/$txtPort/$btnStart/$chkAutoRestart)
+$script:AutoRestartFile = Join-Path $script:Root 'data\runtime\auto_restart.json'
+$script:DownSince = $null          # 端口 down 起始时间 (stopped 持续计时)
+$script:LastLiftAt = $null         # 上次自动拉起时间
+$script:LiftArmed = $false         # 拉起后等待起来 (武装)
+$script:PostLiftWindow = $null     # 最近一次"活过"的时间 (熔断: 起来又崩算失败)
+$script:AutoLiftFails = 0          # 连续失败计数
+$script:AutoLiftFirstFail = $null  # 首次失败时间
+$script:CircuitUntil = $null       # 熔断到期时间 (半开恢复: 熔断后 10 分钟自动解除)
+
+function Load-AutoRestartState {
+    if (Test-Path $script:AutoRestartFile) {
+        try { return Get-Content $script:AutoRestartFile -Raw | ConvertFrom-Json } catch {}
+    }
+    return $null
+}
+function Save-AutoRestartState {
+    try {
+        $dir = Split-Path $script:AutoRestartFile -Parent
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        $obj = @{ enabled = [bool]$chkAutoRestart.Checked
+                 failCount = $script:AutoLiftFails
+                 firstFailAt = if ($script:AutoLiftFirstFail) { $script:AutoLiftFirstFail.ToString('o') } else { '' }
+                 lastLiftAt = if ($script:LastLiftAt) { $script:LastLiftAt.ToString('o') } else { '' }
+                 circuitUntil = if ($script:CircuitUntil) { $script:CircuitUntil.ToString('o') } else { '' } }
+        $obj | ConvertTo-Json | Set-Content $script:AutoRestartFile -Encoding UTF8
+    } catch {}
+}
+
+# 主动重启 / 安全模式标记存在 → 不自动拉起 (区分"主动重启"与"真崩溃"的关键)
+# quarantined (安全模式隔离) 文件加过期判断: 超过 10 分钟视为残留 · 不再拦自动拉起
+function Test-PendingRestartRequest {
+    foreach ($f in @('restart_request.json', 'restart_request.quarantined.json')) {
+        $p = Join-Path $script:Root "data\runtime\$f"
+        if (-not (Test-Path $p)) { continue }
+        # 两个文件统一加过期: 超过 10 分钟视为残留 · 不拦自动拉起
+        # (修: daemon 写了 restart_request 但没消费(重启失败/起不来) → 防止永远不自启的死锁)
+        try {
+            $age = (Get-Date) - (Get-Item $p).LastWriteTime
+            if ($age.TotalMinutes -gt 10) { continue }   # 残留 · 不拦
+        } catch { continue }  # 读不到时间按残留处理
+        return $true
+    }
+    return $false
+}
+
+# wish-32691f0e · 运行监控数据源: daemon.pid + restart_history.jsonl (daemon 死了也能读)
+# 状态判定: TCP 通=running · TCP 不通但末条 started/takeover 在 90s 内=restarting · 否则 stopped
+function Get-DaemonMonitorData {
+    param([int]$Port)
+    $pidFile = Join-Path $script:Root 'data\runtime\daemon.pid'
+    $histFile = Join-Path $script:Root 'data\runtime\restart_history.jsonl'
+
+    $alive = Test-DaemonAlive -Port $Port
+    $pidData = $null
+    if (Test-Path $pidFile) {
+        try { $pidData = Get-Content $pidFile -Raw | ConvertFrom-Json } catch { $pidData = $null }
+    }
+    $events = @()
+    if (Test-Path $histFile) {
+        try {
+            foreach ($ln in (Get-Content $histFile -Tail 10)) {
+                try { $events += ($ln | ConvertFrom-Json) } catch {}
+            }
+        } catch {}
+    }
+    [Array]::Reverse($events)   # 新的在前
+
+    $state = 'stopped'
+    if ($alive) {
+        $state = 'running'
+    } elseif ($events.Count -gt 0) {
+        $last = $events[0]
+        $evt = [string]$last.event
+        $ts = [string]$last.timestamp
+        if (($evt -eq 'daemon_started' -or $evt -eq 'takeover_completed') -and $ts) {
+            try {
+                $age = ((Get-Date) - [datetime]::Parse($ts)).TotalSeconds
+                if ($age -ge 0 -and $age -lt 90) { $state = 'restarting' }
+            } catch {}
+        }
+    }
+    return @{ State = $state; Pid = if ($pidData) { [string]$pidData.pid } else { '' }
+              StartedAt = if ($pidData) { [string]$pidData.started_at } else { '' }
+              Events = $events }
+}
+
+# 拉起 daemon (与手动启动同路径: .venv + run_api_only · 端口预检硬闸兜底防双起)
+function Lift-Daemon {
+    $port = 7860
+    try { $port = [int]$txtPort.Text } catch {}
+    if (Test-DaemonAlive -Port $port) { return }   # 已活就别动
+    if ($script:LiftArmed) { return }               # 已拉起在等
+
+    # 熔断: 10 分钟内连续失败 >=3 次 → 停 10 分钟 (半开恢复: 到期自动解除熔断再试探)
+    if ($script:AutoLiftFails -ge 3 -and $script:AutoLiftFirstFail -and
+        ((Get-Date) - $script:AutoLiftFirstFail).TotalMinutes -lt 10) {
+        if (-not $script:CircuitUntil) { $script:CircuitUntil = (Get-Date).AddMinutes(10) }
+        Add-Log "自动拉起熔断: 10 分钟内连续失败 $($script:AutoLiftFails) 次 · 暂停自动拉起 10 分钟 · 到期自动恢复" 'err'
+        try { $chkAutoRestart.Checked = $false } catch {}
+        Save-AutoRestartState
+        return
+    }
+
+    Add-Log "检测到 daemon 停止 · 自动拉起 (port=$port)…" 'warn'
+    $logPath = Join-Path $script:Root "_daemon_auto_$port.log"
+    $errPath = Join-Path $script:Root "_daemon_auto_$port.err"
+    try {
+        Start-Process -FilePath $script:VenvPython `
+            -ArgumentList @('-u', 'tools\run_api_only.py', '--host', '127.0.0.1', '--port', "$port") `
+            -WorkingDirectory $script:Root -WindowStyle Hidden `
+            -RedirectStandardOutput $logPath -RedirectStandardError $errPath
+    } catch { Add-Log "自动拉起失败: $_" 'err' }
+    $script:DownSince = $null
+    $script:LastLiftAt = Get-Date
+    $script:LiftArmed = $true
+    Save-AutoRestartState
+}
+
+# 看门狗主逻辑 (autoRestartTimer 每 10s 调)
+function Watch-AutoRestart {
+    try { if (-not $chkAutoRestart.Checked) { $script:DownSince = $null; return } } catch { return }
+    $port = 7860
+    try { $port = [int]$txtPort.Text } catch {}
+    if (Test-PendingRestartRequest) { return }   # 主动重启/安全模式 → 不碰
+
+    # 半开恢复: 熔断到期 → 自动解除熔断 (重新开开关 + 清失败计数 + 立即进入观察)
+    if ($script:CircuitUntil -and (Get-Date) -ge $script:CircuitUntil) {
+        $script:CircuitUntil = $null
+        $script:AutoLiftFails = 0
+        $script:AutoLiftFirstFail = $null
+        $script:DownSince = $null
+        try { $chkAutoRestart.Checked = $true } catch {}
+        Add-Log "熔断到期 · 自动恢复崩溃自启 (半开试探)" 'warn'
+        Save-AutoRestartState
+    }
+
+    $d = Get-DaemonMonitorData -Port $port
+    if ($d.State -eq 'running') {
+        # 活过 → 清除"拉起中"武装 + 记录"刚活过"时间 (熔断: 起来又崩算失败) · 成功则清零失败计数
+        $script:LiftArmed = $false
+        $script:PostLiftWindow = Get-Date
+        if ($script:AutoLiftFails -gt 0) { $script:AutoLiftFails = 0; $script:AutoLiftFirstFail = $null; Save-AutoRestartState }
+        $script:DownSince = $null
+        return
+    }
+    if ($d.State -eq 'restarting') { return }    # 主动重启窗口 (restart_history 90s)
+
+    # State = stopped
+    if ($script:LiftArmed) {
+        # 拉起后还没起来: 超过 45s 判定失败
+        if ($script:LastLiftAt -and ((Get-Date) - $script:LastLiftAt).TotalSeconds -ge 45) {
+            $script:AutoLiftFails++
+            if (-not $script:AutoLiftFirstFail) { $script:AutoLiftFirstFail = Get-Date }
+            $script:LiftArmed = $false
+            Add-Log "自动拉起未成功 (fail=$($script:AutoLiftFails))" 'err'
+            Save-AutoRestartState
+        }
+        return
+    }
+    # 刚活过又崩 (<10 分钟) → 算一次失败 (反复崩溃循环熔断)
+    if ($script:PostLiftWindow -and ((Get-Date) - $script:PostLiftWindow).TotalMinutes -lt 10) {
+        $script:AutoLiftFails++
+        if (-not $script:AutoLiftFirstFail) { $script:AutoLiftFirstFail = Get-Date }
+        $script:PostLiftWindow = $null
+        Add-Log "自动拉起后短期内又崩 (fail=$($script:AutoLiftFails))" 'err'
+        Save-AutoRestartState
+    }
+    # 持续 stopped 计时: 满 90s 触发拉起 (三条件全满足)
+    if (-not $script:DownSince) { $script:DownSince = Get-Date }
+    elseif (((Get-Date) - $script:DownSince).TotalSeconds -ge 90) {
+        Lift-Daemon
+    }
+}
+
+# wish-32691f0e · 刷新监控面板 (Timer 每 2s 调一次)
+function Update-MonitorPanel {
+    $port = 7860
+    try { $port = [int]$txtPort.Text } catch {}
+    $d = Get-DaemonMonitorData -Port $port
+
+    $stText = '已停止'; $stColor = $cDanger
+    if ($d.State -eq 'running') { $stText = '运行中'; $stColor = $cOk }
+    elseif ($d.State -eq 'restarting') { $stText = '重启中…'; $stColor = $cWarn }
+
+    # 托盘状态 (BRO 2026-08-15 · 监控面板已删 · 状态进托盘)
+    if ($script:trayIcon) {
+        try { $script:trayIcon.Text = "Daemonkey 守护 · $stText" } catch {}
+    }
+
+    if ($script:lblMonState) {
+        $script:lblMonState.Text = "● $stText"
+        $script:lblMonState.ForeColor = $stColor
+    }
+
+    $meta = ''
+    if ($d.State -eq 'running') {
+        $ageTxt = ''
+        if ($d.StartedAt) {
+            try {
+                $age = [int]((Get-Date) - [datetime]::Parse($d.StartedAt)).TotalMinutes
+                $ageTxt = if ($age -lt 1) { '刚刚' } elseif ($age -lt 60) { "已运行 $age 分钟" }
+                          else { "已运行 $([int]($age/60)) 小时 $($age % 60) 分" }
+            } catch {}
+        }
+        $meta = "PID=$($d.Pid) · 启动 $($d.StartedAt) · $ageTxt"
+    } elseif ($d.State -eq 'restarting') {
+        $meta = "重启中 · 新进程即将接管端口 $port"
+    } else {
+        $meta = "端口 $port 无监听 · daemon 未运行"
+        if ($d.Events.Count -gt 0) { $meta += " · 上次事件: $($d.Events[0].event)" }
+    }
+    if ($script:lblMonMeta) { $script:lblMonMeta.Text = $meta }
+
+    # 0.9.4+ · 按钮状态跟随监控刷新: 运行中→「关闭进程」· 停止→「启动」
+    # 只在按钮空闲 (Enabled) 时同步 · 正在启动/停止中 (disabled) 不打扰
+    if ($btnStart.Enabled) {
+        $isRunning = ($d.State -eq 'running')
+        if ($isRunning -and -not $script:DaemonRunning) {
+            $script:DaemonRunning = $true
+            $btnStart.Text = '关闭进程'
+            Set-ButtonFill $btnStart $cOk
+        } elseif (-not $isRunning -and $script:DaemonRunning) {
+            $script:DaemonRunning = $false
+            $btnStart.Text = $script:StartText
+            Set-ButtonFill $btnStart $cBtn
+        }
+    }
+
+    $evtLabels = @($script:lblMonEvt1, $script:lblMonEvt2, $script:lblMonEvt3)
+    for ($i = 0; $i -lt 3; $i++) {
+        if ($evtLabels[$i] -and $i -lt $d.Events.Count) {
+            $e = $d.Events[$i]
+            $ts = [string]$e.timestamp
+            if ($ts.Length -ge 19) { $ts = $ts.Substring(5, 11) }  # MM-dd HH:mm
+            $txt = "$ts  $($e.event)"
+            if ($e.reason) { $txt += "  ·  $($e.reason)" }
+            if ($e.old_pid) { $txt += "  ·  pid=$($e.old_pid)" }
+            if ($e.pid) { $txt += "  ·  pid=$($e.pid)" }
+            if ($txt.Length -gt 62) { $txt = $txt.Substring(0, 59) + '…' }
+            $evtLabels[$i].Text = $txt
+            $evtLabels[$i].Visible = $true
+        } elseif ($evtLabels[$i]) {
+            $evtLabels[$i].Text = ''
+            $evtLabels[$i].Visible = $false
+        }
+    }
 }
 
 function Get-PetProcessInfo {
@@ -329,6 +630,610 @@ $form.MaximizeBox = $false
 # 任务栏 / Alt-Tab 图标 (窗口图标和 exe 文件图标都对齐到同一个 .ico)
 $icoFile = Join-Path $script:Root 'assets\daemonkey.ico'
 if (Test-Path $icoFile) { try { $form.Icon = New-Object System.Drawing.Icon($icoFile) } catch {} }
+
+# ── 托盘图标 (壳肉分离 · 守护进程常驻 · 2026-08-15 v2) ──
+# v2 修复 (BRO 实测: 托盘图标 hover 就消失 = PowerShell GC 回收 NotifyIcon/委托):
+#   ① 所有托盘对象 (图标/菜单/委托) 全存 $script: 强引用 · 事件委托用命名 scriptblock 变量
+#   ② 托盘图标挂到 $form 上 ($form.ShowDialog 期间绝对存活 → 图标不会被 GC)
+#   ③ 托盘常驻 (不随窗口显隐 · 守护语义: 窗口最小化隐藏 / 托盘双击呼出 / 退出才 Dispose)
+$script:trayIcon = $null
+$script:trayMenu = $null
+$script:OnTrayDoubleClick = $null   # 跳板: 托盘双击行为 (面板段赋值)
+$script:OnTrayOpen = $null          # 跳板: 右键菜单"打开面板"行为
+$script:trayIcoObj = $null
+$script:trayEvtDblClick = $null
+$script:trayEvtOpen = $null
+$script:trayEvtAuto = $null
+$script:trayEvtRestart = $null
+$script:trayEvtQuit = $null
+$script:trayEvtMenuOpening = $null
+$script:trayEvtFormClosed = $null
+# 崩溃自启状态容器 (面板已删 · 用不可见 CheckBox 承载 .Checked · 蟹子代码引用它)
+$script:chkAutoRestart = New-Object System.Windows.Forms.CheckBox
+$script:chkAutoRestart.Checked = $false
+$script:chkAutoRestart.Visible = $false
+$form.Controls.Add($script:chkAutoRestart)
+if (Test-Path $icoFile) {
+    try {
+        $script:trayIcoObj = New-Object System.Drawing.Icon($icoFile)
+        $script:trayIcon = New-Object System.Windows.Forms.NotifyIcon
+        $script:trayIcon.Icon = $script:trayIcoObj
+        $script:trayIcon.Text = 'Daemonkey 守护'
+        $script:trayIcon.Visible = $true   # 托盘常驻 (守护进程 · 窗口开着也在)
+        # 双击托盘 → 呼出窗口 (命名委托 · 防 GC)
+        $script:trayEvtDblClick = {
+            $form.Show()
+            $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+            $form.BringToFront()
+        }
+        $script:trayIcon.Add_DoubleClick({
+            if ($script:OnTrayDoubleClick) { & $script:OnTrayDoubleClick }
+        })
+        # 右键菜单
+        $script:trayMenu = New-Object System.Windows.Forms.ContextMenuStrip
+        $script:trayEvtOpen = {
+            $form.Show()
+            $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+            $form.BringToFront()
+        }
+        $script:trayEvtAuto = {
+            if ($script:chkAutoRestart) { $script:chkAutoRestart.Checked = $mAuto.Checked }
+            if ($script:autoRestartOn -ne $null) { $script:autoRestartOn = $mAuto.Checked }
+        }
+        $script:trayEvtRestart = { try { $btnStart.PerformClick() } catch {} }
+        $script:trayEvtQuit = { $form.Close() }
+        $mOpen = New-Object System.Windows.Forms.ToolStripMenuItem('打开面板')
+        $mOpen.Add_Click({
+            if ($script:OnTrayOpen) { & $script:OnTrayOpen }
+        })
+        $mAuto = New-Object System.Windows.Forms.ToolStripMenuItem('崩溃自动拉起')
+        $mAuto.CheckOnClick = $true
+        $mAuto.Add_Click($script:trayEvtAuto)
+        $mRestart = New-Object System.Windows.Forms.ToolStripMenuItem('重启 daemon')
+        $mRestart.Add_Click($script:trayEvtRestart)
+        $mQuit = New-Object System.Windows.Forms.ToolStripMenuItem('退出守护')
+        $mQuit.Add_Click($script:trayEvtQuit)
+        [void]$script:trayMenu.Items.Add($mOpen)
+        [void]$script:trayMenu.Items.Add($mAuto)
+        [void]$script:trayMenu.Items.Add($mRestart)
+        [void]$script:trayMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+        [void]$script:trayMenu.Items.Add($mQuit)
+        # 菜单项也存 script 强引用 (防 GC 吃菜单项)
+        $script:trayMenuItems = @($mOpen, $mAuto, $mRestart, $mQuit)
+        $script:trayIcon.ContextMenuStrip = $script:trayMenu
+        # 菜单打开时同步自启开关状态 (命名委托)
+        $script:trayEvtMenuOpening = {
+            if ($script:chkAutoRestart) { $mAuto.Checked = $script:chkAutoRestart.Checked }
+        }
+        $script:trayMenu.Add_Opening($script:trayEvtMenuOpening)
+        # 窗体关闭 → 托盘也清理 (防残留幽灵图标)
+        $script:trayEvtFormClosed = {
+            try { $script:trayIcon.Visible = $false; $script:trayIcon.Dispose() } catch {}
+        }
+        $form.Add_FormClosed($script:trayEvtFormClosed)
+        # ★ 托盘图标挂到窗体 · $form.ShowDialog 期间窗体绝对存活 → 图标永不被 GC
+        $form.Add_Shown({
+            $script:trayIcon.Visible = $true
+        })
+        Add-Log '托盘就绪 · 常驻右下角 (双击呼出 · 右键菜单)' 'ok'
+    } catch { 
+        $script:trayIcon = $null
+        Add-Log "托盘图标创建失败: $_" 'err'
+    }
+}
+# ── 托盘状态更新 (Update-MonitorPanel 每 2s 调 · 复用其状态判定) ──
+$script:UpdateTray = {
+    param([string]$state)
+    if (-not $script:trayIcon) { return }
+    try {
+        $script:trayIcon.Text = 'Daemonkey 守护 · ' + $state
+    } catch {}
+}
+
+# ═══════════════════════════════════════════════════════════════
+# 守护面板 (BRO 拍板 · 2026-08-15 · 图2 原型落地)
+#   双击托盘 → 弹守护面板 (轻量浮层) · 不弹启动器壳
+#   打开控制台 → 呼出完整启动器 ($form)
+#   状态: 心跳环 + PID/端口/时长 · 崩溃自启开关 · 最近事件 · 三按钮
+# ═══════════════════════════════════════════════════════════════
+$script:guardForm = $null
+$script:guardEvts = @()          # 事件环形缓冲 (最新在前)
+$script:guardEvtLabels = @($null, $null, $null)
+$script:guardEvtSwitch = $null
+$script:guardEvtOpen = $null
+$script:guardEvtRestart = $null
+$script:guardEvtStop = $null
+$script:guardEvtClose = $null
+$script:guardUpdateTimer = $null
+
+# 记一条守护事件 (环形 · 最多 8 条)
+function Add-GuardEvent {
+    param([string]$msg, [string]$kind = 'ok')
+    $script:guardEvts = @(@{ t = (Get-Date).ToString('HH:mm'); msg = $msg; kind = $kind }) + $script:guardEvts
+    if ($script:guardEvts.Count -gt 8) { $script:guardEvts = $script:guardEvts[0..7] }
+}
+
+# 刷新守护面板 UI (2s 定时调)
+function Update-GuardPanel {
+    if (-not $script:guardForm) { return }
+    if (-not $script:guardForm.Visible) { return }
+    try {
+        $port = 7860
+        try { $port = [int]$txtPort.Text } catch {}
+        $d = Get-DaemonMonitorData -Port $port
+        $st = 'running'; $stText = '守护中 · daemon 运行正常'
+        if ($d.State -eq 'stopped') { $st = 'stopped'; $stText = '守护中 · daemon 已停止' }
+        elseif ($d.State -eq 'restarting') { $st = 'restarting'; $stText = '守护中 · daemon 重启中…' }
+        $detailTxt = "端口 $port · 等待 daemon 启动"
+        if ($d.State -eq 'running' -and $d.Pid) {
+            $ageTxt = '刚刚'
+            if ($d.StartedAt) {
+                try {
+                    $ageMin = [int]((Get-Date) - [datetime]::Parse($d.StartedAt)).TotalMinutes
+                    $ageTxt = if ($ageMin -lt 1) { '刚刚' } elseif ($ageMin -lt 60) { "$ageMin 分钟" } else { "$([int]($ageMin/60)) 小时 $($ageMin % 60) 分" }
+                } catch {}
+            }
+            $detailTxt = "PID $($d.Pid) · 端口 $port · 已运行 $ageTxt"
+        }
+        $script:guardData = @{ st = $st; main = $stText; detail = $detailTxt }
+        if ($script:guardWv -and $script:guardWv.CoreWebView2) { Push-GuardState } else { $script:guardForm.Refresh() }
+    } catch {}
+}
+
+
+# 创建守护面板 (无边框圆角浮层 · 右下角)
+function New-GuardPanelGdi {
+    # ── 原型配色 (popover 一比一) ──
+    $c = @{
+        bg     = [System.Drawing.ColorTranslator]::FromHtml('#1e2230')
+        panel2 = [System.Drawing.ColorTranslator]::FromHtml('#242938')
+        accent = [System.Drawing.ColorTranslator]::FromHtml('#7c6cf0')
+        ok     = [System.Drawing.ColorTranslator]::FromHtml('#3ddc84')
+        warn   = [System.Drawing.ColorTranslator]::FromHtml('#f5b942')
+        err    = [System.Drawing.ColorTranslator]::FromHtml('#f0524d')
+        text   = [System.Drawing.ColorTranslator]::FromHtml('#e8eaf0')
+        muted  = [System.Drawing.ColorTranslator]::FromHtml('#8a8fa3')
+        border = [System.Drawing.ColorTranslator]::FromHtml('#2e3345')
+        toggle = [System.Drawing.ColorTranslator]::FromHtml('#3a3f52')
+        errTxt = [System.Drawing.ColorTranslator]::FromHtml('#ff8f8a')
+    }
+    $script:guardC = $c
+    $script:guardData = @{ st = 'running'; main = '守护中 · daemon 运行正常'; detail = '端口 7860 · 等待 daemon 启动' }
+    $script:guardHover = ''          # close/open/restart/stop/toggle
+    $script:guardAuto = $false
+    $script:guardSubText = 'daemonkey-launcher · 守护进程'
+    if ($script:chkAutoRestart) { $script:guardAuto = [bool]$script:chkAutoRestart.Checked }
+
+    $g = New-Object System.Windows.Forms.Form
+    $g.Text = 'Daemonkey 守护'
+    $g.FormBorderStyle = 'None'
+    $g.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+    $g.ShowInTaskbar = $false
+    $g.TopMost = $true
+    $g.BackColor = $c.bg
+    $g.Width = 340; $g.Height = 342
+    $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $g.Location = P ($wa.Right - $g.Width - 12) ($wa.Bottom - $g.Height - 12)
+    $g.Region = New-Object System.Drawing.Region((Get-RoundPath $g.Width $g.Height 12))
+
+    # ── 全自绘 ──
+    $g.Add_Paint({
+        param($s, $e)
+        $gfx = $e.Graphics
+        $gfx.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $gfx.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
+        $c = $script:guardC
+        $W = $s.Width; $H = $s.Height
+        $fTitle  = New-Object System.Drawing.Font('Microsoft YaHei', 14, [System.Drawing.FontStyle]::Bold)
+        $fSub    = New-Object System.Drawing.Font('Microsoft YaHei', 11)
+        $fMain   = New-Object System.Drawing.Font('Microsoft YaHei', 15, [System.Drawing.FontStyle]::Bold)
+        $fDetail = New-Object System.Drawing.Font('Microsoft YaHei', 11.5)
+        $fLbl    = New-Object System.Drawing.Font('Microsoft YaHei', 13)
+        $fHint   = New-Object System.Drawing.Font('Microsoft YaHei', 11)
+        $fEvM    = New-Object System.Drawing.Font('Microsoft YaHei', 12)
+        $fBtn    = New-Object System.Drawing.Font('Microsoft YaHei', 12, [System.Drawing.FontStyle]::Bold)
+        $fEvHdr  = New-Object System.Drawing.Font('Microsoft YaHei', 11)
+
+        $brushBg = New-Object System.Drawing.SolidBrush($c.bg)
+        $brushText = New-Object System.Drawing.SolidBrush($c.text)
+        $brushMuted = New-Object System.Drawing.SolidBrush($c.muted)
+        $penB = New-Object System.Drawing.Pen($c.border, 1)
+
+        # 背景 + 边框
+        $gfx.Clear($c.bg)
+        $gfx.DrawRectangle($penB, 0, 0, $W - 1, $H - 1)
+
+        # 头部渐变 + 分隔线
+        $rectHead = New-Object System.Drawing.Rectangle(0, 0, $W, 61)
+        $brushHead = New-Object System.Drawing.Drawing2D.LinearGradientBrush($rectHead, $c.panel2, $c.bg, 90)
+        $gfx.FillRectangle($brushHead, $rectHead)
+        $gfx.DrawLine($penB, 0, 61, $W, 61)
+
+        # logo: 紫底圆角 + 白色闪电
+        $logoPath = Get-RoundPath 36 36 10
+        $logoT = New-Object System.Drawing.Drawing2D.Matrix
+        $logoT.Translate(18, 14)
+        $logoPath.Transform($logoT)
+        $brushAccent = New-Object System.Drawing.SolidBrush($c.accent)
+        $gfx.FillPath($brushAccent, $logoPath)
+        $penW = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 2.4)
+        $penW.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+        $penW.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+        $gfx.DrawLines($penW, @(
+            [System.Drawing.Point]::new(37, 21), [System.Drawing.Point]::new(31, 30),
+            [System.Drawing.Point]::new(27, 30), [System.Drawing.Point]::new(30, 25),
+            [System.Drawing.Point]::new(24, 25)))
+
+        # 标题 + 副标题
+        $gfx.DrawString('Daemonkey 守护', $fTitle, $brushText, 66, 14)
+        $gfx.DrawString($script:guardSubText, $fSub, $brushMuted, 66, 38)
+
+        # ✕ 关闭 (hover 红底)
+        if ($script:guardHover -eq 'close') {
+            $closePath = Get-RoundPath 36 30 8
+            $closeT = New-Object System.Drawing.Drawing2D.Matrix
+            $closeT.Translate(300, 4)
+            $closePath.Transform($closeT)
+            $brushClose = New-Object System.Drawing.SolidBrush($c.err)
+            $gfx.FillPath($brushClose, $closePath)
+        }
+        $penX = New-Object System.Drawing.Pen($c.muted, 1.6)
+        if ($script:guardHover -eq 'close') { $penX = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 1.8) }
+        $gfx.DrawLine($penX, 310, 12, 327, 29)
+        $gfx.DrawLine($penX, 327, 12, 310, 29)
+
+        # 状态区 (外环 + 内圆发光 + 文字)
+        $stCol = $c.ok
+        if ($script:guardData.st -eq 'stopped') { $stCol = $c.err }
+        elseif ($script:guardData.st -eq 'restarting') { $stCol = $c.warn }
+        # 外环 (浅色底)
+        $brushRing = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(36, $stCol))
+        $gfx.FillEllipse($brushRing, 18, 75, 46, 46)
+        # 光晕 (3 层半透明)
+        $brushHalo1 = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(20, $stCol))
+        $brushHalo2 = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(45, $stCol))
+        $brushCore = New-Object System.Drawing.SolidBrush($stCol)
+        $gfx.FillEllipse($brushHalo1, 26, 83, 30, 30)
+        $gfx.FillEllipse($brushHalo2, 28, 85, 26, 26)
+        $gfx.FillEllipse($brushCore, 30, 87, 22, 22)
+        # 状态文字
+        $brushSt = New-Object System.Drawing.SolidBrush($stCol)
+        $gfx.DrawString($script:guardData.main, $fMain, $brushSt, 78, 79)
+        $gfx.DrawString($script:guardData.detail, $fDetail, $brushMuted, 78, 106)
+
+        # 分隔线
+        $gfx.DrawLine($penB, 0, 136, $W, 136)
+        $gfx.DrawLine($penB, 0, 195, $W, 195)
+
+        # 开关行
+        $gfx.DrawString('崩溃自动拉起', $fLbl, $brushText, 18, 147)
+        $gfx.DrawString('daemon 异常退出后 90 秒自动恢复', $fHint, $brushMuted, 18, 169)
+        # toggle
+        $tgRect = New-Object System.Drawing.Rectangle(280, 150, 42, 23)
+        $tgPath = Get-RoundPath 42 23 12
+        $tgT = New-Object System.Drawing.Drawing2D.Matrix
+        $tgT.Translate(280, 150)
+        $tgPath.Transform($tgT)
+        $brushTg = New-Object System.Drawing.SolidBrush($(if ($script:guardAuto) { $c.accent } else { $c.toggle }))
+        $gfx.FillPath($brushTg, $tgPath)
+        if ($script:guardHover -eq 'toggle') {
+            $brushTgH = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(22, 255, 255, 255))
+            $gfx.FillPath($brushTgH, $tgPath)
+        }
+        $brushKnob = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)
+        $knobX = if ($script:guardAuto) { 21 } else { 2 }
+        $gfx.FillEllipse($brushKnob, 280 + $knobX, 152, 19, 19)
+
+        # 事件区
+        $gfx.DrawString('最近事件', $fEvHdr, $brushMuted, 18, 206)
+        for ($i = 0; $i -lt 3; $i++) {
+            $yy = 226 + $i * 20
+            if ($i -lt $script:guardEvts.Count) {
+                $ev = $script:guardEvts[$i]
+                $evCol = if ($ev.kind -eq 'err') { $c.err } elseif ($ev.kind -eq 'warn') { $c.warn } else { $c.text }
+                $brushEv = New-Object System.Drawing.SolidBrush($evCol)
+                $fEvT = New-Object System.Drawing.Font('Consolas', 10.5)
+                $gfx.DrawString($ev.t, $fEvT, $brushMuted, 18, $yy)
+                # 状态圆点
+                $brushDot = New-Object System.Drawing.SolidBrush($evCol)
+                $gfx.FillEllipse($brushDot, 58, $yy + 4, 6, 6)
+                $gfx.DrawString($ev.msg, $fEvM, $brushEv, 70, $yy)
+            }
+        }
+
+        # 按钮区 (open / restart / stop)
+        $hover = $script:guardHover
+        # open: 紫底白字
+        $openPath = Get-RoundPath 96 34 8
+        $openT = New-Object System.Drawing.Drawing2D.Matrix
+        $openT.Translate(18, 296)
+        $openPath.Transform($openT)
+        $brushOpen = New-Object System.Drawing.SolidBrush($c.accent)
+        $gfx.FillPath($brushOpen, $openPath)
+        if ($hover -eq 'open') { $gfx.FillPath((New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(20, 255, 255, 255))), $openPath) }
+        # 终端 icon
+        $penW2 = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 1.6)
+        $gfx.DrawRectangle($penW2, 27, 303, 14, 11)
+        $gfx.DrawLine($penW2, 29, 310, 39, 310)
+        $gfx.DrawLine($penW2, 34, 303, 34, 307)
+        $gfx.DrawString('打开控制台', $fBtn, (New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)), 46, 305)
+        # restart: ghost
+        $restPath = Get-RoundPath 96 34 8
+        $restT = New-Object System.Drawing.Drawing2D.Matrix
+        $restT.Translate(122, 296)
+        $restPath.Transform($restT)
+        $brushRest = New-Object System.Drawing.SolidBrush($c.panel2)
+        $gfx.FillPath($brushRest, $restPath)
+        $penRestB = New-Object System.Drawing.Pen($c.border, 1)
+        $gfx.DrawPath($penRestB, $restPath)
+        if ($hover -eq 'restart') { $gfx.FillPath((New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(20, 255, 255, 255))), $restPath) }
+        # 重启 icon (圆弧 + 箭头)
+        $penRest = New-Object System.Drawing.Pen($c.text, 2)
+        $penRest.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+        $penRest.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+        $gfx.DrawArc($penRest, 132, 303, 12, 12, -40, 290)
+        $brushArr = New-Object System.Drawing.SolidBrush($c.text)
+        $gfx.FillPolygon($brushArr, @([System.Drawing.Point]::new(144, 300), [System.Drawing.Point]::new(147, 304), [System.Drawing.Point]::new(142, 304)))
+        $gfx.DrawString('重启', $fBtn, $brushText, 152, 305)
+        # stop: danger
+        $stopPath = Get-RoundPath 96 34 8
+        $stopT = New-Object System.Drawing.Drawing2D.Matrix
+        $stopT.Translate(226, 296)
+        $stopPath.Transform($stopT)
+        $brushStop = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(41, 240, 82, 77))
+        $gfx.FillPath($brushStop, $stopPath)
+        $penStopB = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(89, 240, 82, 77), 1)
+        $gfx.DrawPath($penStopB, $stopPath)
+        if ($hover -eq 'stop') { $gfx.FillPath((New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(18, 255, 255, 255))), $stopPath) }
+        # 方块 icon
+        $brushStopI = New-Object System.Drawing.SolidBrush($c.errTxt)
+        $gfx.FillRectangle($brushStopI, 238, 304, 10, 10)
+        $gfx.DrawString('停止', $fBtn, (New-Object System.Drawing.SolidBrush($c.errTxt)), 254, 305)
+
+        # 释放
+        $brushBg.Dispose(); $brushText.Dispose(); $brushMuted.Dispose()
+        $penB.Dispose(); $brushHead.Dispose(); $brushAccent.Dispose(); $penW.Dispose()
+        $penX.Dispose(); $brushRing.Dispose(); $brushHalo1.Dispose(); $brushHalo2.Dispose()
+        $brushCore.Dispose(); $brushSt.Dispose(); $brushTg.Dispose(); $brushKnob.Dispose()
+    })
+
+    # ── 交互: hover / 点击 ──
+    $g.Add_MouseMove({
+        param($s, $e)
+        $x = $e.X; $y = $e.Y
+        $h = ''
+        if ($x -ge 300 -and $x -lt 340 -and $y -ge 0 -and $y -lt 34) { $h = 'close' }
+        elseif ($x -ge 280 -and $x -lt 322 -and $y -ge 150 -and $y -lt 173) { $h = 'toggle' }
+        elseif ($y -ge 296 -and $y -lt 330) {
+            if ($x -ge 18 -and $x -lt 114) { $h = 'open' }
+            elseif ($x -ge 122 -and $x -lt 218) { $h = 'restart' }
+            elseif ($x -ge 226 -and $x -lt 322) { $h = 'stop' }
+        }
+        if ($h -ne $script:guardHover) { $script:guardHover = $h; $s.Invalidate() }
+    })
+    $g.Add_MouseLeave({ param($s, $e) $script:guardHover = ''; $s.Invalidate() })
+    $g.Add_MouseDown({
+        param($s, $e)
+        if ($e.Button -ne 'Left') { return }
+        $x = $e.X; $y = $e.Y
+        if ($x -ge 300 -and $x -lt 340 -and $y -ge 0 -and $y -lt 34) { $script:guardForm.Hide(); return }
+        if ($x -ge 280 -and $x -lt 322 -and $y -ge 150 -and $y -lt 173) {
+            $script:guardAuto = -not $script:guardAuto
+            if ($script:chkAutoRestart) { $script:chkAutoRestart.Checked = $script:guardAuto }
+            $script:guardSubText = 'daemonkey-launcher · ' + $(if ($script:guardAuto) { '自动拉起已开启' } else { '自动拉起已关闭' })
+            Add-Log "崩溃自动拉起: $(if ($script:guardAuto) { '开' } else { '关' })" 'info'
+            $s.Invalidate(); return
+        }
+        if ($y -ge 296 -and $y -lt 330) {
+            if ($x -ge 18 -and $x -lt 114) {
+                $script:guardForm.Hide()
+                $form.Show()
+                $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+                $form.BringToFront()
+            } elseif ($x -ge 122 -and $x -lt 218) {
+                try { $btnStart.PerformClick() } catch {}
+            } elseif ($x -ge 226 -and $x -lt 322) {
+                $port = 7860
+                try { $port = [int]$txtPort.Text } catch {}
+                $existing = Get-DaemonProcessInfo -Port $port
+                if ($existing) {
+                    try { Stop-Process -Id $existing.Pid -Force -ErrorAction Stop; Add-GuardEvent "daemon 已停止 (pid=$($existing.Pid))" 'warn' } catch { Add-GuardEvent "停止失败: $_" 'err' }
+                } else { Add-GuardEvent 'daemon 未在运行' 'warn' }
+                $script:guardForm.Hide()
+            }
+            return
+        }
+    })
+
+    # 2s 刷新
+    $script:guardUpdateTimer = New-Object System.Windows.Forms.Timer
+    $script:guardUpdateTimer.Interval = 2000
+    $script:guardUpdateTimer.Add_Tick({ Update-GuardPanel })
+    $script:guardUpdateTimer.Start()
+
+    $script:guardForm = $g
+    return $g
+}
+
+# ── WebView2 版守护面板 (HTML 跨平台资产 · 失败自动回退 GDI+) ──
+function Push-GuardState {
+    if (-not $script:guardWv) { return }
+    try {
+        $wv2 = $script:guardWv.CoreWebView2
+        if (-not $wv2) { return }
+        $evs = @()
+        foreach ($ev in ($script:guardEvts | Select-Object -First 3)) { $evs += @{ t = $ev.t; msg = $ev.msg; kind = $ev.kind } }
+        $state = @{
+            st     = $script:guardData.st
+            main   = $script:guardData.main
+            detail = $script:guardData.detail
+            auto   = [bool]$script:guardAuto
+            sub    = $script:guardSubText
+            events = $evs
+        }
+        $json = $state | ConvertTo-Json -Compress -Depth 5
+        $wv2.PostWebMessageAsJson($json)
+    } catch {}
+}
+
+function New-GuardPanel {
+    # 状态 (两版共享)
+    $script:guardData = @{ st = 'running'; main = '守护中 · daemon 运行正常'; detail = '端口 7860 · 等待 daemon 启动' }
+    $script:guardAuto = $false
+    $script:guardSubText = 'daemonkey-launcher · 守护进程'
+    if ($script:chkAutoRestart) { $script:guardAuto = [bool]$script:chkAutoRestart.Checked }
+
+    # ── 尝试 WebView2 ──
+    $wvReady = $false
+    try {
+        if (-not ('Microsoft.Web.WebView2.WinForms.WebView2' -as [type])) {
+            Add-Type -Path "$script:Root\assets\webview2\Microsoft.Web.WebView2.Core.dll" -ErrorAction Stop
+            Add-Type -Path "$script:Root\assets\webview2\Microsoft.Web.WebView2.WinForms.dll" -ErrorAction Stop
+        }
+        $wvReady = $true
+    } catch { $wvReady = $false }
+    if (-not $wvReady) { Add-Log 'WebView2 dll 加载失败 · 回退 GDI+ 面板' 'warn'; return New-GuardPanelGdi }
+
+    $g = New-Object System.Windows.Forms.Form
+    $g.Text = 'Daemonkey 守护'
+    $g.FormBorderStyle = 'None'
+    $g.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+    $g.ShowInTaskbar = $false
+    $g.TopMost = $true
+    # 窗体 = 卡片尺寸 (无边缘 → 无黑边)
+    $g.BackColor = [System.Drawing.Color]::FromArgb(30, 34, 48)
+    $g.Width = 340; $g.Height = 385
+    $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $g.Location = P ($wa.Right - $g.Width - 12) ($wa.Bottom - $g.Height - 12)
+    $g.Region = New-Object System.Drawing.Region((Get-RoundPath $g.Width $g.Height 12))
+
+    $wv = New-Object Microsoft.Web.WebView2.WinForms.WebView2
+    $wv.Dock = 'Fill'
+    # 背景 = 卡片色 (窗体无边缘)
+    $wv.DefaultBackgroundColor = [System.Drawing.Color]::FromArgb(30, 34, 48)
+    # 🔴 WebView2 自身圆角 (去圆角外黑边: 方形 HWND 盖住窗体 Region 圆角 → 角落露窗体背景)
+    try { $wv.CornerRadius = 12 } catch {}
+    $wv.ZoomFactor = 1.0
+    # 修无边框窗口 hover 闪烁 (Chromium 已知坑: CalculateNativeWinOcclusion 误触发遮挡重绘)
+    # 独立 UserDataFolder (防多 powershell 实例共用默认目录 → E_ACCESSDENIED)
+    try {
+        $wvUdf = Join-Path $script:Root 'data\runtime\webview2'
+        try { New-Item -ItemType Directory -Path $wvUdf -Force | Out-Null } catch {}
+        $wv.CreationProperties = New-Object Microsoft.Web.WebView2.WinForms.CoreWebView2CreationProperties
+        $wv.CreationProperties.UserDataFolder = $wvUdf
+        $wv.CreationProperties.AdditionalBrowserArguments = '--disable-features=CalculateNativeWinOcclusion,msWebOOUI,msPdfOOUI'
+    } catch {}
+    $g.Controls.Add($wv)
+    $script:guardWv = $wv
+
+    try {
+        # 🔴 关键: 不能用 $task.Wait() 阻塞线程 (消息泵停转 → WebView2 初始化永远挂起 → 回退 GDI+)
+        # 用 DoEvents 消息循环驱动初始化 (实测 0.6s 完成)
+        $task = $wv.EnsureCoreWebView2Async($null)
+        $deadline = (Get-Date).AddSeconds(30)
+        while (-not $wv.CoreWebView2 -and (Get-Date) -lt $deadline) {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 100
+            if ($task.IsFaulted) { break }
+        }
+        if (-not $wv.CoreWebView2) {
+            $g.Dispose(); Add-Log 'WebView2 初始化失败 · 回退 GDI+ 面板' 'warn'
+            $script:guardWv = $null
+            return New-GuardPanelGdi
+        }
+        $wv.CoreWebView2.Settings.AreDefaultContextMenusEnabled = $false
+        $wv.CoreWebView2.Settings.IsStatusBarEnabled = $false
+        $wv.CoreWebView2.Settings.IsZoomControlEnabled = $false
+        $wv.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = $false
+
+        # JS → PS 事件
+        $wv.CoreWebView2.Add_WebMessageReceived({
+            param($sender, $e)
+            try {
+                $msg = $e.WebMessageAsJson | ConvertFrom-Json
+                switch ($msg.type) {
+                    'close' { $script:guardForm.Hide() }
+                    'toggle' {
+                        $script:guardAuto = [bool]$msg.on
+                        if ($script:chkAutoRestart) { $script:chkAutoRestart.Checked = $script:guardAuto }
+                        $script:guardSubText = 'daemonkey-launcher · ' + $(if ($script:guardAuto) { '自动拉起已开启' } else { '自动拉起已关闭' })
+                        Add-Log "崩溃自动拉起: $(if ($script:guardAuto) { '开' } else { '关' })" 'info'
+                        Push-GuardState
+                    }
+                    'open' {
+                        $script:guardForm.Hide()
+                        $form.Show()
+                        $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
+                        $form.BringToFront()
+                    }
+                    'restart' { try { $btnStart.PerformClick() } catch {} }
+                    'stop' {
+                        $port = 7860
+                        try { $port = [int]$txtPort.Text } catch {}
+                        $existing = Get-DaemonProcessInfo -Port $port
+                        if ($existing) {
+                            try { Stop-Process -Id $existing.Pid -Force -ErrorAction Stop; Add-GuardEvent "daemon 已停止 (pid=$($existing.Pid))" 'warn' } catch { Add-GuardEvent "停止失败: $_" 'err' }
+                        } else { Add-GuardEvent 'daemon 未在运行' 'warn' }
+                        $script:guardForm.Hide()
+                    }
+                }
+            } catch {}
+        })
+
+        # 导航到 HTML 面板 (NavigateToString 绕开 file:// + WebView2 缓存 · 每次启动重读文件自动生效)
+        $htmlPath = Join-Path $script:Root 'assets\guard-panel.html'
+        try {
+            $htmlContent = Get-Content $htmlPath -Raw -Encoding UTF8
+            if ($htmlContent) { $wv.CoreWebView2.NavigateToString($htmlContent) }
+            else { throw 'HTML 为空' }
+        } catch {
+            $g.Dispose()
+            try { $script:guardWv = $null } catch {}
+            Add-Log "guard-panel.html 读取失败: $_ · 回退 GDI+ 面板" 'warn'
+            return New-GuardPanelGdi
+        }
+
+        # 导航完成后推初始状态
+        $wv.CoreWebView2.Add_NavigationCompleted({
+            param($sender, $e)
+            if ($e.IsSuccess) { Push-GuardState }
+        })
+    } catch {
+        $g.Dispose()
+        try { $script:guardWv = $null } catch {}
+        Add-Log "WebView2 启动失败: $_ · 回退 GDI+ 面板" 'warn'
+        return New-GuardPanelGdi
+    }
+
+    # 2s 刷新
+    $script:guardUpdateTimer = New-Object System.Windows.Forms.Timer
+    $script:guardUpdateTimer.Interval = 2000
+    $script:guardUpdateTimer.Add_Tick({ Update-GuardPanel })
+    $script:guardUpdateTimer.Start()
+
+    $script:guardForm = $g
+    return $g
+}
+
+
+
+# 守护面板随主窗初始化 (托盘双击呼出它 · 不呼启动器壳)
+# 跳板变量: 托盘事件绑定的是"调跳板"· 这里改跳板指向 = 改行为 (绑定引用不失效)
+$script:OnTrayDoubleClick = {
+    if (-not $script:guardForm) { New-GuardPanel | Out-Null }
+    $script:guardForm.Show()
+    $script:guardForm.BringToFront()
+    Update-GuardPanel
+}
+$script:OnTrayOpen = {
+    if (-not $script:guardForm) { New-GuardPanel | Out-Null }
+    $script:guardForm.Show()
+    $script:guardForm.BringToFront()
+    Update-GuardPanel
+}
+# 初始事件
+Add-GuardEvent '守护启动 · 启动器已运行' 'ok'
+
 # 圆角窗口 (无边框 · Region 裁出圆角)
 $script:WinRadius = 14
 $form.Region = New-Object System.Drawing.Region((Get-RoundPath $form.Width $form.Height $script:WinRadius))
@@ -435,7 +1340,17 @@ $btnMin.ForeColor = $cDim
 $btnMin.Font = F 10
 $btnMin.Cursor = [System.Windows.Forms.Cursors]::Hand
 $btnMin.TabStop = $false
-$btnMin.Add_Click({ $form.WindowState = [System.Windows.Forms.FormWindowState]::Minimized })
+$btnMin.Add_Click({ 
+    # 最小化 → 隐藏到托盘 (守护进程常驻 · 托盘图标可见)
+    if ($script:trayIcon) {
+        $form.Hide()
+        $script:trayIcon.Visible = $true
+    } else {
+        # 托盘没创建成功 (ico 缺失等) · 退而求其次缩到任务栏 · 别让窗口"消失"
+        $form.WindowState = [System.Windows.Forms.FormWindowState]::Minimized
+        Add-Log '托盘不可用 · 退到任务栏最小化 (检查 assets\daemonkey.ico)' 'warn'
+    }
+})
 $btnMin.Add_MouseEnter({ $btnMin.BackColor = [System.Drawing.Color]::FromArgb(44, 46, 66); $btnMin.ForeColor = $cText })
 $btnMin.Add_MouseLeave({ $btnMin.BackColor = $cTitleBar; $btnMin.ForeColor = $cDim })
 $titleBar.Controls.Add($btnMin)
@@ -1559,6 +2474,14 @@ $btnStart.Add_Click({
     }
 
     Add-Log '全部完成 · daemon 在后台运行' 'ok'
+    # 2026-08-15 · 启动成功后自动收托盘 (守护模式: WEBUI 弹出后窗口退居托盘 · 不再占任务栏)
+    if ($daemonStarted -and $script:trayIcon) {
+        $form.Hide()
+        $script:trayIcon.Visible = $true
+        $script:trayIcon.Text = 'Daemonkey 守护 · 运行中'
+        Add-Log 'daemon 已启动 · 窗口收进托盘 (双击托盘图标可呼出)' 'ok'
+        Add-GuardEvent '启动完成 · 已转入托盘 (双击 exe 的壳已隐藏)' 'ok'
+    }
     if ($daemonStarted) {
         # 0.8.3 · 启动成功 → 按钮变「关闭进程」(点击可停 daemon)
         $script:DaemonRunning = $true
@@ -1659,5 +2582,58 @@ $updateTimer.Add_Tick({
 })
 $updateTimer.Start()
 
+# ── wish-32691f0e · 运行监控轮询 (2s · UI 主线程 Timer · 失败静默不打断 UI) ──
+$monitorTimer = New-Object System.Windows.Forms.Timer
+$monitorTimer.Interval = 2000
+$monitorTimer.Add_Tick({ try { Update-MonitorPanel } catch {} })
+$monitorTimer.Start()
+
+# ── wish-1b8e141b · 崩溃自动拉起看门狗 (10s 轮询 · 判定: stopped 持续 90s + 无 pending restart_request) ──
+$autoRestartTimer = New-Object System.Windows.Forms.Timer
+$autoRestartTimer.Interval = 10000
+$autoRestartTimer.Add_Tick({ try { Watch-AutoRestart } catch {} })
+# 启动时恢复上次状态 (launcher 重启后开关仍记得)
+try {
+    $ar = Load-AutoRestartState
+    if ($ar -and $ar.enabled) { $chkAutoRestart.Checked = $true }
+    if ($ar -and $ar.circuitUntil) {
+        try { $script:CircuitUntil = [datetime]::Parse($ar.circuitUntil) } catch {}
+    }
+} catch { }
+# 0.9.4+ · 启动器打开时检测 daemon 是否已在跑 → 按钮状态与现状一致
+# (服务在跑时重开启动器 · 按钮直接显示「关闭进程」· 不误走"启动"流程)
+try {
+    $port0 = 7860
+    try { $port0 = [int]$txtPort.Text } catch {}
+    if (Test-DaemonAlive -Port $port0) {
+        $script:DaemonRunning = $true
+        $btnStart.Text = '关闭进程'
+        Set-ButtonFill $btnStart $cOk
+        Add-Log "检测到 daemon 已在跑 (port=$port0) · 按钮为「关闭进程」" 'ok'
+    }
+} catch {}
+$autoRestartTimer.Start()
 [System.Windows.Forms.Application]::EnableVisualStyles()
-[void]$form.ShowDialog()
+if ($env:DK_PREVIEW_GUARD -eq '1') {
+    try {
+        if (-not $script:guardForm) { New-GuardPanel | Out-Null }
+        $script:guardForm.Show()
+        $script:guardForm.BringToFront()
+        Update-GuardPanel
+    } catch { try { Set-Content (Join-Path $script:Root '_guard_preview_err.txt') "面板预览失败: $_" -Encoding UTF8 } catch {} }
+}
+if ($env:DK_PREVIEW_GUARD -eq '1') {
+    try {
+        if (-not $script:guardForm) { New-GuardPanel | Out-Null }
+        $script:guardForm.Show()
+        Update-GuardPanel
+    } catch { try { Set-Content (Join-Path $script:Root '_guard_preview_err.txt') "面板预览失败: $_" -Encoding UTF8 } catch {} }
+}
+# 2026-08-15 · ShowDialog(模态) → Application.Run(非模态): 托盘应用标准模式
+#   模态窗 Hide 后再 Show() 有边界问题 (托盘双击呼出可能不显示) · Run 模式无此问题
+# 防 GC 终极保险: 消息循环期间 KeepAlive 所有托盘对象 (PowerShell 分代 GC 在循环空闲时会回收)
+[GC]::KeepAlive($script:trayIcon)
+[GC]::KeepAlive($script:trayMenu)
+[GC]::KeepAlive($script:trayIcoObj)
+[GC]::KeepAlive($script:trayMenuItems)
+[System.Windows.Forms.Application]::Run($form)
