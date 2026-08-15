@@ -848,7 +848,7 @@ if (Test-Path $icoFile) {
             $b3.ForeColor = $cText
             $b3.FlatStyle = 'Flat'
             $b3.FlatAppearance.BorderSize = 1
-            $b3.FlatAppearance.BorderColor = $cLine
+            $b3.FlatAppearance.BorderColor = $cCard
             $b3.Add_Click({ try { $script:quitDlg.Close() } catch {} })
             $script:quitDlg.Controls.Add($b3)
 
