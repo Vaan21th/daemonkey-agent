@@ -2876,6 +2876,12 @@ header {
   border: 1px solid rgba(159, 122, 234, 0.18);
   border-radius: 12px;
   box-shadow: 0 6px 36px -16px rgba(159, 122, 234, 0.3);
+  /* 卷八十四 · 龙头审查 (2026-08-15) · 矮窗口防御档1:
+     面板允许压缩 + 内部滚动 · 窗口矮时面板自己让位 (flex:0 1 auto)
+     输入框恒在屏内 (输入框自身 flex:0 0 auto 不缩) */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .onboarding-head { text-align: center; margin-bottom: 24px; }
 .onboarding-title {
@@ -3033,6 +3039,14 @@ header {
 @media (max-width: 640px) {
   .onboarding-cards { grid-template-columns: 1fr; }
   .onboarding-panel { margin: 24px 12px; padding: 20px; }
+}
+/* 卷八十四 · 龙头审查 (2026-08-15) · 矮窗口防御档2:
+   窗口高度 ≤680px 时边距自动收一档 · 多数矮窗口下面板不滚就放得下 */
+@media (max-height: 680px) {
+  .onboarding-panel { margin: 24px auto 12px; padding: 16px 20px; }
+  .onboarding-head { margin-bottom: 12px; }
+  .onboarding-card { padding: 10px 14px; }
+  .onboarding-cards { margin-bottom: 8px; gap: 8px; }
 }
 
 .tool-progress-bar {
