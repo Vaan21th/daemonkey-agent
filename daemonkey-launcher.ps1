@@ -2816,6 +2816,12 @@ function New-MainWebView {
                     if ($url) { Open-Url $url }
                 }
                 'min' { $form.WindowState = [System.Windows.Forms.FormWindowState]::Minimized }
+                'drag' {
+                    try {
+                        $dx = [int]$msg.dx; $dy = [int]$msg.dy
+                        $form.Location = New-Object System.Drawing.Point(($form.Location.X + $dx), ($form.Location.Y + $dy))
+                    } catch {}
+                }
                 'close' { $form.Hide() }
                 'term-stop' {
                     if ($script:termProc -and -not $script:termProc.HasExited) {
