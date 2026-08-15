@@ -66,7 +66,7 @@
   .launch-ops::-webkit-scrollbar { width: 8px; }
   .launch-ops::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
   .launch-ops > * { flex-shrink: 0; }
-  .launch-ops .lg-brand { margin-top: auto; }
+  .launch-ops .lg-brand { margin-top: 6px; }
   .launch-ops .lg-first { margin-bottom: auto; }
   .lg-brand { font-size: 42px; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1;
     background: linear-gradient(180deg, #f4f5ff 20%, #b9b3ff 80%); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -127,6 +127,15 @@
   .ab-slogan { font-size: 11.5px; color: var(--muted); margin: 3px 0 2px; font-style: italic; font-family: Georgia, serif; }
   .ab-ver { font-size: 10px; color: var(--dim); margin-bottom: 14px; font-family: var(--mono); }
   .ab-free { font-size: 11px; color: var(--warn); background: rgba(245,185,66,0.08); border: 1px solid rgba(245,185,66,0.25); border-radius: 8px; padding: 9px 12px; line-height: 1.7; margin: 10px 0 12px; }
+  .comm-split { display: flex; gap: 16px; height: calc(100% - 62px); }
+  .comm-left { flex: 3; overflow-y: auto; padding-right: 6px; min-width: 0; }
+  .comm-left::-webkit-scrollbar { width: 8px; }
+  .comm-left::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
+  .contrib-row { display: flex; align-items: baseline; gap: 8px; padding: 7px 10px; border-radius: 8px; border-bottom: 1px solid rgba(255,255,255,0.045); }
+  .contrib-row:hover { background: rgba(255,255,255,0.045); }
+  .c-name { font-size: 12.5px; font-weight: 700; color: var(--ink); white-space: nowrap; }
+  .c-desc { font-size: 10.5px; color: var(--muted); line-height: 1.5; }
+  .comm-right { flex: 2; display: flex; flex-direction: column; gap: 12px; }
   .c-badge { display: inline-block; font-size: 9.5px; font-weight: 600; padding: 2px 8px; border-radius: 99px; margin-right: 8px; vertical-align: 2px; letter-spacing: 0.3px; }
   .c-b-blue { background: rgba(61,124,240,0.18); color: #7ab4ff; border: 1px solid rgba(61,124,240,0.35); }
   .c-b-purple { background: rgba(124,108,240,0.18); color: #b3a9ff; border: 1px solid rgba(124,108,240,0.35); }
@@ -240,14 +249,21 @@
         <div style="font-size:10.5px;color:var(--muted);">检查更新已开放 · 插件市场等核心稳定后开放。</div>
       </div>
 
-      <!-- 社群 & 贡献者页 -->
+      <!-- 社群 & 贡献者页 · 左右分栏: 左名单(20-100人规模) + 右社群二维码 -->
       <div class="content" id="page-community">
         <div class="pg-title">社群 &amp; 贡献者</div>
-        <div class="pg-note">感谢每一位让 Daemonkey 更好的伙伴 —— 社区提交经评估合入后，名字与贡献留在这里。<br>名单会持续更新。</div>
-        <div class="card"><div class="card-title"><span class="c-badge c-b-blue">工具层审查</span>墨言</div><div class="card-desc">三审反馈工具层 bug：发现 write_file / edit_file 换行污染祖传真雷（LF→CRLF）· request_restart 竞态 · wish_update 合并防护；标注记忆索引全量重建隐患。</div></div>
-        <div class="card"><div class="card-title"><span class="c-badge c-b-purple">代码审查 · UI</span>龙头</div><div class="card-desc">Codex 全面审查 v2.0（418 行报告 · 19 补丁 · 66 文件）· 5 项 A 档修复合入 · 提问轨道 v5 · 引导卡矮窗口修复 · 附件上传扩展。</div></div>
-        <div class="card"><div class="card-title"><span class="c-badge c-b-green">启动器 · 工具</span>蟹子</div><div class="card-desc">崩溃自动拉起核心 · MCP streamable_http 传输 · ${secret} 占位符解析 · .gitignore 完善。</div></div>
-        <div class="card" style="margin-bottom:16px;"><div class="card-title">社群</div><div class="ab-comm-id" id="commId" style="margin-top:8px;"></div><div class="ab-qr-row"><div class="ab-qr" id="qrBox">扫码进社群</div><div class="ab-qr-hint" id="qrHint"></div></div></div>
+        <div class="pg-note">感谢每一位让 Daemonkey 更好的伙伴 —— 社区提交经评估合入后，名字与贡献进名单 · 持续更新。</div>
+        <div class="comm-split">
+          <div class="comm-left">
+            <div class="contrib-row"><span class="c-badge c-b-blue">工具层审查</span><span class="c-name">墨言</span><span class="c-desc">write_file/edit_file 换行污染祖传真雷 · request_restart 竞态 · 记忆索引全量重建隐患</span></div>
+            <div class="contrib-row"><span class="c-badge c-b-purple">代码审查 · UI</span><span class="c-name">龙头</span><span class="c-desc">Codex 审查 v2.0 (66 文件) · 5 项 A 档合入 · 提问轨道 v5 · 引导卡矮窗口 · 附件上传扩展</span></div>
+            <div class="contrib-row"><span class="c-badge c-b-green">启动器 · 工具</span><span class="c-name">蟹子</span><span class="c-desc">崩溃自动拉起核心 · MCP streamable_http · secret 占位符 · .gitignore</span></div>
+          </div>
+          <div class="comm-right">
+            <div class="card" style="margin-bottom:0;"><div class="card-title">社群</div><div class="ab-comm-id" id="commId" style="margin-top:8px;"></div><div class="ab-qr-row"><div class="ab-qr" id="qrBox">扫码进社群</div><div class="ab-qr-hint" id="qrHint"></div></div></div>
+            <div class="card" style="margin-bottom:0;"><div class="card-title">想贡献？</div><div class="card-desc">提交 PR 或进社群说一声 · 评估采纳后名字进名单。<br>名单按贡献持续更新。</div></div>
+          </div>
+        </div>
       </div>
 
       <!-- 关于页 -->
