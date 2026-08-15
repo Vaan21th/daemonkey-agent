@@ -251,6 +251,17 @@ def generate_snapshot() -> dict:
         recent_summaries=recent_summaries,
     )
 
+    # 用户称呼替换 (2026-08-15 镜像标题 BRO 硬编码修复):
+    #   BRO 是母体主人的称呼 · 开源版用户相遇时留的 owner_name (如「飘飘」)
+    #   应该出现在快照标题/镜子话里。 有 owner_name → 全模板替换；无 → 保持 BRO (母体兼容)。
+    try:
+        from api_routes.core import _owner_name
+        _owner = _owner_name() or ""
+    except Exception:
+        _owner = ""
+    if _owner and _owner != "BRO":
+        user_prompt = user_prompt.replace("BRO", _owner)
+
     started = time.time()
     logger.info("capability_mirror: calling LLM")
 
