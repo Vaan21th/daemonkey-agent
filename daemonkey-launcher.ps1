@@ -629,14 +629,55 @@ $form.FormBorderStyle = 'None'
 $form.MaximizeBox = $false
 # 任务栏 / Alt-Tab 图标 (窗口图标和 exe 文件图标都对齐到同一个 .ico)
 # 2026-08-15 · 双保险: ico 加载失败 → ExtractAssociatedIcon 从 exe 提取 · 任务栏图标跟随
+# 2026-08-15 19:10 · 治本: 无边框窗口任务栏按钮图标走窗口类图标 · WinForms $form.Icon 对无边框窗口不生效
+#                → 手动 WM_SETICON (big+small) 强制设置 · 任务栏按钮一定跟随
 try {
     $icoFile = Join-Path $script:Root 'assets\daemonkey.ico'
-    if (Test-Path $icoFile) { $form.Icon = New-Object System.Drawing.Icon($icoFile) }
+    if (Test-Path $icoFile) {
+        try { $form.Icon = New-Object System.Drawing.Icon($icoFile); "Icon($icoFile) OK: $($form.Icon.Handle)" | Out-File $dbgLog -Append } catch { "Icon($icoFile) FAIL: $_" | Out-File $dbgLog -Append }
+    }
     if (-not $form.Icon) {
         $exePath = Join-Path $script:Root 'Daemonkey.exe'
-        if (Test-Path $exePath) { $form.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exePath) }
+        if (Test-Path $exePath) { $form.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exePath); "ExtractAssociatedIcon OK: $($form.Icon.Handle)" | Out-File $dbgLog -Append }
     }
     $form.ShowIcon = $true
+    if ($form.Icon) {
+        if (-not ('DkWin32Icon' -as [type])) {
+            Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class DkWin32Icon {
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", EntryPoint = "SetClassLongPtrW")]
+    public static extern IntPtr SetClassLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+    [DllImport("user32.dll")]
+    public static extern bool DestroyIcon(IntPtr hIcon);
+}
+"@ -ErrorAction Stop
+        }
+        try {
+            $hMain = $form.Handle   # 强制创建窗口 handle (此时才可设窗口图标)
+            [void][DkWin32Icon]::SendMessage($hMain, 0x0080, [IntPtr]1, $form.Icon.Handle)  # WM_SETICON ICON_BIG
+            [void][DkWin32Icon]::SendMessage($hMain, 0x0080, [IntPtr]0, $form.Icon.Handle)  # WM_SETICON ICON_SMALL
+            # 类图标 (GCLP_HICON/GCLP_HICONSM) · 任务栏按钮图标优先用类图标 · 不受窗口重建影响
+            [void][DkWin32Icon]::SetClassLongPtr($hMain, -14, $form.Icon.Handle)   # GCLP_HICON
+            [void][DkWin32Icon]::SetClassLongPtr($hMain, -34, $form.Icon.Handle)   # GCLP_HICONSM
+        } catch { Add-Log "WM_SETICON 失败: $_" 'warn' }
+        # Shown 后再设一次: 后续属性修改(如 FormBorderStyle)会重建 Handle 冲掉图标 · 显示后 Handle 稳定
+        $script:mainIcon = $form.Icon   # 持有引用防 GC 销毁 HICON
+        $form.Add_Shown({
+            try {
+                if ($script:mainIcon) {
+                    [void][DkWin32Icon]::SendMessage($form.Handle, 0x0080, [IntPtr]1, $script:mainIcon.Handle)
+                    [void][DkWin32Icon]::SendMessage($form.Handle, 0x0080, [IntPtr]0, $script:mainIcon.Handle)
+                    [void][DkWin32Icon]::SetClassLongPtr($form.Handle, -14, $script:mainIcon.Handle)
+                    [void][DkWin32Icon]::SetClassLongPtr($form.Handle, -34, $script:mainIcon.Handle)
+                    Add-Log "窗口图标已应用 (WM_SETICON + 类图标)" 'ok'
+                } else { Add-Log 'Shown: mainIcon 为空' 'warn' }
+            } catch { Add-Log "Shown WM_SETICON err: $_" 'err' }
+        })
+    }
 } catch { Add-Log "窗口图标设置失败: $_" 'warn' }
 
 # ── 托盘图标 (壳肉分离 · 守护进程常驻 · 2026-08-15 v2) ──
@@ -2688,6 +2729,17 @@ function Push-Main {
 }
 
 function Push-MainState {
+    # 社群二维码 + ID (HTML 端 qrBox/commId · 与 GDI 关于页同源)
+    $commFile = Join-Path $script:Root 'assets\community.txt'
+    $commIdTxt = if (Test-Path $commFile) { (Get-Content $commFile -TotalCount 1) } else { 'WeChat / 社群: 把号或链接写到 assets\community.txt' }
+    $qrFileM = Join-Path $script:Root 'assets\community-qr.png'
+    $qrDataUri = $null
+    if (Test-Path $qrFileM) {
+        try {
+            $b64 = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($qrFileM))
+            $qrDataUri = "data:image/png;base64,$b64"
+        } catch {}
+    }
     Push-Main @{
         type = 'state'
         ver = "$script:Version"
@@ -2702,6 +2754,9 @@ function Push-MainState {
         onboard = [bool]$onboardBanner.Visible
         status = '守护中 · daemon 运行正常'
         statusKind = 'run'
+        commId = $commIdTxt
+        qrDataUri = $qrDataUri
+        qrHint = if ($qrDataUri) { '微信扫码进社群' } else { '把社群二维码放到 assets\community-qr.png · 这里自动显示' }
     }
 }
 
