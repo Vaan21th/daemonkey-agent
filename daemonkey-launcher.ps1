@@ -2933,6 +2933,7 @@ function Push-MainState {
     Push-Main @{
         type = 'state'
         ver = "$script:Version"
+        nav = $script:CurrentPage   # 2026-08-15 · 初始化补推带当前页 · 否则 needSetup 时 Show-Page 推送在 mainWv 创建前丢失 → HTML 永远停启动页
         opts = @{
             daemon  = [bool]$chkDaemon.Checked
             pet     = [bool]$chkPet.Checked
