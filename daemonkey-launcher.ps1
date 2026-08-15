@@ -821,6 +821,101 @@ if (Test-Path $icoFile) {
             if ($script:autoRestartOn -ne $null) { $script:autoRestartOn = $mAuto.Checked }
         }
         $script:trayEvtRestart = { try { $btnStart.PerformClick() } catch {} }
+# ───── 退出三选一弹窗 (2026-08-15 · 启动页"关闭进程"复用 · 参数化) ─────
+function Show-QuitDialog {
+    param(
+        [string]$Title = '退出 Daemonkey',
+        [string]$Sub = 'daemon 服务可以继续在后台运行',
+        [string]$PrimaryText = '全部退出 · 停止 daemon + 关闭启动器',
+        [string]$SecondaryText = '仅关闭启动器 · daemon 继续运行',
+        [scriptblock]$PrimaryAction,
+        [scriptblock]$SecondaryAction
+    )
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = $Title
+    $dlg.FormBorderStyle = 'None'          # 无边框
+    $dlg.StartPosition = 'CenterScreen'
+    $dlg.ClientSize = Sz 420 250
+    $dlg.BackColor = $cBg
+    $dlg.ForeColor = $cText
+    $dlg.Font = F 9
+    $dlg.TopMost = $true
+    $dlg.ShowInTaskbar = $false
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+    try {
+        if (-not ('QuitDlgRgn' -as [type])) {
+            Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class QuitDlgRgn { [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int a,int b,int c,int d,int e,int f); }' -ErrorAction Stop
+        }
+        $dlg.Region = [System.Drawing.Region]::FromHrgn([QuitDlgRgn]::CreateRoundRectRgn(0, 0, 420, 250, 14, 14))
+    } catch {}
+    $t1 = New-Object System.Windows.Forms.Label
+    $t1.Text = $Title
+    $t1.Font = F 12
+    $t1.Location = P 24 22
+    $t1.Size = Sz 380 26
+    $t1.BackColor = $cBg
+    $t1.ForeColor = $cText
+    $dlg.Controls.Add($t1)
+    $t2 = New-Object System.Windows.Forms.Label
+    $t2.Text = $Sub
+    $t2.Font = F 8.5
+    $t2.Location = P 24 50
+    $t2.Size = Sz 380 18
+    $t2.BackColor = $cBg
+    $t2.ForeColor = [System.Drawing.Color]::FromArgb(150, 156, 180)
+    $dlg.Controls.Add($t2)
+    $b1 = New-Object System.Windows.Forms.Button
+    $b1.Text = $PrimaryText
+    $b1.Location = P 24 84
+    $b1.Size = Sz 380 34
+    $b1.BackColor = $cDanger
+    $b1.ForeColor = [System.Drawing.Color]::White
+    $b1.FlatStyle = 'Flat'
+    $b1.FlatAppearance.BorderSize = 0
+    $b1.Add_Click({ try { $dlg.Close() } catch {}; try { if ($PrimaryAction) { & $PrimaryAction } } catch {} })
+    $dlg.Controls.Add($b1)
+    $b2 = New-Object System.Windows.Forms.Button
+    $b2.Text = $SecondaryText
+    $b2.Location = P 24 126
+    $b2.Size = Sz 380 34
+    $b2.BackColor = $cBtn
+    $b2.ForeColor = [System.Drawing.Color]::White
+    $b2.FlatStyle = 'Flat'
+    $b2.FlatAppearance.BorderSize = 0
+    $b2.Add_Click({ try { $dlg.Close() } catch {}; try { if ($SecondaryAction) { & $SecondaryAction } } catch {} })
+    $dlg.Controls.Add($b2)
+    $b3 = New-Object System.Windows.Forms.Button
+    $b3.Text = '取消'
+    $b3.Location = P 24 168
+    $b3.Size = Sz 380 34
+    $b3.BackColor = $cCard
+    $b3.ForeColor = $cText
+    $b3.FlatStyle = 'Flat'
+    $b3.FlatAppearance.BorderSize = 1
+    $b3.FlatAppearance.BorderColor = $cCard
+    $b3.Add_Click({ try { $dlg.Close() } catch {} })
+    $dlg.Controls.Add($b3)
+    try { $dlg.ShowDialog() } catch {}
+}
+
+function Stop-Daemon {
+    param([int]$port)
+    Add-Log "停止 daemon (port=$port)…" 'info'
+    $existing = Get-DaemonProcessInfo -Port $port
+    if ($existing) {
+        try {
+            Stop-Process -Id $existing.Pid -Force -ErrorAction Stop
+            for ($i = 0; $i -lt 20; $i++) {
+                if (-not (Test-DaemonAlive -Port $port)) { break }
+                Start-Sleep -Milliseconds 300
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+            Add-Log "daemon 已停止 (pid=$($existing.Pid))" 'ok'
+        } catch { Add-Log "停止 daemon 失败: $_" 'err' }
+    } else { Add-Log '没找到 daemon 进程 (可能已停)' 'warn' }
+}
+
         $script:trayEvtQuit = {
             # 退出三选一: ①全退(停止daemon+关启动器) ②仅关启动器(daemon继续跑) ③取消
             # 2026-08-15 · BRO 清单 #7 · 关闭联动: 退出前让用户选 daemon 命运
@@ -2569,27 +2664,18 @@ $btnStart.Add_Click({
         return
     }
 
-    # 0.8.3 · 停止模式: daemon 在跑 → 按钮已变「关闭进程」→ 点它停 daemon
+    # 0.8.3 · 停止模式: daemon 在跑 → 按钮已变「关闭进程」→ 弹三选一 (2026-08-15 BRO: 复用退出弹窗)
     if ($script:DaemonRunning) {
-        $btnStart.Enabled = $false
-        $btnStart.Text = '停止中…'
-        Add-Log "停止 daemon (port=$port)…" 'info'
-        $existing = Get-DaemonProcessInfo -Port $port
-        if ($existing) {
-            try {
-                Stop-Process -Id $existing.Pid -Force -ErrorAction Stop
-                for ($i = 0; $i -lt 20; $i++) {
-                    if (-not (Test-DaemonAlive -Port $port)) { break }
-                    Start-Sleep -Milliseconds 300
-                    [System.Windows.Forms.Application]::DoEvents()
-                }
-                Add-Log "daemon 已停止 (pid=$($existing.Pid))" 'ok'
-            } catch { Add-Log "停止 daemon 失败: $_" 'err' }
-        } else { Add-Log '没找到 daemon 进程 (可能已停)' 'warn' }
-        $script:DaemonRunning = $false
-        $btnStart.Text = $script:StartText
-        Set-ButtonFill $btnStart $cBtn
-        $btnStart.Enabled = $true
+        Show-QuitDialog -Title 'Daemonkey 运行中' -Sub '选择 daemon 与启动器的去向' `
+            -PrimaryText '全部退出 · 停止 daemon + 关闭启动器' `
+            -PrimaryAction { Stop-Daemon -port $port; $form.Close() } `
+            -SecondaryText '仅停止 daemon · 留在启动器' `
+            -SecondaryAction {
+                Stop-Daemon -port $port
+                $script:DaemonRunning = $false
+                $btnStart.Text = $script:StartText
+                Set-ButtonFill $btnStart $cBtn
+            }
         return
     }
 
@@ -2767,12 +2853,16 @@ $needSetup = Test-NeedSetup
 if ($needSetup) {
     $onboardBanner.Visible = $true
     Show-Page 'setup'
-    Term-Write '首次使用 · 检测到运行环境未安装 · 自动开始安装 (约 1-2 分钟)…' $cAccent
+    Term-Write '✅ 检测到首次使用 · 已自动开始安装运行环境 (约 1-2 分钟 · 无需点任何按钮)…' $cOk
     Add-Log '首次使用 · 自动安装运行环境 (run.ps1 -NoLaunch) · 装完自动启动…' 'info'
     $runPs1 = Join-Path $script:Root 'run.ps1'
     Term-Run 'powershell.exe' "-NoProfile -ExecutionPolicy Bypass -File `"$runPs1`" -NoLaunch" -OnExit {
         param($code)
-        $ready = -not (Test-NeedSetup)
+        $ready = $false
+        for ($i = 0; $i -lt 3; $i++) {
+            Start-Sleep -Milliseconds 1500      # venv 刚建好 · 首次 import 可能慢/锁 · 等 1.5s 重试
+            if (-not (Test-NeedSetup)) { $ready = $true; break }
+        }
         Add-Log "安装回调 · exit=$code · 环境就绪=$ready" 'warn'
         if ($ready) {
             Add-Log '环境就绪 · 自动启动 daemon + WebUI…' 'ok'
@@ -2788,6 +2878,8 @@ if ($needSetup) {
             }
         } else {
             Add-Log "环境安装未完成 (exit=$code) · 看右栏输出 · 可再点【开始安装】重试或去『急救』" 'err'
+            Show-Page 'launch'   # 2026-08-15 · 不留环境页 · 回启动页让用户看日志
+            Term-Write "环境未完全就绪 · 去『环境』页点【开始安装】或看右栏输出。" $cWarn
         }
     }
 } else {
