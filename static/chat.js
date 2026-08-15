@@ -713,11 +713,13 @@ const _DOC_MIMES = [
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  // wish-xxx · 附件类型扩展 (用户 2026-08-15) · 压缩包 + 表格 · 微信/管理器拖拽可用
+  // wish-xxx · 附件类型扩展 (用户 2026-08-15) · 压缩包 + 表格 + 补丁 · 微信/管理器拖拽可用
   'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.macroEnabled',
   'application/x-tar', 'application/gzip',
+  'text/x-diff', 'text/x-patch',  // .diff/.patch (龙头 0025 · 常用补丁文件)
 ];
 const _DOC_ICONS = {
   'application/pdf': 'ri-file-pdf-2-line',
@@ -734,8 +736,11 @@ const _DOC_ICONS = {
   'application/x-7z-compressed': 'ri-file-zip-line',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'ri-file-excel-2-line',
   'application/vnd.ms-excel': 'ri-file-excel-2-line',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.macroEnabled': 'ri-file-excel-2-line',
   'application/x-tar': 'ri-file-zip-line',
   'application/gzip': 'ri-file-zip-line',
+  'text/x-diff': 'ri-file-code-line',
+  'text/x-patch': 'ri-file-code-line',
 };
 
 // wish-41ed72ef · MIME fallback · 有些浏览器/OS 不给 file.type
@@ -751,7 +756,9 @@ function _guessMime(file) {
     'zip':'application/zip','rar':'application/x-rar-compressed','7z':'application/x-7z-compressed',
     'xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     'xls':'application/vnd.ms-excel',
+    'xlsm':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.macroEnabled',
     'tar':'application/x-tar','gz':'application/gzip',
+    'diff':'text/x-diff','patch':'text/x-patch',
     'png':'image/png','jpg':'image/jpeg','jpeg':'image/jpeg',
     'gif':'image/gif','webp':'image/webp','bmp':'image/bmp',
   };
