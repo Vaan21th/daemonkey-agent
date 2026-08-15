@@ -2731,7 +2731,12 @@ function Push-Main {
 function Push-MainState {
     # 社群二维码 + ID (HTML 端 qrBox/commId · 与 GDI 关于页同源)
     $commFile = Join-Path $script:Root 'assets\community.txt'
-    $commIdTxt = if (Test-Path $commFile) { (Get-Content $commFile -TotalCount 1) } else { 'WeChat / 社群: 把号或链接写到 assets\community.txt' }
+    # 2026-08-15 · [object Object] 根因: Get-Content 字符串带 PSObject 包装(PSPath等) · ConvertTo-Json 序列化整个对象
+    #                → [string] 强转去包装 (纯字符串 · JS 端 textContent 正常)
+    $commIdTxt = ''
+    if (Test-Path $commFile) { $commIdTxt = [string]((Get-Content $commFile -TotalCount 1) -join ' ') }
+    if ([string]::IsNullOrWhiteSpace($commIdTxt)) { $commIdTxt = 'WeChat / 社群: 把号或链接写到 assets\community.txt' }
+    $commIdTxt = $commIdTxt.Trim()
     $qrFileM = Join-Path $script:Root 'assets\community-qr.png'
     $qrDataUri = $null
     if (Test-Path $qrFileM) {
@@ -2820,7 +2825,7 @@ function New-MainWebView {
 
     try {
         $task = $wv.EnsureCoreWebView2Async($null)
-        $deadline = (Get-Date).AddSeconds(8)
+        $deadline = (Get-Date).AddSeconds(5)
         while (-not $wv.CoreWebView2 -and (Get-Date) -lt $deadline) {
             [System.Windows.Forms.Application]::DoEvents()
             Start-Sleep -Milliseconds 100
@@ -2930,6 +2935,8 @@ function New-MainWebView {
     return $wv
 }
 
-# ── Activation · 覆盖式 Overlay: 成功盖层 · 失败 GDI 自然露出 (物理不可能白屏) ──
-$script:mainWv = New-MainWebView
+# ── Activation · 覆盖式 Overlay: 窗口先显示 GDI · Shown 后盖 WebView2 (启动不卡死等 8s) ──
+# 2026-08-15 · 卡顿修复: 原 Application.Run 前同步初始化 WebView2 (8s 死等 → 窗口"不响应")
+#                → 移 Shown 事件: 窗口立刻显示 GDI · WebView2 初始化完盖层 (1-3s) · 失败 GDI 自然露出
+$form.Add_Shown({ try { $script:mainWv = New-MainWebView } catch { Add-Log "主界面 WebView2 异常: $_" 'warn' } })
 [System.Windows.Forms.Application]::Run($form)

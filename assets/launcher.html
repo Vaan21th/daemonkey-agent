@@ -147,7 +147,7 @@
   .ab-btn-douyin:hover { background: #ff456a; }
   .ab-comm-id { font-size: 11.5px; color: var(--ink); margin-bottom: 10px; font-family: var(--mono); }
   .ab-qr-row { display: flex; align-items: center; gap: 14px; }
-  .ab-qr { width: 84px; height: 84px; border-radius: 8px; background: rgba(255,255,255,0.07); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 9px; overflow: hidden; }
+  .ab-qr { width: 120px; height: 120px; border-radius: 8px; background: rgba(255,255,255,0.07); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 9px; overflow: hidden; }
   .ab-qr img { width: 100%; height: 100%; object-fit: contain; }
   .ab-qr-hint { font-size: 10px; color: var(--muted); line-height: 1.6; }
 
@@ -206,7 +206,7 @@
               <div class="opt-row"><div><div class="lbl">WebUI Daemon</div><div class="hint">浏览器对话 · 核心</div></div><div class="toggle on" id="tgDaemon"></div></div>
               <div class="opt-row" style="border-top:1px solid var(--line);"><div><div class="lbl">桌宠 sprite</div><div class="hint">屏幕角落的小猫 OPUS</div></div><div class="toggle on" id="tgPet"></div></div>
               <div class="opt-row" style="border-top:1px solid var(--line);"><div><div class="lbl">启动后自动打开浏览器</div></div><div class="toggle on" id="tgBrowser"></div></div>
-              <div class="opt-row" style="border-top:1px solid var(--line);"><div><div class="lbl">崩溃自动拉起</div><div class="hint">daemon 异常退出后 90 秒自动恢复</div></div><div class="toggle on" id="tgCrash"></div></div>
+              <div class="opt-row" style="border-top:1px solid var(--line);"><div><div class="lbl">崩溃自动拉起</div><div class="hint">daemon 异常退出后 90 秒自动恢复</div></div><div class="toggle" id="tgCrash"></div></div>
             </div>
             <div class="lg-port">端口 <input id="inPort" type="text" value="7860"><span style="opacity:0.5">· 首次使用见下方</span></div>
             <div class="lg-onboard" id="onboard"><div class="txt">首次使用 · 正在自动安装运行环境<br>装完自动打开 WebUI</div><button class="btn btn-primary" id="btnGoSetup" style="height:28px;font-size:11px;flex-shrink:0;">去环境 →</button></div>
