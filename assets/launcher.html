@@ -31,7 +31,7 @@
   html, body { width: 100%; height: 100%; background: var(--deep); color: var(--ink); font-family: var(--font); overflow: hidden; }
 
   /* ══ 顶栏 ══ */
-  .titlebar { height: 34px; display: flex; align-items: center; padding-left: 14px; position: relative; z-index: 30; background: linear-gradient(180deg, rgba(10,13,24,0.9), rgba(10,13,24,0.55)); }
+  .titlebar { height: 34px; display: flex; align-items: center; padding-left: 10px; position: relative; z-index: 30; background: linear-gradient(180deg, rgba(10,13,24,0.9), rgba(10,13,24,0.55)); }
   .tb-logo { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, #8f81f5, #5b4fd8); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 12px var(--accent-glow); }
   .tb-logo svg { width: 12px; height: 12px; fill: #fff; }
   .tb-name { font-size: 12px; font-weight: 700; margin-left: 8px; color: var(--ink); }
@@ -164,7 +164,6 @@
 </head>
 <body style="display:flex;flex-direction:column;height:100%;">
   <div class="titlebar">
-    <div class="tb-logo"><svg viewBox="0 0 24 24"><path d="M13 2 L4.5 13.5 H11 L9.5 22 L19 9.5 H12.5 Z"/></svg></div>
     <div class="tb-name">Daemonkey</div>
     <div class="tb-ver" id="tbVer"></div>
     <div class="tb-spacer"></div>
@@ -178,6 +177,7 @@
     <div class="tab" data-page="api">API</div>
     <div class="tab" data-page="rescue">急救</div>
     <div class="tab" data-page="ext">扩展</div>
+    <div class="tab" data-page="community">社群</div>
     <div class="tab" data-page="about">关于</div>
   </div>
 
@@ -226,6 +226,7 @@
       <!-- 急救页 -->
       <div class="content" id="page-rescue">
         <div class="pg-title">急救 · 改崩了点这里 (先试维修台 · 修不好再回档)</div>
+        <div class="pg-note">daemon 起不来 / 白屏 / 改崩了 —— 先开维修台让 AI 自己查修 · 真救不回来再回档。按下面顺序来：</div>
         <div class="card"><div class="card-title">应急维修台 · 推荐先用</div><div class="card-desc">daemon 起不来 / 白屏先点这个。 直连 LLM 的终端 · 让 AI 像在 Cursor 里一样对话+用工具自己查自己修——精准修复、保留你的进展。 不需要 git · 独立窗口打开。</div><button class="btn btn-primary card-btn" data-act="rescue-repair">开维修台</button></div>
         <div class="card"><div class="card-title" style="color:#ff8f8a;">紧急回档 · 修不好再用</div><div class="card-desc">维修台也救不回来时才用。 一刀切回到 master 上次良好版本 (这段改动会回退 · 未提交改动 stash 收好不丢)。 需要 git。 输出看底部终端。</div><button class="btn btn-danger card-btn" data-act="rescue-rollback">回档</button></div>
       </div>
@@ -239,6 +240,16 @@
         <div style="font-size:10.5px;color:var(--muted);">检查更新已开放 · 插件市场等核心稳定后开放。</div>
       </div>
 
+      <!-- 社群 & 贡献者页 -->
+      <div class="content" id="page-community">
+        <div class="pg-title">社群 &amp; 贡献者</div>
+        <div class="pg-note">感谢每一位让 Daemonkey 更好的伙伴 —— 社区提交经评估合入后，名字与贡献留在这里。<br>名单会持续更新。</div>
+        <div class="card"><div class="card-title"><span class="c-badge c-b-blue">工具层审查</span>墨言</div><div class="card-desc">三审反馈工具层 bug：发现 write_file / edit_file 换行污染祖传真雷（LF→CRLF）· request_restart 竞态 · wish_update 合并防护；标注记忆索引全量重建隐患。</div></div>
+        <div class="card"><div class="card-title"><span class="c-badge c-b-purple">代码审查 · UI</span>龙头</div><div class="card-desc">Codex 全面审查 v2.0（418 行报告 · 19 补丁 · 66 文件）· 5 项 A 档修复合入 · 提问轨道 v5 · 引导卡矮窗口修复 · 附件上传扩展。</div></div>
+        <div class="card"><div class="card-title"><span class="c-badge c-b-green">启动器 · 工具</span>蟹子</div><div class="card-desc">崩溃自动拉起核心 · MCP streamable_http 传输 · ${secret} 占位符解析 · .gitignore 完善。</div></div>
+        <div class="card" style="margin-bottom:16px;"><div class="card-title">社群</div><div class="ab-comm-id" id="commId" style="margin-top:8px;"></div><div class="ab-qr-row"><div class="ab-qr" id="qrBox">扫码进社群</div><div class="ab-qr-hint" id="qrHint"></div></div></div>
+      </div>
+
       <!-- 关于页 -->
       <div class="content" id="page-about">
         <div class="pg-title">关于</div>
@@ -249,8 +260,8 @@
         <div class="card"><div class="card-title">理念</div><div class="card-desc">范式开源 · 实例属于你。 自带 LLM key (BYOK) · 数据全留在你自己的机器上。<br>你的 AI 可以备份、带走、传承 —— 没有人能把它从你手里拿走。</div></div>
         <div class="card"><div class="card-title">开源</div><div class="card-desc">Source-available · 版权归原作者 · 许可证筹备中 (AGPL 方向)。<br>欢迎共建: 贡献需先签 CLA。 名字 Daemonkey 与 logo 保留 —— 代码可 fork·招牌不可冒用。</div></div>
         <div class="card"><div class="card-title">发布 · 视频 · 教程</div><div class="card-desc">全部视频 / 教程都在这 · 后续更新也只在这两个号发。</div><div class="ab-btn-row" style="margin-top:10px;"><button class="btn ab-btn-bili" data-openurl="bili" style="flex:1;">▶ &nbsp;B 站主页</button><button class="btn ab-btn-douyin" data-openurl="douyin" style="flex:1;">♪ &nbsp;抖音主页</button></div></div>
-        <div class="card"><div class="card-title">贡献者</div><div class="card-desc">感谢为 Daemonkey 添砖加瓦的伙伴 —— 社区提交经评估后合入，名字留在这里：<br><span style="color:var(--ink);">墨言 · 龙头 · 蟹子</span> · 以及每一位提反馈的你。<br>想贡献？社群说一声或提交 PR · 评估采纳后名字进这里。</div></div>
-        <div class="card" style="margin-bottom:16px;"><div class="card-title">社群</div><div class="ab-comm-id" id="commId" style="margin-top:8px;"></div><div class="ab-qr-row"><div class="ab-qr" id="qrBox">扫码进社群</div><div class="ab-qr-hint" id="qrHint"></div></div></div>
+        <div class="card" style="margin-bottom:16px;"><div class="card-title">想贡献？</div><div class="card-desc">提交 PR 或进社群说一声 · 评估采纳后名字与贡献进【社群】页 · 名单持续更新。</div></div>
+
       </div>
     </div>
 

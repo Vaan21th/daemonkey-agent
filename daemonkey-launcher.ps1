@@ -628,8 +628,16 @@ $form.Font = F 9
 $form.FormBorderStyle = 'None'
 $form.MaximizeBox = $false
 # 任务栏 / Alt-Tab 图标 (窗口图标和 exe 文件图标都对齐到同一个 .ico)
-$icoFile = Join-Path $script:Root 'assets\daemonkey.ico'
-if (Test-Path $icoFile) { try { $form.Icon = New-Object System.Drawing.Icon($icoFile) } catch {} }
+# 2026-08-15 · 双保险: ico 加载失败 → ExtractAssociatedIcon 从 exe 提取 · 任务栏图标跟随
+try {
+    $icoFile = Join-Path $script:Root 'assets\daemonkey.ico'
+    if (Test-Path $icoFile) { $form.Icon = New-Object System.Drawing.Icon($icoFile) }
+    if (-not $form.Icon) {
+        $exePath = Join-Path $script:Root 'Daemonkey.exe'
+        if (Test-Path $exePath) { $form.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exePath) }
+    }
+    $form.ShowIcon = $true
+} catch { Add-Log "窗口图标设置失败: $_" 'warn' }
 
 # ── 托盘图标 (壳肉分离 · 守护进程常驻 · 2026-08-15 v2) ──
 # v2 修复 (BRO 实测: 托盘图标 hover 就消失 = PowerShell GC 回收 NotifyIcon/委托):
