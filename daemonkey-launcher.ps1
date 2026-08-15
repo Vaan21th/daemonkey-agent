@@ -617,10 +617,10 @@ $form = New-Object System.Windows.Forms.Form
 $form.Text = 'Daemonkey'
 # 锁死像素 · 不随 ps2exe 宿主字体/DPI 自动缩放 (否则编译成 exe 后窗口会被缩小)
 $form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
-$form.ClientSize = Sz 1000 620
+$form.ClientSize = Sz 1080 700
 # 钉死最小/最大尺寸 = 不可缩放 · 防止 ps2exe 冷启动期间先弹一个小窗 (Min/Max 由 WinForms 强制 · 与设置时机无关)
-$form.MinimumSize = Sz 1000 620
-$form.MaximumSize = Sz 1000 620
+$form.MinimumSize = Sz 1080 700
+$form.MaximumSize = Sz 1080 700
 $form.StartPosition = 'CenterScreen'
 $form.BackColor = $cBg
 $form.ForeColor = $cText
@@ -2740,6 +2740,12 @@ function New-MainWebView {
     $wv.Dock = 'Fill'
     $wv.DefaultBackgroundColor = [System.Drawing.Color]::FromArgb(10, 13, 24)
     try { $wv.CornerRadius = 12 } catch {}
+    # 1080P/2K/4K 适配: 高 DPI 下 CSS px 自动放大 → 内容溢出 · ZoomFactor = 96/Dpi 按物理像素精确渲染
+    try {
+        $g = [System.Drawing.Graphics]::FromHwnd($form.Handle)
+        if ($g.DpiX -gt 96) { $wv.ZoomFactor = [double](96.0 / $g.DpiX) }
+        $g.Dispose()
+    } catch {}
     try {
         $udf = Join-Path $script:Root 'data\runtime\webview2_main'
         try { New-Item -ItemType Directory -Path $udf -Force | Out-Null } catch {}
@@ -2780,7 +2786,10 @@ function New-MainWebView {
             $msg = $e.WebMessageAsJson | ConvertFrom-Json
             switch ($msg.type) {
                 'start' { Invoke-GdiButton $btnStart }
-                'nav' { Show-Page ([string]$msg.page) }
+                'nav' {
+                    # GDI 兜底只有六页 · 社群页 HTML 自渲染 · PS 侧映射到 about 防白屏
+                    if ([string]$msg.page -eq 'community') { Show-Page 'about' } else { Show-Page ([string]$msg.page) }
+                }
                 'opt' {
                     switch ([string]$msg.key) {
                         'daemon'  { $chkDaemon.Checked  = [bool]$msg.on }
