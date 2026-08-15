@@ -713,6 +713,11 @@ const _DOC_MIMES = [
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  // wish-xxx · 附件类型扩展 (用户 2026-08-15) · 压缩包 + 表格 · 微信/管理器拖拽可用
+  'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'application/x-tar', 'application/gzip',
 ];
 const _DOC_ICONS = {
   'application/pdf': 'ri-file-pdf-2-line',
@@ -723,6 +728,14 @@ const _DOC_ICONS = {
   'text/csv': 'ri-file-text-line',
   'text/html': 'ri-file-text-line',
   'application/json': 'ri-file-code-line',
+  // wish-xxx · 附件扩展 (用户 2026-08-15)
+  'application/zip': 'ri-file-zip-line',
+  'application/x-rar-compressed': 'ri-file-zip-line',
+  'application/x-7z-compressed': 'ri-file-zip-line',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'ri-file-excel-2-line',
+  'application/vnd.ms-excel': 'ri-file-excel-2-line',
+  'application/x-tar': 'ri-file-zip-line',
+  'application/gzip': 'ri-file-zip-line',
 };
 
 // wish-41ed72ef · MIME fallback · 有些浏览器/OS 不给 file.type
@@ -734,6 +747,11 @@ function _guessMime(file) {
     'json':'application/json','pdf':'application/pdf',
     'docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'pptx':'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    // wish-xxx · 附件扩展 (用户 2026-08-15)
+    'zip':'application/zip','rar':'application/x-rar-compressed','7z':'application/x-7z-compressed',
+    'xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'xls':'application/vnd.ms-excel',
+    'tar':'application/x-tar','gz':'application/gzip',
     'png':'image/png','jpg':'image/jpeg','jpeg':'image/jpeg',
     'gif':'image/gif','webp':'image/webp','bmp':'image/bmp',
   };
@@ -844,9 +862,9 @@ function addAttachment(file) {
     return p;
   }
   
-  // ── 文档 → base64 直读 (不压缩) ──
+  // ── 文档 → base64 直读 (不压缩) · 50MB 上限 (zip/xlsx 常超旧 10MB)
   if (_DOC_MIMES.includes(mime)) {
-    if (file.size > 10 * 1024 * 1024) { alert('文件太大 · 上限 10MB'); return Promise.resolve(); }
+    if (file.size > 50 * 1024 * 1024) { alert('文件太大 · 上限 50MB'); return Promise.resolve(); }
     const p = new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = () => {
