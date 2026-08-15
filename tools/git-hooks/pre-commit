@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # Daemonkey · pre-commit hook  (canonical source · 版本控制真相源)
-# 作用: daemonkey-launcher.ps1 变动时·自动重编 Daemonkey.exe 并加入本次 commit。
+# 作用: 壳肉分离 · 肉(daemonkey-launcher.ps1)变动不重编 exe(薄壳逻辑不变) · 只有壳(launcher-boot.ps1)变动才重编。
 #
 # 为什么: Daemonkey.exe 进仓库(让用户 clone 即开箱即用)·必须永远是最新 launcher
 # 编出来的。靠人记得手动跑 build-exe 迟早忘(母体卷六十三血泪)·所以用钩子兜底保鲜。
@@ -24,7 +24,7 @@ echo "[pre-commit] daemonkey-launcher.ps1 变动 · 自动重编 Daemonkey.exe �
 REPO_ROOT=$(git rev-parse --show-toplevel)
 cd "$REPO_ROOT"
 
-powershell -ExecutionPolicy Bypass -File "tools/build-exe.ps1"
+powershell -ExecutionPolicy Bypass -File "tools/build-boot-exe.ps1"
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -ne 0 ]; then
