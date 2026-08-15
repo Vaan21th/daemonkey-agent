@@ -504,6 +504,19 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
                                " 修好再合。 如确需强合: allow_override=True。\n"
                                + (v_report or "").strip()[-1500:])
                 return out
+            # · B2b 第二道兜底闸 (wish-bb743b6c): verify 过了 → LLM 审 diff ·
+            #   判定会不会导致启动/核心链路出错。 会 → 拦 + 人话日志；不会 → 放行。
+            #   fail-open: LLM 不可用/异常 → 放行 (verify 已确认能跑 · 不因闸故障卡死上线)。
+            try:
+                from workers.merge_explain import audit_merge
+                _au = audit_merge(branch)
+            except Exception:
+                _au = {"ok": True, "blocked": False, "note": "LLM 兜底审计异常 · 已放行"}
+            if _au.get("blocked"):
+                _run_git(["checkout", "master"], timeout=15)  # 回到干净 master · 分支留着待修
+                out["blocked"] = True
+                out["note"] = _au.get("note") or "LLM 合并审计拦截"
+                return out
         m_rc, _, m_err = _run_git(["checkout", "master"], timeout=15)
         if m_rc != 0:
             out["note"] = f"切 master 失败 · {m_err.strip()[:160]}"
