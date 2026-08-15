@@ -608,6 +608,43 @@ function Ensure-RepoAndSource {
     } catch {} finally { Pop-Location }
 }
 
+# ═══════════════════════════════════════════════════
+#  启动画面 (Splash) · 覆盖启动空白期 (git init / 一键装依赖 / WebView2 初始化)
+#  主界面显示时关闭 (Shown + WebView2 NavigationCompleted / 4s 兜底)
+# ═══════════════════════════════════════════════════
+try {
+    $script:splash = New-Object System.Windows.Forms.Form
+    $script:splash.FormBorderStyle = 'None'
+    $script:splash.StartPosition = 'CenterScreen'
+    $script:splash.Size = Sz 440 320
+    $script:splash.BackColor = $cBg
+    $script:splash.TopMost = $true
+    $script:splash.ShowInTaskbar = $false
+
+    $bannerPath = Join-Path $script:Root 'assets\banner.png'
+    if (Test-Path $bannerPath) {
+        $pb = New-Object System.Windows.Forms.PictureBox
+        $pb.Image = [System.Drawing.Image]::FromFile($bannerPath)
+        $pb.SizeMode = 'Zoom'
+        $pb.Size = Sz 440 240
+        $pb.Location = P 0 0
+        $pb.BackColor = $cBg
+        $script:splash.Controls.Add($pb)
+    }
+    $stxt = New-Object System.Windows.Forms.Label
+    $stxt.Text = '正在启动 Daemonkey · 首次使用自动安装运行环境'
+    $stxt.Font = F 10
+    $stxt.ForeColor = $cText
+    $stxt.BackColor = $cBg
+    $stxt.TextAlign = 'MiddleCenter'
+    $stxt.Size = Sz 440 30
+    $stxt.Location = P 0 250
+    $script:splash.Controls.Add($stxt)
+
+    $script:splash.Show()
+    $script:splash.Refresh()
+} catch { $script:splash = $null }
+
 Ensure-RepoAndSource
 
 # ═══════════════════════════════════════════════════
@@ -744,7 +781,80 @@ if (Test-Path $icoFile) {
             if ($script:autoRestartOn -ne $null) { $script:autoRestartOn = $mAuto.Checked }
         }
         $script:trayEvtRestart = { try { $btnStart.PerformClick() } catch {} }
-        $script:trayEvtQuit = { $form.Close() }
+        $script:trayEvtQuit = {
+            # 退出三选一: ①全退(停止daemon+关启动器) ②仅关启动器(daemon继续跑) ③取消
+            # 2026-08-15 · BRO 清单 #7 · 关闭联动: 退出前让用户选 daemon 命运
+            $script:quitDlg = New-Object System.Windows.Forms.Form
+            $script:quitDlg.Text = '退出 Daemonkey'
+            $script:quitDlg.FormBorderStyle = 'FixedDialog'
+            $script:quitDlg.StartPosition = 'CenterScreen'
+            $script:quitDlg.ClientSize = Sz 420 250
+            $script:quitDlg.BackColor = $cBg
+            $script:quitDlg.ForeColor = $cText
+            $script:quitDlg.Font = F 9
+            $script:quitDlg.TopMost = $true
+            $script:quitDlg.ShowInTaskbar = $false
+            $script:quitDlg.MaximizeBox = $false
+            $script:quitDlg.MinimizeBox = $false
+
+            $t1 = New-Object System.Windows.Forms.Label
+            $t1.Text = '退出 Daemonkey 启动器?'
+            $t1.Font = F 11
+            $t1.Location = P 20 18
+            $t1.Size = Sz 380 24
+            $t1.BackColor = $cBg
+            $t1.ForeColor = $cText
+            $script:quitDlg.Controls.Add($t1)
+
+            $b1 = New-Object System.Windows.Forms.Button
+            $b1.Text = '全部退出 · 停止 daemon + 关闭启动器'
+            $b1.Location = P 20 58
+            $b1.Size = Sz 380 34
+            $b1.BackColor = $cDanger
+            $b1.ForeColor = [System.Drawing.Color]::White
+            $b1.FlatStyle = 'Flat'
+            $b1.FlatAppearance.BorderSize = 0
+            $b1.Add_Click({
+                try { $script:quitDlg.Close() } catch {}
+                try {
+                    $port = 7860
+                    try { $port = [int]$txtPort.Text } catch {}
+                    $existing = Get-DaemonProcessInfo -Port $port
+                    if ($existing) { Stop-Process -Id $existing.Pid -Force -ErrorAction Stop; Add-Log "daemon 已停止 (pid=$($existing.Pid))" 'ok' }
+                } catch { Add-Log "停止 daemon 失败: $_" 'err' }
+                $form.Close()
+            })
+            $script:quitDlg.Controls.Add($b1)
+
+            $b2 = New-Object System.Windows.Forms.Button
+            $b2.Text = '仅关闭启动器 · daemon 继续运行'
+            $b2.Location = P 20 100
+            $b2.Size = Sz 380 34
+            $b2.BackColor = $cBtn
+            $b2.ForeColor = [System.Drawing.Color]::White
+            $b2.FlatStyle = 'Flat'
+            $b2.FlatAppearance.BorderSize = 0
+            $b2.Add_Click({
+                try { $script:quitDlg.Close() } catch {}
+                $form.Close()
+            })
+            $script:quitDlg.Controls.Add($b2)
+
+            $b3 = New-Object System.Windows.Forms.Button
+            $b3.Text = '取消'
+            $b3.Location = P 20 142
+            $b3.Size = Sz 380 34
+            $b3.BackColor = $cCard
+            $b3.ForeColor = $cText
+            $b3.FlatStyle = 'Flat'
+            $b3.FlatAppearance.BorderSize = 1
+            $b3.FlatAppearance.BorderColor = $cLine
+            $b3.Add_Click({ try { $script:quitDlg.Close() } catch {} })
+            $script:quitDlg.Controls.Add($b3)
+
+            try { $script:quitDlg.ShowDialog() } catch {}
+            $script:quitDlg = $null
+        }
         $mOpen = New-Object System.Windows.Forms.ToolStripMenuItem('打开面板')
         $mOpen.Add_Click({
             if ($script:OnTrayOpen) { & $script:OnTrayOpen }
@@ -1019,7 +1129,7 @@ function New-GuardPanelGdi {
         $gfx.DrawRectangle($penW2, 27, 303, 14, 11)
         $gfx.DrawLine($penW2, 29, 310, 39, 310)
         $gfx.DrawLine($penW2, 34, 303, 34, 307)
-        $gfx.DrawString('打开控制台', $fBtn, (New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)), 46, 305)
+        $gfx.DrawString('打开启动器', $fBtn, (New-Object System.Drawing.SolidBrush([System.Drawing.Color]::White)), 46, 305)
         # restart: ghost
         $restPath = Get-RoundPath 96 34 8
         $restT = New-Object System.Drawing.Drawing2D.Matrix
@@ -2946,11 +3056,54 @@ function New-MainWebView {
         # 闪屏修复: WebView2 加载完成 → 显示窗口 (GDI 旧界面永远不会被用户看到)
         try { $form.Opacity = 1 } catch {}
         try { if ($script:MainFadeTimer) { $script:MainFadeTimer.Stop(); $script:MainFadeTimer.Dispose(); $script:MainFadeTimer = $null } } catch {}
+        # 启动画面: 主界面已显示 → 关 Splash
+        try { if ($script:splash) { $script:splash.Close() } } catch {}
     })
 
     $script:mainWv = $wv
     return $wv
 }
+
+# ═══════════════════════════════════════════════════
+#  启动器自更新 · 启动后 8s 后台检查 gitee 新版 ps1 → 备份 → 覆盖 (下次双击 exe 生效)
+# ═══════════════════════════════════════════════════
+function Check-LauncherUpdate {
+    try {
+        $localVer = $script:Version
+        $mf = Join-Path $script:Root 'core_manifest.json'
+        if (-not (Test-Path $mf)) { return }
+        $manifest = Get-Content $mf -Raw -Encoding UTF8 | ConvertFrom-Json
+        $giteeUrl = [string]$manifest.sources.remotes.gitee
+        if (-not $giteeUrl) { return }
+        $rawBase = ($giteeUrl -replace '\.git$', '') -replace '^https://gitee\.com/', 'https://gitee.com/'
+        if ($rawBase -notmatch 'gitee\.com') { return }
+        $resp = Invoke-WebRequest -Uri "$rawBase/raw/master/core_manifest.json" -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
+        $remoteVer = [string]((($resp.Content | ConvertFrom-Json).core_version) -replace '^v', '')
+        if (-not $remoteVer) { return }
+        $remoteVer = "v$remoteVer"
+        if ($remoteVer -eq $localVer) { Add-Log "启动器已是最新 ($localVer)" 'ok'; return }
+        Add-Log "发现启动器新版: $localVer → $remoteVer · 下载中…" 'warn'
+        $resp2 = Invoke-WebRequest -Uri "$rawBase/raw/master/daemonkey-launcher.ps1" -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
+        $newPs1 = $resp2.Content
+        if ($newPs1.Length -lt 50000) { Add-Log "下载的启动器异常 (仅 $($newPs1.Length) 字符) · 跳过更新" 'err'; return }
+        $curPs1 = Join-Path $script:Root 'daemonkey-launcher.ps1'
+        $backupDir = Join-Path $script:Root 'data\runtime\launcher_backup'
+        if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
+        Copy-Item $curPs1 (Join-Path $backupDir "daemonkey-launcher.ps1.$localVer.bak") -Force
+        $enc = New-Object System.Text.UTF8Encoding($true)   # 带 BOM · PS5.1 中文注释不乱码
+        [System.IO.File]::WriteAllText($curPs1, $newPs1, $enc)
+        Add-Log "启动器已更新 $localVer → $remoteVer · 重启启动器生效 (旧版备份在 data\runtime\launcher_backup)" 'ok'
+    } catch { Add-Log "启动器自更新检查失败: $_" 'warn' }
+}
+
+# 启动后 8s 后台跑一次 · 不阻塞启动
+$script:updTimer = New-Object System.Windows.Forms.Timer
+$script:updTimer.Interval = 8000
+$script:updTimer.Add_Tick({
+    try { $script:updTimer.Stop(); $script:updTimer.Dispose(); $script:updTimer = $null } catch {}
+    Check-LauncherUpdate
+})
+$script:updTimer.Start()
 
 # ── Activation · 覆盖式 Overlay: 窗口先隐藏 (Opacity=0) · WebView2 盖层完成后显示 · 4s 兑底 ──
 # 2026-08-15 · 卡顿修复: 原 Application.Run 前同步初始化 WebView2 (8s 死等 → 窗口"不响应")
@@ -2963,6 +3116,7 @@ $form.Add_Shown({
         $script:MainFadeTimer.Interval = 4000
         $script:MainFadeTimer.Add_Tick({
             try { $form.Opacity = 1 } catch {}
+            try { if ($script:splash) { $script:splash.Close() } } catch {}
             try { $script:MainFadeTimer.Stop(); $script:MainFadeTimer.Dispose(); $script:MainFadeTimer = $null } catch {}
         })
         $script:MainFadeTimer.Start()
