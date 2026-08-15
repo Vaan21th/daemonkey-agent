@@ -30,6 +30,62 @@ import time
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get("OPUS_API_PORT", "7860"))
 
+# ── 打包/源码 路径分叉 (2026-08-15 v1 · 首装引导) ──
+#   源码跑: daemon 代码就在本目录 · 资产 assets/ 同级
+#   打包跑 (PyInstaller .app): daemon 代码首装 clone 到 ~/Daemonkey ·
+#   资产在 .app 内部 sys._MEIPASS/assets (launcher.html 等随包带走)
+FROZEN = bool(getattr(sys, "frozen", False))
+if FROZEN:
+    DAEMON_DIR = os.path.expanduser("~/Daemonkey")      # 首装 git clone 到这
+    ASSET_DIR = os.path.join(sys._MEIPASS, "assets")     # 打包资产目录
+else:
+    DAEMON_DIR = os.path.dirname(os.path.abspath(__file__))
+    ASSET_DIR = os.path.join(DAEMON_DIR, "assets")
+ROOT = DAEMON_DIR   # 后面全部 cwd/路径逻辑跟着走 (venv/run_api_only/core_manifest)
+
+
+def ensure_daemon_dir(api):
+    """首装引导 (仅打包模式): 确保 ~/Daemonkey 有 daemon 代码 + venv + 依赖。
+
+    对齐 Windows 一键链路 (Ensure-RepoAndSource):
+      无代码 → git clone gitee → 建 .venv → pip install -r requirements.txt
+    源码模式直接过 (代码就在旁边)。 进度经 api.log 推送到启动器 UI。
+    """
+    if not FROZEN:
+        return True, "源码模式"
+    d = DAEMON_DIR
+    code_ok = os.path.exists(os.path.join(d, "tools", "run_api_only.py"))
+    if not code_ok:
+        api.log("首次使用 · 正在拉取 Daemonkey 代码...", "warn")
+        try:
+            r = subprocess.run(["git", "clone", "--depth", "1",
+                                "https://gitee.com/vaan21th/dae-monkey.git", d],
+                               capture_output=True, text=True, timeout=600)
+            if r.returncode != 0:
+                return False, f"git clone 失败: {r.stderr[-200:]}"
+        except Exception as e:
+            return False, f"clone 异常: {e}"
+    py_venv = os.path.join(d, ".venv", "bin", "python")
+    if not os.path.exists(py_venv):
+        api.log("首次使用 · 创建运行环境 (venv)...", "warn")
+        try:
+            subprocess.run(["python3", "-m", "venv", os.path.join(d, ".venv")],
+                           timeout=300)
+        except Exception as e:
+            return False, f"venv 创建失败: {e}"
+    api.log("首次使用 · 安装依赖 (几分钟·请稍候)...", "warn")
+    try:
+        subprocess.run([py_venv, "-m", "pip", "install", "--upgrade", "pip", "-q"],
+                       timeout=300)
+        r = subprocess.run([py_venv, "-m", "pip", "install", "-r",
+                            os.path.join(d, "requirements.txt"), "-q"],
+                           timeout=900)
+        if r.returncode != 0:
+            return False, f"依赖安装失败: {r.stderr[-200:]}"
+    except Exception as e:
+        return False, f"依赖异常: {e}"
+    return True, "就绪"
+
 
 class LauncherApi:
     """HTML (launcher.html) ↔ Python 桥接。HTML 侧经 pywebview shim
@@ -217,7 +273,7 @@ def main():
     import webview
 
     api = LauncherApi()
-    html = os.path.join(ROOT, "assets", "launcher.html")
+    html = os.path.join(ASSET_DIR, "launcher.html")
     win = webview.create_window(
         "Daemonkey",
         html,
@@ -227,6 +283,15 @@ def main():
         min_size=(960, 620),
     )
     api.win = win
+    # 首装引导 (打包模式): 后台线程跑 · 进度经 api.log 推送到 UI · 不阻塞窗口
+    if FROZEN:
+        def _ensure():
+            ok, note = ensure_daemon_dir(api)
+            if ok:
+                api.log("运行环境就绪 · 点【启动 daemon】开始", "ok")
+            else:
+                api.log(f"⚠ 首次安装失败: {note} · 可关掉重开重试", "err")
+        threading.Thread(target=_ensure, daemon=True).start()
     api.start_watch()
     webview.start()
     api._stop.set()

@@ -32,6 +32,7 @@ rm -rf build dist Daemonkey.spec
 python3 -m PyInstaller \
   --windowed \
   --name "Daemonkey" \
+  --icon "assets/daemonkey.icns" \
   --add-data "assets:assets" \
   --hidden-import "webview" \
   --hidden-import "webview.platforms.cocoa" \
