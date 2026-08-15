@@ -1459,6 +1459,11 @@ function Term-Write {
     $rtb.AppendText($text + "`r`n")
     $rtb.SelectionColor = $rtb.ForeColor
     $rtb.ScrollToCaret()
+    # 2026-08-15 · HTML 主界面同步 (限流 500ms)
+    if ((Get-Date) -gt $script:mainLastTermPush.AddMilliseconds(500)) {
+        $script:mainLastTermPush = Get-Date
+        Push-Main @{ type = 'term'; log = $text }
+    }
 }
 
 function Term-WriteRaw {
@@ -1471,6 +1476,11 @@ function Term-WriteRaw {
     $rtb.AppendText($text)
     $rtb.SelectionColor = $rtb.ForeColor
     $rtb.ScrollToCaret()
+    # 2026-08-15 · HTML 主界面同步 (限流 500ms)
+    if ((Get-Date) -gt $script:mainLastTermPush.AddMilliseconds(500)) {
+        $script:mainLastTermPush = Get-Date
+        Push-Main @{ type = 'term'; log = $text }
+    }
 }
 
 function Add-Log {
@@ -1484,6 +1494,7 @@ function Add-Log {
     Term-Write $msg $col
     $script:lblStatus.Text = $msg
     [System.Windows.Forms.Application]::DoEvents()
+    Push-Main @{ type = 'log'; log = $msg; logKind = $kind }
 }
 
 $script:termProc = $null
@@ -1581,6 +1592,7 @@ function Show-Page {
             $it.Text.ForeColor = $cDim
         }
     }
+    Push-Main @{ type = 'nav'; page = $name }
 }
 
 function Nav-Hover {
@@ -2596,7 +2608,7 @@ $updateTimer.Start()
 # ── wish-32691f0e · 运行监控轮询 (2s · UI 主线程 Timer · 失败静默不打断 UI) ──
 $monitorTimer = New-Object System.Windows.Forms.Timer
 $monitorTimer.Interval = 2000
-$monitorTimer.Add_Tick({ try { Update-MonitorPanel } catch {} })
+$monitorTimer.Add_Tick({ try { Update-MonitorPanel } catch {}; Push-MainBtnState })
 $monitorTimer.Start()
 
 # ── wish-1b8e141b · 崩溃自动拉起看门狗 (10s 轮询 · 判定: stopped 持续 90s + 无 pending restart_request) ──
@@ -2647,4 +2659,199 @@ if ($env:DK_PREVIEW_GUARD -eq '1') {
 [GC]::KeepAlive($script:trayMenu)
 [GC]::KeepAlive($script:trayIcoObj)
 [GC]::KeepAlive($script:trayMenuItems)
+
+# ═══════════════════════════════════════════════════════════════════
+# 2026-08-15 · 主界面 HTML 化 (覆盖式 Overlay · 月光操作台)
+#   GDI 三栏全量保留作兜底 · WebView2 盖层成功则 Dock=Fill 覆盖 $form
+#   用户操作 postMessage → 回写真实 GDI 控件 · 启动链路零感知
+#   Mac 双端: 同一份 assets/launcher.html · Mac 侧 pywebview 复用桥接协议
+# ═══════════════════════════════════════════════════════════════════
+$script:mainWv = $null
+$script:mainLastTermPush = [datetime]::MinValue
+$script:mainLastBtnSig = ''
+
+function Push-Main {
+    param($obj)
+    try {
+        if ($script:mainWv -and $script:mainWv.CoreWebView2) {
+            $script:mainWv.CoreWebView2.PostWebMessageAsJson(($obj | ConvertTo-Json -Compress -Depth 6))
+        }
+    } catch {}
+}
+
+function Push-MainState {
+    Push-Main @{
+        type = 'state'
+        ver = "$script:Version"
+        opts = @{
+            daemon  = [bool]$chkDaemon.Checked
+            pet     = [bool]$chkPet.Checked
+            browser = [bool]$chkBrowser.Checked
+            crash   = [bool]$chkAutoRestart.Checked
+        }
+        port = [string]$txtPort.Text
+        btn = @{ text = [string]$btnStart.Text; enabled = [bool]$btnStart.Enabled }
+        onboard = [bool]$onboardBanner.Visible
+        status = '守护中 · daemon 运行正常'
+        statusKind = 'run'
+    }
+}
+
+function Push-MainBtnState {
+    try {
+        $sig = "$($btnStart.Text)|$($btnStart.Enabled)"
+        if ($sig -ne $script:mainLastBtnSig) {
+            $script:mainLastBtnSig = $sig
+            Push-Main @{ type = 'btn'; btn = @{ text = [string]$btnStart.Text; enabled = [bool]$btnStart.Enabled } }
+        }
+    } catch {}
+}
+
+function Invoke-GdiButton {
+    param($btn)
+    try {
+        if ($null -eq $btn) { return }
+        $m = $btn.GetType().GetMethod('OnClick', [System.Reflection.BindingFlags]'Instance,NonPublic')
+        if ($m) { $m.Invoke($btn, @([System.EventArgs]::Empty)) }
+        else { Add-Log '按钮无 OnClick 方法' 'err' }
+    } catch { Add-Log "按钮触发失败: $_" 'err' }
+}
+
+$script:MainProviders = @(
+    @{ id = 'api-0'; url = 'https://platform.deepseek.com/' },
+    @{ id = 'api-1'; url = 'https://open.bigmodel.cn/' },
+    @{ id = 'api-2'; url = 'https://platform.moonshot.cn/' },
+    @{ id = 'api-3'; url = 'https://bailian.console.aliyun.com/' },
+    @{ id = 'api-4'; url = 'https://www.anthropic.com/api' },
+    @{ id = 'api-5'; url = 'https://openrouter.ai/' },
+    @{ id = 'api-6'; url = 'https://aihubmix.com/' },
+    @{ id = 'api-7'; url = 'https://aistudio.google.com/' }
+)
+
+function New-MainWebView {
+    try {
+        if (-not ('Microsoft.Web.WebView2.WinForms.WebView2' -as [type])) {
+            Add-Type -Path "$script:Root\assets\webview2\Microsoft.Web.WebView2.Core.dll" -ErrorAction Stop
+            Add-Type -Path "$script:Root\assets\webview2\Microsoft.Web.WebView2.WinForms.dll" -ErrorAction Stop
+        }
+    } catch { Add-Log 'WebView2 dll 缺失 · 使用 GDI 界面' 'warn'; return $null }
+
+    $wv = New-Object Microsoft.Web.WebView2.WinForms.WebView2
+    $wv.Dock = 'Fill'
+    $wv.DefaultBackgroundColor = [System.Drawing.Color]::FromArgb(10, 13, 24)
+    try { $wv.CornerRadius = 12 } catch {}
+    try {
+        $udf = Join-Path $script:Root 'data\runtime\webview2_main'
+        try { New-Item -ItemType Directory -Path $udf -Force | Out-Null } catch {}
+        $wv.CreationProperties = New-Object Microsoft.Web.WebView2.WinForms.CoreWebView2CreationProperties
+        $wv.CreationProperties.UserDataFolder = $udf
+        $wv.CreationProperties.AdditionalBrowserArguments = '--disable-features=CalculateNativeWinOcclusion,msWebOOUI,msPdfOOUI'
+    } catch {}
+    $form.Controls.Add($wv)
+
+    try {
+        $task = $wv.EnsureCoreWebView2Async($null)
+        $deadline = (Get-Date).AddSeconds(8)
+        while (-not $wv.CoreWebView2 -and (Get-Date) -lt $deadline) {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 100
+            if ($task.IsFaulted) { break }
+        }
+        if (-not $wv.CoreWebView2) {
+            $form.Controls.Remove($wv); $wv.Dispose()
+            Add-Log '主界面 WebView2 初始化超时 · 使用 GDI 界面' 'warn'
+            return $null
+        }
+    } catch {
+        $form.Controls.Remove($wv); try { $wv.Dispose() } catch {}
+        Add-Log "主界面 WebView2 初始化失败: $_ · 使用 GDI 界面" 'warn'
+        return $null
+    }
+
+    $wv.CoreWebView2.Settings.AreDefaultContextMenusEnabled = $false
+    $wv.CoreWebView2.Settings.IsStatusBarEnabled = $false
+    $wv.CoreWebView2.Settings.IsZoomControlEnabled = $false
+    $wv.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = $false
+
+    # HTML → PS 桥接
+    $wv.CoreWebView2.Add_WebMessageReceived({
+        param($sender, $e)
+        try {
+            $msg = $e.WebMessageAsJson | ConvertFrom-Json
+            switch ($msg.type) {
+                'start' { Invoke-GdiButton $btnStart }
+                'nav' { Show-Page ([string]$msg.page) }
+                'opt' {
+                    switch ([string]$msg.key) {
+                        'daemon'  { $chkDaemon.Checked  = [bool]$msg.on }
+                        'pet'     { $chkPet.Checked     = [bool]$msg.on }
+                        'browser' { $chkBrowser.Checked = [bool]$msg.on }
+                        'crash' {
+                            $chkAutoRestart.Checked = [bool]$msg.on
+                            try { Save-AutoRestartState } catch {}
+                            Add-Log "崩溃自动拉起: $(if ($msg.on) { '开' } else { '关' })" 'info'
+                        }
+                    }
+                }
+                'port' {
+                    $p = [string]$msg.text
+                    if ($p -match '^\d{2,5}$') { $txtPort.Text = $p }
+                }
+                'action' {
+                    switch ([string]$msg.id) {
+                        'setup-env'        { Invoke-GdiButton $btnEnv }
+                        'setup-token'      { Invoke-GdiButton $btnTok }
+                        'setup-env-file'   { Invoke-GdiButton $btnKey }
+                        'rescue-repair'    { Invoke-GdiButton $btnRepair }
+                        'rescue-rollback'  { Invoke-GdiButton $btnRoll }
+                        'ext-check-update' { Invoke-GdiButton $btnPatch }
+                    }
+                }
+                'openurl' {
+                    $id = [string]$msg.id
+                    $url = $null
+                    foreach ($pr in $script:MainProviders) { if ($pr.id -eq $id) { $url = $pr.url; break } }
+                    if ($id -eq 'bili') { $url = $script:BiliUrl }
+                    elseif ($id -eq 'douyin') { $url = $script:DouyinUrl }
+                    if ($url) { Open-Url $url }
+                }
+                'min' { $form.WindowState = [System.Windows.Forms.FormWindowState]::Minimized }
+                'close' { $form.Hide() }
+                'term-stop' {
+                    if ($script:termProc -and -not $script:termProc.HasExited) {
+                        try { $script:termProc.Kill(); Term-Write '[已停止当前命令]' $cWarn } catch {}
+                    }
+                }
+                'term-clear' { $script:Terminal.Clear() }
+            }
+        } catch {}
+    })
+
+    # 导航 HTML (NavigateToString 绕 file:// 缓存)
+    $htmlPath = Join-Path $script:Root 'assets\launcher.html'
+    try {
+        $htmlContent = Get-Content $htmlPath -Raw -Encoding UTF8
+        if (-not $htmlContent) { throw 'HTML 为空' }
+        $wv.CoreWebView2.NavigateToString($htmlContent)
+    } catch {
+        $form.Controls.Remove($wv); try { $wv.Dispose() } catch {}
+        Add-Log "launcher.html 读取失败: $_ · 使用 GDI 界面" 'warn'
+        return $null
+    }
+
+    $wv.CoreWebView2.Add_NavigationCompleted({
+        param($sender, $e)
+        if ($e.IsSuccess) {
+            try { $script:mainWv.BringToFront() } catch {}
+            Push-MainState
+            Add-Log '月光操作台界面已加载' 'ok'
+        }
+    })
+
+    $script:mainWv = $wv
+    return $wv
+}
+
+# ── Activation · 覆盖式 Overlay: 成功盖层 · 失败 GDI 自然露出 (物理不可能白屏) ──
+$script:mainWv = New-MainWebView
 [System.Windows.Forms.Application]::Run($form)
