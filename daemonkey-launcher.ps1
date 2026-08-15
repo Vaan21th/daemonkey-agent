@@ -1016,7 +1016,7 @@ function New-GuardPanelGdi {
         param($s, $e)
         if ($e.Button -ne 'Left') { return }
         $x = $e.X; $y = $e.Y
-        if ($x -ge 300 -and $x -lt 340 -and $y -ge 0 -and $y -lt 34) { $script:guardForm.Hide(); return }
+        if ($x -ge 300 -and $x -lt 340 -and $y -ge 0 -and $y -lt 34) { Close-GuardPanel; return }
         if ($x -ge 280 -and $x -lt 322 -and $y -ge 150 -and $y -lt 173) {
             $script:guardAuto = -not $script:guardAuto
             if ($script:chkAutoRestart) { $script:chkAutoRestart.Checked = $script:guardAuto }
@@ -1026,7 +1026,7 @@ function New-GuardPanelGdi {
         }
         if ($y -ge 296 -and $y -lt 330) {
             if ($x -ge 18 -and $x -lt 114) {
-                $script:guardForm.Hide()
+                Close-GuardPanel
                 $form.Show()
                 $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
                 $form.BringToFront()
@@ -1039,7 +1039,7 @@ function New-GuardPanelGdi {
                 if ($existing) {
                     try { Stop-Process -Id $existing.Pid -Force -ErrorAction Stop; Add-GuardEvent "daemon 已停止 (pid=$($existing.Pid))" 'warn' } catch { Add-GuardEvent "停止失败: $_" 'err' }
                 } else { Add-GuardEvent 'daemon 未在运行' 'warn' }
-                $script:guardForm.Hide()
+                Close-GuardPanel
             }
             return
         }
@@ -1152,7 +1152,7 @@ function New-GuardPanel {
             try {
                 $msg = $e.WebMessageAsJson | ConvertFrom-Json
                 switch ($msg.type) {
-                    'close' { $script:guardForm.Hide() }
+                    'close' { Close-GuardPanel }
                     'toggle' {
                         $script:guardAuto = [bool]$msg.on
                         if ($script:chkAutoRestart) { $script:chkAutoRestart.Checked = $script:guardAuto }
@@ -1161,7 +1161,7 @@ function New-GuardPanel {
                         Push-GuardState
                     }
                     'open' {
-                        $script:guardForm.Hide()
+                        Close-GuardPanel
                         $form.Show()
                         $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
                         $form.BringToFront()
@@ -1174,7 +1174,7 @@ function New-GuardPanel {
                         if ($existing) {
                             try { Stop-Process -Id $existing.Pid -Force -ErrorAction Stop; Add-GuardEvent "daemon 已停止 (pid=$($existing.Pid))" 'warn' } catch { Add-GuardEvent "停止失败: $_" 'err' }
                         } else { Add-GuardEvent 'daemon 未在运行' 'warn' }
-                        $script:guardForm.Hide()
+                        Close-GuardPanel
                     }
                 }
             } catch {}
@@ -1213,6 +1213,17 @@ function New-GuardPanel {
 
     $script:guardForm = $g
     return $g
+}
+
+# 关闭守护面板 · 真销毁释放 WebView2 (防 336MB 常驻) · 下次打开自动重建
+function Close-GuardPanel {
+    try { if ($script:guardUpdateTimer) { $script:guardUpdateTimer.Stop(); $script:guardUpdateTimer.Dispose() } } catch {}
+    $script:guardUpdateTimer = $null
+    try { if ($script:guardWv) { $script:guardWv.Dispose() } } catch {}
+    $script:guardWv = $null
+    try { if ($script:guardForm) { $script:guardForm.Dispose() } } catch {}
+    $script:guardForm = $null
+    Add-Log '守护面板已关闭 · 内存已释放' 'info'
 }
 
 
