@@ -284,17 +284,39 @@ def _execute_task(task: dict) -> dict:
         return {"ok": False, "summary": f"执行失败: {type(e).__name__}: {e}"[:300]}
 
 
+def _update_task_fields(task_id: str, updates: dict) -> None:
+    """在最新磁盘数据上只改一个任务的字段再落盘 (H-05 修复 · 来自龙头社区提交)。
+
+    _execute_task 跑分钟级 LLM turn 期间不能持锁 —— 期间用户经 API 的增删改会先落盘;
+    若之后用执行前的旧快照整体 _save 会把它们全部覆盖 (新加的任务静默消失、
+    已删的任务复活)。这里重读最新数据、只更新本任务的字段; 任务已被删除则不复活。
+    """
+    d = _load()
+    for t in d.get("tasks", []):
+        if t.get("id") == task_id:
+            t.update(updates)
+            break
+    else:
+        return  # 任务已被用户删除 → 保持删除
+    _save(d)
+
+
 def _tick() -> None:
     now = _now_utc()
     _TASK_STATE["last_tick_at"] = now.isoformat()
     d = _load()
     changed = False
+    pending_updates: list[tuple[str, dict]] = []  # (task_id, 字段更新) · 执行完局部落盘
     for t in d.get("tasks", []):
         if not t.get("enabled"):
             continue
         nra = t.get("next_run_at")
         if not nra:
-            t["next_run_at"] = _compute_next_run(t["schedule"], after=now)
+            try:
+                t["next_run_at"] = _compute_next_run(t["schedule"], after=now)
+            except Exception as e:
+                logger.warning("compute next_run_at failed for %s: %s", t.get("id"), e)
+                t["next_run_at"] = None
             changed = True
             continue
         try:
@@ -303,23 +325,39 @@ def _tick() -> None:
             due = False
         if not due:
             continue
-        res = _execute_task(t)
-        t["last_run_at"] = now.isoformat()
-        t["last_run_status"] = "ok" if res.get("ok") else "error"
-        t["last_run_summary"] = res.get("summary")
-        t["runs_completed"] = int(t.get("runs_completed") or 0) + 1
+        res = _execute_task(t)  # 分钟级 LLM turn · 锁外执行
+        # 单任务的状态推进 · 任何字段计算失败都不能让本轮不落盘 (否则下轮重复执行+重复通知)
+        upd: dict = {
+            "last_run_at": now.isoformat(),
+            "last_run_status": "ok" if res.get("ok") else "error",
+            "last_run_summary": res.get("summary"),
+            "runs_completed": int(t.get("runs_completed") or 0) + 1,
+        }
         _TASK_STATE["tasks_executed"] += 1
         if not res.get("ok"):
             _TASK_STATE["last_error"] = res.get("summary")
         # once 执行完自动停 (留档不删) · 周期型算下次
         if (t.get("schedule") or {}).get("type") == "once":
-            t["enabled"] = False
-            t["next_run_at"] = None
+            upd["enabled"] = False
+            upd["next_run_at"] = None
         else:
-            t["next_run_at"] = _compute_next_run(t["schedule"], after=now)
-        changed = True
+            try:
+                upd["next_run_at"] = _compute_next_run(t["schedule"], after=now)
+            except Exception as e:
+                logger.warning(
+                    "compute next_run_at failed for %s · 顺延 1h 防重复执行: %s", t.get("id"), e)
+                upd["next_run_at"] = (now + timedelta(hours=1)).isoformat()
+        pending_updates.append((t.get("id") or "", upd))
     if changed:
         _save(d)
+    # H-05 · 执行期间用户的增删改已先落盘 → 重读最新数据按 task_id 局部更新 · 不整本覆盖
+    for tid, upd in pending_updates:
+        if not tid:
+            continue
+        try:
+            _update_task_fields(tid, upd)
+        except Exception:
+            logger.exception("apply scheduled-task update failed: %s", tid)
 
 
 def _task_loop(first_delay_sec: int) -> None:

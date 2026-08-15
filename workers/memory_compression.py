@@ -64,15 +64,33 @@ SUMMARY_MODEL_HINT = (
     "5. 控制在 300-600 字"
 )
 
-# 模块级 cooldown 计数器——跨 tool_loop 调用共享
-_last_compression_turn: int = -COOLDOWN_TURNS
-_compression_count: int = 0
-_consecutive_compacts: int = 0   # v2 · 连续压缩计数 (防每轮重建缓存 · wish-7f0adf2c)
+# ── 会话级压缩状态 (H-04 修复 · 来自龙头社区提交) ───────────────────────────
+# 原先是模块级全局 · daemon 多会话并发 (WebUI/飞书/微信/续场各一线程) 时互相覆盖:
+# 线程 A set_session_id(sidA) 后、真正压缩前被线程 B 的 set_session_id(sidB) 覆盖 →
+# A 的摘要写进 B 的 summary.json · 最坏时 rewrite_session 把 B 的整本会话文件替换成 A 的消息。
+# 改 ContextVar: 状态跟随执行上下文 · 每个 chat worker 线程一份 · 并发会话互不可见。
+import contextvars as _cvars
+
+_SESSION_STATE: "_cvars.ContextVar" = _cvars.ContextVar("mc_session_state", default=None)
+
+
+def _state() -> dict:
+    """当前执行上下文的压缩状态 (懒初始化)。"""
+    st = _SESSION_STATE.get()
+    if st is None:
+        st = {
+            "current_sid": "",
+            "last_compression_turn": -COOLDOWN_TURNS,
+            "compression_count": 0,
+            "consecutive_compacts": 0,   # v2 · 连续压缩计数 (防每轮重建缓存 · wish-7f0adf2c)
+        }
+        _SESSION_STATE.set(st)
+    return st
+
+
+# 纯统计计数器 (跨会话混计无害 · 保持模块级)
 _pruned_total: int = 0           # v2 · 累计修剪的工具结果数
 _archived_files: int = 0         # v2 · 累计归档文件数
-
-# 模块级 session_id——由上层在每次新一轮对话开始时设置
-_current_sid: str = ""
 
 # tiktoken 懒加载缓存
 _tiktoken_enc = None
@@ -227,9 +245,8 @@ def _tok_per_char() -> float:
 # ---------- helpers ----------
 
 def set_session_id(sid: str) -> None:
-    """让压缩层知道当前 session id，以便落 summary.json。"""
-    global _current_sid
-    _current_sid = sid
+    """让压缩层知道当前 session id · 会话级 (ContextVar · 多会话并发互不串台)。"""
+    _state()["current_sid"] = sid
 
 
 def _stringify_message(msg: dict) -> str:
@@ -456,7 +473,7 @@ def token_budget_check(
     wish-83fe7c7b · 卷五十四:
       加 model_id 参数 · 按模型窗口动态算触发阈值 · 替掉写死的 30 条。
     """
-    global _last_compression_turn, _compression_count, _consecutive_compacts
+    st = _state()
 
     # 1. env 显式阈值（最高优先）
     try:
@@ -466,7 +483,7 @@ def token_budget_check(
             estimated = _estimate_tokens(messages)
             if estimated >= token_threshold:
                 # 过 cooldown
-                turns_since_last = len(messages) - _last_compression_turn
+                turns_since_last = len(messages) - st["last_compression_turn"]
                 if turns_since_last >= COOLDOWN_TURNS:
                     return True
                 return False
@@ -486,17 +503,17 @@ def token_budget_check(
             # wish-8f122254 · 条数爆了 + 估算逼近阈值一半 → 跨 tokenizer 低估漏网 · 强制触发
             _hit = True
         if not _hit:
-            _consecutive_compacts = 0   # v2 · 估算低于阈值 → 连续压缩计数清零
+            st["consecutive_compacts"] = 0   # v2 · 估算低于阈值 → 连续压缩计数清零
             return False
-        if _consecutive_compacts >= MAX_CONSECUTIVE_COMPACTS:
+        if st["consecutive_compacts"] >= MAX_CONSECUTIVE_COMPACTS:
             # v2 · 连续压缩仍超阈值 → 暂停自动压缩 (防每轮重建缓存 · wish-7f0adf2c)
             return False
-        turns_since_last = len(messages) - _last_compression_turn
+        turns_since_last = len(messages) - st["last_compression_turn"]
         return turns_since_last >= COOLDOWN_TURNS
 
     # 3. 退化 · 消息数阈值
     if len(messages) >= AUTO_COMPRESS_THRESHOLD:
-        turns_since_last = len(messages) - _last_compression_turn
+        turns_since_last = len(messages) - st["last_compression_turn"]
         return turns_since_last >= COOLDOWN_TURNS
 
     return False
@@ -683,12 +700,12 @@ def _persist_rewrite(messages: list[dict]) -> None:
 
     延迟 import daemon_session 防循环。失败不抛 (压缩本身已生效 · 持久化尽力而为)。
     """
-    global _current_sid
-    if not _current_sid:
+    sid = _state()["current_sid"]
+    if not sid:
         return
     try:
         from daemon_session import rewrite_session
-        rewrite_session(_current_sid, messages)
+        rewrite_session(sid, messages)
     except Exception:
         logging.getLogger("opus.memcomp").warning(
             "压缩重写 session jsonl 失败 · 磁盘仍是旧版 · 重启会回退到压缩前", exc_info=True)
@@ -727,7 +744,7 @@ def auto_compress(
 
     返回：新的 messages 列表
     """
-    global _last_compression_turn, _compression_count, _consecutive_compacts, _pruned_total
+    global _pruned_total
 
     n = len(messages)
     if n < MIN_MESSAGES_TO_COMPRESS:
@@ -766,7 +783,7 @@ def auto_compress(
         return messages2
 
     # ---- 步骤 6 · stuck guard ----
-    if not force and _consecutive_compacts >= MAX_CONSECUTIVE_COMPACTS:
+    if not force and _state()["consecutive_compacts"] >= MAX_CONSECUTIVE_COMPACTS:
         return messages2
 
     # ---- 步骤 7 · 归档原件 (必须先归档成功才允许动历史 · 数据安全红线) ----
@@ -821,9 +838,10 @@ def auto_compress(
         new_messages.insert(len(new_messages) - 1, ack_msg)
 
     # ---- 步骤 11 · 落盘 + 持久化 + 计数 ----
-    _last_compression_turn = len(new_messages)
-    _compression_count += 1
-    _consecutive_compacts += 1
+    _st = _state()
+    _st["last_compression_turn"] = len(new_messages)
+    _st["compression_count"] += 1
+    _st["consecutive_compacts"] += 1
     _save_summary_json(summary, len(fold), key_facts)
     _persist_rewrite(new_messages)
 
@@ -872,9 +890,9 @@ def _archive_messages(kind: str, msgs: list[dict]) -> str:
     sessions/archive/{sid}-{kind}-{ts}.jsonl · 一条 message 一行 (原样 dump dict)。
     失败抛异常 —— 调用方必须 archive 成功后才允许改历史 (数据安全红线)。
     """
-    global _current_sid, _archived_files
+    global _archived_files
     _ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    sid = _current_sid or "anon"
+    sid = _state()["current_sid"] or "anon"
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     path = _ARCHIVE_DIR / f"{sid}-{kind}-{ts}.jsonl"
 
@@ -911,12 +929,12 @@ def _save_summary_json(summary: str, from_turns: int, key_facts: list[str]) -> N
         "key_facts": [...]
       }
     """
-    global _current_sid
-    if not _current_sid:
+    _st = _state()
+    if not _st["current_sid"]:
         return
 
     _SESSIONS_DIR.mkdir(exist_ok=True)
-    path = _SESSIONS_DIR / f"{_current_sid}.summary.json"
+    path = _SESSIONS_DIR / f"{_st['current_sid']}.summary.json"
 
     entry = {
         "compressed_at": datetime.now().isoformat(timespec="seconds"),
@@ -960,18 +978,19 @@ def _save_summary_json(summary: str, from_turns: int, key_facts: list[str]) -> N
     try:
         from workers.memory_index import index_session_summary
 
-        index_session_summary(_current_sid, summary, key_facts)
+        index_session_summary(_st["current_sid"], summary, key_facts)
     except Exception:
         pass
 
 
 def get_last_compression_stats() -> dict:
     """返回最近一次压缩的统计信息（给日志/UI 用）。"""
+    st = _state()
     return {
-        "compression_count": _compression_count,
-        "last_compression_at_turn": _last_compression_turn,
-        "current_sid": _current_sid,
-        "consecutive_compacts": _consecutive_compacts,
+        "compression_count": st["compression_count"],
+        "last_compression_at_turn": st["last_compression_turn"],
+        "current_sid": st["current_sid"],
+        "consecutive_compacts": st["consecutive_compacts"],
         "pruned_total": _pruned_total,
         "archived_files": _archived_files,
     }

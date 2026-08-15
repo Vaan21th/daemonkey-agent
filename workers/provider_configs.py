@@ -373,22 +373,33 @@ def apply_config_to_env(cfg: dict) -> None:
     """把一条 config 的字段同步到 os.environ · 让 setup_client / detect_provider 沿用旧路径.
 
     daemon 启动 / 热切换都调这个 · 然后再 setup_client(provider_kind).
+    安全约束: 切换必须【无条件】写/清全部相关键 —— 条件赋值会让上一个 config 的值残留
+    (先中转后官方 Anthropic 时旧 base_url 残留 → 官方 key 被发到第三方中转站;
+     先 anthropic 后 openai 时旧 ANTHROPIC_API_KEY 残留 → openai 客户端带错 key)。
     """
     if not cfg:
         return
     pkind = cfg.get("provider_kind") or "openai"
-    base = cfg.get("base_url") or ""
-    model = cfg.get("model") or ""
+    base = (cfg.get("base_url") or "").strip()
+    model = (cfg.get("model") or "").strip()
     key = cfg.get("api_key") or ""
     os.environ["OPUS_PROVIDER"] = pkind
     if base:
         os.environ["OPUS_BASE_URL"] = base
+    else:
+        os.environ.pop("OPUS_BASE_URL", None)
     if model:
         os.environ["OPUS_MODEL"] = model
-    if pkind == "anthropic":
-        os.environ["ANTHROPIC_API_KEY"] = key
     else:
-        os.environ["OPUS_API_KEY"] = key
+        os.environ.pop("OPUS_MODEL", None)
+    if key:
+        # setup_client 取 key 优先级是 ANTHROPIC_API_KEY or OPUS_API_KEY —— 必须清掉另一边
+        if pkind == "anthropic":
+            os.environ["ANTHROPIC_API_KEY"] = key
+            os.environ.pop("OPUS_API_KEY", None)
+        else:
+            os.environ["OPUS_API_KEY"] = key
+            os.environ.pop("ANTHROPIC_API_KEY", None)
 
 
 def _normalize_pricing(p) -> dict | None:

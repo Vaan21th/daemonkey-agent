@@ -9,8 +9,11 @@ import sys
 import threading
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
+from typing import Optional
+
+from api_routes._deps import check_auth
 
 logger = logging.getLogger("opus.stt")
 
@@ -111,8 +114,9 @@ def _download_model(model_name: str) -> bool:
 
 
 @router.get("/stt/status")
-def stt_status():
+def stt_status(authorization: Optional[str] = Header(None)):
     """设置页状态聚合: 依赖/模型/就绪/启动预加载开关。"""
+    check_auth(authorization)
     from workers import stt_transcribe
     st = stt_transcribe.stt_status()
     st["boot_load"] = _env_flag("OPUS_STT_BOOT_LOAD")
@@ -126,8 +130,9 @@ class SttModelReq(BaseModel):
 
 
 @router.post("/stt/model")
-def stt_set_model(req: SttModelReq):
+def stt_set_model(req: SttModelReq, authorization: Optional[str] = Header(None)):
     """设置页切换模型大小 (tiny/base/small) · 下次加载生效。"""
+    check_auth(authorization)
     from workers import stt_transcribe
     if req.model_name not in ("tiny", "base", "small"):
         raise HTTPException(400, f"模型大小只支持 tiny/base/small · 收到 {req.model_name}")
@@ -140,18 +145,22 @@ class SttBootLoadReq(BaseModel):
 
 
 @router.post("/stt/boot-load")
-def stt_set_boot_load(req: SttBootLoadReq):
+def stt_set_boot_load(req: SttBootLoadReq, authorization: Optional[str] = Header(None)):
     """设置页「随 daemon 启动加载模型」开关 → .env OPUS_STT_BOOT_LOAD。"""
+    check_auth(authorization)
     _write_env_flag("OPUS_STT_BOOT_LOAD", req.enabled)
     return {"ok": True, "enabled": req.enabled}
 
 
 @router.post("/stt/setup")
-def stt_setup():
+def stt_setup(authorization: Optional[str] = Header(None)):
     """一键安装: ①pip 装依赖 ②下载模型。后台线程跑 · 前端轮询 /stt/status。
 
-    安装锁: 同一时刻只允许一个 setup · 重复点返回 409。"""
-    if _setup_lock.locked():
+    安装判重: 以 _setup_state['running'] 为准 —— 锁在后台 worker 内持有/释放,
+    原先端点 finally 立即 release · 后台 pip/下载期间实际无保护 (可并发重复安装)。
+    """
+    check_auth(authorization)
+    if _setup_state.get("running") or _setup_lock.locked():
         raise HTTPException(409, "安装已在跑 · 请等待完成")
     if not _setup_lock.acquire(blocking=False):
         raise HTTPException(409, "安装已在跑 · 请等待完成")
@@ -173,17 +182,22 @@ def stt_setup():
                 _setup_state["step"] = "model_failed" if not ok_model else "done"
             finally:
                 _setup_state["running"] = False
+                _setup_lock.release()
 
         t = threading.Thread(target=_worker, name="stt-setup", daemon=True)
         t.start()
         return {"ok": True, "message": "安装已开始 · 轮询 /stt/status 看进度"}
-    finally:
-        _setup_lock.release()
+    except Exception:
+        # 起线程失败时必须归还锁 · 否则 setup 永久卡死
+        if _setup_lock.locked():
+            _setup_lock.release()
+        raise
 
 
 @router.post("/stt/remove-model")
-def stt_remove_model():
+def stt_remove_model(authorization: Optional[str] = Header(None)):
     """删除模型文件 (释放磁盘) · 依赖保留 · 可重新下载。"""
+    check_auth(authorization)
     import shutil
     from workers import stt_transcribe
     model_name = stt_transcribe.get_model_name()

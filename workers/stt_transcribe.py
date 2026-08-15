@@ -35,7 +35,58 @@ os.environ["HF_HUB_DISABLE_XET"] = "1"
 logger = logging.getLogger("opus.stt")
 
 # 模型名: tiny (~75MB) / base (~150MB) / small (~460MB) · 可在设置页选
-_MODEL_NAME = os.environ.get("STT_WHISPER_MODEL", "small")
+# 持久化: 设置页切换 → set_model_name() 写 .env STT_WHISPER_MODEL (wish-241e0014 续修 ·
+# 08-15 BRO 反馈"重启后语音识别失效"· 根因: 旧代码只改内存 · 重启回默认 small)。
+# 模块加载时从 .env 读 · 优先级: .env 存的值 > 环境变量 > 默认 small。
+_MODEL_NAME = "small"
+
+
+def _env_path() -> Path:
+    return Path(__file__).resolve().parent.parent / ".env"
+
+
+def _read_model_name_from_env() -> str:
+    """读 .env 里持久化的模型名 (设置页切换时写入) · 无效回退环境变量/默认。"""
+    try:
+        p = _env_path()
+        if p.exists():
+            for line in p.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("STT_WHISPER_MODEL="):
+                    v = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if v in ("tiny", "base", "small"):
+                        return v
+    except Exception:
+        pass
+    env = os.environ.get("STT_WHISPER_MODEL", "")
+    return env if env in ("tiny", "base", "small") else "small"
+
+
+def _write_model_name_to_env(name: str) -> bool:
+    """把模型名写进 .env · 保留其他行。失败不阻塞 (内存值仍生效 · 只影响重启后)。"""
+    try:
+        p = _env_path()
+        lines = []
+        if p.exists():
+            lines = p.read_text(encoding="utf-8").splitlines()
+        out = []
+        found = False
+        for line in lines:
+            if line.strip().startswith("STT_WHISPER_MODEL="):
+                out.append(f"STT_WHISPER_MODEL={name}")
+                found = True
+            else:
+                out.append(line)
+        if not found:
+            out.append(f"STT_WHISPER_MODEL={name}")
+        p.write_text("\n".join(out) + "\n", encoding="utf-8")
+        return True
+    except Exception as e:
+        logger.warning("写 .env STT_WHISPER_MODEL 失败: %s", e)
+        return False
+
+
+_MODEL_NAME = _read_model_name_from_env()
 
 # 依赖缺省判定 (给设置页状态显示 + 安装触发用)
 STT_DEPS = ("pilk", "faster_whisper")
@@ -51,17 +102,27 @@ def get_model_name() -> str:
 
 
 def set_model_name(name: str) -> None:
-    """设置页切换模型大小 (tiny/base/small) · 下次加载生效"""
+    """设置页切换模型大小 (tiny/base/small) · 立即生效 + 持久化到 .env (重启不丢)。
+
+    08-15 修复: 旧版只改内存 · daemon 重启后回到默认 small · 已下载的 base/tiny
+    模型找不到 → 语音识别静默失效。现在切换即写 .env · 重启后从 .env 恢复。"""
     global _MODEL_NAME
     valid = {"tiny", "base", "small"}
     if name in valid:
         _MODEL_NAME = name
+        _write_model_name_to_env(name)
 
 
 def deps_installed() -> bool:
-    """检查 STT 依赖是否已装 (pilk + faster_whisper)。设置页状态显示用。"""
+    """检查 STT 依赖是否已装 (pilk + faster_whisper)。设置页状态显示用。
+
+    08-15 修复: 旧代码 `import importlib` 后直接用 importlib.util.find_spec ·
+    但 importlib.util 不会随 import importlib 自动加载 → 永远抛 AttributeError →
+    except → False → 设置页永远显示"未开启"· 即使依赖早已装好。
+    显式 import importlib.util 修复。
+    """
     try:
-        import importlib
+        import importlib.util  # noqa: F401 · 显式加载 util 子模块 (import importlib 不会带它)
         for d in STT_DEPS:
             if importlib.util.find_spec(d) is None:
                 return False

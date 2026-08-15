@@ -3380,6 +3380,16 @@ header {
   padding: 32px 16px;
   font-size: 13px;
 }
+/* 会话时间分组标题 (用户 2026-08-15 拍板 · 今天/昨天/本周/本月/更早 · 专注版+工作台共用) */
+.session-group-header {
+  padding: 10px 12px 2px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--dim, #8a8699);
+  user-select: none;
+  pointer-events: none;
+}
 .session-item {
   padding: 10px 12px 8px 12px;
   border-radius: 8px;
@@ -9733,6 +9743,23 @@ a.bi-sig-title:hover { color: var(--Daemonkey); text-decoration: underline; }
      改 break-word: 中文按词/字自然换行 · 只有超长英文/URL 才强制断 */
   word-break: break-word;
   overflow-wrap: break-word;
+}
+/* 2026-08-15 v5 移植 (龙头): 预览卡两段式 —— 问题 (≤3 行) + 回答片段 (≤4 行) */
+.rail-tip-q {
+  font-weight: 600;
+  color: #fff;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rail-tip-a {
+  margin-top: 4px;
+  color: #bbb;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .rail-jump-flash {
   animation: railJumpFlash 1.2s ease;

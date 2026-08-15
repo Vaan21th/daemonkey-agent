@@ -89,6 +89,15 @@ def _run_set_identity(args: dict) -> tuple[bool, str]:
         payload["name"] = name
     if style:
         payload["persona_style"] = style
+        # wish-9585aa62: 设定风格时 LLM 蒸馏叙事风格包 (开场白/安抚/完成语变体池)
+        # 失败 (网络/JSON) → 不阻塞 · 保持原 persona_style · 叙事器回退默认包
+        try:
+            from identity import distill_narration_pack
+            pack = distill_narration_pack(style)
+            if pack:
+                payload["narration_pack"] = pack
+        except Exception:
+            pass
     # owner_name = 该怎么称呼他 (localize 把代码里的占位名换成这个)·空就先不写·之后可补
     if owner:
         payload["owner_name"] = owner

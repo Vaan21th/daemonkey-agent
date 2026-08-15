@@ -127,7 +127,7 @@ def _resolve_workshop_file(domain: str, filename: str) -> "Path":
         if "/" not in filename:
             raise HTTPException(400, "outputs reveal needs app_id/filename")
         suffix = PurePosixPath(filename).suffix.lower()
-        if f".{suffix}" not in _WORKSHOP_FILE_EXTS:
+        if suffix not in _WORKSHOP_FILE_EXTS:
             raise HTTPException(400, f"unsupported output type: {suffix}")
         if ".." in filename or filename.startswith("/") or filename.startswith("\\") or "\x00" in filename:
             raise HTTPException(400, "invalid filename")

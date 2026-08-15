@@ -236,17 +236,18 @@ async def abort_turn(
     return {"ok": True, "turn_id": turn_id, "note": "abort signaled; will stop at next tool decision"}
 
 
-@router.post("/turns/{turn_id}/confirm")
-async def confirm_tool_call(
+def _resolve_confirm_inline(
+    tool_call_id: str,
     turn_id: str,
-    payload: dict = Body(...),
-    authorization: Optional[str] = Header(None),
-):
-    """wish-2a4d8c1e · BRO 在 chat 卡片点 4 按钮 (approve/trust_*/deny)"""
-    check_auth(authorization)
-    if not isinstance(payload, dict):
-        raise HTTPException(400, "request body must be a JSON object")
+    decision: str,
+    reason: str = "",
+) -> dict:
+    """wish-2f0c731a · 把 confirm endpoint 核心抽成进程内可调函数。
 
+    WebUI 卡片 (POST /turns/{turn_id}/confirm) 和微信文字回复
+    (wechat_listener._maybe_resolve_confirm) 共用同一套 resolve 逻辑。
+    返回 {ok, detail, decision, applied_trust?}。
+    """
     from daemon_api import (
         _PENDING_CONFIRMS,
         _PENDING_CONFIRMS_LOCK,
@@ -255,36 +256,35 @@ async def confirm_tool_call(
         _extract_trust_pattern,
     )
 
-    tool_call_id = (payload.get("tool_call_id") or "").strip()
-    decision = (payload.get("decision") or "").strip()
-    reason = (payload.get("reason") or "").strip()[:500]
+    decision = (decision or "").strip()
+    reason = (reason or "").strip()[:500]
 
     if not tool_call_id:
-        raise HTTPException(400, "tool_call_id is required")
+        return {"ok": False, "detail": "tool_call_id is required"}
     if decision not in {"approve_once", "trust_30min", "trust_24h", "trust_permanent", "deny"}:
-        raise HTTPException(400, f"invalid decision: {decision!r}")
+        return {"ok": False, "detail": f"invalid decision: {decision!r}"}
 
     with _PENDING_CONFIRMS_LOCK:
         pending = _PENDING_CONFIRMS.get(tool_call_id)
         if pending is None:
-            raise HTTPException(404, f"no pending confirm for tool_call_id={tool_call_id}")
+            return {"ok": False, "detail": f"no pending confirm for tool_call_id={tool_call_id}"}
         if pending["event"].is_set():
             return {
                 "ok": False,
                 "detail": "already resolved",
                 "previous_decision": pending.get("decision"),
             }
-        if pending.get("turn_id") and pending["turn_id"] != turn_id:
-            raise HTTPException(
-                400,
-                f"turn_id mismatch · pending belongs to {pending['turn_id']!r} · got {turn_id!r}",
-            )
+        if pending.get("turn_id") and turn_id and pending["turn_id"] != turn_id:
+            return {
+                "ok": False,
+                "detail": f"turn_id mismatch · pending belongs to {pending['turn_id']!r} · got {turn_id!r}",
+            }
         pending["decision"] = decision
         pending["reason"] = reason
         ev = pending["event"]
         tool_name = pending.get("tool_name") or ""
 
-    # wish-2a4d8c1e 续 · trust_* 决议时立刻调 add_trusted (不等 worker)
+    # trust_* 决议时立刻调 add_trusted (不等 worker)
     applied_trust = None
     if decision.startswith("trust_"):
         if _supports_trust(tool_name):
@@ -337,6 +337,43 @@ async def confirm_tool_call(
         "tool_call_id": tool_call_id,
         "decision": decision,
         "applied_trust": applied_trust,
+    }
+
+
+@router.post("/turns/{turn_id}/confirm")
+async def confirm_tool_call(
+    turn_id: str,
+    payload: dict = Body(...),
+    authorization: Optional[str] = Header(None),
+):
+    """wish-2a4d8c1e · BRO 在 chat 卡片点 4 按钮 (approve/trust_*/deny)"""
+    check_auth(authorization)
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "request body must be a JSON object")
+
+    tool_call_id = (payload.get("tool_call_id") or "").strip()
+    decision = (payload.get("decision") or "").strip()
+    reason = (payload.get("reason") or "").strip()[:500]
+
+    if not tool_call_id:
+        raise HTTPException(400, "tool_call_id is required")
+    if decision not in {"approve_once", "trust_30min", "trust_24h", "trust_permanent", "deny"}:
+        raise HTTPException(400, f"invalid decision: {decision!r}")
+
+    result = _resolve_confirm_inline(tool_call_id, turn_id, decision, reason)
+    if not result.get("ok"):
+        detail = result.get("detail") or "resolve failed"
+        if "no pending confirm" in detail or "already resolved" in detail:
+            raise HTTPException(404, detail)
+        if "turn_id mismatch" in detail:
+            raise HTTPException(400, detail)
+        raise HTTPException(400, detail)
+
+    return {
+        "ok": True,
+        "tool_call_id": result.get("tool_call_id"),
+        "decision": result.get("decision"),
+        "applied_trust": result.get("applied_trust"),
     }
 
 

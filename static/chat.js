@@ -287,6 +287,14 @@ function toggleCompact(force, animate) {
     }
   }
   document.body.classList.toggle('compact', on);
+  // rail 跟随布局: 切换模式会改变 #messages 面板位置 (专注版/工作台两套布局) ·
+  // 必须重定位 rail 才不漂移 (用户 反馈: 切回工作台后轨道位置变了)
+  // 立即重定一次 + 动画结束 (420ms) 后再定一次 · 覆盖瞬切和过渡态
+  if (typeof _repositionRail === 'function') { try { _repositionRail(); } catch (e) {} }
+  clearTimeout(window._compactRailT);
+  window._compactRailT = setTimeout(function () {
+    if (typeof _repositionRail === 'function') { try { _repositionRail(); } catch (e) {} }
+  }, 430);
   // 卷八十三 · 简洁版三栏: 进入时挂载会话清单 + 产物面板 · 退出时收起
   _syncCompactSidebars(on);
   // 进入简洁版时给对话栏一个上浮淡入(掩盖布局瞬切·加载恢复态不放[animate=false])
@@ -332,6 +340,7 @@ function _syncCompactSidebars(on) {
 // 左侧会话清单 (复用 /sessions API + buildSessionRow · 与抽屉同源 · 排序交给服务端 mtime desc)
 let _compactSessionOffset = 0;
 let _compactShowArchived = false;   // 专注版归档视图开关 (跟工作台抽屉的 showArchivedSessions 各自独立)
+let _compactLastGroupKey = null;   // 分页续接时上一页最后的组 key · 跨页不重复插分组标题
 const _COMPACT_PAGE = 30;
 async function renderCompactSessions(reset = true) {
   const list = document.getElementById('compactSessionList');
@@ -355,8 +364,11 @@ async function renderCompactSessions(reset = true) {
         last_model_cfg: s.last_model_cfg || null,
       };
     }
-    if (reset) list.innerHTML = '';
-    for (const s of data.sessions) list.appendChild(buildSessionRow(s));
+    if (reset) { list.innerHTML = ''; _compactLastGroupKey = null; }
+    // 分组渲染 (今天/昨天/本周/本月/更早) · 分页续接时沿用上一页的组 key · 跨页不重复插标题
+    let gk = _compactLastGroupKey;
+    for (const s of data.sessions) gk = _appendSessionGrouped(list, s, gk);
+    _compactLastGroupKey = gk;
     _renderCompactFoot(list, data.sessions);
     _startSessionRunPoll();  // 运行状态轮询 · 专注版列表可见即启动 (也会顺带重排)
   } catch (e) {
@@ -400,9 +412,24 @@ async function _refreshSessionRunningStates() {
     if (compactList && !compactList.hidden) {
       const bySid = {};
       compactList.querySelectorAll('.session-item[data-sid]').forEach(el => { bySid[el.dataset.sid] = el; });
+      // 分组标题跟随: 记录每个 item 之前最近的 .session-group-header ·
+      // 重排时标题跟着组内第一个 item 走 · 不留在原地 (否则 5s 轮询把分组结构打乱)
+      const headerForSid = {};
+      const headerNodes = [];
+      let curHeader = null;
+      for (const c of compactList.children) {
+        if (c.classList && c.classList.contains('session-group-header')) { curHeader = c; headerNodes.push(c); }
+        else if (c.classList && c.classList.contains('session-item')) { headerForSid[c.dataset.sid] = curHeader; }
+      }
       // 已加载的节点按 order 重排 · 没加载的不动 (分页加载时)
       const frag = document.createDocumentFragment();
-      for (const sid of order) { if (bySid[sid]) frag.appendChild(bySid[sid]); }
+      let lastHeader = null;
+      for (const sid of order) {
+        if (!bySid[sid]) continue;
+        const hdr = headerForSid[sid];
+        if (hdr && hdr !== lastHeader) { frag.appendChild(hdr); lastHeader = hdr; }
+        frag.appendChild(bySid[sid]);
+      }
       compactList.appendChild(frag);  // appendChild 已存在的节点 = 移动到末尾 · 按 order 序完成重排
     }
     document.querySelectorAll('.session-item[data-sid]').forEach(el => {
@@ -1618,7 +1645,9 @@ let _flowRunsDetailCache = {};  // run_id → 完整 state (展开时 fetch · �
 let _flowRunsDismissed = {};    // run_id → true · 用户 点 "知道了" 后不再 banner
 
 function _flowRunsToken() {
-  try { return localStorage.getItem('Daemonkey_token') || ''; } catch (e) { return ''; }
+  // H-12 修复: 全站 token 实际写在 Daemonkey_ui_token (旧版 Daemonkey_ui_token) ——
+  // 原先读的 Daemonkey_token 无人写入 · pollFlowRuns 永远空转 · 运行横幅整套死区
+  try { return localStorage.getItem('Daemonkey_ui_token') || localStorage.getItem('Daemonkey_ui_token') || ''; } catch (e) { return ''; }
 }
 
 function _isRecentTerminal(run) {
@@ -3678,8 +3707,9 @@ function renderSettingsAccess() {
       <div class="llm-section-head"><h3>🔑 API Token · 决定 WebUI 能否连 daemon</h3></div>
       <div class="field">
         <label>API Token (Bearer)</label>
-        <input id="accTokenIn" type="password" value="${escHtml(token || '')}" placeholder="DAEMONKEY_API_TOKEN">
-        <div class="field-hint">来自 .env 里的 DAEMONKEY_API_TOKEN · 浏览器记住</div>
+        <input id="accTokenIn" type="password" value="${escHtml(token || '')}" placeholder="DAEMONKEY_API_TOKEN / Daemonkey_API_TOKEN">
+        <div class="field-hint">⚠ 这是【连接 daemon 的门禁钥匙】· 不是 LLM 的 API Key（模型 Key 在「模型/Provider」里配）</div>
+        <div class="field-hint">在 daemon 目录的 <code>.env</code> 文件里找 <code>DAEMONKEY_API_TOKEN</code>（发布版叫 <code>Daemonkey_API_TOKEN</code>）· 复制粘贴进来 · 填一次浏览器记住 · 本机访问通常自动放行不用填</div>
       </div>
 
       <div class="llm-section-head" style="margin-top:18px"><h3>📂 当前 Session</h3></div>
@@ -4875,11 +4905,13 @@ function updateCurrentLabel() {
 }
 
 let _sessionListOffset = 0;
+let _drawerLastGroupKey = null;   // 分页续接时上一页最后的组 key · 跨页不重复插分组标题
 const SESSION_PAGE = 50;
 
 async function refreshSessionList(reset = true) {
   if (reset) {
     _sessionListOffset = 0;
+    _drawerLastGroupKey = null;
     $sessionList.innerHTML = '<div class="drawer-empty">加载中…</div>';
   }
   // 关掉可能开着的菜单
@@ -4915,9 +4947,10 @@ async function refreshSessionList(reset = true) {
       return;
     }
     if (reset) $sessionList.innerHTML = '';
-    for (const s of data.sessions) {
-      $sessionList.appendChild(buildSessionRow(s));
-    }
+    // 分组渲染 (今天/昨天/本周/本月/更早) · 与专注版共用 _appendSessionGrouped · 跨页不重复插标题
+    let gk = _drawerLastGroupKey;
+    for (const s of data.sessions) gk = _appendSessionGrouped($sessionList, s, gk);
+    _drawerLastGroupKey = gk;
     // 还有更多 → 底部加载更多按钮
     const hasMore = (data.sessions || []).length >= SESSION_PAGE;
     const loadMoreEl = document.getElementById('sessionLoadMore');
@@ -4937,6 +4970,43 @@ async function refreshSessionList(reset = true) {
   } catch (e) {
     if (reset) $sessionList.innerHTML = '<div class="drawer-empty">网络出错: ' + e.message + '</div>';
   }
+}
+
+// 会话按时间分组 (用户 2026-08-15 拍板 · 今天/昨天/本周/本月/更早 · 专注版 + 工作台共用)
+// 分组 key 是【相对今天】的归一字符串 · 跨天自然滚动 · 不依赖任何绝对日期
+function _sessionGroupKey(mtime) {
+  if (!mtime) return '更早';
+  const d = new Date(mtime);
+  if (isNaN(d.getTime())) return '更早';
+  const now = new Date();
+  const startOfDay = function (x) { const t = new Date(x); t.setHours(0, 0, 0, 0); return t; };
+  const today = startOfDay(now).getTime();
+  const dayMs = 86400000;
+  const t = startOfDay(d).getTime();
+  if (t >= today) return '今天';
+  if (t >= today - dayMs) return '昨天';
+  // 本周: 周一 0 点起
+  const dow = (now.getDay() + 6) % 7; // 0=周一
+  const weekStart = today - dow * dayMs;
+  if (t >= weekStart) return '本周';
+  // 本月: 1 号 0 点起
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  if (t >= monthStart) return '本月';
+  return '更早';
+}
+function _sessionGroupHeaderEl(key) {
+  const h = document.createElement('div');
+  h.className = 'session-group-header';
+  h.textContent = key;
+  return h;
+}
+// 列表追加带分组: 组变化时插标题 · 返回当前组 key (调用方分页续接时传入续用)
+// 专注版 renderCompactSessions 与工作台 refreshSessionList 共用 · 一处写两处受益
+function _appendSessionGrouped(list, session, lastGroupKey) {
+  const gk = _sessionGroupKey(session.mtime);
+  if (gk !== lastGroupKey) list.appendChild(_sessionGroupHeaderEl(gk));
+  list.appendChild(buildSessionRow(session));
+  return gk;
 }
 
 function buildSessionRow(s) {
@@ -14411,9 +14481,66 @@ if (!sessionId) {
 
 updateCurrentLabel();
 renderDetailWelcome();
+// 2026-08-15 · 老用户升级免傻眼 (用户 拍板): token 空时不再立即弹设置框。
+// 先探测本机回环连通性 —— loopback 中间件 (wish-bb84a386 + H-01) 在本机访问时
+// 会自动注入有效 token · 浏览器 localStorage 没有 key 也能正常连 (老用户 0.8.x→0.9.x
+// 升级后旧 key 名 Daemonkey_ui_token/Daemonkey_ui_token 对新前端失效的体验缝)。
+// 探测 /status (需鉴权端点) 能通 = 本机回环注入真实生效 → 静默进 chat · 不弹框。
+// ⚠ 不能用 /api/ping-test (noauth) —— 它 200 只证明 daemon 活着 · 不能证明
+//   loopback 注入生效 (用户禁用 Daemonkey_LOOPBACK_TRUST 时 ping-test 照样 200 ·
+//   会误判本机 OK 不弹框 → 后面带空 token 的请求全 401 → 历史加载失败)。
+// 只有真连不上 (远程/隧道/loopback 禁用) 才弹设置引导填 .env 的 token。
 if (!token) {
-  addSys('欢迎回到<名字> 的家 · 第一次进来需要填 token');
-  setTimeout(openSettings, 400);
+  const _probeLoopback = async function () {
+    try {
+      const r = await fetch('/status', { signal: AbortSignal.timeout(2500) });
+      return r.ok;   // 无 token 能过 /status = loopback 中间件注入了有效 token
+    } catch (e) { return false; }
+  };
+  _probeLoopback().then(function (ok) {
+    if (ok) {
+      // 本机回环注入生效 · 无需 token · 静默进 chat (等价于有 token 的 else 分支)
+      if (sessionId && !sessionId.startsWith('tmp-')) {
+        _metaTried.add(sessionId);
+        _ensureSessionMeta(sessionId);
+        _loadSessionHistory(sessionId).then(async () => {
+          const st = activeSession();
+          let bgStatus = 'none';
+          try {
+            const br = await fetch(`/sessions/${encodeURIComponent(sessionId)}/background_turn_status`, {
+              headers: { 'Authorization': 'Bearer ' + token },
+            });
+            if (br.ok) bgStatus = ((await br.json()).status) || 'none';
+          } catch {}
+          if (bgStatus === 'scheduled' || bgStatus === 'running') {
+            addSys('<i class="ri-refresh-fill"></i> daemon 刚重启过 · Daemonkey 正在后台续写上次的任务 · 自动接续中…', st && st.$container);
+            let polling = false;
+            try { polling = await _probeAndStartPoll(st, 30000); } catch {}
+            if (!polling) {
+              try { await _loadSessionHistory(sessionId); } catch {}
+              if (st && sessionId === st.sessionId) {
+                pending = false;
+                setSendButtonState('idle');
+                setInputLocked(false);
+                showToolProgress(false);
+              }
+            }
+          } else {
+            addSys('Daemonkey 在线 · ' + aliasFor(sessionId) + ' · 点 ≡ 看历史对话');
+            _maybeStartPoll(st);
+          }
+        }).catch(() => {
+          addSys('Daemonkey 在线 · ' + aliasFor(sessionId) + ' · (历史加载失败) · 点 ≡ 看历史对话');
+        });
+      } else {
+        addSys('Daemonkey 在线 · 新对话 · 点 ≡ 看历史对话');
+      }
+    } else {
+      // 连不上 = 远程 / 隧道 / loopback 禁用 · 必须手填 token
+      addSys('欢迎回到<名字> 的家 · 第一次进来需要填 token（本机回环未自动放行）');
+      setTimeout(openSettings, 400);
+    }
+  });
 } else {
   if (sessionId && !sessionId.startsWith('tmp-')) {
     // 浏览器刷新页面 · 已有 sessionId · 先拉服务端 label 把顶部标题从裸 api-xxxx 换成对话名
@@ -14699,13 +14826,17 @@ function switchSessionById(sid) {
 function showSpawnBanner() { /* no-op · spawnTask 自动切标签无需 banner */ }
 window.switchSessionById = switchSessionById;
 
-// ========== 提问轨道（Message Index Rail）· 社区贡献 · 2026-08-10 ==========
+// ========== 提问轨道（Message Index Rail）· 社区贡献 · 2026-08-10 · v5 增量移植 2026-08-15 ==========
 // 右侧一列集中连在一起的标记 · 只列用户消息（全部，无上限）
 // 点击标记 → 平滑滚动定位到对应消息（闪烁高亮）· 悬停/聚焦 → 预览文字（截断 ~12 字）
 // 磁性拉伸: 光标在轨道移动 → 影响半径内刻度按距离连续变长（smoothstep）· 离开回弹
 // 滚动聊天区 → 当前可见消息对应标记高亮
 // 适配母体: 主题色用 --Daemonkey 系 (非社区 --accent) · 父容器补 position:relative (chat-pane 无定位)
-const _RAIL_PREVIEW_LEN = 12;
+// 2026-08-15 v5 增量移植 (龙头提交): ①两段式预览(问题+回答片段) ②磁性驱动预览统一
+//   (hover 不再依赖精准命中 6px 细条 · 光标靠近轨道即出预览) ③_railTopCache 免每帧读布局
+const _RAIL_PREVIEW_LEN = 60;   // 预览截断字符上限 (v5: 12→60 · 两段式问题 ≤3 行)
+const _RAIL_ANSWER_LEN = 200;   // 回答片段截断上限 (v5 新增 · ≤4 行)
+const _RAIL_HOT_MIN = 0.75;     // 磁性预览触发阈值 (v5 · smoothstep 下 ≈ 指针距刻度 24px 内)
 const _RAIL_MAGNET_RADIUS = 72;   // 磁性影响半径
 const _RAIL_MAX_STRETCH = 52;     // 磁性拉伸最宽
 const _RAIL_TOP_OFFSET = 120;     // rail 距消息区顶部
@@ -14718,6 +14849,13 @@ let _railPointerY = null;         // 最近一次光标 y（视口坐标）
 let _railRAF = null;              // 磁性拉伸 RAF 句柄
 let _railHideTimer = null;        // safe zone 隐藏定时器
 let _railSelfHealTimer = null;    // 兜底自愈轮询句柄 (2026-08-10 v3 · 防误隐藏后无事件恢复)
+let _railPreviewIdx = -1;         // 磁性驱动预览跟随的当前刻度 (切换时才重建 DOM · v5)
+let _railTopCache = null;         // rail 视口 top 缓存 (v5 · 磁性拉伸免每帧 getBoundingClientRect)
+// 2026-08-15 磁性命中带 (用户 反馈): rail 元素本身只有 ~20px 宽 · 鼠标从消息区滑过来
+// 要精准够到细条才有反应 (中间镂空/左侧带"点不到")。扩成透明命中带: 左缘向左扩展
+// _RAIL_HIT_ZONE px · document 级 pointermove 判断 · 靠近轨道即触发磁性+预览。
+const _RAIL_HIT_ZONE = 48;        // 命中带向左扩展宽度 (px)
+let _railHitRect = null;          // {left,right,top,bottom} 命中带缓存 · document handler 纯数值比较
 
 function _ensureMsgRail() {
   if (_railEl) return _railEl;
@@ -14741,15 +14879,23 @@ function _ensureMsgRail() {
   _railTip.addEventListener('mouseleave', function() { _hideRailPreview(); });
   panel.addEventListener('scroll', _updateRailActive, { passive: true });
   window.addEventListener('resize', _repositionRail);
-  // 磁性拉伸: rail 只绑一次 pointermove · RAF 消费（免每帧写 DOM）
-  _railEl.addEventListener('pointermove', function(e) {
-    _railPointerY = e.clientY;
-    if (!_railRAF) _railRAF = requestAnimationFrame(_applyRailMagnet);
-  });
-  _railEl.addEventListener('pointerleave', function() {
-    _railPointerY = null;
-    if (_railRAF) { cancelAnimationFrame(_railRAF); _railRAF = null; }
-    _railMarks.forEach(function(item) { item.el.style.transform = 'scaleX(1)'; }); // 回弹
+  // 磁性拉伸: document 级 pointermove · 命中带判断 (rail 左缘向左扩展 48px) ·
+  // 鼠标靠近轨道就触发 · 不用精准够到 20px 细条 (用户: 中间镂空点不到)
+  // RAF 消费（免每帧写 DOM）· 命中带外回弹 + 隐藏预览
+  document.addEventListener('pointermove', function(e) {
+    const hr = _railHitRect;
+    if (!hr) return;
+    const inZone = e.clientX >= hr.left && e.clientX <= hr.right &&
+                   e.clientY >= hr.top && e.clientY <= hr.bottom;
+    if (inZone) {
+      _railPointerY = e.clientY;
+      if (!_railRAF) _railRAF = requestAnimationFrame(_applyRailMagnet);
+    } else if (_railPointerY != null) {
+      _railPointerY = null;
+      if (_railRAF) { cancelAnimationFrame(_railRAF); _railRAF = null; }
+      _railMarks.forEach(function(item) { item.el.style.transform = 'scaleX(1)'; }); // 回弹
+      if (_railPreviewIdx !== -1) { _railPreviewIdx = -1; _scheduleHidePreview(); }
+    }
   });
   if (window.MutationObserver) {
     // 2026-08-11 F2 (墨言审查): 监听 #messages 全子树 class 变化 → 每条消息渲染/折叠
@@ -14801,7 +14947,7 @@ function _refreshMsgRail() {
   // 2026-08-10 修复 v3: 容器切换瞬间 (:not([hidden]) 选不到) 不隐藏 rail ·
   // 用 panel 全量兜底找 .msg.用户 · 只要有用户消息就显示 · 不因瞬间状态误隐藏
   const src = container || document.getElementById('messages');
-  if (!src) { _railEl.hidden = true; return; }
+  if (!src) { _railEl.hidden = true; _railHitRect = null; return; }
   const userMsgs = src.querySelectorAll('.msg.用户'); // 用户消息 = msg 用户 (角色类)
   // 2026-08-10 修复 v9 (用户 拍板): rail 只显示最近 N 条 · 不随折叠/展开爆炸 ·
   // 展开折叠加载全部后 DOM 224+ 条 → 刻度挤爆看不见 (用户: "200多轮根本显示不全")
@@ -14829,9 +14975,10 @@ function _refreshMsgRail() {
     mark.style.width = baseW + 'px';
     mark.style.opacity = Math.max(0.55, 0.95 - idxFromBottom * 0.05).toFixed(2);
     mark.addEventListener('click', function() { _jumpToMsg(msgEl); });
-    mark.addEventListener('mouseenter', function() { _showRailPreview(mark, msgEl); });
-    mark.addEventListener('mouseleave', function() { _scheduleHidePreview(); });
-    // 键盘可达: Tab 聚焦同样显示预览
+    // 2026-08-15 v5 移植: 预览统一交给磁性驱动 (_applyRailMagnet) ·
+    // mark 上不再绑 mouseenter/mouseleave (避免双机制状态不同步) ·
+    // 鼠标靠近轨道即触发 · 不用精准 hover 刻度细条
+    // 键盘可达: Tab 聚焦同样显示预览 (保留)
     mark.addEventListener('focus', function() { _showRailPreview(mark, msgEl); });
     mark.addEventListener('blur', function() { _scheduleHidePreview(); });
     _railEl.appendChild(mark);
@@ -14864,26 +15011,43 @@ function _jumpToMsg(msgEl) {
   setTimeout(function() { msgEl.classList.remove('rail-jump-flash'); }, 1300);
 }
 
+// 找用户消息后最近的最终回答 (排除 thinking/sys/工具卡) · v5 移植 (龙头)
+function _findRailAnswer(msgEl) {
+  // 限定当前消息所在 session 内找 · 不依赖全局容器 (切会话瞬间可能扫到别的 session)
+  const container = (msgEl && msgEl.closest('.session-msgs')) || _visibleMsgContainer();
+  if (!container) return null;
+  const all = container.querySelectorAll('.msg');
+  let found = false;
+  for (let i = 0; i < all.length; i++) {
+    const el = all[i];
+    if (el === msgEl) { found = true; continue; }
+    if (!found) continue;
+    if (el.classList.contains('Daemonkey') && !el.classList.contains('thinking')) {
+      return el;
+    }
+  }
+  return null;
+}
+
 function _showRailPreview(mark, msgEl) {
   if (!_railTip) return;
   if (_railHideTimer) { clearTimeout(_railHideTimer); _railHideTimer = null; }
-  // 2026-08-10 修复 v2: 预览文本只取正文 (跳过 .time 时间戳) · 纯文本节点直接用
-  let txt = '';
-  const bodyEl = msgEl.querySelector && msgEl.querySelector('.md-body');
-  if (bodyEl) {
-    txt = (bodyEl.innerText || bodyEl.textContent || '').replace(/\s+/g, ' ').trim();
-  } else {
-    for (let i = 0; i < msgEl.childNodes.length; i++) {
-      const n = msgEl.childNodes[i];
-      if (n.nodeType === 3) { txt += n.textContent; }            // 文本节点
-      else if (n.nodeType === 1 && !(n.classList && n.classList.contains('time'))) {
-        txt += (n.innerText || n.textContent || '');
-      }
-    }
-    txt = txt.replace(/\s+/g, ' ').trim();
+  // 2026-08-15 v5 移植: 两段式预览 —— 问题 (≤3 行) + 回答片段 (≤4 行) ·
+  // 渲染用 textContent 防注入 · 不再用 innerText 拼字符串
+  _railTip.innerHTML = '';
+  const q = (msgEl.textContent || '').replace(/\s+/g, ' ').trim();
+  const ansEl = _findRailAnswer(msgEl);
+  const a = ansEl ? (ansEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+  const qDiv = document.createElement('div');
+  qDiv.className = 'rail-tip-q';
+  qDiv.textContent = (q.length > _RAIL_PREVIEW_LEN ? q.slice(0, _RAIL_PREVIEW_LEN) + '…' : q) || '（空消息）';
+  _railTip.appendChild(qDiv);
+  if (a) {
+    const aDiv = document.createElement('div');
+    aDiv.className = 'rail-tip-a';
+    aDiv.textContent = a.length > _RAIL_ANSWER_LEN ? a.slice(0, _RAIL_ANSWER_LEN) + '…' : a;
+    _railTip.appendChild(aDiv);
   }
-  if (txt.length > _RAIL_PREVIEW_LEN) txt = txt.slice(0, _RAIL_PREVIEW_LEN) + '…';
-  _railTip.textContent = txt || '（空消息）';
   // 2026-08-10 修复 v2: 不用 translateX(-100%) (刻度靠右时会把卡推出屏幕) ·
   // 直接 right 定位: 卡右边缘 = 刻度左边缘 - 10px · 稳稳在视口内
   const r = mark.getBoundingClientRect();
@@ -14916,6 +15080,15 @@ function _repositionRail() {
   // fixed 定位直接用视口坐标 · 不随父容器裁切 · 窗口怎么变都在聊天区右侧
   const prect = panel.getBoundingClientRect();
   _railEl.style.top = (prect.top + _RAIL_TOP_OFFSET) + 'px';
+  _railTopCache = prect.top + _RAIL_TOP_OFFSET; // v5: 缓存 rail 视口 top · 磁性拉伸免每帧读布局
+  // 磁性命中带: rail 真实矩形 + 左缘向左扩展 (用户: 靠近轨道就触发 · 不用够到细条)
+  const rr = _railEl.getBoundingClientRect();
+  _railHitRect = {
+    left: rr.left - _RAIL_HIT_ZONE,
+    right: rr.right + 4,
+    top: rr.top - 8,
+    bottom: rr.bottom + 8
+  };
   // 2026-08-10 修复 v8 (顾问 KIMI K3 方案 A): 刻度从滚动条带上挪开 ·
   // 原 right = innerWidth - prect.right + 5 → rail 右缘 1583 紧贴滚动条左缘 1584 (8px 宽) ·
   // 人眼把 rail 归并成"滚动条的一部分" = 视觉消失 · +16 让刻度右缘落到 ~1576 ·
@@ -14930,13 +15103,17 @@ function _repositionRail() {
 function _applyRailMagnet() {
   _railRAF = null;
   if (_railPointerY == null || !_railMarks.length || !_railEl) return;
-  const railTop = _railEl.getBoundingClientRect().top; // 每帧只读一次布局
+  // v5: 用 _railTopCache · 首次回退读一次 (reposition 时刷新 · 免每帧 getBoundingClientRect)
+  const railTop = _railTopCache != null ? _railTopCache : _railEl.getBoundingClientRect().top;
+  let hotIdx = -1;
+  let hotInfluence = 0;
   _railMarks.forEach(function(item, i) {
     const centerY = _railCenters[i] != null ? railTop + _railCenters[i] : null;
     if (centerY == null) return;
     const dist = Math.abs(_railPointerY - centerY);
     const t = Math.max(0, 1 - dist / _RAIL_MAGNET_RADIUS);
     const influence = t * t * (3 - 2 * t); // smoothstep
+    if (influence > hotInfluence) { hotInfluence = influence; hotIdx = i; }
     if (influence <= 0.01) {
       item.el.style.transform = 'scaleX(1)';
     } else {
@@ -14944,6 +15121,19 @@ function _applyRailMagnet() {
       item.el.style.transform = 'scaleX(' + (w / item.baseW) + ')';
     }
   });
+  // v5 移植: 磁性驱动预览 —— 离光标最近的刻度直接显示预览 (不用精准 hover 6px 细条 ·
+  // 命中区=整个 rail 轨道) · 切换刻度才重建 DOM · 离开轨道阈值外延迟隐藏
+  const HOT_MIN = _RAIL_HOT_MIN;
+  if (hotIdx >= 0 && hotInfluence > HOT_MIN) {
+    if (_railPreviewIdx !== hotIdx) {
+      _railPreviewIdx = hotIdx;
+      const hot = _railMarks[hotIdx];
+      _showRailPreview(hot.el, hot.msgEl);
+    }
+  } else if (_railPreviewIdx !== -1) {
+    _railPreviewIdx = -1;
+    _scheduleHidePreview();
+  }
 }
 
 function _updateRailActive() {

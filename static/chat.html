@@ -415,8 +415,9 @@
     <h2>设置 · 第一次需要填 token</h2>
     <div class="field">
       <label>API Token (Bearer)</label>
-      <input id="tokenInput" type="password" placeholder="Daemonkey_API_TOKEN 的值">
-      <div class="field-hint">来自电脑 .env 文件里 Daemonkey_API_TOKEN。填一次浏览器记住。</div>
+      <input id="tokenInput" type="password" placeholder="Daemonkey_API_TOKEN 的值（在 .env 文件里）">
+      <div class="field-hint">这是【连接 daemon 的门禁钥匙】· 不是 LLM 的 API Key（模型 Key 在「LLM 配置」里配）。</div>
+      <div class="field-hint">打开 daemon 目录下的 <code>.env</code> 文件，找 <code>Daemonkey_API_TOKEN</code>（发布版叫 <code>Daemonkey_API_TOKEN</code>）那一行，把等号后面的值复制粘贴进来。填一次浏览器记住。本机访问通常自动放行，只有远程/隧道访问才需要填。</div>
     </div>
     <div class="field">
       <label>Session ID</label>

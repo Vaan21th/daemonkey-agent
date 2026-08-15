@@ -22,6 +22,7 @@ wish-bb84a386 · loopback 鉴权豁免 (2026-05-28 卷四十六续 V):
 """
 from __future__ import annotations
 
+import hmac
 import os
 from typing import TYPE_CHECKING, Optional
 
@@ -29,7 +30,6 @@ from fastapi import HTTPException
 
 if TYPE_CHECKING:
     from fastapi import Request
-    from starlette.types import ASGIApp
 
 
 def check_auth(authorization: Optional[str]) -> None:
@@ -47,6 +47,12 @@ def check_auth(authorization: Optional[str]) -> None:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="missing Bearer token")
     if authorization[7:].strip() != expected:
+        raise HTTPException(status_code=401, detail="invalid token")
+    # 恒时比较 (防时序侧信道 · 本地威胁模型下低优先但零成本 · 龙头 H-01 附带)
+    if not hmac.compare_digest(
+        authorization[7:].strip().encode("utf-8", "replace"),
+        expected.encode("utf-8", "replace"),
+    ):
         raise HTTPException(status_code=401, detail="invalid token")
 
 
@@ -74,18 +80,43 @@ def _is_loopback(request: "Request") -> bool:
     return host in _LOOPBACK_HOSTS
 
 
+def _host_is_local(request: "Request") -> bool:
+    """Host 头必须是本机名 (localhost / 127.0.0.1 / [::1] · 可带端口)。
+
+    只看 client.host 会被两类远程流量伪装成 loopback:
+      1. 本机隧道 (cloudflared/frp) 转发来的公网流量 —— client.host 恒为 127.0.0.1
+      2. DNS 重绑定 —— 恶意域名解析到 127.0.0.1 后浏览器直连本机端口
+    但这两类的 Host 头是公网域名而非本机名 → 联合校验即可拦住 token 注入。
+    """
+    host = ""
+    for k, v in (request.scope.get("headers") or []):
+        if k.lower() == b"host":
+            try:
+                host = v.decode("latin-1", "replace").strip().lower()
+            except Exception:
+                host = ""
+            break
+    h = host
+    if h.startswith("["):          # IPv6 形如 [::1]:7860
+        h = h.split("]", 1)[0].lstrip("[")
+    elif ":" in h:                 # IPv4/域名带端口
+        h = h.rsplit(":", 1)[0]
+    return h in _LOOPBACK_HOSTS
+
+
 async def loopback_auth_middleware(request: "Request", call_next):
     """FastAPI middleware · 同机访问自动注入有效 Bearer token.
 
     工作原理:
       1. 取 request.client.host · 判断是不是 127.0.0.1 / ::1 / localhost
-      2. 是 + OPUS_LOOPBACK_TRUST 未禁用 → 在 ASGI scope[headers] 注入
+      2. 是 + Host 头也是本机名 (防隧道转发/DNS 重绑定伪装·见 _host_is_local)
+         + OPUS_LOOPBACK_TRUST 未禁用 → 在 ASGI scope[headers] 注入
          `Authorization: Bearer <env_token>` (覆盖前端可能发的过期 token)
       3. 下游 check_auth 看到的就是有效 token · 78 处调用全零改动
       4. 跨网请求 (e.g. 阿里云远程 daemon · 微信 bot 跨进程) 不动 ·
          原 check_auth 严格鉴权继续生效
     """
-    if _loopback_trust_enabled() and _is_loopback(request):
+    if _loopback_trust_enabled() and _is_loopback(request) and _host_is_local(request):
         env_token = (os.environ.get("OPUS_API_TOKEN") or "").strip()
         if env_token:
             scope = request.scope

@@ -36,7 +36,7 @@ _CDN_BASE = "https://novac2c.cdn.weixin.qq.com/c2c"
 
 # UploadMediaType (getuploadurl) 与 MessageItemType (sendmessage) 编号不同·别搞混
 _UPLOAD_IMAGE, _UPLOAD_VIDEO, _UPLOAD_FILE = 1, 2, 3
-_ITEM_IMAGE, _ITEM_VIDEO, _ITEM_FILE = 2, 5, 4
+_ITEM_IMAGE, _ITEM_VIDEO, _ITEM_FILE, _ITEM_VOICE = 2, 5, 4, 3  # wish-241e0014 语音接收 (voice=3)
 
 _MAX_BYTES = 25 * 1024 * 1024  # 留个上限·别把 daemon 内存撑爆
 
@@ -134,7 +134,7 @@ def _build_item(kind: str, item_type: int, info: dict, file_name: str) -> dict:
 
 
 def send_media(path: str, caption: str = "", *, to_user_id: Optional[str] = None) -> dict:
-    """给用户发一个本地文件 (图片/视频/其它=文件附件)·caption 作为前导文字。
+    """给 BRO 发一个本地文件 (图片/视频/其它=文件附件)·caption 作为前导文字。
     返回 {ok, kind, bytes} 或 {ok:False, error}。窗口关/未配置/文件问题都在这里挡掉。"""
     if not ilink_client.enabled():
         return {"ok": False, "error": "ilink_not_enabled"}
@@ -171,6 +171,7 @@ _INBOUND_ITEM = {
     _ITEM_IMAGE: ("image", "image_item"),
     _ITEM_VIDEO: ("video", "video_item"),
     _ITEM_FILE: ("file", "file_item"),
+    _ITEM_VOICE: ("voice", "voice_item"),  # wish-241e0014 语音接收
 }
 
 
