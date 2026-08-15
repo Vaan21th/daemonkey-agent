@@ -45,12 +45,13 @@ python3 -m PyInstaller \
 echo "==> ✅ 产物: dist/Daemonkey.app"
 ls -d "$PWD/dist/Daemonkey.app" 2>/dev/null && echo "    双击即用 · 用户无需装任何东西"
 
-# 5. 可选 dmg (分发更友好)
+# 5. 可选 dmg (分发更友好 · 架构名动态: macos-14 runner=x86_64 · 以后 arm runner 自动 arm64)
 if command -v hdiutil >/dev/null 2>&1; then
-  echo "==> 打包 dmg (分发用)..."
+  ARCH="$(uname -m)"
+  echo "==> 打包 dmg (分发用 · $ARCH)..."
   hdiutil create -volname "Daemonkey" -srcfolder "dist/Daemonkey.app" \
-    -ov -format UDZO "dist/Daemonkey-$VER-arm64.dmg" 2>/dev/null \
-    && echo "==> ✅ dmg: dist/Daemonkey-$VER-arm64.dmg" || echo "   (dmg 失败不影响 app)"
+    -ov -format UDZO "dist/Daemonkey-$VER-$ARCH.dmg" 2>/dev/null \
+    && echo "==> ✅ dmg: dist/Daemonkey-$VER-$ARCH.dmg" || echo "   (dmg 失败不影响 app)"
 fi
 
 echo ""
