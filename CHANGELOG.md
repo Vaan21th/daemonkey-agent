@@ -7,7 +7,33 @@
 
 ---
 
-## [0.7.0beta] — 2026-07-14
+## [0.9.5] — 2026-08-15
+
+**启动器全家桶（壳肉分离 · HTML 月光操作台 · 托盘守护 · Mac 双端）+ 社区 7 项安全修复 + 首次一条龙**
+
+### 新增 Added
+- **全新启动器 Daemonkey.exe（壳肉分离）** —— 薄壳 35KB 只负责拉起，界面/逻辑全在「肉」里，以后改启动器不用重编 exe；新界面「月光操作台」HTML 化（灵猴满月主视觉 · 启动/环境/API/急救/扩展/社群/关于 七个标签页）
+- **首次使用一条龙** —— 首次双击自动装运行环境（进度可见 · 无需点任何按钮），装完自动启动 WebUI 进「相遇」；之后打开点【启动】即可
+- **崩溃自动拉起** —— daemon 异常退出 90 秒自动恢复（连续失败 3 次熔断 10 分钟）
+- **托盘 + 守护面板** —— 最小化收托盘 · 双击呼出守护面板（运行状态 / PID / 端口 / 崩溃自启开关 / 事件日志）；退出三选一（全退 / 仅关启动器 / 取消）
+- **启动器自更新** —— 启动后自动检查新版 · 发现才提示 · 失败静默不打扰
+- **Mac 双端适配** —— 同一份 HTML + pywebview 壳（mac_launcher.py）· 首装引导（clone+venv+pip 一条龙）· daemonkey.icns 图标 · GitHub Actions 双架构出包（arm64 + x86_64）· MAC-GUIDE.md 使用指南
+- **关于页** —— 作者署名 無序EmptySet · 贡献者名单（墨言 / 龙头 / 蟹子）· 社群二维码
+
+### 修复 / 优化 Fixed
+- **社区安全修复 7 项（龙头）** —— 回环地址放行 / 压缩 ContextVar / 调度器快照 / outputs 双加点 / flow token key 等
+- **附件扩展** —— 支持拖拽 zip / rar / 7z / xlsx / xls / tar / gz / diff / patch（10MB → 50MB）
+- **提问轨道 v5 增量（龙头）** —— 两段式预览 / 磁性驱动 / 轨道位置缓存
+- **引导卡矮窗口修复（龙头）** —— 窗口矮时输入框不再被顶出屏幕
+- **合并两闸模型（墨言）** —— merge_explain.py 冲突合并增强
+- **token 弹框免傻眼** —— 本机回环自动放行 · 文案注明「门禁钥匙非 LLM Key」
+- **微信更新** —— 叙事器风格化回复 / 确认兜底 / STT 模型持久化
+- **假就绪修复** —— 环境检测加依赖实测（venv 损坏时自动重装，不再"看着装了其实没装"）
+
+> The launcher family pack: shell-meat separation (35KB thin exe), HTML "Moonlight Console" UI, tray + guard panel, crash auto-relift, one-shot first-run setup, Mac dual-arch support (arm64 + x86_64 via GitHub Actions), launcher self-update, contributor page. Plus 7 community security fixes, attachment drag-drop extensions (zip/rar/7z/xlsx up to 50MB), rail-track v5 increments, and the "fake-ready" detection fix. Windows: Daemonkey.exe · macOS: Daemonkey-0.9.5-<arch>.dmg.
+
+---
+
 
 **演示稿引擎（PPT）+ 生图工具 + 抗套娃任务账本 + 卡顿/token 修复**
 
