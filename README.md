@@ -148,7 +148,7 @@ chmod +x start.sh && ./start.sh
 
 > 已在 Linux POSIX 实测启动通过——WebUI / 对话 / 记忆 / 工坊等核心功能可用。桌宠、剪贴板、打开本地应用等 **Windows 专属能力暂未适配**，不影响核心使用。
 >
-> 详细启动步骤 / 故障排查见 **[START-macOS.md](START-macOS.md)**。
+> 详细启动步骤 / 故障排查见 **[MAC-GUIDE.md](MAC-GUIDE.md)**（macOS 使用指南 · 终端一键启动 + 图形启动器 .app）。
 
 ---
 
@@ -298,7 +298,7 @@ It builds a Python venv, installs deps, starts the local service and opens your 
 
 > Startup verified on Linux POSIX — WebUI / chat / memory / studio core features work. Windows-only abilities (desktop pet, clipboard, open local apps) are **not yet ported** but don't affect core use.
 >
-> Full guide & troubleshooting: **[START-macOS.md](START-macOS.md)**.
+> Full guide & troubleshooting: **[MAC-GUIDE.md](MAC-GUIDE.md)**.
 
 ### Self-healing & upgrades
 
