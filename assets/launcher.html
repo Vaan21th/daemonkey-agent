@@ -220,6 +220,7 @@
       <!-- 环境页 -->
       <div class="content" id="page-setup">
         <div class="pg-title">环境 &amp; 配置</div>
+        <div class="setup-auto" id="setupAuto" style="display:none;align-items:center;gap:8px;background:rgba(124,108,240,0.16);border:1px solid rgba(124,108,240,0.45);border-radius:10px;padding:10px 14px;margin:0 24px 10px 24px;font-size:12px;color:#c7c9ff;">🔄 首次使用 · 正在自动安装运行环境 · 装完自动打开 WebUI · 无需操作</div>
         <div class="pg-note">Daemonkey 自动装环境 · 装坏了也能一键修。</div>
         <div class="card"><div class="card-desc" style="color:var(--accent-hi);margin-top:0;line-height:1.8;">首次使用 · 自动流程:<br>① 检测到环境未装会自动安装 (约 1-2 分钟 · 看底部终端)<br>② 装完自动启动 daemon 并打开 WebUI<br>③ 在 WebUI 里填 API key · 即可开聊。之后打开直接点『启动』。</div></div>
         <div class="card"><div class="card-title">① 安装 / 修复运行环境</div><div class="card-desc">建虚拟环境 (.venv) + 装依赖 · 第一次必跑 · 装坏了也点它修。 输出看底部终端。</div><button class="btn btn-primary card-btn" data-act="setup-env">开始安装</button></div>
@@ -369,6 +370,10 @@ window.opBridge.pushState = function (s) {
   if (!s) { return; }
   if (s.ver) { document.getElementById('tbVer').textContent = s.ver; document.getElementById('abVer').textContent = s.ver; }
   if (typeof s.nav === 'string') { showPage(s.nav); }
+  if (typeof s.needSetup === 'boolean') {
+    var el = document.getElementById('setupAuto');
+    if (el) { el.style.display = s.needSetup ? 'flex' : 'none'; }
+  }
   if (s.btn) {
     var b = document.getElementById('btnStart');
     if (s.btn.text) { b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5 v14 l11 -7 Z"/></svg>' + s.btn.text; }

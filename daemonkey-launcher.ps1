@@ -2320,6 +2320,7 @@ $stepCard.Controls.Add($stepLbl)
 $cardEnv = New-Card $pgSetup 24 178 532 92 '① 安装 / 修复运行环境' '建虚拟环境 (.venv) + 装依赖 · 第一次必跑 · 装坏了也点它修。 输出看右栏。'
 $btnEnv = New-ActionButton $cardEnv '开始安装' 372 26 142 40 $cBtn $cText
 $btnEnv.Add_Click({
+    if ($script:termProc) { Add-Log '依赖正在安装中 · 请稍候…' 'warn'; return }   # 2026-08-15 · 防重复点反复刷提示
     Add-Log '安装/修复环境 (run.ps1 -NoLaunch) · 装依赖约 1-2 分钟…' 'info'
     $runPs1 = Join-Path $script:Root 'run.ps1'
     Term-Run 'powershell.exe' "-NoProfile -ExecutionPolicy Bypass -File `"$runPs1`" -NoLaunch"
@@ -3026,6 +3027,7 @@ function Push-MainState {
         type = 'state'
         ver = "$script:Version"
         nav = $script:CurrentPage   # 2026-08-15 · 初始化补推带当前页 · 否则 needSetup 时 Show-Page 推送在 mainWv 创建前丢失 → HTML 永远停启动页
+        needSetup = (Test-NeedSetup)   # 2026-08-15 · HTML 环境页显示"自动安装中"横幅
         opts = @{
             daemon  = [bool]$chkDaemon.Checked
             pet     = [bool]$chkPet.Checked
@@ -3222,6 +3224,7 @@ function New-MainWebView {
 #  启动器自更新 · 启动后 8s 后台检查 gitee 新版 ps1 → 备份 → 覆盖 (下次双击 exe 生效)
 # ═══════════════════════════════════════════════════
 function Check-LauncherUpdate {
+    if (Test-NeedSetup) { return }   # 2026-08-15 · 首装(环境未装)跳过 · 用户在装环境不该被更新检查打扰
     try {
         $localVer = $script:Version
         $mf = Join-Path $script:Root 'core_manifest.json'
@@ -3231,15 +3234,24 @@ function Check-LauncherUpdate {
         if (-not $giteeUrl) { return }
         $rawBase = ($giteeUrl -replace '\.git$', '') -replace '^https://gitee\.com/', 'https://gitee.com/'
         if ($rawBase -notmatch 'gitee\.com') { return }
-        $resp = Invoke-WebRequest -Uri "$rawBase/raw/master/core_manifest.json" -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
+        # 2026-08-15 · gitee 直连 (绕开系统代理 · Clash 死端口同坑 8/11 雷达/飞书)
+        $oldProxy = [System.Net.WebRequest]::DefaultWebProxy
+        [System.Net.WebRequest]::DefaultWebProxy = $null
+        try {
+            $resp = Invoke-WebRequest -Uri "$rawBase/raw/master/core_manifest.json" -UseBasicParsing -TimeoutSec 8 -ErrorAction Stop
+        } finally { [System.Net.WebRequest]::DefaultWebProxy = $oldProxy }
         $remoteVer = [string]((($resp.Content | ConvertFrom-Json).core_version) -replace '^v', '')
         if (-not $remoteVer) { return }
         $remoteVer = "v$remoteVer"
-        if ($remoteVer -eq $localVer) { Add-Log "启动器已是最新 ($localVer)" 'ok'; return }
+        if ($remoteVer -eq $localVer) { return }   # 2026-08-15 · 已最新静默 · 不刷屏
         Add-Log "发现启动器新版: $localVer → $remoteVer · 下载中…" 'warn'
-        $resp2 = Invoke-WebRequest -Uri "$rawBase/raw/master/daemonkey-launcher.ps1" -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
+        $oldProxy2 = [System.Net.WebRequest]::DefaultWebProxy
+        [System.Net.WebRequest]::DefaultWebProxy = $null
+        try {
+            $resp2 = Invoke-WebRequest -Uri "$rawBase/raw/master/daemonkey-launcher.ps1" -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
+        } finally { [System.Net.WebRequest]::DefaultWebProxy = $oldProxy2 }
         $newPs1 = $resp2.Content
-        if ($newPs1.Length -lt 50000) { Add-Log "下载的启动器异常 (仅 $($newPs1.Length) 字符) · 跳过更新" 'err'; return }
+        if ($newPs1.Length -lt 50000) { return }   # 2026-08-15 · 下载异常静默跳过
         $curPs1 = Join-Path $script:Root 'daemonkey-launcher.ps1'
         $backupDir = Join-Path $script:Root 'data\runtime\launcher_backup'
         if (-not (Test-Path $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
@@ -3247,7 +3259,7 @@ function Check-LauncherUpdate {
         $enc = New-Object System.Text.UTF8Encoding($true)   # 带 BOM · PS5.1 中文注释不乱码
         [System.IO.File]::WriteAllText($curPs1, $newPs1, $enc)
         Add-Log "启动器已更新 $localVer → $remoteVer · 重启启动器生效 (旧版备份在 data\runtime\launcher_backup)" 'ok'
-    } catch { Add-Log "启动器自更新检查失败: $_" 'warn' }
+    } catch { }   # 2026-08-15 · 失败完全静默 (代理未开/网络不可达常见) · 不打扰用户 · 有新版才提示
 }
 
 # 启动后 8s 后台跑一次 · 不阻塞启动
