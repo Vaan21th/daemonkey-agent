@@ -296,6 +296,21 @@ function send(type, data) {
   if (window.chrome && window.chrome.webview) { window.chrome.webview.postMessage(msg); }
   else if (window.opBridge && window.opBridge.send) { window.opBridge.send(msg); }
 }
+// ── pywebview (Mac 版) shim · Windows WebView2 分支不受影响 ──
+// Mac: launcher.html 由 pywebview 加载 · 强制接管 chrome.webview → js_api 通道
+//   (pywebview EdgeChromium 也暴露 chrome.webview 但协议不兼容 · 必须覆盖)
+//   HTML→Python: chrome.webview.postMessage → window.pywebview.api.on_msg
+//   Python→HTML: 壳调 window._dkRecv(jsonStr) → opBridge.pushState
+if (window.pywebview && window.pywebview.api) {
+  window.chrome = window.chrome || {};
+  window.chrome.webview = {
+    postMessage: function (msg) { window.pywebview.api.on_msg(JSON.stringify(msg)); },
+    addEventListener: function (type, cb) { window._dkMsgCb = cb; }
+  };
+  window._dkRecv = function (jsonStr) {
+    try { var d = JSON.parse(jsonStr); if (d && window.opBridge && window.opBridge.pushState) { window.opBridge.pushState(d); } } catch (err) {}
+  };
+}
 if (window.chrome && window.chrome.webview) {
   window.chrome.webview.addEventListener('message', function (e) {
     var d = e.data;
