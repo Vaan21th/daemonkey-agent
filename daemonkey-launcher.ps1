@@ -1476,6 +1476,7 @@ function New-GuardPanel {
                 $msg = $e.WebMessageAsJson | ConvertFrom-Json
                 switch ($msg.type) {
                     'close' { Close-GuardPanel }
+                    'gclose' { Close-GuardPanel }
                     'toggle' {
                         $script:guardAuto = [bool]$msg.on
                         if ($script:chkAutoRestart) { $script:chkAutoRestart.Checked = $script:guardAuto }

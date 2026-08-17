@@ -26,6 +26,20 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
+
+# 托盘 (pystray + Pillow) · Mac 菜单栏常驻 · 装不上就跳过 (启动器窗口还能用)
+# 分开 try: PIL (Pillow) 在 requirements 必有 (视觉能力) · pystray 才是有无托盘的关键
+try:
+    from PIL import Image, ImageDraw
+except Exception:
+    Image = ImageDraw = None
+
+try:
+    import pystray
+    _HAS_TRAY = Image is not None   # 托盘需要 PIL 画图标
+except Exception:
+    _HAS_TRAY = False
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get("OPUS_API_PORT", "7860"))
@@ -93,12 +107,17 @@ class LauncherApi:
     调 window._dkRecv(jsonStr) 回推。"""
 
     def __init__(self):
-        self.win = None
+        self.win = None                  # 主窗口 (launcher.html)
+        self.guard_win = None            # 守护面板窗口 (guard-panel.html)
         self.daemon = None               # subprocess.Popen
         self.opts = {"daemon": True, "pet": False, "browser": True, "crash": True}
         self.port = PORT
         self._stop = threading.Event()
         self._watch = None
+        self._tray = None
+        self._tray_th = None
+        self._started_at = time.time()   # 守护面板「已运行」时长
+        self.events = deque(maxlen=8)    # 事件环形缓冲 (守护面板最近事件)
 
     # ─────────────────────── HTML → Python ───────────────────────
 
@@ -127,9 +146,18 @@ class LauncherApi:
         elif t == "openurl":
             self.on_openurl(msg.get("id"))
         elif t == "min":
-            self.log("(Mac v0: 最小化走系统按钮)")
+            # 最小化 = 收托盘 (托盘常驻 · 点图标呼出)
+            self.hide_main()
         elif t == "close":
-            self.log("关闭窗口 · 启动器退出 (daemon 继续后台运行)")
+            # 关主窗口 = 收托盘 (daemon 继续跑 · 托盘常驻)
+            self.log("窗口已收托盘 · 点托盘图标呼出 (daemon 继续运行)", "warn")
+            self.hide_main()
+        elif t == "gclose":
+            # 守护面板关闭 (guard-panel.html 专属 · 与主窗口 close 区分)
+            self.hide_guard()
+        elif t == "open":
+            # 守护面板「打开启动器」
+            self.show_main()
         elif t == "nav":
             pass  # 页面切换无需后端动作
         elif t == "drag":
@@ -242,6 +270,126 @@ class LauncherApi:
 
     def log(self, text, kind="line"):
         self.push({"type": "log", "log": text, "logKind": kind})
+        # 事件缓冲 (守护面板最近事件) · 只记关键级别
+        if kind in ("ok", "warn", "err"):
+            t = time.strftime("%H:%M")
+            self.events.appendleft({"t": t, "kind": kind, "msg": text})
+            self.push_guard_state()
+
+    # ─────────────────────── 托盘 (pystray · Mac 菜单栏常驻) ───────────────────────
+
+    def _tray_image(self):
+        """64×64 紫底圆角 + 白色月牙 (和启动器主视觉呼应)。"""
+        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle([2, 2, 62, 62], radius=16, fill=(124, 108, 240, 255))
+        d.ellipse([15, 13, 45, 43], fill=(255, 255, 255, 255))
+        d.ellipse([26, 13, 52, 43], fill=(124, 108, 240, 255))
+        return img
+
+    def start_tray(self):
+        if not _HAS_TRAY or self._tray:
+            return
+        try:
+            menu = pystray.Menu(
+                pystray.MenuItem("打开启动器", self.show_main, default=True),
+                pystray.MenuItem("守护面板", self.show_guard),
+                pystray.MenuItem("崩溃自动拉起", self._tray_toggle_crash,
+                                 checked=lambda item: bool(self.opts.get("crash"))),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem("退出", self._tray_quit),
+            )
+            self._tray = pystray.Icon("daemonkey", self._tray_image(), "Daemonkey", menu)
+            self._tray_th = threading.Thread(target=self._tray.run, daemon=True)
+            self._tray_th.start()
+            self.log("托盘已就绪 · 菜单栏图标常驻", "ok")
+        except Exception as e:
+            self.log(f"托盘启动失败: {e} (不影响启动器)", "err")
+
+    def _tray_toggle_crash(self, icon, item):
+        self.opts["crash"] = not self.opts.get("crash")
+        self.log(f"崩溃自动拉起 → {'开' if self.opts['crash'] else '关'}", "warn")
+        self.push_guard_state()
+
+    def _tray_quit(self, icon, item):
+        # 全退: 停 daemon + 退托盘 + 关窗口
+        try:
+            self.stop_daemon()
+        except Exception:
+            pass
+        self._stop.set()
+        try:
+            icon.stop()
+        except Exception:
+            pass
+        for w in (self.guard_win, self.win):
+            if w:
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+        time.sleep(1.5)
+        os._exit(0)   # 保底退出
+
+    # ─────────────────────── 窗口显隐 ───────────────────────
+
+    def show_main(self, icon=None, item=None):
+        if self.win:
+            try:
+                self.win.show()
+            except Exception:
+                pass
+
+    def hide_main(self):
+        if self.win:
+            try:
+                self.win.hide()
+            except Exception:
+                pass
+
+    def show_guard(self, icon=None, item=None):
+        if self.guard_win:
+            try:
+                self.guard_win.show()
+                self.push_guard_state()
+            except Exception:
+                pass
+
+    def hide_guard(self):
+        if self.guard_win:
+            try:
+                self.guard_win.hide()
+            except Exception:
+                pass
+
+    # ─────────────────────── 守护面板状态推送 ───────────────────────
+
+    def push_guard_state(self):
+        if not self.guard_win:
+            return
+        running = self.daemon is not None and self.daemon.poll() is None
+        if running and self.daemon:
+            pid = self.daemon.pid
+            uptime = int(time.time() - self._started_at)
+            m, s = divmod(uptime, 60)
+            h, m = divmod(m, 60)
+            dur = f"{h}小时{m}分" if h else f"{m}分{s}秒"
+            detail = f"PID {pid} | 端口 {self.port} | 已运行 {dur}"
+        else:
+            detail = f"端口 {self.port}"
+        payload = {
+            "st": "running" if running else "stopped",
+            "main": "守护中 · daemon 运行正常" if running else "已停止 · daemon 未运行",
+            "detail": detail,
+            "auto": bool(self.opts.get("crash")),
+            "sub": "daemonkey-launcher · 守护进程",
+            "events": list(self.events)[:3],
+        }
+        try:
+            js = json.dumps(json.dumps(payload, ensure_ascii=False))
+            self.guard_win.evaluate_js(f"window._dkRecv({js})")
+        except Exception:
+            pass
 
     def _version(self):
         try:
@@ -274,6 +422,9 @@ def main():
 
     api = LauncherApi()
     html = os.path.join(ASSET_DIR, "launcher.html")
+    guard_html = os.path.join(ASSET_DIR, "guard-panel.html")
+
+    # 主窗口 (月光操作台)
     win = webview.create_window(
         "Daemonkey",
         html,
@@ -283,6 +434,22 @@ def main():
         min_size=(960, 620),
     )
     api.win = win
+    api.main_win = win
+
+    # 守护面板窗口 (预创建 · 隐藏 · 托盘呼出) · 同一份 guard-panel.html (跨平台)
+    try:
+        guard = webview.create_window(
+            "Daemonkey 守护",
+            guard_html,
+            js_api=api,
+            width=380,
+            height=430,
+            hidden=True,
+            on_top=True,
+        )
+        api.guard_win = guard
+    except Exception as e:
+        api.log(f"守护面板窗口创建失败: {e}", "err")
     # 首装引导 (打包模式): 后台线程跑 · 进度经 api.log 推送到 UI · 不阻塞窗口
     if FROZEN:
         def _ensure():
@@ -293,6 +460,8 @@ def main():
                 api.log(f"⚠ 首次安装失败: {note} · 可关掉重开重试", "err")
         threading.Thread(target=_ensure, daemon=True).start()
     api.start_watch()
+    api.start_tray()
+    api.log("守护面板已就绪 · 托盘常驻", "ok")
     webview.start()
     api._stop.set()
 

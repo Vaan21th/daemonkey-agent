@@ -38,7 +38,7 @@ jobs:
       - name: Install build deps
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install pyinstaller pywebview pyinstaller-hooks-contrib
+          python3 -m pip install pyinstaller pywebview pyinstaller-hooks-contrib pystray Pillow
 
       - name: Build .app + dmg
         run: |

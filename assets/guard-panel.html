@@ -234,6 +234,13 @@ if (window.chrome && window.chrome.webview) {
 }
 
 window.opBridge = window.opBridge || {};
+// pywebview (Mac) shim · 同 launcher.html · Windows WebView2 分支不受影响
+window._dkRecv = function (jsonStr) {
+  try { window.opBridge.pushState(JSON.parse(jsonStr)); } catch (e) {}
+};
+if (window.pywebview && window.pywebview.api) {
+  window.opBridge.send = function (msg) { window.pywebview.api.on_msg(JSON.stringify(msg)); };
+}
 window.opBridge.pushState = function (s) {
   // st: running/stopped/restarting → CSS 类 ok/err/warn (ps1 推的是 running 不是 ok · 必须映射)
   var stCls = s.st === 'stopped' ? 'err' : s.st === 'restarting' ? 'warn' : 'ok';
@@ -264,7 +271,7 @@ window.opBridge.pushState = function (s) {
 };
 
 // ── 交互 ──
-document.getElementById('btnClose').addEventListener('click', function () { send('close'); });
+document.getElementById('btnClose').addEventListener('click', function () { send('gclose'); });
 document.getElementById('toggle').addEventListener('click', function () {
   var on = !this.classList.contains('on');
   this.classList.toggle('on', on);

@@ -14,6 +14,9 @@ jieba>=0.42.0
 # wish-4a6331b2 · OPUS 视觉能力 · 图片压缩
 Pillow>=10.0.0
 
+# 0.9.5 · Mac 启动器托盘 (pystray 菜单栏常驻 · 跨平台无害)
+pystray>=0.19.0
+
 # wish-41ed72ef · 文档上传 · PDF 文本提取
 PyPDF2>=3.0.0
 
