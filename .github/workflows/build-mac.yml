@@ -17,6 +17,8 @@ on:
 
 jobs:
   build-mac:
+    permissions:
+      contents: write    # 允许 Attach dmg 到 Release · 默认 read 会 403 (2026-08-17 修复)
     strategy:
       fail-fast: false          # 一个架构失败不拦另一个
       matrix:
