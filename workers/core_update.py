@@ -36,7 +36,9 @@ MANIFEST_PATH = ROOT / "core_manifest.json"
 def load_manifest() -> dict:
     """读 core_manifest.json · 缺失/坏掉返空壳 (不抛)。"""
     try:
-        return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        # utf-8-sig: 发布链 PowerShell 写回 core_manifest.json 会带 BOM · 硬 utf-8 撞 BOM 报错 →
+        # 版本号/升级胶囊全灭 (2026-08-17 0.9.5 发布回归) · sig 兼容 BOM/无 BOM 双态
+        return json.loads(MANIFEST_PATH.read_text(encoding="utf-8-sig"))
     except Exception:
         return {"kernel": {}, "never_sync": [], "sources": {}}
 

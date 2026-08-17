@@ -685,5 +685,5 @@ def _http_get_manifest(url: str) -> dict:
 
 def json_load(p):
     import json
-    with open(p, "r", encoding="utf-8") as f:
+    with open(p, "r", encoding="utf-8-sig") as f:  # sig 兼容发布链 BOM (2026-08-17 回归)
         return json.load(f)
