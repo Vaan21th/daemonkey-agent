@@ -6,7 +6,7 @@
 > 原则: **L1 = 让「写代码安全」+「daemon 稳定」的底层机制。改一处全员受益,用户不该 fork。**
 > 清单可演进。撞到用户改过的 L1 文件时,更新流程会弹出来让人决定,绝不无声覆盖。
 >
-> *草案 · 卷六十四续五 · 2026-06-08 · 待 BRO 圈定*
+> *草案 · 2026-06-08 · 待圈定*
 
 ---
 
@@ -56,7 +56,7 @@
 ### 6. 身份本地化机制 (归一地基)
 - `identity.py` — ai_name / owner_name / localize 出口本地化
 
-### 7. 核心前端机制 (卷七十四续十八 · 2026-06-18 纳入)
+### 7. 核心前端机制 (2026-06-18 纳入)
 > 前端分两层: **机制层**(核心交互逻辑 · 所有人共享的 bug 修复/能力增强)与**皮肤层**(用户自定义主题/样式)。
 > 机制层该随内核同步 · 皮肤层永不碰。下面两个是机制层:
 - `static/chat.js` — 主对话前端 (会话/轮询/工具渲染/微信 WebUI 自动感知… 核心交互机制)
@@ -66,7 +66,7 @@
 
 ---
 
-## 边界文件 · 已圈定 (2026-06-08 BRO 拍板: 全按建议)
+## 边界文件 · 已圈定 (2026-06-08 拍板: 全按建议)
 
 > 决议: `tool_loop` / `soul_loader` / `api_routes(core+_deps+__init__)` / `daemon_runtime` / `daemon_session` / `scheduler` / `model_aliases` / `provider_presets` **纳入**;
 > `daemon_api.py`(混功能路由) 与 `provider_configs.py`(含 key) **不纳入**。
@@ -95,18 +95,18 @@
 
 ## 待办
 
-1. ✅ BRO 圈定「边界文件」→ 白名单落定
+1. ✅ 圈定「边界文件」→ 白名单落定
 2. ✅ 白名单转机器可读 `core_manifest.json`
 3. ✅ 建中心库 (Gitee 源已就绪 `gitee.com/vaan21th/dae-monkey`;真相源唯一=母体,下游只拉不推)
 4. ✅ 写 `update_core` 工具: `git fetch` → 按白名单算 diff → 预览 → 只覆盖白名单文件 → checkpoint 可回退 (已实装 · 见 `agent_tools/update_core.py`)
 5. ✅ 包成对话工具 (用户说「看下内核更新」即可触发 check/preview/apply)
-6. ✅ 核心前端机制 (`chat.js`/`workshop.js`) 上移进白名单 + dirty 本地改过提示 (卷七十四续十八)
-7. ✅ 内核版本号体系 `core_version` (卷七十四续二十): manifest 加 `core_version` 当唯一真相源 · launcher/WebUI 动态读它显示 · `update_core check` 拿本地/远程两边对比报「有新版」· launcher「检查更新」卡片接上 · github 源占位(待建镜像库)
+6. ✅ 核心前端机制 (`chat.js`/`workshop.js`) 上移进白名单 + dirty 本地改过提示
+7. ✅ 内核版本号体系 `core_version`: manifest 加 `core_version` 当唯一真相源 · launcher/WebUI 动态读它显示 · `update_core check` 拿本地/远程两边对比报「有新版」· launcher「检查更新」卡片接上 · github 源占位(待建镜像库)
 8. ⬜ 长期: 拆 `daemon_api.py` 的 core 骨架出来再纳入白名单
 
 ---
 
-## 版本号怎么走 (core_version · 卷七十四续二十)
+## 版本号怎么走 (core_version)
 
 - **唯一真相源** = `core_manifest.json` 的 `core_version` (语义版本 · 如 `0.2.0`)。内核有实质更新就在这里 bump · **只此一处**。
 - **谁读它**: launcher (启动时直接读文件 · daemon 没起也能显示) / WebUI (`chat.js` 开页 fetch `/api/core/version` 挂到顶部品牌区) / `update_core check` (和远程对比)。

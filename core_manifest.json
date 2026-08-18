@@ -209,7 +209,8 @@
                    "内核自升级机制":  [
                                    "core_manifest.json",
                                    "workers/core_update.py",
-                                   "agent_tools/update_core.py"
+                                   "agent_tools/update_core.py",
+                                   "agent_tools/merge_user_override.py"
                                ],
                    "上下文压缩(L1·长会话自动摘要·user turn 逐字保护·prune 免费减负·重启持久化·治大窗口永不压缩·tiktoken 优雅降级没装也跑)":  [
                                                                                                         "workers/memory_compression.py",
