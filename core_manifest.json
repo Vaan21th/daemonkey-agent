@@ -1,292 +1,292 @@
-{
-  "manifest_version": 1,
-  "core_version": "0.9.6-hf5",
-  "core_version_note": "0.9.6(2026-08-21 · 记忆体系收尾+PLAN+升级保护层: ①基线/魔改共存[用户可接管内核文件opt-out·static/user/装修区永不被覆盖·基线指纹·救援路径捞回0.9.5前被吞魔改·扩白名单不再无声丢用户改动] ②白名单闭环[依赖闸升级符号级实测·补import伙伴漏登记] ③执行链/凭据面加固[后台执行三件套·续场串台·微信误触确认·限流+附件·数据一致性四刀] ④PLAN计划系统[task_plan有序步骤+task_ledger账本+前端计划条·长轴任务看得见] ⑤记忆卫生闸[清38%噪音·用户升级自动受益] ⑥记忆重排序[FTS5 top-30→LLM判→top-5·ATM-Bench +9.7pt·memory_rerank] ⑦画像分层注入[核心层常驻+历史层走召回·notebook_tiers] ⑧成长档案星图[three.js向量簇图+记忆管理柱状图] ⑨真机实测三连修[飞书看门狗死代码·并行工具批次丢session上下文[PLAN真机从没跑通过·61%假绑定]·任务名带空格打瘸step] · 0.9.5(2026-08-15 · 附件扩展(zip/xlsx/diff/patch)+微信入白名单+叙事轨trail v5+时间分组+H01/H07+token弹框+引导卡矮窗口修复) · hf1~hf5(2026-08-21 傍晚·test 实测五连修: PLAN前端/星图入口/画像字段/替换事故 + numpy/pypdf 依赖登记入白名单 + 补装链路闭环 + 缺依赖友好兜底 + 星图空态分层提示)",
-  "description": "Daemonkey 内核(L1)白名单 — update_core 只同步这里列出的文件;清单外的一律物理不碰(用户的功能/应用/灵魂永不被覆盖)。人类可读版见 docs/CORE-MANIFEST.md。",
-  "updated": "2026-08-21 20:15",
-  "log_ref": "卷六十四续五 · 卷七十四续十八(核心前端) · 卷七十四续二十(core_version 版本号体系) · 卷七十四续二十一(github 备份源接通) · 卷七十四续二十二(记忆系统纳入内核:自动注入+两段式recall+缓存稳定化·0.3.2 大更) · 卷七十四续二十五(能力发现引擎 discover_skill + 每周一节律 + 看板入口·0.4.0) · 0.5.0(NLP 定时任务 task_scheduler + scheduled_tasks 工具组 + 侧边栏定时任务维度 + 宪法两层注入 product_constitution + 急救体系周全 ensure_git_repo首启兜底/维修台优先) · 0.5.2(技能闭环第②环「接住」打通: extract_playbook 加 import 动作 + workers/playbook_import.py 把外部 skill MD 经 LLM 归一成 playbook 入库·memory_index 自动索引·closure_check 按需召回; 启动器关于页双发布入口 B站+抖音; playbook 技能系统(discover发现/import接住/extract沉淀/playbooks存储)整体纳入内核白名单 L1·官方可增量下发改进·写入侧与召回侧不再割裂) · 0.6.0(卷七十五 · 派分身 dispatch_subagent + 通用子执行器 subagent_runner —— 主对话可一次派 1~N 个隔离「分身」并行干活[各自独立上下文 + 收紧工具白名单]·跑完自动汇总结论回本轮;分身默认只拿只读/研究白名单·硬 DENY 剔除 dispatch_subagent 自身[防无限递归·限一层]与 request_restart/update_core/service_* 等系统控制/破坏性工具·并发上限 2 + 每分身迭代预算防 token 爆·每个分身落 sessions/sub-*.jsonl 可回看;subagent_runner 从 app_runner 抽出通用「临时 messages→run_tool_loop→记账」中段·app_runner 改薄壳零回归·是后续工作流每步隔离化/串行升级的地基;两文件随 update_core 下发即激活[agent_tools 自动发现]) · 卷七十五续八(2026-07-11 大扩白名单:daemon_api.py + api_routes/chat.py + api_routes/sessions.py + 工坊引擎5件[flow_runner/flow_steps/app_runner/create_workflow/create_app] + UI骨架[chat.html/chat.css/workshop.css] 全纳入内核·让「语音对话/模型行为思考强度/自主巡航进度/工作流并行组/简洁版+换肤」这批 0.6.0 能力对升级用户全部真生效;daemon_api.py 反转「永不同步」旧决定[见 excluded_borderline_history]·只碰框架代码不碰用户数据;apply_update 加「拉到新清单自动补一轮」·扩白名单后单轮到位[老版本首跳因跑旧代码仍需两轮·工具层已提示再升一次]) · 0.6.8beta(卷七十七续 · 双轨记忆·情感优先[closure_check 情绪/生活信号词典大扩容 + 长度门槛<2 + _TECH_NOISE 反噪·命中率47%→100%] + 主动关怀纳入内核[proactive_call/rituals/dynamic_telemetry/ilink_client 进白名单·care 信号→到点主动微信慰问·防尬红线·ritual>care>silence·母体测不出的Daemonkey注入漏在源头修掉+过 localize] + notebook 写入标准[update_bro_note 进白名单·流水加内容预览] + 客户档案 CRM 详情重构[时间线/会议记录/交付过程·跨客户 FTS] + 知识库 P3[pinned/sensitive 开关] + 心愿/沉淀位拆 depot.js + API 加固[safe_json_body 畸形 body→干净400·clients 上传端点缺 python-multipart 时优雅降级不崩整条路由]) · 0.7.2beta(2026-07-28 · 白名单补漏 7 文件:顾问机制[workers/director+agent_tools/replan·总监模型三唤醒点]+视觉通道[agent_tools/look_at]+桌宠三件套[pet/activities/expressions·通知气泡]+provider配置后端[workers/provider_configs·已核实代码不含KEY·真值在 data/provider_configs.json(L3)]——修'新功能 commit 了但用户 update_core 拉不到'的断层[顾问机制/桌宠气泡/视觉修复全在白名单外];excluded_borderline 删 provider_configs.py 误判条目[原注释把机制代码与 data 层配置文件混淆];sprites 默认美术不进白名单·防覆盖用户自定义皮肤) · 0.8.0beta(2026-07-29 · 两天密集更新·五大功能线+白名单补12: ①通知体系[桌宠完成音效 ding/manbo.wav+设置页通知 tab+Windows toast 系统通知+浏览器标签闪烁+notify.jsonl 运行时数据出 git] ②顾问体系[总监模型分层:常驻执行+顾问三唤醒点(蓝图/破局/验收)+顾问在场感 live 进度金卡+顾问连续性+协同模式+顾问改名唯一性+顾问可停止] ③多实例并行安全[精准 checkpoint 按会话归属+卷入通知+safe_merge 合主干五道保护+edit_attribution 归属表] ④git 欠账三件套[欠账胶囊从永远亮到按需亮+/api/git-debt/detail 文件清单人话分类+一键收进主干] ⑤带图消息持久化+渲染性能针[刷新图不丢+长会话 content-visibility]+会话记住模型+GUARD 档位重定界+验收闭环第四问[git 欠账对账]+顾问验收管线强制+跨模型 session 500 根治+重启续场防呆/follow_up 默认值;白名单新增:通知体系3[notification_config/windows_toast/api_routes/notifications]+顾问2[advisor_live/api_routes/advisor]+多实例安全2[edit_attribution/safe_merge]+浏览器工具3[_browser/browser_act/browser_fetch]+核心路由2[governance/models]) · 0.8.1beta(2026-07-29 · 体检工具重生+进度条视觉+欠账豁免: ①体检子进程隔离[verify_daemon_endpoints/verify_gate·体检不再堵daemon事件循环·WebUI重启/关闭按钮不再被拖死·BRO连砍两次的事故根治]+fast默认模式[假token并行·秒级验import/参数雷/前端JS·144路由~2.6s]+deep可选模式[真token串行+单请求8s超时+跳LLM端点·防共享锁雪崩]+fast模式token mismatch修复[环境不动·请求头带保证不匹配的smoke token·防handler真跑雪崩重演] ②进度条方案A流光细条[削蓝灰大色块+整行扫光→底部2px主题色流光·8套皮肤自适应]+二轮(BRO视觉反馈)去上框+透明底融入消息区+输入框focus改主题灰--dim[消除与流光的同色系高亮疲劳] ③git欠账豁免[is_debt_exempt·demo/方案稿/临时文件不算欠账·BRO拍板·亮灯/对账/面板三处同一事实源]+closure_check欠账查询复用git_ops.git_debt_detail[单一事实源·删自跑git命令]) · 0.8.2beta(2026-07-30 · 桌宠启动失败 hotfix+升级体验两连[用户升级事故驱动]: ①桌宠 exit=1 根治[QSoundEffect 软导入·缺 PyQt6-QtMultimedia 只失音效桌宠照跑·0.8.0 硬 import 直接崩]+依赖清单补回4行[PyQt6/requests/qrcode/playwright·0.8.0 整文件覆盖冲掉]+新增 PyQt6-QtMultimedia+run.ps1 依赖检查加 QtMultimedia[老用户下次启动自动补装] ②升级后首条对话告知更新内容[workers/startup_notices 版本比对 last_seen vs manifest+changelog 末段提取注入 telemetry·一次性消费] ③缺依赖对话提醒[启动 find_spec 体检 16 项可选依赖·缺失项首条对话提醒去环境页补装·NLP First 非硬弹窗];白名单新增 workers/startup_notices[主动关怀组·与 dynamic_telemetry 同批同步]) · 0.8.3beta(2026-07-31 · 三连修复+防盗用: ①续场串台根治[request_restart 优先取会话级 ContextVar·修多标签页并发时 RUNTIME.session_id 被覆盖导致重启续场注入错对话的实测事故] ②桌宠依赖自动补装[run.ps1 依赖检查加 QtMultimedia·老用户升级后跑一次 run.ps1 即自动补装桌宠依赖·0.8.2 hotfix 口实不符补上] ③防盗用版权声明[升级/首装后首条对话转告·本项目完全开源免费·付费请退款·原作者抖音/B站: 無序Emptyset·硬编码于内核白名单·随 update_core 从官方码仓下发·盗版者无法篡改]) · 0.8.4beta(2026-07-31 · 更新胶囊+hotfix 收编: ①更新胶囊[WebUI header 有新版才显示的升级入口·平时隐藏·检测到 Gitee 新版显示版本号·点开看 changelog+版权声明+「对话里升级」按钮·点击自动在对话发起 update_core 升级流程] ②/api/update-status 端点[async 异步不阻塞事件循环·10 分钟缓存防频繁拉 gitee·离线/失败静默返回无更新·完全不拖慢 daemon] ③0.8.3 遗留 hotfix 收编[防盗用声明强指令·桌宠 stderr 重定向 _pet.err·桌宠 activities 通知通道补 port]) · 0.8.5(2026-07-31 · 首个正式版 · 升级保护层+更新胶囊: ①升级保护层[用户魔改的白名单文件升级时不再被无声覆盖: 升级前检测+物理备份到 data/runtime/user_overrides/·升级后报告·用户说「合并我的改动」→ LLM 三路对比[用户版 vs 官方版]→ 用户确认 → 写回融合版 · 全程询问不自动改 · 官方版另存防手抖 · 没魔改的用户零打扰] ②更新胶囊[WebUI 有新版才显示的升级入口·版本号+changelog+版权+「对话里升级」按钮] ③/api/update-status 端点[async·10min 缓存·离线静默] ④0.8.4 收编[防盗用强指令·桌宠 stderr·activities 通知通道]) · 0.8.5-hf1(2026-07-31 · hotfix: 设置弹窗保存/取消按钮补绑定[社区用户发现·saveSettings 定义了但没绑按钮·初见时点击保存无反应·新用户下载 release 必踩] + 版本比较支持 hf 后缀[0.8.5-hf1 > 0.8.5]) · 0.8.5-hf2(2026-08-01 · hotfix: 初见页 401 报错加固[直接改 .env 填 key 无 probe 拦截·401 只在唤醒时爆·前端裸抛服务端原文·现在 401 附可操作排查提示:当前 base_url/model + 官方地址 + key 完整性]) · 0.8.6(2026-08-02 · 社区 9 bug 全修 + 桌宠路径修复 + 初见体验三连: ①社区用户 7/31 反馈 9 bug 全量修复[requirements 毒行 PyQt6-QtMultimedia 删除(PyPI 不存在·pip install 全崩)/视觉掩码保存覆盖真 key 永久 401/look_at temperature 硬限制降级重试/顾问 director 三件套+工具白名单全链路/Windows 瞬态句柄锁重试+robust 写防护四件套/httpx 传输层重试] ②桌宠启动修复[启动器 Start-Process 路径含空格被拆参→pythonw 找不到模块·手动引号包裹·实测含空格目录正常启动] ③初见体验[相遇引导页按钮 5 秒倒计时·明确告知即将进入相遇/首次使用全自动流程: 打开 exe 自动安装环境→装完自动启动 daemon+WebUI/默认模型 V4PRO→V4FLASH 轻量省钱] + 发布闸新增[5]内核白名单全量核对[防新增文件漏 port 的升级断层]) · 卷(0.8.9):缓存命中/压缩v2/压缩线/注入净化/串台修/召回增强 · 0.9.1+ (2026-08-12 · 记忆语义检索层入内核: memory_embed.py 进记忆系统 · vision.py 进视觉通道[含 /embed-config 路由] · 修纯净版 update_core 拉不到 embedding 功能的断层) · 0.9.5(2026-08-15 · 附件扩展(zip/xlsx/diff/patch)+微信入白名单+叙事器+rail v5+时间分组+H01/H07+token弹框+引导卡矮窗口修复)",
-  "sources": {
-    "primary": "gitee",
-    "note": "支持多源(gitee+github)。真相源唯一=母体 master;只单向往外 push,下游只拉不推。update_core 可指定从哪个 remote 拉。github 当前为作者私有备份源(下游需授权方可匿名拉·转公开后即可当 gitee 的海外/抽风兜底源)。",
-    "remotes": {
-      "gitee": "https://gitee.com/vaan21th/dae-monkey.git",
-      "github": "https://github.com/Vaan21th/daemonkey-agent.git"
-    }
-  },
-  "kernel": {
-    "写文件与编辑安全": [
-      "agent_tools/edit_file.py",
-      "agent_tools/write_file.py",
-      "agent_tools/_edit_lock.py",
-      "agent_tools/_git_lock.py",
-      "agent_tools/_subprocess_helper.py",
-      "workers/safe_write.py",
-      "workers/edit_selfcheck.py",
-      "workers/schema_guard.py",
-      "workers/secret_redactor.py"
-    ],
-    "代码读搜执行": [
-      "agent_tools/read_file.py",
-      "agent_tools/outline_file.py",
-      "agent_tools/glob_files.py",
-      "agent_tools/grep_files.py",
-      "agent_tools/search_code.py",
-      "agent_tools/lint_check.py",
-      "agent_tools/python_exec.py",
-      "agent_tools/shell_exec.py"
-    ],
-    "git纪律与上线闸": [
-      "agent_tools/verify_daemon_endpoints.py",
-      "agent_tools/worktree_status.py",
-      "tools/git-hooks/pre-commit",
-      "tools/install_hooks.ps1",
-      "workers/boot_health.py",
-      "workers/frontend_check.py",
-      "workers/git_ops.py",
-      "workers/merge_explain.py",
-      "workers/verify_gate.py",
-      "workers/worktree_state.py"
-    ],
-    "daemon生命周期与救命": [
-      "workers/daemon_lifecycle.py",
-      "workers/resume_runner.py",
-      "agent_tools/request_restart.py",
-      "workers/session_repair.py",
-      "tools/run_api_only.py",
-      "tools/repair_console.py",
-      "workers/env_reloader.py"
-    ],
-    "急救入口(启动器层·daemon崩了也能用·运行时读IDENTITY中性化)": [
-      "repair.bat",
-      "ROLLBACK.bat",
-      "verify.bat",
-      "tools/rollback_emergency.ps1"
-    ],
-    "运行护栏与可观测": [
-      "workers/opus_logging.py",
-      "workers/audit_logger.py",
-      "workers/rate_limiter.py",
-      "workers/token_budget_guard.py",
-      "workers/net_client.py"
-    ],
-    "身份与灵魂加载机制": [
-      "identity.py",
-      "soul_loader.py",
-      "product_constitution.py"
-    ],
-    "相遇 onboarding 机制(L1·开源用户首启命脉·相遇→生成身份/画像→热重载主daemon)": [
-      "api_routes/onboarding.py",
-      "onboarding/onboard.py",
-      "onboarding/onboarding_prompt.py",
-      "onboarding/proto_tools.py",
-      "onboarding/web_loop.py"
-    ],
-    "核心循环与路由骨架": [
-      "tool_loop.py",
-      "daemon_api.py",
-      "daemon_runtime.py",
-      "daemon_session.py",
-      "api_routes/__init__.py",
-      "api_routes/_deps.py",
-      "api_routes/core.py",
-      "api_routes/chat.py",
-      "api_routes/sessions.py",
-      "api_routes/workshop.py",
-      "workers/scheduler.py",
-      "api_routes/governance.py",
-      "api_routes/models.py",
-      "api_routes/dashboard.py",
-      "opus_daemon.py"
-    ],
-    "provider机制(provider_configs 是配置面板后端机制代码·KEY 真值在 data/provider_configs.json[L3·never_sync·.gitignore]·本清单只同步代码永不碰 KEY)": [
-      "model_aliases.py",
-      "provider_presets.py",
-      "daemon_provider.py",
-      "workers/provider_configs.py",
-      "api_routes/providers.py",
-      "workers/pricing.py"
-    ],
-    "核心前端机制(L1·机制层·非用户皮肤层。皮肤/主题由用户在 UI 里切换·选择存 localStorage 不落文件·所以同步这些结构文件不会丢用户选的主题。0.9.6 起前端装修有正式去处: static/user/user.js + user.css[never_sync·官方永不覆盖·排在所有官方资源之后加载→用户改动总能盖住默认]·API 是 window.Daemonkey[addDomain/addNavGroup/ready/pane/refresh/ctx]。本组只同步官方维护的 EXAMPLES.js[示例+API 说明·用户抄走用]·用户自己那两个文件官方碰不到。真要直接改内核前端文件 → 让用户走 kernel_takeover 接管·而不是任其被覆盖。卷·2026-07-12 拆单文件债:成长档案 hub[画像/日记/技能库] 抽到 depot.js·客户档案+用户运营抽到 clients.js·均在 chat.js 之前加载·零构建全局作用域共享·随内核下发保持母体/纯净版一致)": [
-      "static/chat.js",
-      "static/depot.js",
-      "static/clients.js",
-      "static/workshop.js",
-      "static/chat.html",
-      "static/chat.css",
-      "static/workshop.css",
-      "static/user/EXAMPLES.js",
-      "static/lib/three/three.min.js",
-      "static/lib/three/OrbitControls.js"
-    ],
-    "记忆系统(L1·通用基础能力·跨会话检索/自动注入/收尾闭环。cognition_loader 是画像/OPUS日记的数据源·卷·2026-07-12 画像查看器重构[时间序章节取尾部=最新·加'最近记了什么'时间线·profile 时间戳动态化]需随内核下发·只读 soul/data[never_sync]不碰用户数据。0.9.6 纳入 add_iron_rule/list_iron_rules:用户说「以后回话别用 emoji」「周报每周五给我」这类持久偏好·当场答应等于没答应[重启就忘]·这两个工具把它固化进 data/cognition/daemon_rules.md[L3·never_sync·soul_loader 以最高优先级拼在 prompt 最前]。原先两工具照母体现状写死[缺文件报错 + 找不到母体历史 anchor 报错]·对新装实例整条路是焊死的·0.9.6 改成缺文件自动建/缺 anchor 追加末尾/cite_volume 默认留空)": [
-      "workers/memory_index.py",
-      "workers/memory_hygiene.py",
-      "workers/notebook_tiers.py",
-      "workers/memory_rerank.py",
-      "workers/memory_map.py",
-      "workers/closure_check.py",
-      "agent_tools/recall_memory.py",
-      "agent_tools/manage_hygiene_rules.py",
-      "agent_tools/audit_playbooks.py",
-      "agent_tools/update_bro_note.py",
-      "agent_tools/add_iron_rule.py",
-      "agent_tools/list_iron_rules.py",
-      "workers/cognition_loader.py",
-      "workers/memory_embed.py",
-      "workers/memory_agent.py",
-      "workers/memory_embed_resume.py"
-    ],
-    "技能系统(L1·playbook 经验沉淀 + 外部 skill 接住归一·发现→接住→沉淀→召回闭环的写入侧·与记忆系统召回侧配套·官方持续维护归一prompt/字段schema/发现脚手架。用户的 playbook 内容在 data/playbooks 属L3·本清单只管机制代码不碰内容)": [
-      "workers/playbooks.py",
-      "agent_tools/extract_playbook.py",
-      "workers/playbook_import.py",
-      "agent_tools/discover_skill.py",
-      "api_routes/playbooks.py"
-    ],
-    "定时任务(L1·NLP自驱·到点跑LLM turn执行/提醒·从被叫醒升级成到点自己动·worker层+工具层随内核下发即跑·工具靠__init__自动发现激活无需手动补import)": [
-      "workers/task_scheduler.py",
-      "agent_tools/scheduled_tasks.py"
-    ],
-    "计划系统(L1·0.9.6 纳入·长轴任务看得见: task_plan=有序步骤维度+状态机·task_ledger=账本[任务台账·PLAN 挂账]·api_routes/plan=计划 CRUD 路由·track_task=工具入口[NLP 优先·用户说『做个计划』AI 直接建]·前端计划条在 chat.js[已白名单]·四件同批下发防链路断·0.7.2 教训: 新功能漏登记=升级用户永远拉不到)": [
-      "workers/task_plan.py",
-      "workers/task_ledger.py",
-      "api_routes/plan.py",
-      "agent_tools/track_task.py"
-    ],
-    "子执行器与分身(L1·subagent_runner通用子执行器核心+dispatch_subagent派分身·可复用子循环·工作流串行地基·工具靠agent_tools自动发现下发即激活)": [
-      "workers/subagent_runner.py",
-      "agent_tools/dispatch_subagent.py",
-      "workers/background_notify.py"
-    ],
-    "工坊引擎(L1·工作流串行/并行执行器 + app/flow 运行时 + 造应用/造工作流工具。只管【引擎机制代码】·用户造的 app/flow 内容在 data/workshop/ 属L3·永不同步。卷七十五续三 并行工作流组[单步可多 app 并发+扇入 join]随内核下发即生效·向后兼容旧串行 flow。0.9.6 补登记 workflow_engine[flow_requires_llm/run_workflow·被白名单内 api_routes/workshop.py 四处 import] + http_executor[run_scripted_app·被 workshop.py:437 import]:workshop.py 2026-08-10 才进白名单·这俩从未进过 → 从那天起用户拿到新 workshop.py 却永远拉不到它俩·下次给 workshop.py 加一个用到它俩新符号的功能就是 ImportError 级硬崩[非软失败]。与卷八十 B 层漏登记同一形状·check_dk_release 扫不出这类[闸只扫『母体新增未入白名单』·扫不出『白名单内文件的 import 伙伴漏登记』]·已加专用闸 tools/check_manifest_deps.py)": [
-      "workers/flow_runner.py",
-      "workers/flow_steps.py",
-      "workers/app_runner.py",
-      "workers/workflow_engine.py",
-      "workers/http_executor.py",
-      "workers/template_interpolator.py",
-      "agent_tools/create_workflow.py",
-      "agent_tools/create_app.py",
-      "workers/workshop_context.py"
-    ],
-    "私有知识库(L1·第二大脑·把用户资料[PDF/Word/PPT/MD]灌进来抽文本→进FTS5→可召回可cite回原文。骑在现成记忆引擎[memory_index/recall_memory·已在白名单]上·本组是知识库专属的抽取/存储/NLP工具/API。文档内容在 data/knowledge/ 属L3·never_sync·升级绝不覆盖用户资料;本清单只管引擎机制。卷·文件夹分组+报告一键存入+pinned常驻优先·随内核下发即生效)": [
-      "workers/doc_ingest.py",
-      "workers/knowledge_base.py",
-      "agent_tools/manage_knowledge.py",
-      "api_routes/knowledge.py"
-    ],
-    "客户档案(L1·合伙人记得每个客户·GAP§5.1客户档案=记忆延伸。每个客户是会长厚的档案[偏好/交付复盘/pipeline阶段]·notes进FTS5[memory_index已在白名单]可召回;知识库文档可用manage_knowledge(link)挂到客户名下。客户数据在 data/clients/ 属L3·never_sync·升级绝不覆盖;本清单只管引擎机制。掘金脑/可行性通过KB(缺口①)间接吃到客户资料)": [
-      "workers/clients.py",
-      "agent_tools/manage_client.py",
-      "api_routes/clients.py"
-    ],
-    "掘金脑与信息雷达引擎(L1·卷七十六纳入·原属L2用户自演化·因是通用引擎改进且不碰用户数据故纳入·让升级用户也能拿到。feasibility 缺口①[可行性分析吃私有知识库当客观背景·cite [k*]] + 雷达并行抓取[ThreadPoolExecutor 并发·墙钟从串行相加降到最慢源]。用户的报告在 data/reports、雷达抓取结果在 data/radar*.json 属L3·never_sync·永不覆盖;本清单只管引擎机制。同 daemon_api.py 决策:只碰引擎代码·apply 前 checkpoint 可 git revert)": [
-      "workers/feasibility_analyzer.py",
-      "workers/info_radar.py",
-      "agent_tools/manage_info_source.py"
-    ],
-    "主动关怀与情感回访(L1·情感内核·proactive scheduler[已在核心循环]每节拍调 proactive_call.tick·跑防骚扰门控[静默时段/每天上限/最小间隔/同类去重/随机性]。care 信号来自 closure_check[已白名单·情感轨]·成熟后到点主动一句慰问·经 ilink_client 推到微信[配了才发·没配 no-op]。rituals=月度复盘等节律;dynamic_telemetry=距上次多久/上次聊啥[也供 daemon_api telemetry]。注入文案作 message 走不到 system 那道 localize·已在 proactive_call 显式过 localize_narration 去母体化[母体测不出的Daemonkey漏点在此堵死]。用户的 proactive 台账/偏好在 data/runtime[never_sync]·永不覆盖)": [
-      "workers/proactive_call.py",
-      "workers/rituals.py",
-      "workers/dynamic_telemetry.py",
-      "workers/ilink_client.py",
-      "workers/startup_notices.py"
-    ],
-    "顾问机制(L1·总监模型分层·常驻模型执行+顾问模型三唤醒点[蓝图/破局/验收]。director=调度核心[读配置里 director 标记·拼唤醒提示词·跨 provider 现场建 client]·replan=工具入口[只读子推理·顾问只出方案主执行体动手]·advisor_live=顾问在场感 live 进度[SSE 实时金卡·活性心跳判定 stale]·advisor 路由=顾问配置/施工单/验收卡 API。顾问标哪个模型是 data/provider_configs.json 里的 director 字段[L3]·永不同步;本组只同步机制代码。soul_loader 对 director 是函数内 lazy import+吞异常·老用户缺文件也不炸·只顾问提示词为空)": [
-      "workers/director.py",
-      "agent_tools/replan.py",
-      "workers/advisor_live.py",
-      "api_routes/advisor.py"
-    ],
-    "视觉通道(L1·look_at 双路径视觉分发[多模态模型直看原图/纯文本模型走 fallback 看图·对 BRO 透明发图即看]。fallback 的 KEY/模型名走环境变量与 provider 配置[L3]·本组只同步分发机制代码。0.9.6 补登记 workers/vision_config.py:多渠道视觉(2026-08-09)把 get_vision_channels 加在它里面·而 look_at.py:343 在白名单里被下发了 → 用户拿到新调用方、旧 vision_config 没这函数·一用看图就 ImportError。 两个白名单文件[look_at + api_routes/vision]共同依赖它·事实上就是 L1。 环境变量名两库一致[都是 OPUS_ 前缀]·不需要 transform 规则。 这是同形状事故第三次·已由 tools/check_manifest_deps.py 符号级实测自动抓出)": [
-      "agent_tools/look_at.py",
-      "api_routes/vision.py",
-      "workers/vision_config.py"
-    ],
-    "语音识别增强(L1·可选更新·设置页开关驱动安装[默认不装·不用的用户零负担]。转写引擎[silk→pilk→wav→faster-whisper·Hermes同款防幻觉参数·懒加载+超时降级]+安装/下载/状态API[依赖走requirements-stt.txt[清华源]·模型走hf-mirror·后台线程+安装锁]。模型与依赖在data/runtime[L3·never_sync]·本组只同步机制代码。设置页视觉tab已拆独立whisper区)": [
-      "workers/stt_transcribe.py",
-      "api_routes/stt.py",
-      "requirements-stt.txt"
-    ],
-    "通知体系(L1·完成/确认三通道通知[桌宠气泡+完成音效+Windows toast]+设置页通知开关+浏览器标签闪烁。notification_config=配置单例[读 data/notification_config.json·L3 never_sync]·windows_toast=系统 toast[winotify 可选依赖·缺了优雅降级不炸]·notifications 路由=双端读写配置 API。桌宠音效文件 ding/manbo.wav 随发布包全量下发不进白名单·notify.jsonl 运行时状态 never_sync)": [
-      "workers/notification_config.py",
-      "workers/windows_toast.py",
-      "api_routes/notifications.py"
-    ],
-    "多实例并行安全(L1·多 daemon 实例同跑时防互相覆盖。edit_attribution=文件归属表[哪个会话在改哪个文件·checkpoint 按归属 add·别的会话裸奔改动留工作区·卷入标 commit message+注对方 jsonl]·safe_merge=合主干五道保护[幂等放行/分支安全门/冲突预演/上线闸/失败回滚])": [
-      "workers/edit_attribution.py",
-      "agent_tools/safe_merge.py"
-    ],
-    "浏览器工具(L1·网页抓取+浏览器自动化。browser_fetch=只读抓页面[httpx 静态+Playwright JS 渲染+CDP 登录态]·browser_act=真操作网页[点击/填写/上传/截图/收图/探查·Playwright]·_browser=共享底层[Edge 进程管理/CDP 连接/页面提取])": [
-      "agent_tools/_browser.py",
-      "agent_tools/browser_act.py",
-      "agent_tools/browser_fetch.py"
-    ],
-    "桌宠(L1·情绪通道实体化·桌面宠物本体+动作绑定+表情映射·通知气泡[干完了/等你拍板]随内核下发即生效。pet.py import activities+expressions·三件套必须同批同步防 import 断裂。sprites 默认美术资源随发布包全量下发不进白名单[避免覆盖用户自定义皮肤]·本批更新纯代码未动美术;notify.jsonl/state.txt/position.txt 是运行时状态·never_sync)": [
-      "desktop_pet/pet.py",
-      "desktop_pet/activities.py",
-      "desktop_pet/expressions.py"
-    ],
-    "内核自升级机制(L1·含升级保护层全套·三层缺一不可。A 备份[core_update 侧·必须在 checkout 之前抓·放到之后存下来的就是官方版·合并功能整条哑火] + B 合并[merge_user_override 读备份/看对比/写回] + C 接管[kernel_takeover 事前声明「这文件归我管」·官方版根本不进 checkout 参数表]。只有 A 没有 B = 备份躺在 data/runtime/user_overrides/ 但用户无法合并回来·0.8.5 承诺的「合并我的改动」对增量升级老用户成空头。零外部依赖[stdlib + 本包]·pkgutil 自动发现下发即激活。0.9.6 加第 0 层 D 基线指纹[core_fingerprint + core_fingerprints.json]:A/B/C 三层全都建立在「认得出哪些文件用户改过」之上·而原本这件事靠 git status —— 它只看工作区 vs 最后一次 commit·任何一次 commit[daemon 自己 checkpoint / 用户手动落袋 / 别的工具] 都让它变干净·下次升级就认为用户没改过·静默覆盖·改动只剩在 git 历史里而用户不一定懂 git。指纹比的是【实际内容 vs 官方内容】·跟 commit 几次无关。基线由发布链对纯净版 transform 后的内容生成[必须是用户实际拿到的那份·拿母体原文算=用户一装上满屏「你改过」]·随 update_core 一起更新所以基线自动前进。hash 归一化换行[防 git autocrlf 在 Windows 上把全部文件误判成改过]。老用户第一次升上来时本机还没基线·那次仍走 git status 兜底·之后各次才享受完整保护。0.9.6 另加救援 E[override_rescue + merge_user_override rescue/rescue_apply]:0.8.4~0.9.5 那段时期备份跑在覆盖之后·存下来的是官方版·用户真改动一个都没进备份[那时说「合并我的改动」只会得到「两边一致」]。但同流程的 checkpoint 是在覆盖之前做的·真东西一直在那条 commit 里 —— rescue 按文件取最晚一次 checkpoint 的内容捞出来写回备份区·之后正常走合并。已用「修复前那一版真实现」造真现场端到端验过[母体自己从不 update_core·历史里一条 update_core 存档都没有·在母体上跑 rescue 永远返回『没东西可捞』·那句话什么都证明不了])": [
-      "core_manifest.json",
-      "core_fingerprints.json",
-      "workers/core_update.py",
-      "workers/core_fingerprint.py",
-      "workers/override_rescue.py",
-      "workers/kernel_takeover.py",
-      "agent_tools/update_core.py",
-      "agent_tools/merge_user_override.py",
-      "agent_tools/kernel_takeover.py"
-    ],
-    "上下文压缩(L1·长会话自动摘要·user turn 逐字保护·prune 免费减负·重启持久化·治大窗口永不压缩·tiktoken 优雅降级没装也跑)": [
-      "workers/memory_compression.py",
-      "agent_tools/summarize_session.py",
-      "workers/cache_usage.py"
-    ],
-    "飞书接入(L1·官方机器人+WebSocket长连接双向对话·收消息监听[feishu_listener]+发消息客户端[feishu_client]+文档/表格/文件读取[feishu_docs]·配置在 data/feishu_config.json[L3·never_sync]·权限批量导入 JSON 在设置页向导·本组只同步机制代码)": [
-      "workers/feishu_client.py",
-      "workers/feishu_docs.py",
-      "workers/feishu_listener.py",
-      "workers/feishu_sessions.py",
-      "agent_tools/feishu_send.py"
-    ],
-    "微信接入(L1·微信 iLink 通道·收消息监听[wechat_listener]+发消息客户端[ilink_client]+媒体收发[ilink_media]+登录[ilink_login]+主动发送工具[wechat_send]+桥接[wechat_bridge]·配置在 data/wechat_config.json 与 ilink 会话[L3·never_sync]·本组只同步机制代码)": [
-      "workers/wechat_listener.py",
-      "workers/ilink_client.py",
-      "workers/ilink_media.py",
-      "workers/ilink_login.py",
-      "agent_tools/wechat_send.py",
-      "wechat_bridge.py"
-    ],
-    "[启动器与守护(L1·Daemonkey.exe 壳肉分离[壳 launcher-boot.ps1 + 肉 daemonkey-launcher.ps1]·用户双击入口·升级走保护层[魔改检测→备份 user_overrides/→可合并]。UI 资产 launcher.html/guard-panel.html/daemonkey.ico + webview2 渲染底座随内核下发·升级带 diff 预览+checkpoint 可回退。community-qr.png/community.txt 是用户社群资产·随发布包首装带·不进白名单防升级覆盖用户自己的二维码)]": [
-      "daemonkey-launcher.ps1",
-      "launcher-boot.ps1",
-      "Daemonkey.exe",
-      "assets/launcher.html",
-      "assets/guard-panel.html",
-      "assets/daemonkey.ico",
-      "assets/webview2/Microsoft.Web.WebView2.Core.dll",
-      "assets/webview2/Microsoft.Web.WebView2.WinForms.dll",
-      "assets/webview2/WebView2Loader.dll",
-      "tools/build-boot-exe.ps1",
-      "tools/install_hooks.ps1",
-      "requirements.txt",
-      "run.ps1"
-    ]
-  },
-  "excluded_borderline": {
-    "agent_tools/__init__.py": "工具注册表·已改 pkgutil 自动发现(drop-in 即注册):新内核工具随 update_core 下发 .py 后·import 时自动激活·激活 gap 已根治不再需手动补 import。剥离工具靠物理删 .py(扫不到即不注册)·停用工具靠 _OPT_OUT(如 set_model)。仍不字节同步的唯一原因:头部基础设施注释有去母体化差异(BRO/卷号→中性)·末尾自动发现段两库已逐字一致"
-  },
-  "excluded_borderline_history": {
-    "daemon_api.py": "卷七十五续八(2026-07-11)已纳入白名单。原因:模型行为(思考/强度)后端 + 自主巡航进度的核心代码(_chat_impl / 进度记录器)就长在此文件·且与 RUNTIME/会话锁/localize 深度耦合无法干净抽出·不同步则升级用户拿不到这两样能力。风险已评估:只碰此框架代码文件本身·用户的 app/flow/雷达/记忆/灵魂在 data/soul/sessions 永不受影响;唯一理论风险是用户手改过本文件里的路由(纯净版用户扩能力走 agent_tools 自动发现/api_routes 模块化路由·基本不会手改)·且 apply 前 checkpoint 可 git revert 回退"
-  },
-  "never_sync": [
-    "soul/**",
-    "data/**",
-    "sessions/**",
-    "static/** —— 默认永不覆盖;例外是核心前端机制文件(chat.js / workshop.js / chat.html / chat.css / workshop.css)已纳入内核白名单·随 update_core 同步(带 diff 预览 + checkpoint 可回退·不无声覆盖)。皮肤/主题走 UI 切换存 localStorage 不落文件·同步这些结构文件不会丢用户选的主题",
-    ".env",
-    ".env.*",
-    "所有清单外的 workers/* agent_tools/* api_routes/* (=L2功能,用户自演化)"
-  ]
+﻿{
+    "manifest_version":  1,
+    "core_version":  "0.9.6-hf5",
+    "core_version_note":  "0.9.6(2026-08-21 · 记忆体系收尾+PLAN+升级保护层: ①基线/魔改共存[用户可接管内核文件opt-out·static/user/装修区永不被覆盖·基线指纹·救援路径捞回0.9.5前被吞魔改·扩白名单不再无声丢用户改动] ②白名单闭环[依赖闸升级符号级实测·补import伙伴漏登记] ③执行链/凭据面加固[后台执行三件套·续场串台·微信误触确认·限流+附件·数据一致性四刀] ④PLAN计划系统[task_plan有序步骤+task_ledger账本+前端计划条·长轴任务看得见] ⑤记忆卫生闸[清38%噪音·用户升级自动受益] ⑥记忆重排序[FTS5 top-30→LLM判→top-5·ATM-Bench +9.7pt·memory_rerank] ⑦画像分层注入[核心层常驻+历史层走召回·notebook_tiers] ⑧成长档案星图[three.js向量簇图+记忆管理柱状图] ⑨真机实测三连修[飞书看门狗死代码·并行工具批次丢session上下文[PLAN真机从没跑通过·61%假绑定]·任务名带空格打瘸step] · 0.9.5(2026-08-15 · 附件扩展(zip/xlsx/diff/patch)+微信入白名单+叙事轨trail v5+时间分组+H01/H07+token弹框+引导卡矮窗口修复) · hf1~hf5(2026-08-21 傍晚·test 实测五连修: PLAN前端/星图入口/画像字段/替换事故 + numpy/pypdf 依赖登记入白名单 + 补装链路闭环 + 缺依赖友好兜底 + 星图空态分层提示)",
+    "description":  "Daemonkey 内核(L1)白名单 — update_core 只同步这里列出的文件;清单外的一律物理不碰(用户的功能/应用/灵魂永不被覆盖)。人类可读版见 docs/CORE-MANIFEST.md。",
+    "updated":  "2026-08-21 20:15",
+    "log_ref":  "卷六十四续五 · 卷七十四续十八(核心前端) · 卷七十四续二十(core_version 版本号体系) · 卷七十四续二十一(github 备份源接通) · 卷七十四续二十二(记忆系统纳入内核:自动注入+两段式recall+缓存稳定化·0.3.2 大更) · 卷七十四续二十五(能力发现引擎 discover_skill + 每周一节律 + 看板入口·0.4.0) · 0.5.0(NLP 定时任务 task_scheduler + scheduled_tasks 工具组 + 侧边栏定时任务维度 + 宪法两层注入 product_constitution + 急救体系周全 ensure_git_repo首启兜底/维修台优先) · 0.5.2(技能闭环第②环「接住」打通: extract_playbook 加 import 动作 + workers/playbook_import.py 把外部 skill MD 经 LLM 归一成 playbook 入库·memory_index 自动索引·closure_check 按需召回; 启动器关于页双发布入口 B站+抖音; playbook 技能系统(discover发现/import接住/extract沉淀/playbooks存储)整体纳入内核白名单 L1·官方可增量下发改进·写入侧与召回侧不再割裂) · 0.6.0(卷七十五 · 派分身 dispatch_subagent + 通用子执行器 subagent_runner —— 主对话可一次派 1~N 个隔离「分身」并行干活[各自独立上下文 + 收紧工具白名单]·跑完自动汇总结论回本轮;分身默认只拿只读/研究白名单·硬 DENY 剔除 dispatch_subagent 自身[防无限递归·限一层]与 request_restart/update_core/service_* 等系统控制/破坏性工具·并发上限 2 + 每分身迭代预算防 token 爆·每个分身落 sessions/sub-*.jsonl 可回看;subagent_runner 从 app_runner 抽出通用「临时 messages→run_tool_loop→记账」中段·app_runner 改薄壳零回归·是后续工作流每步隔离化/串行升级的地基;两文件随 update_core 下发即激活[agent_tools 自动发现]) · 卷七十五续八(2026-07-11 大扩白名单:daemon_api.py + api_routes/chat.py + api_routes/sessions.py + 工坊引擎5件[flow_runner/flow_steps/app_runner/create_workflow/create_app] + UI骨架[chat.html/chat.css/workshop.css] 全纳入内核·让「语音对话/模型行为思考强度/自主巡航进度/工作流并行组/简洁版+换肤」这批 0.6.0 能力对升级用户全部真生效;daemon_api.py 反转「永不同步」旧决定[见 excluded_borderline_history]·只碰框架代码不碰用户数据;apply_update 加「拉到新清单自动补一轮」·扩白名单后单轮到位[老版本首跳因跑旧代码仍需两轮·工具层已提示再升一次]) · 0.6.8beta(卷七十七续 · 双轨记忆·情感优先[closure_check 情绪/生活信号词典大扩容 + 长度门槛\u003c2 + _TECH_NOISE 反噪·命中率47%→100%] + 主动关怀纳入内核[proactive_call/rituals/dynamic_telemetry/ilink_client 进白名单·care 信号→到点主动微信慰问·防尬红线·ritual\u003ecare\u003esilence·母体测不出的Daemonkey注入漏在源头修掉+过 localize] + notebook 写入标准[update_bro_note 进白名单·流水加内容预览] + 客户档案 CRM 详情重构[时间线/会议记录/交付过程·跨客户 FTS] + 知识库 P3[pinned/sensitive 开关] + 心愿/沉淀位拆 depot.js + API 加固[safe_json_body 畸形 body→干净400·clients 上传端点缺 python-multipart 时优雅降级不崩整条路由]) · 0.7.2beta(2026-07-28 · 白名单补漏 7 文件:顾问机制[workers/director+agent_tools/replan·总监模型三唤醒点]+视觉通道[agent_tools/look_at]+桌宠三件套[pet/activities/expressions·通知气泡]+provider配置后端[workers/provider_configs·已核实代码不含KEY·真值在 data/provider_configs.json(L3)]——修\u0027新功能 commit 了但用户 update_core 拉不到\u0027的断层[顾问机制/桌宠气泡/视觉修复全在白名单外];excluded_borderline 删 provider_configs.py 误判条目[原注释把机制代码与 data 层配置文件混淆];sprites 默认美术不进白名单·防覆盖用户自定义皮肤) · 0.8.0beta(2026-07-29 · 两天密集更新·五大功能线+白名单补12: ①通知体系[桌宠完成音效 ding/manbo.wav+设置页通知 tab+Windows toast 系统通知+浏览器标签闪烁+notify.jsonl 运行时数据出 git] ②顾问体系[总监模型分层:常驻执行+顾问三唤醒点(蓝图/破局/验收)+顾问在场感 live 进度金卡+顾问连续性+协同模式+顾问改名唯一性+顾问可停止] ③多实例并行安全[精准 checkpoint 按会话归属+卷入通知+safe_merge 合主干五道保护+edit_attribution 归属表] ④git 欠账三件套[欠账胶囊从永远亮到按需亮+/api/git-debt/detail 文件清单人话分类+一键收进主干] ⑤带图消息持久化+渲染性能针[刷新图不丢+长会话 content-visibility]+会话记住模型+GUARD 档位重定界+验收闭环第四问[git 欠账对账]+顾问验收管线强制+跨模型 session 500 根治+重启续场防呆/follow_up 默认值;白名单新增:通知体系3[notification_config/windows_toast/api_routes/notifications]+顾问2[advisor_live/api_routes/advisor]+多实例安全2[edit_attribution/safe_merge]+浏览器工具3[_browser/browser_act/browser_fetch]+核心路由2[governance/models]) · 0.8.1beta(2026-07-29 · 体检工具重生+进度条视觉+欠账豁免: ①体检子进程隔离[verify_daemon_endpoints/verify_gate·体检不再堵daemon事件循环·WebUI重启/关闭按钮不再被拖死·BRO连砍两次的事故根治]+fast默认模式[假token并行·秒级验import/参数雷/前端JS·144路由~2.6s]+deep可选模式[真token串行+单请求8s超时+跳LLM端点·防共享锁雪崩]+fast模式token mismatch修复[环境不动·请求头带保证不匹配的smoke token·防handler真跑雪崩重演] ②进度条方案A流光细条[削蓝灰大色块+整行扫光→底部2px主题色流光·8套皮肤自适应]+二轮(BRO视觉反馈)去上框+透明底融入消息区+输入框focus改主题灰--dim[消除与流光的同色系高亮疲劳] ③git欠账豁免[is_debt_exempt·demo/方案稿/临时文件不算欠账·BRO拍板·亮灯/对账/面板三处同一事实源]+closure_check欠账查询复用git_ops.git_debt_detail[单一事实源·删自跑git命令]) · 0.8.2beta(2026-07-30 · 桌宠启动失败 hotfix+升级体验两连[用户升级事故驱动]: ①桌宠 exit=1 根治[QSoundEffect 软导入·缺 PyQt6-QtMultimedia 只失音效桌宠照跑·0.8.0 硬 import 直接崩]+依赖清单补回4行[PyQt6/requests/qrcode/playwright·0.8.0 整文件覆盖冲掉]+新增 PyQt6-QtMultimedia+run.ps1 依赖检查加 QtMultimedia[老用户下次启动自动补装] ②升级后首条对话告知更新内容[workers/startup_notices 版本比对 last_seen vs manifest+changelog 末段提取注入 telemetry·一次性消费] ③缺依赖对话提醒[启动 find_spec 体检 16 项可选依赖·缺失项首条对话提醒去环境页补装·NLP First 非硬弹窗];白名单新增 workers/startup_notices[主动关怀组·与 dynamic_telemetry 同批同步]) · 0.8.3beta(2026-07-31 · 三连修复+防盗用: ①续场串台根治[request_restart 优先取会话级 ContextVar·修多标签页并发时 RUNTIME.session_id 被覆盖导致重启续场注入错对话的实测事故] ②桌宠依赖自动补装[run.ps1 依赖检查加 QtMultimedia·老用户升级后跑一次 run.ps1 即自动补装桌宠依赖·0.8.2 hotfix 口实不符补上] ③防盗用版权声明[升级/首装后首条对话转告·本项目完全开源免费·付费请退款·原作者抖音/B站: 無序Emptyset·硬编码于内核白名单·随 update_core 从官方码仓下发·盗版者无法篡改]) · 0.8.4beta(2026-07-31 · 更新胶囊+hotfix 收编: ①更新胶囊[WebUI header 有新版才显示的升级入口·平时隐藏·检测到 Gitee 新版显示版本号·点开看 changelog+版权声明+「对话里升级」按钮·点击自动在对话发起 update_core 升级流程] ②/api/update-status 端点[async 异步不阻塞事件循环·10 分钟缓存防频繁拉 gitee·离线/失败静默返回无更新·完全不拖慢 daemon] ③0.8.3 遗留 hotfix 收编[防盗用声明强指令·桌宠 stderr 重定向 _pet.err·桌宠 activities 通知通道补 port]) · 0.8.5(2026-07-31 · 首个正式版 · 升级保护层+更新胶囊: ①升级保护层[用户魔改的白名单文件升级时不再被无声覆盖: 升级前检测+物理备份到 data/runtime/user_overrides/·升级后报告·用户说「合并我的改动」→ LLM 三路对比[用户版 vs 官方版]→ 用户确认 → 写回融合版 · 全程询问不自动改 · 官方版另存防手抖 · 没魔改的用户零打扰] ②更新胶囊[WebUI 有新版才显示的升级入口·版本号+changelog+版权+「对话里升级」按钮] ③/api/update-status 端点[async·10min 缓存·离线静默] ④0.8.4 收编[防盗用强指令·桌宠 stderr·activities 通知通道]) · 0.8.5-hf1(2026-07-31 · hotfix: 设置弹窗保存/取消按钮补绑定[社区用户发现·saveSettings 定义了但没绑按钮·初见时点击保存无反应·新用户下载 release 必踩] + 版本比较支持 hf 后缀[0.8.5-hf1 \u003e 0.8.5]) · 0.8.5-hf2(2026-08-01 · hotfix: 初见页 401 报错加固[直接改 .env 填 key 无 probe 拦截·401 只在唤醒时爆·前端裸抛服务端原文·现在 401 附可操作排查提示:当前 base_url/model + 官方地址 + key 完整性]) · 0.8.6(2026-08-02 · 社区 9 bug 全修 + 桌宠路径修复 + 初见体验三连: ①社区用户 7/31 反馈 9 bug 全量修复[requirements 毒行 PyQt6-QtMultimedia 删除(PyPI 不存在·pip install 全崩)/视觉掩码保存覆盖真 key 永久 401/look_at temperature 硬限制降级重试/顾问 director 三件套+工具白名单全链路/Windows 瞬态句柄锁重试+robust 写防护四件套/httpx 传输层重试] ②桌宠启动修复[启动器 Start-Process 路径含空格被拆参→pythonw 找不到模块·手动引号包裹·实测含空格目录正常启动] ③初见体验[相遇引导页按钮 5 秒倒计时·明确告知即将进入相遇/首次使用全自动流程: 打开 exe 自动安装环境→装完自动启动 daemon+WebUI/默认模型 V4PRO→V4FLASH 轻量省钱] + 发布闸新增[5]内核白名单全量核对[防新增文件漏 port 的升级断层]) · 卷(0.8.9):缓存命中/压缩v2/压缩线/注入净化/串台修/召回增强 · 0.9.1+ (2026-08-12 · 记忆语义检索层入内核: memory_embed.py 进记忆系统 · vision.py 进视觉通道[含 /embed-config 路由] · 修纯净版 update_core 拉不到 embedding 功能的断层) · 0.9.5(2026-08-15 · 附件扩展(zip/xlsx/diff/patch)+微信入白名单+叙事器+rail v5+时间分组+H01/H07+token弹框+引导卡矮窗口修复) · 0.9.6-hf5(2026-08-21 · 魔改护栏[官方更新不再覆盖你的改动·可接管内核文件] PLAN计划系统[长任务看得见] 记忆三道闸+重排[省38%token·ATM-Bench +9.7pt] 记忆星图[three.js关系图] 画像分层注入 会话内成本 执行器/凭证管 + hf1~hf5实测修复[PLAN前端/星图入口/依赖登记全链/缺依赖友好兜底/星图空态提示])",
+    "sources":  {
+                    "primary":  "gitee",
+                    "note":  "支持多源(gitee+github)。真相源唯一=母体 master;只单向往外 push,下游只拉不推。update_core 可指定从哪个 remote 拉。github 当前为作者私有备份源(下游需授权方可匿名拉·转公开后即可当 gitee 的海外/抽风兜底源)。",
+                    "remotes":  {
+                                    "gitee":  "https://gitee.com/vaan21th/dae-monkey.git",
+                                    "github":  "https://github.com/Vaan21th/daemonkey-agent.git"
+                                }
+                },
+    "kernel":  {
+                   "写文件与编辑安全":  [
+                                    "agent_tools/edit_file.py",
+                                    "agent_tools/write_file.py",
+                                    "agent_tools/_edit_lock.py",
+                                    "agent_tools/_git_lock.py",
+                                    "agent_tools/_subprocess_helper.py",
+                                    "workers/safe_write.py",
+                                    "workers/edit_selfcheck.py",
+                                    "workers/schema_guard.py",
+                                    "workers/secret_redactor.py"
+                                ],
+                   "代码读搜执行":  [
+                                  "agent_tools/read_file.py",
+                                  "agent_tools/outline_file.py",
+                                  "agent_tools/glob_files.py",
+                                  "agent_tools/grep_files.py",
+                                  "agent_tools/search_code.py",
+                                  "agent_tools/lint_check.py",
+                                  "agent_tools/python_exec.py",
+                                  "agent_tools/shell_exec.py"
+                              ],
+                   "git纪律与上线闸":  [
+                                     "agent_tools/verify_daemon_endpoints.py",
+                                     "agent_tools/worktree_status.py",
+                                     "tools/git-hooks/pre-commit",
+                                     "tools/install_hooks.ps1",
+                                     "workers/boot_health.py",
+                                     "workers/frontend_check.py",
+                                     "workers/git_ops.py",
+                                     "workers/merge_explain.py",
+                                     "workers/verify_gate.py",
+                                     "workers/worktree_state.py"
+                                 ],
+                   "daemon生命周期与救命":  [
+                                         "workers/daemon_lifecycle.py",
+                                         "workers/resume_runner.py",
+                                         "agent_tools/request_restart.py",
+                                         "workers/session_repair.py",
+                                         "tools/run_api_only.py",
+                                         "tools/repair_console.py",
+                                         "workers/env_reloader.py"
+                                     ],
+                   "急救入口(启动器层·daemon崩了也能用·运行时读IDENTITY中性化)":  [
+                                                                  "repair.bat",
+                                                                  "ROLLBACK.bat",
+                                                                  "verify.bat",
+                                                                  "tools/rollback_emergency.ps1"
+                                                              ],
+                   "运行护栏与可观测":  [
+                                    "workers/opus_logging.py",
+                                    "workers/audit_logger.py",
+                                    "workers/rate_limiter.py",
+                                    "workers/token_budget_guard.py",
+                                    "workers/net_client.py"
+                                ],
+                   "身份与灵魂加载机制":  [
+                                     "identity.py",
+                                     "soul_loader.py",
+                                     "product_constitution.py"
+                                 ],
+                   "相遇 onboarding 机制(L1·开源用户首启命脉·相遇→生成身份/画像→热重载主daemon)":  [
+                                                                               "api_routes/onboarding.py",
+                                                                               "onboarding/onboard.py",
+                                                                               "onboarding/onboarding_prompt.py",
+                                                                               "onboarding/proto_tools.py",
+                                                                               "onboarding/web_loop.py"
+                                                                           ],
+                   "核心循环与路由骨架":  [
+                                     "tool_loop.py",
+                                     "daemon_api.py",
+                                     "daemon_runtime.py",
+                                     "daemon_session.py",
+                                     "api_routes/__init__.py",
+                                     "api_routes/_deps.py",
+                                     "api_routes/core.py",
+                                     "api_routes/chat.py",
+                                     "api_routes/sessions.py",
+                                     "api_routes/workshop.py",
+                                     "workers/scheduler.py",
+                                     "api_routes/governance.py",
+                                     "api_routes/models.py",
+                                     "api_routes/dashboard.py",
+                                     "opus_daemon.py"
+                                 ],
+                   "provider机制(provider_configs 是配置面板后端机制代码·KEY 真值在 data/provider_configs.json[L3·never_sync·.gitignore]·本清单只同步代码永不碰 KEY)":  [
+                                                                                                                                                 "model_aliases.py",
+                                                                                                                                                 "provider_presets.py",
+                                                                                                                                                 "daemon_provider.py",
+                                                                                                                                                 "workers/provider_configs.py",
+                                                                                                                                                 "api_routes/providers.py",
+                                                                                                                                                 "workers/pricing.py"
+                                                                                                                                             ],
+                   "核心前端机制(L1·机制层·非用户皮肤层。皮肤/主题由用户在 UI 里切换·选择存 localStorage 不落文件·所以同步这些结构文件不会丢用户选的主题。0.9.6 起前端装修有正式去处: static/user/user.js + user.css[never_sync·官方永不覆盖·排在所有官方资源之后加载→用户改动总能盖住默认]·API 是 window.Daemonkey[addDomain/addNavGroup/ready/pane/refresh/ctx]。本组只同步官方维护的 EXAMPLES.js[示例+API 说明·用户抄走用]·用户自己那两个文件官方碰不到。真要直接改内核前端文件 → 让用户走 kernel_takeover 接管·而不是任其被覆盖。卷·2026-07-12 拆单文件债:成长档案 hub[画像/日记/技能库] 抽到 depot.js·客户档案+用户运营抽到 clients.js·均在 chat.js 之前加载·零构建全局作用域共享·随内核下发保持母体/纯净版一致)":  [
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        "static/chat.js",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        "static/depot.js",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        "static/clients.js",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        "static/workshop.js",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        "static/chat.html",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        "static/chat.css",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        "static/workshop.css",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        "static/user/EXAMPLES.js",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        "static/lib/three/three.min.js",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        "static/lib/three/OrbitControls.js"
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    ],
+                   "记忆系统(L1·通用基础能力·跨会话检索/自动注入/收尾闭环。cognition_loader 是画像/OPUS日记的数据源·卷·2026-07-12 画像查看器重构[时间序章节取尾部=最新·加\u0027最近记了什么\u0027时间线·profile 时间戳动态化]需随内核下发·只读 soul/data[never_sync]不碰用户数据。0.9.6 纳入 add_iron_rule/list_iron_rules:用户说「以后回话别用 emoji」「周报每周五给我」这类持久偏好·当场答应等于没答应[重启就忘]·这两个工具把它固化进 data/cognition/daemon_rules.md[L3·never_sync·soul_loader 以最高优先级拼在 prompt 最前]。原先两工具照母体现状写死[缺文件报错 + 找不到母体历史 anchor 报错]·对新装实例整条路是焊死的·0.9.6 改成缺文件自动建/缺 anchor 追加末尾/cite_volume 默认留空)":  [
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "workers/memory_index.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "workers/memory_hygiene.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "workers/notebook_tiers.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "workers/memory_rerank.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "workers/memory_map.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "workers/closure_check.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "agent_tools/recall_memory.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "agent_tools/manage_hygiene_rules.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "agent_tools/audit_playbooks.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "agent_tools/update_bro_note.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "agent_tools/add_iron_rule.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "agent_tools/list_iron_rules.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "workers/cognition_loader.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "workers/memory_embed.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "workers/memory_agent.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "workers/memory_embed_resume.py"
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       ],
+                   "技能系统(L1·playbook 经验沉淀 + 外部 skill 接住归一·发现→接住→沉淀→召回闭环的写入侧·与记忆系统召回侧配套·官方持续维护归一prompt/字段schema/发现脚手架。用户的 playbook 内容在 data/playbooks 属L3·本清单只管机制代码不碰内容)":  [
+                                                                                                                                                                               "workers/playbooks.py",
+                                                                                                                                                                               "agent_tools/extract_playbook.py",
+                                                                                                                                                                               "workers/playbook_import.py",
+                                                                                                                                                                               "agent_tools/discover_skill.py",
+                                                                                                                                                                               "api_routes/playbooks.py"
+                                                                                                                                                                           ],
+                   "定时任务(L1·NLP自驱·到点跑LLM turn执行/提醒·从被叫醒升级成到点自己动·worker层+工具层随内核下发即跑·工具靠__init__自动发现激活无需手动补import)":  [
+                                                                                                                        "workers/task_scheduler.py",
+                                                                                                                        "agent_tools/scheduled_tasks.py"
+                                                                                                                    ],
+                   "计划系统(L1·0.9.6 纳入·长轴任务看得见: task_plan=有序步骤维度+状态机·task_ledger=账本[任务台账·PLAN 挂账]·api_routes/plan=计划 CRUD 路由·track_task=工具入口[NLP 优先·用户说『做个计划』AI 直接建]·前端计划条在 chat.js[已白名单]·四件同批下发防链路断·0.7.2 教训: 新功能漏登记=升级用户永远拉不到)":  [
+                                                                                                                                                                                                                                      "workers/task_plan.py",
+                                                                                                                                                                                                                                      "workers/task_ledger.py",
+                                                                                                                                                                                                                                      "api_routes/plan.py",
+                                                                                                                                                                                                                                      "agent_tools/track_task.py"
+                                                                                                                                                                                                                                  ],
+                   "子执行器与分身(L1·subagent_runner通用子执行器核心+dispatch_subagent派分身·可复用子循环·工作流串行地基·工具靠agent_tools自动发现下发即激活)":  [
+                                                                                                                           "workers/subagent_runner.py",
+                                                                                                                           "agent_tools/dispatch_subagent.py",
+                                                                                                                           "workers/background_notify.py"
+                                                                                                                       ],
+                   "工坊引擎(L1·工作流串行/并行执行器 + app/flow 运行时 + 造应用/造工作流工具。只管【引擎机制代码】·用户造的 app/flow 内容在 data/workshop/ 属L3·永不同步。卷七十五续三 并行工作流组[单步可多 app 并发+扇入 join]随内核下发即生效·向后兼容旧串行 flow。0.9.6 补登记 workflow_engine[flow_requires_llm/run_workflow·被白名单内 api_routes/workshop.py 四处 import] + http_executor[run_scripted_app·被 workshop.py:437 import]:workshop.py 2026-08-10 才进白名单·这俩从未进过 → 从那天起用户拿到新 workshop.py 却永远拉不到它俩·下次给 workshop.py 加一个用到它俩新符号的功能就是 ImportError 级硬崩[非软失败]。与卷八十 B 层漏登记同一形状·check_dk_release 扫不出这类[闸只扫『母体新增未入白名单』·扫不出『白名单内文件的 import 伙伴漏登记』]·已加专用闸 tools/check_manifest_deps.py)":  [
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "workers/flow_runner.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "workers/flow_steps.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "workers/app_runner.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "workers/workflow_engine.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "workers/http_executor.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "workers/template_interpolator.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "agent_tools/create_workflow.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "agent_tools/create_app.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "workers/workshop_context.py"
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                ],
+                   "私有知识库(L1·第二大脑·把用户资料[PDF/Word/PPT/MD]灌进来抽文本→进FTS5→可召回可cite回原文。骑在现成记忆引擎[memory_index/recall_memory·已在白名单]上·本组是知识库专属的抽取/存储/NLP工具/API。文档内容在 data/knowledge/ 属L3·never_sync·升级绝不覆盖用户资料;本清单只管引擎机制。卷·文件夹分组+报告一键存入+pinned常驻优先·随内核下发即生效)":  [
+                                                                                                                                                                                                                                                           "workers/doc_ingest.py",
+                                                                                                                                                                                                                                                           "workers/knowledge_base.py",
+                                                                                                                                                                                                                                                           "agent_tools/manage_knowledge.py",
+                                                                                                                                                                                                                                                           "api_routes/knowledge.py"
+                                                                                                                                                                                                                                                       ],
+                   "客户档案(L1·合伙人记得每个客户·GAP§5.1客户档案=记忆延伸。每个客户是会长厚的档案[偏好/交付复盘/pipeline阶段]·notes进FTS5[memory_index已在白名单]可召回;知识库文档可用manage_knowledge(link)挂到客户名下。客户数据在 data/clients/ 属L3·never_sync·升级绝不覆盖;本清单只管引擎机制。掘金脑/可行性通过KB(缺口①)间接吃到客户资料)":  [
+                                                                                                                                                                                                                                                 "workers/clients.py",
+                                                                                                                                                                                                                                                 "agent_tools/manage_client.py",
+                                                                                                                                                                                                                                                 "api_routes/clients.py"
+                                                                                                                                                                                                                                             ],
+                   "掘金脑与信息雷达引擎(L1·卷七十六纳入·原属L2用户自演化·因是通用引擎改进且不碰用户数据故纳入·让升级用户也能拿到。feasibility 缺口①[可行性分析吃私有知识库当客观背景·cite [k*]] + 雷达并行抓取[ThreadPoolExecutor 并发·墙钟从串行相加降到最慢源]。用户的报告在 data/reports、雷达抓取结果在 data/radar*.json 属L3·never_sync·永不覆盖;本清单只管引擎机制。同 daemon_api.py 决策:只碰引擎代码·apply 前 checkpoint 可 git revert)":  [
+                                                                                                                                                                                                                                                                                                                      "workers/feasibility_analyzer.py",
+                                                                                                                                                                                                                                                                                                                      "workers/info_radar.py",
+                                                                                                                                                                                                                                                                                                                      "agent_tools/manage_info_source.py"
+                                                                                                                                                                                                                                                                                                                  ],
+                   "主动关怀与情感回访(L1·情感内核·proactive scheduler[已在核心循环]每节拍调 proactive_call.tick·跑防骚扰门控[静默时段/每天上限/最小间隔/同类去重/随机性]。care 信号来自 closure_check[已白名单·情感轨]·成熟后到点主动一句慰问·经 ilink_client 推到微信[配了才发·没配 no-op]。rituals=月度复盘等节律;dynamic_telemetry=距上次多久/上次聊啥[也供 daemon_api telemetry]。注入文案作 message 走不到 system 那道 localize·已在 proactive_call 显式过 localize_narration 去母体化[母体测不出的Daemonkey漏点在此堵死]。用户的 proactive 台账/偏好在 data/runtime[never_sync]·永不覆盖)":  [
+                                                                                                                                                                                                                                                                                                                                                                                                                                                      "workers/proactive_call.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                      "workers/rituals.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                      "workers/dynamic_telemetry.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                      "workers/ilink_client.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                      "workers/startup_notices.py"
+                                                                                                                                                                                                                                                                                                                                                                                                                                                  ],
+                   "顾问机制(L1·总监模型分层·常驻模型执行+顾问模型三唤醒点[蓝图/破局/验收]。director=调度核心[读配置里 director 标记·拼唤醒提示词·跨 provider 现场建 client]·replan=工具入口[只读子推理·顾问只出方案主执行体动手]·advisor_live=顾问在场感 live 进度[SSE 实时金卡·活性心跳判定 stale]·advisor 路由=顾问配置/施工单/验收卡 API。顾问标哪个模型是 data/provider_configs.json 里的 director 字段[L3]·永不同步;本组只同步机制代码。soul_loader 对 director 是函数内 lazy import+吞异常·老用户缺文件也不炸·只顾问提示词为空)":  [
+                                                                                                                                                                                                                                                                                                                                                                                     "workers/director.py",
+                                                                                                                                                                                                                                                                                                                                                                                     "agent_tools/replan.py",
+                                                                                                                                                                                                                                                                                                                                                                                     "workers/advisor_live.py",
+                                                                                                                                                                                                                                                                                                                                                                                     "api_routes/advisor.py"
+                                                                                                                                                                                                                                                                                                                                                                                 ],
+                   "视觉通道(L1·look_at 双路径视觉分发[多模态模型直看原图/纯文本模型走 fallback 看图·对 BRO 透明发图即看]。fallback 的 KEY/模型名走环境变量与 provider 配置[L3]·本组只同步分发机制代码。0.9.6 补登记 workers/vision_config.py:多渠道视觉(2026-08-09)把 get_vision_channels 加在它里面·而 look_at.py:343 在白名单里被下发了 → 用户拿到新调用方、旧 vision_config 没这函数·一用看图就 ImportError。 两个白名单文件[look_at + api_routes/vision]共同依赖它·事实上就是 L1。 环境变量名两库一致[都是 OPUS_ 前缀]·不需要 transform 规则。 这是同形状事故第三次·已由 tools/check_manifest_deps.py 符号级实测自动抓出)":  [
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "agent_tools/look_at.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "api_routes/vision.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                    "workers/vision_config.py"
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                ],
+                   "语音识别增强(L1·可选更新·设置页开关驱动安装[默认不装·不用的用户零负担]。转写引擎[silk→pilk→wav→faster-whisper·Hermes同款防幻觉参数·懒加载+超时降级]+安装/下载/状态API[依赖走requirements-stt.txt[清华源]·模型走hf-mirror·后台线程+安装锁]。模型与依赖在data/runtime[L3·never_sync]·本组只同步机制代码。设置页视觉tab已拆独立whisper区)":  [
+                                                                                                                                                                                                                                                               "workers/stt_transcribe.py",
+                                                                                                                                                                                                                                                               "api_routes/stt.py",
+                                                                                                                                                                                                                                                               "requirements-stt.txt"
+                                                                                                                                                                                                                                                           ],
+                   "通知体系(L1·完成/确认三通道通知[桌宠气泡+完成音效+Windows toast]+设置页通知开关+浏览器标签闪烁。notification_config=配置单例[读 data/notification_config.json·L3 never_sync]·windows_toast=系统 toast[winotify 可选依赖·缺了优雅降级不炸]·notifications 路由=双端读写配置 API。桌宠音效文件 ding/manbo.wav 随发布包全量下发不进白名单·notify.jsonl 运行时状态 never_sync)":  [
+                                                                                                                                                                                                                                                                                                             "workers/notification_config.py",
+                                                                                                                                                                                                                                                                                                             "workers/windows_toast.py",
+                                                                                                                                                                                                                                                                                                             "api_routes/notifications.py"
+                                                                                                                                                                                                                                                                                                         ],
+                   "多实例并行安全(L1·多 daemon 实例同跑时防互相覆盖。edit_attribution=文件归属表[哪个会话在改哪个文件·checkpoint 按归属 add·别的会话裸奔改动留工作区·卷入标 commit message+注对方 jsonl]·safe_merge=合主干五道保护[幂等放行/分支安全门/冲突预演/上线闸/失败回滚])":  [
+                                                                                                                                                                                                        "workers/edit_attribution.py",
+                                                                                                                                                                                                        "agent_tools/safe_merge.py"
+                                                                                                                                                                                                    ],
+                   "浏览器工具(L1·网页抓取+浏览器自动化。browser_fetch=只读抓页面[httpx 静态+Playwright JS 渲染+CDP 登录态]·browser_act=真操作网页[点击/填写/上传/截图/收图/探查·Playwright]·_browser=共享底层[Edge 进程管理/CDP 连接/页面提取])":  [
+                                                                                                                                                                                             "agent_tools/_browser.py",
+                                                                                                                                                                                             "agent_tools/browser_act.py",
+                                                                                                                                                                                             "agent_tools/browser_fetch.py"
+                                                                                                                                                                                         ],
+                   "桌宠(L1·情绪通道实体化·桌面宠物本体+动作绑定+表情映射·通知气泡[干完了/等你拍板]随内核下发即生效。pet.py import activities+expressions·三件套必须同批同步防 import 断裂。sprites 默认美术资源随发布包全量下发不进白名单[避免覆盖用户自定义皮肤]·本批更新纯代码未动美术;notify.jsonl/state.txt/position.txt 是运行时状态·never_sync)":  [
+                                                                                                                                                                                                                                                       "desktop_pet/pet.py",
+                                                                                                                                                                                                                                                       "desktop_pet/activities.py",
+                                                                                                                                                                                                                                                       "desktop_pet/expressions.py"
+                                                                                                                                                                                                                                                   ],
+                   "内核自升级机制(L1·含升级保护层全套·三层缺一不可。A 备份[core_update 侧·必须在 checkout 之前抓·放到之后存下来的就是官方版·合并功能整条哑火] + B 合并[merge_user_override 读备份/看对比/写回] + C 接管[kernel_takeover 事前声明「这文件归我管」·官方版根本不进 checkout 参数表]。只有 A 没有 B = 备份躺在 data/runtime/user_overrides/ 但用户无法合并回来·0.8.5 承诺的「合并我的改动」对增量升级老用户成空头。零外部依赖[stdlib + 本包]·pkgutil 自动发现下发即激活。0.9.6 加第 0 层 D 基线指纹[core_fingerprint + core_fingerprints.json]:A/B/C 三层全都建立在「认得出哪些文件用户改过」之上·而原本这件事靠 git status —— 它只看工作区 vs 最后一次 commit·任何一次 commit[daemon 自己 checkpoint / 用户手动落袋 / 别的工具] 都让它变干净·下次升级就认为用户没改过·静默覆盖·改动只剩在 git 历史里而用户不一定懂 git。指纹比的是【实际内容 vs 官方内容】·跟 commit 几次无关。基线由发布链对纯净版 transform 后的内容生成[必须是用户实际拿到的那份·拿母体原文算=用户一装上满屏「你改过」]·随 update_core 一起更新所以基线自动前进。hash 归一化换行[防 git autocrlf 在 Windows 上把全部文件误判成改过]。老用户第一次升上来时本机还没基线·那次仍走 git status 兜底·之后各次才享受完整保护。0.9.6 另加救援 E[override_rescue + merge_user_override rescue/rescue_apply]:0.8.4~0.9.5 那段时期备份跑在覆盖之后·存下来的是官方版·用户真改动一个都没进备份[那时说「合并我的改动」只会得到「两边一致」]。但同流程的 checkpoint 是在覆盖之前做的·真东西一直在那条 commit 里 —— rescue 按文件取最晚一次 checkpoint 的内容捞出来写回备份区·之后正常走合并。已用「修复前那一版真实现」造真现场端到端验过[母体自己从不 update_core·历史里一条 update_core 存档都没有·在母体上跑 rescue 永远返回『没东西可捞』·那句话什么都证明不了])":  [
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         "core_manifest.json",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         "core_fingerprints.json",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         "workers/core_update.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         "workers/core_fingerprint.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         "workers/override_rescue.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         "workers/kernel_takeover.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         "agent_tools/update_core.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         "agent_tools/merge_user_override.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         "agent_tools/kernel_takeover.py"
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     ],
+                   "上下文压缩(L1·长会话自动摘要·user turn 逐字保护·prune 免费减负·重启持久化·治大窗口永不压缩·tiktoken 优雅降级没装也跑)":  [
+                                                                                                        "workers/memory_compression.py",
+                                                                                                        "agent_tools/summarize_session.py",
+                                                                                                        "workers/cache_usage.py"
+                                                                                                    ],
+                   "飞书接入(L1·官方机器人+WebSocket长连接双向对话·收消息监听[feishu_listener]+发消息客户端[feishu_client]+文档/表格/文件读取[feishu_docs]·配置在 data/feishu_config.json[L3·never_sync]·权限批量导入 JSON 在设置页向导·本组只同步机制代码)":  [
+                                                                                                                                                                                                        "workers/feishu_client.py",
+                                                                                                                                                                                                        "workers/feishu_docs.py",
+                                                                                                                                                                                                        "workers/feishu_listener.py",
+                                                                                                                                                                                                        "workers/feishu_sessions.py",
+                                                                                                                                                                                                        "agent_tools/feishu_send.py"
+                                                                                                                                                                                                    ],
+                   "微信接入(L1·微信 iLink 通道·收消息监听[wechat_listener]+发消息客户端[ilink_client]+媒体收发[ilink_media]+登录[ilink_login]+主动发送工具[wechat_send]+桥接[wechat_bridge]·配置在 data/wechat_config.json 与 ilink 会话[L3·never_sync]·本组只同步机制代码)":  [
+                                                                                                                                                                                                                                    "workers/wechat_listener.py",
+                                                                                                                                                                                                                                    "workers/ilink_client.py",
+                                                                                                                                                                                                                                    "workers/ilink_media.py",
+                                                                                                                                                                                                                                    "workers/ilink_login.py",
+                                                                                                                                                                                                                                    "agent_tools/wechat_send.py",
+                                                                                                                                                                                                                                    "wechat_bridge.py"
+                                                                                                                                                                                                                                ],
+                   "[启动器与守护(L1·Daemonkey.exe 壳肉分离[壳 launcher-boot.ps1 + 肉 daemonkey-launcher.ps1]·用户双击入口·升级走保护层[魔改检测→备份 user_overrides/→可合并]。UI 资产 launcher.html/guard-panel.html/daemonkey.ico + webview2 渲染底座随内核下发·升级带 diff 预览+checkpoint 可回退。community-qr.png/community.txt 是用户社群资产·随发布包首装带·不进白名单防升级覆盖用户自己的二维码)]":  [
+                                                                                                                                                                                                                                                                                                                           "daemonkey-launcher.ps1",
+                                                                                                                                                                                                                                                                                                                           "launcher-boot.ps1",
+                                                                                                                                                                                                                                                                                                                           "Daemonkey.exe",
+                                                                                                                                                                                                                                                                                                                           "assets/launcher.html",
+                                                                                                                                                                                                                                                                                                                           "assets/guard-panel.html",
+                                                                                                                                                                                                                                                                                                                           "assets/daemonkey.ico",
+                                                                                                                                                                                                                                                                                                                           "assets/webview2/Microsoft.Web.WebView2.Core.dll",
+                                                                                                                                                                                                                                                                                                                           "assets/webview2/Microsoft.Web.WebView2.WinForms.dll",
+                                                                                                                                                                                                                                                                                                                           "assets/webview2/WebView2Loader.dll",
+                                                                                                                                                                                                                                                                                                                           "tools/build-boot-exe.ps1",
+                                                                                                                                                                                                                                                                                                                           "tools/install_hooks.ps1",
+                                                                                                                                                                                                                                                                                                                           "requirements.txt",
+                                                                                                                                                                                                                                                                                                                           "run.ps1"
+                                                                                                                                                                                                                                                                                                                       ]
+               },
+    "excluded_borderline":  {
+                                "agent_tools/__init__.py":  "工具注册表·已改 pkgutil 自动发现(drop-in 即注册):新内核工具随 update_core 下发 .py 后·import 时自动激活·激活 gap 已根治不再需手动补 import。剥离工具靠物理删 .py(扫不到即不注册)·停用工具靠 _OPT_OUT(如 set_model)。仍不字节同步的唯一原因:头部基础设施注释有去母体化差异(BRO/卷号→中性)·末尾自动发现段两库已逐字一致"
+                            },
+    "excluded_borderline_history":  {
+                                        "daemon_api.py":  "卷七十五续八(2026-07-11)已纳入白名单。原因:模型行为(思考/强度)后端 + 自主巡航进度的核心代码(_chat_impl / 进度记录器)就长在此文件·且与 RUNTIME/会话锁/localize 深度耦合无法干净抽出·不同步则升级用户拿不到这两样能力。风险已评估:只碰此框架代码文件本身·用户的 app/flow/雷达/记忆/灵魂在 data/soul/sessions 永不受影响;唯一理论风险是用户手改过本文件里的路由(纯净版用户扩能力走 agent_tools 自动发现/api_routes 模块化路由·基本不会手改)·且 apply 前 checkpoint 可 git revert 回退"
+                                    },
+    "never_sync":  [
+                       "soul/**",
+                       "data/**",
+                       "sessions/**",
+                       "static/** —— 默认永不覆盖;例外是核心前端机制文件(chat.js / workshop.js / chat.html / chat.css / workshop.css)已纳入内核白名单·随 update_core 同步(带 diff 预览 + checkpoint 可回退·不无声覆盖)。皮肤/主题走 UI 切换存 localStorage 不落文件·同步这些结构文件不会丢用户选的主题",
+                       ".env",
+                       ".env.*",
+                       "所有清单外的 workers/* agent_tools/* api_routes/* (=L2功能,用户自演化)"
+                   ]
 }
