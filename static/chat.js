@@ -10007,7 +10007,7 @@ function renderBIDashboard(data) {
           <div class="bi-card-head">
             <h3><i class="ri-brain-fill" style="color:#8affd6"></i> 记忆体系 <span class="badge" id="biMemoryBadge">…</span></h3>
             <span>
-              <button class="bi-link" id="biMemoryAuditBtn" type="button" title="让 OPUS 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 手艺体检</button>
+              <button class="bi-link" id="biMemoryAuditBtn" type="button" title="让 ${window.AI_NAME || 'Daemonkey'} 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 手艺体检</button>
               <button class="bi-link" onclick="loadDashboard('memory_map')" title="记忆星图 · 三道闸治理全景"><i class="ri-sparkling-2-fill"></i> 星图</button>
             </span>
           </div>
