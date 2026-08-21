@@ -247,6 +247,19 @@
     </div>
     <div class="chat-main">
     <div id="chatTabBar" class="chat-tab-bar" hidden></div>
+    <!-- 任务计划条 · 长轴任务"总共几步/走到哪"在这里 · 数据 = task_ledger 的 steps 层
+         放在工作流 banner 之上: 计划是这场任务的纲·工作流只是其中某一步的执行
+         整条 bar 可点展开(按钮不单独绑事件·靠冒泡·避免两套开合逻辑) -->
+    <div id="planBanner" class="plan-banner" hidden>
+      <div class="plan-bar" id="planBar" onclick="togglePlanDetail()">
+        <span class="plan-icon"><i class="ri-list-check-2"></i></span>
+        <span class="plan-title" id="planTitle">任务</span>
+        <span class="plan-count" id="planCount"></span>
+        <span class="plan-track"><span class="plan-track-fill" id="planTrackFill"></span></span>
+        <button class="plan-toggle" type="button" id="planToggle" tabindex="-1" title="展开 / 收起步骤">详情 ▾</button>
+      </div>
+      <div id="planDetail" class="plan-detail" hidden></div>
+    </div>
     <!-- 卷七十二 v3 · 工作流跑时进度 banner (用户 图2 诉求) · 轮询 /workshop/runs 实时显示 active flows -->
     <!-- v5 (2026-06-10): 🚀 emoji → ri-rocket-fill · 用户 铁律: 这个项目里 Daemonkey 写的图标必须 remix -->
     <div id="flowRunsBanner" class="flow-runs-banner" hidden>

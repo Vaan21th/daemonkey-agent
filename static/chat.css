@@ -2676,6 +2676,165 @@ header {
 /* 卷七十二 v3 · 工作流跑时进度 banner (用户 图2 诉求) · 紫色调区别于 tool-progress 蓝色
  * 卷七十三 P0 (2026-06-10): 异步化后 banner 需要 done(绿)/failed(红) 通知态 ·
  *   用户 不再依赖 LLM tool 同步返结果 · banner 是唯一的"跑完 / 失败"反馈通道 */
+/* ── 任务计划条 (对话框上方 · task_ledger 的 steps 层) ────────────────────
+ * 跟下面的 flow-runs-banner 同一套视觉语言(banner→bar→detail)·但故意有两处不同:
+ *   1. 不做 shimmer 扫光 —— 扫光的语义是"正在跑"·计划是一份静态清单
+ *   2. 多一条 plan-track 细进度条 —— 一眼看出还剩多少·不用展开
+ * 这两点让两个 banner 同屏时不会认错。 */
+.plan-banner {
+  flex: 0 0 auto;
+  background: linear-gradient(90deg, rgba(159, 122, 234, 0.10), rgba(159, 122, 234, 0.02));
+  border-top: 1px solid rgba(159, 122, 234, 0.22);
+  border-bottom: 1px solid rgba(159, 122, 234, 0.16);
+  font-size: 12px;
+  color: var(--dim1);
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+.plan-banner.is-done {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.14), rgba(34, 197, 94, 0.03));
+  border-top-color: rgba(34, 197, 94, 0.38);
+  border-bottom-color: rgba(34, 197, 94, 0.24);
+}
+.plan-bar {
+  padding: 7px 14px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+}
+.plan-bar:hover { background: rgba(159, 122, 234, 0.05); }
+.plan-icon { font-size: 14px; color: #c7adff; flex: 0 0 auto; }
+.plan-banner.is-done .plan-icon { color: #7ddc9f; }
+.plan-title {
+  color: #d8c5ff;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 42%;
+}
+.plan-banner.is-done .plan-title { color: #aaf0c0; }
+.plan-count { color: var(--dim2, #8b8b9a); flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+/* 细进度条: 占满剩余宽度 · 这是 plan 相对 flow banner 独有的信息 */
+.plan-track {
+  flex: 1 1 auto;
+  min-width: 40px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.plan-track-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(159, 122, 234, 0.55), rgba(159, 122, 234, 0.9));
+  transition: width 0.3s ease;
+}
+.plan-banner.is-done .plan-track-fill {
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0.55), rgba(34, 197, 94, 0.9));
+}
+.plan-toggle {
+  background: rgba(159, 122, 234, 0.15);
+  color: #c7adff;
+  border: 1px solid rgba(159, 122, 234, 0.35);
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.plan-bar:hover .plan-toggle { background: rgba(159, 122, 234, 0.28); }
+.plan-detail {
+  border-top: 1px dashed rgba(159, 122, 234, 0.25);
+  padding: 8px 10px 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.25);
+}
+/* 步骤行 · 点图标打钩 / 点文字改 / hover 出删除 */
+.plan-step {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 4px 6px;
+  border-radius: 6px;
+  line-height: 1.5;
+}
+.plan-step:hover { background: rgba(255, 255, 255, 0.04); }
+.plan-step-mark {
+  flex: 0 0 auto;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--dim2, #8b8b9a);
+  background: none;
+  border: none;
+  padding: 0;
+  line-height: 1.4;
+}
+.plan-step-mark:hover { color: #c7adff; }
+.plan-step[data-status="done"] .plan-step-mark { color: #4ade80; }
+.plan-step[data-status="doing"] .plan-step-mark { color: #c7adff; }
+.plan-step[data-status="skip"] .plan-step-mark { color: #7a7a86; }
+.plan-step-i {
+  flex: 0 0 auto;
+  color: var(--dim2, #8b8b9a);
+  font-variant-numeric: tabular-nums;
+  min-width: 16px;
+  text-align: right;
+}
+.plan-step-text {
+  flex: 1 1 auto;
+  cursor: text;
+  word-break: break-word;
+  color: var(--fg, #e8e8ef);
+}
+.plan-step[data-status="done"] .plan-step-text { color: var(--dim2, #8b8b9a); text-decoration: line-through; }
+.plan-step[data-status="skip"] .plan-step-text { color: #6f6f7a; text-decoration: line-through; }
+.plan-step[data-status="doing"] .plan-step-text { color: #e6d9ff; font-weight: 600; }
+.plan-step-note { color: #8b8b9a; font-size: 11px; margin-left: 4px; }
+.plan-step-edit {
+  flex: 1 1 auto;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(159, 122, 234, 0.5);
+  border-radius: 4px;
+  color: var(--fg, #e8e8ef);
+  font: inherit;
+  padding: 2px 6px;
+}
+.plan-step-del {
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  color: #6f6f7a;
+  cursor: pointer;
+  opacity: 0;
+  padding: 0 2px;
+  font-size: 13px;
+}
+.plan-step:hover .plan-step-del { opacity: 1; }
+.plan-step-del:hover { color: #ff8b8b; }
+.plan-detail-foot {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 6px 0;
+  margin-top: 4px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+}
+.plan-add-btn, .plan-foot-link {
+  background: none;
+  border: none;
+  color: #c7adff;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+.plan-add-btn:hover, .plan-foot-link:hover { text-decoration: underline; }
+.plan-foot-hint { color: #6f6f7a; font-size: 11px; margin-left: auto; }
+
 .flow-runs-banner {
   flex: 0 0 auto;
   background: linear-gradient(90deg, rgba(159, 122, 234, 0.14), rgba(159, 122, 234, 0.04));
@@ -9343,15 +9502,21 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 
 /* 模型切换时间线 · 方案 B (2026-08-06 用户 拍板) */
 .bi-tl-main { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg3); border-radius: 10px; font-size: 12.5px; margin-bottom: 8px; }
-.bi-tl-main > i:first-child { color: var(--teal); font-size: 14px; }
+.bi-tl-main > i:first-child { color: var(--teal); font-size: 14px; flex-shrink: 0; }
+/* 2026-08-20 · 模型名单行截断 长名 (deepseek-v4-flash) 换行会把整行撑高 ·
+   flex item 截断必须 min-width:0 · 名字太长省略· 全名看 title */
+.bi-tl-main span:not(.bi-tl-arr):not(.bi-tl-main-meta), .bi-tl-main b {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1;
+}
 .bi-tl-main b { font-weight: 600; }
+.bi-tl-arr { flex-shrink: 0; }
 .bi-tl-arr { color: var(--dim2); font-size: 11px; display: flex; }
 .bi-tl-main-meta { color: var(--dim2); font-size: 11px; margin-left: auto; white-space: nowrap; }
 .bi-tl-adv { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 10px; font-size: 12.5px; margin-bottom: 8px; background: linear-gradient(135deg, rgba(124,92,252,.14), rgba(183,148,244,.08)); border: 1px solid rgba(124,92,252,.35); border-left: 3px solid var(--purple); }
 .bi-tl-adv > i { color: var(--purple); font-size: 14px; }
 .bi-tl-adv-lbl { color: var(--purple); font-weight: 700; font-size: 11.5px; letter-spacing: .5px; }
 .bi-tl-adv-sep { color: var(--dim2); }
-.bi-tl-adv b { font-weight: 600; }
+.bi-tl-adv b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; }
 .bi-tl-adv-meta { color: var(--dim); font-size: 11.5px; margin-left: auto; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
 .bi-tl-mode { color: var(--amber); font-size: 11px; }
 /* 模型切换「展开更多」按钮 (2026-08-20) */
@@ -9457,7 +9622,10 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
    align-items:start → 两卡顶部对齐。热力卡按正方形日历的自然高度·
    信号流高度由 JS 同步成一模一样 (_biSyncSignalHeight)·谁都不被 grid 拉变形。
    底部对齐靠"等高"保证·不靠 grid stretch (stretch 会把矮的拉空)。 */
-.bi-grid-2.bi-row-heat { grid-template-columns: 1.4fr 1fr; align-items: start; }
+/* 2026-08-20 · 1.4fr 写死会被容器宽度无视 (在 detail-pane 里两卡硬挤· 信号流标签条溢出)·
+   改 auto-fit: 容器容不下两列(各 260px) 时自动堆叠· min(·100%) 防极窄容器撑爆·
+   代价: 两列时等分丢 1.4:1 比例 · 可接受(热力图有 max-width 480 封顶居中) */
+.bi-grid-2.bi-row-heat { grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); align-items: start; }
 
 /* 日历正方形格子·等比填满卡片宽度 (用户 要的"等比缩放": 卡越宽格子越大·永远正方形·不变矩形)。
    width:100% 横向填满·格子 aspect-ratio:1 走全局 .bi-cal-cell·这里不再覆盖成矩形。 */

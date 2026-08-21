@@ -1380,14 +1380,14 @@ const $autoIn = document.getElementById('autoConfirm');
 
 // 卷三十五补丁6 · 进度条 + mutating 工具白名单
 // 这些工具会写 data/ 下文件 · 改 dashboard 数据 · Daemonkey 调一次 → UI 立刻刷一次
-// 只读工具 (read_file / grep_files / web_search / 用户wser_fetch / shell_exec 等) 不在表 · 跳过
+// 只读工具 (read_file / grep_files / web_search / browser_fetch / shell_exec 等) 不在表 · 跳过
 const MUTATING_TOOLS = new Set([
   'wish_add', 'wish_update',
   'tag_radar_item', 'manage_info_source',
   'init_domain', 'remove_domain', 'add_domain',
   'mine_opportunities', 'analyze_feasibility', 'record_outcome',
   'toggle_favorite', 'generate_report', 'expand_trend_to_report',
-  'auto_pipeline', 'update_用户_note', 'refresh_radar', 'generate_trends',
+  'auto_pipeline', 'update_bro_note', 'refresh_radar', 'generate_trends',
   'Daemonkey_diary',
   // 卷五十四 · 工坊产出类补全 (之前漏了·Daemonkey 造完 app/草稿 看板不自动刷·用户 得手动 F5)
   'create_app', 'update_app', 'create_workflow', 'draft_studio',
@@ -1668,6 +1668,262 @@ let _flowRunsActive = [];       // 当前展示集合 (running + 最近 90s 内 
 let _flowRunsDetailOpen = false;
 let _flowRunsDetailCache = {};  // run_id → 完整 state (展开时 fetch · 折叠时也保留供下次秒开)
 let _flowRunsDismissed = {};    // run_id → true · 用户 点 "知道了" 后不再 banner
+
+// ── 任务计划条 (对话框上方 · 长轴任务"总共几步/走到哪") ──────────────────
+// 数据源 /api/plan/active → task_ledger 的 steps 层。
+// AI 用 track_task(action='plan'/'step') 写·用户在这个面板里改 ——
+// 改完下一轮 render_hint 就把新计划回灌给 AI(产品观第 2 条: 人的反馈要真的influence下一次调用)。
+const PLAN_OPEN_KEY = 'Daemonkey_plan_detail_open';
+let _planData = null;
+let _planPollTimer = null;
+let _planEditing = 0;     // 正在 inline 编辑第几步 · 轮询期间别重绘把输入框冲掉
+
+function _planOpen() {
+  try { return localStorage.getItem(PLAN_OPEN_KEY) === '1'; } catch (e) { return false; }
+}
+
+async function _planApi(method, path, body) {
+  const token = _flowRunsToken();   // 全站同一把 token (Daemonkey_ui_token)
+  if (!token) return null;
+  const opt = { method, headers: { 'Authorization': 'Bearer ' + token } };
+  if (body) {
+    opt.headers['Content-Type'] = 'application/json';
+    opt.body = JSON.stringify(body);
+  }
+  try {
+    const r = await fetch(path, opt);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+async function refreshPlan() {
+  if (!sessionId) { _renderPlan(null); return; }
+  const d = await _planApi('GET', '/api/plan/active?session_id=' + encodeURIComponent(sessionId));
+  if (d) _renderPlan(d);
+}
+window.refreshPlan = refreshPlan;
+
+function _renderPlan(d) {
+  _planData = d;
+  const banner = document.getElementById('planBanner');
+  if (!banner) return;
+  if (!d || !d.active) { banner.hidden = true; return; }
+  banner.hidden = false;
+  const p = d.progress || {};
+  const total = p.total || 0;
+  const settled = p.settled || 0;
+  banner.classList.toggle('is-done', !!p.all_done);
+  const t = document.getElementById('planTitle');
+  const c = document.getElementById('planCount');
+  const fill = document.getElementById('planTrackFill');
+  if (t) t.textContent = d.title || '任务';
+  if (c) c.textContent = settled + '/' + total;
+  if (fill) fill.style.width = (total ? Math.round(settled * 100 / total) : 0) + '%';
+  const detail = document.getElementById('planDetail');
+  const toggle = document.getElementById('planToggle');
+  const open = _planOpen();
+  if (toggle) toggle.textContent = open ? '收起 ▴' : '详情 ▾';
+  if (detail) {
+    detail.hidden = !open;
+    if (open) _renderPlanDetail();
+  }
+}
+
+const _PLAN_MARK = {
+  todo: 'ri-checkbox-blank-circle-line',
+  doing: 'ri-loader-4-line tp-spin',
+  done: 'ri-checkbox-circle-fill',
+  skip: 'ri-indeterminate-circle-line',
+};
+const _PLAN_MARK_TITLE = {
+  todo: '点一下标记做完', doing: '正在做 · 点一下标记做完',
+  done: '已完成 · 点一下退回待做', skip: '已跳过 · 点一下退回待做',
+};
+
+// 用 DOM API 建节点(不拼 innerHTML): 步骤文案是 AI/用户写的自由文本·
+// 里面可能有 < > & 甚至像标签的东西·拼字符串就得自己做转义·textContent 天然免疫。
+function _renderPlanDetail() {
+  const detail = document.getElementById('planDetail');
+  if (!detail || !_planData) return;
+  if (_planEditing) return;            // 编辑中不重绘 · 否则打字打一半被冲掉
+  detail.textContent = '';
+  const steps = _planData.steps || [];
+  steps.forEach((s) => {
+    const st = s.status || 'todo';
+    const row = document.createElement('div');
+    row.className = 'plan-step';
+    row.dataset.status = st;
+
+    const mark = document.createElement('button');
+    mark.type = 'button';
+    mark.className = 'plan-step-mark';
+    mark.title = _PLAN_MARK_TITLE[st] || '';
+    mark.innerHTML = '<i class="' + (_PLAN_MARK[st] || _PLAN_MARK.todo) + '"></i>';
+    mark.onclick = (e) => { e.stopPropagation(); _planToggleStep(s.i, st); };
+    row.appendChild(mark);
+
+    const idx = document.createElement('span');
+    idx.className = 'plan-step-i';
+    idx.textContent = s.i + '.';
+    row.appendChild(idx);
+
+    const txt = document.createElement('span');
+    txt.className = 'plan-step-text';
+    txt.textContent = s.text || '';
+    txt.title = '点一下改这步';
+    txt.onclick = (e) => { e.stopPropagation(); _planEditStep(row, s); };
+    row.appendChild(txt);
+
+    if (s.note) {
+      const note = document.createElement('span');
+      note.className = 'plan-step-note';
+      note.textContent = '(' + s.note + ')';
+      row.appendChild(note);
+    }
+
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'plan-step-del';
+    del.title = '删掉这步';
+    del.innerHTML = '<i class="ri-close-line"></i>';
+    del.onclick = (e) => { e.stopPropagation(); _planDelStep(s.i); };
+    row.appendChild(del);
+
+    detail.appendChild(row);
+  });
+
+  const foot = document.createElement('div');
+  foot.className = 'plan-detail-foot';
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'plan-add-btn';
+  add.innerHTML = '<i class="ri-add-line"></i> 加一步';
+  add.onclick = (e) => { e.stopPropagation(); _planAddStep(); };
+  foot.appendChild(add);
+
+  // 这活是在做某条心愿单 → 给条能跳过去的线 (账本侧存 wish_id · 心愿单那边也能反查进度)
+  if (_planData.wish_id) {
+    const w = document.createElement('button');
+    w.type = 'button';
+    w.className = 'plan-foot-link';
+    w.title = '这份计划属于这条心愿 · 点开看心愿单';
+    w.innerHTML = '<i class="ri-lightbulb-line"></i> ' + _planData.wish_id;
+    w.onclick = (e) => {
+      e.stopPropagation();
+      if (typeof switchView === 'function') switchView('wishlist');
+    };
+    foot.appendChild(w);
+  }
+
+  const hint = document.createElement('span');
+  hint.className = 'plan-foot-hint';
+  const ec = _planData.entry_count || 0;
+  // 名字跟『相遇』里取的走 · 拼新串直接用 window.AI_NAME(见顶部 localizer)。
+  // 光靠 MutationObserver 兜也能换·但那是异步的·会闪一下默认名。
+  hint.textContent = ec ? ('这任务还记了 ' + ec + ' 条结论')
+    : ('改完 ' + (window.AI_NAME || 'Daemonkey') + ' 下一轮就知道');
+  foot.appendChild(hint);
+  detail.appendChild(foot);
+}
+
+function togglePlanDetail() {
+  const detail = document.getElementById('planDetail');
+  const toggle = document.getElementById('planToggle');
+  if (!detail) return;
+  const willOpen = detail.hidden;
+  try { localStorage.setItem(PLAN_OPEN_KEY, willOpen ? '1' : '0'); } catch (e) { /* 隐私模式 */ }
+  detail.hidden = !willOpen;
+  if (toggle) toggle.textContent = willOpen ? '收起 ▴' : '详情 ▾';
+  if (willOpen) _renderPlanDetail();
+}
+window.togglePlanDetail = togglePlanDetail;
+
+// 打钩语义: 做完的点一下退回待做·其余一点就是"做完了"(最符合勾选框直觉)
+async function _planToggleStep(i, cur) {
+  const next = (cur === 'done') ? 'todo' : 'done';
+  const d = await _planApi('PATCH', '/api/plan/step',
+    { session_id: sessionId, i: i, status: next });
+  if (d) _renderPlan(d);
+}
+
+function _planEditStep(row, s) {
+  if (_planEditing) return;
+  _planEditing = s.i;
+  const txt = row.querySelector('.plan-step-text');
+  if (!txt) { _planEditing = 0; return; }
+  const input = document.createElement('input');
+  input.className = 'plan-step-edit';
+  input.value = s.text || '';
+  const done = async (save) => {
+    if (!_planEditing) return;
+    _planEditing = 0;
+    const v = input.value.trim();
+    if (save && v && v !== (s.text || '')) {
+      const d = await _planApi('PATCH', '/api/plan/step',
+        { session_id: sessionId, i: s.i, text: v });
+      if (d) { _renderPlan(d); return; }
+    }
+    _renderPlanDetail();
+  };
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); done(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); done(false); }
+  };
+  input.onblur = () => done(true);
+  row.replaceChild(input, txt);
+  input.focus();
+  input.select();
+}
+
+async function _planDelStep(i) {
+  const d = await _planApi('DELETE', '/api/plan/step', { session_id: sessionId, i: i });
+  if (d) _renderPlan(d);
+}
+
+// 就地长出一个输入框·不用 window.prompt: prompt 阻塞主线程、样式不受控、
+// 跟工程 UI 语言不搭·而且自动化测不到(会被自动 dismiss)。
+function _planAddStep() {
+  const detail = document.getElementById('planDetail');
+  if (!detail || _planEditing) return;
+  _planEditing = -1;                   // -1 = 正在新增(不是改某一步) · 挡住轮询重绘
+  const row = document.createElement('div');
+  row.className = 'plan-step';
+  row.dataset.status = 'todo';
+  const input = document.createElement('input');
+  input.className = 'plan-step-edit';
+  input.placeholder = '写一句话 · 动词开头 · 回车加进去';
+  const done = async (save) => {
+    if (!_planEditing) return;
+    _planEditing = 0;
+    const v = input.value.trim();
+    if (save && v) {
+      const d = await _planApi('POST', '/api/plan/step',
+        { session_id: sessionId, text: v });
+      if (d) { _renderPlan(d); return; }
+    }
+    _renderPlanDetail();
+  };
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); done(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); done(false); }
+  };
+  input.onblur = () => done(true);
+  row.appendChild(input);
+  const foot = detail.querySelector('.plan-detail-foot');
+  detail.insertBefore(row, foot);
+  input.focus();
+}
+
+function _startPlanPoll() {
+  if (_planPollTimer) return;
+  refreshPlan();
+  // 6 秒: 计划变化远没工作流频繁(那边 3 秒)·而且发完消息会主动刷一次
+  _planPollTimer = setInterval(() => {
+    if (document.hidden) return;       // 后台标签页不空跑
+    refreshPlan();
+  }, 6000);
+}
 
 function _flowRunsToken() {
   // H-12 修复: 全站 token 实际写在 Daemonkey_ui_token (旧版 Daemonkey_ui_token) ——
@@ -1992,6 +2248,13 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', _startFlowRunsPoll);
 } else {
   _startFlowRunsPoll();
+}
+
+// 计划条跟着一起起(同一个生命周期 · 两条 banner 都在 messages 上方)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _startPlanPoll);
+} else {
+  _startPlanPoll();
 }
 
 // ── git 欠账亮灯 (2026-07-29 · 用户 拍板 · 开 WebUI 第一眼可观测) ──
@@ -4776,7 +5039,7 @@ function _docCardHtml(d) {
       <span class="dvi-meta">${String(d.ext).toUpperCase()} · ${_docCategory(d.ext).label}</span>
     </span>
     <span class="dvi-actions">
-      ${isPreviewable ? btn('ri-eye-line','预览','_docOpenIn用户wser') : ''}
+      ${isPreviewable ? btn('ri-eye-line','预览','_docOpenInBrowser') : ''}
       ${btn('ri-mac-line','应用打开','_docOpenLocal')}
       ${btn('ri-save-3-line','另存为','_docSaveAs')}
     </span>
@@ -4785,7 +5048,7 @@ function _docCardHtml(d) {
 
 // 浏览器打开 → 统一弹框预览 (卷八十一续 · 用户 拍板: 复用知识库弹框骨架 · 不再新标签)
 // md/txt → fetch preview 渲染 markdown; 图片/音频/视频/pdf → 弹框内嵌; docx/xlsx/pptx → 下载
-async function _docOpenIn用户wser(domain, filename, ext) {
+async function _docOpenInBrowser(domain, filename, ext) {
   try {
     const t = token ? `?token=${encodeURIComponent(token)}` : '';
     const dispName = _safeDecode(filename.split('/').pop() || filename);
@@ -5524,8 +5787,8 @@ const TL_T2C = {
   outline_file:'file', search_code:'file', lint_check:'file', read_scenario:'file', pdf_read:'file', read_dashboard:'file',
   shell_exec:'exec', python_exec:'exec', service_start:'exec', service_stop:'exec', service_status:'exec', service_list:'exec',
   open_app:'exec', worktree_status:'exec', verify_daemon_endpoints:'exec', request_restart:'exec', update_core:'exec',
-  web_search:'web', web_fetch:'web', 用户wser_fetch:'web', 用户wser_act:'web', web_search_image:'web', verify_claim:'web',
-  update_用户_note:'memory', recall_memory:'memory', session_search:'memory', update_self_evolution:'memory',
+  web_search:'web', web_fetch:'web', browser_fetch:'web', browser_act:'web', web_search_image:'web', verify_claim:'web',
+  update_bro_note:'memory', recall_memory:'memory', session_search:'memory', update_self_evolution:'memory',
   summarize_session:'memory', manage_knowledge:'memory', manage_client:'memory', extract_playbook:'memory', track_task:'memory',
   create_app:'workshop', update_app:'workshop', list_apps:'workshop', run_app:'workshop', app_versions:'workshop',
   manage_app_asset:'workshop', app_set_secret:'workshop', app_list_secrets:'workshop', app_delete_secret:'workshop',
@@ -5591,11 +5854,11 @@ const TL_HUMAN = {
   track_task: c => ({ action: '往任务账本记了一笔', result: '已记住，下次接着干不用重来' }),
   web_search: c => ({ action: `上网搜索 <b>${String(c.s).replace(/"/g, '').slice(0, 40)}</b>`, result: c.r }),
   web_fetch: c => ({ action: '抓取网页正文', result: c.r }),
-  用户wser_act: c => ({ action: '操作网页（点击/填表/收图）', result: c.ok ? '操作完成' : (c.r || '操作失败') }),
+  browser_act: c => ({ action: '操作网页（点击/填表/收图）', result: c.ok ? '操作完成' : (c.r || '操作失败') }),
   generate_image: c => ({ action: '画了一张图', result: '图片已生成并保存' }),
   generate_report: c => ({ action: '生成了一份报告文档', result: '已落盘，报告库可下载' }),
   wechat_send: c => ({ action: '给你发了条微信', result: '已送达' }),
-  update_用户_note: c => ({ action: '记一笔到你的画像档案', result: '已记住，以后每次开机都会带上' }),
+  update_bro_note: c => ({ action: '记一笔到你的画像档案', result: '已记住，以后每次开机都会带上' }),
   extract_playbook: c => ({ action: '沉淀经验成操作手册', result: '已存档，下次同类任务直接照着做' }),
   recall_memory: c => ({ action: '翻长期记忆', result: c.r }),
   replan: c => ({ action: '请顾问出方案/破局/验收', result: c.ok ? '顾问已给出结论' : (c.r || '未通过') }),
@@ -6113,6 +6376,7 @@ function _stopSessionPoll(state) {
     setSendButtonState('idle');
     setInputLocked(false);
     showToolProgress(false);
+    refreshPlan();   // 后台 polling 跑完同样刷一次
     if (wasPending) { try { _maybeTabFlash('✅ Daemonkey 干完了'); } catch {} }
   } else if (wasPending) {
     // 后台 polling 完成 + 用户 不在看 · 弹 toast + tab 红点 (跟 send finally 后台完成对齐)
@@ -6572,7 +6836,7 @@ function mdRender(text, opts) {
           <span class="mdc-name">${escHtml(name)}</span>
           <span class="mdc-meta">${ext.toUpperCase()}</span>
           <span class="mdc-actions">
-            ${isPreviewable ? btn('ri-eye-line','预览','_docOpenIn用户wser') : ''}
+            ${isPreviewable ? btn('ri-eye-line','预览','_docOpenInBrowser') : ''}
             ${btn('ri-mac-line','应用打开','_docOpenLocal')}
             ${btn('ri-save-3-line','另存为','_docSaveAs')}
           </span>
@@ -7492,6 +7756,7 @@ async function send() {
       setInputLocked(false);
       $input.focus();
       showToolProgress(false);
+      refreshPlan();   // 这一轮可能列了计划/勾掉一步 · 立刻刷·别等 6s 轮询
       try { _maybeTabFlash('✅ Daemonkey 干完了'); } catch {}
     } else {
       // 后台跑完 + 用户 不在看 = 标记 unread + toast 提示
@@ -7690,7 +7955,7 @@ async function send() {
         goBtn.innerHTML = '<i class="ri-quill-pen-line"></i> 过收尾三问';
         goBtn.onclick = () => {
           const prompt = '回头看刚才这轮 — 过一遍收尾三问，该沉淀的沉淀：\n'
-            + '① 我这次有没有透露/出现新信号该记进 OWNER-NOTEBOOK？(update_用户_note)\n'
+            + '① 我这次有没有透露/出现新信号该记进 OWNER-NOTEBOOK？(update_bro_note)\n'
             + '② 这次的操作流程/踩坑值得抽成 playbook 吗？(extract_playbook)\n'
             + '③ 有没有暴露我的能力缺口该记心愿？(wish_add)\n'
             + '确实啥也不用沉淀就说一句为什么。';
@@ -11389,6 +11654,14 @@ async function loadDashboard(domain, opts = {}) {
   //   对话里跑工具后的静默刷新 (scheduleDashboardRefresh / stream finally) 会拿 currentView='settings' 调进来
   //   → fetch /dashboard/settings → 后端没这个域 → 404 → 把 用户 正看的设置页冲成"加载失败 [404]"。 这里直接短路。
   if (!domain || domain === 'settings') return;
+  // 0.9.6 · 用户自定义维度 (static/user/user.js 里 Daemonkey.addDomain 注册的) ·
+  //   后端没有 /dashboard/<它> · 渲染完全交给用户自己的 render。 出错兜住·别把整个中栏搞白。
+  const _ud = Daemonkey._domains[domain];
+  if (_ud && typeof _ud.render === 'function') {
+    try { await _ud.render($dashView, opts); }
+    catch (e) { $dashView.innerHTML = `<div class="dash-empty">用户面板「${domain}」渲染出错<br>${e.message}</div>`; }
+    return;
+  }
   // 工作室看板 · 起始屏 BI · 侧边栏直返入口 (用户 2026-08-06 · 复用起始屏渲染 · 零新逻辑)
   if (domain === 'bi') return renderDetailWelcome();
   // 成长档案 hub · 是个"虚拟维度" · 委派给当前激活的子标签 · 顶部补一条标签条

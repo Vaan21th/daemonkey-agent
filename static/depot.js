@@ -23,6 +23,7 @@ const DEPOT_TABS = [
   { id: 'diary',     label: 'Daemonkey 日记', icon: 'ri-brain-fill' },
   { id: 'wishlist',  label: 'Daemonkey 心愿', icon: 'ri-lightbulb-fill' },
   { id: 'playbooks', label: '技能库',    icon: 'ri-tools-fill' },
+  { id: 'memory_map', label: '记忆星图', icon: 'ri-sparkling-2-fill' },
   { id: 'reviews',   label: '月度复盘',  icon: 'ri-calendar-check-fill' },
   { id: 'sinks',     label: '沉淀位',    icon: 'ri-archive-drawer-fill' },
 ];
@@ -50,6 +51,11 @@ const _DEPOT_BANNERS = {
     icon: 'ri-tools-fill',
     title: '这是 Daemonkey 的工艺库 · 打法 + 铁律',
     sub: '打法:把一次踩过坑、后来走顺的流程,跟 Daemonkey 说"抽成 playbook",它就沉淀在这里,之后同类任务自动取用。铁律:Daemonkey 用失败换来的工程纪律,写进来就注入它每一次的判断里——经验和纪律都不再每次从零试。',
+  },
+  memory_map: {
+    icon: 'ri-sparkling-2-fill',
+    title: '这是 Daemonkey 的记忆星图 · 三道闸治理全景',
+    sub: '每个光点是一门手艺(playbook),位置由语义向量降维而来——挨得近的天然成簇·亮线连着的是内容相似的同类。下面三道闸是记忆体系的治理实测:写入闸(卫生)/分层闸(画像)/重排闸(召回),每个数字都是现算的真值。',
   },
 };
 
@@ -243,10 +249,10 @@ function renderCognition(data) {
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
   }
-  const 用户 = data.用户_profile || {};
+  const bro = data.bro_profile || {};
   const flow = data.recent_flow || [];
-  const sections = 用户.sections || [];
-  const lastUpd = _fmtCogTime(用户.last_updated);
+  const sections = bro.sections || [];
+  const lastUpd = _fmtCogTime(bro.last_updated);
 
   let html = `
     <div class="dash-head">
@@ -256,8 +262,8 @@ function renderCognition(data) {
       <button onclick="loadDashboard('cognition')">刷新</button>
     </div>`;
 
-  if (!用户.exists) {
-    html += `<div class="dash-empty">${escHtml(用户.note || '画像还没建 · 跟 Daemonkey 多聊聊,它会开始记你')}</div>`;
+  if (!bro.exists) {
+    html += `<div class="dash-empty">${escHtml(bro.note || '画像还没建 · 跟 Daemonkey 多聊聊,它会开始记你')}</div>`;
     $dashView.innerHTML = html;
     return;
   }

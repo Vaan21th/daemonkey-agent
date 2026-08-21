@@ -66,9 +66,9 @@
       outputs: [{ name: 'results', type: 'array' }],
       props: { top_k: 10 },
     },
-    'atomic/用户wser_fetch': {
+    'atomic/browser_fetch': {
       icon: '<i class="ri-global-fill"></i>', title: '浏览器抓取', group: 'atomic',
-      desc: 'agent_tools.用户wser_fetch', color: '#5DA3F0',
+      desc: 'agent_tools.browser_fetch', color: '#5DA3F0',
       inputs: [{ name: 'url', type: 'string' }],
       outputs: [{ name: 'content', type: 'string' }],
       props: {},
