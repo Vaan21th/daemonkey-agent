@@ -11,6 +11,10 @@ psutil>=5.9.0
 # 卷四十六 II · wish-43f705b8 · FTS5 中文 tokenizer · 修中文 recall_memory 0 命中
 jieba>=0.42.0
 
+# 2026-08-21 hf2 · 记忆向量化地基 (memory_embed 嵌入/memory_map 星图/audit_playbooks 判重全要它)
+# 母体手动装了 2.4.5 一直没登记 → 全新环境星图 500 · 记忆嵌入静默断
+numpy>=1.26.0
+
 # wish-4a6331b2 · OPUS 视觉能力 · 图片压缩
 Pillow>=10.0.0
 
@@ -18,7 +22,8 @@ Pillow>=10.0.0
 pystray>=0.19.0
 
 # wish-41ed72ef · 文档上传 · PDF 文本提取
-PyPDF2>=3.0.0
+# 2026-08-21 hf2 修正: 代码实际用的是 pypdf(小写) · PyPDF2 3.x 后官方改名 pypdf·登记错包名=全新环境文档摄入炸
+pypdf>=4.0.0
 
 # wish-41ed72ef · 文档上传 · DOCX 文本提取
 python-docx>=1.0.0

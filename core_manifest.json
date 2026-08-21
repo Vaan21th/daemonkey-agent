@@ -269,7 +269,8 @@
       "assets/webview2/Microsoft.Web.WebView2.WinForms.dll",
       "assets/webview2/WebView2Loader.dll",
       "tools/build-boot-exe.ps1",
-      "tools/install_hooks.ps1"
+      "tools/install_hooks.ps1",
+      "requirements.txt"
     ]
   },
   "excluded_borderline": {
