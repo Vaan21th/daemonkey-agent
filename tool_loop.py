@@ -33,6 +33,7 @@ OPUS 的"手"——tool use 多轮循环。
 
 from __future__ import annotations
 
+import contextvars
 import hashlib
 import json
 import logging
@@ -744,8 +745,24 @@ def _maybe_parallel_auto(
 
     out: dict[int, ToolResult] = {}
     workers = min(_PARALLEL_MAX_WORKERS, len(jobs))
+    # 每个 job 带一份**独立的** context 副本进线程 (2026-08-19 修)。
+    #
+    # 病根: `ThreadPoolExecutor.submit` 不传递 contextvars —— 线程里 `_SESSION_CTX` 是空的·
+    # `current_session_id()` 于是退化成 `t<线程id>`。 后果不止"记错"·是**功能不成立**:
+    #   · track_task 把任务账本绑到 t17900 而不是真会话 → 计划条在界面上根本不出现·
+    #     下一批工具换了线程池 → 又是新线程 id → 勾步骤报"没有活跃计划"
+    #   · edit_file/write_file 的编辑锁 owner 也认不出"哪个对话在改"
+    # 而串行那两条路 (spec.run 直接跑在当前线程) 上下文是活的 —— 于是**同一轮对话里
+    # 单个工具正常、并行批次失灵**·`data/runtime/ledger_active.json` 里真 session id 和
+    # t 开头的键混着躺了一个月没人发现。 又是一次"两条路各自一个行为"。
+    #
+    # 必须每个 job 单独 copy: 同一个 Context 对象不能被两个线程同时 `run`
+    # (RuntimeError: cannot enter context - it is already entered)。
     with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-        fut_to_idx = {ex.submit(_work, spec, args): idx for idx, spec, args in jobs}
+        fut_to_idx = {}
+        for idx, spec, args in jobs:
+            ctx = contextvars.copy_context()
+            fut_to_idx[ex.submit(ctx.run, _work, spec, args)] = idx
         for fut in concurrent.futures.as_completed(fut_to_idx):
             out[fut_to_idx[fut]] = fut.result()
     return out

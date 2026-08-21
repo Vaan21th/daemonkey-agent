@@ -166,6 +166,80 @@ _TURN_TO_SID: dict[str, str] = {}
 _TURN_PROGRESS: dict[str, dict] = {}
 
 
+# ── 注册表收口点 ──────────────────────────────────────────────
+# 上面三张表原先由 8 个调用点各自手写 (chat / resume / 微信 / 飞书 / 主动呼叫 /
+# workshop 的 app run + flow run x2)。 手写的代价: 漏写一张表前端就瞎一块 —— workshop
+# 三处只写了 cancel 表·没建进度快照·浏览器 F5 之后查不到"这个 run 在跑什么"。
+# 收成下面四个函数后·将来要不要加执行 ID / 统一状态机·全工程只有这一处要改。
+#
+# 注意 sid 的边界: app/flow run 不属于任何会话 (workshop 端点没有 session 概念)·
+# 这类 run 必须传 sid=""·否则会把不属于该会话的活儿混进 /sessions/{sid}/active_turn。
+
+def register_turn(
+    turn_id: str,
+    sid: str,
+    cancel: threading.Event,
+    label: str = "",
+) -> None:
+    """登记一个正在跑的活儿 · 三张表一次写齐。
+
+    label 非空时顺带开进度快照 —— 给不走 _chat_impl 的活儿 (app/flow run) 用·
+    因为 _make_progress_recorder 只在对话链路上建快照。
+    """
+    if not turn_id:
+        return
+    with _TURNS_LOCK:
+        _ACTIVE_TURNS[turn_id] = cancel
+        if sid:
+            _TURN_TO_SID[turn_id] = sid
+        if label:
+            _now = time.time()
+            _TURN_PROGRESS.setdefault(turn_id, {
+                "started_at": _now, "updated_at": _now,
+                "iteration": 0, "label": label, "tool": "",
+            })
+
+
+def unregister_turn(turn_id: str) -> None:
+    """活儿结束 · 三张表一起清 (务必放在 finally 里)。"""
+    if not turn_id:
+        return
+    with _TURNS_LOCK:
+        _ACTIVE_TURNS.pop(turn_id, None)
+        _TURN_TO_SID.pop(turn_id, None)
+        _TURN_PROGRESS.pop(turn_id, None)
+
+
+def get_turn_cancel(turn_id: str) -> Optional[threading.Event]:
+    """取某个活儿的中断开关 · abort 端点用。"""
+    if not turn_id:
+        return None
+    with _TURNS_LOCK:
+        return _ACTIVE_TURNS.get(turn_id)
+
+
+def active_session_ids() -> set:
+    """哪些会话正在跑活儿 · 历史列表据此显示运行状态。"""
+    with _TURNS_LOCK:
+        return set(_TURN_TO_SID.values())
+
+
+def find_session_turn(sid: str) -> Optional[str]:
+    """反查某会话正在跑的活儿 ID · 浏览器 F5 后靠它恢复轮询。"""
+    if not sid:
+        return None
+    with _TURNS_LOCK:
+        for tid, t_sid in _TURN_TO_SID.items():
+            if t_sid == sid:
+                return tid
+    return None
+
+
+def turn_progress_recorder(turn_id: str, inner: Optional[Callable[[str, dict], None]] = None):
+    """把一个 progress 回调包成"同时记进快照"的版本 · 供 daemon_api 之外的调用点。"""
+    return _make_progress_recorder(turn_id, inner)
+
+
 def get_turn_progress(turn_id: str) -> Optional[dict]:
     """② · 查 turn 最新进度快照 (含服务端算好的 elapsed_s / stale_s) · 供 active_turn 端点。"""
     if not turn_id:
@@ -194,9 +268,11 @@ def _make_progress_recorder(turn_id: str, inner: Optional[Callable[[str, dict], 
         return inner
     _now = time.time()
     with _TURNS_LOCK:
-        _TURN_PROGRESS[turn_id] = {
+        # setdefault 而非直接赋值: register_turn 可能已带业务 label 开好了快照 (app/flow run)·
+        # 不该被"启动中…"盖掉。 turn_id 是 uuid 不复用·两种写法对对话链路等价。
+        _TURN_PROGRESS.setdefault(turn_id, {
             "started_at": _now, "updated_at": _now, "iteration": 0, "label": "启动中…", "tool": "",
-        }
+        })
 
     def _rec(event_type: str, data: dict) -> None:
         try:
@@ -579,6 +655,22 @@ def _make_remote_confirm(
                     "禁止套话 (\'可能有风险\' / \'我会小心\'), 必须真. 加上后立即重试, BRO 才会看到批准请求."
                 )
 
+        # policy=guard (threshold=3) 时 · 无人值守的后台 turn 里 GUARD 不自动放行。
+        # 为什么: GUARD 的定义就是「不可逆或涉及凭据·要人看一眼再拍」·
+        # 而 push_event is None 意味着没有前台 SSE·根本没有那只眼睛 ——
+        # 此时"自动批 GUARD"绕过的正是它自己存在的意义。
+        # 否则 OPUS_*_AUTO_CONFIRM=guard 一设 · 微信/飞书/定时任务后台就能读走 .env。
+        #
+        # 只在 threshold>=3 时拦: 其余档位下 GUARD 本来就走不到执行 (下面 rank>threshold
+        # → inline confirm · 无 push_event 时退化 skip) · 不去动那条已有路径。
+        if rank == 3 and threshold >= 3 and push_event is None:
+            return (
+                "reject:这是 GUARD 级操作 (不可逆或涉及凭据) · 而你正跑在【无人值守的后台 turn】里 "
+                "(没有前台 SSE · 没人能看到批准卡片) · 所以 daemon 不替用户放行。\n"
+                "→ 换个不碰凭据、不做不可逆动作的做法把这轮做完; "
+                "真必须做这一步 · 把原因写清楚留给用户 · 由他在 WebUI 前台重跑一次。"
+            )
+
         # 老规则: tier ≤ threshold → 直接 go (AUTO 永远过; confirm policy 下 CONFIRM 也过)
         if rank <= threshold:
             return "go"
@@ -935,6 +1027,8 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
 
     _ATTACH_DIR = _Path("data/runtime/attachments")
     _ATTACH_DIR.mkdir(parents=True, exist_ok=True)
+    _ATTACH_MAX_BYTES = 50 * 1024 * 1024
+    _ATTACH_MAX_B64_CHARS = _ATTACH_MAX_BYTES * 4 // 3 + 16
 
     # 粘贴/上传的图按会话留存(不再看完即删)· 让 OPUS 之后能换个问法再 look_at 同一张。
     # 顺手清掉 7 天前的旧图 · 防目录无限堆积 (best-effort · 失败不影响主流程)。
@@ -977,6 +1071,16 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
             continue
 
         mime, b64_str = match.group(1), match.group(2)
+
+        # 前端有 50MB 闸·但后端不能只信前端: 直连 API / 改过的前端都能塞进来·
+        # 而这里是先整段解码再落盘 —— 没上限就是一发请求打爆内存。
+        # 阈值跟文档摄取那条线对齐 (base64 比原文胖 ~4/3)。
+        if len(b64_str) > _ATTACH_MAX_B64_CHARS:
+            descriptions.append(
+                f"附件{i+1} ({name}): [超过 {_ATTACH_MAX_BYTES // (1024 * 1024)}MB 上限·跳过]"
+            )
+            continue
+
         is_image = mime.startswith("image/")
         ext = mime.split("/")[-1].split("+")[0][:12]
         if ext == "jpeg":
@@ -1745,6 +1849,17 @@ def build_app():
     from api_routes._deps import loopback_auth_middleware
     app.middleware("http")(loopback_auth_middleware)
 
+    # 收拾上个进程留下的 running 残骸 —— 工作流执行线程死在进程里·磁盘上的 "running"
+    # 没人改·前端金灯就永远不灭。 按 owner_pid 判定·不会碰真在跑的那些。
+    try:
+        from workers.flow_runner import reconcile_orphan_runs
+        _orphans = reconcile_orphan_runs()
+        if _orphans:
+            print(f"[daemon] 上次没跑完的工作流 {len(_orphans)} 条已标记可续跑: "
+                  f"{', '.join(_orphans[:5])}", flush=True)
+    except Exception as e:
+        print(f"[daemon] WARN · 残留 run 收拾跳过 (不阻塞启动): {type(e).__name__}: {e}", flush=True)
+
 
     # wish-413999da phase 1 · 5 路由抽到 api_routes/core.py:
     #   / · /api/ping-test · /ui · /static/{path:path} · /workshop/outputs/{filename:path}
@@ -1805,6 +1920,7 @@ def build_app():
     from api_routes import vision as _routes_vision
     from api_routes import notifications as _routes_notifications
     from api_routes import advisor as _routes_advisor
+    from api_routes import plan as _routes_plan  # 任务计划条 (task_ledger 的步骤层)
     from api_routes import stt as _routes_stt  # wish-241e0014 · /stt/* 语音识别增强
     # 2026-08-08 · /api/tts 语音回复 (商业化 TTS · 归属待决 · 优雅降级: 纯净版无 voice.py 不崩)
     try:
@@ -1830,6 +1946,7 @@ def build_app():
     app.include_router(_routes_vision.router)  # wish-4a6331b2 · /vision-config (曾漏注册→404)
     app.include_router(_routes_notifications.router)  # wish-fb6b7427 · /notification-config
     app.include_router(_routes_advisor.router)  # wish-ea8922f7 · /api/advisor/status + trace
+    app.include_router(_routes_plan.router)  # /api/plan/* · 对话框上方的任务计划条 (读+改)
     app.include_router(_routes_stt.router)  # wish-241e0014 · /stt/* 语音识别增强 (可选更新)
 
     # wish-241e0014 · 随 daemon 启动预加载 whisper 模型 (设置页开关 OPUS_STT_BOOT_LOAD=1)

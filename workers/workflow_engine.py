@@ -177,33 +177,8 @@ def _run_app_node(
             "outputs": {}, "text": "",
         }
 
-    exec_kind = (app.get("exec_kind") or "").strip().lower()
-
-    # scripted 分支 · 不走 LLM · 直接 HTTP
-    if exec_kind == "scripted":
-        from workers.http_executor import run_scripted_app
-        result = run_scripted_app(
-            app=app,
-            inputs=inputs,
-            runtime=runtime,
-            progress=progress,
-            upstream_outputs=upstream_outputs,
-        )
-        # 统一返回字段 (run_scripted_app 没 text / usage / iterations · 补空)
-        return {
-            "ok": result.get("ok", False),
-            "outputs": result.get("outputs") or {},
-            "text": "",
-            "usage": {},
-            "iterations": 0,
-            "error": result.get("error"),
-            "http": result.get("http") or {},
-            "exec_kind": "scripted",
-        }
-
-    # agentic / 未声明 → 走 LLM
-    from workers.app_runner import run_app
-    result = run_app(
+    from workers.app_runner import run_app_by_kind
+    return run_app_by_kind(
         app=app,
         inputs=inputs,
         runtime=runtime,
@@ -212,9 +187,6 @@ def _run_app_node(
         upstream_outputs=upstream_outputs,
         max_iterations=max_iterations,
     )
-    if isinstance(result, dict):
-        result.setdefault("exec_kind", "agentic")
-    return result
 
 
 def run_workflow(

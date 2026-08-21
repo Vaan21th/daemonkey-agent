@@ -45,6 +45,9 @@ _STATIC_WHITELIST = {
     "lib/litegraph.core.css": "text/css; charset=utf-8",
     # 卷五十六 · Chart.js 4.4.7 本地化 (BI 看板图表) · 漏加白名单 = 404 = 雷达/环形图永久空白 (BRO 实测)
     "lib/chart.umd.min.js": "application/javascript; charset=utf-8",
+    # 0.9.6 · Three.js r128 本地化 (记忆星图 3D) · 同上 · 漏加 = 黑块
+    "lib/three/three.min.js": "application/javascript; charset=utf-8",
+    "lib/three/OrbitControls.js": "application/javascript; charset=utf-8",
     # 卷四十六 · Remix Icon 4.6.0 字体本地化 (替代 jsdelivr CDN · BRO 网络下 CDN 容易卡)
     "lib/remixicon/remixicon.css": "text/css; charset=utf-8",
     "lib/remixicon/remixicon.woff2": "font/woff2",
@@ -106,6 +109,26 @@ def _inject_ai_name(html: str) -> str:
     if "</head>" in html:
         return html.replace("</head>", tag + "</head>", 1)
     return tag + html
+
+
+def _bust_static_cache(html: str) -> str:
+    """把 html 里 /static/xxx.js|css?v=旧值 的版本串换成文件 mtime。
+
+    why: 版本串原来是手写日期 (?v=20260814f) · 靠人肉 bump —— 改了 chat.js 忘了 bump,
+    webview2/Edge 就继续用磁盘缓存的旧版 (2026-08-20 BRO 窄屏截图里的「简洁版」顶栏
+    就是上古缓存 · 当前版早改名「专注版」)。mtime 自动变 · 永远不用记。
+    """
+    import re as _re
+
+    def _ver(m: "_re.Match") -> str:
+        fname = m.group(1)
+        try:
+            mt = int((ROOT / "static" / fname).stat().st_mtime)
+        except Exception:
+            return m.group(0)
+        return f"/static/{fname}?v={mt}"
+
+    return _re.sub(r"/static/([\w./-]+\.(?:js|css))\?v=[\w.-]+", _ver, html)
 
 # ────────────────────────────────────────────────────────────────
 # 工坊产物 MIME (wish-f3b4958e · 卷四十四 K stage 2c++)
@@ -193,7 +216,12 @@ async def web_ui():
     html = path.read_text(encoding="utf-8")
     # 把用户在『相遇』里给这只 Daemonkey 起的名字注进页面 · 前端用它替换写死的 "OPUS"
     # (race-free: 服务端注入·不必等前端再 fetch /status·避免先闪一下 "OPUS")
-    return HTMLResponse(_inject_ai_name(html))
+    # Cache-Control: no-cache —— HTML 本身也必须每次重验证 (2026-08-20 事故:
+    # webview2 把 /ui 整个缓存了 · html 里引用的还是旧版本串 · cache busting 形同虚设)
+    return HTMLResponse(
+        _inject_ai_name(_bust_static_cache(html)),
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
 
 
 @router.get("/static/{path:path}")

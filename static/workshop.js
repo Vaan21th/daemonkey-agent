@@ -2041,7 +2041,8 @@ function _askDaemonkeyInChat(kind) {
 
   // 卷四十六续 12 · wish-165ea1f6 phase B · 后端真跑 (SSE 流式)
   // 复用 _activeRuns map 让取消按钮能 abort
-  const _activeRuns = new Map();  // appId → AbortController
+  const _activeRuns = new Map();    // appId → AbortController
+  const _activeRunIds = new Map();  // appId → 后端 run_id (取消要用它通知后端停)
 
   const _IMG_EXT = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
   const _AUDIO_EXT = ['.wav', '.mp3', '.ogg', '.flac', '.m4a'];
@@ -2191,6 +2192,7 @@ function _askDaemonkeyInChat(kind) {
     const reader = resp.body.getReader();
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
+    let runId = '';   // hello 事件给的 · 流断后靠它继续问后台状态
 
     const parseEvents = (chunk) => {
       buffer += chunk;
@@ -2222,7 +2224,9 @@ function _askDaemonkeyInChat(kind) {
           try { payload = JSON.parse(data); } catch (e) { payload = { raw: data }; }
           if (evt === 'hello') {
             const tag = payload.exec_kind === 'scripted' ? '<i class="ri-flash-fill"></i> scripted' : '<i class="ri-brain-fill"></i> agentic';
-            appendEvent('hello', `${tag} · run ${payload.run_id || ''}`);
+            runId = payload.run_id || '';
+            _activeRunIds.set(app.id, runId);   // 取消按钮要拿它去通知后端停
+            appendEvent('hello', `${tag} · run ${runId}`);
           } else if (evt === 'app_run_start') {
             appendEvent('start', `app 启动 · 工具白名单 ${(payload.tools || []).length} 个`);
           } else if (evt === 'assistant_text') {
@@ -2274,10 +2278,44 @@ function _askDaemonkeyInChat(kind) {
       } else {
         if (statusBox) statusBox.innerHTML = '<i class="ri-close-fill"></i> 流断';
         appendEvent('error', String(e), 'err');
+        // 流断 ≠ 活儿断: worker 是独立线程 · 不依赖 SSE。 拿 run_id 接着跟 · 别让人以为白跑了
+        _followDetachedRun(runId, appendEvent, statusBox);
       }
     } finally {
       if (cancelBtn) cancelBtn.hidden = true;
       _activeRuns.delete(app.id);
+      _activeRunIds.delete(app.id);
+    }
+  }
+
+  async function _followDetachedRun(runId, appendEvent, statusBox) {
+    // SSE 断掉后继续问 daemon「那个 run 还活着吗 / 跑到哪了」。
+    // 出口是 /turns/{id}/progress —— 工坊 run 故意不绑 session (硬绑会污染会话的
+    // active_turn) · 所以查不了 /sessions/{sid}/active_turn · 只能按 turn 自己查。
+    const token = _getToken && _getToken();
+    if (!runId || !token) return;
+    let lastLabel = null;
+    for (let i = 0; i < 240; i++) {   // 最多跟 20 分钟 · 之后不再打扰
+      let snap = null;
+      try {
+        const r = await fetch('/turns/' + encodeURIComponent(runId) + '/progress', {
+          headers: { 'Authorization': 'Bearer ' + token },
+        });
+        if (r.ok) snap = await r.json();
+      } catch (e) { /* 网络抖一下 · 下一轮再试 */ }
+      if (snap && snap.alive) {
+        const label = (snap.progress && snap.progress.label) || '进行中…';
+        if (statusBox) statusBox.innerHTML = '<i class="ri-loader-4-line"></i> 后台仍在跑';
+        if (label !== lastLabel) {          // 只在真的换步骤时记一行 · 别 5s 灌一条
+          appendEvent('后台', label);
+          lastLabel = label;
+        }
+      } else if (snap) {
+        if (statusBox) statusBox.innerHTML = '<i class="ri-check-fill"></i> 后台已跑完';
+        appendEvent('后台', '这个 run 已结束 · 刷新看产物');
+        return;
+      }
+      await new Promise(res => setTimeout(res, 5000));
     }
   }
 
@@ -2286,6 +2324,21 @@ function _askDaemonkeyInChat(kind) {
     if (ctrl) {
       try { ctrl.abort(); } catch (e) {}
     }
+    _abortBackendRun(_activeRunIds.get(appId));
+  }
+
+  async function _abortBackendRun(runId) {
+    // 只 abort 前端这条连接等于自欺: 后台 worker 是独立线程 · 不通知它就继续跑、继续烧钱。
+    // 停在下一个工具决策点生效(跟对话里的停止按钮同语义)·不是瞬断。
+    if (!runId) return;
+    const token = _getToken && _getToken();
+    if (!token) return;
+    try {
+      await fetch('/turns/' + encodeURIComponent(runId) + '/abort', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+    } catch (e) { /* 后端已经收不到就算了 · 本地连接总之断了 */ }
   }
 
   function _onAppFormClear(appId) {
@@ -2314,6 +2367,7 @@ function _askDaemonkeyInChat(kind) {
   //   - 画布直接序列化 → POST /workshop/flows/run (inline · 不强迫先 save)
   //   - 弹一个浮层 (在工坊视图右下角) 实时显示 node_start/node_done · 跟主对话同样工艺
   let _flowRunCtrl = null;
+  let _flowRunId = '';   // 画布这条 run 的后端 id
 
   function _onRun() {
     if (!_graph._nodes.length) { _toast('画布是空的 · 先拖个工具进来'); return; }
@@ -2341,6 +2395,7 @@ function _askDaemonkeyInChat(kind) {
     if (_flowRunCtrl) try { _flowRunCtrl.abort(); } catch (e) {}
     const ctrl = new AbortController();
     _flowRunCtrl = ctrl;
+    _flowRunId = '';
 
     const append = (kind, text, cls) => {
       const row = document.createElement('div');
@@ -2405,7 +2460,10 @@ function _askDaemonkeyInChat(kind) {
           for (const { evt, data } of parse(chunk)) {
             let p = null;
             try { p = JSON.parse(data); } catch (e) { p = { raw: data }; }
-            if (evt === 'hello') append('hello', 'run_id ' + (p.run_id || ''));
+            if (evt === 'hello') {
+              _flowRunId = p.run_id || '';   // 取消按钮要拿它通知后端停
+              append('hello', 'run_id ' + _flowRunId);
+            }
             else if (evt === 'flow_start') append('flow', `开跑 · ${p.node_count} 节点`);
             else if (evt === 'node_start') append('node <i class="ri-play-fill"></i>', `#${p.node_id} · ${p.type || ''}`, 'tool');
             else if (evt === 'node_done') append('node <i class="ri-check-fill"></i>', `#${p.node_id} · outputs ${(p.outputs_keys||[]).join(',')}`, 'tool-ok');
@@ -2471,6 +2529,7 @@ function _askDaemonkeyInChat(kind) {
       if (!t) return;
       if (t.dataset.act === 'flow-run-cancel') {
         if (_flowRunCtrl) try { _flowRunCtrl.abort(); } catch (err) {}
+        _abortBackendRun(_flowRunId);
       } else if (t.dataset.act === 'flow-run-close') {
         overlay.hidden = true;
       }

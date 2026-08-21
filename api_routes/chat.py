@@ -4,7 +4,7 @@ wish-413999da phase 1 · 5 路由 · 含 SSE 流式
 
 依赖 daemon_api 的 module-level helpers · lazy import 防循环依赖:
   _chat_impl / _resolve_max_tokens / _resolve_session_id
-  _ACTIVE_TURNS / _TURNS_LOCK / _TURN_TO_SID
+  register_turn / unregister_turn / get_turn_cancel (正在跑的活儿注册表收口点)
   _PENDING_CONFIRMS / _PENDING_CONFIRMS_LOCK
   _supports_trust / _trust_decision_to_minutes / _extract_trust_pattern
   _short_json_preview
@@ -99,9 +99,12 @@ async def chat(
 async def chat_stream(
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
+    request: Request = None,
 ):
     """SSE 流式版 (卷十七加 · 解决 524 + 让 BRO 看 OPUS 思考过程)"""
     check_auth(authorization)
+    # 限流必须跟 /chat 一致: WebUI 全走这条 SSE · 只在 /chat 上装闸等于没装
+    check_rate_limit(request, authorization)
     if not isinstance(payload, dict):
         raise HTTPException(400, "request body must be a JSON object")
 
@@ -109,10 +112,8 @@ async def chat_stream(
         _chat_impl,
         _resolve_max_tokens,
         _resolve_session_id,
-        _TURNS_LOCK,
-        _ACTIVE_TURNS,
-        _TURN_TO_SID,
-        _TURN_PROGRESS,
+        register_turn,
+        unregister_turn,
     )
 
     message = payload.get("message", "")
@@ -145,9 +146,7 @@ async def chat_stream(
 
     turn_id = "turn-" + uuid.uuid4().hex[:12]
     cancel_event = threading.Event()
-    with _TURNS_LOCK:
-        _ACTIVE_TURNS[turn_id] = cancel_event
-        _TURN_TO_SID[turn_id] = sid
+    register_turn(turn_id, sid, cancel_event)
 
     queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
@@ -176,10 +175,7 @@ async def chat_stream(
         except Exception as e:
             push_event("error", {"status": 500, "detail": f"{type(e).__name__}: {e}"})
         finally:
-            with _TURNS_LOCK:
-                _ACTIVE_TURNS.pop(turn_id, None)
-                _TURN_TO_SID.pop(turn_id, None)
-                _TURN_PROGRESS.pop(turn_id, None)  # ② 进度快照跟 turn 同生命周期
+            unregister_turn(turn_id)
 
     threading.Thread(target=worker, daemon=True).start()
 
@@ -227,9 +223,8 @@ async def abort_turn(
 ):
     """卷三十六 · BRO 点停止按钮 · 中断正在跑的 turn"""
     check_auth(authorization)
-    from daemon_api import _TURNS_LOCK, _ACTIVE_TURNS
-    with _TURNS_LOCK:
-        evt = _ACTIVE_TURNS.get(turn_id)
+    from daemon_api import get_turn_cancel
+    evt = get_turn_cancel(turn_id)
     if evt is None:
         raise HTTPException(404, f"turn not found or already done: {turn_id}")
     evt.set()

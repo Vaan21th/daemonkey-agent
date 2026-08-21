@@ -26,8 +26,13 @@ def _summarize(args: dict) -> str:
 
 
 def _run(args: dict) -> ToolResult:
+    # 0.9.6 修 · 新装实例还没这个文件 —— 那是"一条铁律都还没加"的正常状态·不是故障。
+    #   原先报 error 会让 LLM 以为系统坏了·转而不敢调 add_iron_rule 加第一条。
     if not DAEMON_RULES_PATH.exists():
-        return ToolResult(ok=False, output="", error=f"daemon_rules.md 不存在: {DAEMON_RULES_PATH}")
+        return ToolResult(ok=True, output=(
+            "还没有任何铁律 (data/cognition/daemon_rules.md 尚未建立)。\n"
+            "加第一条 → add_iron_rule · rule_number=1 (文件会自动建好)。"
+        ))
 
     text = DAEMON_RULES_PATH.read_text(encoding="utf-8")
 

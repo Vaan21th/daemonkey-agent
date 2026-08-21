@@ -37,6 +37,7 @@ workshop_context 每轮把活跃 run 进度重新注入 · 等于"刚说过"。
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import uuid
@@ -197,10 +198,56 @@ def _init_state(flow: dict, *, from_step: int = 1) -> tuple[dict, list[dict]]:
         "current_step": from_step,
         "total_steps": len(steps),
         "started_at": _iso_now(),
+        # 谁在跑这条 —— run 的执行线程活在进程内存里·status 却是落盘的。
+        # 记下 pid·下次 daemon 起来才分得清「真在跑」和「上个进程死掉留下的残骸」。
+        "owner_pid": os.getpid(),
         "steps": [_init_entry(st, from_step) for st in steps],
     }
     _save_state(state)
     return state, steps
+
+
+def reconcile_orphan_runs() -> list[str]:
+    """daemon 启动时收拾上一个进程留下的 running 残骸 · 返回被改的 run_id。
+
+    为什么必须收: 执行线程死在上一个进程里·磁盘上那句 "running" 没人再去改 —— 前端
+    金灯永远不灭·用户既不敢重跑也不知道能不能续·台账里也永远挂着一条假的在跑。
+
+    判定靠 owner_pid·不是"启动即全标":校验闸和别的工具也会 import 建 app·
+    只按"磁盘上有 running"就动手会把另一个真在跑的 daemon 的活儿误判成残骸。
+    没有 owner_pid 的是这版之前留下的·必然属于早已退出的进程。
+
+    标成 failed 而不是新造一个状态: 续跑不校验状态·failed 照样能 resume·
+    前端也早就认得它 —— 少一个状态词就少一处两边理解不一致。
+    """
+    if not RUNS_DIR.exists():
+        return []
+    from .daemon_lifecycle import _is_pid_alive
+
+    me = os.getpid()
+    fixed: list[str] = []
+    for p in RUNS_DIR.glob("run-*.json"):
+        st = load_run(p.stem)
+        if not st or st.get("status") != "running":
+            continue
+        pid = st.get("owner_pid")
+        if isinstance(pid, int) and pid > 0 and (pid == me or _is_pid_alive(pid)):
+            continue
+        st["status"] = "failed"
+        st["error"] = "daemon 重启中断 · 这条没跑完 · 可以从断点续跑"
+        st["interrupted_by"] = "daemon_restart"
+        for entry in st.get("steps") or []:
+            if entry.get("status") == "running":
+                entry["status"] = "pending"      # 续跑时这步要重来 · 不是已完成
+            for be in entry.get("branches") or []:
+                if be.get("status") == "running":
+                    be["status"] = "pending"
+        try:
+            _save_state(st)
+            fixed.append(st.get("run_id") or p.stem)
+        except Exception:
+            pass
+    return fixed
 
 
 def start_run(
@@ -243,6 +290,7 @@ def start_run_async(
     def worker() -> None:
         # ContextVar 跨线程不传递 · 进 worker 后自己 set + finally reset · 别泄露
         token = None
+        cancel = _claim_turn(run_id, f"跑工作流 {state.get('flow_name') or run_id}")
         try:
             if trusted_flow_id:
                 try:
@@ -251,7 +299,8 @@ def start_run_async(
                 except Exception:
                     token = None
             try:
-                _execute(state, steps, runtime=runtime, progress=None, cancel_check=None)
+                _execute(state, steps, runtime=runtime, progress=None,
+                         cancel_check=(cancel.is_set if cancel else None))
             except Exception as e:
                 # 防御: _execute 内部已 try/except 大多场景 · 这里兜一手
                 cur = load_run(run_id) or state
@@ -262,6 +311,7 @@ def start_run_async(
                 except Exception:
                     pass
         finally:
+            _release_turn(run_id)
             if token is not None:
                 try:
                     from agent_tools import reset_trusted_flow_context
@@ -271,6 +321,32 @@ def start_run_async(
 
     threading.Thread(target=worker, daemon=True, name=f"flow-run-{run_id}").start()
     return state
+
+
+def _claim_turn(run_id: str, label: str):
+    """把这条 run 登记进活儿注册表 · 返回它的 cancel 事件 (登记不上返 None)。
+
+    为什么要登记: 不登记就没人能停它 —— 原先异步路径固定 cancel_check=None ·
+    AI 在后台起的工作流一旦跑起来·点什么都停不下·只能等它烧完。
+    登记后 POST /turns/{run_id}/abort 就能停·顺带进度也查得到。
+
+    sid 传空: 工作流不隶属任何会话 · 硬塞会污染会话自己的 active_turn。
+    """
+    try:
+        from daemon_api import register_turn
+        cancel = threading.Event()
+        register_turn(run_id, "", cancel, label=label)
+        return cancel
+    except Exception:
+        return None      # 注册表拿不到也要能跑 · 只是停不下来
+
+
+def _release_turn(run_id: str) -> None:
+    try:
+        from daemon_api import unregister_turn
+        unregister_turn(run_id)
+    except Exception:
+        pass
 
 
 def _prep_resume(run_id: str, *, from_step: Optional[int]) -> tuple[dict, list[dict]]:
@@ -301,6 +377,8 @@ def _prep_resume(run_id: str, *, from_step: Optional[int]) -> tuple[dict, list[d
                 be["finished_at"] = None   # wish-fix #4
     state["status"] = "running"
     state["current_step"] = target
+    state["owner_pid"] = os.getpid()   # 换手: 现在这条归本进程跑 · 别再被当成上一个进程的残骸
+    state.pop("interrupted_by", None)
     _save_state(state)
     return state, steps
 
@@ -331,6 +409,8 @@ def resume_run_async(
 
     def worker() -> None:
         token = None
+        cancel = _claim_turn(target_run_id,
+                             f"续跑工作流 {state.get('flow_name') or target_run_id}")
         try:
             if trusted_flow_id:
                 try:
@@ -339,7 +419,8 @@ def resume_run_async(
                 except Exception:
                     token = None
             try:
-                _execute(state, steps, runtime=runtime, progress=None, cancel_check=None)
+                _execute(state, steps, runtime=runtime, progress=None,
+                         cancel_check=(cancel.is_set if cancel else None))
             except Exception as e:
                 cur = load_run(target_run_id) or state
                 cur["status"] = "failed"
@@ -349,6 +430,7 @@ def resume_run_async(
                 except Exception:
                     pass
         finally:
+            _release_turn(target_run_id)
             if token is not None:
                 try:
                     from agent_tools import reset_trusted_flow_context
@@ -391,7 +473,9 @@ def _run_single_app(
 
     单 app 步和并行分支共用。 app 解析失败 → 返回 ok=False 的 result (不抛)。
     """
-    from .app_runner import run_app
+    # 走 run_app_by_kind 而不是 run_app: scripted 步(只是去网址取数)不该进 tool_loop 烧 token。
+    # 原先固定调 run_app · 于是同一条 flow 让 AI 跑比在画布点运行贵一个数量级。
+    from .app_runner import run_app_by_kind
 
     app = _resolve_app(app_ref)
     if app is None:
@@ -400,7 +484,7 @@ def _run_single_app(
             "error": f"app 解析失败: {app_ref!r} (不存在或名字命中多个 · 用 app-id 引用)",
             "app_id": None, "app_name": None,
         }
-    result = dict(run_app(
+    result = dict(run_app_by_kind(
         app=app,
         inputs=_task_inputs(goal, substeps, label),
         runtime=runtime,

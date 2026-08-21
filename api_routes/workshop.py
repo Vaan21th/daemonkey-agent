@@ -34,7 +34,7 @@ api_routes/workshop.py · 工坊路由 (wish-413999da · phase 1)
     GET    /workshop/file/{domain}/{filename}     · 原始 .md 下载
     POST   /workshop/reveal/{domain}/{filename}   · 本机外部应用打开
 
-注: app/flow run 的 SSE 用 daemon_api 模块级 _TURNS_LOCK / _ACTIVE_TURNS 共享
+注: app/flow run 走 daemon_api 的 register_turn / unregister_turn 收口点共享
     (build_app() 末尾 include_router · 此时 daemon_api 已 load 完)
 """
 from __future__ import annotations
@@ -417,19 +417,22 @@ async def workshop_run_app(
         raise HTTPException(400, "inputs must be a JSON object")
     max_iterations = int(payload.get("max_iterations") or 12)
 
-    # daemon_api 内 _TURNS_LOCK / _ACTIVE_TURNS 是共享 cancel 注册表
-    from daemon_api import _TURNS_LOCK, _ACTIVE_TURNS
+    from daemon_api import register_turn, unregister_turn, turn_progress_recorder
 
     run_id = "run-" + uuid.uuid4().hex[:12]
     cancel_event = threading.Event()
-    with _TURNS_LOCK:
-        _ACTIVE_TURNS[run_id] = cancel_event
+    # sid 传空: app run 不隶属任何会话 · 硬塞会污染 /sessions/{sid}/active_turn
+    register_turn(run_id, "", cancel_event,
+                  label=f"运行应用 {app_data.get('name') or aid}")
 
     queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
 
-    def push_event(event_type: str, data: dict) -> None:
+    def _push_raw(event_type: str, data: dict) -> None:
         asyncio.run_coroutine_threadsafe(queue.put((event_type, data)), loop)
+
+    # 包一层进度记录 · 让 SSE 断了/F5 之后还能查到这个 run 跑到哪一步
+    push_event = turn_progress_recorder(run_id, _push_raw)
 
     def worker() -> None:
         try:
@@ -455,8 +458,7 @@ async def workshop_run_app(
         except Exception as e:
             push_event("error", {"status": 500, "detail": f"{type(e).__name__}: {e}"})
         finally:
-            with _TURNS_LOCK:
-                _ACTIVE_TURNS.pop(run_id, None)
+            unregister_turn(run_id)
 
     threading.Thread(target=worker, daemon=True).start()
 
@@ -519,18 +521,19 @@ async def workshop_run_flow_inline(
 
     flow_data = {"id": "flow-inline", "name": "(inline)", "litegraph_json": graph}
 
-    from daemon_api import _TURNS_LOCK, _ACTIVE_TURNS
+    from daemon_api import register_turn, unregister_turn, turn_progress_recorder
 
     run_id = "frun-" + uuid.uuid4().hex[:12]
     cancel_event = threading.Event()
-    with _TURNS_LOCK:
-        _ACTIVE_TURNS[run_id] = cancel_event
+    register_turn(run_id, "", cancel_event, label="试跑画布工作流")
 
     queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
 
-    def push_event(event_type: str, data: dict) -> None:
+    def _push_raw(event_type: str, data: dict) -> None:
         asyncio.run_coroutine_threadsafe(queue.put((event_type, data)), loop)
+
+    push_event = turn_progress_recorder(run_id, _push_raw)
 
     def worker() -> None:
         try:
@@ -544,8 +547,7 @@ async def workshop_run_flow_inline(
         except Exception as e:
             push_event("error", {"status": 500, "detail": f"{type(e).__name__}: {e}"})
         finally:
-            with _TURNS_LOCK:
-                _ACTIVE_TURNS.pop(run_id, None)
+            unregister_turn(run_id)
 
     threading.Thread(target=worker, daemon=True).start()
 
@@ -605,18 +607,20 @@ async def workshop_run_flow(
     entry_inputs = payload.get("entry_inputs") or {}
     max_iterations = int(payload.get("max_iterations") or 12)
 
-    from daemon_api import _TURNS_LOCK, _ACTIVE_TURNS
+    from daemon_api import register_turn, unregister_turn, turn_progress_recorder
 
     run_id = "frun-" + uuid.uuid4().hex[:12]
     cancel_event = threading.Event()
-    with _TURNS_LOCK:
-        _ACTIVE_TURNS[run_id] = cancel_event
+    register_turn(run_id, "", cancel_event,
+                  label=f"运行工作流 {flow_data.get('name') or fid}")
 
     queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
 
-    def push_event(event_type: str, data: dict) -> None:
+    def _push_raw(event_type: str, data: dict) -> None:
         asyncio.run_coroutine_threadsafe(queue.put((event_type, data)), loop)
+
+    push_event = turn_progress_recorder(run_id, _push_raw)
 
     def worker() -> None:
         try:
@@ -633,8 +637,7 @@ async def workshop_run_flow(
         except Exception as e:
             push_event("error", {"status": 500, "detail": f"{type(e).__name__}: {e}"})
         finally:
-            with _TURNS_LOCK:
-                _ACTIVE_TURNS.pop(run_id, None)
+            unregister_turn(run_id)
 
     threading.Thread(target=worker, daemon=True).start()
 

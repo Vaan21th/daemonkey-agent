@@ -325,8 +325,30 @@ def _tick() -> None:
             due = False
         if not due:
             continue
+        # 先认领这一次 · 再去执行 —— 把 next_run_at 推到下一档并立刻落盘。
+        #
+        # 为什么必须先落: _execute_task 是分钟级 LLM turn · 期间 daemon 崩了或被重启 ·
+        # 磁盘上 next_run_at 还停在已经过期的那一刻 → 下次 tick 又跑一遍 (重复烧钱 +
+        # 重复给 BRO 推同一条结果)。 而本函数对「执行失败」本来就是不重试的 (下面 res
+        # 不 ok 也照样推进) · 崩溃窗口重复跑其实是漏掉了这个既定语义 · 这里补齐。
+        claim: dict = {}
+        if (t.get("schedule") or {}).get("type") == "once":
+            claim["enabled"] = False          # once 跑过就停 (留档不删)
+            claim["next_run_at"] = None
+        else:
+            try:
+                claim["next_run_at"] = _compute_next_run(t["schedule"], after=now)
+            except Exception as e:
+                logger.warning(
+                    "compute next_run_at failed for %s · 顺延 1h 防重复执行: %s", t.get("id"), e)
+                claim["next_run_at"] = (now + timedelta(hours=1)).isoformat()
+        try:
+            _update_task_fields(t.get("id") or "", claim)
+        except Exception:
+            logger.exception("claim scheduled-task before run failed: %s", t.get("id"))
+
         res = _execute_task(t)  # 分钟级 LLM turn · 锁外执行
-        # 单任务的状态推进 · 任何字段计算失败都不能让本轮不落盘 (否则下轮重复执行+重复通知)
+        # 执行结果单独落 · 任何字段计算失败都不能让本轮不落盘
         upd: dict = {
             "last_run_at": now.isoformat(),
             "last_run_status": "ok" if res.get("ok") else "error",
@@ -336,17 +358,6 @@ def _tick() -> None:
         _TASK_STATE["tasks_executed"] += 1
         if not res.get("ok"):
             _TASK_STATE["last_error"] = res.get("summary")
-        # once 执行完自动停 (留档不删) · 周期型算下次
-        if (t.get("schedule") or {}).get("type") == "once":
-            upd["enabled"] = False
-            upd["next_run_at"] = None
-        else:
-            try:
-                upd["next_run_at"] = _compute_next_run(t["schedule"], after=now)
-            except Exception as e:
-                logger.warning(
-                    "compute next_run_at failed for %s · 顺延 1h 防重复执行: %s", t.get("id"), e)
-                upd["next_run_at"] = (now + timedelta(hours=1)).isoformat()
         pending_updates.append((t.get("id") or "", upd))
     if changed:
         _save(d)

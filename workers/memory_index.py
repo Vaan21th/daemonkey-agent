@@ -465,10 +465,20 @@ def _insert_chunk_with_fts(
     token_count: int,
     updated_at: str,
 ) -> int:
-    """插一条 chunk 到 chunks 表 + 同步 jieba 切词版到 fts。 返新 chunk id。
+    """插一条 chunk 到 chunks 表 + 同步 jieba 切词版到 fts。 返新 chunk id (被卫生闸拦下返 0)。
 
     wish-45b8ff04 · 顺带补 embedding (best-effort · 失败静默不阻塞主索引)。
+
+    2026-08-19 · 卫生闸挂在这里是因为 11 处插入全过这一个口子 —— 一处拦住全部·
+    不会有哪条路绕过去 (垃圾 1 就是"rebuild 那条路不做角色过滤"漏出来的)。
     """
+    try:
+        from workers.memory_hygiene import is_noise
+        if is_noise(source, section, content):
+            return 0
+    except Exception:
+        pass       # 卫生闸坏了不该拖垮索引 · 顶多是收了脏数据
+
     cur = conn.execute(
         "INSERT INTO memory_chunks (source, section, chunk_index, content, token_count, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
@@ -893,6 +903,48 @@ def index_session_turn(session_id: str, role: str, content: str, ts: str = "") -
         return True
     except Exception:
         return False
+
+
+def purge_session(session_id: str) -> int:
+    """把一个会话在索引里的痕迹删干净 · 返回删掉的 chunk 数。
+
+    为什么需要: 会话原文和摘要是 append-only 进 FTS 的 (index_session_turn /
+    index_session_summary) · 而删会话那边只删 jsonl 和列表条目 —— 索引里那份还留着 ·
+    于是 recall_memory 还能把用户已经删掉的对话搜出来。
+
+    用 substr 前缀比对而不是 LIKE: session_id 里带下划线 · 而 '_' 在 LIKE 里是
+    「任意一个字符」· 会顺手误伤别的会话。
+    """
+    sid = (session_id or "").strip()
+    if not sid:
+        return 0
+    prefix = f"{sid}:"
+    conn = None
+    try:
+        conn = _get_conn()
+        rows = conn.execute(
+            "SELECT id FROM memory_chunks WHERE source IN ('session', 'session_summary') "
+            "AND substr(section, 1, ?) = ?",
+            (len(prefix), prefix),
+        ).fetchall()
+        ids = [r[0] for r in rows]
+        if not ids:
+            return 0
+        placeholders = ",".join("?" * len(ids))
+        # standalone fts 不跟着 chunks 走 · 得自己按 rowid 删
+        conn.execute(f"DELETE FROM memory_fts WHERE rowid IN ({placeholders})", ids)
+        conn.execute(f"DELETE FROM memory_chunks WHERE id IN ({placeholders})", ids)
+        conn.commit()
+        return len(ids)
+    except Exception as e:
+        logger.warning("purge_session(%s) 失败: %s", sid, e)
+        return 0
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def index_session_summary(

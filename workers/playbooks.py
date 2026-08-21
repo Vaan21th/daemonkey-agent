@@ -593,12 +593,19 @@ def revise_playbook(
         meta["file_size"] = filepath.stat().st_size if filepath.exists() else meta.get("file_size", 0)
         _save_index(index)
 
-    # 4. 记忆索引同步 (best-effort · 上游无对应模块自动跳过)
+    # 4. 记忆索引同步 —— 跟 save_playbook 走同一条路 (单源增量 · section 精准定位这一篇)
+    #
+    # 原先这里写的是 rebuild(source="playbooks", incremental=True) · 而 rebuild() 不收任何参数:
+    # 每次修订都 TypeError · 又被裸 except 吞掉 → 索引其实从来没跟着改过 ·
+    # recall_memory(scope='skill') 一直召回修订前的旧正文。 静默吞异常正是它藏这么久的原因 ·
+    # 所以这里也改成跟 save/delete 一致的 warning。
+    # task_type 改了也不用额外清旧: incremental_update 按 "{slug}:" 前缀删 · 覆盖得到。
     try:
-        from workers.memory_index import rebuild
-        rebuild(source="playbooks", incremental=True)
-    except Exception:
-        pass
+        from workers.memory_index import incremental_update
+        incremental_update("skill", content,
+                           section=f"{meta.get('slug') or ''}:{new_task_type or 'general'}")
+    except Exception as e:
+        logger.warning("playbook revised 后 FTS5 增量索引失败: %s · 等 daemon 重启时 rebuild", e)
 
     return {
         "id": playbook_id,

@@ -136,7 +136,45 @@ def _run(args: dict) -> "ToolResult":
             f"确认 OK 后这文件就是你的魔改+官方修复融合版。"
         ))
 
-    return ToolResult(ok=False, output="", error=f"未知 action: {action} · 可选 list / diff / apply")
+    if action in ("rescue", "rescue_apply"):
+        from workers import core_update, override_rescue
+        cands = override_rescue.scan(core_update.kernel_files())
+        if not cands:
+            return ToolResult(ok=True, output=(
+                "没有需要打捞的东西。\n"
+                "  说明: 历次升级的 checkpoint 存档里·没有哪个内核文件的当时版本跟你现在的不一样。\n"
+                "  要么你没在这些文件上改过东西·要么改动已经拿回来了。"
+            ))
+        if action == "rescue":
+            lines = [f"从历次升级存档里找到 {len(cands)} 个可能被吞掉的改动:", ""]
+            for c in cands:
+                lines.append(f"  {c['file']}")
+                lines.append(f"    · 来自 {c['date']} 的升级存档 ({c['sha']}) · {len(c['content'])}B")
+            lines += [
+                "",
+                "为什么会被吞: 0.9.6 之前备份动作跑在覆盖【之后】· 存下来的是刚拉到的官方版·",
+                "  你的真版本一个都没进备份 —— 所以那时候说「合并我的改动」只会得到「两边一致」。",
+                "  但升级前的存档 (checkpoint) 是在覆盖之前做的·你的东西一直在里面。",
+                "",
+                "要我捞出来 → 说「把它们捞回来」(写进备份区·之后就能正常走「合并我的改动」)",
+            ]
+            return ToolResult(ok=True, output="\n".join(lines))
+
+        done = override_rescue.restore(cands)
+        okd = [d for d in done if not d.get("error")]
+        bad = [d for d in done if d.get("error")]
+        lines = [f"✅ 已捞回 {len(okd)} 个文件的你那版·放进备份区:", ""]
+        for d in okd:
+            tail = " (盖掉了原来那份无效备份)" if d.get("replaced_stale") else ""
+            lines.append(f"  {d['file']}  ← {d['date']} 存档{tail}")
+        if bad:
+            lines += ["", f"⚠ {len(bad)} 个没捞成:"]
+            lines += [f"  {d['file']} · {d['error']}" for d in bad]
+        lines += ["", "下一步: 对我说「合并 <文件>」→ 我看你那版和官方版的对比 → 给你融合方案。"]
+        return ToolResult(ok=True, output="\n".join(lines))
+
+    return ToolResult(ok=False, output="", error=(
+        f"未知 action: {action} · 可选 list / diff / apply / rescue / rescue_apply"))
 
 
 def _summarize(args: dict) -> str:
@@ -148,6 +186,10 @@ def _summarize(args: dict) -> str:
         return f"看 {f} 的用户版 vs 官方版对比"
     if act == "apply":
         return f"写回 {f} 的合并结果"
+    if act == "rescue":
+        return "从历次升级存档里找被吞掉的魔改"
+    if act == "rescue_apply":
+        return "把存档里的魔改捞回备份区"
     return f"merge_user_override: {act}"
 
 
@@ -158,12 +200,20 @@ SPEC = ToolSpec(
         "升级时用户魔改的白名单文件被官方覆盖后 · 备份在 data/runtime/user_overrides/。"
         "本工具: list 列备份 · diff 看用户版vs官方版对比 · apply 写回合并结果。"
         "语义判断由 OPUS 自己做 (读 diff → 分析 → 给用户方案 → 用户确认 → apply)。"
+        "rescue / rescue_apply: 0.9.6 之前备份动作跑在覆盖之后·存下来的是官方版·"
+        "用户真改动没进备份 (说「合并我的改动」只会得到「两边一致」)。 但升级前的 checkpoint "
+        "存档是在覆盖之前做的·真东西在里面 —— rescue 找出来 · rescue_apply 捞进备份区。"
+        "用户说「我以前改的东西不见了」/「升级把我改的覆盖了但合并说没差异」→ 先跑 rescue。"
     ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["list", "diff", "apply"], "description": "list=列备份 / diff=看某文件对比 / apply=写回合并结果"},
+            "action": {"type": "string",
+                       "enum": ["list", "diff", "apply", "rescue", "rescue_apply"],
+                       "description": ("list=列备份 / diff=看某文件对比 / apply=写回合并结果 / "
+                                       "rescue=从历次升级存档里找被吞掉的魔改(只读) / "
+                                       "rescue_apply=把找到的捞进备份区")},
             "file": {"type": "string", "description": "diff/apply 用 · 目标文件路径 (备份里的原始路径)"},
             "content": {"type": "string", "description": "apply 用 · 合并后的完整文件内容"},
         },

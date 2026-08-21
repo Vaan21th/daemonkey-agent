@@ -5474,6 +5474,7 @@ async function switchToSession(sid) {
     }
     refreshCtxRing();  // wish-bec4f3b9 · 切对话实例 → 圆圈跟着走
     _refreshCompactAfterSwitch();  // 卷八十三 · 简洁版侧栏跟会话走
+    refreshPlan();                 // 计划条跟着会话换 (活跃账本是按会话记的)
     return;
   }
 
@@ -5499,6 +5500,7 @@ async function switchToSession(sid) {
     try { _renderTabBar(); } catch {}
   }
   _refreshCompactAfterSwitch();  // 卷八十三 · 简洁版侧栏跟会话走
+  refreshPlan();                 // 计划条跟着会话换
 }
 
 // 卷八十三 · 切会话后: 简洁版左侧清单高亮 + 右侧产物面板跟着换会话
@@ -6404,6 +6406,7 @@ function newConversation() {
     try { _renderTabBar(); } catch {}
   }
   _refreshCompactAfterSwitch();  // 卷八十三 · 新建会话后简洁版侧栏归零
+  refreshPlan();                 // 新会话没活跃账本 → 计划条自动隐藏
 }
 
 function formatTime(ts) {
@@ -8385,6 +8388,54 @@ function renderNav() {
 }
 renderNav();
 
+// ── 用户装修 API (0.9.6) ──────────────────────────────────────────────────
+// 为什么需要它: chat.js / chat.html 在内核白名单里·官方升级会覆盖 → 用户直接改这两个文件
+// 迟早被盖掉。 而 static/user/ 在 never_sync 里·永不被覆盖。 所以用户的界面改动写在
+// static/user/user.js·通过下面这套 API 挂进来 —— 这是官方承诺的接口·会随内核一起维护。
+// (真想直接改内核文件也行: 对 Daemonkey 说「chat.js 我自己管」→ 接管后官方永不覆盖它)
+window.Daemonkey = window.Daemonkey || {};
+Daemonkey._domains = {};   // 用户自定义维度 · loadDashboard 会查这里
+
+// 加一个自定义维度(侧边栏入口 + 自己的渲染函数)。 render 收到中栏容器·想画什么画什么。
+//   Daemonkey.addDomain('mine', { label:'我的面板', icon:'ri-star-line', section:'home',
+//                                 render(pane){ pane.innerHTML = '...' } })
+Daemonkey.addDomain = function (key, meta) {
+  if (!key || !meta) return false;
+  Daemonkey._domains[key] = meta;
+  const icon = String(meta.icon || 'ri-apps-2-line');
+  DOMAIN_META[key] = {
+    icon: icon.trim().startsWith('<') ? icon : `<i class="${icon}"></i>`,
+    label: meta.label || key,
+    section: meta.section || 'home',
+    stub: false,
+  };
+  renderNav();
+  return true;
+};
+
+// 加一个侧边栏分组。 opts.before 传已有分组 id 可插到它前面·默认追加到最后。
+Daemonkey.addNavGroup = function (id, label, opts) {
+  if (!id || NAV_GROUPS.some(g => g.id === id)) return false;
+  const grp = { id, label: label || id };
+  const at = opts && opts.before ? NAV_GROUPS.findIndex(g => g.id === opts.before) : -1;
+  if (at >= 0) NAV_GROUPS.splice(at, 0, grp); else NAV_GROUPS.push(grp);
+  renderNav();
+  return true;
+};
+
+// 装修代码的入口。 user.js 是 defer·跑到时 DOM 已就绪·但内联 <script> 未必 → 统一用它兜住。
+Daemonkey.ready = function (fn) {
+  if (typeof fn !== 'function') return;
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, { once: true });
+  else setTimeout(fn, 0);
+};
+
+// 给装修代码用的抓手(免得用户去猜内核的变量名·这几个是稳定承诺)
+Daemonkey.pane = () => $detailPane;            // 中栏容器
+Daemonkey.refresh = () => loadDashboard(currentView);
+Daemonkey.currentView = () => currentView;
+Daemonkey.ctx = () => window._ctxData || null;  // 当前会话 token / 缓存命中等实时数据
+
 function switchView(view) {
   if (!DOMAIN_META[view]) return;
   if (DOMAIN_META[view].disabled) return;
@@ -8423,9 +8474,44 @@ function toggleNavCollapse(force) {
   // workshop 在中栏的话 · canvas 用 ResizeObserver 监容器尺寸 · 自动会重画 · 不用手动通知
 }
 (function _restoreNavCollapse() {
-  if (localStorage.getItem(NAV_COLLAPSED_KEY) !== '1') return;
+  // 2026-08-20 BRO 拍板: 导航默认收起 (纯图标 · 悬浮显名) · 显式展开过才保持展开
+  if (localStorage.getItem(NAV_COLLAPSED_KEY) === '0') return;
   document.addEventListener('DOMContentLoaded', () => toggleNavCollapse(true), { once: true });
   if (document.readyState !== 'loading') toggleNavCollapse(true);
+})();
+
+// ── Dock 式距离衰减 (2026-08-20 BRO: 分组分割线割裂波动链 · 改 JS 按鼠标真实距离驱动 ·
+//    跨分组连续 · 由大变小无限平滑 · 比 CSS :has 链更像真 macOS Dock) ──
+// 分工: CSS 管 hover 弹出入场动画 (dkNavPop · 播放期间覆盖内联) + label 浮出;
+//       JS 管 transform 距离衰减 + 颜色近紫远灰。 mouseleave 清空回弹。
+(function _dockNavFx() {
+  const groups = document.querySelector('.nav-groups');
+  if (!groups) return;
+  const isCollapsed = () => document.querySelector('.main-layout')?.classList.contains('nav-collapsed');
+  let raf = 0;
+  function paint(my) {
+    raf = 0;
+    groups.querySelectorAll('.nav-item .icon').forEach(ic => {
+      const r = ic.getBoundingClientRect();
+      const d = Math.abs(my - (r.top + r.height / 2));
+      // 大小: 平方衰减 · 0px→1.7 · ~50px→1.45 · ~90px→1.2 · ≥140px→1
+      // 颜色不动 (2026-08-20 BRO: 邻居染淡紫=比白色暗=像被隐藏) ——
+      // 紫色是"选中"独占信号 · 归 CSS hover 管 · 距离感全靠大小波动表达
+      const t = Math.max(0, 1 - d / 140);
+      const s = 1 + 0.7 * t * t;
+      ic.style.transform = s > 1.02 ? `scale(${s.toFixed(3)})` : '';
+    });
+  }
+  groups.addEventListener('mousemove', (e) => {
+    if (!isCollapsed() || raf) return;
+    raf = requestAnimationFrame(() => paint(e.clientY));
+  });
+  groups.addEventListener('mouseleave', () => {
+    groups.querySelectorAll('.nav-item .icon').forEach(ic => {
+      ic.style.transform = '';
+      ic.style.color = '';
+    });
+  });
 })();
 window.addEventListener('keydown', (e) => {
   if (e.altKey && (e.key === 'b' || e.key === 'B')) {
@@ -9805,7 +9891,7 @@ function renderDetailWelcome() {
   $detailPane.innerHTML = `
     <div class="bi-loading">
       <div style="font-size:18px;margin-bottom:8px"><i class="ri-diamond-fill"></i> 工作室 BI 看板</div>
-      <div style="font-size:12px;color:var(--dim2)">加载中…</div>
+      ${typeof dashLoadingHTML === 'function' ? dashLoadingHTML('正在装配看板') : '<div style="font-size:12px;color:var(--dim2)">加载中…</div>'}
     </div>`;
   loadBIDashboard();
 }
@@ -9849,6 +9935,9 @@ function renderBIDashboard(data) {
           <button class="bi-link" onclick="renderDetailWelcome()" title="刷新"><i class="ri-refresh-fill"></i> 刷新</button>
         </span>
       </div>
+
+      <!-- 建议操作 (0.9.6 · BRO: 页面分散 · 顶部放条件触发的行动建议 · 晨会汇报位) -->
+      <div id="biSuggestBar" style="margin-bottom:12px"></div>
 
       <!-- KPI 数字条 -->
       <div class="bi-kpi-bar" id="biKpiBar">
@@ -9909,6 +9998,27 @@ function renderBIDashboard(data) {
         <div class="bi-card">
           <div class="bi-card-head"><h3><i class="ri-temp-hot-fill" style="color:#F6AD55"></i> 闭环温度计 <span class="badge" id="biClosureRate">…</span></h3></div>
           <div id="biClosureBody"><div class="bi-v3-empty">加载中…</div></div>
+        </div>
+      </div>
+
+      <!-- 记忆体系 + 工坊 (0.9.6 · BRO: 看板 = 用户了解功能的大面板 · 按钮走 spawnQuickly 后台任务 · 跟照镜同款) -->
+      <div class="bi-grid-2" style="margin-top:12px">
+        <div class="bi-card">
+          <div class="bi-card-head">
+            <h3><i class="ri-brain-fill" style="color:#8affd6"></i> 记忆体系 <span class="badge" id="biMemoryBadge">…</span></h3>
+            <span>
+              <button class="bi-link" id="biMemoryAuditBtn" type="button" title="让 OPUS 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 手艺体检</button>
+              <button class="bi-link" onclick="loadDashboard('memory_map')" title="记忆星图 · 三道闸治理全景"><i class="ri-sparkling-2-fill"></i> 星图</button>
+            </span>
+          </div>
+          <div class="bi-self-grid" id="biMemoryBody"><div class="bi-v3-empty">加载中…</div></div>
+        </div>
+        <div class="bi-card">
+          <div class="bi-card-head">
+            <h3><i class="ri-tools-fill" style="color:#b794f6"></i> 工坊 <span class="badge" id="biWorkshopBadge">…</span></h3>
+            <button class="bi-link" onclick="loadDashboard('workshop')" title="进工坊编排应用与工作流"><i class="ri-arrow-right-line"></i> 进工坊</button>
+          </div>
+          <div class="bi-self-grid" id="biWorkshopBody"><div class="bi-v3-empty">加载中…</div></div>
         </div>
       </div>
 
@@ -10118,6 +10228,16 @@ function _biUptime(iso) {
 // wish-bec4f3b9 · 模型计费卡 (原型 dashboard-billing-proto 完整形态 · 价格表 × 用量 → 钱)
 // 默认今日 · 用户 刷新看到的是当天数据 · 要更多自己切 7天/30天
 let _biBillingRange = 'today';
+// 模型切换「展开更多」(2026-08-20 · 默认 5 条 · 跟缓存经济性卡对齐)
+function biTlToggleMore(btn) {
+  const more = document.getElementById('biTlMoreWrap');
+  if (!more) return;
+  const open = more.style.display !== 'none';
+  more.style.display = open ? 'none' : '';
+  btn.innerHTML = open
+    ? `<i class="ri-arrow-down-s-line"></i> 展开剩余 ${more.children.length} 条`
+    : '<i class="ri-arrow-up-s-line"></i> 收起';
+}
 async function loadBIBilling() {
   const body = document.getElementById('biBillingBody');
   const badge = document.getElementById('biBillingUnpriced');
@@ -10138,7 +10258,7 @@ async function loadBIBilling() {
 
     // ① KPI 四卡
     const kpiCards = `
-      <div class="bi-kpi-bar proto-kpi-4" style="grid-template-columns:repeat(4,1fr);margin-bottom:12px">
+      <div class="bi-kpi-bar proto-kpi-4" style="grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));margin-bottom:12px">
         <div class="bi-kpi-card"><div class="bi-kpi-icon" style="color:#F6AD55"><i class="ri-coin-fill"></i></div>
           <div class="bi-kpi-value">${cur}${(k.today_cost || 0).toFixed(2)}</div><div class="bi-kpi-label">${rl}花费${unpricedHint}</div></div>
         <div class="bi-kpi-card"><div class="bi-kpi-icon" style="color:#B794F4"><i class="ri-wallet-3-fill"></i></div>
@@ -10186,25 +10306,37 @@ async function loadBIBilling() {
     // ③ 双栏: 模型切换时间线 + 缓存经济性
     // 方案 B (2026-08-06 用户 拍板) · 普通切换=平铺行 · 顾问唤醒=紫色左边条胶囊
     const switches = (d.switches || []);
-    const tl = switches.length ? switches.slice(0, 8).map(s => {
+    const tlItems = switches.slice(0, 8).map(s => {
       if (s.advisor) {
-        const mode = s.mode ? `<span class="bi-tl-mode">${escHtml(s.mode)}</span>` : '';
-        return `<div class="bi-tl-adv" title="${s.advisor ? '系统自动调用的顾问模型 · 独立临时连接' : ''}">
+        // 2026-08-20 BRO: 胶囊只留 皇冠+模型名+tok · 「顾问唤醒」标签和时间/mode 收进悬浮
+        // (窄分辨率下 meta 长串把胶囊撑高/挤爆 · 折叠抗性优先)
+        const full = `顾问唤醒 · ${s.ts || ''} · ${s.mode || ''} · ${_biFmtTok(s.tokens_after || 0)} tok · 系统自动调用的顾问模型 · 独立临时连接`;
+        return `<div class="bi-tl-adv" title="${escHtml(full)}">
           <i class="ri-vip-crown-fill"></i>
-          <span class="bi-tl-adv-lbl">顾问唤醒</span>
-          <span class="bi-tl-adv-sep">·</span>
-          <b>${escHtml(s.to?.name||'')}</b>
-          <span class="bi-tl-adv-meta"><i class="ri-time-line"></i> ${escHtml(s.ts||'')}${mode ? ' · ' + mode : ''} · ${_biFmtTok(s.tokens_after||0)} tok</span>
+          <b title="${escHtml(s.to?.name||'')}">${escHtml(s.to?.name||'')}</b>
+          <span class="bi-tl-adv-meta">${_biFmtTok(s.tokens_after||0)} tok</span>
         </div>`;
       }
+      const fullMain = `${escHtml(s.from?.name||'')} → ${escHtml(s.to?.name||'')} · ${escHtml(s.ts||'')} · ${_biFmtTok(s.tokens_after||0)} tok`;
       return `<div class="bi-tl-main">
         <i class="ri-arrow-right-up-line"></i>
-        <span>${escHtml(s.from?.name||'')}</span>
+        <span title="${escHtml(s.from?.name||'')}">${escHtml(s.from?.name||'')}</span>
         <span class="bi-tl-arr"><i class="ri-arrow-right-line"></i></span>
-        <b>${escHtml(s.to?.name||'')}</b>
-        <span class="bi-tl-main-meta"><i class="ri-time-line"></i> ${escHtml(s.ts||'')} · ${_biFmtTok(s.tokens_after||0)} tok</span>
+        <b title="${escHtml(s.to?.name||'')}">${escHtml(s.to?.name||'')}</b>
+        <span class="bi-tl-main-meta" title="${escHtml(s.ts||'')}">${_biFmtTok(s.tokens_after||0)} tok</span>
       </div>`;
-    }).join('') + (switches.length > 8 ? '<div class="bi-brief-scope" style="padding:4px 2px">仅显示最近 8 条</div>' : '') : '<div class="bi-v3-empty" style="padding:6px 0">还没有模型切换记录</div>';
+    });
+    // 2026-08-20 BRO: 最多显 5 条 · 超出收进「展开更多」(左栏比右栏(缓存经济性)高一截 · 对不齐)
+    // 「仅显示最近 8 条」不单起一行 · 并进展开按钮行右侧 (BRO 续)
+    const TL_SHOW = 5;
+    const tlCapNote = switches.length > 8 ? '<span class="bi-brief-scope" style="margin-left:auto">仅显示最近 8 条</span>' : '';
+    const tl = tlItems.length ? (
+      tlItems.slice(0, TL_SHOW).join('')
+      + (tlItems.length > TL_SHOW
+        ? `<div id="biTlMoreWrap" style="display:none">${tlItems.slice(TL_SHOW).join('')}</div>
+           <div style="display:flex;align-items:center"><button class="bi-tl-more" onclick="biTlToggleMore(this)"><i class="ri-arrow-down-s-line"></i> 展开剩余 ${tlItems.length - TL_SHOW} 条</button>${tlCapNote}</div>`
+        : tlCapNote ? `<div style="display:flex">${tlCapNote}</div>` : '')
+    ) : '<div class="bi-v3-empty" style="padding:6px 0">还没有模型切换记录</div>';
     const cacheRows = (d.by_model || []).filter(m => (m.cache_read_tokens||0) > 0 && _biIsLlm(m)).map(m => {
       const rate = m.input_tokens > 0 ? (m.cache_read_tokens||0) / m.input_tokens : 0;
       let saved = null;
@@ -10214,14 +10346,14 @@ async function loadBIBilling() {
       }
       return `<div style="margin-bottom:7px">
         <div style="display:flex;justify-content:space-between;font-size:12px">
-          <span style="color:var(--text)">${escHtml(m.name||'?')}</span>
-          <span style="color:var(--dim)">${Math.round(rate*100)}% · ${m.price ? cur + saved.toFixed(2) : '<span style="color:#F6AD55">未配价</span>'}</span>
+          <span style="color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0" title="${escHtml(m.name||'?')}">${escHtml(m.name||'?')}</span>
+          <span style="color:var(--dim);flex-shrink:0;margin-left:8px">${Math.round(rate*100)}% · ${m.price ? cur + saved.toFixed(2) : '<span style="color:#F6AD55">未配价</span>'}</span>
         </div>
         <div class="bi-bar-bg" style="height:6px;background:var(--bg3);border-radius:3px;margin-top:3px"><div style="height:100%;border-radius:3px;width:${rate*100}%;background:#4FD1C5"></div></div>
       </div>`;
     }).join('');
     const duo = `
-      <div class="bi-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="bi-grid-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px;margin-bottom:12px">
         <div>
           <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px"><i class="ri-switch-fill" style="color:#63B3ED"></i> 模型切换</div>
           ${tl}
@@ -10318,6 +10450,93 @@ async function loadBISelf() {
     cells.push({ icon: 'ri-time-fill', color: '#63B3ED', val: _biUptime(life.started_at), lbl: '已在线' });
   }
   if (!cells.length) { body.innerHTML = '<div class="bi-v3-empty">拿不到运行数据</div>'; return; }
+  body.innerHTML = cells.map(c =>
+    `<div class="bi-self-cell"><div class="bi-self-icon" style="color:${c.color}"><i class="${c.icon}"></i></div><div class="bi-self-val">${escHtml(String(c.val))}</div><div class="bi-self-lbl">${escHtml(c.lbl)}</div></div>`
+  ).join('');
+}
+
+// 0.9.6 · 建议操作条 (顶部 · 条件触发 · 忽略按天记 localStorage)
+function _biSuggestIgnored() {
+  try { return JSON.parse(localStorage.getItem('bi_suggest_ignore') || '{}'); } catch { return {}; }
+}
+function biSuggestIgnore(id) {
+  const m = _biSuggestIgnored();
+  m[id] = new Date().toISOString().slice(0, 10); // 当天有效 · 明天又出现
+  localStorage.setItem('bi_suggest_ignore', JSON.stringify(m));
+  const el = document.getElementById('biSuggest-' + id);
+  if (el) el.remove();
+  const bar = document.getElementById('biSuggestBar');
+  if (bar && !bar.querySelector('.bi-suggest-item')) bar.innerHTML = '';
+}
+async function loadBISuggestions() {
+  const bar = document.getElementById('biSuggestBar');
+  if (!bar) return;
+  try {
+    const r = await fetch('/dashboard/suggestions', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) return;
+    const items = ((await r.json()).items || []);
+    const ignored = _biSuggestIgnored();
+    const today = new Date().toISOString().slice(0, 10);
+    const show = items.filter(it => ignored[it.id] !== today);
+    if (!show.length) { bar.innerHTML = ''; return; }
+    bar.innerHTML = show.map(it => `
+      <div class="bi-suggest-item" id="biSuggest-${escHtml(it.id)}" style="display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:6px;border:1px solid var(--border,#2a2a3a);border-radius:10px;background:var(--bg2,#1a1826);font-size:12px">
+        <i class="${escHtml(it.icon)}" style="color:${escHtml(it.color || 'var(--accent,#8a7dff)')};font-size:14px"></i>
+        <span style="flex:1;color:var(--text,#ece8f5)">${escHtml(it.text)}</span>
+        ${it.prompt ? `<button class="bi-link" style="white-space:nowrap" onclick="spawnQuickly(${JSON.stringify(it.prompt).replace(/"/g, '&quot;')}, ${JSON.stringify(it.label || '建议操作').replace(/"/g, '&quot;')})"><i class="ri-play-fill"></i> ${escHtml(it.label || '执行')}</button>` : ''}
+        <button class="bi-link" title="今天不再提示" onclick="biSuggestIgnore('${escHtml(it.id)}')" style="opacity:.55"><i class="ri-close-line"></i></button>
+      </div>`).join('');
+  } catch (e) { /* 建议条失败不影响看板 */ }
+}
+
+// 0.9.6 · 记忆体系卡 (lite 端点 · 秒出数字 · 详细全景点「星图」进 memory_map tab)
+async function loadBIMemory() {
+  const body = document.getElementById('biMemoryBody');
+  const badge = document.getElementById('biMemoryBadge');
+  const btn = document.getElementById('biMemoryAuditBtn');
+  if (btn) btn.onclick = () => spawnQuickly('帮我看看手艺是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '手艺体检');
+  if (!body) return;
+  try {
+    const r = await fetch('/dashboard/memory_map?lite=1', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) { body.innerHTML = '<div class="bi-v3-empty">加载失败</div>'; return; }
+    const d = await r.json();
+    if (d.error) { body.innerHTML = `<div class="bi-v3-empty">${escHtml(d.error)}</div>`; return; }
+    const nb = d.notebook || {};
+    const hg = d.hygiene || {};
+    const nbPct = nb.full_chars ? Math.round(nb.core_chars / nb.full_chars * 100) : null;
+    if (badge) badge.textContent = (d.playbook_count || 0) + ' 门手艺';
+    const cells = [
+      { icon: 'ri-database-2-fill', color: '#8affd6', val: _biFmtNum(d.total_chunks || 0), lbl: '记忆总量' },
+      { icon: 'ri-tools-fill', color: '#b794f6', val: d.playbook_count || 0, lbl: '手艺' },
+      { icon: 'ri-shield-check-fill', color: '#6ed27a', val: 'v' + (hg.version || '?'), lbl: hg.migrated ? '卫生闸·已清理' : '卫生闸·待清理' },
+    ];
+    if (nbPct != null) cells.push({ icon: 'ri-stack-fill', color: '#ffd28a', val: '-' + (100 - nbPct) + '%', lbl: '画像分层压缩' });
+    body.innerHTML = cells.map(c =>
+      `<div class="bi-self-cell"><div class="bi-self-icon" style="color:${c.color}"><i class="${c.icon}"></i></div><div class="bi-self-val">${escHtml(String(c.val))}</div><div class="bi-self-lbl">${escHtml(c.lbl)}</div></div>`
+    ).join('');
+  } catch (e) { body.innerHTML = '<div class="bi-v3-empty">网络出错</div>'; }
+}
+
+// 0.9.6 · 工坊卡 (apps/flows 计数 + shipped 数 · 入口卡)
+async function loadBIWorkshop() {
+  const body = document.getElementById('biWorkshopBody');
+  const badge = document.getElementById('biWorkshopBadge');
+  if (!body) return;
+  const hdr = { headers: { 'Authorization': 'Bearer ' + token } };
+  const [apps, flows] = await Promise.all([
+    fetch('/workshop/apps', hdr).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/workshop/flows', hdr).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]);
+  if (!apps && !flows) { body.innerHTML = '<div class="bi-v3-empty">拿不到工坊数据</div>'; return; }
+  const appList = (apps && (apps.items || apps.apps)) || [];
+  const flowList = (flows && (flows.items || flows.flows)) || [];
+  const shipped = appList.filter(a => a && a.shipped).length;
+  if (badge) badge.textContent = appList.length + ' 应用';
+  const cells = [
+    { icon: 'ri-apps-2-fill', color: '#b794f6', val: appList.length, lbl: '应用' },
+    { icon: 'ri-flow-chart', color: '#4FD1C5', val: flowList.length, lbl: '工作流' },
+    { icon: 'ri-rocket-fill', color: '#F6AD55', val: shipped, lbl: '已出厂' },
+  ];
   body.innerHTML = cells.map(c =>
     `<div class="bi-self-cell"><div class="bi-self-icon" style="color:${c.color}"><i class="${c.icon}"></i></div><div class="bi-self-val">${escHtml(String(c.val))}</div><div class="bi-self-lbl">${escHtml(c.lbl)}</div></div>`
   ).join('');
@@ -11150,6 +11369,19 @@ function _splitMissing(name) {
   $dashView.innerHTML = `<div class="dash-head"><h2>${name}</h2></div>`
     + `<div class="dash-empty">这个维度的前端模块正在升级到位<br>重启 daemon 后刷新页面 (F5) 即可恢复。</div>`;
 }
+// 通用加载态 · 三点脉冲 (2026-08-20 · 实测 calendar 4.8s / wishlist 2.3s / radar 0.45s ·
+//   纯文字"加载中…"在秒级等待里太单薄。 星尘是星图专属 · 这里用克制的三点。
+//   text 参数给慢 tab 配专属文案 · 颜色全走 CSS 变量 · 深浅肤自适应)
+function dashLoadingHTML(text) {
+  return `<style>
+@keyframes dkLdDot { 0%,60%,100%{transform:translateY(0);opacity:.35} 30%{transform:translateY(-6px);opacity:1} }
+.dkLdDot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent,#8a7dff); animation:dkLdDot 1.2s ease-in-out infinite; }
+</style>
+<div class="dash-empty" style="display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:80px">
+  <div><span class="dkLdDot"></span> <span class="dkLdDot" style="animation-delay:.15s"></span> <span class="dkLdDot" style="animation-delay:.3s"></span></div>
+  <div style="font-size:12px;color:var(--dim);letter-spacing:1px">${text || '加载中'}</div>
+</div>`;
+}
 function _depotTabs(domain) { if (typeof _maybeDepotTabs === 'function') _maybeDepotTabs(domain); }
 
 async function loadDashboard(domain, opts = {}) {
@@ -11186,7 +11418,10 @@ async function loadDashboard(domain, opts = {}) {
     return;
   }
   if (!opts.silent) {
-    $dashView.innerHTML = `<div class="dash-empty">加载中…</div>`;
+    // 慢 tab 专属文案 (实测: calendar 4.8s · wishlist 2.3s · radar 0.45s · 其余 <0.2s)
+    // memory_map 分支自己会覆盖成星尘加载态 · 这里给它什么无所谓
+    const _loadHints = { calendar: '正在对齐日程', wishlist: '正在清点心愿', radar: '正在扫雷达', reviews: '正在翻复盘档案' };
+    $dashView.innerHTML = dashLoadingHTML(_loadHints[domain]);
   }
   // wish-149eab3f phase B · 沉淀位走 /sinks 端点 · 不是 /dashboard/sinks
   if (domain === 'sinks') {
@@ -11196,6 +11431,19 @@ async function loadDashboard(domain, opts = {}) {
       const data = await r.json();
       renderSinks(data);
       _depotTabs('sinks');
+    } catch (e) { $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`; }
+    return;
+  }
+  // 记忆星图 tab · 走 /dashboard/memory_map 端点 (0.9.6 · 三道闸治理全景)
+  if (domain === 'memory_map') {
+    // 后端现算 PCA+漏斗+卫生 · 要 1-3s · 先上星尘加载态 (①A 多色 · BRO 选定)
+    if (typeof memoryMapLoadingHTML === 'function') $dashView.innerHTML = memoryMapLoadingHTML();
+    try {
+      const r = await fetch('/dashboard/memory_map', { headers: { 'Authorization': 'Bearer ' + token } });
+      if (!r.ok) { $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`; return; }
+      const data = await r.json();
+      if (typeof renderMemoryMap === 'function') renderMemoryMap(data); else return _splitMissing('记忆星图');
+      _depotTabs('memory_map');
     } catch (e) { $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`; }
     return;
   }

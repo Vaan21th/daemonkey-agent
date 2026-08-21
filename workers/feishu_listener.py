@@ -27,7 +27,7 @@ _MSG_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="feishu-msg
 
 # 飞书打断机制 (2026-08-08 · wish 对标 cc-connect /stop)
 # user_key → 正在跑的 turn_id · 让 /stop 命令和新消息能定位"这个用户的 turn"并 set cancel。
-# 生命周期跟 _begin_turn / _unregister_turn 的 _ACTIVE_TURNS 注册/注销对齐。
+# 生命周期跟 _begin_turn / _unregister_turn 对注册表的登记/注销对齐。
 _FEISHU_USER_TURNS: dict[str, str] = {}
 _FEISHU_TURNS_LOCK = threading.Lock()
 
@@ -42,6 +42,11 @@ _STATE = {
     "ws_status": "stopped",    # stopped / connected / disconnected / reviving
     "revive_count": 0,         # 自动复活 (删旧拉新) 次数
 }
+
+# 多久没收到任何业务事件才判"卡死"。 必须远大于用户正常静默时长 (深夜/思考间隙)·
+# 误杀的代价是白重连·漏判的代价是手机端一直收不到消息。
+_WS_IDLE_REVIVE_SEC = 1800
+_WS_CHECK_SEC = 30         # 看门狗巡检间隔
 
 
 def get_state() -> dict:
@@ -61,30 +66,29 @@ def _begin_turn(user_key: str, sid: str):
 
     必须原子——否则三消息并发时"打断"和"注册"之间可插队 (A4 · 2026-08-08 三审发现):
     M2 打断 turn1 → M3 插队注册 turn3 → M2 注册 turn2 覆盖 turn3 映射 → turn3 失去映射打不死。
+    原子性由 _FEISHU_USER_TURNS 的读-改-写全程持锁保证;注册表那把锁由 daemon_api
+    的收口函数各自短暂持有 (锁序恒为 FEISHU → 注册表 · 本模块无反向嵌套)。
     """
-    from daemon_api import _ACTIVE_TURNS, _TURN_TO_SID, _TURNS_LOCK
+    from daemon_api import get_turn_cancel, register_turn
     turn_id = f"feishu-{uuid.uuid4().hex[:12]}"
     cancel = threading.Event()
     interrupted = False
-    with _TURNS_LOCK, _FEISHU_TURNS_LOCK:
+    with _FEISHU_TURNS_LOCK:
         old_tid = _FEISHU_USER_TURNS.get(user_key)
         if old_tid:
-            old_cancel = _ACTIVE_TURNS.get(old_tid)
+            old_cancel = get_turn_cancel(old_tid)
             if old_cancel is not None:
                 old_cancel.set()
                 interrupted = True
-        _ACTIVE_TURNS[turn_id] = cancel
-        _TURN_TO_SID[turn_id] = sid
+        register_turn(turn_id, sid, cancel)
         _FEISHU_USER_TURNS[user_key] = turn_id
     return turn_id, cancel, interrupted
 
 
 def _unregister_turn(user_key: str, turn_id: str) -> None:
     """清理 turn 占位 (只删自己的映射 · 防误删新 turn)。幂等。"""
-    from daemon_api import _ACTIVE_TURNS, _TURN_TO_SID, _TURNS_LOCK
-    with _TURNS_LOCK:
-        _ACTIVE_TURNS.pop(turn_id, None)
-        _TURN_TO_SID.pop(turn_id, None)
+    from daemon_api import unregister_turn as _unregister
+    _unregister(turn_id)
     with _FEISHU_TURNS_LOCK:
         if _FEISHU_USER_TURNS.get(user_key) == turn_id:
             _FEISHU_USER_TURNS.pop(user_key, None)
@@ -584,12 +588,12 @@ def _handle_command(text: str, user_key: str) -> Optional[str]:
 
 def _interrupt_user_turn(user_key: str) -> bool:
     """打断该 user 正在跑的 turn (set cancel_event)。返回是否真找到了活跃 turn。"""
-    from daemon_api import _ACTIVE_TURNS, _TURNS_LOCK
-    with _TURNS_LOCK, _FEISHU_TURNS_LOCK:
+    from daemon_api import get_turn_cancel
+    with _FEISHU_TURNS_LOCK:
         turn_id = _FEISHU_USER_TURNS.get(user_key)
         if not turn_id:
             return False
-        cancel = _ACTIVE_TURNS.get(turn_id)
+        cancel = get_turn_cancel(turn_id)
         if cancel is None:
             return False
         cancel.set()
@@ -1641,16 +1645,19 @@ def _event_handler_builder():
 
 
 def _run_ws_loop() -> None:
-    """飞书 WS 长连接 · 自动复活机制 (删旧拉新)。
+    """飞书 WS 长连接 · 复活分两层。
 
     循环语义:
-      1. 每次循环 = 拉一个**全新** ws.Client (旧 client 已在上一轮 teardown)
-      2. client.start() 阻塞 · SDK 内部自动重连
-      3. start() 返回 (= 连接生命周期结束: SDK 放弃 / 异常 / 看门狗强制断开)
-         → 删旧 (teardown 旧 client) → 回到 1 拉新 (revive_count + 1)
-      4. 启动即异常 → 指数退避后删旧拉新
-      5. 看门狗线程: 30min 无任何业务事件 → 判定卡死 → 强制断开 → 触发删旧拉新
-         (阈值远大于"用户静默"时长 · 防误杀 · SDK 自身 ping_timeout 已处理断线)
+      1. 每次循环 = 拉一个**全新** ws.Client (旧 client 已 teardown)
+      2. client.start() 阻塞 · SDK 内部自动重连 (无限重试 · 间隔 120s)
+      3. start() 抛异常 → 删旧 → 指数退避 → 回到 1 拉新 (revive_count + 1)
+      4. 看门狗线程: 30min 无任何业务事件 → 踹掉连接 → SDK 自己复活 (见 _kick_connection)
+
+    **start() 正常情况下永不返回** —— SDK 的 start() 末尾是
+    `loop.run_until_complete(_select())` · 而 `_select()` 是 `while True: sleep(3600)` ·
+    永久停泊。 所以第 3 步只在**抛异常**时走得到 · "断开连接就能让 start() 返回、
+    外层重建 client"这条路是不存在的 (2026-08-19 修: 老版本正是照这个假前提写的看门狗)。
+    在线复活因此必须在**同一个 client 上原地做**·不能靠重建。
 
     退出条件: 只有 feishu 未启用 (用户停用) 才 return · 否则永不退出。
     """
@@ -1712,42 +1719,94 @@ def _run_ws_loop() -> None:
             time.sleep(delay)
 
 
-def _teardown_client(client) -> None:
-    """删旧: 关闭旧 ws.Client · 释放连接 (尽力而为 · 不抛)。"""
+def _run_on_sdk_loop(client, method: str, *, timeout: float = 20.0, what: str = "") -> bool:
+    """把 ws.Client 的某个协程方法投到 SDK 那个模块级事件循环上跑 · 返回是否跑成。
+
+    为什么绕这么远: lark 的 `ws.Client` **公开接口只有 `start()`** · 没有 close/stop/
+    disconnect 任何断开入口 (2026-08-19 逐行读 lark_oapi/ws/client.py 确认)。 想在
+    "连着但不来消息"时把连接踹掉·只能用它的私有协程。 而看门狗跑在另一个线程·
+    协程必须 threadsafe 投递到 SDK 自己那个 `loop`(模块级全局)·不能新建循环。
+
+    SDK 升级若改了这些私有名·这里会失败 —— 所以只记 warning·绝不让看门狗线程死掉
+    (上一版就是 `client.close()` 抛 AttributeError 把看门狗整条打断的)。 方法名走字符串
+    而不是让调用方传 `client._disconnect`·就是为了**属性访问也落在 try 里** ——
+    否则改名的 AttributeError 会在调用点炸开·又是同一个坑。
+    """
+    import asyncio
     try:
-        if client is not None:
-            client.close()
+        from lark_oapi.ws import client as _wsc
+        loop = getattr(_wsc, "loop", None)
+        if loop is None or loop.is_closed():
+            logger.warning("feishu: SDK 事件循环不可用 · 跳过%s", what)
+            return False
+        coro_fn = getattr(client, method)
+        asyncio.run_coroutine_threadsafe(coro_fn(), loop).result(timeout=timeout)
+        return True
     except Exception:
-        logger.warning("listener 群消息处理失败 (L1685)", exc_info=True)
+        logger.warning("feishu: %s失败 (SDK 私有接口可能已变)", what, exc_info=True)
+        return False
+
+
+def _teardown_client(client) -> None:
+    """删旧: 彻底丢弃一个 client · 断连接并禁掉它的自动重连 (尽力而为 · 不抛)。
+
+    必须先关 `_auto_reconnect`: 否则断开会触发 SDK 自己拉回来 · 我们又在外层建了新
+    client → 两条连接同时收消息 (每条消息处理两遍)。
+    """
+    if client is None:
+        return
+    try:
+        client._auto_reconnect = False
+    except Exception:
+        pass
+    _run_on_sdk_loop(client, "_disconnect", what="断开旧连接")
+
+
+def _kick_connection(client) -> bool:
+    """踹一脚当前连接 · 让 SDK 走它自己的复活路径 (与 teardown 相反 · 保留自动重连)。
+
+    机制: `_disconnect()` 关掉 socket → SDK 的 receive loop 那边 `recv()` 抛错 →
+    它自己 `_disconnect` + `_reconnect` (无限重试·间隔 120s·还会重建 receive loop)。
+    我们只负责踹·复活是 SDK 设计好的路径。
+
+    为什么不直接调 `_reconnect()`: `_connect()` 在 `self._conn` 非空时会 **持着 asyncio
+    锁直接 return**(SDK 的 bug·那个 return 不在 try 里) → 锁永远不释放 → 后续
+    connect/disconnect 全部死锁。 所以只有确认 `_conn is None` 时才允许自己拉。
+    """
+    if getattr(client, "_conn", None) is None:
+        # 上一轮踹过了但没人拉回来 (receive loop 已经死透) → 这才轮到我们自己拉
+        return _run_on_sdk_loop(client, "_reconnect", timeout=180.0, what="强制重连")
+    return _run_on_sdk_loop(client, "_disconnect", what="踹掉卡死连接")
 
 
 def _ws_watchdog(client, stop_ev: threading.Event) -> None:
     """看门狗: 每 30s 检查 · ①停用即断 ②卡死检测 (30min 无业务事件才判 · 防静默误杀)。"""
     while not stop_ev.is_set():
-        if stop_ev.wait(30):
+        if stop_ev.wait(_WS_CHECK_SEC):
             return
         from workers import feishu_client
-        # ① 停用即断: set_enabled(False) → 断开旧连接 → 外层循环开头发现未启用 → 退出
+        # ① 停用即断: set_enabled(False) → 断开且不许自动拉回
         if not feishu_client.enabled():
             logger.info("feishu 已停用 · 看门狗断开旧连接")
             _STATE["ws_status"] = "stopped"
-            try:
-                client.close()
-            except Exception:
-                logger.warning("listener 会话清理失败 (L1701)", exc_info=True)
+            _STATE["ws_connected"] = False
+            _teardown_client(client)
             return
         # ② 卡死检测: 30min 无任何业务事件才怀疑卡死 (SDK 自身 ping_timeout 已处理断线 ·
         #    阈值必须远大于"用户静默"时长 · 防深夜/思考间隙误杀)
         last = _STATE.get("last_event_ts", 0.0)
         idle = time.time() - last
-        if idle > 1800:
-            logger.warning("feishu ws 看门狗: %ds 无事件 · 判定卡死 · 强制删旧拉新", int(idle))
-            _STATE["ws_status"] = "reviving"
-            try:
-                client.close()  # 断开 → start() 返回 → _run_ws_loop 删旧拉新
-            except Exception:
-                logger.warning("listener 消息撤回失败 (L1713)", exc_info=True)
-            return
+        if idle <= _WS_IDLE_REVIVE_SEC:
+            continue
+        logger.warning("feishu ws 看门狗: %ds 无事件 · 判定卡死 · 踹连接触发复活", int(idle))
+        _STATE["ws_status"] = "reviving"
+        _STATE["revive_count"] += 1
+        _kick_connection(client)
+        # 踹完重置计时 · 给 SDK 一个完整 idle 窗口去重连 (它的重试间隔就有 120s) ·
+        # 否则下个 30s 又判定卡死 · 变成不停踹。 复活失败的话下一轮会升级成强制重连。
+        _STATE["last_event_ts"] = time.time()
+        # 关键: **不 return** · 继续守着。 上一版这里 return 掉了 · 等于"只救一次"·
+        # 而且那次还因为 AttributeError 根本没救到。
 
 
 def start_listener_in_background() -> Optional[threading.Thread]:

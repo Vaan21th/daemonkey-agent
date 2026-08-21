@@ -3732,9 +3732,8 @@ header {
   pointer-events: none;
 }
 
-.main-layout.nav-collapsed .nav-rail { padding: 10px 4px 0; }
+.main-layout.nav-collapsed .nav-rail { padding: 10px 4px 0; overflow: visible; }
 .main-layout.nav-collapsed .nav-section,
-.main-layout.nav-collapsed .nav-item .label,
 .main-layout.nav-collapsed .nav-item .badge,
 .main-layout.nav-collapsed .nav-collapse-btn .label,
 .main-layout.nav-collapsed .nav-settings-btn .label {
@@ -3744,12 +3743,51 @@ header {
   justify-content: center;
   padding: 9px 0;
   gap: 0;
+  position: relative;
 }
 .main-layout.nav-collapsed .nav-item .icon {
   width: auto;
   font-size: 18px;
   margin: 0;
+  /* Dock 距离衰减由 JS 驱动 (chat.js _dockNavFx · 跨分组连续 · 2026-08-20 BRO) ·
+     CSS 只管过渡平滑 · transform/color 不再写静态 hover 值 (会被 JS 内联覆盖) */
+  transition: transform .12s ease-out, color .18s ease;
 }
+/* 中心弹出入场 (BRO 选定方案 C) · hover 瞬间播一次 · 播放期间覆盖 JS 内联 ·
+   播完 fill:none 回 JS 距离值 · 衔接无跳变 */
+@keyframes dkNavPop {
+  0% { transform: scale(0); opacity: 0; }
+  60% { transform: scale(1.9); opacity: 1; }
+  100% { transform: scale(1.7); }
+}
+.main-layout.nav-collapsed .nav-item:hover .icon {
+  animation: dkNavPop .38s cubic-bezier(.34, 1.56, .64, 1);
+  /* 紫色是"选中"的独占信号 · 邻居只缩放不变色 (2026-08-20 BRO: 邻居染淡紫=比白暗=
+     像被隐藏)。 大小表达距离 · 颜色表达选中 · 两通道分开。 加微光晕让选中更跳 */
+  color: var(--opus);
+  text-shadow: 0 0 12px rgba(159, 122, 234, .55);
+}
+.main-layout.nav-collapsed .nav-item .label {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-5px);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease, transform .18s cubic-bezier(.34, 1.56, .64, 1);
+  z-index: 60;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+}
+.main-layout.nav-collapsed .nav-item:hover .label { opacity: 1; transform: translateY(-50%) translateX(0); }
+/* nav-groups 滚动区在收起态也要放行浮出 label */
+.main-layout.nav-collapsed .nav-groups { overflow: visible; }
 .main-layout.nav-collapsed .nav-collapse-btn,
 .main-layout.nav-collapsed .nav-settings-btn {
   justify-content: center;
@@ -3767,12 +3805,12 @@ header {
 .main-layout.nav-collapsed .nav-settings-btn .icon {
   font-size: 18px;
 }
+/* 2026-08-20 BRO: 折叠后不需要分组 · 分割线去掉 (图标连续排列 · Dock 波动跨组不断) */
 .main-layout.nav-collapsed .nav-group {
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 4px;
-  padding-bottom: 4px;
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
 }
-.main-layout.nav-collapsed .nav-group:last-of-type { border-bottom: none; }
 .nav-settings-btn {
   width: 100%;
   background: transparent;
@@ -5349,6 +5387,8 @@ header {
   text-align: center;
   color: var(--dim);
 }
+/* 2026-08-20 · BI 加载态套三点脉冲时 · 去掉 dash-empty 的 80px 顶距 (标题已在上面) */
+.bi-loading .dash-empty { padding-top: 18px !important; }
 
 .bi-dashboard {
   display: flex;
@@ -9158,10 +9198,11 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
  * 卷四十七 · BI 看板 V3 · KPI + 日历 + 信号流 + 图表 + 机会 + 时间线
  * ────────────────────────────────────────────────────────────── */
 
-/* KPI 数字条 */
+/* KPI 数字条 · 2026-08-20 改 auto-fit: 容器窄了自动减列 (中栏宽度≠视口宽度 ·
+   @media 断点管不到中栏 · 1K/125% 缩放下中栏 ~700px 时 5 列挤爆) */
 .bi-kpi-bar {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -9180,10 +9221,10 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .bi-kpi-delta { font-size: 11px; margin-top: 2px; display: flex; align-items: center; justify-content: center; gap: 3px; }
 .bi-kpi-delta.up { color: #48BB78; }
 
-/* 双列网格 */
+/* 双列网格 · 2026-08-20 改 auto-fit: 容器 <640px 自动单列 (同理 · 中栏窄时不挤) */
 .bi-grid-2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 12px;
 }
 
@@ -9313,6 +9354,13 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .bi-tl-adv b { font-weight: 600; }
 .bi-tl-adv-meta { color: var(--dim); font-size: 11.5px; margin-left: auto; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
 .bi-tl-mode { color: var(--amber); font-size: 11px; }
+/* 模型切换「展开更多」按钮 (2026-08-20) */
+.bi-tl-more {
+  background: none; border: none; color: var(--dim); font-size: 11.5px; cursor: pointer;
+  padding: 4px 2px; display: inline-flex; align-items: center; gap: 3px; font-family: inherit;
+  transition: color .15s;
+}
+.bi-tl-more:hover { color: var(--opus); }
 
 /* 日历热力图 */
 .bi-cal-grid {
@@ -9343,14 +9391,8 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 /* BI 加载 / 空态 */
 .bi-v3-empty { text-align: center; padding: 16px; color: var(--dim2); font-size: 12px; }
 
-/* 响应式 */
-@media (max-width: 700px) {
-  .bi-kpi-bar { grid-template-columns: repeat(3, 1fr); }
-  .bi-grid-2 { grid-template-columns: 1fr; }
-}
-@media (max-width: 480px) {
-  .bi-kpi-bar { grid-template-columns: repeat(2, 1fr); }
-}
+/* 响应式 · 2026-08-20: bi-kpi-bar/bi-grid-2 已改 auto-fit minmax 自适应 ·
+   不再用视口断点锁列数 (中栏宽度≠视口 · 断点管不到还反伤) */
 .bi-cal-cell {
   aspect-ratio: 1;
   border-radius: 3px;
@@ -9373,15 +9415,6 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 
 /* BI 加载 / 空态 */
 .bi-v3-empty { text-align: center; padding: 20px; color: var(--dim2); font-size: 12px; }
-
-/* 响应式 */
-@media (max-width: 700px) {
-  .bi-kpi-bar { grid-template-columns: repeat(3, 1fr); }
-  .bi-grid-2 { grid-template-columns: 1fr; }
-}
-@media (max-width: 480px) {
-  .bi-kpi-bar { grid-template-columns: repeat(2, 1fr); }
-}
 
 /* ══ 价值热力图 (卷五十六 · 2026-06-03) ══ */
 .bi-heat-nav { display: inline-flex; align-items: center; gap: 4px; }

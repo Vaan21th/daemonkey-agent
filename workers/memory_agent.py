@@ -253,8 +253,14 @@ def exec_agent_tool(name: str, args: dict, *, use_embedding: bool = True) -> str
         if not kw:
             return "Error: 'keyword' parameter is required and must be a non-empty string."
         try:
-            chunks = mi.search(kw, top_k=min(limit, 20), scope="all",
+            # LLM 重排序 (0.9.6 · workers/memory_rerank.py): 开着就捞大池精排 ·
+            # 保险丝在 rerank 内部 (LLM 挂/解析失败/判全不相关 → 退回 FTS5 原序)。
+            from workers import memory_rerank as _rr
+            _k = min(limit, 20)
+            _pool = _rr.pool_size() if _rr.rerank_enabled() else _k
+            chunks = mi.search(kw, top_k=max(_k, _pool), scope="all",
                                window_by="snippet", use_embedding=use_embedding)
+            chunks = _rr.rerank(kw, chunks, top_k=_k)
         except Exception as e:
             return f"Error: search failed: {e}"
         if not chunks:

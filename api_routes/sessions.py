@@ -10,8 +10,9 @@ api_routes/sessions.py · session 管理路由 (wish-413999da · phase 1)
   GET    /sessions/{sid}                 · 返回 raw jsonl
   GET    /sessions/{sid}/messages        · WebUI 友好的结构化 turn 列表
   GET    /sessions/{sid}/active_turn     · wish-3fef4bc7 · 浏览器 F5 后查 active turn
+  GET    /turns/{turn_id}/progress       · 按 turn 直接查进度 (工坊 run 不绑 session · 只能这样查)
 
-注: 用 daemon_api 模块级 _TURNS_LOCK / _TURN_TO_SID 共享状态
+注: 用 daemon_api 的活儿注册表收口函数 (active_session_ids / find_session_turn) 读共享状态
     (daemon_api 已 load 完才 include_router · 此时 module attr 可访问)
 """
 from __future__ import annotations
@@ -63,11 +64,10 @@ async def sessions(
     check_auth(authorization)
 
     # wish-xxx · 全局活跃 turn 集合 (daemon 正在为哪些 session 跑 LLM)
-    # 真相源: daemon_api._TURN_TO_SID (turn_id → session_id) · 前端历史列表据此显示运行状态
+    # 真相源: daemon_api 的活儿注册表 · 前端历史列表据此显示运行状态
     try:
-        from daemon_api import _TURNS_LOCK, _TURN_TO_SID
-        with _TURNS_LOCK:
-            _active_sids = set(_TURN_TO_SID.values())
+        from daemon_api import active_session_ids
+        _active_sids = active_session_ids()
     except Exception:
         _active_sids = set()
 
@@ -428,18 +428,30 @@ async def session_active_turn(sid: str, authorization: Optional[str] = Header(No
     """
     check_auth(authorization)
     # 从 daemon_api 模块取共享 state (build_app 时 daemon_api 已 load)
-    from daemon_api import _TURNS_LOCK, _TURN_TO_SID, get_turn_progress
+    from daemon_api import find_session_turn, get_turn_progress
 
-    found = None
-    with _TURNS_LOCK:
-        for tid, t_sid in _TURN_TO_SID.items():
-            if t_sid == sid:
-                found = tid
-                break
+    found = find_session_turn(sid)
     if not found:
         return {"session_id": sid, "turn_id": None}
-    # ② 自主巡航进度 · 带上最新一步 (get_turn_progress 自己拿锁 · 必须在 with 外调 · 防重入死锁)
     return {"session_id": sid, "turn_id": found, "progress": get_turn_progress(found)}
+
+
+@router.get("/turns/{turn_id}/progress")
+async def turn_progress(turn_id: str, authorization: Optional[str] = Header(None)):
+    """按 turn_id 直接查进度 —— 给不隶属会话的 turn 用 (工坊 app/flow run)。
+
+    为什么单独开一个: 上面那个出口是「按 sid 反查 turn」· 而工坊 run 故意不绑 session
+    (硬塞会污染会话的 active_turn)· 于是它的进度快照写进去了却没人查得到 —— SSE 一断
+    /F5 一刷·前端就再也不知道后台那个 run 跑到哪了·只能干等或重跑。 前端从 SSE 的
+    hello 事件里拿 run_id · 断线后拿它来这里续看。
+
+    progress=None 有两种情形(跑完了 / 从没有过)· 对前端是同一个动作: 停止 polling。
+    """
+    check_auth(authorization)
+    from daemon_api import get_turn_progress
+
+    snap = get_turn_progress(turn_id)
+    return {"turn_id": turn_id, "alive": snap is not None, "progress": snap}
 
 
 @router.get("/sessions/{sid}/background_turn_status")

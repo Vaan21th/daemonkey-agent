@@ -39,7 +39,9 @@ def _classify(args: dict) -> str:
 
 
 def _run(args: dict) -> ToolResult:
+    from workers import core_fingerprint as cf
     from workers import core_update as cu
+    from workers import kernel_takeover as kt
 
     action = (args.get("action") or "check").strip().lower()
     branch = (args.get("branch") or "master").strip() or "master"
@@ -108,13 +110,47 @@ def _run(args: dict) -> ToolResult:
             if deleted:
                 lines.append(f"  中心库已删 {len(deleted)} 个 (update_core 不会删你本地 · 仅提示):")
                 lines += [f"    - {f}" for f in deleted]
+            taken = kt.load()
+            taken_in_update = [f for f in (changed + added) if f in taken]
+            if taken_in_update:
+                lines.append("")
+                lines.append("🔒 这些文件你已接管 · 官方有新版但升级【物理上不会碰它们】:")
+                lines += [f"    = {f}" for f in taken_in_update]
+                lines.append("  想交还给官方管 → 对我说「取消接管 <文件>」")
             dirty = cu.dirty_kernel_files(manifest)
-            dirty_in_update = [f for f in (changed + added) if f in dirty]
+            # 已接管的不会被覆盖 → 不该再警告"你改过会被覆盖"(那是虚惊)
+            dirty_in_update = [f for f in (changed + added) if f in dirty and f not in taken]
             if dirty_in_update:
                 lines.append("")
-                lines.append("⚠ 这些待更新的内核文件 · 你本地有未提交改动:")
+                # 0.9.6 起判定走基线指纹 · 所以是"跟官方版不一样"而不是"未提交改动"——
+                #   改动 commit 过也照样认得出
+                lines.append("⚠ 这些待更新的内核文件 · 你改过 (内容跟官方版不一样):")
                 lines += [f"    ! {f}" for f in dirty_in_update]
-                lines.append("  升级会先 checkpoint 存档(可 git revert 找回)再覆盖 · 不会无声丢你的改动。")
+                lines.append("  升级会先备份你的版本 + checkpoint 存档 · 覆盖后可对我说「合并我的改动」拿回来。")
+                lines.append("  不想让官方碰某个文件 → 对我说「这文件我自己管」(接管后永不被覆盖)。")
+
+            # ── 整机漂移总览 ──
+            # 出问题时第一句要能回答:「你这台机器跟官方差多少」。 差异是排查的起点 ——
+            # 官方版跑得好好的功能在用户那儿坏了·先看是不是他自己改过那块。
+            if not cf.has_baseline():
+                lines.append("")
+                lines.append("ℹ 这台还没有官方基线指纹 (0.9.6 之前装的) · 本次升级会补上。"
+                             "之后「哪些内核文件你改过」就能精确认出 —— 不再受 commit 影响。")
+            else:
+                drift_other = [f for f in dirty if f not in (changed + added)]
+                lines.append("")
+                if not dirty:
+                    lines.append(f"✓ 内核与官方 {cf.baseline_version()} 完全一致 · 没有本地改动")
+                else:
+                    n_taken = len([f for f in dirty if f in taken])
+                    tail = f" · 其中 {n_taken} 个是你接管的" if n_taken else ""
+                    lines.append(f"ℹ 全机内核有 {len(dirty)} 个文件跟官方 "
+                                 f"{cf.baseline_version()} 不一样{tail}")
+                    if drift_other:
+                        lines.append("  (本次不更新它们·仅告知你改过:)")
+                        lines += [f"    · {f}" for f in drift_other[:8]]
+                        if len(drift_other) > 8:
+                            lines.append(f"    · ... 另 {len(drift_other) - 8} 个")
             lines.append("")
             lines.append("⛑  只会覆盖上面列出的白名单文件 · 你的 soul/ data/ 应用 物理不碰。")
             if action == "preview" and total:
@@ -158,6 +194,14 @@ def _run(args: dict) -> ToolResult:
                     bak = uo.get("backup") or "(备份失败·但 git checkpoint 里有)"
                     lines.append(f"    ! {uo['file']}  → 备份: {bak}")
                 lines.append("  需要把你的改动合并回来 · 对我说「合并我的改动」即可。")
+                lines.append("  不想让官方以后再碰它 → 「这文件我自己管」(接管后永不被覆盖)。")
+            # 0.9.6 · 用户接管 · 官方有新版但物理没覆盖
+            skipped_take = res.get("skipped_takeover") or []
+            if skipped_take:
+                lines.append("")
+                lines.append("🔒 这些文件你已接管 · 官方这版更新了它们 · 但一个字节都没覆盖:")
+                lines += [f"    = {f}" for f in skipped_take]
+                lines.append("  想看官方改了什么 → action=preview · 想交还官方管 → 「取消接管 <文件>」")
             lines.append("\n⚠ 内核是 daemon 代码 · 改完需要【重启 daemon】才生效。")
             lines.append("  你的应用 / 工作流 / soul 灵魂记忆一个字节都没动。")
             return ToolResult(ok=True, output="\n".join(lines))

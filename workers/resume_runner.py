@@ -89,19 +89,17 @@ def _run_background_turn(message: str, session_id: str) -> dict:
     返 dict (跟 _chat_impl 一样) 或 raise · 调用方负责包 try/except
 
     卷四十六 续 14 补丁 VI · 2026-05-26 16:15:
-      register turn_id 到 _TURN_TO_SID + _ACTIVE_TURNS · 让 GET /sessions/{sid}/active_turn
+      走 register_turn 登记这个 turn · 让 GET /sessions/{sid}/active_turn
       能查到这个 background turn · 前端 _maybeStartPoll 才能启 polling 自动 reload
       (不然 BRO reload session 看到 follow_up turn 跑一半的快照 · 后续 reply 不出现 ·
       必须手动 F5 才能看到 final reply)
     """
     import threading
-    from daemon_api import _chat_impl, _ACTIVE_TURNS, _TURN_TO_SID, _TURNS_LOCK, _TURN_PROGRESS
+    from daemon_api import _chat_impl, register_turn, unregister_turn
 
     turn_id = "resume-" + (session_id[-8:] if session_id else "x")
     cancel_event = threading.Event()
-    with _TURNS_LOCK:
-        _ACTIVE_TURNS[turn_id] = cancel_event
-        _TURN_TO_SID[turn_id] = session_id
+    register_turn(turn_id, session_id, cancel_event)
     try:
         # wish-8914f90c · 墙钟熔断: 后台续场 turn 收紧预算 — 总墙钟 300s · 单次 LLM 60s。
         # daemon_api._env_float 每次调用时读 os.environ · 同进程内设置即刻生效。
@@ -131,10 +129,7 @@ def _run_background_turn(message: str, session_id: str) -> dict:
             else:
                 os.environ["_RESUME_LLM_TIMEOUT_SEC"] = _prev_llm
     finally:
-        with _TURNS_LOCK:
-            _ACTIVE_TURNS.pop(turn_id, None)
-            _TURN_TO_SID.pop(turn_id, None)
-            _TURN_PROGRESS.pop(turn_id, None)  # ② 进度快照跟 turn 同生命周期
+        unregister_turn(turn_id)
 
 
 def schedule_resume_turn(restart_req: Optional[dict]) -> bool:
@@ -188,7 +183,7 @@ def schedule_resume_turn(restart_req: Optional[dict]) -> bool:
             print(f"[opus-resume] background turn 完成 · reply='{reply_preview}...'", flush=True)
             # 墨言 094-2 · 续场结果按最新活跃通道推送 (飞书/微信) · WebUI 不推 (用户看着)
             try:
-                _push_background_reply(result.get("reply") or "")
+                _push_background_reply(result.get("reply") or "", sid)
             except Exception as e:
                 print(f"[opus-resume] 续场推送异常: {type(e).__name__}: {e}", flush=True)
             with _bg_status_lock:
@@ -272,16 +267,30 @@ def _resolve_latest_push_channel() -> Optional[tuple[str, str]]:
         return None
 
 
-def _push_background_reply(reply: str) -> None:
-    """续场验证回复 → 按最新活跃通道推送 (墨言 094-2 wish-a65228cd)。
+def _channel_of_session(sid: str) -> Optional[tuple[str, str]]:
+    """会话 id → 它属于哪个外部通道 · WebUI/API 返 None (用户看着 · 不推)。"""
+    sid = (sid or "").strip()
+    if sid.startswith("api-feishu-") and "-user_" in sid:
+        return ("feishu", sid)
+    if sid == "api-wechat":
+        return ("wechat", sid)
+    return None
 
-    最新活跃会话是飞书 → 推飞书；是微信 → 推微信；是 WebUI/API → 不推。
+
+def _push_background_reply(reply: str, session_id: str = "") -> None:
+    """续场回复 → 推回**这条会话自己的**通道 (墨言 094-2 wish-a65228cd)。
+
+    session_id 就是真相: 续写的是谁的会话 · 就推给谁。
+    只有拿不到 sid 时才退回"猜最新活跃会话" —— 猜是会串台的:
+    重启前最后说话的是飞书那位·而续的是微信那条·结果把微信的回复推给了飞书的人。
     """
     if not reply or not reply.strip():
         return
-    ch = _resolve_latest_push_channel()
+    ch = _channel_of_session(session_id) if session_id else None
+    if ch is None and not session_id:
+        ch = _resolve_latest_push_channel()
     if not ch:
-        print("[opus-resume] 续场推送跳过 · 最新活跃会话不是飞书/微信 (WebUI/API 不推)", flush=True)
+        print("[opus-resume] 续场推送跳过 · 这条会话不是飞书/微信 (WebUI/API 不推)", flush=True)
         return
     channel, sid = ch
     if channel == "feishu":

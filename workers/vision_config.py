@@ -84,3 +84,42 @@ def get_vision_model() -> tuple[Optional[str], Optional[str], Optional[str]]:
             return model, base_url, api_key
 
     return None, None, None
+
+
+def get_vision_channels() -> list[dict]:
+    """返回可并发竞速的视觉通道列表（wish-18f08ccc · 多通道竞速池）。
+
+    每个通道: {"name", "model", "base_url", "api_key"}。
+    优先级：
+      1. vision_config.json 的 channels 字段（可配多个 · enabled=false 跳过）
+      2. 顶层单通道（老配置 · 包成单元素列表）
+      3. .env 回退（单元素）
+      4. 都没有 → []
+    """
+    cfg = load_vision_config()
+    chans = cfg.get("channels")
+    if isinstance(chans, dict):
+        out = []
+        for name, ch in chans.items():
+            if not isinstance(ch, dict):
+                continue
+            if ch.get("enabled") is False:
+                continue
+            model = (ch.get("model") or "").strip()
+            base_url = (ch.get("base_url") or "").strip()
+            api_key = (ch.get("api_key") or "").strip()
+            if model and base_url and api_key:
+                out.append({
+                    "name": str(name),
+                    "model": model,
+                    "base_url": base_url,
+                    "api_key": api_key,
+                })
+        if out:
+            return out
+
+    # 顶层单通道 / .env 回退
+    m, b, k = get_vision_model()
+    if m and b and k:
+        return [{"name": m, "model": m, "base_url": b, "api_key": k}]
+    return []

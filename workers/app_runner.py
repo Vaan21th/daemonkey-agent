@@ -176,6 +176,64 @@ def _allowed_tools(app: dict) -> list:
     return [REGISTRY[name] for name in whitelist if name in REGISTRY]
 
 
+def run_app_by_kind(
+    *,
+    app: dict,
+    inputs: dict,
+    runtime: Any,
+    progress: Optional[Callable[[str, dict], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
+    upstream_outputs: Optional[dict] = None,
+    max_iterations: int = 8,
+) -> dict:
+    """按 app.exec_kind 分流跑一个 app —— 两个工作流引擎唯一的入口。
+
+    scripted → http_executor (0 LLM · 只是去网址取数)
+    agentic / 未声明 → run_app (走 LLM)
+
+    为什么必须收在一处: 分流原先只写在画布引擎里 · flow_runner 固定调 run_app ·
+    于是同一条工作流「画布点运行」几乎不烧 token · 「让 AI 跑」每个 scripted 步也进
+    tool_loop —— 同一件事两个入口两个价钱 · 而贵的那条恰好是用户看不见过程的那条。
+    """
+    if not isinstance(app, dict) or not app.get("id"):
+        return {"ok": False, "text": "", "outputs": {}, "usage": {},
+                "iterations": 0, "error": "app spec invalid"}
+
+    if (app.get("exec_kind") or "").strip().lower() == "scripted":
+        from workers.http_executor import run_scripted_app
+        result = run_scripted_app(
+            app=app,
+            inputs=inputs,
+            runtime=runtime,
+            progress=progress,
+            upstream_outputs=upstream_outputs,
+        )
+        # 补齐 agentic 那条才有的字段 · 让上游不必判分支
+        return {
+            "ok": result.get("ok", False),
+            "outputs": result.get("outputs") or {},
+            "text": "",
+            "usage": {},
+            "iterations": 0,
+            "error": result.get("error"),
+            "http": result.get("http") or {},
+            "exec_kind": "scripted",
+        }
+
+    result = run_app(
+        app=app,
+        inputs=inputs,
+        runtime=runtime,
+        progress=progress,
+        cancel_check=cancel_check,
+        upstream_outputs=upstream_outputs,
+        max_iterations=max_iterations,
+    )
+    if isinstance(result, dict):
+        result.setdefault("exec_kind", "agentic")
+    return result
+
+
 def run_app(
     *,
     app: dict,

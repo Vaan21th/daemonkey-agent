@@ -485,11 +485,21 @@
      排在 chat.js 前面 → 主界面被它干等几十秒才出内容 (= 用户 报的"每次启动慢/白屏·硬刷新也慢")。
      Chart 只在 BI 看板用·主界面加载不需要 → 改本地 + defer·主界面 0 等待·BI 照常。 -->
 <script defer src="/static/lib/chart.umd.min.js"></script>
+<!-- 记忆星图 3D (0.9.6) · Three.js r128 UMD 本地化 · defer 不阻塞主界面 (与 Chart.js 同款) -->
+<script defer src="/static/lib/three/three.min.js"></script>
+<script defer src="/static/lib/three/OrbitControls.js"></script>
 <script src="/static/lib/litegraph.core.js"></script>
 <script src="/static/workshop.js?v=20260810"></script>
 <script src="/static/depot.js?v=20260810"></script>
 <script src="/static/clients.js?v=20260810"></script>
 <script src="/static/chat.js?v=20260814f"></script>
+
+<!-- 用户装修区 (0.9.6) · static/user/ 在 never_sync 里 —— 官方升级永远不会覆盖这两个文件。
+     样式写 user.css / 行为写 user.js (用 window.Daemonkey API)·刷新页面即生效。
+     排在所有官方脚本之后 = 用户的改动总能盖住官方默认。
+     文件不存在时浏览器只在控制台记一条 404·功能零影响 (所以不必预先创建)。 -->
+<link rel="stylesheet" href="/static/user/user.css?v=1">
+<script src="/static/user/user.js?v=1"></script>
 
 </body>
 </html>

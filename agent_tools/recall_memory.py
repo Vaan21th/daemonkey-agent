@@ -165,10 +165,24 @@ def _run(args: dict) -> ToolResult:
         )
 
     # I1 (wish-6ff9d89b) · list 模式用摘要窗口 (window_by='snippet') · 不被全文窗口压制条数
-    # wish-45b8ff04 · use_embedding=True: FTS5 漏掉的语义命中补进 (embedding 不可用自动退化)
-    results = search(query, top_k=top_k, scope=scope, context_window=context_window,
+    #
+    # 2026-08-19 · 语义通道从"无条件开"改成默认关 (实测依据见
+    # data/learnings/2026-08-19-memory-scale-audit.md):
+    #   对话原文占 97.7% 而向量覆盖率是 0% → 语义通道只能在剩下 2% 里挑 ·
+    #   实测慢 20-70 倍 (7-27ms → 400-1487ms) · 前 3 名通常完全相同 ·
+    #   唯一的差异常常是把第 4-5 名换成"只有标题没正文"的空壳 (即变差)。
+    # 不焊死: 用户的数据分布可能跟我们不一样 (比如他给对话补过向量) ·
+    # 设 OPUS_RECALL_EMBEDDING=1 就开回来。
+    import os as _os
+    _use_emb = _os.environ.get("OPUS_RECALL_EMBEDDING", "").strip().lower() in ("1", "true", "yes")
+    # LLM 重排序 (0.9.6 · workers/memory_rerank.py): 开着就先捞大池再精排 · 关了维持原行为。
+    # 保险丝在 rerank 内部: LLM 挂/解析失败/判全不相关 → 退回 FTS5 原序前 top_k。
+    from workers import memory_rerank as _rr
+    _pool = _rr.pool_size() if _rr.rerank_enabled() else top_k
+    results = search(query, top_k=max(top_k, _pool), scope=scope, context_window=context_window,
                      window_by="snippet" if mode != "full" else "content",
-                     use_embedding=True)
+                     use_embedding=_use_emb)
+    results = _rr.rerank(query, results, top_k=top_k)
 
     if not results:
         return ToolResult(

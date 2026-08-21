@@ -126,18 +126,26 @@ def _read_text(path: Path) -> str:
 
 
 def _load_bro_notebook(daemon_root: Path) -> str:
-    """读画像 soul/OWNER-NOTEBOOK.md（旧名 BRO-NOTEBOOK.md 向后兼容）。
+    """读画像 soul/OWNER-NOTEBOOK.md（旧名 BRO-NOTEBOOK.md 向后兼容）· 分层注入。
 
     soul/ 是同步过来的本地副本——只从本地读，避免 daemon 跨机器/跨平台时硬绑全局路径。
-    母体 soul/ 仍是 BRO-NOTEBOOK.md → 走 fallback 读到·内容一字不变。
+    母体 soul/ 仍是 BRO-NOTEBOOK.md → 走 fallback 读到。
+    分层逻辑在 workers/notebook_tiers.py（why 见该模块 docstring）；
+    分层模块异常时退回全量——画像缺失比体量超支严重。
     """
     for fn in (OWNER_NOTEBOOK_FILENAME, BRO_NOTEBOOK_FILENAME):
         p = daemon_root / SOUL_DIR_NAME / fn
         if p.exists():
             try:
-                return p.read_text(encoding="utf-8")
+                full = p.read_text(encoding="utf-8")
             except Exception:
                 return ""
+            try:
+                from workers.notebook_tiers import render_tiered
+
+                return render_tiered(full)
+            except Exception:
+                return full
     return ""
 
 
@@ -701,6 +709,42 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
                 _threading.Thread(target=_bg_refresh, daemon=True, name='memory-index-refresh').start()
     except Exception:
         pass
+
+    # --- 记忆库卫生 · 升级后自动清一次存量噪音 (2026-08-19) ---
+    # 过滤规则随内核下发只管住"以后不再收"·用户库里已经进去的垃圾要清一次才受益 —
+    # 而用户不会自己去跑命令·所以挂在启动路径上自动做完。
+    # 定向 DELETE (秒级·不重读 jsonl·不调 embedding) · 绝不走全量 rebuild:
+    # 2026-08-12 那场事故就是全量重建 300s 卡死被强杀·库反而变空表。
+    # PRAGMA user_version 记版本 → 清过就跳过 · 进程内也只检查一次。
+    if not getattr(load_soul, '_hygiene_checked', False):
+        load_soul._hygiene_checked = True
+        try:
+            import threading as _th2
+
+            def _bg_hygiene():
+                import logging as _lg
+                _log2 = _lg.getLogger('opus.soul_loader')
+                _c = None
+                try:
+                    from workers import memory_hygiene as _mh
+                    from workers.memory_index import _get_conn as _gc
+                    _c = _gc()
+                    if _mh.needs_migration(_c):
+                        _r = _mh.migrate(_c)
+                        _log2.info('记忆库卫生迁移 v%s: 清掉 %d 条噪音 %s',
+                                   _r.get('version'), _r.get('total', 0), _r.get('by_rule'))
+                except Exception as _e2:
+                    _log2.warning('记忆库卫生迁移失败(不影响使用): %s', _e2)
+                finally:
+                    if _c is not None:
+                        try:
+                            _c.close()
+                        except Exception:
+                            pass
+
+            _th2.Thread(target=_bg_hygiene, daemon=True, name='memory-hygiene').start()
+        except Exception:
+            pass
 
     return Soul(
         system_prompt=system_prompt,

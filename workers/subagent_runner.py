@@ -32,6 +32,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from agent_tools import TIER_GUARD
+
 
 @dataclass
 class SubagentResult:
@@ -49,12 +51,22 @@ class SubagentResult:
 
 
 def _auto_confirm(spec, args, *more) -> str:
-    """子执行器沙盒内默认 auto-approve —— 与 app_runner 同哲学。
+    """子执行器沙盒内默认 auto-approve · 但 GUARD 一律拒。
 
-    安全靠的是【工具白名单】(allowed_tool_names): 白名单外的工具 tool_loop 直接返
-    "not allowed" 根本执行不到。 派分身的上层 (dispatch_subagent) 负责给一个不含
-    GUARD 高危工具的收紧白名单。 需要更严时上层可传自定义 confirm。
+    安全主要靠【工具白名单】(allowed_tool_names): 白名单外的工具 tool_loop 直接返
+    "not allowed" 根本执行不到。
+
+    为什么还要单拦 GUARD: 白名单按**工具名**收紧·而危险度是按**参数**定的。
+    `read_file` 在默认只读白名单里·但 `read_file('.env')` 是 GUARD ——
+    分身在后台跑、没人看着·恰恰最不该自己批不可逆/凭据级的操作。
+    真需要放行的·上层 dispatch 时传自定义 confirm 显式承担。
     """
+    try:
+        if spec is not None and spec.effective_tier(args or {}) == TIER_GUARD:
+            return ("reject:这是 GUARD 级操作 (不可逆或涉及凭据) · 分身不能自行放行。"
+                    "换个不碰凭据/不可逆的做法 · 或把这步交回主对话让用户拍。")
+    except Exception:
+        pass      # 判不出档位就按老行为放行 · 别让分身直接瘫
     return "yes"
 
 

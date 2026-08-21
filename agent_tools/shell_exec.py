@@ -122,7 +122,11 @@ _GUARD_PATTERNS = [
     r"\bgit\s+clean\s+-",
     r"\bgit\s+filter-branch\b",
     # ── 4. KEY 安全级 ──
-    r"\.env\s*$",
+    # \b 而不是 $: 原先只认行尾 · `type .env.bak` / `Get-Content .env -Raw`
+    # 这类带后缀或带参数的写法一律绕过闸 · key 就这么读走了。
+    r"\.env(rc)?\b",
+    r"\bid_rsa\b",
+    r"\.(pem|p12|pfx)\b",
 ]
 
 _GUARD_RE = re.compile("|".join(f"(?:{p})" for p in _GUARD_PATTERNS), re.IGNORECASE)

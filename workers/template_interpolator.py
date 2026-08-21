@@ -1,7 +1,7 @@
 """workers/template_interpolator.py
 ====================================
 
-卷四十六续 13 · wish-165ea1f6 phase C · exec_template 用的最小模板插值器
+exec_template 用的最小模板插值器 (scripted app 的 0-LLM 执行路径)
 
 支持的语法 (故意做窄·不允许任意表达式·避免变成 mini Jinja):
 
@@ -12,16 +12,16 @@
     - 字符串 "${ui:n}" 整体是单一 placeholder · ui.n=1 (int) → 返 1 (int · 类型保留)
     - 字符串 "size=${ui:size}" 字符串拼接 → 返 str (因为有非 placeholder 字符)
     - 跟 Terraform / jq / GoTemplate 一致 · 解决 API 期望 uint 我们却传 "1" str 的问题
-    ${secret:<app_id>:<secret_name>}    · 铁律 7 标准 · workers.app_secrets.get_secret(app_id, name)
+    ${secret:<app_id>:<secret_name>}    · workers.app_secrets.get_secret(app_id, name)
     ${secret:<secret_name>}             · 单段兜底 · 用 context.app_id (只能拿自己 app 的 secret)
     ${upstream:<node_id>:<port>}        · 工作流上游节点 output (workflow_engine 注入)
     ${app_id}                           · 当前 app id (后端注入)
     ${ts}                               · 时间戳 (yyyymmdd_HHMMSS · 后端注入)
     ${ts_ms}                            · 毫秒时间戳
 
-secret 走 workers.app_secrets · 跟『卷四十四 K stage 2c++ · 铁律 7』对齐:
+secret 走 workers.app_secrets · 遵守「密钥真值永不进 LLM 上下文」这条纪律:
     - app KEY 存 data/workshop/secrets/<app_id>.json · 结构 {"app_id":"...","secrets":{"name":"value"}}
-    - daemon OPUS 通过 app_set_secret 工具落盘 · 不会直接拿 value (LLM 只看 placeholder)
+    - 通过 app_set_secret 工具落盘 · 不会直接拿 value (LLM 只看 placeholder)
     - exec_template / system_prompt / shell_exec 里都用 placeholder · daemon 在内部 resolve
 
 不支持:

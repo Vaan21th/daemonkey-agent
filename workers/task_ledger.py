@@ -36,28 +36,23 @@ _ACTIVE_PATH = _ROOT / "data" / "runtime" / "ledger_active.json"
 
 _KINDS = ("verified", "ruledout", "pending", "decision", "note")
 
-# 中文 / 同义词 → 规范 kind
-_KIND_ALIASES = {
-    "verified": "verified", "verify": "verified", "ok": "verified", "pass": "verified",
-    "done": "verified", "works": "verified", "confirmed": "verified",
-    "已验证": "verified", "验证": "verified", "通过": "verified", "确认": "verified", "通了": "verified",
-    "ruledout": "ruledout", "ruled_out": "ruledout", "rejected": "ruledout", "deadend": "ruledout",
-    "dead_end": "ruledout", "fail": "ruledout", "failed": "ruledout", "no": "ruledout",
-    "已排除": "ruledout", "排除": "ruledout", "死路": "ruledout", "行不通": "ruledout", "放弃": "ruledout",
-    "pending": "pending", "todo": "pending", "wip": "pending", "trying": "pending", "hypothesis": "pending",
-    "待验证": "pending", "进行中": "pending", "假设": "pending", "试": "pending", "待办": "pending",
-    "decision": "decision", "decide": "decision", "chose": "decision", "picked": "decision",
-    "决策": "decision", "决定": "decision", "选定": "decision",
-    "note": "note", "备注": "note", "记录": "note", "要点": "note",
+_KIND_ALIASES = {      # 规范 kind ← 中文/同义词别名
+    a: canon
+    for canon, aliases in {
+        "verified": ("verify", "ok", "pass", "done", "works", "confirmed",
+                     "已验证", "验证", "通过", "确认", "通了"),
+        "ruledout": ("ruled_out", "rejected", "deadend", "dead_end", "fail", "failed", "no",
+                     "已排除", "排除", "死路", "行不通", "放弃"),
+        "pending": ("todo", "wip", "trying", "hypothesis",
+                    "待验证", "进行中", "假设", "试", "待办"),
+        "decision": ("decide", "chose", "picked", "决策", "决定", "选定"),
+        "note": ("备注", "记录", "要点"),
+    }.items()
+    for a in (canon,) + aliases
 }
 
-_ICONS = {
-    "verified": "✓ 已验证",
-    "ruledout": "✗ 已排除",
-    "pending": "· 待验证",
-    "decision": "▶ 决策",
-    "note": "· 记录",
-}
+_ICONS = {"verified": "✓ 已验证", "ruledout": "✗ 已排除", "pending": "· 待验证",
+          "decision": "▶ 决策", "note": "· 记录"}
 
 _MAX_ENTRIES = 200          # 单本账最多留多少条(超出丢最旧的 note/verified·保 ruledout/decision)
 _HINT_MAX_PER_KIND = 12     # 回灌时每类最多列几条(防提示膨胀)
@@ -130,6 +125,14 @@ def get_ledger(slug: str) -> Optional[dict]:
     if not slug:
         return None
     return _read_json(_ledger_path(slug), None)
+
+
+def save_ledger(led: dict) -> None:
+    """整本落盘 · 给 task_plan(步骤层)复用同一份原子写 + 同一个真源文件。"""
+    if not led or not led.get("slug"):
+        return
+    led["updated"] = _now()
+    _write_json(_ledger_path(led["slug"]), led)
 
 
 def open_ledger(slug_or_title: str, session_id: str = "", title: Optional[str] = None) -> dict:
@@ -216,16 +219,27 @@ def render_ledger(led: dict) -> str:
 
 
 def render_hint(session_id: str) -> str:
-    """本会话活跃账本 → 每轮回灌的硬提示(抗套娃钥匙)。无活跃账本返回空串。"""
+    """本会话活跃账本 → 每轮回灌。两段:【计划】走到第几步 +【结论】试过什么。
+
+    计划在前 —— 它决定下一个动作;结论只是避免走回头路。
+    """
     slug = active_slug(session_id)
     if not slug:
         return ""
     led = get_ledger(slug)
-    body = render_ledger(led) if led else ""
-    if not body:
+    if not led:
         return ""
+    try:
+        from workers.task_plan import render_hint as _plan_hint
+        plan = _plan_hint(led)
+    except Exception:
+        plan = ""      # 计划层坏了不该拖垮结论回灌
+    body = render_ledger(led)
+    if not body:
+        return plan    # 刚开工: 只有计划还没结论 · 别把计划也吞掉
     hint = (
-        "\n\n=== 任务账本 · 之前的结论(参考·别盲从) ===\n"
+        plan
+        + "\n\n=== 任务账本 · 之前的结论(参考·别盲从) ===\n"
         + body
         + "\n【怎么用】默认别重复劳动:✓ 的先别重验、✗ 的先别再走、从『待验证』往前推。\n"
         "【结论可能过时】若和你现在的观察冲突、或代码/环境已变——**以现在为准**,"

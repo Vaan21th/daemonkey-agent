@@ -125,9 +125,12 @@ def set_session_meta(
 
 
 def delete_session(session_id: str) -> bool:
-    """真删一个 session · jsonl 文件 + meta 条目都清掉
+    """真删一个 session · jsonl + 压缩摘要 + meta 条目 + 召回索引 全部清掉
 
     返回是否真删到了东西（任一存在就算 True）
+
+    摘要和索引也必须清: 只删 jsonl 的话 · 已删对话还能被 recall_memory 搜出来 ·
+    而且留着的 <sid>.summary.json 会在下次全量重建时把它重新索引回来 —— 等于删不掉。
     """
     deleted = False
     p = session_path(session_id)
@@ -138,11 +141,25 @@ def delete_session(session_id: str) -> bool:
         except OSError:
             pass
 
+    summary = SESSIONS_DIR / f"{session_id}.summary.json"
+    if summary.exists():
+        try:
+            summary.unlink()
+            deleted = True
+        except OSError:
+            pass
+
     idx = _load_meta_index()
     if session_id in idx:
         idx.pop(session_id, None)
         _save_meta_index(idx)
         deleted = True
+
+    try:
+        from workers.memory_index import purge_session
+        purge_session(session_id)
+    except Exception:
+        pass      # 索引清不掉不该让"删会话"整体失败 · 下次全量重建会兜住
 
     return deleted
 

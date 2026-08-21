@@ -282,16 +282,14 @@ def _run_bg_turn(message: str, sid: str, reason: str, max_tokens=None) -> dict:
     即用户在 WebUI 设的全局 max_tokens (卷七十四续三十一·真相源统一)·不再写死小值把长输出截断。
     """
     import threading
-    from daemon_api import _chat_impl, _ACTIVE_TURNS, _TURN_TO_SID, _TURNS_LOCK
+    from daemon_api import _chat_impl, register_turn, unregister_turn
     if max_tokens is None:
         from daemon_runtime import bg_max_tokens
         max_tokens = bg_max_tokens()
 
     turn_id = "proactive-" + (sid[-8:] if sid else "x")
     cancel_event = threading.Event()
-    with _TURNS_LOCK:
-        _ACTIVE_TURNS[turn_id] = cancel_event
-        _TURN_TO_SID[turn_id] = sid
+    register_turn(turn_id, sid, cancel_event)
     try:
         from daemon_runtime import RUNTIME as _RT
         from provider_presets import safe_max_tokens as _smt
@@ -306,9 +304,7 @@ def _run_bg_turn(message: str, sid: str, reason: str, max_tokens=None) -> dict:
             user_meta={"src": "proactive", "proactive_reason": reason},
         )
     finally:
-        with _TURNS_LOCK:
-            _ACTIVE_TURNS.pop(turn_id, None)
-            _TURN_TO_SID.pop(turn_id, None)
+        unregister_turn(turn_id)
 
 
 def run_proactive_call(trigger: dict, *, force: bool = False) -> dict:

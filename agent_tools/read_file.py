@@ -24,7 +24,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from . import TIER_AUTO, ToolResult, ToolSpec, register_tool
+from . import (
+    TIER_AUTO,
+    TIER_CONFIRM,
+    TIER_GUARD,
+    ToolResult,
+    ToolSpec,
+    register_tool,
+)
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,6 +43,50 @@ def _resolve(path_str: str) -> Path:
     if not p.is_absolute():
         p = ROOT / p
     return p.resolve()
+
+
+# 读到就等于泄露的东西 —— key / 私钥 / 存着 key 的配置。
+# 为什么读也要拦: 内容会进 LLM 上下文·再落进会话存档 · 收不回来。
+# 写 .env 早就是 GUARD 档了(write_file._is_guard_target) · 读它却一直是 AUTO · 这边补齐。
+_SECRET_NAMES = {
+    "provider_configs.json", "vision_config.json", "embed_config.json",
+    "feishu_config.json", "notification_config.json", "app_secrets.json",
+    "credentials.json", "token.json",
+}
+_SECRET_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".keystore", ".jks")
+
+
+def _is_secret_target(path: Path) -> bool:
+    name = path.name.lower()
+    if name == ".env" or name.startswith(".env") or name == ".netrc":
+        return True
+    if name in _SECRET_NAMES or name.startswith("id_rsa") or name.startswith("id_ed25519"):
+        return True
+    if name.endswith(_SECRET_SUFFIXES):
+        return True
+    return any(k in name for k in ("secret", "credential", "apikey", "api_key"))
+
+
+def _classify(args: dict) -> str:
+    """读普通文件照旧 AUTO · 凭据升 GUARD · 工程目录外升 CONFIRM。
+
+    盘外只升 CONFIRM 不是 GUARD: 本地 agent 本来就该能看用户桌面上那份 xlsx (BRO 拍板) ·
+    但"它正在读工程外的什么东西"该让用户看见一眼。
+    """
+    raw = args.get("path") or ""
+    if not raw:
+        return TIER_AUTO
+    try:
+        p = _resolve(raw)
+    except Exception:
+        return TIER_AUTO      # 路径都解析不了 · 交给 _run 去报错
+    if _is_secret_target(p):
+        return TIER_GUARD
+    try:
+        p.relative_to(ROOT)
+    except ValueError:
+        return TIER_CONFIRM
+    return TIER_AUTO
 
 
 def _is_valid_utf8_text(head: bytes) -> bool:
@@ -259,6 +310,7 @@ SPEC = ToolSpec(
     },
     run=_run,
     summarize=_summarize,
+    classify=_classify,
 )
 
 

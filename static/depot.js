@@ -407,6 +407,7 @@ function renderPlaybooks(data) {
       <span class="meta">工艺库 · 打法 ${st.total || items.length} 条${st.used ? ' · ' + st.used + ' 条用过' : ''}${iron.length ? ' · 铁律 ' + iron.length + ' 条' : ''}</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('playbooks')">刷新列表</button>
+      <button onclick="spawnQuickly('帮我看看手艺是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '手艺体检')" title="让 Daemonkey 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 检查重复</button>
     </div>`;
 
   // 工艺铁律区(Daemonkey 用失败换来的工程纪律 · 会注入它每一次的判断)
@@ -642,6 +643,375 @@ const SINK_LAYER_META = {
   history: { icon: '<i class="ri-history-fill"></i>',     label: '工程史', color: '#d6b8ff' },
   entry:   { icon: '<i class="ri-door-open-fill"></i>',   label: '入口', color: '#ffe28a' },
 };
+
+// ── 记忆星图 (0.9.6 · 三道闸治理全景 · 数据源 /dashboard/memory_map) ──
+let _mmChartSrc = null;
+let _mm3d = null;  // {renderer, scene, camera, controls, raf, flyTo}
+
+function _mmStatCard(icon, label, value, sub, color) {
+  // 单行数据带 · 变量名对齐皮肤系统 (--bg2/--border/--text/--dim) · sub 直接展示在框内 (2026-08-20 BRO: hover 才显示的信息很重要)
+  return `<div style="flex:1;min-width:0;padding:8px 6px;border:1px solid var(--border,#2a2a3a);border-radius:8px;background:var(--bg2,#16161f);text-align:center">` +
+    `<div style="font-size:15px;font-weight:600;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><i class="${icon}"></i> ${value}</div>` +
+    `<div style="font-size:10px;color:var(--text,#ccc);opacity:.85;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>` +
+    `<div style="font-size:9px;color:var(--dim);margin-top:2px;line-height:1.45">${sub}</div></div>`;
+}
+
+function memoryMapLoadingHTML() {
+  // ①A 多色星尘加载态 (2026-08-20 BRO 选定) · 尘色=星图簇配色 · 核心深浅肤适配
+  const light = (typeof _mmIsLight === 'function') && _mmIsLight();
+  const coreBg = light ? '#d4a017' : '#fff8e7';
+  const coreGlow = light ? 'rgba(212,160,23,.5)' : 'rgba(255,233,176,.4)';
+  const dust = [
+    ['-90px','-60px','5px','#8affd6','0s'], ['100px','-40px','3px','#b794f6','.3s'],
+    ['-70px','70px','4px','#f687b3','.6s'], ['90px','80px','2px','#ffd28a','.9s'],
+    ['0','-95px','4px','#8affd6','1.2s'], ['-105px','10px','3px','#b794f6','1.5s'],
+    ['60px','30px','2px','#f687b3','1.8s'], ['-40px','-20px','3px','#ffd28a','2.1s'],
+  ].map(d => `<div class="mmLdDust" style="--dx:${d[0]};--dy:${d[1]};width:${d[2]};height:${d[2]};background:${d[3]};box-shadow:0 0 6px ${d[3]};animation-delay:${d[4]}"></div>`).join('');
+  return `<style>
+@keyframes mmLdConverge { 0%{transform:translate(var(--dx),var(--dy)) scale(.4);opacity:0} 25%{opacity:1} 80%{transform:translate(0,0) scale(1);opacity:1} 100%{transform:translate(0,0) scale(1.6);opacity:0} }
+@keyframes mmLdCore { 0%,72%,100%{transform:scale(1)} 86%{transform:scale(1.6)} }
+@keyframes mmLdBlink { 0%,100%{opacity:.4} 50%{opacity:1} }
+.mmLdDust { position:absolute; border-radius:50%; animation:mmLdConverge 2.6s cubic-bezier(.45,.05,.55,.95) infinite; }
+</style>
+<div style="display:flex;flex-direction:column;min-height:100%">
+  <div class="dash-head"><h2><i class="ri-sparkling-2-fill"></i> 记忆星图 · 三道闸治理</h2></div>
+  <div style="position:relative;flex:1 1 auto;min-height:400px;margin:10px 0 4px;border:1px solid var(--border,#2a2a3a);border-radius:10px;overflow:hidden;background:var(--bg2,#05060d);display:flex;align-items:center;justify-content:center">
+    ${dust}
+    <div style="width:10px;height:10px;border-radius:50%;background:${coreBg};box-shadow:0 0 20px ${coreBg},0 0 40px ${coreGlow};animation:mmLdCore 2.6s ease-in-out infinite"></div>
+    <div style="position:absolute;bottom:14px;font-size:11px;color:var(--dim);letter-spacing:2px;animation:mmLdBlink 1.8s ease-in-out infinite">正在汇聚记忆星尘</div>
+  </div>
+</div>`;
+}
+
+function renderMemoryMap(data) {
+  if (data.error) {
+    $dashView.innerHTML = `<div class="dash-head"><h2><i class="ri-sparkling-2-fill"></i> 记忆星图</h2></div>
+      <div class="dash-empty">${escHtml(data.error)}</div>`;
+    return;
+  }
+  const pts = (data.constellation && data.constellation.points) || [];
+  const edges = (data.constellation && data.constellation.edges) || [];
+  const nb = data.notebook || {};
+  const hg = data.hygiene || {};
+  const fn = data.funnel || {};
+  const nbPct = nb.full_chars ? Math.round(nb.core_chars / nb.full_chars * 100) : 0;
+  const fnPct = fn.rate != null ? Math.round(fn.rate * 100) : null;
+
+  let html = `<div style="display:flex;flex-direction:column;min-height:100%">`;
+  html += `<div class="dash-head"><h2><i class="ri-sparkling-2-fill"></i> 记忆星图 · 三道闸治理</h2></div>`;
+  html += `<div style="display:flex;gap:6px;margin:10px 0">` +
+    _mmStatCard('ri-database-2-fill', '记忆总量', (data.total_chunks || 0).toLocaleString(), '条 chunk · FTS5 索引', '#8affd6') +
+    _mmStatCard('ri-shield-check-fill', '写入闸·卫生', 'v' + (hg.version || '?'), `残余噪音 ${hg.remaining_noise ?? '?'} 条`, '#6ed27a') +
+    _mmStatCard('ri-stack-fill', '分层闸·画像', '-' + (100 - nbPct) + '%', `每轮 ${(nb.full_chars || 0).toLocaleString()}→${(nb.core_chars || 0).toLocaleString()} 字符`, '#ffd28a') +
+    _mmStatCard('ri-filter-3-fill', '重排闸·漏斗', fnPct != null ? fnPct + '%' : '—', `递送 ${fn.delivered ?? '?'} · 取用 ${fn.loaded ?? '?'} 门`, '#f687b3') +
+    `</div>`;
+  html += `<div style="padding:2px 2px 0;color:var(--dim);font-size:11px;line-height:1.6"><i class="ri-sparkling-2-fill"></i> ${pts.length} 门手艺 · ${data.constellation && data.constellation.clusters || 0} 个星系 · 亮线 = 语义相似 ≥0.80 · 亮点 = 被取用过 <a href="javascript:void(0)" onclick="spawnQuickly('帮我看看手艺是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '手艺体检')" style="color:var(--accent,#8a7dff);text-decoration:none;margin-left:6px;white-space:nowrap"><i class="ri-search-eye-line"></i> 手艺体检</a></div>`;
+  // 星图框 flex:1 弹性填满剩余空间 (2026-08-20 BRO: 折叠条贴底 · 展开了整栏滚动 · 不写死高度)
+  html += `<div style="position:relative;flex:1 1 auto;min-height:400px;margin:6px 0 4px;border:1px solid var(--border,#2a2a3a);border-radius:10px;overflow:hidden;background:var(--bg2,#05060d)">` +
+    `<div id="mmStar3d" style="position:absolute;inset:0"></div>` +
+    `<div id="mmStarTip" style="display:none;position:absolute;z-index:5;pointer-events:none;background:var(--bg2,rgba(10,12,24,.92));border:1px solid var(--border,rgba(138,255,214,.35));color:var(--text,#dde);border-radius:8px;padding:6px 9px;font-size:11px;max-width:230px;line-height:1.5"></div>` +
+    `<div style="position:absolute;left:8px;bottom:6px;z-index:4;font-size:10px;color:var(--dim,#556);pointer-events:none">拖拽旋转 · 滚轮缩放 · 点星系名聚焦 · 双击回全景</div>` +
+    `</div>`;
+  // 记忆构成默认折叠 (2026-08-20 BRO: 高度让给星图 · 展开后整栏滚动) · 展开才懒渲染 (display:none 里 Chart 拿到 0 宽)
+  _mmSrcData = data.sources || [];
+  html += `<div style="cursor:pointer;padding:8px 2px 0;color:var(--dim);font-size:12px;user-select:none;flex:0 0 auto" onclick="_mmToggleSrc()">` +
+    `<i id="mmSrcIcon" class="ri-arrow-right-s-fill"></i> 记忆构成 · 各信源 chunk 分布</div>`;
+  html += `<div id="mmSrcBody" style="display:none;flex:0 0 auto"><div style="position:relative;height:260px;margin:6px 0 10px"><canvas id="mmChartSrc"></canvas></div></div>`;
+  html += `</div>`;
+  $dashView.innerHTML = html;
+
+  // 3D 星图 (Three.js · 星系化 · 2026-08-20 BRO 拍板)
+  _whenThreeReady(() => {
+    const box = document.getElementById('mmStar3d');
+    if (!box || !pts.length) return;
+    if (!_mmWebglOk()) {
+      // WebGL 不可用 (e.g. Cursor 内嵌 webview 崩溃循环事故 · 2026-08-20) → 明示回退, 不硬起
+      box.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#667;font-size:12px;text-align:center;padding:0 20px">当前环境不支持 WebGL · 请在你自己的浏览器打开 ${location.origin}/ui 查看 3D 星图</div>`;
+      return;
+    }
+    _mmRenderStar3D(box, pts, edges, (data.constellation && data.constellation.cluster_names) || {});
+    _mmLastStar = { pts, edges, names: (data.constellation && data.constellation.cluster_names) || {} };
+    _mmWatchTheme();
+  });
+}
+
+// 换肤跟随: body class 变 → 星图在显示就按新皮肤重渲染 (浅色↔深色 blending/配色不同 · 不重渲会违和)
+let _mmLastStar = null;
+let _mmThemeObs = null;
+function _mmWatchTheme() {
+  if (_mmThemeObs) return;
+  let lastCls = document.body.className;
+  _mmThemeObs = new MutationObserver(() => {
+    if (document.body.className === lastCls) return;
+    lastCls = document.body.className;
+    const box = document.getElementById('mmStar3d');
+    if (box && _mm3d && _mmLastStar) _mmRenderStar3D(box, _mmLastStar.pts, _mmLastStar.edges, _mmLastStar.names);
+  });
+  _mmThemeObs.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+}
+
+// 记忆构成折叠区 · 展开时懒渲染 (display:none 里 Chart 初始化拿 0 宽 · 必须可见才画)
+let _mmSrcData = [];
+function _mmToggleSrc() {
+  const body = document.getElementById('mmSrcBody');
+  const icon = document.getElementById('mmSrcIcon');
+  if (!body) return;
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  if (icon) icon.className = open ? 'ri-arrow-down-s-fill' : 'ri-arrow-right-s-fill';
+  if (open && !body.dataset.rendered) {
+    body.dataset.rendered = '1';
+    _whenChartReady(() => {
+      const c2 = document.getElementById('mmChartSrc');
+      if (!c2 || !_mmSrcData.length) return;
+      // 信源分布横向柱状 (session 量级碾压 → 对数轴)
+      const top = _mmSrcData.slice(0, 8);
+      const restN = _mmSrcData.slice(8).reduce((a, s) => a + s.count, 0);
+      const labels = top.map(s => s.source).concat(restN ? ['其他 ×' + (_mmSrcData.length - 8)] : []);
+      const vals = top.map(s => s.count).concat(restN ? [restN] : []);
+      if (_mmChartSrc) _mmChartSrc.destroy();
+      _mmChartSrc = new Chart(c2.getContext('2d'), {
+        type: 'bar',
+        data: { labels, datasets: [{ data: vals, backgroundColor: 'rgba(159,122,234,0.5)', borderRadius: 3 }] },
+        options: {
+          indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { type: 'logarithmic', ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.06)' } }, y: { ticks: { color: '#aaa' }, grid: { display: false } } },
+        },
+      });
+    });
+  }
+}
+
+function _mmWebglOk() {
+  try {
+    const c = document.createElement('canvas');
+    return !!(window.WebGLRenderingContext && (c.getContext('webgl') || c.getContext('experimental-webgl')));
+  } catch (e) { return false; }
+}
+
+// 浅色皮肤判定 (皮肤系统适配 · 2026-08-20): 白天/护眼暖黄/粉白 下星图换浅色版
+// (additive 混合在浅底=洗白 · 必须换 normal blending + 深色星点)
+function _mmIsLight() {
+  return /theme-light|theme-sepia|theme-pink-white/.test(document.body.className || '');
+}
+
+// 相机自适应: 按容器宽高比 + 点云包围球算距离 (2026-08-20 · 2K 屏实测:
+// 竖长容器 340×600 里固定距离 = 水平贴边裁剪 + 垂直留白 · 窄方向视野是瓶颈)
+function _mmFitDist(camera, pts, W, H) {
+  let maxR = 0.5;
+  pts.forEach(p => { const r = Math.hypot(p.x, p.y, p.z || 0); if (r > maxR) maxR = r; });
+  const fovV = camera.fov * Math.PI / 180;
+  const fovH = 2 * Math.atan(Math.tan(fovV / 2) * (W / H));
+  return maxR / Math.tan(Math.min(fovV, fovH) / 2) * 1.15;  // 15% 呼吸边距
+}
+
+// ── 3D 星图 (Three.js r128 · 星系隐喻: 簇=星系 · 点星系名聚焦 · 双击回全景) ──
+function _whenThreeReady(cb, _tries) {
+  if (typeof THREE !== 'undefined' && THREE.OrbitControls) { cb(); return; }
+  _tries = _tries || 0;
+  if (_tries > 60) return;  // ~6s 还没来 = 脚本真没加载到 · 放弃
+  setTimeout(() => _whenThreeReady(cb, _tries + 1), 100);
+}
+
+function _mmStarTexture() {
+  // 径向渐变发光圆 · 所有星点共用一张 texture
+  // 核心 18% 实心 · 40% 处急降到 0.25 · 光晕收敛不晃眼 (2026-08-20 BRO 实测 additive 叠加过曝)
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.18, 'rgba(255,255,255,.9)');
+  g.addColorStop(0.4, 'rgba(255,255,255,.22)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+function _mmDispose3d() {
+  if (!_mm3d) return;
+  cancelAnimationFrame(_mm3d.raf);
+  if (_mm3d.ro) _mm3d.ro.disconnect();
+  _mm3d.controls.dispose();
+  _mm3d.renderer.dispose();
+  const el = _mm3d.renderer.domElement;
+  if (el && el.parentNode) el.parentNode.removeChild(el);
+  _mm3d = null;
+}
+
+function _mmRenderStar3D(box, pts, edges, clusterNames) {
+  _mmDispose3d();
+  const light = _mmIsLight();
+  let W = box.clientWidth || 340, H = box.clientHeight || 520;
+  const scene = new THREE.Scene();
+  // 背景跟皮肤面板色走 (浅肤=浅底 · 深肤=宇宙黑) · 变量名对齐皮肤系统 --bg2
+  const cssPanel = (getComputedStyle(document.body).getPropertyValue('--bg2') || '').trim();
+  scene.background = new THREE.Color(light ? (cssPanel || '#f5f3ee') : 0x05060d);
+  const camera = new THREE.PerspectiveCamera(55, W / H, 0.01, 100);
+  const fitDist = _mmFitDist(camera, pts, W, H);
+  camera.position.copy(new THREE.Vector3(0.55, 0.42, 1).normalize().multiplyScalar(fitDist));
+  camera.lookAt(0, 0, 0);
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'low-power' });
+  } catch (e) {
+    box.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#667;font-size:12px">WebGL 初始化失败 · 请在你自己的浏览器打开查看</div>`;
+    return;
+  }
+  // 跟随 devicePixelRatio (cap 2): 2K/4K 屏 + Windows 缩放下星点锐利 · cap 2 防 4K 全量渲染负载
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(W, H);
+  box.appendChild(renderer.domElement);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true; controls.dampingFactor = 0.08;
+  controls.minDistance = 0.3; controls.maxDistance = fitDist * 2.5;
+
+  // 远星尘背景 (球壳随机 · 压扁 y 呈银盘感)
+  const dustN = 400, dustPos = new Float32Array(dustN * 3);
+  for (let i = 0; i < dustN; i++) {
+    const r = 3.5 + Math.random() * 4, th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+    dustPos[i * 3] = r * Math.sin(ph) * Math.cos(th);
+    dustPos[i * 3 + 1] = r * Math.cos(ph) * 0.6;
+    dustPos[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th);
+  }
+  const dustGeo = new THREE.BufferGeometry();
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+  scene.add(new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: light ? 0xa8b0c4 : 0x4a5a7a, size: 0.03, transparent: true, opacity: light ? 0.7 : 1 })));
+
+  // 星点 sprite: 簇 → 黄金角色相 · 孤星冷灰白 · 被取用的更亮
+  // 浅肤: normal blending + 深色星点 (additive 在浅底会洗白) · 深肤: additive 发光
+  const blend = light ? THREE.NormalBlending : THREE.AdditiveBlending;
+  const starTex = _mmStarTexture();
+  const hueOf = cid => (cid * 137.5) % 360;
+  const colorOf = p => {
+    if (p.cluster < 0) return new THREE.Color().setHSL(0.58, light ? 0.35 : 0.15, light ? 0.5 : (p.loaded ? 0.8 : 0.55));
+    return new THREE.Color().setHSL(hueOf(p.cluster) / 360, light ? 0.7 : (p.loaded ? 0.85 : 0.5), light ? (p.loaded ? 0.42 : 0.55) : (p.loaded ? 0.72 : 0.58));
+  };
+  const sizeOfRaw = p => Math.max(0.045, Math.min(0.13, Math.sqrt(p.chars || 100) / 220));
+  // 密度自适应 (BRO: 信息越多自动变小保证显示全面): 点越多单点越小 · 68 点 ×0.86 · 200 点 ×0.55
+  const densityScale = Math.max(0.55, Math.min(1.1, Math.sqrt(50 / pts.length)));
+  const sizeOf = p => sizeOfRaw(p) * densityScale;
+  const sprites = [];
+  pts.forEach((p, i) => {
+    const mat = new THREE.SpriteMaterial({ map: starTex, color: colorOf(p), transparent: true, opacity: p.loaded ? 0.95 : 0.65, blending: blend, depthWrite: false });
+    const sp = new THREE.Sprite(mat);
+    const s = sizeOf(p);
+    sp.scale.set(s, s, 1);
+    sp.position.set(p.x, p.y, p.z || 0);
+    sp.userData.idx = i;
+    scene.add(sp); sprites.push(sp);
+  });
+
+  // 连边 (顶点色 · additive · 相似度越高越亮)
+  if (edges.length) {
+    const pos = [], col = [];
+    for (const [i, j, sim] of edges) {
+      const a = pts[i], b = pts[j];
+      pos.push(a.x, a.y, a.z || 0, b.x, b.y, b.z || 0);
+      const ca = colorOf(a), cb = colorOf(b), k = 0.25 + ((sim || 0.8) - 0.8) * 3;
+      col.push(ca.r * k, ca.g * k, ca.b * k, cb.r * k, cb.g * k, cb.b * k);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: light ? 0.5 : 0.75, blending: blend, depthWrite: false })));
+  }
+
+  // 簇中心 + 星系标签 (HTML overlay · 每帧投影)
+  const centers = {};
+  pts.forEach(p => {
+    if (p.cluster < 0) return;
+    const c = centers[p.cluster] = centers[p.cluster] || { x: 0, y: 0, z: 0, n: 0 };
+    c.x += p.x; c.y += p.y; c.z += (p.z || 0); c.n++;
+  });
+  const labelLayer = document.createElement('div');
+  labelLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden';
+  box.appendChild(labelLayer);
+  const labels = [];
+  Object.entries(centers).forEach(([cid, c]) => {
+    const center = new THREE.Vector3(c.x / c.n, c.y / c.n, c.z / c.n);
+    const div = document.createElement('div');
+    div.textContent = clusterNames[cid] || ('星系 ' + cid);
+    div.style.cssText = `position:absolute;transform:translate(-50%,-150%);cursor:pointer;pointer-events:auto;font-size:11px;font-weight:600;letter-spacing:1px;color:hsl(${hueOf(+cid)},${light ? '70%,42%' : '85%,78%'});text-shadow:0 0 8px hsla(${hueOf(+cid)},85%,${light ? '45%,.45' : '65%,.9'});white-space:nowrap;user-select:none`;
+    div.title = '点击聚焦这个星系';
+    div.onclick = () => { if (_mm3d) _mm3d.flyTo = { target: center.clone(), dist: 1.1 }; };
+    labelLayer.appendChild(div);
+    labels.push({ div, center });
+  });
+
+  // hover tooltip (raycaster 对 sprite)
+  const tip = document.getElementById('mmStarTip');
+  const ray = new THREE.Raycaster();
+  const mouse = new THREE.Vector2(-2, -2);
+  renderer.domElement.addEventListener('pointermove', e => {
+    const r = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+    mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+  });
+  renderer.domElement.addEventListener('pointerleave', () => { mouse.set(-2, -2); if (tip) tip.style.display = 'none'; });
+  renderer.domElement.addEventListener('dblclick', () => { if (_mm3d) _mm3d.flyTo = { target: new THREE.Vector3(0, 0, 0), dist: fitDist }; });
+
+  let hovered = -1;
+  let frame = 0;
+  // 面板宽度随窗口/系统缩放变化 · canvas + 相机 + 标签投影一起跟上
+  const ro = new ResizeObserver(() => {
+    const w = box.clientWidth, h = box.clientHeight;
+    if (!w || !h) return;
+    W = w; H = h;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  });
+  ro.observe(box);
+  function tick() {
+    const st = _mm3d; if (!st) return;
+    st.raf = requestAnimationFrame(tick);
+    frame++;
+    if (st.flyTo) {
+      const dir = camera.position.clone().sub(controls.target);
+      dir.normalize();
+      const want = st.flyTo.target.clone().add(dir.multiplyScalar(st.flyTo.dist));
+      camera.position.lerp(want, 0.12);
+      controls.target.lerp(st.flyTo.target, 0.12);
+      if (camera.position.distanceTo(want) < 0.02) st.flyTo = null;
+    }
+    controls.update();
+    // raycast 每 3 帧一次 · hover 精度无感 · 负载省 2/3
+    if (frame % 3 === 0) {
+      ray.setFromCamera(mouse, camera);
+      const hits = ray.intersectObjects(sprites);
+      const h = hits.length ? hits[0].object.userData.idx : -1;
+      if (h !== hovered) {
+        if (hovered >= 0) { const s = sizeOf(pts[hovered]); sprites[hovered].scale.set(s, s, 1); }
+        hovered = h;
+        if (hovered >= 0) { const s = sizeOf(pts[hovered]) * 1.5; sprites[hovered].scale.set(s, s, 1); }
+        if (tip) {
+          if (hovered >= 0) {
+            const p = pts[hovered];
+            const gname = p.cluster >= 0 ? (clusterNames[p.cluster] || '星系 ' + p.cluster) : '孤星';
+            tip.innerHTML = `<div style="font-weight:600;margin-bottom:2px">${escHtml(p.id)}</div><div style="color:var(--dim,#9aa)">${(p.chars || 0).toLocaleString()} 字符 · ${p.loaded ? '被取用过' : '未取用'} · ${escHtml(gname)}</div>`;
+            tip.style.display = 'block';
+          } else tip.style.display = 'none';
+        }
+      }
+    }
+    if (tip && hovered >= 0) {
+      const v = sprites[hovered].position.clone().project(camera);
+      tip.style.left = ((v.x + 1) / 2 * W + 10) + 'px';
+      tip.style.top = ((-v.y + 1) / 2 * H - 10) + 'px';
+    }
+    for (const { div, center } of labels) {
+      const v = center.clone().project(camera);
+      if (v.z > 1) { div.style.display = 'none'; continue; }
+      div.style.display = 'block';
+      div.style.left = ((v.x + 1) / 2 * W) + 'px';
+      div.style.top = ((-v.y + 1) / 2 * H) + 'px';
+    }
+    renderer.render(scene, camera);
+  }
+  _mm3d = { renderer, scene, camera, controls, raf: 0, flyTo: null, ro };
+  tick();
+}
 
 function renderSinks(data) {
   if (data.error) {

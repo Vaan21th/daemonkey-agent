@@ -46,9 +46,19 @@ _LOCK = threading.Lock()
 
 
 def _require_loopback(request: Request) -> None:
+    """只放本机进来 —— 来源 IP 和 Host 头都得是本机。
+
+    光看 client.host 不够: 本机隧道 (cloudflared/frp) 转发进来的公网流量 · 以及解析到
+    127.0.0.1 的恶意域名 (DNS 重绑定) · client.host 都恒为 127.0.0.1。 这些流量的 Host
+    头是公网域名而非本机名 · 所以要跟 loopback 鉴权豁免用同一把尺子联合判断 ——
+    否则写 API key 的 /save-key 就能被外面调到。
+    """
     host = (request.client.host if request and request.client else "") or ""
     if host.strip().lower() not in _LOOPBACK_HOSTS:
         raise HTTPException(403, "onboarding 仅限本机访问")
+    from api_routes._deps import _host_is_local   # 复用同一份实现 · 不再分叉一套
+    if not _host_is_local(request):
+        raise HTTPException(403, "onboarding 仅限本机访问 (Host 头不是本机名)")
 
 
 # ──────────────────────────── .env 读写 ────────────────────────────

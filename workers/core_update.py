@@ -26,9 +26,12 @@ workers/core_update.py
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Optional
 
+from workers import core_fingerprint
 from workers.git_ops import ROOT, _ensure_identity, _has_git, _lock, _run_git, checkpoint_commit
+from workers.kernel_takeover import load as load_takeover
 
 MANIFEST_PATH = ROOT / "core_manifest.json"
 
@@ -83,26 +86,41 @@ def kernel_files(manifest: Optional[dict] = None) -> list[str]:
 
 
 def dirty_kernel_files(manifest: Optional[dict] = None) -> list[str]:
-    """白名单文件里 · 当前工作区有未提交改动的 (git status --porcelain)。
+    """白名单文件里 · 用户改过的。
 
     给 update_core 用:升级前提醒「这些内核文件你本地改过 · 覆盖前会先 checkpoint ·
     可 git revert 找回」——对应「用户最爱改前端 · 别被无声覆盖」那条护栏(卷七十四续十八)。
+
+    0.9.6 起两条腿走 —— 基线指纹为主·git status 补它管不到的部分。
+
+    为什么加指纹 (git status 的死角):
+      git status 只看【工作区 vs 最后一次 commit】· 而 commit 随时会发生 —— daemon 自己的
+      checkpoint、用户手动 commit、别的工具落袋。 任何一次都让 status 变干净 →
+      下次升级认为「他没改过」→ 不备份·直接覆盖·改动只剩在 git 历史里。
+      指纹比的是【实际内容 vs 官方内容】· 跟 commit 了几次无关。
+
+    为什么 git status 不能扔 (指纹也有管不到的):
+      指纹只对【它记过的文件】有发言权。 基线比白名单旧、文件刚扩进白名单、或整台机器
+      还没基线时·那些文件在指纹眼里是空白 —— 当成"没改过"就等于保护倒退。 所以基线
+      覆盖不到的部分继续走 git status: 两者取并集·各补各的盲区。
     """
-    if not _has_git():
-        return []
     files = kernel_files(manifest)
     if not files:
         return []
-    with _lock("core_update:dirty"):
-        rc, out, _ = _run_git(["status", "--porcelain", "--"] + files, timeout=15)
-    if rc != 0:
-        return []
-    dirty: list[str] = []
-    for line in out.splitlines():
-        # porcelain 行: "XY <path>" · 路径从第 4 字符起 · 带引号的去掉
-        p = line[3:].strip().strip('"').replace("\\", "/")
-        if p and p not in dirty:
-            dirty.append(p)
+
+    baseline = (core_fingerprint.load().get("files") or {})
+    dirty: list[str] = core_fingerprint.modified_files(files) if baseline else []
+
+    uncovered = [f for f in files if f not in baseline]
+    if uncovered and _has_git():
+        with _lock("core_update:dirty"):
+            rc, out, _ = _run_git(["status", "--porcelain", "--"] + uncovered, timeout=15)
+        if rc == 0:
+            for line in out.splitlines():
+                # porcelain 行: "XY <path>" · 路径从第 4 字符起 · 带引号的去掉
+                p = line[3:].strip().strip('"').replace("\\", "/")
+                if p and p not in dirty:
+                    dirty.append(p)
     return dirty
 
 
@@ -228,27 +246,48 @@ def apply_update(remote: str, branch: str = "master", base: str = "HEAD",
     """
     out: dict = {"ok": False, "updated": [], "added": [], "skipped_deleted": [],
                  "checkpoint": "", "commit_sha": None, "note": "", "passes": 0,
-                 "user_overrides": []}  # 0.8.4 · 用户魔改备份清单
+                 "user_overrides": [],      # 0.8.4 · 用户魔改备份清单
+                 "skipped_takeover": []}    # 0.9.6 · 用户接管 · 官方有新版但没覆盖
     if not _has_git():
         out["note"] = "git 未 init · 无法更新"
         return out
 
-    # 0.8.4 · 升级保护层 · checkpoint 前记下用户魔改 (checkpoint 会把工作区落盘成 commit·
-    #   之后 git status 就干净了·所以必须在这之前检测)
-    user_dirty = dirty_kernel_files()
+    # ① fetch 必须最先跑 —— 只有拿到中心库那份清单 · 才知道这次把白名单扩成了什么样。
+    #    (独立拿锁放锁 · 后面 checkpoint 复用 git_ops 自己拿锁 · 嵌套会死锁)
+    with _lock("core_update:fetch"):
+        _ensure_identity()
+        ok, msg = _fetch_locked(remote)
+        remote_wl = _remote_kernel_files_locked(remote, branch) if ok else []
+    if not ok:
+        out["note"] = f"fetch 失败 · {msg}"
+        return out
 
-    # ① 落袋为安: 覆盖前先把工作区所有改动 commit (复用 git_ops · 它自己拿放锁)。
+    # ② 升级保护层 · checkpoint 前记下用户魔改 (checkpoint 会把工作区落盘成 commit·
+    #    之后 git status 就干净了·所以必须在这之前检测)。
+    #    范围 = 本地清单 ∪ 远端清单: 0.9.6 前只查本地清单 · 于是"这次才纳入白名单的文件"
+    #    在检测时还是隐形的 → 不备份不提示 → 补拉第二轮照新清单把它覆盖掉 · 用户改动无声消失。
+    #    每次扩白名单的版本都会踩·而基线版本一次就扩了 12 个 (场景 E 守这条)。
+    union = sorted(set(kernel_files()) | set(remote_wl))
+    user_dirty = dirty_kernel_files({"kernel": {"_union": union}})
+
+    # ③ 落袋为安: 覆盖前先把工作区所有改动 commit (复用 git_ops · 它自己拿放锁)。
     #    任何后续覆盖都能 git revert 找回 · 这是"绝不丢用户活儿"的物理保证。
     cp = checkpoint_commit(f"update_core 前存档 · 拉 {remote}/{branch} 内核")
     out["checkpoint"] = cp.get("note", "")
 
-    # ② 抢一次锁 · fetch → 拉第一轮 →(必要时)拉第二轮 (不嵌套 checkpoint · 锁不可重入)
+    # ④ 抢一次锁 · 备份 → 拉第一轮 →(必要时)拉第二轮 (不嵌套 checkpoint · 锁不可重入)
     with _lock("core_update:apply"):
         _ensure_identity()  # 工作区本来干净时 checkpoint 提前返回没设身份 · 这里兜底
-        ok, msg = _fetch_locked(remote)
-        if not ok:
-            out["note"] = f"fetch 失败 · {msg}"
-            return out
+
+        # 0.9.6 修 · 备份必须在 checkout 之前:_backup_user_overrides 读的是磁盘【当下】内容 ·
+        #   原先放在 pull 之后 · 那时磁盘已被 checkout 成官方版 · .bak 里存的就是官方新版 ·
+        #   于是 merge_user_override 拿 .bak 当"你的版本"跟磁盘对比 → 永远输出"两边完全一致"。
+        #   0.8.5~0.9.5 的"合并我的改动"一直是这个哑火状态。
+        #   此刻还不知道官方会覆盖哪些 · 所以把全部 user_dirty 都备份(多备的无害) ·
+        #   冲突判定挪到两轮 pull 之后按累积结果算。
+        #   已接管的文件不可能被覆盖 → 不需要保护 · 也不该留备份污染合并清单。
+        backup_targets = [f for f in user_dirty if f not in set(load_takeover())]
+        pre_backups = _backup_user_overrides(backup_targets) if backup_targets else {}
 
         p1 = _pull_pass_locked(remote, branch, base, do_commit)
         if not p1["ok"]:
@@ -257,24 +296,18 @@ def apply_update(remote: str, branch: str = "master", base: str = "HEAD",
         out["updated"] = list(p1["updated"])
         out["added"] = list(p1["added"])
         out["skipped_deleted"] = list(p1["deleted"])
+        out["skipped_takeover"] = list(p1["skipped_takeover"])
         out["commit_sha"] = p1["commit_sha"]
         out["note"] = p1["note"]
         out["passes"] = 1
 
-        # 0.8.4 · 升级保护层 · 冲突候选 = 用户魔改 ∩ 官方覆盖 → 物理备份用户版
-        covered = list(p1["updated"]) + list(p1["added"])
-        conflicts = [f for f in user_dirty if f in covered]
-        if conflicts:
-            backups = _backup_user_overrides(conflicts)
-            out["user_overrides"] = [
-                {"file": f, "backup": backups.get(f, "")} for f in conflicts
-            ]
-
-        # ③ 本轮拉到了 core_manifest.json → 白名单可能新增文件 · 用新清单从 HEAD 再补一轮。
+        # ⑤ 本轮拉到了 core_manifest.json → 白名单可能新增文件 · 用新清单从 HEAD 再补一轮。
         #    跑了第二轮就代表"新清单已完整生效"· passes=2 · 无论第二轮有没有捞到新文件。
         if p1["pulled_manifest"]:
             p2 = _pull_pass_locked(remote, branch, "HEAD", do_commit)
             out["passes"] = 2
+            out["skipped_takeover"] += [f for f in p2["skipped_takeover"]
+                                        if f not in out["skipped_takeover"]]
             if p2["ok"] and (p2["updated"] or p2["added"]):
                 out["updated"] += [f for f in p2["updated"] if f not in out["updated"]]
                 out["added"] += [f for f in p2["added"] if f not in out["added"]]
@@ -284,13 +317,50 @@ def apply_update(remote: str, branch: str = "master", base: str = "HEAD",
                     out["commit_sha"] = p2["commit_sha"]
                 out["note"] = "清单更新后自动补拉了一轮新增内核文件"
 
+        # 0.8.4 升级保护层 · 冲突 = 用户魔改 ∩ 官方实际覆盖 · 含第二轮补拉(原先只算第一轮 ·
+        #   靠新清单才拉进来的文件即使被覆盖也不会提示用户)
+        conflicts = [f for f in user_dirty if f in (out["updated"] + out["added"])]
+        if conflicts:
+            out["user_overrides"] = [
+                {"file": f, "backup": pre_backups.get(f, "")} for f in conflicts
+            ]
+        # 官方这次没覆盖的 · 备份是多余的:留着会让 merge_user_override 列出一堆"两边完全一致"
+        #   的假条目(.bak 与磁盘同源) —— 那正是备份时序 bug 最迷惑人的症状 · 别自己再造一遍。
+        for _f, _p in pre_backups.items():
+            if _f not in conflicts:
+                try:
+                    Path(_p).unlink()
+                except Exception:
+                    pass
+
         if not out["updated"] and not out["added"]:
-            out["note"] = "内核已是最新 · 没有白名单文件需要更新"
+            out["note"] = (
+                "官方有新版 · 但全部落在你接管的文件上 · 本次没动任何文件"
+                if out["skipped_takeover"]
+                else "内核已是最新 · 没有白名单文件需要更新")
         out["ok"] = True
     return out
 
 
 # ── 不加锁内部实现 (调用方必须已持锁) ───────────────────────────────────
+
+def _remote_kernel_files_locked(remote: str, branch: str) -> list[str]:
+    """中心库那份清单里的白名单 · 拿不到返空 (调用方须已持锁且已 fetch)。
+
+    为什么要读远端那份: 「用户改过哪些内核文件」是照【本地】清单查的·而补拉第二轮
+    照【新】清单跑。 中心库扩白名单时·新纳入的文件在本地清单里还不存在 → 查不到 →
+    不备份 → 第二轮照样覆盖它。 取本地 ∪ 远端·把这道缝焊上。
+    """
+    if not _has_git() or not remote:
+        return []
+    rc, out, _ = _run_git(["show", f"{remote}/{branch}:core_manifest.json"], timeout=15)
+    if rc != 0 or not out.strip():
+        return []
+    try:
+        return kernel_files(json.loads(out.lstrip("\ufeff")))
+    except Exception:
+        return []
+
 
 def _fetch_locked(remote: str, timeout: int = 90) -> tuple[bool, str]:
     rc, out, err = _run_git(["fetch", remote, "--prune"], timeout=timeout)
@@ -334,13 +404,22 @@ def _pull_pass_locked(remote: str, branch: str, base: str, do_commit: bool) -> d
     返 {"ok","updated","added","deleted","commit_sha","note","pulled_manifest"}。
     """
     res: dict = {"ok": False, "updated": [], "added": [], "deleted": [],
-                 "commit_sha": None, "note": "", "pulled_manifest": False}
+                 "commit_sha": None, "note": "", "pulled_manifest": False,
+                 "skipped_takeover": []}
     d = _diff_locked(remote, branch, base)
     if d.get("error"):
         res["note"] = f"diff 失败 · {d['error']}"
         return res
     to_pull = list(d["changed"]) + list(d["added"])
     res["deleted"] = d["deleted"]
+
+    # 用户接管的文件:官方版根本不进 checkout 的参数表 → 物理上不可能被覆盖(与备份/合并那条
+    #   事后补救路线互补)。 两轮 pull 共用本函数 · 所以这一处过滤对补拉那轮同样生效。
+    taken = set(load_takeover())
+    if taken:
+        res["skipped_takeover"] = [f for f in to_pull if f in taken]
+        to_pull = [f for f in to_pull if f not in taken]
+
     if not to_pull:
         res["ok"] = True
         return res
@@ -349,8 +428,10 @@ def _pull_pass_locked(remote: str, branch: str, base: str, do_commit: bool) -> d
     if co_rc != 0:
         res["note"] = f"checkout 覆盖失败 · {co_err.strip()[:200]} · 没有任何文件被改"
         return res
-    res["updated"] = d["changed"]
-    res["added"] = d["added"]
+    # 只报真拉了的 · 被接管而跳过的不能算进 updated/added(否则报告说"更新了"而磁盘没动)
+    pulled = set(to_pull)
+    res["updated"] = [f for f in d["changed"] if f in pulled]
+    res["added"] = [f for f in d["added"] if f in pulled]
     res["pulled_manifest"] = "core_manifest.json" in to_pull
     if do_commit:
         _run_git(["add", "--"] + to_pull, timeout=20)

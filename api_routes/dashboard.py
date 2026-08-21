@@ -1044,6 +1044,142 @@ async def dashboard_billing(
     }
 
 # ──────────────────────────────────────────────────────────
+# 建议操作 (0.9.6 · BRO: 看板太分散 · 顶部放条件触发的行动建议)
+# 必须在 /dashboard/{domain} catch-all 之前注册 · 否则被吃掉
+# ──────────────────────────────────────────────────────────
+
+
+@router.get("/dashboard/suggestions")
+def dashboard_suggestions(authorization: Optional[str] = Header(None)):
+    """条件触发的行动建议 · 每条 = 条件 + 文案 + spawnQuickly prompt。
+
+    规则是硬编码的确定性检查 (mtime/计数/版本) · 不调 LLM · 毫秒级。
+    prompt 为空 = 纯提示 (动作不在对话里 · 比如重启 daemon)。
+    """
+    check_auth(authorization)
+    import sqlite3
+    from datetime import datetime, timezone
+
+    root = Path(__file__).resolve().parent.parent
+    now = datetime.now(timezone.utc)
+    out = []
+
+    def _days_since(p: Path) -> float | None:
+        """文件/目录里最新文件的距今天数 · 不存在返回 None。"""
+        try:
+            if p.is_dir():
+                files = [f for f in p.rglob("*") if f.is_file()]
+                if not files:
+                    return None
+                mt = max(f.stat().st_mtime for f in files)
+            else:
+                if not p.exists():
+                    return None
+                mt = p.stat().st_mtime
+            return (now.timestamp() - mt) / 86400
+        except Exception:
+            return None
+
+    # 1. 月度复盘: reviews 空 或最新 >25 天
+    d = _days_since(root / "data" / "reviews")
+    if d is None or d > 25:
+        out.append({
+            "id": "monthly_review", "icon": "ri-calendar-check-fill", "color": "#F6AD55",
+            "text": "该做月度复盘了" if d is not None else "还没做过月度复盘",
+            "prompt": "帮我做月度复盘 (用 monthly_review 工具起草 · 起草完给我过目)",
+            "label": "月度复盘",
+        })
+
+    # 2. 手艺体检: 上次判重 >14 天 且手艺 >30 门
+    learnings = root / "data" / "learnings"
+    dedup_days = None
+    if learnings.exists():
+        plans = [f for f in learnings.glob("*dedup*") if f.is_file()]
+        if plans:
+            dedup_days = _days_since(max(plans, key=lambda f: f.stat().st_mtime))
+    db = root / "data" / "memory_index.db"
+    pb_count = 0
+    if db.exists():
+        try:
+            conn = sqlite3.connect(str(db))
+            pb_count = conn.execute(
+                "SELECT COUNT(DISTINCT section) FROM memory_chunks WHERE source='skill'"
+            ).fetchone()[0]
+            conn.close()
+        except Exception:
+            pass
+    if pb_count > 30 and (dedup_days is None or dedup_days > 14):
+        out.append({
+            "id": "audit_playbooks", "icon": "ri-search-eye-line", "color": "#8affd6",
+            "text": f"{pb_count} 门手艺 · 该体检有没有重复的了",
+            "prompt": "帮我看看手艺是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)",
+            "label": "手艺体检",
+        })
+
+    # 3. 卫生闸: 有待迁移的清理 (重启自动清 · 纯提示)
+    #    注意: 不跑 purge_noise dry_run (全库扫 2-3s · 建议引擎要毫秒级 · 残余数留星图 tab 看)
+    if db.exists():
+        try:
+            from workers import memory_hygiene as mh
+            conn = sqlite3.connect(str(db))
+            dirty = mh.needs_migration(conn)
+            conn.close()
+            if dirty:
+                out.append({
+                    "id": "hygiene_pending", "icon": "ri-shield-check-fill", "color": "#6ed27a",
+                    "text": "记忆库有待清理项 · 重启 daemon 自动清",
+                    "prompt": "", "label": "",
+                })
+        except Exception:
+            pass
+
+    # 5. 心愿堆积: pending >5
+    try:
+        from workers.wishlist import wishlist_summary
+        ws = wishlist_summary()
+        pending = (ws.get("by_status") or {}).get("pending", 0)
+        if pending > 5:
+            out.append({
+                "id": "wishlist_backlog", "icon": "ri-lightbulb-fill", "color": "#b794f6",
+                "text": f"{pending} 个心愿在排队 · 挑一个动手?",
+                "prompt": "看看心愿单 · 挑 1 个最值得现在动手的 · 给我说为什么",
+                "label": "看心愿",
+            })
+    except Exception:
+        pass
+
+    # 6. 今日雷达: radar.json 不是今天
+    radar_days = _days_since(root / "data" / "radar.json")
+    if radar_days is None or radar_days > 0.5:
+        out.append({
+            "id": "daily_radar", "icon": "ri-radar-fill", "color": "#4FD1C5",
+            "text": "今日信息雷达还没抓",
+            "prompt": "帮我跑一遍信息雷达 (用 auto_pipeline 工具 · 参数 refresh_radar=true, regen_trends=false, mine_opps=false · 只抓取 · 跑完告诉我新增了哪些条目)",
+            "label": "抓雷达",
+        })
+
+    return {"items": out[:3]}  # 最多 3 条 · 多了就吵
+
+
+# ──────────────────────────────────────────────────────────
+# 记忆星图 (0.9.6 · 成长档案「记忆星图」tab 数据源)
+# 必须在 /dashboard/{domain} catch-all 之前注册 · 否则被吃掉
+# ──────────────────────────────────────────────────────────
+
+
+@router.get("/dashboard/memory_map")
+def dashboard_memory_map(authorization: Optional[str] = Header(None), lite: int = 0):
+    """记忆星图 + 记忆管理统计 · 数据组装在 workers/memory_map.py (纯读 · 现算)。
+
+    ?lite=1 · BI 看板记忆卡专用: 只要秒出的统计数字 · 跳过 PCA/卫生 dry_run/漏斗。
+    """
+    check_auth(authorization)
+    from workers.memory_map import build_memory_map
+
+    return build_memory_map(lite=bool(lite))
+
+
+# ──────────────────────────────────────────────────────────
 # 卷四十四 K stage 2c · 出品工坊资产 endpoint · apps + flows
 # ──────────────────────────────────────────────────────────
 

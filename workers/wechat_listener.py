@@ -26,6 +26,10 @@ _WECHAT_LABEL = "\U0001f4f1 \u5fae\u4fe1 · BRO"
 _KILL_OFF = "opus stop"
 _KILL_ON = "opus start"
 
+# 「好 / 行 / 对」这类口头语当放行的有效期。 出了这个窗口就只认【确认】二字 ·
+# 否则用户在微信随口应一句·就可能替他批掉一个几分钟前弹出的危险操作。
+_CASUAL_CONFIRM_WINDOW_SEC = 120
+
 # ── 卷八十一续 · P0 单会话排他 + FIFO 队列 (Hermes queue 语义 · A 跑完 B 自动接上) ──
 # 根因 (BRO 社区反馈): 原来每条消息直接 _run_bg_turn 无锁无队列 → A 处理中 B 又开一个线程
 # 抢同一 api-wechat 会话 → 并发写冲突 / 回复串线 / "把自己玩死了"。
@@ -87,14 +91,12 @@ def _wechat_session() -> str:
 
 
 def _run_bg_turn(message: str, attachments: Optional[list] = None, progress_cb=None) -> str:
-    from daemon_api import _ACTIVE_TURNS, _TURN_TO_SID, _TURNS_LOCK, _chat_impl
+    from daemon_api import register_turn, unregister_turn, _chat_impl
 
     sid = _wechat_session()
     turn_id = "wechat-" + str(int(time.time() * 1000))
     cancel = threading.Event()
-    with _TURNS_LOCK:
-        _ACTIVE_TURNS[turn_id] = cancel
-        _TURN_TO_SID[turn_id] = sid
+    register_turn(turn_id, sid, cancel)
     try:
         from daemon_runtime import bg_max_tokens
         result = _chat_impl(
@@ -110,9 +112,7 @@ def _run_bg_turn(message: str, attachments: Optional[list] = None, progress_cb=N
         )
         return (result.get("reply") or "").strip()
     finally:
-        with _TURNS_LOCK:
-            _ACTIVE_TURNS.pop(turn_id, None)
-            _TURN_TO_SID.pop(turn_id, None)
+        unregister_turn(turn_id)
 
 
 def _collect_media(items: list) -> tuple[list, list]:
@@ -359,14 +359,22 @@ def _maybe_resolve_confirm(text: str, frm: str) -> Optional[dict]:
     t = (text or "").strip()
     if not t or len(t) > 6:
         return None
-    confirm_re = _re.compile(r"^(确认|同意|可以|放行|批准|ok|okay|行|好|干|是|对)[!！。.]*$", _re.I)
+    # 明确词 = 只可能是在答确认卡 · 任何时候都算
+    confirm_re = _re.compile(r"^(确认|同意|放行|批准|ok|okay)[!！。.]*$", _re.I)
+    # 日常口头语 —— 「好」「行」「对」也可能只是在应上一句话·
+    # 拿它当放行会在用户毫不知情时批掉一个危险操作。 只在确认卡刚发出的窗口内认。
+    casual_re = _re.compile(r"^(可以|行|好|好的|嗯|是|对|干)[!！。.]*$", _re.I)
     cancel_re = _re.compile(r"^(取消|拒绝|不行|不要|别|不干|否|不)[!！。.]*$", _re.I)
 
     decision = None
+    casual = False
     if confirm_re.match(t):
         decision = "approve_once"
+    elif casual_re.match(t):
+        decision = "approve_once"
+        casual = True
     elif cancel_re.match(t):
-        decision = "deny"
+        decision = "deny"   # 拒绝方向宁可误判 · 代价只是白问一次
     else:
         return None
 
@@ -384,6 +392,14 @@ def _maybe_resolve_confirm(text: str, frm: str) -> Optional[dict]:
             turn_id = latest.get("turn_id") or ""
             if not tool_call_id:
                 return {"ok": False, "detail": "找不到待确认的操作"}
+            age = time.time() - (latest.get("created_at") or 0)
+            if casual and age > _CASUAL_CONFIRM_WINDOW_SEC:
+                # 卡是几分钟前弹的·这句"好"多半是在聊别的 —— 提示而不是替他放行
+                return {
+                    "ok": False,
+                    "detail": (f"有个操作还等着你拍: {latest.get('tool_name') or '?'} · "
+                               f"要放行请回复【确认】· 不要请回复【取消】"),
+                }
     except Exception as e:
         logger.debug("wechat resolve find failed: %s", e)
         return {"ok": False, "detail": "确认解析失败"}
