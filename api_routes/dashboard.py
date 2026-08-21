@@ -1174,9 +1174,14 @@ def dashboard_memory_map(authorization: Optional[str] = Header(None), lite: int 
     ?lite=1 · BI 看板记忆卡专用: 只要秒出的统计数字 · 跳过 PCA/卫生 dry_run/漏斗。
     """
     check_auth(authorization)
-    from workers.memory_map import build_memory_map
+    try:
+        from workers.memory_map import build_memory_map
 
-    return build_memory_map(lite=bool(lite))
+        return build_memory_map(lite=bool(lite))
+    except ImportError as e:
+        # numpy 未装的老用户 (0.9.6 前 requirements 从未登记它) —— 友好提示代替裸 500
+        # 与 build_memory_map 自身的 {"error": ...} 空态返回同构 · 前端已有 error 展示路径
+        return {"error": f"缺依赖 {e.name} · 到启动器「环境」页点【开始安装】补装后重启即恢复"}
 
 
 # ──────────────────────────────────────────────────────────

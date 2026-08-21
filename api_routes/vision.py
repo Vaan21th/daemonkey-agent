@@ -116,8 +116,14 @@ async def get_embed_config(authorization: Optional[str] = Header(None)):
     """读 embedding 语义检索状态 + 配置。api_key 掩码。"""
     check_auth(authorization)
 
-    from workers.memory_embed import load_config, stats
-    from workers.memory_index import _get_conn
+    try:
+        from workers.memory_embed import load_config, stats
+        from workers.memory_index import _get_conn
+    except ImportError as e:
+        # numpy 未装的老用户 (0.9.6 前 requirements 从未登记它) —— 返回缺依赖态代替裸 500
+        return {"enabled": False, "configured": False, "missing_dep": e.name,
+                "error": f"缺依赖 {e.name} · 到启动器「环境」页点【开始安装】补装后重启即恢复",
+                "covered": 0, "total": 0}
 
     conn = _get_conn()
     st = stats(conn)
