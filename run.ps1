@@ -196,7 +196,7 @@ Write-Step 'checking dependencies...'
 $reqPath = Join-Path $PSScriptRoot 'requirements.txt'
 $needsInstall = $false
 try {
-    & $venvPython -c "import openai, fastapi, uvicorn, PyQt6, cryptography, multipart, PyQt6.QtMultimedia" 2>&1 | Out-Null
+    & $venvPython -c "import openai, fastapi, uvicorn, PyQt6, cryptography, multipart, PyQt6.QtMultimedia, numpy, pypdf" 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { $needsInstall = $true }
 } catch { $needsInstall = $true }
 

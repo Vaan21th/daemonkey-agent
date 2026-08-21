@@ -270,7 +270,8 @@
       "assets/webview2/WebView2Loader.dll",
       "tools/build-boot-exe.ps1",
       "tools/install_hooks.ps1",
-      "requirements.txt"
+      "requirements.txt",
+      "run.ps1"
     ]
   },
   "excluded_borderline": {
