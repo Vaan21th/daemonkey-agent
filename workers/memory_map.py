@@ -49,6 +49,28 @@ def _load_pb_vectors(conn: sqlite3.Connection) -> dict[str, dict]:
     return pbs
 
 
+def _constellation_empty_reason(conn: sqlite3.Connection, n_pb: int) -> dict:
+    """星图空态的三层原因 (2026-08-21 · test3 实测暴露: 空数组无说明 = 用户对着黑框猜)。
+
+    分层诊断: 没配embedding → 配了但向量覆盖 0 → 有向量但手艺 <3 门。
+    返回 {"code", "msg", "action"} · action=settings 时前端给「去设置」按钮。
+    """
+    try:
+        from workers.memory_embed import load_config, stats
+        cfg = load_config()
+        if not cfg.get("configured"):
+            return {"code": "no_embed_config", "action": "settings",
+                    "msg": "星图靠语义向量把相似手艺聚成星系·但embedding服务还没配——配上后历史记忆自动向量化·星图就亮"}
+        st = stats(conn)
+        if st.get("total", 0) > 0 and st.get("covered", 0) == 0:
+            return {"code": "no_vectors", "action": "settings",
+                    "msg": "embedding 已配·但历史记忆还没向量化——到设置页「视觉」区点一次【回填】·或等新记忆慢慢攒"}
+    except Exception:
+        pass
+    return {"code": "few_playbooks", "action": "",
+            "msg": f"星图至少要 3 门已向量的手艺才开图 (现在 {n_pb} 门)——手艺是踩坑之后说「抽成 playbook」攒下来的·用着用着就亮了"}
+
+
 def _constellation(conn: sqlite3.Connection) -> dict:
     """playbook 星图: centroid → PCA 2D + ≥阈值连边 + 簇编号 (并查集)。"""
     import numpy as np
@@ -56,7 +78,8 @@ def _constellation(conn: sqlite3.Connection) -> dict:
     pbs = _load_pb_vectors(conn)
     names = sorted(pbs)
     if len(names) < 3:
-        return {"points": [], "edges": [], "clusters": 0}
+        return {"points": [], "edges": [], "clusters": 0,
+                "empty_reason": _constellation_empty_reason(conn, len(names))}
 
     X = np.stack([pbs[n]["centroid"] for n in names])
     Xc = X - X.mean(axis=0)

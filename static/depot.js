@@ -729,7 +729,19 @@ function renderMemoryMap(data) {
   // 3D 星图 (Three.js · 星系化 · 2026-08-20 BRO 拍板)
   _whenThreeReady(() => {
     const box = document.getElementById('mmStar3d');
-    if (!box || !pts.length) return;
+    if (!box) return;
+    if (!pts.length) {
+      // 空态分层提示 (2026-08-21 · test3 实测: 空数组无说明 = 用户对着黑框猜)
+      const er = (data.constellation && data.constellation.empty_reason) || null;
+      const msg = er ? er.msg : '还没有可向量聚类的手艺·用着用着就亮了';
+      const btn = (er && er.action === 'settings')
+        ? `<a href="javascript:void(0)" onclick="openSettings()" style="display:inline-block;margin-top:10px;padding:6px 16px;border:1px solid var(--accent,#8a7dff);border-radius:8px;color:var(--accent,#8a7dff);font-size:12px;text-decoration:none"><i class="ri-settings-3-line"></i> 去设置</a>` : '';
+      box.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:0 32px;text-align:center">` +
+        `<i class="ri-sparkling-2-line" style="font-size:34px;color:var(--dim,#556);opacity:.7"></i>` +
+        `<div style="margin-top:10px;font-size:13px;color:var(--text,#dde)">星图还没点亮</div>` +
+        `<div style="margin-top:6px;font-size:11.5px;color:var(--dim);line-height:1.7;max-width:420px">${escHtml(msg)}</div>${btn}</div>`;
+      return;
+    }
     if (!_mmWebglOk()) {
       // WebGL 不可用 (e.g. Cursor 内嵌 webview 崩溃循环事故 · 2026-08-20) → 明示回退, 不硬起
       box.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#667;font-size:12px;text-align:center;padding:0 20px">当前环境不支持 WebGL · 请在你自己的浏览器打开 ${location.origin}/ui 查看 3D 星图</div>`;
