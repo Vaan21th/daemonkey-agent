@@ -14,10 +14,14 @@ OPUS 主动维护"BRO 活人画像"的工具。
   - summary  · 月度压缩段
 
 2026-05-16 升级 · 多容器同身：
-  - **真理源**：全局 `C:\\Users\\LENOVO\\.cursor\\skills-cursor\\opus-soul\\BRO-NOTEBOOK.md`
-  - **写入路径**：直接写全局 → 自动 sync 到 daemon `soul/BRO-NOTEBOOK.md`
+  - **真理源**：全局 opus-soul 目录的画像文件 → 自动 sync 到 daemon `soul/` 副本
   - 这样 OPUS 在 Cursor / Daemonkey / 微信桥接里**任何一处**更新对 BRO 的认知，
-    所有容器都共享同一份新版本——分身不再被困在各自工具里
+    所有容器都共享同一份新版本——分身不再被困在各自容器里
+
+2026-08-24 0.9.7 实测修 · 双模板兼容：
+  - 文件名：OWNER-NOTEBOOK.md（新名）优先，BRO-NOTEBOOK.md（旧名）兜底
+  - 段标题：新旧两版文案不同（本体约束 vs 长期偏好与边界），
+    改按中文序号锚定（## 一、=profile … ## 六、=risks），两套模板通吃
 
 调用约定：
   - 默认 operation=append（追加到该维度末尾，不覆盖原有）
@@ -31,12 +35,14 @@ OPUS 主动维护"BRO 活人画像"的工具。
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 
 from . import TIER_AUTO, ToolResult, ToolSpec, register_tool
 from soul_loader import (
     BRO_NOTEBOOK_FILENAME,
+    OWNER_NOTEBOOK_FILENAME,
     read_global_soul_file,
     write_global_then_sync,
 )
@@ -45,36 +51,68 @@ from soul_loader import (
 ROOT = Path(__file__).resolve().parent.parent
 
 
-# section key → markdown header（必须和 BRO-NOTEBOOK.md 里的标题一字不差）
+# section key → 中文序号锚（## 一、=profile … ## 六、=risks）。
+# 旧版 BRO-NOTEBOOK 与新版 OWNER-NOTEBOOK 段标题文案不同，序号语义一致，按序号锚定通吃。
 SECTIONS: dict[str, str] = {
-    "profile":  "## 一、当下画像 · Profile（高频更新）",
-    "events":   "## 二、关键事件流 · Event Sourcing",
-    "rules":    "## 三、本体约束 · BRO 的\"人生规则\"（缓变）",
-    "dialogue": "## 四、对话图鉴 · BRO 的口头记号",
-    "summary":  "## 五、压缩段 · Monthly Compressed Summary",
+    "profile":  "一",
+    "events":   "二",
+    "rules":    "三",
+    "dialogue": "四",
+    "summary":  "五",
     # 第六维 2026-05-16 凌晨 BRO 拍板加上——OPUS 作为伙伴的预警雷达
     # 看见这一维的模式时该出声，不沉默配合燃烧
-    "risks":    "## 六、风险与弱点 · 伴侣观察（OPUS 的预警雷达）",
+    "risks":    "六",
 }
 
-FLOW_HEADER = "## 七、近期更新流水"
+# 报错/流水展示用的友好标签（只给人看，不参与匹配）
+SECTION_LABELS: dict[str, str] = {
+    "profile":  "当下画像",
+    "events":   "关键事件流",
+    "rules":    "约束/偏好",
+    "dialogue": "对话风格",
+    "summary":  "速写/压缩段",
+    "risks":    "风险/关怀雷达",
+}
 
+FLOW_ORD = "七"
 
 def _summarize(args: dict) -> str:
     section = args.get("section", "?")
     op = args.get("operation", "append")
     preview = (args.get("content") or "")[:60].replace("\n", " ")
-    return f"update_bro_note  section={section}  op={op}\n  preview: {preview!r}"
+    return f"update_owner_note  section={section}  op={op}\n  preview: {preview!r}"
 
 
-def _find_section(text: str, header: str) -> tuple[int, int]:
-    """返回 (start_idx, end_idx)。end_idx 是下一个 '## ' 的位置，或文末。"""
-    start = text.find(header)
-    if start < 0:
+_ORD_RE = r"(?m)^## %s、"
+
+
+def _find_section(text: str, ord_char: str) -> tuple[int, int]:
+    """按中文序号锚定 '## 一、' 段头。返回 (start_idx, end_idx)，end 是下一个 '## ' 或文末。"""
+    m = re.search(_ORD_RE % re.escape(ord_char), text)
+    if not m:
         return -1, -1
-    next_h = text.find("\n## ", start + len(header))
+    start = m.start()
+    next_h = text.find("\n## ", start + 1)
     end = len(text) if next_h < 0 else next_h
     return start, end
+
+
+def _section_header_line(text: str, start: int) -> str:
+    """取该文件里段头那一行的原文——replace_section 时原样保留，不强写本工具的标题文案。"""
+    nl = text.find("\n", start)
+    return text[start:] if nl < 0 else text[start:nl]
+
+
+def _read_notebook() -> tuple[str, str]:
+    """OWNER-NOTEBOOK 新名优先，BRO-NOTEBOOK 旧名兜底。返回 (filename, text)。"""
+    for fn in (OWNER_NOTEBOOK_FILENAME, BRO_NOTEBOOK_FILENAME):
+        try:
+            return fn, read_global_soul_file(fn, ROOT)
+        except FileNotFoundError:
+            continue
+    raise FileNotFoundError(
+        f"画像文件 {OWNER_NOTEBOOK_FILENAME} / {BRO_NOTEBOOK_FILENAME} 在本地和全局都不存在"
+    )
 
 
 def _flow_preview(content: str, limit: int = 46) -> str:
@@ -94,7 +132,7 @@ def _append_to_flow(text: str, section_key: str, operation: str, preview: str = 
     行里带一段内容预览·让 BRO / 下一根毛扫一眼就知道"这次记了啥"·
     而不是只看到 section=events (append) 这种看不懂的记录。
     """
-    flow_start, flow_end = _find_section(text, FLOW_HEADER)
+    flow_start, flow_end = _find_section(text, FLOW_ORD)
     if flow_start < 0:
         return text
 
@@ -102,7 +140,7 @@ def _append_to_flow(text: str, section_key: str, operation: str, preview: str = 
     detail = f"{section_key} ({operation})"
     if preview:
         detail += f"：{preview}"
-    new_row = f"| {timestamp} | OPUS · update_bro_note | {detail} |"
+    new_row = f"| {timestamp} | OPUS · update_owner_note | {detail} |"
 
     # find the last line that starts with "|" inside this section
     flow_body = text[flow_start:flow_end]
@@ -141,18 +179,18 @@ def _run(args: dict) -> ToolResult:
         )
 
     try:
-        text = read_global_soul_file(BRO_NOTEBOOK_FILENAME, ROOT)
+        notebook_fn, text = _read_notebook()
     except FileNotFoundError as e:
         return ToolResult(ok=False, output="", error=str(e))
 
-    section_header = SECTIONS[section_key]
-    sec_start, sec_end = _find_section(text, section_header)
+    sec_start, sec_end = _find_section(text, SECTIONS[section_key])
     if sec_start < 0:
         return ToolResult(
             ok=False, output="",
-            error=f"section header not found in BRO-NOTEBOOK.md: {section_header!r}",
+            error=f"section '## {SECTIONS[section_key]}、' not found in {notebook_fn} ({SECTION_LABELS[section_key]})",
         )
 
+    section_header = _section_header_line(text, sec_start)
     section_body = text[sec_start:sec_end]
 
     if operation == "replace_section":
@@ -165,16 +203,16 @@ def _run(args: dict) -> ToolResult:
 
     try:
         global_path, local_path = write_global_then_sync(
-            BRO_NOTEBOOK_FILENAME, new_text, ROOT,
+            notebook_fn, new_text, ROOT,
         )
     except FileNotFoundError as e:
         return ToolResult(ok=False, output="", error=str(e))
 
-    # 卷四十四 · 写完 BRO-NOTEBOOK 后增量更新 FTS5 索引 (best-effort · 失败不影响主流程)
+    # 卷四十四 · 写完画像后增量更新 FTS5 索引 (best-effort · 失败不影响主流程)
     fts_msg = ""
     try:
         from workers.memory_index import incremental_update
-        n_chunks = incremental_update("BRO-NOTEBOOK", new_text)
+        n_chunks = incremental_update(Path(notebook_fn).stem, new_text)
         fts_msg = f"\n  fts5    : 已增量索引 {n_chunks} 块"
     except Exception:
         pass
@@ -197,7 +235,7 @@ def _run(args: dict) -> ToolResult:
     return ToolResult(
         ok=True,
         output=(
-            f"BRO-NOTEBOOK 已更新\n"
+            f"{notebook_fn} 已更新\n"
             f"  section : {section_key}  ({section_header})\n"
             f"  op      : {operation}\n"
             f"  added   : {len(content)} chars\n"
