@@ -91,7 +91,7 @@ _PKG_READ_SUBCMDS = {"list", "ls", "view", "info", "outdated", "audit"}
 #     4. KEY 安全级  · 碰 .env (泄露/丢失不可逆 · 铁律 7)
 #   其余一律 CONFIRM (WebUI 通道自动跑·不弹窗)：
 #     pip/npm 装包 (venv 可重建) / ssh/scp (连接本身无险) / curl 写调用 /
-#     --no-verify (跳 git 钩子) / Remove-Item -Force (单文件强删) / Daemonkey-soul 路径出现。
+#     --no-verify (跳 git 钩子) / Remove-Item -Force (单文件强删) / opus-soul 路径出现。
 
 _GUARD_PATTERNS = [
     # ── 1. 废机级 ──

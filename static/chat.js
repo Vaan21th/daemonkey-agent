@@ -26,7 +26,7 @@
   if (!doAI && !doOwner) return;                // 母体两者都默认 → 保持原样
   // 正则跳过 DAEMONKEY_API_TOKEN / Daemonkey / OWNER-NOTEBOOK 这类技术标识·只换作为称呼出现的词
   var RE_AI = /Daemonkey(?![\w-])/g;
-  var RE_OWNER = /\b用户(?![\w-])/g;
+  var RE_OWNER = /\bBRO(?![\w-])/g;
   // Daemonkey 分家: 取了自己名字的实例·把母体私有 lore「<名字> 的家」中性成「<名字> 的家」。
   // 前端 localizer 原本只换 Daemonkey/用户·「<名字> 的家」这类叙事得单独抹·否则纯净版界面会漏出来。
   var HOME = NAME ? (NAME + ' 的家') : '';
@@ -84,16 +84,16 @@
 })();
 
 const STORAGE = {
-  token: 'Daemonkey_ui_token',
-  session: 'Daemonkey_ui_session',
-  autoConfirm: 'Daemonkey_ui_auto_confirm',
-  aliases: 'Daemonkey_ui_session_aliases',
+  token: 'opus_ui_token',
+  session: 'opus_ui_session',
+  autoConfirm: 'opus_ui_auto_confirm',
+  aliases: 'opus_ui_session_aliases',
 };
 
 
 // === 主题系统 · wish-7b89146f ===
-const THEME_KEY = 'Daemonkey_ui_theme';
-const THEME_CUSTOM_KEY = 'Daemonkey_ui_theme_custom';
+const THEME_KEY = 'opus_ui_theme';
+const THEME_CUSTOM_KEY = 'opus_ui_theme_custom';
 
 // 卷七十二 v5 · 2026-06-10 · 用户 bug 报告: 「用户 让 Daemonkey 写代码时只要提到「默认」俩字 ·
 //   就会直接换主题 · 而不是执行全句的需求」
@@ -160,7 +160,7 @@ function applyTheme(cls, label) {
   const cs = document.getElementById('theme-custom'); if (cs) cs.remove();
   if (cls) document.body.classList.add(cls);
   localStorage.setItem(THEME_KEY, cls||'dark');
-  localStorage.setItem('Daemonkey_ui_theme_label', label||'深色');
+  localStorage.setItem('opus_ui_theme_label', label||'深色');
   updateThemeDot();
 }
 
@@ -171,13 +171,13 @@ function applyCustomTheme(vars, label) {
   s.textContent = 'body { ' + Object.entries(vars).map(function(e){return e[0]+':'+e[1]+';'}).join('') + ' }';
   localStorage.setItem(THEME_KEY, 'custom');
   localStorage.setItem(THEME_CUSTOM_KEY, JSON.stringify(vars));
-  localStorage.setItem('Daemonkey_ui_theme_label', label);
+  localStorage.setItem('opus_ui_theme_label', label);
   updateThemeDot();
 }
 
 function initTheme() {
   const saved = localStorage.getItem(THEME_KEY) || 'dark';
-  const label = localStorage.getItem('Daemonkey_ui_theme_label') || '深色';
+  const label = localStorage.getItem('opus_ui_theme_label') || '深色';
   if (saved === 'custom') {
     try {
       const vars = JSON.parse(localStorage.getItem(THEME_CUSTOM_KEY)||'{}');
@@ -199,7 +199,7 @@ function updateThemeDot() {
     var logo = document.querySelector('.header-logo');
     if (logo) logo.appendChild(dot);
   }
-  try { dot.style.background = getComputedStyle(document.body).getPropertyValue('--Daemonkey').trim(); } catch(e) {}
+  try { dot.style.background = getComputedStyle(document.body).getPropertyValue('--opus').trim(); } catch(e) {}
 }
 
 // 在 send() 中拦截预设主题切换 · 返回 true=已拦截
@@ -242,7 +242,7 @@ function scanThemeBlocks(container) {
 }
 
 // ═══ 卷七十五续九 · 换肤按钮 UI(接现成 applyTheme)+ 简洁版切换 ═══
-// 换肤色板:每个 swatch 带对应主题 class · dots 用 var(--bg)/var(--Daemonkey) 取真实色(不硬编码·防漂移);
+// 换肤色板:每个 swatch 带对应主题 class · dots 用 var(--bg)/var(--opus) 取真实色(不硬编码·防漂移);
 // 默认(暗紫·无 class)用 inline 兜底 · 因为它继承不到自身的默认变量。
 function buildThemeGrid() {
   var grid = document.getElementById('themeGrid');
@@ -250,7 +250,7 @@ function buildThemeGrid() {
   var cur = localStorage.getItem(THEME_KEY) || 'dark';
   if (cur === 'dark') cur = '';
   grid.innerHTML = THEME_PRESETS.map(function (t) {
-    var styleAttr = t.cls ? '' : ' style="--bg:#16131f;--Daemonkey:#b794f6"';
+    var styleAttr = t.cls ? '' : ' style="--bg:#16131f;--opus:#b794f6"';
     var active = (t.cls === cur) ? ' active' : '';
     return '<button type="button" class="theme-swatch ' + t.cls + active + '" data-cls="' + t.cls + '"' + styleAttr + '>' +
              '<span class="swatch-dots"><span class="sw-bg"></span><span class="sw-op"></span></span>' +
@@ -314,7 +314,7 @@ function toggleCompact(force, animate) {
   if (icon) icon.className = on ? 'ri-layout-masonry-line' : 'ri-focus-3-line';
   if (label) label.textContent = on ? '工作台' : '专注版';
   if (btn) btn.title = on ? '回工作台 (Alt+Z)' : '专注版 · 只留对话框 (Alt+Z)';
-  localStorage.setItem('Daemonkey_ui_compact', on ? '1' : '');
+  localStorage.setItem('opus_ui_compact', on ? '1' : '');
 }
 
 /* ═══ 卷八十三 · 简洁版三栏 (用户 2026-08-14 拍板 · 会话清单左常驻 + 产物右折叠) ═══
@@ -523,7 +523,7 @@ initTheme();
 (function initCompactAndThemeUI() {
   function _go() {
     buildThemeGrid();
-    if (localStorage.getItem('Daemonkey_ui_compact') === '1') toggleCompact(true, false);
+    if (localStorage.getItem('opus_ui_compact') === '1') toggleCompact(true, false);
   }
   if (document.getElementById('compactBtn')) _go();
   else document.addEventListener('DOMContentLoaded', _go, { once: true });
@@ -945,7 +945,7 @@ if ($attachBtn && $attachFile) {
     transcribe: { label: '语音对话', panel: true,  icon: 'ri-chat-voice-line' },   // 持续听 · 停约 1 秒自动发
     meeting:    { label: '会议纪要', panel: true,  icon: 'ri-group-line' },         // = 持续录成文本 · 停止后整理
   };
-  let mode = localStorage.getItem('Daemonkey_voice_mode') || 'dictation';
+  let mode = localStorage.getItem('opus_voice_mode') || 'dictation';
   if (!MODES[mode]) mode = 'dictation';
   if (!SR) { $micBtn.classList.add('unsupported'); $micBtn.title = '语音功能需 Chrome / Edge 浏览器'; }
 
@@ -960,11 +960,11 @@ if ($attachBtn && $attachFile) {
       .then(r => {
         if (r.status === 404 || r.status === 405) return; // 端点不存在/未注册 → 保持隐藏
         $ttsWrap.hidden = false;
-        window.__voiceTtsEnabled = localStorage.getItem('Daemonkey_voice_tts') === '1';
+        window.__voiceTtsEnabled = localStorage.getItem('opus_voice_tts') === '1';
         $ttsToggle.checked = !!window.__voiceTtsEnabled;
         $ttsToggle.addEventListener('change', () => {
           window.__voiceTtsEnabled = $ttsToggle.checked;
-          localStorage.setItem('Daemonkey_voice_tts', $ttsToggle.checked ? '1' : '0');
+          localStorage.setItem('opus_voice_tts', $ttsToggle.checked ? '1' : '0');
           if (typeof _setRecNote === 'function' && _listening && mode === 'transcribe') {
             _setRecNote($ttsToggle.checked
               ? '<i class="ri-volume-up-line"></i> TTS 已开 · Daemonkey 回复会朗读'
@@ -1066,7 +1066,7 @@ if ($attachBtn && $attachFile) {
     btn.addEventListener('click', () => {
       if (!SR) { alert('语音功能需要 Chrome / Edge 浏览器'); return; }
       mode = btn.dataset.mode;
-      localStorage.setItem('Daemonkey_voice_mode', mode);
+      localStorage.setItem('opus_voice_mode', mode);
       _applyModeMeta();
       _closeMenu();
     });
@@ -1340,9 +1340,9 @@ if ($attachBtn && $attachFile) {
 function modelBehaviorPayload() {
   const out = {};
   try {
-    const think = localStorage.getItem('Daemonkey_mb_thinking') || 'auto';
-    const effort = localStorage.getItem('Daemonkey_mb_effort') || '';
-    const mt = localStorage.getItem('Daemonkey_mb_max_tokens') || '';
+    const think = localStorage.getItem('opus_mb_thinking') || 'auto';
+    const effort = localStorage.getItem('opus_mb_effort') || '';
+    const mt = localStorage.getItem('opus_mb_max_tokens') || '';
     if (think && think !== 'auto') out.thinking = think;
     if (effort) out.reasoning_effort = effort;
     const n = parseInt(mt, 10);
@@ -1356,16 +1356,16 @@ function modelBehaviorPayload() {
   const $mt = document.getElementById('mbMaxTokens');
   if (!$think && !$effort && !$mt) return;
   try {
-    if ($think) $think.value = localStorage.getItem('Daemonkey_mb_thinking') || 'auto';
-    if ($effort) $effort.value = localStorage.getItem('Daemonkey_mb_effort') || '';
-    if ($mt) $mt.value = localStorage.getItem('Daemonkey_mb_max_tokens') || '';
+    if ($think) $think.value = localStorage.getItem('opus_mb_thinking') || 'auto';
+    if ($effort) $effort.value = localStorage.getItem('opus_mb_effort') || '';
+    if ($mt) $mt.value = localStorage.getItem('opus_mb_max_tokens') || '';
   } catch (_) {}
-  $think && $think.addEventListener('change', () => localStorage.setItem('Daemonkey_mb_thinking', $think.value));
-  $effort && $effort.addEventListener('change', () => localStorage.setItem('Daemonkey_mb_effort', $effort.value));
+  $think && $think.addEventListener('change', () => localStorage.setItem('opus_mb_thinking', $think.value));
+  $effort && $effort.addEventListener('change', () => localStorage.setItem('opus_mb_effort', $effort.value));
   $mt && $mt.addEventListener('change', () => {
     const n = parseInt($mt.value, 10);
-    if (n > 0) localStorage.setItem('Daemonkey_mb_max_tokens', String(n));
-    else { localStorage.removeItem('Daemonkey_mb_max_tokens'); $mt.value = ''; }
+    if (n > 0) localStorage.setItem('opus_mb_max_tokens', String(n));
+    else { localStorage.removeItem('opus_mb_max_tokens'); $mt.value = ''; }
   });
 })();
 
@@ -1387,8 +1387,8 @@ const MUTATING_TOOLS = new Set([
   'init_domain', 'remove_domain', 'add_domain',
   'mine_opportunities', 'analyze_feasibility', 'record_outcome',
   'toggle_favorite', 'generate_report', 'expand_trend_to_report',
-  'auto_pipeline', 'update_bro_note', 'refresh_radar', 'generate_trends',
-  'Daemonkey_diary',
+  'auto_pipeline', 'update_owner_note', 'refresh_radar', 'generate_trends',
+  'opus_diary',
   // 卷五十四 · 工坊产出类补全 (之前漏了·Daemonkey 造完 app/草稿 看板不自动刷·用户 得手动 F5)
   'create_app', 'update_app', 'create_workflow', 'draft_studio',
   'update_self_evolution',
@@ -1487,8 +1487,8 @@ const _PROGRESS_EMOJI_ICON = {
   '📝': 'ri-file-edit-line', '✅': 'ri-check-line', '🔧': 'ri-tools-line',
   '🚀': 'ri-rocket-line', '💬': 'ri-chat-3-line', '📥': 'ri-download-line',
   '🔎': 'ri-search-line', '📶': 'ri-radar-line', '🗂️': 'ri-folder-3-line',
-  '💎': 'ri-vip-diamond-line', '🌊': 'ri-line-chart-line', '🛰️': 'ri-用户adcast-line',
-  '🛰': 'ri-用户adcast-line', '🌟': 'ri-star-line', '⭐': 'ri-star-line',
+  '💎': 'ri-vip-diamond-line', '🌊': 'ri-line-chart-line', '🛰️': 'ri-broadcast-line',
+  '🛰': 'ri-broadcast-line', '🌟': 'ri-star-line', '⭐': 'ri-star-line',
   '🖼️': 'ri-image-line', '🖼': 'ri-image-line', '🎨': 'ri-palette-line',
 };
 function _iconifyProgress(text) {
@@ -1673,7 +1673,7 @@ let _flowRunsDismissed = {};    // run_id → true · 用户 点 "知道了" 后
 // 数据源 /api/plan/active → task_ledger 的 steps 层。
 // AI 用 track_task(action='plan'/'step') 写·用户在这个面板里改 ——
 // 改完下一轮 render_hint 就把新计划回灌给 AI(产品观第 2 条: 人的反馈要真的influence下一次调用)。
-const PLAN_OPEN_KEY = 'Daemonkey_plan_detail_open';
+const PLAN_OPEN_KEY = 'opus_plan_detail_open';
 let _planData = null;
 let _planPollTimer = null;
 let _planEditing = 0;     // 正在 inline 编辑第几步 · 轮询期间别重绘把输入框冲掉
@@ -1683,7 +1683,7 @@ function _planOpen() {
 }
 
 async function _planApi(method, path, body) {
-  const token = _flowRunsToken();   // 全站同一把 token (Daemonkey_ui_token)
+  const token = _flowRunsToken();   // 全站同一把 token (opus_ui_token)
   if (!token) return null;
   const opt = { method, headers: { 'Authorization': 'Bearer ' + token } };
   if (body) {
@@ -1820,7 +1820,7 @@ function _renderPlanDetail() {
   hint.className = 'plan-foot-hint';
   const ec = _planData.entry_count || 0;
   // 名字跟『相遇』里取的走 · 拼新串直接用 window.AI_NAME(见顶部 localizer)。
-  // 光靠 MutationObserver 兜也能换·但那是异步的·会闪一下默认名。
+  // 光靠 MutationObserver 兜也能换·但那是异步的·会闪一下母体名。
   hint.textContent = ec ? ('这任务还记了 ' + ec + ' 条结论')
     : ('改完 ' + (window.AI_NAME || 'Daemonkey') + ' 下一轮就知道');
   foot.appendChild(hint);
@@ -1926,9 +1926,9 @@ function _startPlanPoll() {
 }
 
 function _flowRunsToken() {
-  // H-12 修复: 全站 token 实际写在 Daemonkey_ui_token (旧版 Daemonkey_ui_token) ——
-  // 原先读的 Daemonkey_token 无人写入 · pollFlowRuns 永远空转 · 运行横幅整套死区
-  try { return localStorage.getItem('Daemonkey_ui_token') || localStorage.getItem('Daemonkey_ui_token') || ''; } catch (e) { return ''; }
+  // H-12 修复: 全站 token 实际写在 opus_ui_token (旧版 Daemonkey_ui_token) ——
+  // 原先读的 opus_token 无人写入 · pollFlowRuns 永远空转 · 运行横幅整套死区
+  try { return localStorage.getItem('opus_ui_token') || localStorage.getItem('Daemonkey_ui_token') || ''; } catch (e) { return ''; }
 }
 
 function _isRecentTerminal(run) {
@@ -2178,7 +2178,7 @@ function renderFlowRunStep(step) {
     const branches = step.branches.map(b => {
       const bst = b.status || 'pending';
       const bicon = _FLOW_STEP_ICONS[bst] || '○';
-      const meta = (window._DaemonkeyWorkshopApps || []).find(a => a.id === (b.app || ''));
+      const meta = (window._opusWorkshopApps || []).find(a => a.id === (b.app || ''));
       const bname = b.app_name || (meta && meta.name) || b.app || '';
       const bgoal = b.goal || '';
       const berr = b.error || '';
@@ -2205,7 +2205,7 @@ function renderFlowRunStep(step) {
 
   // ── 单 app 串行步 (原逻辑) ──
   const appRef = step.app || '';
-  const meta = (window._DaemonkeyWorkshopApps || []).find(a => a.id === appRef);
+  const meta = (window._opusWorkshopApps || []).find(a => a.id === appRef);
   const appName = (meta && meta.name) ? meta.name : appRef;
   const err = step.error || '';
   return `
@@ -2282,7 +2282,7 @@ async function pollGitDebt() {
 // ── git 欠账面板 (2026-07-29 · 用户 直批三件套 B+C) ──
 // 点击胶囊 → 面板显示"未提交的是什么"(文件清单+人话分类) → 一键收进主干 (不用懂 git)
 const _GIT_DEBT_KIND_COLOR = {
-  code: 'var(--Daemonkey)', soul: '#e06c9f', cognition: '#8a7bd8', playbook: '#3fb27f',
+  code: 'var(--opus)', soul: '#e06c9f', cognition: '#8a7bd8', playbook: '#3fb27f',
   ledger: '#b8933f', workshop: '#4a9ecb', doc: '#6a9fd8', session: '#888',
   data: '#999', other: '#777',
 };
@@ -2392,7 +2392,7 @@ function renderGitDebtPanel(d) {
     h += '<div class="git-debt-sec">领先主干 ' + d.ahead + ' 个 commit 未合:</div>';
     h += '<div class="git-debt-list">';
     for (const c of d.ahead_commits) {
-      h += '<div class="git-debt-file-row"><code style="color:var(--Daemonkey)">' + escHtml(c.sha) + '</code>'
+      h += '<div class="git-debt-file-row"><code style="color:var(--opus)">' + escHtml(c.sha) + '</code>'
          + '<span class="git-debt-path">' + escHtml(c.subject) + '</span></div>';
     }
     h += '</div>';
@@ -2469,7 +2469,7 @@ if (document.readyState === 'loading') {
 // 设计:
 //   messages 容器空 (新对话 / 切到没消息的会话) → 显示 panel · 一旦有消息 → hide
 //   点卡 → 把模板填入输入框 + focus + 不直接发 (用户 可改完再发)
-//   模板可自定义 · 存 localStorage 'Daemonkey.onboarding.templates' (P2-8)
+//   模板可自定义 · 存 localStorage 'opus.onboarding.templates' (P2-8)
 const _ONBOARD_DEFAULT_TEMPLATES = {
   create_app: '我想造一个应用 · 用来 [描述用途 · 例如「自动抓 B 站热门评论」]\n输入是: [列字段]\n输出是: [列字段]\n你帮我设计 system_prompt + 工具白名单 + ui_form_schema · 然后落到工坊。',
   create_flow: '我想搭一条工作流 · 名字叫 [起一个]\n流程是:\n  1. [第一步用什么 app · 干啥]\n  2. [第二步用什么 app · 干啥]\n  3. ...\n你帮我用 create_workflow 落档 · 我看了再说跑不跑。',
@@ -2485,7 +2485,7 @@ const _ONBOARD_DEFAULT_TEMPLATES = {
 
 function _loadOnboardingTemplates() {
   try {
-    const raw = localStorage.getItem('Daemonkey.onboarding.templates');
+    const raw = localStorage.getItem('opus.onboarding.templates');
     if (raw) {
       const parsed = JSON.parse(raw);
       // 2026-08-11 修 (墨言贡献评估 #1): Object.assign 合并 localStorage 数据有 __proto__
@@ -2498,7 +2498,7 @@ function _loadOnboardingTemplates() {
 
 function _saveOnboardingTemplates(custom) {
   try {
-    localStorage.setItem('Daemonkey.onboarding.templates', JSON.stringify(custom));
+    localStorage.setItem('opus.onboarding.templates', JSON.stringify(custom));
   } catch (e) {}
 }
 
@@ -2506,7 +2506,7 @@ function _saveOnboardingTemplates(custom) {
 // 病根: #messages 容器里包的是多个 .session-msgs[data-sid="..."] 子容器 (每 session 一个 · hidden 切换)
 //      不是消息本身。 messages.children.length === 0 几乎永远 false →  panel 永远 hidden
 //      雪上加霜: newConversation 调 addSys('新对话开始 ...') 把 sys 消息加到 visible .session-msgs · 雪上加霜
-// 修法: ① 判断改成 "visible .session-msgs 里有没有实质的 .msg.用户/.msg.Daemonkey" (排除 sys/thinking 的兜底文案)
+// 修法: ① 判断改成 "visible .session-msgs 里有没有实质的 .msg.bro/.msg.opus" (排除 sys/thinking 的兜底文案)
 //      ② observer subtree:true · 因消息加到子容器 · #messages 直接 childList 不触发
 //      ③ observer 也监听 'hidden' 属性 · 因为切 session 是改 hidden 不是 childList
 function refreshOnboardingPanel() {
@@ -2516,8 +2516,8 @@ function refreshOnboardingPanel() {
   // 看 visible 的 .session-msgs · 没有就 fallback 看整个 #messages 直接子里有没有真实消息
   let scope = messages.querySelector(':scope > .session-msgs:not([hidden])');
   if (!scope) scope = messages;
-  // 实质消息 = 用户 / Daemonkey (排除 thinking 占位 / sys 兜底文案 / err / 工具卡)
-  const hasRealMsg = !!scope.querySelector('.msg.用户, .msg.Daemonkey:not(.thinking)');
+  // 实质消息 = bro / opus (排除 thinking 占位 / sys 兜底文案 / err / 工具卡)
+  const hasRealMsg = !!scope.querySelector('.msg.bro, .msg.opus:not(.thinking)');
   panel.hidden = hasRealMsg;
 }
 window.refreshOnboardingPanel = refreshOnboardingPanel;
@@ -2644,10 +2644,10 @@ function scheduleDashboardRefresh(delayMs = 600) {
     try {
       if (typeof refreshNavBadges === 'function') refreshNavBadges();
       // 卷五十四 · 工坊是挂载式 view · loadDashboard('workshop') 已挂载时短路不重拉 ·
-      // 必须走 Daemonkey_WORKSHOP_VIEW.refresh() 才能把 Daemonkey 新造的 app/flow 拉进来
+      // 必须走 OPUS_WORKSHOP_VIEW.refresh() 才能把 Daemonkey 新造的 app/flow 拉进来
       if (typeof currentView !== 'undefined' && currentView === 'workshop'
-          && window.Daemonkey_WORKSHOP_VIEW && typeof window.Daemonkey_WORKSHOP_VIEW.refresh === 'function') {
-        window.Daemonkey_WORKSHOP_VIEW.refresh();
+          && window.OPUS_WORKSHOP_VIEW && typeof window.OPUS_WORKSHOP_VIEW.refresh === 'function') {
+        window.OPUS_WORKSHOP_VIEW.refresh();
       } else if (typeof currentView !== 'undefined' && currentView && typeof loadDashboard === 'function') {
         loadDashboard(currentView, { silent: true });
       }
@@ -2906,7 +2906,7 @@ async function switchLlmConfig() {
   if (!cfg.model) { $status.textContent = '⚠ 没填 model'; $status.className = 'field-hint fail'; return; }
   // 没填 key · 用户想沿用 · 让用户确认
   if (cfg.api_key === '__keep_current__') {
-    const ok = await DaemonkeyConfirm({
+    const ok = await opusConfirm({
       title: '不填 API Key · 沿用当前',
       message: '你没填新的 API Key · 我会沿用当前 .env 里的 key 走 ' + cfg.provider_kind + ' / ' + cfg.model + '\n继续?',
       okText: '继续切',
@@ -2915,7 +2915,7 @@ async function switchLlmConfig() {
     if (!ok) return;
     // 后端要求 api_key 必填 · 这里如果当前 provider 还跟新 cfg 一致 · 后端会重读 env
     // 简化: 让用户填一次新 key (即便复用旧的)
-    const k = await DaemonkeyPrompt({
+    const k = await opusPrompt({
       title: '粘一下当前 API Key',
       message: '后端写 .env 需要明文 · 不会发到 LLM',
       placeholder: 'sk-xxx',
@@ -3053,9 +3053,9 @@ function renderLlmConfigCard(c) {
 // 弹一个对话框让 用户 填一次 AiHub key · 然后批量加 4-5 条 config (pinned=false 默认)
 async function quickImportAihubMix() {
   // 让 用户 输入 AiHub key (一次 · 公用)
-  const key = await DaemonkeyPrompt({
+  const key = await opusPrompt({
     title: '一键导入 AiHubMix 常用模型',
-    message: '会自动加入: Sonnet 4.6 / Daemonkey 4.7 / Kimi K2.6 / GLM 5.1 / GPT-5.5\n这些都是 用户 过去用过的 · 加进来默认不勾右上角 · 编辑里可以单独激活。\n\n填一次 AiHub key · 这些 configs 共用 (你也可以加完单独改 key):',
+    message: '会自动加入: Sonnet 4.6 / Opus 4.7 / Kimi K2.6 / GLM 5.1 / GPT-5.5\n这些都是 用户 过去用过的 · 加进来默认不勾右上角 · 编辑里可以单独激活。\n\n填一次 AiHub key · 这些 configs 共用 (你也可以加完单独改 key):',
     placeholder: 'sk-xxx · AiHubMix 平台 key · 留空 = 只加占位不设 key',
     okText: '一键加',
     cancelText: '取消',
@@ -3064,7 +3064,7 @@ async function quickImportAihubMix() {
   const apiKey = (key || '').trim();
   const presets = [
     { name: 'Sonnet 4.6 · AiHubMix', model: 'claude-sonnet-4-6', note: '性价比·支持 cache' },
-    { name: 'Daemonkey 4.7 · AiHubMix', model: 'claude-Daemonkey-4-7', note: '深聊最强·5x 贵·支持 cache' },
+    { name: 'Opus 4.7 · AiHubMix', model: 'claude-opus-4-7', note: '深聊最强·5x 贵·支持 cache' },
     { name: 'Kimi K2.6 · AiHubMix', model: 'kimi-k2.6', note: '262K·Agent/工具能力强' },
     { name: 'GLM 5.1 · AiHubMix', model: 'glm-5.1', note: '200K·智谱旗舰·写代码强' },
     { name: 'GPT-5.5 · AiHubMix', model: 'gpt-5.5', note: 'GPT 系最新' },
@@ -3091,7 +3091,7 @@ async function quickImportAihubMix() {
     } catch (e) { failMsg = e.message; break; }
   }
   if (failMsg) {
-    await DaemonkeyAlert({ title: '部分失败', message: `加成功 ${okCount}/${presets.length}\n失败原因: ${failMsg.slice(0, 200)}`, icon: '<i class="ri-error-warning-fill"></i>' });
+    await opusAlert({ title: '部分失败', message: `加成功 ${okCount}/${presets.length}\n失败原因: ${failMsg.slice(0, 200)}`, icon: '<i class="ri-error-warning-fill"></i>' });
   } else if (apiKey) {
     addSys(`<i class="ri-check-fill"></i> 已加 ${okCount} 条 AiHubMix · 想用就去右上角 ● 勾选`);
   } else {
@@ -3137,7 +3137,7 @@ function openLlmConfigAddForm() {
       });
       if (!r.ok) {
         const t = await r.text();
-        await DaemonkeyAlert({ title: '保存失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
+        await opusAlert({ title: '保存失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
         return;
       }
       hideLlmEditForm();
@@ -3175,7 +3175,7 @@ function openLlmConfigEditForm(cfgId) {
       });
       if (!r.ok) {
         const t = await r.text();
-        await DaemonkeyAlert({ title: '保存失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
+        await opusAlert({ title: '保存失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
         return;
       }
       hideLlmEditForm();
@@ -3486,7 +3486,7 @@ async function activateConfig(cfgId) {
   });
   if (!r.ok) {
     const t = await r.text();
-    await DaemonkeyAlert({ title: '激活失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
+    await opusAlert({ title: '激活失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
     return;
   }
   const data = await r.json();
@@ -3525,7 +3525,7 @@ async function togglePinConfig(cfgId, pinned) {
   });
   if (!r.ok) {
     const t = await r.text();
-    await DaemonkeyAlert({ title: '改 pinned 失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
+    await opusAlert({ title: '改 pinned 失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
     return;
   }
   await renderSettingsLLM();
@@ -3534,7 +3534,7 @@ async function togglePinConfig(cfgId, pinned) {
 
 async function deleteConfig(cfgId) {
   const cfg = _providerConfigs.find(c => c.id === cfgId);
-  const ok = await DaemonkeyConfirm({
+  const ok = await opusConfirm({
     title: '删除 LLM 配置',
     message: `确定删除 "${cfg?.name || cfgId}"?\nAPI key 也会从本地删除·不可恢复。`,
     okText: '删',
@@ -3548,7 +3548,7 @@ async function deleteConfig(cfgId) {
   });
   if (!r.ok) {
     const t = await r.text();
-    await DaemonkeyAlert({ title: '删除失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
+    await opusAlert({ title: '删除失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
     return;
   }
   await renderSettingsLLM();
@@ -3560,7 +3560,7 @@ async function toggleDirectorConfig(cfgId, val) {
   const cfg = _providerConfigs.find(c => c.id === cfgId);
   if (!cfg) return;
   const label = cfg.name || cfg.model || cfgId;
-  const ok = await DaemonkeyConfirm(val ? {
+  const ok = await opusConfirm(val ? {
     title: '设为顾问模型',
     message: `把 "${label}" 设为顾问？\n\n顾问 = 能力最强的贵模型。主对话日常用便宜模型干活时 · 它只在「蓝图 / 破局 / 验收」三个唤醒点被 replan 召唤进来把关（跨 provider 现场连接 · 干净上下文不装灵魂）。\n\n全局只能有一个顾问 · 设它为顾问后 · 之前的顾问会自动取消。\n\n省钱场景：DeepSeek 干活 + K3 当顾问 · 同强度任务估省 50-70%。`,
     okText: '设为顾问',
@@ -3579,7 +3579,7 @@ async function toggleDirectorConfig(cfgId, val) {
   });
   if (!r.ok) {
     const t = await r.text();
-    await DaemonkeyAlert({ title: '改顾问失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
+    await opusAlert({ title: '改顾问失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
     return;
   }
   await renderSettingsLLM();
@@ -3587,7 +3587,7 @@ async function toggleDirectorConfig(cfgId, val) {
 }
 
 function showDirectorHelp() {
-  DaemonkeyAlert({
+  opusAlert({
     title: '<i class="ri-vip-crown-fill"></i> 顾问模型是干啥的？',
     message: '顾问 = 能力最强的贵模型。\n\n主对话日常用便宜模型干活时 · 它只在「蓝图 / 破局 / 验收」三个唤醒点被 replan 召唤进来把关（跨 provider 现场连接 · 干净上下文不装灵魂）。\n\n全局只能有一个顾问 · 设新的顾问后旧的自动取消。不配则不启用顾问功能 · replan 照旧用当前主模型当顾问。\n\n省钱场景：DeepSeek 干活 + K3 当顾问 · 同强度任务估省 50-70%。',
   });
@@ -4104,11 +4104,11 @@ async function addTrustedCommand() {
   const dur = parseInt(document.getElementById('accTrustDuration').value, 10);
   const reason = document.getElementById('accTrustReason').value.trim();
   if (!pat) {
-    DaemonkeyAlert({ title: '空 pattern', message: '请填命令头 (例如 "pip install")' });
+    opusAlert({ title: '空 pattern', message: '请填命令头 (例如 "pip install")' });
     return;
   }
   if (!token) {
-    DaemonkeyAlert({ title: '缺 token', message: '请先填 API token' });
+    opusAlert({ title: '缺 token', message: '请先填 API token' });
     return;
   }
   try {
@@ -4123,14 +4123,14 @@ async function addTrustedCommand() {
     });
     if (!r.ok) {
       const txt = await r.text();
-      DaemonkeyAlert({ title: '加入失败', message: 'HTTP ' + r.status + '\n' + txt });
+      opusAlert({ title: '加入失败', message: 'HTTP ' + r.status + '\n' + txt });
       return;
     }
     document.getElementById('accTrustPattern').value = '';
     document.getElementById('accTrustReason').value = '';
     await refreshTrustedCommands();
   } catch (e) {
-    DaemonkeyAlert({ title: '加入失败', message: e.message });
+    opusAlert({ title: '加入失败', message: e.message });
   }
 }
 
@@ -4143,12 +4143,12 @@ async function removeTrustedCommand(itemId) {
     });
     if (!r.ok) {
       const txt = await r.text();
-      DaemonkeyAlert({ title: '删除失败', message: 'HTTP ' + r.status + '\n' + txt });
+      opusAlert({ title: '删除失败', message: 'HTTP ' + r.status + '\n' + txt });
       return;
     }
     await refreshTrustedCommands();
   } catch (e) {
-    DaemonkeyAlert({ title: '删除失败', message: e.message });
+    opusAlert({ title: '删除失败', message: e.message });
   }
 }
 
@@ -4410,7 +4410,7 @@ async function wechatLoadStatus() {
       const winTxt = s.window_open
         ? `<span style="color:var(--dim2)">· 窗口开着 (${s.context_age_hours ?? '?'}h 前说过话)</span>`
         : s.silent
-          ? '<span style="color:var(--dim2)">· 已静默 (微信发 Daemonkey start 唤醒)</span>'
+          ? '<span style="color:var(--dim2)">· 已静默 (微信发 opus start 唤醒)</span>'
           : '<span style="color:#fbbf24">· 24h 窗口已关 · 你先发一句即开</span>';
       liveInner = `<span class="live-dot ${listener.alive ? 'on' : 'off'}"></span> 监听 ${listener.alive ? '在线' : '离线'}
         ${listener.messages_in != null ? `<span class="chan-chip">收 <b>${listener.messages_in}</b></span><span class="chan-chip">回 <b>${listener.replies_out}</b></span>` : ''}
@@ -4424,7 +4424,7 @@ async function wechatLoadStatus() {
 
 async function wechatGenQr() {
   const box = document.getElementById('wechatQrBox');
-  if (!token) { DaemonkeyAlert({ title: '缺 token', message: '先在『访问 & 会话』填 API Token' }); return; }
+  if (!token) { opusAlert({ title: '缺 token', message: '先在『访问 & 会话』填 API Token' }); return; }
   if (_wechatQrPoll) { clearInterval(_wechatQrPoll); _wechatQrPoll = null; }
   box.style.display = 'block';
   box.innerHTML = '<div class="field-hint">取二维码中…</div>';
@@ -4513,7 +4513,7 @@ function wechatRenderFreq(currentId) {
     const ic = cur ? freqIcon(cur.emoji) : null;
     const curIcon = ic ? `<i class="${ic}"></i>` : (cur ? cur.emoji : '');
     desc.innerHTML = currentId === 'custom'
-      ? '当前是<b>自定义</b>档 (你手改过 .env 的 Daemonkey_PROACTIVE_* )·点任意档位归一'
+      ? '当前是<b>自定义</b>档 (你手改过 .env 的 OPUS_PROACTIVE_* )·点任意档位归一'
       : (cur ? `当前:${curIcon} <b>${escHtml(cur.label)}</b> · ${escHtml(cur.desc)}` : '');
   }
 }
@@ -4531,7 +4531,7 @@ async function wechatSetFrequency(presetId) {
     const d = await r.json();
     wechatRenderFreq(d.current);
   } catch (e) {
-    DaemonkeyAlert({ title: '设置失败', message: e.message });
+    opusAlert({ title: '设置失败', message: e.message });
   }
 }
 
@@ -4630,7 +4630,7 @@ function renderSettingsData() {
 }
 
 async function resetAll() {
-  const ok = await DaemonkeyConfirm({
+  const ok = await opusConfirm({
     title: '清空所有本地数据',
     message: '会清掉 token / sessionId / 别名等浏览器本地数据·然后刷新。\n服务端的对话不会动·随时能找回来。',
     okText: '清空并退出',
@@ -4647,16 +4647,16 @@ $modal.addEventListener('click', e => { if (e.target === $modal) closeSettings()
 // 卷三十四补丁 · 统一 H5 modal · 替代浏览器原生 confirm/prompt/alert
 //
 // 三个 promise 函数：
-//   DaemonkeyConfirm({ title, message, okText, cancelText, danger })  → Promise<boolean>
-//   DaemonkeyPrompt({ title, message, default, placeholder, okText }) → Promise<string|null>
-//   DaemonkeyAlert({ title, message, okText, icon })                  → Promise<void>
+//   opusConfirm({ title, message, okText, cancelText, danger })  → Promise<boolean>
+//   opusPrompt({ title, message, default, placeholder, okText }) → Promise<string|null>
+//   opusAlert({ title, message, okText, icon })                  → Promise<void>
 //
 // 行为：
 //   - 一次只能开一个 modal · 后调的进队列等前一个 resolve
 //   - Enter = 确定 · ESC = 取消
 //   - 点遮罩 = 取消（alert 模式下也允许·等价 OK）
 // ──────────────────────────────────────────────────────────────
-const _omEl = document.getElementById('DaemonkeyModal');
+const _omEl = document.getElementById('opusModal');
 const _omIcon = document.getElementById('omIcon');
 const _omTitle = document.getElementById('omTitle');
 const _omMessage = document.getElementById('omMessage');
@@ -4801,22 +4801,22 @@ if (_omEl) {
   });
 }
 
-function DaemonkeyConfirm(opts) {
+function opusConfirm(opts) {
   opts = opts || {};
   return new Promise((resolve) => {
     _omQueue.push({ mode: 'confirm', ...opts, resolve });
     _omRunNext();
   });
 }
-function DaemonkeyPrompt(opts) {
+function opusPrompt(opts) {
   opts = opts || {};
   return new Promise((resolve) => {
     _omQueue.push({ mode: 'prompt', ...opts, resolve });
     _omRunNext();
   });
 }
-function DaemonkeyAlert(opts) {
-  // 支持 DaemonkeyAlert('字符串') 速写
+function opusAlert(opts) {
+  // 支持 opusAlert('字符串') 速写
   if (typeof opts === 'string') opts = { message: opts };
   opts = opts || {};
   return new Promise((resolve) => {
@@ -5424,7 +5424,7 @@ async function _patchSessionMeta(sid, patch) {
     });
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
-      await DaemonkeyAlert({
+      await opusAlert({
         title: `操作失败 [${r.status}]`,
         message: txt.slice(0, 400) || '服务端没返详情',
         icon: '<i class="ri-error-warning-fill"></i>',
@@ -5435,7 +5435,7 @@ async function _patchSessionMeta(sid, patch) {
     sessionMetaCache[sid] = data.meta || {};
     return true;
   } catch (e) {
-    await DaemonkeyAlert({ title: '网络出错', message: e.message, icon: '<i class="ri-error-warning-fill"></i>' });
+    await opusAlert({ title: '网络出错', message: e.message, icon: '<i class="ri-error-warning-fill"></i>' });
     return false;
   }
 }
@@ -5474,7 +5474,7 @@ async function toggleArchiveSession(sid) {
 async function deleteSession(sid) {
   closeSessionMenu();
   const name = aliasFor(sid);
-  const ok = await DaemonkeyConfirm({
+  const ok = await opusConfirm({
     title: '删除会话',
     message: { html: `确认删除 <b>「${escHtml(name)}」</b> 吗？<span class="om-hint">会真删 sessions/${escHtml(sid)}.jsonl · 不可恢复</span>` },
     okText: '删除',
@@ -5489,7 +5489,7 @@ async function deleteSession(sid) {
     });
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
-      await DaemonkeyAlert({
+      await opusAlert({
         title: `删除失败 [${r.status}]`,
         message: txt.slice(0, 400) || '服务端没返详情',
         icon: '<i class="ri-error-warning-fill"></i>',
@@ -5505,14 +5505,14 @@ async function deleteSession(sid) {
       _refreshSessionLists();
     }
   } catch (e) {
-    await DaemonkeyAlert({ title: '网络出错', message: e.message, icon: '<i class="ri-error-warning-fill"></i>' });
+    await opusAlert({ title: '网络出错', message: e.message, icon: '<i class="ri-error-warning-fill"></i>' });
   }
 }
 
 async function renameSession(sid) {
   closeSessionMenu();
   const current = aliasFor(sid);
-  const name = await DaemonkeyPrompt({
+  const name = await opusPrompt({
     title: '重命名会话',
     message: '给这个对话起个名字 · 留空清掉别名回到默认显示',
     defaultValue: current,
@@ -5608,10 +5608,10 @@ async function _loadSessionHistory(sid, opts) {
               _uc = _uc.trim();
             }
             // wish-7c579a20 · 带附件消息: 剥掉系统注入的说明段 + 重建图片/文档(刷新不丢)
-            const _attS = _用户AttachStrip(_uc);
+            const _attS = _broAttachStrip(_uc);
             if (_attS.legacy.length || (t.attachments && t.attachments.length)) _uc = _attS.body || _uc;
-            const _用户B = addMsg('用户', _uc, null, t.ts, s.$container);
-            _render用户Attachments(_用户B,
+            const _broB = addMsg('bro', _uc, null, t.ts, s.$container);
+            _renderBroAttachments(_broB,
               (t.attachments && t.attachments.length)
                 ? t.attachments
                 : _attS.legacy.map(function(b) { return { name: b, path: 'data/runtime/attachments/' + b }; }));
@@ -5634,7 +5634,7 @@ async function _loadSessionHistory(sid, opts) {
             renderReasoningBubble(t.reasoning_content, { collapsed: true, historical: true }, s.$container);
           }
           if (t.content && t.content.trim()) {
-            addMsg('Daemonkey', t.content, null, t.ts, s.$container);
+            addMsg('opus', t.content, null, t.ts, s.$container);
           }
           if (t.tool_calls && t.tool_calls.length) {
             const _results = [];
@@ -5788,7 +5788,7 @@ const TL_T2C = {
   shell_exec:'exec', python_exec:'exec', service_start:'exec', service_stop:'exec', service_status:'exec', service_list:'exec',
   open_app:'exec', worktree_status:'exec', verify_daemon_endpoints:'exec', request_restart:'exec', update_core:'exec',
   web_search:'web', web_fetch:'web', browser_fetch:'web', browser_act:'web', web_search_image:'web', verify_claim:'web',
-  update_bro_note:'memory', recall_memory:'memory', session_search:'memory', update_self_evolution:'memory',
+  update_owner_note:'memory', recall_memory:'memory', session_search:'memory', update_self_evolution:'memory',
   summarize_session:'memory', manage_knowledge:'memory', manage_client:'memory', extract_playbook:'memory', track_task:'memory',
   create_app:'workshop', update_app:'workshop', list_apps:'workshop', run_app:'workshop', app_versions:'workshop',
   manage_app_asset:'workshop', app_set_secret:'workshop', app_list_secrets:'workshop', app_delete_secret:'workshop',
@@ -5858,7 +5858,7 @@ const TL_HUMAN = {
   generate_image: c => ({ action: '画了一张图', result: '图片已生成并保存' }),
   generate_report: c => ({ action: '生成了一份报告文档', result: '已落盘，报告库可下载' }),
   wechat_send: c => ({ action: '给你发了条微信', result: '已送达' }),
-  update_bro_note: c => ({ action: '记一笔到你的画像档案', result: '已记住，以后每次开机都会带上' }),
+  update_owner_note: c => ({ action: '记一笔到你的画像档案', result: '已记住，以后每次开机都会带上' }),
   extract_playbook: c => ({ action: '沉淀经验成操作手册', result: '已存档，下次同类任务直接照着做' }),
   recall_memory: c => ({ action: '翻长期记忆', result: c.r }),
   replan: c => ({ action: '请顾问出方案/破局/验收', result: c.ok ? '顾问已给出结论' : (c.r || '未通过') }),
@@ -6444,10 +6444,10 @@ async function _pollSession(state) {
         if (t.role === 'user') {
           // wish-7c579a20 · 带附件消息: 剥皮 + 重建图片/文档(同 _loadSessionHistory)
           let _pc = t.content || '';
-          const _pAttS = _用户AttachStrip(_pc);
+          const _pAttS = _broAttachStrip(_pc);
           if (_pAttS.legacy.length || (t.attachments && t.attachments.length)) _pc = _pAttS.body || _pc;
-          const _p用户B = addMsg('用户', _pc, null, t.ts, state.$container);
-          _render用户Attachments(_p用户B,
+          const _pBroB = addMsg('bro', _pc, null, t.ts, state.$container);
+          _renderBroAttachments(_pBroB,
             (t.attachments && t.attachments.length)
               ? t.attachments
               : _pAttS.legacy.map(function(b) { return { name: b, path: 'data/runtime/attachments/' + b }; }));
@@ -6456,7 +6456,7 @@ async function _pollSession(state) {
             renderReasoningBubble(t.reasoning_content, { collapsed: true, historical: true }, state.$container);
           }
           if (t.content && t.content.trim()) {
-            addMsg('Daemonkey', t.content, null, t.ts, state.$container);
+            addMsg('opus', t.content, null, t.ts, state.$container);
           }
           if (t.tool_calls && t.tool_calls.length) {
             const _results = [];
@@ -7045,8 +7045,8 @@ function mdRender(text, opts) {
 
   return html;
 }
-// 卷四十六续 11 补丁 · 暴露给 workshop.js 等其他 module 复用 (e.g. Daemonkey app 系统提示词渲染)
-try { window.DaemonkeyMdRender = mdRender; } catch (e) { /* 顶层环境异常 · 跳过 */ }
+// 卷四十六续 11 补丁 · 暴露给 workshop.js 等其他 module 复用 (e.g. opus app 系统提示词渲染)
+try { window.opusMdRender = mdRender; } catch (e) { /* 顶层环境异常 · 跳过 */ }
 
 // wish-3fef4bc7 · helpers 接受可选 target container · 不传 = 操作 active session ($msgs)
 // 这样 78 处现存调用不动 · send 内的调用传 state.$container 即可路由到正确 session
@@ -7057,7 +7057,7 @@ function addMsg(role, text, className, ts, target, opts) {
   div.className = 'msg ' + (className || role);
   const cls = className || role;
   // 卷三十：Daemonkey 输出走 markdown 渲染（用户 输入 / sys / err / 工具卡保持原样）
-  const useMd = cls.includes('Daemonkey') && !cls.includes('thinking');
+  const useMd = cls.includes('opus') && !cls.includes('thinking');
   if (useMd) {
     const body = document.createElement('div');
     body.className = 'md-body';
@@ -7092,7 +7092,7 @@ function addSys(text, target) { return addMsg('sys', text, null, null, target); 
  * 数据双源: ①新格式 t.attachments（后端 meta 结构化落盘）
  *           ②老消息从 content 头部『已存: data/runtime/attachments/xxx』正则提取
  * 顺便剥皮: 系统注入的『[用户上传了 N 个附件…』说明段不进气泡·只留 用户 正文 */
-function _用户AttachStrip(raw) {
+function _broAttachStrip(raw) {
   if (!raw || raw.indexOf('[用户上传了') !== 0) return { body: raw || '', legacy: [] };
   const sep = raw.indexOf('\n---\n');
   const head = sep >= 0 ? raw.slice(0, sep) : raw;
@@ -7104,10 +7104,10 @@ function _用户AttachStrip(raw) {
   return { body: body, legacy: legacy };
 }
 
-function _render用户Attachments(bubble, atts) {
+function _renderBroAttachments(bubble, atts) {
   if (!bubble || !atts || !atts.length) return;
   const wrap = document.createElement('div');
-  wrap.className = '用户-attach-imgs';
+  wrap.className = 'bro-attach-imgs';
   atts.forEach(function(a) {
     const base = String(a.path || '').split('/').pop().split('\\').pop();
     if (!base) return;
@@ -7116,7 +7116,7 @@ function _render用户Attachments(bubble, atts) {
       || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(base);
     if (isImg) {
       const img = document.createElement('img');
-      img.className = '用户-attach-img';
+      img.className = 'bro-attach-img';
       img.src = url;
       img.alt = a.name || base;
       img.title = a.name || base;
@@ -7125,7 +7125,7 @@ function _render用户Attachments(bubble, atts) {
       wrap.appendChild(img);
     } else {
       const card = document.createElement('a');
-      card.className = 'attach-doc-card 用户-attach-doc';
+      card.className = 'attach-doc-card bro-attach-doc';
       card.href = url;
       card.target = '_blank';
       card.innerHTML = '<i class="ri-file-3-line"></i><span class="doc-name">' + escHtml(a.name || base) + '</span>';
@@ -7258,7 +7258,7 @@ function appendReasoningDelta(state, textPiece) {
     if (state._tl) { try { tlFinishRound(state); } catch (e) {} }
     // 新建一个流式 reasoning bubble · 自动展开 · 标 streaming
     const div = document.createElement('div');
-    div.className = 'msg Daemonkey reasoning streaming';
+    div.className = 'msg opus reasoning streaming';
     const header = document.createElement('div');
     header.className = 'reasoning-header';
     header.innerHTML = `<span class="reasoning-icon"><i class="ri-brain-fill"></i></span> <span class="reasoning-label">思考中</span> <span class="reasoning-toggle">收起 ▴</span>`;
@@ -7403,7 +7403,7 @@ function appendAssistantDelta(state, textPiece) {
   if (!state.currentStreamingAssistant) {
     // 新建一条流式 assistant bubble
     const div = document.createElement('div');
-    div.className = 'msg Daemonkey streaming';
+    div.className = 'msg opus streaming';
     const body = document.createElement('div');
     body.className = 'md-body';
     div.appendChild(body);
@@ -7443,7 +7443,7 @@ function finalizeStreamingAssistant(state, finalText) {
   //   条件: TTS 开关开 + 语音对话模式活跃 (transcribe + 正在听) · 其他模式不打扰
   try {
     if (window.__voiceTtsEnabled && typeof window.__speakReply === 'function') {
-      const vMode = localStorage.getItem('Daemonkey_voice_mode');
+      const vMode = localStorage.getItem('opus_voice_mode');
       if (vMode === 'transcribe') {
         const speakText = (finalText || state.streamingAssistantRaw || '').trim();
         if (speakText) window.__speakReply(speakText);
@@ -7457,7 +7457,7 @@ function finalizeStreamingAssistant(state, finalText) {
 function renderReasoningBubble(text, options = {}, target) {
   if (!text) return null;
   const div = document.createElement('div');
-  div.className = 'msg Daemonkey reasoning';
+  div.className = 'msg opus reasoning';
   const collapsed = !!options.collapsed;
   // 卷三十八 · 历史回放 · 不是 streaming · label 直接显示"思考完成 · N 字"
   const label = options.historical
@@ -7554,13 +7554,13 @@ async function send() {
   if (_attachmentPromises.length > 0) await Promise.all(_attachmentPromises);
   _attachmentPromises.length = 0;
   const _hasImgs = _attachments.length > 0;
-  addMsg('用户', text || '（图片）', null, new Date(), state.$container, { forceScroll: true });
+  addMsg('bro', text || '（图片）', null, new Date(), state.$container, { forceScroll: true });
   if (_hasImgs) {
     // wish-41ed72ef · 用户 气泡附件渲染：图片缩略图 + 文档卡片
-    const _用户Bubble = state.$container ? state.$container.lastElementChild : null;
-    if (_用户Bubble && _用户Bubble.classList.contains('用户')) {
+    const _broBubble = state.$container ? state.$container.lastElementChild : null;
+    if (_broBubble && _broBubble.classList.contains('bro')) {
       const _attWrap = document.createElement('div');
-      _attWrap.className = '用户-attach-imgs';
+      _attWrap.className = 'bro-attach-imgs';
       _attachments.forEach(a => {
         if (a.type === 'file') {
           // 文档卡片
@@ -7587,7 +7587,7 @@ async function send() {
           _attWrap.appendChild(_img);
         }
       });
-      _用户Bubble.appendChild(_attWrap);
+      _broBubble.appendChild(_attWrap);
     }
   }
   $input.value = '';
@@ -7706,7 +7706,7 @@ async function send() {
     }
 
     if (!state.sawAssistantText && !state.errorShown) {
-      addMsg('Daemonkey', '(Daemonkey 没说话)', null, null, state.$container);
+      addMsg('opus', '(Daemonkey 没说话)', null, null, state.$container);
     }
   } catch (e) {
     // 用户 主动 stop = userAbortedSelf · catch 不算错
@@ -7756,7 +7756,7 @@ async function send() {
       setInputLocked(false);
       $input.focus();
       showToolProgress(false);
-      refreshPlan();   // 这一轮可能列了计划/勾掉一步 · 立刻刷·别等 6s 轮询
+      refreshPlan();   // 这一轮 Daemonkey 可能列了计划/勾掉一步 · 立刻刷·别等 6s 轮询
       try { _maybeTabFlash('✅ Daemonkey 干完了'); } catch {}
     } else {
       // 后台跑完 + 用户 不在看 = 标记 unread + toast 提示
@@ -7831,7 +7831,7 @@ async function send() {
           commitSessionId(data.session_id);
         }
         if (state.assistantBubbles.length === 0) {
-          const ph = addMsg('Daemonkey', 'Daemonkey 正在想', 'msg Daemonkey thinking', null, state.$container);
+          const ph = addMsg('opus', 'Daemonkey 正在想', 'msg opus thinking', null, state.$container);
           ph.dataset.placeholder = '1';
           state.assistantBubbles.push(ph);
         }
@@ -7850,7 +7850,7 @@ async function send() {
       case 'assistant_reasoning_done': {
         // 0.9.1 · 用兜底版: reasoning_delta 丢了也能补建气泡 · 不静默丢思考链
         ensureReasoningBubble(state, data.text || '');
-        const newPh = addMsg('Daemonkey', '继续...', 'msg Daemonkey thinking', null, state.$container);
+        const newPh = addMsg('opus', '继续...', 'msg opus thinking', null, state.$container);
         newPh.dataset.placeholder = '1';
         state.assistantBubbles.push(newPh);
         break;
@@ -7870,7 +7870,7 @@ async function send() {
         state.autoResumeCount = data.count || state.autoResumeCount + 1;
         const note = data.note || `自动续接 ${state.autoResumeCount}/${data.max || 3}`;
         addSys(`⏩ ${note} · Daemonkey 接着上次断点继续`, state.$container);
-        const newPh = addMsg('Daemonkey', '继续中...', 'msg Daemonkey thinking', null, state.$container);
+        const newPh = addMsg('opus', '继续中...', 'msg opus thinking', null, state.$container);
         newPh.dataset.placeholder = '1';
         state.assistantBubbles.push(newPh);
         break;
@@ -7890,7 +7890,7 @@ async function send() {
         // 用户 2026-07-28: 同 appendReasoningDelta · 新一轮思考前收尾旧工具容器 · 时间线按轮分组
         if (state._tl) { try { tlFinishRound(state); } catch (e) {} }
         renderReasoningBubble(data.text || '', {}, state.$container);
-        const newPh = addMsg('Daemonkey', '继续...', 'msg Daemonkey thinking', null, state.$container);
+        const newPh = addMsg('opus', '继续...', 'msg opus thinking', null, state.$container);
         newPh.dataset.placeholder = '1';
         state.assistantBubbles.push(newPh);
         break;
@@ -7911,7 +7911,7 @@ async function send() {
         if (state.currentStreamingAssistant) {
           finalizeStreamingAssistant(state, data.text || '');
         } else {
-          const bubble = addMsg('Daemonkey', data.text || '', 'msg Daemonkey', new Date(), state.$container);
+          const bubble = addMsg('opus', data.text || '', 'msg opus', new Date(), state.$container);
           if (data.has_tool_calls) {
             bubble.classList.add('streaming');
           }
@@ -7955,7 +7955,7 @@ async function send() {
         goBtn.innerHTML = '<i class="ri-quill-pen-line"></i> 过收尾三问';
         goBtn.onclick = () => {
           const prompt = '回头看刚才这轮 — 过一遍收尾三问，该沉淀的沉淀：\n'
-            + '① 我这次有没有透露/出现新信号该记进 OWNER-NOTEBOOK？(update_bro_note)\n'
+            + '① 我这次有没有透露/出现新信号该记进 OWNER-NOTEBOOK？(update_owner_note)\n'
             + '② 这次的操作流程/踩坑值得抽成 playbook 吗？(extract_playbook)\n'
             + '③ 有没有暴露我的能力缺口该记心愿？(wish_add)\n'
             + '确实啥也不用沉淀就说一句为什么。';
@@ -8300,7 +8300,7 @@ async function send() {
             ph.remove();
             state.assistantBubbles.shift();
           }
-          addMsg('Daemonkey', data.reply, null, new Date(), state.$container);
+          addMsg('opus', data.reply, null, new Date(), state.$container);
         }
         flushImages(state);               // 生图产物图廊·先渲图·再渲打开按钮
         flushOpenActions(state);          // 产物「用对应软件打开」按钮·统一落在这一 turn 的最底部
@@ -8727,7 +8727,7 @@ function toggleNavRail() {
 // root cause: col-resizer-left 用 display:none → grid item 序位错位 · detail/chat 落错列
 // 修法: chat.css 行 1620+ 改 visibility:hidden 保住 grid 5 槽位
 // (跟 toggleNavRail 不冲突 · 后者是手机端 slide-in 用的 .open class)
-const NAV_COLLAPSED_KEY = 'Daemonkey_nav_collapsed_v1';
+const NAV_COLLAPSED_KEY = 'opus_nav_collapsed_v1';
 function toggleNavCollapse(force) {
   const layout = document.querySelector('.main-layout');
   if (!layout) return;
@@ -8739,13 +8739,13 @@ function toggleNavCollapse(force) {
   // workshop 在中栏的话 · canvas 用 ResizeObserver 监容器尺寸 · 自动会重画 · 不用手动通知
 }
 (function _restoreNavCollapse() {
-  // 2026-08-20 BRO 拍板: 导航默认收起 (纯图标 · 悬浮显名) · 显式展开过才保持展开
+  // 2026-08-20 用户 拍板: 导航默认收起 (纯图标 · 悬浮显名) · 显式展开过才保持展开
   if (localStorage.getItem(NAV_COLLAPSED_KEY) === '0') return;
   document.addEventListener('DOMContentLoaded', () => toggleNavCollapse(true), { once: true });
   if (document.readyState !== 'loading') toggleNavCollapse(true);
 })();
 
-// ── Dock 式距离衰减 (2026-08-20 BRO: 分组分割线割裂波动链 · 改 JS 按鼠标真实距离驱动 ·
+// ── Dock 式距离衰减 (2026-08-20 用户: 分组分割线割裂波动链 · 改 JS 按鼠标真实距离驱动 ·
 //    跨分组连续 · 由大变小无限平滑 · 比 CSS :has 链更像真 macOS Dock) ──
 // 分工: CSS 管 hover 弹出入场动画 (dkNavPop · 播放期间覆盖内联) + label 浮出;
 //       JS 管 transform 距离衰减 + 颜色近紫远灰。 mouseleave 清空回弹。
@@ -8760,7 +8760,7 @@ function toggleNavCollapse(force) {
       const r = ic.getBoundingClientRect();
       const d = Math.abs(my - (r.top + r.height / 2));
       // 大小: 平方衰减 · 0px→1.7 · ~50px→1.45 · ~90px→1.2 · ≥140px→1
-      // 颜色不动 (2026-08-20 BRO: 邻居染淡紫=比白色暗=像被隐藏) ——
+      // 颜色不动 (2026-08-20 用户: 邻居染淡紫=比白色暗=像被隐藏) ——
       // 紫色是"选中"独占信号 · 归 CSS hover 管 · 距离感全靠大小波动表达
       const t = Math.max(0, 1 - d / 140);
       const s = 1 + 0.7 * t * t;
@@ -9498,8 +9498,8 @@ function collapseConfirmCard(card, decision, reason, autoTimeout, result) {
 // 卷三十 · 三栏左右拖拽 resize
 // ─────────────────────────────────────────────────────────
 (function initColResizers() {
-  const STORE_NAV = 'Daemonkey_ui_nav_w';
-  const STORE_CHAT = 'Daemonkey_ui_chat_w';
+  const STORE_NAV = 'opus_ui_nav_w';
+  const STORE_CHAT = 'opus_ui_chat_w';
   const NAV_MIN = 140, NAV_MAX = 360;
   const CHAT_MIN = 280, CHAT_MAX = 800;
 
@@ -9704,9 +9704,9 @@ async function restartDaemon() {
   if (!token) { addSys('⚠ 还没设 token · 不能重启 daemon'); return; }
   // 卷四十六 IV (2026-05-26): 重启对话框加 follow_up_message · 用户 痛点根治
   //   原来 confirm 只能 yes/no · 重启完只 inject system notice · Daemonkey 不会自动续场
-  //   现在 DaemonkeyPrompt 让 用户 一并填"重启完想让我做啥" · 串到 /restart-daemon body
+  //   现在 opusPrompt 让 用户 一并填"重启完想让我做啥" · 串到 /restart-daemon body
   //   留空 = 跟老逻辑一样 · 只重启 · 不跑 background turn
-  const followUp = await DaemonkeyPrompt({
+  const followUp = await opusPrompt({
     title: '重启 daemon 进程?',
     message: '会杀掉当前 daemon · 自动起新的 (装载新代码 + 清空进程内存)。\n持久化的 session 不会丢——重启后还能继续上次对话。\n大约 5-10 秒。\n\n[可选] 重启完想让我做啥? 留空 = 只重启 · 不自动续场',
     placeholder: '例: 重启完帮我验证 /digest 是不是真的返回了新数据',
@@ -9768,7 +9768,7 @@ async function restartDaemon() {
 
 async function shutdownDaemon() {
   if (!token) { addSys('⚠ 还没设 token · 不能关 daemon'); return; }
-  const ok = await DaemonkeyConfirm({
+  const ok = await opusConfirm({
     title: '关闭 daemon 进程?',
     message: '会杀掉当前 daemon · **不**起新进程。\n之后要回来工作 · 双击 start.bat 走 GUI 启动器。\n持久化的 session 不会丢。',
     okText: '关闭',
@@ -9845,7 +9845,7 @@ async function rollbackDaemon() {
     `当前分支: ${info.current_branch}\n最近 5 个 commits:\n\n${lines}` +
     `${dirtyHint}\n\n输入要回到的序号 (2-${cands.length} · 1=当前 HEAD 不动):`;
 
-  const idxStr = await DaemonkeyPrompt({
+  const idxStr = await opusPrompt({
     title: '<i class="ri-rewind-fill"></i> 回档 · 选目标 commit',
     message: promptMsg,
     placeholder: '比如 2',
@@ -9866,7 +9866,7 @@ async function rollbackDaemon() {
     `这会 git reset --hard · daemon 自动重启 · 大约 5-10 秒。\n` +
     (info.dirty ? '未 commit 改动会先 stash · 不会丢。\n\n' : '\n') +
     '[可选] 回档完想让我做啥? 留空 = 只回档 · 不自动续场';
-  const followUp = await DaemonkeyPrompt({
+  const followUp = await opusPrompt({
     title: '<i class="ri-rewind-fill"></i> 确认回档?',
     message: confirmMsg,
     placeholder: '例: 回档完跑一遍 health check · 确认 X 还工作',
@@ -10036,7 +10036,7 @@ async function switchModel(alias) {
     });
     if (!r.ok) {
       const t = await r.text();
-      await DaemonkeyAlert({ title: '切换模型失败', message: t.slice(0, 400) || '服务端没返详情', icon: '<i class="ri-error-warning-fill"></i>' });
+      await opusAlert({ title: '切换模型失败', message: t.slice(0, 400) || '服务端没返详情', icon: '<i class="ri-error-warning-fill"></i>' });
       return;
     }
     const data = await r.json();
@@ -10062,7 +10062,7 @@ async function switchModel(alias) {
     setTimeout(() => tip.remove(), 2800);
     setTimeout(loadCurrentModel, 600);
   } catch (e) {
-    await DaemonkeyAlert({ title: '网络出错', message: e.message, icon: '<i class="ri-error-warning-fill"></i>' });
+    await opusAlert({ title: '网络出错', message: e.message, icon: '<i class="ri-error-warning-fill"></i>' });
   }
 }
 
@@ -10092,8 +10092,8 @@ function backToChat() {
   document.querySelectorAll('.nav-item.active').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.nav-settings-btn.active').forEach(b => b.classList.remove('active'));
   // 卷四十四 K · 离开任何 view · 工坊也要 unmount
-  if (window.Daemonkey_WORKSHOP_VIEW && window.Daemonkey_WORKSHOP_VIEW.isMounted()) {
-    window.Daemonkey_WORKSHOP_VIEW.unmount();
+  if (window.OPUS_WORKSHOP_VIEW && window.OPUS_WORKSHOP_VIEW.isMounted()) {
+    window.OPUS_WORKSHOP_VIEW.unmount();
     $detailPane.classList.remove('workshop-active');
   }
   renderDetailWelcome();
@@ -10194,14 +10194,14 @@ function renderBIDashboard(data) {
   $detailPane.innerHTML = `
     <div class="bi-dashboard">
       <div class="bi-head">
-        <h2><i class="ri-dashboard-fill" style="color:var(--Daemonkey)"></i> 工作室 BI 看板</h2>
+        <h2><i class="ri-dashboard-fill" style="color:var(--opus)"></i> 工作室 BI 看板</h2>
         <span class="bi-head-meta">
           ${data.generated_at || ''} ·
           <button class="bi-link" onclick="renderDetailWelcome()" title="刷新"><i class="ri-refresh-fill"></i> 刷新</button>
         </span>
       </div>
 
-      <!-- 建议操作 (0.9.6 · BRO: 页面分散 · 顶部放条件触发的行动建议 · 晨会汇报位) -->
+      <!-- 建议操作 (0.9.6 · 用户: 页面分散 · 顶部放条件触发的行动建议 · 晨会汇报位) -->
       <div id="biSuggestBar" style="margin-bottom:12px"></div>
 
       <!-- KPI 数字条 -->
@@ -10216,7 +10216,7 @@ function renderBIDashboard(data) {
       <div class="bi-grid-2 bi-row-heat">
         <div class="bi-card bi-heat-card">
           <div class="bi-card-head">
-            <h3><i class="ri-fire-fill" style="color:var(--Daemonkey)"></i> 价值热力</h3>
+            <h3><i class="ri-fire-fill" style="color:var(--opus)"></i> 价值热力</h3>
             <span class="bi-heat-nav">
               <button class="bi-heat-arrow" onclick="biHeatNav(-1)" title="上个月"><i class="ri-arrow-left-s-line"></i></button>
               <span class="badge" id="biCalBadge">…</span>
@@ -10231,7 +10231,7 @@ function renderBIDashboard(data) {
         </div>
         <div class="bi-card bi-signal-card">
           <div class="bi-card-head">
-            <h3><i class="ri-radar-fill" style="color:var(--Daemonkey)"></i> 信号流</h3>
+            <h3><i class="ri-radar-fill" style="color:var(--opus)"></i> 信号流</h3>
             <span class="bi-sig-head-r">
               <button class="bi-sig-today" id="biSigToday" onclick="biSigToggleToday()" title="只看今天抓到/发布的信号"><i class="ri-calendar-event-line"></i> 今日</button>
               <span class="badge" id="biSigCount">…</span>
@@ -10266,13 +10266,13 @@ function renderBIDashboard(data) {
         </div>
       </div>
 
-      <!-- 记忆体系 + 工坊 (0.9.6 · BRO: 看板 = 用户了解功能的大面板 · 按钮走 spawnQuickly 后台任务 · 跟照镜同款) -->
+      <!-- 记忆体系 + 工坊 (0.9.6 · 用户: 看板 = 用户了解功能的大面板 · 按钮走 spawnQuickly 后台任务 · 跟照镜同款) -->
       <div class="bi-grid-2" style="margin-top:12px">
         <div class="bi-card">
           <div class="bi-card-head">
             <h3><i class="ri-brain-fill" style="color:#8affd6"></i> 记忆体系 <span class="badge" id="biMemoryBadge">…</span></h3>
             <span>
-              <button class="bi-link" id="biMemoryAuditBtn" type="button" title="让 ${window.AI_NAME || 'Daemonkey'} 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 手艺体检</button>
+              <button class="bi-link" id="biMemoryAuditBtn" type="button" title="让 Daemonkey 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 手艺体检</button>
               <button class="bi-link" onclick="loadDashboard('memory_map')" title="记忆星图 · 三道闸治理全景"><i class="ri-sparkling-2-fill"></i> 星图</button>
             </span>
           </div>
@@ -10353,7 +10353,7 @@ function fillBIV3Blocks(data) {
 
   // KPI 条
   const picks = [
-    { id:'radar',   icon:'ri-radar-fill',     color:'var(--Daemonkey)',  label:'雷达信号' },
+    { id:'radar',   icon:'ri-radar-fill',     color:'var(--opus)',  label:'雷达信号' },
     { id:'trends',  icon:'ri-line-chart-fill', color:'#4FD1C5',     label:'今日趋势' },
     { id:'reports', icon:'ri-article-fill',    color:'#63B3ED',     label:'报告产出' },
     { id:'wishlist',icon:'ri-lightbulb-fill',  color:'#F6AD55',     label:'Daemonkey 心愿' },
@@ -10419,6 +10419,9 @@ async function loadBIV3Async() {
     loadBIClosure();  // B·闭环温度计
     loadBISelf();     // C·Daemonkey 自况
     loadBIBilling();  // wish-bec4f3b9 · 模型计费卡
+    loadBIMemory();   // 0.9.6 · 记忆体系卡 (lite 端点 · <100ms)
+    loadBIWorkshop(); // 0.9.6 · 工坊卡
+    loadBISuggestions(); // 0.9.6 · 建议操作条 (顶部 · 条件触发)
   } catch (e) {
     console.error('BI V3 async load error:', e);
   }
@@ -10503,6 +10506,7 @@ function biTlToggleMore(btn) {
     ? `<i class="ri-arrow-down-s-line"></i> 展开剩余 ${more.children.length} 条`
     : '<i class="ri-arrow-up-s-line"></i> 收起';
 }
+
 async function loadBIBilling() {
   const body = document.getElementById('biBillingBody');
   const badge = document.getElementById('biBillingUnpriced');
@@ -10573,7 +10577,7 @@ async function loadBIBilling() {
     const switches = (d.switches || []);
     const tlItems = switches.slice(0, 8).map(s => {
       if (s.advisor) {
-        // 2026-08-20 BRO: 胶囊只留 皇冠+模型名+tok · 「顾问唤醒」标签和时间/mode 收进悬浮
+        // 2026-08-20 用户: 胶囊只留 皇冠+模型名+tok · 「顾问唤醒」标签和时间/mode 收进悬浮
         // (窄分辨率下 meta 长串把胶囊撑高/挤爆 · 折叠抗性优先)
         const full = `顾问唤醒 · ${s.ts || ''} · ${s.mode || ''} · ${_biFmtTok(s.tokens_after || 0)} tok · 系统自动调用的顾问模型 · 独立临时连接`;
         return `<div class="bi-tl-adv" title="${escHtml(full)}">
@@ -10591,8 +10595,8 @@ async function loadBIBilling() {
         <span class="bi-tl-main-meta" title="${escHtml(s.ts||'')}">${_biFmtTok(s.tokens_after||0)} tok</span>
       </div>`;
     });
-    // 2026-08-20 BRO: 最多显 5 条 · 超出收进「展开更多」(左栏比右栏(缓存经济性)高一截 · 对不齐)
-    // 「仅显示最近 8 条」不单起一行 · 并进展开按钮行右侧 (BRO 续)
+    // 2026-08-20 用户: 最多显 5 条 · 超出收进「展开更多」(左栏比右栏(缓存经济性)高一截 · 对不齐)
+    // 「仅显示最近 8 条」不单起一行 · 并进展开按钮行右侧 (用户 续)
     const TL_SHOW = 5;
     const tlCapNote = switches.length > 8 ? '<span class="bi-brief-scope" style="margin-left:auto">仅显示最近 8 条</span>' : '';
     const tl = tlItems.length ? (
@@ -10709,7 +10713,7 @@ async function loadBISelf() {
   }
   if (sess) {
     const cnt = (sess.total != null) ? sess.total : ((sess.sessions || []).length);
-    cells.push({ icon: 'ri-chat-3-fill', color: 'var(--Daemonkey)', val: cnt, lbl: '会话数' });
+    cells.push({ icon: 'ri-chat-3-fill', color: 'var(--opus)', val: cnt, lbl: '会话数' });
   }
   if (life && life.started_at) {
     cells.push({ icon: 'ri-time-fill', color: '#63B3ED', val: _biUptime(life.started_at), lbl: '已在线' });
@@ -10857,7 +10861,7 @@ function biHeatRender(c) {
   if (dt) {
     dt.innerHTML = (c.domains || []).map(d => {
       const on = d.id === _biHeat.domain;
-      const style = on ? `style="--dc:${d.color || 'var(--Daemonkey)'}"` : '';
+      const style = on ? `style="--dc:${d.color || 'var(--opus)'}"` : '';
       return `<button class="bi-heat-dom${on ? ' active' : ''}" ${style} onclick="biHeatSetDomain('${d.id}')">${d.icon || ''} ${escHtml(d.label)} <i>${d.count}</i></button>`;
     }).join('');
   }
@@ -11172,7 +11176,7 @@ async function biBriefGenerate() {
   const btn = document.getElementById('biBriefGenBtn');
   const body = document.getElementById('biBriefBody');
   const { mm, vd } = _biBriefScopeQuery();
-  const ok = await DaemonkeyConfirm({
+  const ok = await opusConfirm({
     title: '研判这段时间的趋势',
     message: {
       html: `让 Daemonkey 看一遍 <b>${mm}${vd && vd !== 'all' ? ' · ' + escHtml(vd) : ''}</b> 的高价值信号·
@@ -11267,7 +11271,7 @@ function _biSigRenderDomains() {
   let html = `<button class="bi-heat-dom${_biSig.domain === 'all' ? ' active' : ''}" onclick="biSigSetDomain('all')"><i class="ri-stack-line"></i> 全部 <i>${total}</i></button>`;
   // 领域按数量从多到少排
   Object.keys(counts).sort((a, b) => counts[b] - counts[a]).forEach(id => {
-    const m = RADAR_DOMAINS_META[id] || { icon: '', label: id, color: 'var(--Daemonkey)' };
+    const m = RADAR_DOMAINS_META[id] || { icon: '', label: id, color: 'var(--opus)' };
     const on = _biSig.domain === id;
     const style = on ? `style="--dc:${m.color}"` : '';
     html += `<button class="bi-heat-dom${on ? ' active' : ''}" ${style} onclick="biSigSetDomain('${id}')">${m.icon || ''} ${escHtml(m.label)} <i>${counts[id]}</i></button>`;
@@ -11440,9 +11444,9 @@ function fillBITimeline(data) {
   if (!tl) return;
   const domains = data.domains || [];
   const colors = {
-    radar:'var(--Daemonkey)', trends:'#4FD1C5', reports:'#63B3ED',
+    radar:'var(--opus)', trends:'#4FD1C5', reports:'#63B3ED',
     content:'#48BB78', dev:'#F6AD55', docs:'#4FD1C5',
-    cognition:'var(--Daemonkey)', opportunities:'#F6AD55',
+    cognition:'var(--opus)', opportunities:'#F6AD55',
     wishlist:'#F6AD55', plugins:'var(--dim)',
   };
   const items = domains
@@ -11670,18 +11674,18 @@ async function loadDashboard(domain, opts = {}) {
     return _splitMissing('成长档案');
   }
   // 卷四十四 K · 切到非 workshop 前·先 unmount 工坊 (释放 ResizeObserver / events)
-  if (domain !== 'workshop' && window.Daemonkey_WORKSHOP_VIEW && window.Daemonkey_WORKSHOP_VIEW.isMounted()) {
-    window.Daemonkey_WORKSHOP_VIEW.unmount();
+  if (domain !== 'workshop' && window.OPUS_WORKSHOP_VIEW && window.OPUS_WORKSHOP_VIEW.isMounted()) {
+    window.OPUS_WORKSHOP_VIEW.unmount();
     $detailPane.classList.remove('workshop-active');
   }
   // 卷四十四 K · workshop 维度走特殊路径 · 不调 API · 直接 mount LiteGraph view
   if (domain === 'workshop') {
-    if (!window.Daemonkey_WORKSHOP_VIEW) {
+    if (!window.OPUS_WORKSHOP_VIEW) {
       $dashView.innerHTML = `<div class="dash-empty">⚠ workshop.js 没加载 · 检查 static/workshop.js</div>`;
       return;
     }
     $detailPane.classList.add('workshop-active');
-    window.Daemonkey_WORKSHOP_VIEW.mount($detailPane);
+    window.OPUS_WORKSHOP_VIEW.mount($detailPane);
     return;
   }
   if (!token) {
@@ -11709,7 +11713,7 @@ async function loadDashboard(domain, opts = {}) {
   }
   // 记忆星图 tab · 走 /dashboard/memory_map 端点 (0.9.6 · 三道闸治理全景)
   if (domain === 'memory_map') {
-    // 后端现算 PCA+漏斗+卫生 · 要 1-3s · 先上星尘加载态 (①A 多色 · BRO 选定)
+    // 后端现算 PCA+漏斗+卫生 · 要 1-3s · 先上星尘加载态 (①A 多色 · 用户 选定)
     if (typeof memoryMapLoadingHTML === 'function') $dashView.innerHTML = memoryMapLoadingHTML();
     try {
       const r = await fetch('/dashboard/memory_map', { headers: { 'Authorization': 'Bearer ' + token } });
@@ -11885,7 +11889,7 @@ function renderScheduledTasks(data) {
   });
   $dashView.querySelectorAll('.sched-del').forEach(btn => {
     btn.onclick = async () => {
-      const ok = await DaemonkeyConfirm({
+      const ok = await opusConfirm({
         title: '删除定时任务', message: '删掉这个定时任务吗？', okText: '删除', cancelText: '保留',
       });
       if (!ok) return;
@@ -12585,7 +12589,7 @@ async function renderFeasibilityDetail(d) {
   if (d.capability_match && d.capability_match.length) {
     html += `<div class="feas-block"><h3><i class="ri-brain-fill"></i> 能力对照</h3><div class="feas-caps">`;
     for (const c of d.capability_match) {
-      const mark = { yes: '<i class="ri-checkbox-circle-fill"></i>', partial: '<i class="ri-circle-fill" style="color:#eab308"></i>', no: '<i class="ri-close-circle-fill"></i>' }[c.用户_has] || '?';
+      const mark = { yes: '<i class="ri-checkbox-circle-fill"></i>', partial: '<i class="ri-circle-fill" style="color:#eab308"></i>', no: '<i class="ri-close-circle-fill"></i>' }[c.bro_has] || '?';
       html += `
         <div class="feas-cap">
           <div class="feas-cap-head">${mark} <b>${escHtml(c.capability || '?')}</b></div>
@@ -13128,7 +13132,7 @@ function renderExecutionDetail(d) {
     if (ok) {
       _loadExecutionDetail(d.opp_id);
     } else {
-      await DaemonkeyAlert({ title: '保存失败', message: '执行反馈没存上 · 看浏览器控制台', icon: '<i class="ri-error-warning-fill"></i>' });
+      await opusAlert({ title: '保存失败', message: '执行反馈没存上 · 看浏览器控制台', icon: '<i class="ri-error-warning-fill"></i>' });
     }
   };
 }
@@ -13215,7 +13219,7 @@ function renderFavorites(data) {
       ev.stopPropagation();
       const kind = btn.getAttribute('data-kind');
       const ref = btn.getAttribute('data-ref');
-      const ok = await DaemonkeyConfirm({
+      const ok = await opusConfirm({
         title: '取消收藏',
         message: '不再收藏这一条吗？',
         okText: '取消收藏',
@@ -13857,7 +13861,7 @@ function renderSourceHistogram(meta, scopeLabel) {
     const y = i * (barHeight + 4);
     const w = Math.max(2, (m.fetched / maxN) * width);
     const fail = !m.ok;
-    const color = fail ? 'var(--red)' : 'var(--Daemonkey)';
+    const color = fail ? 'var(--red)' : 'var(--opus)';
     const display = (m.display || m.source || '').slice(0, 14);
     const barSvg = `
       <text x="0" y="${y + barHeight - 5}" class="sh-label" fill="var(--dim)">${escHtml(display)}</text>
@@ -14135,7 +14139,7 @@ function setRadarDomainFilter(domain) {
 // 自然语言删除依然可以走 Daemonkey · 这个函数只服务"按钮点击"场景
 async function confirmRemoveDomain(slug, label, itemsCount, sourcesCount) {
   if (!slug || slug === 'self-evolve') return;
-  const ok = await DaemonkeyConfirm({
+  const ok = await opusConfirm({
     title: '删除雷达领域',
     message: {
       html: `确认删除领域 <b>「${escHtml(label)}」</b> 吗？
@@ -14164,7 +14168,7 @@ async function confirmRemoveDomain(slug, label, itemsCount, sourcesCount) {
     });
     if (!resp.ok) {
       const errText = await resp.text();
-      await DaemonkeyAlert({
+      await opusAlert({
         title: '删除失败',
         message: `${resp.status} · ${errText}`,
         danger: true,
@@ -14174,7 +14178,7 @@ async function confirmRemoveDomain(slug, label, itemsCount, sourcesCount) {
     const result = await resp.json();
     const affected = (result && result.affected_sources && result.affected_sources.length) || 0;
     const target = (result && result.target_domain) || '—';
-    await DaemonkeyAlert({
+    await opusAlert({
       title: '删除成功',
       message: {
         html: `已删除领域 <b>「${escHtml(label)}」</b>。<br>
@@ -14183,7 +14187,7 @@ async function confirmRemoveDomain(slug, label, itemsCount, sourcesCount) {
     });
     if (typeof loadDashboard === 'function') loadDashboard();
   } catch (e) {
-    await DaemonkeyAlert({
+    await opusAlert({
       title: '删除失败',
       message: '网络或服务异常: ' + (e && e.message || e),
       danger: true,
@@ -14979,7 +14983,7 @@ function wishFromRadar(title, url) {
     `   - 它的设计哲学跟 Daemonkey 是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
     `   - 如果合拍·这能力对 用户 这个具体的人有啥用 (而不是"通用上有用")\n` +
     `3. 然后明确告诉 用户：\n` +
-    `   - 值得装 → 调 wish_add 写一份心愿 (title / why / source_kind=radar / source_ref + url / design_sketch / complexity / hours / priority / Daemonkey_take = 你自己的态度)\n` +
+    `   - 值得装 → 调 wish_add 写一份心愿 (title / why / source_kind=radar / source_ref + url / design_sketch / complexity / hours / priority / opus_take = 你自己的态度)\n` +
     `   - 不值得装 → 说清为啥·别强加 wish 占心愿单\n` +
     `   - 拿不准 → 就说拿不准·要 用户 给更多 context\n` +
     `**你才是搭档·不是给 用户 端菜的工具人**·拿出判断力。`,
@@ -15030,10 +15034,10 @@ renderDetailWelcome();
 // 2026-08-15 · 老用户升级免傻眼 (用户 拍板): token 空时不再立即弹设置框。
 // 先探测本机回环连通性 —— loopback 中间件 (wish-bb84a386 + H-01) 在本机访问时
 // 会自动注入有效 token · 浏览器 localStorage 没有 key 也能正常连 (老用户 0.8.x→0.9.x
-// 升级后旧 key 名 Daemonkey_ui_token/Daemonkey_ui_token 对新前端失效的体验缝)。
+// 升级后旧 key 名 Daemonkey_ui_token/opus_ui_token 对新前端失效的体验缝)。
 // 探测 /status (需鉴权端点) 能通 = 本机回环注入真实生效 → 静默进 chat · 不弹框。
 // ⚠ 不能用 /api/ping-test (noauth) —— 它 200 只证明 daemon 活着 · 不能证明
-//   loopback 注入生效 (用户禁用 Daemonkey_LOOPBACK_TRUST 时 ping-test 照样 200 ·
+//   loopback 注入生效 (用户禁用 OPUS_LOOPBACK_TRUST 时 ping-test 照样 200 ·
 //   会误判本机 OK 不弹框 → 后面带空 token 的请求全 401 → 历史加载失败)。
 // 只有真连不上 (远程/隧道/loopback 禁用) 才弹设置引导填 .env 的 token。
 if (!token) {
@@ -15377,7 +15381,7 @@ window.switchSessionById = switchSessionById;
 // 点击标记 → 平滑滚动定位到对应消息（闪烁高亮）· 悬停/聚焦 → 预览文字（截断 ~12 字）
 // 磁性拉伸: 光标在轨道移动 → 影响半径内刻度按距离连续变长（smoothstep）· 离开回弹
 // 滚动聊天区 → 当前可见消息对应标记高亮
-// 适配母体: 主题色用 --Daemonkey 系 (非社区 --accent) · 父容器补 position:relative (chat-pane 无定位)
+// 适配母体: 主题色用 --opus 系 (非社区 --accent) · 父容器补 position:relative (chat-pane 无定位)
 // 2026-08-15 v5 增量移植 (龙头提交): ①两段式预览(问题+回答片段) ②磁性驱动预览统一
 //   (hover 不再依赖精准命中 6px 细条 · 光标靠近轨道即出预览) ③_railTopCache 免每帧读布局
 const _RAIL_PREVIEW_LEN = 60;   // 预览截断字符上限 (v5: 12→60 · 两段式问题 ≤3 行)
@@ -15463,15 +15467,15 @@ function _ensureMsgRail() {
   _refreshMsgRail();
   // 2026-08-10 修复 v3: 兜底自愈 · 每 1.5s 检查一次 ·
   // 任何事件漏监/瞬间状态导致 rail 误隐藏 → 有用户消息就强制恢复 (治"展开折叠后消失")
-  // 2026-08-10 修复 v5: 自愈检查条件从 `.session-msgs .msg.用户` (限容器内) 放宽为
-  // `#messages` 全量 `.msg.用户` · 展开折叠/加载全部重建后容器 class 若变化 ·
+  // 2026-08-10 修复 v5: 自愈检查条件从 `.session-msgs .msg.bro` (限容器内) 放宽为
+  // `#messages` 全量 `.msg.bro` · 展开折叠/加载全部重建后容器 class 若变化 ·
   // 旧条件查不到 → 永不恢复 · 只能等对话触发 observer (用户: "要再对话一次才出现")
   if (!_railSelfHealTimer) {
     _railSelfHealTimer = setInterval(function() {
       if (!_railEl) return;
       if (_railEl.hidden) {
         const panel = document.getElementById('messages');
-        if (panel && panel.querySelector('.msg.用户')) {
+        if (panel && panel.querySelector('.msg.bro')) {
           _refreshMsgRail();  // 有用户消息但 rail 隐藏 → 重建恢复
         }
       }
@@ -15491,10 +15495,10 @@ function _refreshMsgRail() {
   if (!_railEl) return;
   const container = _visibleMsgContainer();
   // 2026-08-10 修复 v3: 容器切换瞬间 (:not([hidden]) 选不到) 不隐藏 rail ·
-  // 用 panel 全量兜底找 .msg.用户 · 只要有用户消息就显示 · 不因瞬间状态误隐藏
+  // 用 panel 全量兜底找 .msg.bro · 只要有用户消息就显示 · 不因瞬间状态误隐藏
   const src = container || document.getElementById('messages');
   if (!src) { _railEl.hidden = true; _railHitRect = null; return; }
-  const userMsgs = src.querySelectorAll('.msg.用户'); // 用户消息 = msg 用户 (角色类)
+  const userMsgs = src.querySelectorAll('.msg.bro'); // 用户消息 = msg bro (角色类)
   // 2026-08-10 修复 v9 (用户 拍板): rail 只显示最近 N 条 · 不随折叠/展开爆炸 ·
   // 展开折叠加载全部后 DOM 224+ 条 → 刻度挤爆看不见 (用户: "200多轮根本显示不全")
   // 上限: 最近 28 条 · 不折叠/展开折叠都完整显示 · 无需内部滚动 · 1080P/2K 都装得下
@@ -15568,7 +15572,7 @@ function _findRailAnswer(msgEl) {
     const el = all[i];
     if (el === msgEl) { found = true; continue; }
     if (!found) continue;
-    if (el.classList.contains('Daemonkey') && !el.classList.contains('thinking')) {
+    if (el.classList.contains('opus') && !el.classList.contains('thinking')) {
       return el;
     }
   }
@@ -15705,4 +15709,4 @@ else document.addEventListener('DOMContentLoaded', function() { _ensureMsgRail()
 // chat.js 顶层执行到这里 = 解析成功 + 没在顶层抛错 → 标记 app 已就绪。
 // chat.html 头部的 boot-guard 靠这个标志判断: 超时后仍为 false = chat.js parse/运行
 // 失败 (白屏) → 弹兑底层。 这一行必须在 chat.js 最末尾。
-window.__Daemonkey_APP_READY = true;
+window.__OPUS_APP_READY = true;

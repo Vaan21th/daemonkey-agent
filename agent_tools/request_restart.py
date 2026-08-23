@@ -30,7 +30,7 @@ Daemonkey 让 daemon 重启的『正确姿势』(卷四十六 III · 2026-05-26 
 
 **这工具会 spawn 替代子进程**·跟 `/restart-daemon` endpoint 同一套路径:
   1. 用 `subprocess.Popen` 起一个新 Python 进程·跑同样的 argv
-  2. 子进程 env 带 `Daemonkey_DAEMON_TAKEOVER_PID=<parent_pid>` · acquire_pid_lock 看到
+  2. 子进程 env 带 `OPUS_DAEMON_TAKEOVER_PID=<parent_pid>` · acquire_pid_lock 看到
      这个 env 就**等 parent 死再 acquire** (workers/daemon_lifecycle.py:197) ·
      不撞双 daemon 的拒启动
   3. parent (老 daemon) 等子进程 1.5s 绑端口窗口 · `mark_graceful_shutdown` · `os._exit(0)`
@@ -81,7 +81,7 @@ def _trigger_shutdown_async(delay_sec: float = 2.0, reason: str = "request_resta
       consume → follow_up turn 也跑不了 → BRO 端到端断链 12 min·必须手动 start.bat。
 
       解法: 跟 daemon_api.py /restart-daemon endpoint 一样 spawn 子进程 + 设
-      Daemonkey_DAEMON_TAKEOVER_PID env · 子进程 acquire_pid_lock 自动等 parent 死 ·
+      OPUS_DAEMON_TAKEOVER_PID env · 子进程 acquire_pid_lock 自动等 parent 死 ·
       重启完全自包含 · 不依赖外部 launcher。
     """
 
@@ -99,7 +99,7 @@ def _trigger_shutdown_async(delay_sec: float = 2.0, reason: str = "request_resta
 
         parent_pid = os.getpid()
         child_env = os.environ.copy()
-        child_env["Daemonkey_DAEMON_TAKEOVER_PID"] = str(parent_pid)
+        child_env["OPUS_DAEMON_TAKEOVER_PID"] = str(parent_pid)
 
         try:
             out_f = open(out_path, "ab")
@@ -132,7 +132,7 @@ def _trigger_shutdown_async(delay_sec: float = 2.0, reason: str = "request_resta
         except Exception:
             os._exit(1)
 
-    t = threading.Thread(target=_kill, daemon=True, name="Daemonkey-restart-killer")
+    t = threading.Thread(target=_kill, daemon=True, name="opus-restart-killer")
     t.start()
 
 

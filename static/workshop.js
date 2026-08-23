@@ -4,7 +4,7 @@
  * 卷四十四 K stage 1b · 从独立页 /workshop 改成 /ui 中央 detail-pane 的 view
  *
  * 暴露:
- *   window.Daemonkey_WORKSHOP_VIEW = {
+ *   window.OPUS_WORKSHOP_VIEW = {
  *     mount(container)   - 把工坊 DOM 注入 container · 第一次会 init LiteGraph
  *     unmount()          - 切到别的 view 时清理 listener · graph 状态保留
  *     isMounted()        - 是否当前挂着
@@ -20,7 +20,7 @@
 
 (function () {
   'use strict';
-  if (window.Daemonkey_WORKSHOP_VIEW) return;  // 防双重加载
+  if (window.OPUS_WORKSHOP_VIEW) return;  // 防双重加载
 
   // ─── 工具节点 schema (跟未来 data/workflow/tools/*.json 对齐) ───
   const TOOL_SPECS = {
@@ -90,7 +90,7 @@
   };
   // custom/sovits 占位符已删除 (卷四十六续 13)
   // 自定义工具组现在从 _apps (kind='app') 动态生成 · 见 _renderToolGroup('custom') 分支
-  // GPT-SoVITS / GPT Image 2 等 Daemonkey 真造的 app 直接进 sidebar · 拖到画布生成 Daemonkey/app/<aid> 节点
+  // GPT-SoVITS / GPT Image 2 等 Daemonkey 真造的 app 直接进 sidebar · 拖到画布生成 opus/app/<aid> 节点
 
   // ─── LiteGraph 右键菜单中文化 (MENU_I18N) ───
   // 来源:阅读 LiteGraph.js 源码 · 内置菜单文案就这些
@@ -124,7 +124,7 @@
     'Group Selected Nodes': '把选中的节点分组',
   };
 
-  let _menuLang = localStorage.getItem('Daemonkey_workshop_lang') || 'zh';
+  let _menuLang = localStorage.getItem('opus_workshop_lang') || 'zh';
 
   // ─── HTML icon → emoji 映射 (canvas title 用 · LiteGraph 不解析 HTML) ───
   // workshop.js 里所有节点 title 走 canvas drawText · 任何 <i class="ri-...">
@@ -174,7 +174,7 @@
   let _trash = { apps: [], flows: [] };
   let _trashLoaded = false;
 
-  function _getToken() { return localStorage.getItem('Daemonkey_ui_token') || ''; }
+  function _getToken() { return localStorage.getItem('opus_ui_token') || ''; }
 
   function tr(s) {
     if (_menuLang === 'en' || !s) return s;
@@ -207,7 +207,7 @@
   // 卷四十四 K stage 2a · tabs + 应用详情状态
   // stage 2b · 砍 'create' tab (用户: 跟右侧 Daemonkey 重复 · 自然语言已够) · 残留 'create' 回退 'apps'
   // stage 2c++ · wish-6fd76512 · 加 'trash' tab
-  let _activeTab = localStorage.getItem('Daemonkey_workshop_tab') || 'apps';  // apps | canvas | trash
+  let _activeTab = localStorage.getItem('opus_workshop_tab') || 'apps';  // apps | canvas | trash
   if (_activeTab === 'create') _activeTab = 'apps';
   if (!['apps', 'canvas', 'trash'].includes(_activeTab)) _activeTab = 'apps';
   let _activeAppId = null;  // null = 看应用网格 · 否则 = 看应用详情
@@ -217,10 +217,10 @@
     if (_nodesRegistered) return;
     _nodesRegistered = true;
     for (const [key, spec] of Object.entries(TOOL_SPECS)) {
-      const fullType = 'Daemonkey/' + key;
+      const fullType = 'opus/' + key;
       const canvasTitle = iconToEmoji(spec.icon) + ' ' + spec.title;
 
-      function DaemonkeyNode() {
+      function OpusNode() {
         this.title = canvasTitle;
         this.color = spec.color;
         this.bgcolor = '#252525';
@@ -230,17 +230,17 @@
         this.properties = Object.assign({ _toolKey: key }, spec.props || {});
         this.size = [200, 24 + Math.max(spec.inputs.length, spec.outputs.length) * 20 + 8];
       }
-      DaemonkeyNode.title = canvasTitle;
-      DaemonkeyNode.desc = spec.desc;
-      DaemonkeyNode.prototype.onExecute = function () { /* phase B 由 daemon workflow_engine 真跑 · 前端不本地执行 */ };
-      DaemonkeyNode.prototype.onAdded = function () { if (/<i\s[^>]*>/i.test(this.title || '')) this.title = canvasTitle; };
-      DaemonkeyNode.prototype.onConfigure = function () { if (/<i\s[^>]*>/i.test(this.title || '')) this.title = canvasTitle; };
-      LiteGraph.registerNodeType(fullType, DaemonkeyNode);
+      OpusNode.title = canvasTitle;
+      OpusNode.desc = spec.desc;
+      OpusNode.prototype.onExecute = function () { /* phase B 由 daemon workflow_engine 真跑 · 前端不本地执行 */ };
+      OpusNode.prototype.onAdded = function () { if (/<i\s[^>]*>/i.test(this.title || '')) this.title = canvasTitle; };
+      OpusNode.prototype.onConfigure = function () { if (/<i\s[^>]*>/i.test(this.title || '')) this.title = canvasTitle; };
+      LiteGraph.registerNodeType(fullType, OpusNode);
     }
   }
 
   // 卷四十六续 12 · wish-165ea1f6 phase B · 把 Daemonkey 造的 app 注册成 LiteGraph 节点
-  //   - 每张 Daemonkey app 卡片 → 一个 node type 'Daemonkey/app/<aid>'
+  //   - 每张 Daemonkey app 卡片 → 一个 node type 'opus/app/<aid>'
   //   - ui_form_schema → input ports (用户 画布上可以连上游 outputs)
   //   - output_schema  → output ports (能接下游 inputs · 没声明默认单端口 'output')
   //   - 每次 _apps 更新都调一次 (idempotent · 已注册的同 type 跳过)
@@ -260,7 +260,7 @@
     JoinNode.title = '⋔ 汇合';
     JoinNode.desc = '并行组汇合点 · 各分支产出在此合并后喂下一步';
     JoinNode.prototype.onExecute = function () { /* 只读投影 · 不本地执行 */ };
-    try { LiteGraph.registerNodeType('Daemonkey/flow_join', JoinNode); _joinRegistered = true; }
+    try { LiteGraph.registerNodeType('opus/flow_join', JoinNode); _joinRegistered = true; }
     catch (e) { /* 已注册 · 静默 */ }
   }
 
@@ -270,7 +270,7 @@
     for (const app of _apps) {
       if (!app || !app.id) continue;
       if (app.kind === 'builtin') continue;
-      const fullType = 'Daemonkey/app/' + app.id;
+      const fullType = 'opus/app/' + app.id;
       if (_registeredAppTypes.has(fullType)) continue;
 
       const inputs = (Array.isArray(app.ui_form_schema) ? app.ui_form_schema : []).map(f => ({
@@ -290,7 +290,7 @@
         this.boxcolor = '#48BB78';
         for (const inp of inputs) this.addInput(inp.name, inp.type);
         for (const out of outputs) this.addOutput(out.name, out.type);
-        this.properties = { _appId: app.id, _kind: 'Daemonkey_app' };
+        this.properties = { _appId: app.id, _kind: 'opus_app' };
         this.size = [220, 24 + Math.max(inputs.length, outputs.length) * 20 + 8];
       }
       AppNode.title = title;
@@ -311,7 +311,7 @@
       for (const n of _graph._nodes) {
         if (!n || !/<i\s[^>]*>/i.test(n.title || '')) continue;
         const kind = n.properties && n.properties._kind;
-        if (kind === 'Daemonkey_app') {
+        if (kind === 'opus_app') {
           const app = _apps.find(a => a && a.id === n.properties._appId);
           if (app) { n.title = iconToEmoji(app.icon) + ' ' + app.name; touched = true; }
         } else if (n.properties && n.properties._toolKey) {
@@ -406,7 +406,7 @@
                   </div>
                 </div>
                 <div class="ws-tb-add">
-                  <button data-act="ask-Daemonkey-flow" title="跟右边对话框跟 Daemonkey 说想要的工作流">＋ 让 Daemonkey 排一条新工作流</button>
+                  <button data-act="ask-opus-flow" title="跟右边对话框跟 Daemonkey 说想要的工作流">＋ 让 Daemonkey 排一条新工作流</button>
                 </div>
               </div>
             </aside>
@@ -459,7 +459,7 @@
   function _renderAppCards() {
     const cards = _apps.map(app => {
       const isBuiltin = app.kind === 'builtin';
-      const isShipped = app.kind === 'Daemonkey' && app.shipped;  // 沉淀闭环 v2 刀⑤修正: 自带 agentic app · 随 DK 出厂 · 不可删
+      const isShipped = app.kind === 'opus' && app.shipped;  // 沉淀闭环 v2 刀⑤修正: 自带 agentic app · 随 DK 出厂 · 不可删
       const kindLabel = isBuiltin ? '内置' : (isShipped ? '自带' : 'Daemonkey 造');
       let meta;
       if (isBuiltin) meta = '<span class="wac-stage">stage 2b 可配置</span>';
@@ -484,7 +484,7 @@
       `;
     }).join('');
     const addCard = `
-      <div class="ws-app-card ws-app-add" data-act="ask-Daemonkey-app" title="跳到右侧 Daemonkey · 直接说想要什么应用">
+      <div class="ws-app-card ws-app-add" data-act="ask-opus-app" title="跳到右侧 Daemonkey · 直接说想要什么应用">
         <div class="wac-icon">＋</div>
         <div class="wac-body">
           <div class="wac-title">长一个新应用</div>
@@ -530,14 +530,14 @@
     if (rApps && rApps.ok) {
       try {
         const data = await rApps.json();
-        const DaemonkeyApps = (data.apps || []).map(a => Object.assign({}, a, { kind: 'Daemonkey' }));
-        // 沉淀闭环 v2 刀⑤修正补丁 (2026-06-10): shipped app (自带·随 DK 出厂) 排在所有 Daemonkey app 之前
-        // 顺序: BUILTIN_APPS (产品设计/开发/文档撰写) → shipped (内容制作) → 其他 Daemonkey app (按 mtime desc)
-        const shippedApps = DaemonkeyApps.filter(a => a.shipped);
-        const otherApps = DaemonkeyApps.filter(a => !a.shipped);
+        const opusApps = (data.apps || []).map(a => Object.assign({}, a, { kind: 'opus' }));
+        // 沉淀闭环 v2 刀⑤修正补丁 (2026-06-10): shipped app (自带·随 DK 出厂) 排在所有 opus app 之前
+        // 顺序: BUILTIN_APPS (产品设计/开发/文档撰写) → shipped (内容制作) → 其他 opus app (按 mtime desc)
+        const shippedApps = opusApps.filter(a => a.shipped);
+        const otherApps = opusApps.filter(a => !a.shipped);
         _apps = BUILTIN_APPS.concat(shippedApps, otherApps);
         // 卷七十二 v3 · 共享 _apps 给 chat.js 的 flow runs banner 用 (查 step.app id → 名字)
-        window._DaemonkeyWorkshopApps = _apps.slice();
+        window._opusWorkshopApps = _apps.slice();
         // 卷四十六续 12 · wish-165ea1f6 phase B · 每次拿到新 app 列表都注册成 LiteGraph node
         _registerAppNodes();
       } catch (e) { /* json parse · 静默走 builtin */ }
@@ -586,7 +586,7 @@
         <div class="ws-apps-welcome-stats">
           <span class="wawm-stat"><b>${total}</b> 个应用</span>
           <span class="wawm-stat"><b>${_apps.filter(a => a.kind === 'builtin').length}</b> 个内置</span>
-          <span class="wawm-stat"><b>${_apps.filter(a => a.kind === 'Daemonkey').length}</b> 个 Daemonkey 造</span>
+          <span class="wawm-stat"><b>${_apps.filter(a => a.kind === 'opus').length}</b> 个 Daemonkey 造</span>
         </div>
         <div class="ws-apps-welcome-tips">
           <div class="wawt-row"><i class="ri-lightbulb-fill"></i> 想要新应用 · 点左下「＋ 长一个新应用」 · 跟主对话区 Daemonkey 说想要什么</div>
@@ -612,13 +612,13 @@
         <span class="ws-ad-title">${_esc(app.name)}</span>
         <span class="ws-ad-kind">${kindLabel}</span>
         <span class="ws-spacer"></span>
-        ${app.kind === 'Daemonkey' && !app.shipped ? `<button class="ws-btn" data-act="ad-delete" data-app-id="${_esc(app.id)}" title="删除这个 Daemonkey 造的 app">🗑 删</button>` : ''}
+        ${app.kind === 'opus' && !app.shipped ? `<button class="ws-btn" data-act="ad-delete" data-app-id="${_esc(app.id)}" title="删除这个 Daemonkey 造的 app">🗑 删</button>` : ''}
         <button class="ws-btn" data-act="ad-refresh" title="刷新产物">⟳ 刷新</button>
       </div>
       <div class="ws-ad-tabs">
         <button class="ws-ad-tab active" data-ad-tab="test"><i class="ri-play-fill"></i> 测试/运行</button>
         <button class="ws-ad-tab" data-ad-tab="output"><i class="ri-folder-2-fill"></i> 产出</button>
-        ${app.kind === 'Daemonkey' ? '<button class="ws-ad-tab" data-ad-tab="detail"><i class="ri-file-list-3-fill"></i> 详情</button>' : ''}
+        ${app.kind === 'opus' ? '<button class="ws-ad-tab" data-ad-tab="detail"><i class="ri-file-list-3-fill"></i> 详情</button>' : ''}
         <button class="ws-ad-tab" data-ad-tab="config"><i class="ri-settings-3-fill"></i> 配置</button>
       </div>
       <div class="ws-ad-pane" data-ad-pane="test">
@@ -898,7 +898,7 @@
     }
   }
 
-  // 卷五十四 · 孪法第4条 · 画布引擎 (workflow_engine.run_workflow) 目前只实装 Daemonkey/app/<aid> 节点。
+  // 卷五十四 · 孪法第4条 · 画布引擎 (workflow_engine.run_workflow) 目前只实装 opus/app/<aid> 节点。
   // composite/* (生产线模板) 和 atomic/* (单步动作) 还没接执行器·拖进画布跑会被引擎跳过报错 =
   // "UI 有按钮但 NLP 跑不通"。 在真接执行器之前·明标"未实装"+禁拖·不误导 用户。
   const _UNIMPL_GROUPS = new Set(['composite', 'atomic']);
@@ -1011,7 +1011,7 @@
       }
       // 卷四十六续 12 · wish-165ea1f6 phase A/B · 应用测试表单
       else if (act === 'ad-form-clear') _onAppFormClear(tgt.dataset.appId);
-      else if (act === 'ad-suggest-form') _onAskDaemonkeyDesignForm(tgt.dataset.appId);
+      else if (act === 'ad-suggest-form') _onAskOpusDesignForm(tgt.dataset.appId);
       else if (act === 'ad-form-cancel') _onAppFormCancel(tgt.dataset.appId);
       // 卷四十四 K stage 2c++ · wish-6fd76512 · 卡片右上角 🗑 软删 · stopPropagation 不打开详情
       else if (act === 'app-delete-card') { e.stopPropagation(); _onDeleteApp(tgt.dataset.appId); }
@@ -1021,8 +1021,8 @@
       else if (act === 'trash-empty-one') _onEmptyTrashOne(tgt.dataset.trashId);
       else if (act === 'trash-empty-all') _onEmptyTrashAll();
       // 卷四十四 K stage 2b · ＋ 卡 / ＋ 工具 → focus 右侧主 chat 预填模板 (NLP First 闭环)
-      else if (act === 'ask-Daemonkey-app') _askDaemonkeyInChat('app');
-      else if (act === 'ask-Daemonkey-tool') _askDaemonkeyInChat('tool');
+      else if (act === 'ask-opus-app') _askOpusInChat('app');
+      else if (act === 'ask-opus-tool') _askOpusInChat('tool');
       // 卷四十六续 11 · sidebar 折叠 (« 收 / » 展)
       else if (act === 'toggle-apps-sidebar') _toggleAppsSidebar();
       // ── 卷四十四 K stage 1b · canvas 工具集 + 节点编辑 ──
@@ -1044,7 +1044,7 @@
         const flow = _flows.find(f => f.id === fid);
         if (flow) _loadRemoteFlow(flow);
       }
-      else if (act === 'ask-Daemonkey-flow') _askDaemonkeyInChat('flow');
+      else if (act === 'ask-opus-flow') _askOpusInChat('flow');
     };
     _container.addEventListener('click', _delegated);
 
@@ -1101,7 +1101,7 @@
       const el = e.target.closest('.ws-tool[draggable="true"]');
       if (!el) return;
       el.classList.add('dragging');
-      e.dataTransfer.setData('text/Daemonkey-tool', el.dataset.tool);
+      e.dataTransfer.setData('text/opus-tool', el.dataset.tool);
       e.dataTransfer.effectAllowed = 'copy';
     };
     _container.addEventListener('dragstart', _dragHandler);
@@ -1161,7 +1161,7 @@
 
   function _toggleLang() {
     _menuLang = _menuLang === 'zh' ? 'en' : 'zh';
-    localStorage.setItem('Daemonkey_workshop_lang', _menuLang);
+    localStorage.setItem('opus_workshop_lang', _menuLang);
     const btn = _container.querySelector('#wsLangBtn');
     if (btn) btn.textContent = _menuLang === 'zh' ? '中' : 'EN';
   }
@@ -1170,7 +1170,7 @@
   function _switchTab(tab) {
     if (!['apps', 'canvas', 'trash'].includes(tab)) return;
     _activeTab = tab;
-    localStorage.setItem('Daemonkey_workshop_tab', tab);
+    localStorage.setItem('opus_workshop_tab', tab);
     const view = _container.querySelector('.workshop-view');
     if (view) view.dataset.tab = tab;
     _container.querySelectorAll('.ws-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
@@ -1225,13 +1225,13 @@
   function _switchAppDetailTab(tabName) {
     _container.querySelectorAll('.ws-ad-tab').forEach(b => b.classList.toggle('active', b.dataset.adTab === tabName));
     _container.querySelectorAll('.ws-ad-pane').forEach(p => { p.hidden = p.dataset.adPane !== tabName; });
-    // Daemonkey app · 切到详情 tab 时动态加载系统提示词
+    // opus app · 切到详情 tab 时动态加载系统提示词
     if (tabName === 'detail' && _activeAppId) {
       const app = _apps.find(a => a.id === _activeAppId);
-      if (app && app.kind === 'Daemonkey') {
+      if (app && app.kind === 'opus') {
         const pane = _container.querySelector('.ws-ad-pane[data-ad-pane="detail"]');
         if (pane && !pane.dataset.loaded) {
-          pane.innerHTML = _renderDaemonkeyAppConfigHTML(app);
+          pane.innerHTML = _renderOpusAppConfigHTML(app);
           pane.dataset.loaded = '1';
         }
       }
@@ -1253,7 +1253,7 @@
     // 拉本 app + _shared 资产 (两份合并 · _shared 标识"跨 app")
     let myAssets = [];
     let sharedAssets = [];
-    if (token && app.kind === 'Daemonkey') {
+    if (token && app.kind === 'opus') {
       try {
         const [r1, r2] = await Promise.all([
           fetch(`/workshop/assets/${encodeURIComponent(app.id)}`, { headers: { 'Authorization': 'Bearer ' + token } }),
@@ -1414,13 +1414,13 @@
             <input type="text" data-am-field="image_label" placeholder="例：白色小猪 IP · 戴红围巾的卡通形象" />
           ` : isJson ? `
             <label class="ws-am-label">JSON 值 (粘合法 JSON · 提交时解析)</label>
-            <textarea data-am-field="value_json" rows="8" placeholder='例: {"voice_id": "用户-final-v1", "speed": 1.0}'></textarea>
+            <textarea data-am-field="value_json" rows="8" placeholder='例: {"voice_id": "bro-final-v1", "speed": 1.0}'></textarea>
           ` : `
             <label class="ws-am-label">${_esc(opts.label || opts.name)}</label>
             <textarea data-am-field="value_text" rows="6" placeholder="${type === 'textarea' ? '多行文本 · 例:口播文风参考样例 ~200 字' : '单行/多行文本均可'}"></textarea>
           `}
           <label class="ws-am-label" style="margin-top:12px">这次写入的说明 (note · 强烈建议填 · 进 history 留痕)</label>
-          <input type="text" data-am-field="note" placeholder="例：第三版克隆·用户 试听满意 · 取代 用户-clone-01" />
+          <input type="text" data-am-field="note" placeholder="例：第三版克隆·用户 试听满意 · 取代 bro-clone-01" />
         </div>
         <div class="ws-am-foot">
           <span class="ws-am-status" data-am-status></span>
@@ -1546,14 +1546,14 @@
 
   // ─── 拉应用历史产物 ───
   // builtin app: GET /dashboard/<domain>
-  // Daemonkey 造的 app: 暂时显示 stub (system_prompt + 工具白名单 + 推荐模型) · 产物历史留 stage 2d
+  // opus 造的 app: 暂时显示 stub (system_prompt + 工具白名单 + 推荐模型) · 产物历史留 stage 2d
   async function _loadAppOutputs(appId, refresh) {
     const app = _apps.find(a => a.id === appId);
     if (!app) return;
     const pane = _container.querySelector('.ws-ad-pane[data-ad-pane="output"]');
     if (!pane) return;
 
-    if (app.kind === 'Daemonkey') {
+    if (app.kind === 'opus') {
       const token2 = _getToken();
       if (!token2) {
         pane.innerHTML = '<div class="ws-ad-error">需要 token · 右上角 ⚙ 设置里填一下</div>';
@@ -1569,7 +1569,7 @@
           return;
         }
         const outData = await r2.json();
-        pane.innerHTML = _renderDaemonkeyOutputsHTML(app, outData);
+        pane.innerHTML = _renderOpusOutputsHTML(app, outData);
       } catch (e2) {
         pane.innerHTML = `<div class="ws-ad-error">网络出错: ${_esc(e2.message)}</div>`;
       }
@@ -1603,14 +1603,14 @@
 
   // 卷四十六续 11 补丁 · 用户 反馈: 外框冗余 / 不自适应 / 系统提示词 markdown 没渲染
   // 改造: 撤掉 max-width:580px auto · 用 padding 撑满 main 宽度
-  //       用 window.DaemonkeyMdRender 真渲染 system_prompt (chat.js 那套表格/代码块/标题全套支持)
+  //       用 window.opusMdRender 真渲染 system_prompt (chat.js 那套表格/代码块/标题全套支持)
   //       metadata (工具 / 模型 / 时间 / 调用) 压成 chip 行 · 不再一项一行
-  function _renderDaemonkeyAppConfigHTML(app) {
+  function _renderOpusAppConfigHTML(app) {
     const tools = (app.tools && app.tools.length)
       ? app.tools.map(t => `<code>${_esc(t)}</code>`).join(' ')
       : '<i>(全部 Daemonkey 工具都可用)</i>';
     const promptPreview = (app.system_prompt || '').trim();
-    const mdRender = window.DaemonkeyMdRender || ((t) => `<pre>${_esc(t)}</pre>`);
+    const mdRender = window.opusMdRender || ((t) => `<pre>${_esc(t)}</pre>`);
     const promptHtml = promptPreview
       ? `<div class="ws-app-md">${mdRender(promptPreview)}</div>`
       : '<div class="ws-app-empty">(未配置系统提示词)</div>';
@@ -1686,7 +1686,7 @@
   //   ① other (md/json/txt) 卡片**没有 onclick** = 哑卡片打不开 · 加 modal preview
   //   ② 文件名是 timestamp 看不懂 → 解析成人话标题 (`导演蓝图 · 6月10日 15:24`)
   //   ③ 加"复制路径"按钮 · 用户 想去文件管理器自己定位
-  function _renderDaemonkeyOutputsHTML(app, data) {
+  function _renderOpusOutputsHTML(app, data) {
   const files = data.files || [];
   if (files.length === 0) {
     return `<div class="ws-ad-empty">
@@ -1852,7 +1852,7 @@ window._openOutputPreview = async function(url, name, type) {
     const text = await r.text();
     const lname = (name || '').toLowerCase();
     if (lname.endsWith('.md')) {
-      const md = (window.DaemonkeyMdRender || ((t) => `<pre>${_esc(t)}</pre>`))(text);
+      const md = (window.opusMdRender || ((t) => `<pre>${_esc(t)}</pre>`))(text);
       body.innerHTML = `<div class="opm-md">${md}</div>`;
     } else if (lname.endsWith('.json')) {
       let pretty = text;
@@ -1906,7 +1906,7 @@ async function _previewWorkshopInline(domain, name, cardEl) {
       return;
     }
     const data = await r.json();
-    const mdRender = window.DaemonkeyMdRender || ((t) => `<pre>${_esc(t)}</pre>`);
+    const mdRender = window.opusMdRender || ((t) => `<pre>${_esc(t)}</pre>`);
     previewEl.innerHTML = `<div class="ws-ad-preview-body"><div class="ws-ad-preview-md">${mdRender(data.markdown || '')}</div></div>`;
     previewEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (e) {
@@ -1938,7 +1938,7 @@ function _closeLightbox() {
 window._openLightbox = _openLightbox;
 window._closeLightbox = _closeLightbox;
 
-function _askDaemonkeyInChat(kind) {
+function _askOpusInChat(kind) {
     let tpl;
     if (kind === 'app') {
       tpl = '我想要一个 ___ 应用 · 功能是 ___ · 检索本地是否有现成的可调用 (例如 ___) · 没有就写代码 / 启程序 / 装依赖 · 完成后注册到工坊里给我看';
@@ -2122,7 +2122,7 @@ function _askDaemonkeyInChat(kind) {
   async function _runAppViaDaemon(form, app, values) {
     const token = _getToken();
     if (!token) {
-      _toast('需要 Daemonkey_API_TOKEN · 设置里填 · 这次跑不了');
+      _toast('需要 OPUS_API_TOKEN · 设置里填 · 这次跑不了');
       return;
     }
     const runBox = form.querySelector('[data-form-run]');
@@ -2351,7 +2351,7 @@ function _askDaemonkeyInChat(kind) {
   }
 
   // 没有 schema 时 · 一键让 Daemonkey 给这个 app 设计表单
-  function _onAskDaemonkeyDesignForm(appId) {
+  function _onAskOpusDesignForm(appId) {
     const app = _apps.find(a => a.id === appId);
     if (!app) { _toast('找不到 app'); return; }
     const tpl = `帮我给应用「${app.name}」(${app.id}) 设计一个 UI 表单 · 看下它的 description / system_prompt / tools · 推断出 用户 重复用时需要填什么字段 · 然后调 update_app 把 ui_form_schema 塞进去。 设计原则: 字段数 ≤ 5 · 命名清晰 · 必填项最少。 设计完告诉我每个字段是啥意义。`;
@@ -2372,12 +2372,12 @@ function _askDaemonkeyInChat(kind) {
   function _onRun() {
     if (!_graph._nodes.length) { _toast('画布是空的 · 先拖个工具进来'); return; }
     const token = _getToken();
-    if (!token) { _toast('需要 Daemonkey_API_TOKEN · 设置里填'); return; }
+    if (!token) { _toast('需要 OPUS_API_TOKEN · 设置里填'); return; }
 
     const order = _graph.computeExecutionOrder(false);
-    const hasAppNode = _graph._nodes.some(n => (n.type || '').startsWith('Daemonkey/app/'));
+    const hasAppNode = _graph._nodes.some(n => (n.type || '').startsWith('opus/app/'));
     if (!hasAppNode) {
-      _toast('画布上还没有 Daemonkey app 节点 · phase B 仅支持 Daemonkey/app/<aid> 节点真跑');
+      _toast('画布上还没有 Daemonkey app 节点 · phase B 仅支持 opus/app/<aid> 节点真跑');
       return;
     }
 
@@ -2541,19 +2541,19 @@ function _askDaemonkeyInChat(kind) {
   async function _onSave() {
     if (!_graph._nodes.length) { _toast('画布是空的 · 没东西可存'); return; }
     const data = _graph.serialize();
-    localStorage.setItem('Daemonkey_workshop_draft', JSON.stringify(data));
+    localStorage.setItem('opus_workshop_draft', JSON.stringify(data));
 
-    if (typeof window.DaemonkeyPrompt !== 'function') {
+    if (typeof window.opusPrompt !== 'function') {
       _toast(`💾 已存到 localStorage · ${_graph._nodes.length} 节点 · ${(data.links || []).length} 连线\n(没找到对话框组件 · daemon 端没存)`);
       return;
     }
-    const name = await window.DaemonkeyPrompt({
+    const name = await window.opusPrompt({
       title: '保存工作流',
       message: '给这条工作流起个名字 (会落到 data/workshop/flows/)',
       placeholder: '比如: 内容选题 → 文稿 → SoVITS 转语音',
     });
     if (!name) return;  // 用户取消 · localStorage 已存
-    const desc = await window.DaemonkeyPrompt({
+    const desc = await window.opusPrompt({
       title: '一句话简介',
       message: `「${name}」 · 这条工作流是干啥的?`,
       placeholder: '比如: 一键产出短视频文案 + 配音 mp3',
@@ -2578,9 +2578,9 @@ function _askDaemonkeyInChat(kind) {
     }
   }
 
-  // 卷四十四 K stage 2c · 加载 · 弹列表 (用 DaemonkeyPrompt 暂代 · stage 2d 换正经下拉)
+  // 卷四十四 K stage 2c · 加载 · 弹列表 (用 opusPrompt 暂代 · stage 2d 换正经下拉)
   async function _onLoad() {
-    const localRaw = localStorage.getItem('Daemonkey_workshop_draft');
+    const localRaw = localStorage.getItem('opus_workshop_draft');
     const hasLocal = !!localRaw;
 
     // 拉远端 flow 列表 (mount 时已加载 · 这里再 refresh 一下保证最新)
@@ -2963,9 +2963,9 @@ function _askDaemonkeyInChat(kind) {
   // 卷四十四 K stage 2c++ · wish-6fd76512 · 软删 · 移到回收站可恢复
   async function _onDeleteApp(appId) {
     const app = _apps.find(a => a.id === appId);
-    if (!app || app.kind !== 'Daemonkey') return;
-    if (typeof window.DaemonkeyConfirm === 'function') {
-      const ok = await window.DaemonkeyConfirm({
+    if (!app || app.kind !== 'opus') return;
+    if (typeof window.opusConfirm === 'function') {
+      const ok = await window.opusConfirm({
         title: '移到回收站?',
         message: `「${app.name}」 · 会移到回收站 · 30 天内可恢复 · 真删要再点 [永久删]`,
         danger: false,
@@ -3083,8 +3083,8 @@ function _askDaemonkeyInChat(kind) {
     const item = (kind === 'flow' ? _trash.flows : _trash.apps).find(it => it.id === trashId);
     const name = (item && item.name) || trashId;
 
-    if (typeof window.DaemonkeyConfirm === 'function') {
-      const ok = await window.DaemonkeyConfirm({
+    if (typeof window.opusConfirm === 'function') {
+      const ok = await window.opusConfirm({
         title: '恢复到应用列表?',
         message: `「${name}」 · ${kind === 'flow' ? '工作流' : '应用'} · 会从回收站移回到 active 列表`,
         danger: false,
@@ -3122,8 +3122,8 @@ function _askDaemonkeyInChat(kind) {
     const item = (kind === 'flow' ? _trash.flows : _trash.apps).find(it => it.id === trashId);
     const name = (item && item.name) || trashId;
 
-    if (typeof window.DaemonkeyConfirm === 'function') {
-      const ok = await window.DaemonkeyConfirm({
+    if (typeof window.opusConfirm === 'function') {
+      const ok = await window.opusConfirm({
         title: '<i class="ri-error-warning-fill"></i> 永久删除?',
         message: `「${name}」 · ${kind === 'flow' ? '工作流' : '应用'} · 真 unlink · 不可恢复 · 这次按下就再也找不回了`,
         danger: true,
@@ -3153,8 +3153,8 @@ function _askDaemonkeyInChat(kind) {
     const total = (_trash.apps || []).length + (_trash.flows || []).length;
     if (total === 0) { _toast('回收站已经是空的'); return; }
 
-    if (typeof window.DaemonkeyConfirm === 'function') {
-      const ok = await window.DaemonkeyConfirm({
+    if (typeof window.opusConfirm === 'function') {
+      const ok = await window.opusConfirm({
         title: '<i class="ri-error-warning-fill"></i><i class="ri-error-warning-fill"></i> 清空整个回收站?',
         message: `${total} 项 · 全部真 unlink · 不可恢复 · 这次按下就再也找不回任何一个了`,
         danger: true,
@@ -3182,8 +3182,8 @@ function _askDaemonkeyInChat(kind) {
   }
 
   function _toast(msg) {
-    if (typeof window.DaemonkeyAlert === 'function') {
-      window.DaemonkeyAlert({ icon: '✨', title: '工坊', message: msg });
+    if (typeof window.opusAlert === 'function') {
+      window.opusAlert({ icon: '✨', title: '工坊', message: msg });
     } else {
       console.log('[workshop]', msg);
       alert(msg);
@@ -3191,7 +3191,7 @@ function _askDaemonkeyInChat(kind) {
   }
 
   function _loadDemoFlow() {
-    // 卷五十四 · 原 demo 流用 Daemonkey/atomic/llm (未实装) + Daemonkey/custom/sovits (卷四十六续 13 已删除) 搭。
+    // 卷五十四 · 原 demo 流用 opus/atomic/llm (未实装) + opus/custom/sovits (卷四十六续 13 已删除) 搭。
     // sovits 节点 createNode 返 null → 下一行 .pos 抛 TypeError → mount() 半路崩 → 工坊首开白屏/卡死
     // (localStorage 'seen_demo' 让它每浏览器只崩一次·正好是 用户 说的"偶尔卡死")。
     // 这些节点画布执行器又跑不了 = 纯误导。 直接不铺 demo · 让空状态引导 (_updateEmpty) 接管。
@@ -3274,7 +3274,7 @@ function _askDaemonkeyInChat(kind) {
     // _graph 不动 · 切回工坊 view 时复用
   }
 
-  window.Daemonkey_WORKSHOP_VIEW = {
+  window.OPUS_WORKSHOP_VIEW = {
     mount,
     unmount,
     isMounted: () => !!_container,

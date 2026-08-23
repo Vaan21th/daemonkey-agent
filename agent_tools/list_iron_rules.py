@@ -1,10 +1,10 @@
 """agent_tools/list_iron_rules.py
 ====================================
 
- K stage 2c++ · wish-a72b2f0a 配套 · 列现有铁律编号 + 标题
+卷四十四 K stage 2c++ · wish-a72b2f0a 配套 · 列现有铁律编号 + 标题
 
 LLM 调 add_iron_rule 之前 · 必须先调这个看现有最大编号 · 取 max+1。
-也用来诊断 (用户 问『现在有几条铁律』时直接调这个)。
+也用来诊断 (BRO 问『现在有几条铁律』时直接调这个)。
 
 tier: TIER_AUTO (只读 metadata)
 """
@@ -36,7 +36,7 @@ def _run(args: dict) -> ToolResult:
 
     text = DAEMON_RULES_PATH.read_text(encoding="utf-8")
 
-    #  II · wish-ff100836 · 解析 domain 注释 (与 add_iron_rule 写出格式呼应)
+    # 卷四十六 II · wish-ff100836 · 解析 domain 注释 (与 add_iron_rule 写出格式呼应)
     # 把整个 daemon_rules.md 按 `## 铁律 N · TITLE` 切段 · 每段抽 `<!-- domain: X -->`
     header_re = re.compile(r"^## 铁律 (\d+)\s+·\s+(.+)$", re.MULTILINE)
     domain_re = re.compile(r"<!--\s*domain:\s*(\w+)\s*-->")
@@ -70,7 +70,7 @@ def _run(args: dict) -> ToolResult:
     lines = [
         f"# 现有铁律 (共 {len(rules)} 条 · 加新铁律传 rule_number={rules[-1]['n'] + 1})",
         "",
-        "## 按 domain 分组 (wish-ff100836  II)",
+        "## 按 domain 分组 (wish-ff100836 卷四十六 II)",
         "",
     ]
     for dom in sorted(by_domain.keys()):
@@ -93,8 +93,8 @@ SPEC = ToolSpec(
         "列 daemon_rules.md 现有所有铁律 (编号 + 标题) · 给 LLM 加铁律前查重用\n\n"
         "**用途**:\n"
         "  - 调 add_iron_rule 之前 · 看现有最大编号 · 取 max+1 (防漏编 / 撞号)\n"
-        "  - 用户 问『现在工程多少条铁律』时直接调这个回\n"
-        "  - OPUS 自己反思想加铁律前 · 看是否已有同类规则 (避免重复)"
+        "  - BRO 问『现在工程多少条铁律』时直接调这个回\n"
+        "  - Daemonkey 自己反思想加铁律前 · 看是否已有同类规则 (避免重复)"
     ),
     tier=TIER_AUTO,
     input_schema={"type": "object", "properties": {}, "additionalProperties": False},

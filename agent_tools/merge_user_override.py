@@ -3,14 +3,14 @@ agent_tools/merge_user_override.py · 用户魔改合并工具 (wish-f2f0f9de ·
 =====================================================================
 
 升级保护层 B: 用户魔改被官方升级覆盖后 · 把用户版本合并回来。
-语义判断交给 OPUS(LLM) · 本工具只做 读备份 / 看对比 / 写回 三个机械动作。
+语义判断交给 Daemonkey(LLM) · 本工具只做 读备份 / 看对比 / 写回 三个机械动作。
 
 动作:
   list            · 列 data/runtime/user_overrides/ 的备份 (文件 + 大小 + 时间)
   diff  {file}    · 输出 用户版(备份) vs 官方新版(当前文件) 的统一 diff (供 LLM 分析)
   apply {file, content} · 把合并结果写回目标文件 (content = LLM 产出 · 用户已确认)
 
-标准流程 (对话驱动 · OPUS 主持 · 全程询问用户):
+标准流程 (对话驱动 · Daemonkey 主持 · 全程询问用户):
   1. 用户说「合并我的改动」→ list 看有哪些备份
   2. 逐个 diff → LLM 分析两边改动:
        - 用户改的区域 ≠ 官方改的区域 → 直接融合 (两边都保留)
@@ -19,7 +19,7 @@ agent_tools/merge_user_override.py · 用户魔改合并工具 (wish-f2f0f9de ·
 
 红线:
   - apply 前必须用户明确确认 (这是用户自己的代码 · LLM 不自动改)
-  - 写回前 OPUS 自己先 diff 预览给用户看
+  - 写回前 Daemonkey 自己先 diff 预览给用户看
   - 备份文件永不删除 (应用成功后可提示用户自己清理)
 """
 
@@ -199,7 +199,7 @@ SPEC = ToolSpec(
         "用户魔改合并工具 (升级保护层 B · wish-f2f0f9de)。"
         "升级时用户魔改的白名单文件被官方覆盖后 · 备份在 data/runtime/user_overrides/。"
         "本工具: list 列备份 · diff 看用户版vs官方版对比 · apply 写回合并结果。"
-        "语义判断由 OPUS 自己做 (读 diff → 分析 → 给用户方案 → 用户确认 → apply)。"
+        "语义判断由 Daemonkey 自己做 (读 diff → 分析 → 给用户方案 → 用户确认 → apply)。"
         "rescue / rescue_apply: 0.9.6 之前备份动作跑在覆盖之后·存下来的是官方版·"
         "用户真改动没进备份 (说「合并我的改动」只会得到「两边一致」)。 但升级前的 checkpoint "
         "存档是在覆盖之前做的·真东西在里面 —— rescue 找出来 · rescue_apply 捞进备份区。"

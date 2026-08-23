@@ -841,12 +841,15 @@ async def dashboard_billing(
     # month_cutoff: 自然月 1 号 00:00 (month_cost 独立于 range · 不随切换变)
     month_cutoff = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    # ── 1. 读三本账 (只读近 range 天 · 另存本月全量算 month_cost) ──
-    chat_rows, app_rows, adv_rows = [], [], []
-    month_all = []   # ts >= month_cutoff 的全部行 (跨三账 · 算自然月花费)
+    # ── 1. 读四本账 (只读近 range 天 · 另存本月全量算 month_cost) ──
+    # 0.9.7 D7: 第四本 subagent_usage.jsonl (分身/总监重规划) —— 以前分身烧的 token
+    # 只落 sessions/sub-*.jsonl · 账单完全不含 → 漏记 = 将来转发收费替用户垫钱。
+    chat_rows, app_rows, adv_rows, sub_rows = [], [], [], []
+    month_all = []   # ts >= month_cutoff 的全部行 (跨四账 · 算自然月花费)
     for fname, bucket in (("chat_turns_usage.jsonl", chat_rows),
                           ("app_runs_usage.jsonl", app_rows),
-                          ("advisor_wakes.jsonl", adv_rows)):
+                          ("advisor_wakes.jsonl", adv_rows),
+                          ("subagent_usage.jsonl", sub_rows)):
         p = runtime_dir / fname
         if not p.exists():
             continue
@@ -898,6 +901,18 @@ async def dashboard_billing(
         _acc(r.get("model_id") or r.get("app_name") or "unknown", r)
     for r in adv_rows:
         _acc(r.get("advisor_model") or "advisor", r)
+    for r in sub_rows:
+        _acc(r.get("model") or "unknown", r.get("usage") or {})
+
+    # 0.9.7 D7 · 分身专项块 (分源可见: dispatch 主对话分身 / replan 总监重规划)
+    sub_by_source = {}
+    for r in sub_rows:
+        src = r.get("source") or "unknown"
+        s = sub_by_source.setdefault(src, {"calls": 0, "input_tokens": 0, "output_tokens": 0})
+        s["calls"] += 1
+        u = r.get("usage") or {}
+        s["input_tokens"] += int(u.get("input_tokens") or 0)
+        s["output_tokens"] += int(u.get("output_tokens") or 0)
 
     # ── 4. 组装 by_model (带 price · 未配价 null) ──
     by_model = []
@@ -1016,7 +1031,9 @@ async def dashboard_billing(
         a["cache_read_tokens"] += int(usage.get("cache_read_tokens") or 0)
         a["cache_creation_tokens"] += int(usage.get("cache_creation_tokens") or 0)
     for r in month_all:
-        _macc(r.get("model_id") or r.get("advisor_model") or r.get("app_name") or "unknown", r)
+        # 0.9.7 D7: 分身账行 usage 是嵌套 dict · 其他账行平铺 · 各取各的
+        _macc(r.get("model_id") or r.get("advisor_model") or r.get("app_name") or r.get("model") or "unknown",
+              r.get("usage") if isinstance(r.get("usage"), dict) else r)
     for mid, a in m_agg.items():
         p = model_to_cfg.get(mid, (None, None))[1]
         if not p:
@@ -1041,6 +1058,12 @@ async def dashboard_billing(
         "by_model": by_model,
         "switches": switches,
         "app_runs": app_runs,
+        "subagent": {   # 0.9.7 D7 · 分身专项 (以前漏记·现在分源可见)
+            "calls": sum(s["calls"] for s in sub_by_source.values()),
+            "input_tokens": sum(s["input_tokens"] for s in sub_by_source.values()),
+            "output_tokens": sum(s["output_tokens"] for s in sub_by_source.values()),
+            "by_source": sub_by_source,
+        },
     }
 
 # ──────────────────────────────────────────────────────────
@@ -1174,14 +1197,9 @@ def dashboard_memory_map(authorization: Optional[str] = Header(None), lite: int 
     ?lite=1 · BI 看板记忆卡专用: 只要秒出的统计数字 · 跳过 PCA/卫生 dry_run/漏斗。
     """
     check_auth(authorization)
-    try:
-        from workers.memory_map import build_memory_map
+    from workers.memory_map import build_memory_map
 
-        return build_memory_map(lite=bool(lite))
-    except ImportError as e:
-        # numpy 未装的老用户 (0.9.6 前 requirements 从未登记它) —— 友好提示代替裸 500
-        # 与 build_memory_map 自身的 {"error": ...} 空态返回同构 · 前端已有 error 展示路径
-        return {"error": f"缺依赖 {e.name} · 到启动器「环境」页点【开始安装】补装后重启即恢复"}
+    return build_memory_map(lite=bool(lite))
 
 
 # ──────────────────────────────────────────────────────────

@@ -55,7 +55,7 @@ const _DEPOT_BANNERS = {
   memory_map: {
     icon: 'ri-sparkling-2-fill',
     title: '这是 Daemonkey 的记忆星图 · 三道闸治理全景',
-    sub: '每个光点是一门手艺(playbook),位置由语义向量降维而来——挨得近的天然成簇·亮线连着的是内容相似的同类。下面三道闸是记忆体系的治理实测:写入闸(卫生)/分层闸(画像)/重排闸(召回),每个数字都是现算的真值。',
+    sub: '每个光点是一门手艺(playbook),位置由语义向量降维而来——挨得近的天然成团,亮线连着的是内容相似的同类。下面三道闸是记忆体系的治理实测:写入闸(卫生)/分层闸(画像)/重排闸(召回),每个数字都是现算的真值。',
   },
 };
 
@@ -359,7 +359,7 @@ function renderDiary(data) {
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
   }
-  const diary = data.Daemonkey_diary || {};
+  const diary = data.opus_diary || {};
   const entries = (diary.entries || []).filter(e => (e.type || 'reflection') !== 'iron_rule');
   const lastUpd = _fmtCogTime(diary.last_updated);
 
@@ -413,7 +413,7 @@ function renderPlaybooks(data) {
       <span class="meta">工艺库 · 打法 ${st.total || items.length} 条${st.used ? ' · ' + st.used + ' 条用过' : ''}${iron.length ? ' · 铁律 ' + iron.length + ' 条' : ''}</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('playbooks')">刷新列表</button>
-      <button onclick="spawnQuickly('帮我看看手艺是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '手艺体检')" title="让 ${window.AI_NAME || 'Daemonkey'} 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 检查重复</button>
+      <button onclick="spawnQuickly('帮我看看手艺是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '手艺体检')" title="让 Daemonkey 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 检查重复</button>
     </div>`;
 
   // 工艺铁律区(Daemonkey 用失败换来的工程纪律 · 会注入它每一次的判断)
@@ -581,7 +581,7 @@ function renderWishlist(data) {
           <span style="opacity:0.6">勘察阶段不改任何代码·用户 全程有 review 权。需要 Cursor 介入时直接对 Daemonkey 说「用 cursor 改这个」即可。</span>
         </div>
       </div>
-      <button class="wish-banner-btn" onclick="askDaemonkeyForWish()">让 Daemonkey 想想还要装啥</button>
+      <button class="wish-banner-btn" onclick="askOpusForWish()">让 Daemonkey 想想还要装啥</button>
     </div>`;
 
   // 卷五十三 · git 测谎仪横幅 · 只报"谎报上线" (status=live 但代码没合进 master)。
@@ -655,7 +655,7 @@ let _mmChartSrc = null;
 let _mm3d = null;  // {renderer, scene, camera, controls, raf, flyTo}
 
 function _mmStatCard(icon, label, value, sub, color) {
-  // 单行数据带 · 变量名对齐皮肤系统 (--bg2/--border/--text/--dim) · sub 直接展示在框内 (2026-08-20 BRO: hover 才显示的信息很重要)
+  // 单行数据带 · 变量名对齐皮肤系统 (--bg2/--border/--text/--dim) · sub 直接展示在框内 (2026-08-20 用户: hover 才显示的信息很重要)
   return `<div style="flex:1;min-width:0;padding:8px 6px;border:1px solid var(--border,#2a2a3a);border-radius:8px;background:var(--bg2,#16161f);text-align:center">` +
     `<div style="font-size:15px;font-weight:600;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><i class="${icon}"></i> ${value}</div>` +
     `<div style="font-size:10px;color:var(--text,#ccc);opacity:.85;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>` +
@@ -663,7 +663,7 @@ function _mmStatCard(icon, label, value, sub, color) {
 }
 
 function memoryMapLoadingHTML() {
-  // ①A 多色星尘加载态 (2026-08-20 BRO 选定) · 尘色=星图簇配色 · 核心深浅肤适配
+  // ①A 多色星尘加载态 (2026-08-20 用户 选定) · 尘色=星图簇配色 · 核心深浅肤适配
   const light = (typeof _mmIsLight === 'function') && _mmIsLight();
   const coreBg = light ? '#d4a017' : '#fff8e7';
   const coreGlow = light ? 'rgba(212,160,23,.5)' : 'rgba(255,233,176,.4)';
@@ -712,13 +712,13 @@ function renderMemoryMap(data) {
     _mmStatCard('ri-filter-3-fill', '重排闸·漏斗', fnPct != null ? fnPct + '%' : '—', `递送 ${fn.delivered ?? '?'} · 取用 ${fn.loaded ?? '?'} 门`, '#f687b3') +
     `</div>`;
   html += `<div style="padding:2px 2px 0;color:var(--dim);font-size:11px;line-height:1.6"><i class="ri-sparkling-2-fill"></i> ${pts.length} 门手艺 · ${data.constellation && data.constellation.clusters || 0} 个星系 · 亮线 = 语义相似 ≥0.80 · 亮点 = 被取用过 <a href="javascript:void(0)" onclick="spawnQuickly('帮我看看手艺是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '手艺体检')" style="color:var(--accent,#8a7dff);text-decoration:none;margin-left:6px;white-space:nowrap"><i class="ri-search-eye-line"></i> 手艺体检</a></div>`;
-  // 星图框 flex:1 弹性填满剩余空间 (2026-08-20 BRO: 折叠条贴底 · 展开了整栏滚动 · 不写死高度)
+  // 星图框 flex:1 弹性填满剩余空间 (2026-08-20 用户: 折叠条贴底 · 展开了整栏滚动 · 不写死高度)
   html += `<div style="position:relative;flex:1 1 auto;min-height:400px;margin:6px 0 4px;border:1px solid var(--border,#2a2a3a);border-radius:10px;overflow:hidden;background:var(--bg2,#05060d)">` +
     `<div id="mmStar3d" style="position:absolute;inset:0"></div>` +
     `<div id="mmStarTip" style="display:none;position:absolute;z-index:5;pointer-events:none;background:var(--bg2,rgba(10,12,24,.92));border:1px solid var(--border,rgba(138,255,214,.35));color:var(--text,#dde);border-radius:8px;padding:6px 9px;font-size:11px;max-width:230px;line-height:1.5"></div>` +
     `<div style="position:absolute;left:8px;bottom:6px;z-index:4;font-size:10px;color:var(--dim,#556);pointer-events:none">拖拽旋转 · 滚轮缩放 · 点星系名聚焦 · 双击回全景</div>` +
     `</div>`;
-  // 记忆构成默认折叠 (2026-08-20 BRO: 高度让给星图 · 展开后整栏滚动) · 展开才懒渲染 (display:none 里 Chart 拿到 0 宽)
+  // 记忆构成默认折叠 (2026-08-20 用户: 高度让给星图 · 展开后整栏滚动) · 展开才懒渲染 (display:none 里 Chart 拿到 0 宽)
   _mmSrcData = data.sources || [];
   html += `<div style="cursor:pointer;padding:8px 2px 0;color:var(--dim);font-size:12px;user-select:none;flex:0 0 auto" onclick="_mmToggleSrc()">` +
     `<i id="mmSrcIcon" class="ri-arrow-right-s-fill"></i> 记忆构成 · 各信源 chunk 分布</div>`;
@@ -726,22 +726,28 @@ function renderMemoryMap(data) {
   html += `</div>`;
   $dashView.innerHTML = html;
 
-  // 3D 星图 (Three.js · 星系化 · 2026-08-20 BRO 拍板)
-  _whenThreeReady(() => {
-    const box = document.getElementById('mmStar3d');
-    if (!box) return;
-    if (!pts.length) {
+  // 0.9.7 尾巴5: 空态渲染移出 _whenThreeReady —— 没数据时不该等 Three.js 加载
+  // (Three 慢/加载失败时空态提示也跟着黑屏 · hf6 尝试翻车回滚 · 097 重做)
+  if (!pts.length) {
+    const box0 = document.getElementById('mmStar3d');
+    if (box0) {
       // 空态分层提示 (2026-08-21 · test3 实测: 空数组无说明 = 用户对着黑框猜)
       const er = (data.constellation && data.constellation.empty_reason) || null;
       const msg = er ? er.msg : '还没有可向量聚类的手艺·用着用着就亮了';
       const btn = (er && er.action === 'settings')
         ? `<a href="javascript:void(0)" onclick="openSettings()" style="display:inline-block;margin-top:10px;padding:6px 16px;border:1px solid var(--accent,#8a7dff);border-radius:8px;color:var(--accent,#8a7dff);font-size:12px;text-decoration:none"><i class="ri-settings-3-line"></i> 去设置</a>` : '';
-      box.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:0 32px;text-align:center">` +
+      box0.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:0 32px;text-align:center">` +
         `<i class="ri-sparkling-2-line" style="font-size:34px;color:var(--dim,#556);opacity:.7"></i>` +
         `<div style="margin-top:10px;font-size:13px;color:var(--text,#dde)">星图还没点亮</div>` +
         `<div style="margin-top:6px;font-size:11.5px;color:var(--dim);line-height:1.7;max-width:420px">${escHtml(msg)}</div>${btn}</div>`;
-      return;
     }
+    return;
+  }
+
+  // 3D 星图 (Three.js · 星系化 · 2026-08-20 用户 拍板)
+  _whenThreeReady(() => {
+    const box = document.getElementById('mmStar3d');
+    if (!box) return;
     if (!_mmWebglOk()) {
       // WebGL 不可用 (e.g. Cursor 内嵌 webview 崩溃循环事故 · 2026-08-20) → 明示回退, 不硬起
       box.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#667;font-size:12px;text-align:center;padding:0 20px">当前环境不支持 WebGL · 请在你自己的浏览器打开 ${location.origin}/ui 查看 3D 星图</div>`;
@@ -834,7 +840,7 @@ function _whenThreeReady(cb, _tries) {
 
 function _mmStarTexture() {
   // 径向渐变发光圆 · 所有星点共用一张 texture
-  // 核心 18% 实心 · 40% 处急降到 0.25 · 光晕收敛不晃眼 (2026-08-20 BRO 实测 additive 叠加过曝)
+  // 核心 18% 实心 · 40% 处急降到 0.25 · 光晕收敛不晃眼 (2026-08-20 用户 实测 additive 叠加过曝)
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const ctx = c.getContext('2d');
   const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
@@ -906,7 +912,7 @@ function _mmRenderStar3D(box, pts, edges, clusterNames) {
     return new THREE.Color().setHSL(hueOf(p.cluster) / 360, light ? 0.7 : (p.loaded ? 0.85 : 0.5), light ? (p.loaded ? 0.42 : 0.55) : (p.loaded ? 0.72 : 0.58));
   };
   const sizeOfRaw = p => Math.max(0.045, Math.min(0.13, Math.sqrt(p.chars || 100) / 220));
-  // 密度自适应 (BRO: 信息越多自动变小保证显示全面): 点越多单点越小 · 68 点 ×0.86 · 200 点 ×0.55
+  // 密度自适应 (用户: 信息越多自动变小保证显示全面): 点越多单点越小 · 68 点 ×0.86 · 200 点 ×0.55
   const densityScale = Math.max(0.55, Math.min(1.1, Math.sqrt(50 / pts.length)));
   const sizeOf = p => sizeOfRaw(p) * densityScale;
   const sprites = [];
@@ -1339,7 +1345,7 @@ function renderWishCard(w, idx) {
             : (w.git_merge_state === 'unmerged'
               ? `<span class="wish-badge wish-badge-branch" title="代码在自己分支上·还没合主干 (active/review 阶段正常)·验收标 live 后会自动合"><i class="ri-git-branch-line"></i> 分支上 · ${w.git_unmerged_commits || '?'} commit</span>`
               : '')}
-          ${w.origin === 'Daemonkey' ? '<span class="wish-badge wish-badge-origin" title="Daemonkey 主动嗅探到的愿望"><i class="ri-radar-fill"></i> Daemonkey 主动发现</span>' : ''}
+          ${w.origin === 'opus' ? '<span class="wish-badge wish-badge-origin" title="Daemonkey 主动嗅探到的愿望"><i class="ri-radar-fill"></i> Daemonkey 主动发现</span>' : ''}
           ${phaseChipInSummary}
           <span class="wish-badge wish-badge-path">${pathMeta.icon} ${escHtml(pathMeta.label)}</span>
           <span class="wish-badge wish-badge-cx">${escHtml(w.complexity || 'medium')} · ~${w.estimated_hours || 4}h · ~$${(w.estimated_token_cost_usd || 1).toFixed(2)}</span>
@@ -1497,7 +1503,7 @@ async function wishAction(wid, action) {
   spawnTask(msg, spawnLabels[action] || `${action} · ${wid}`);
 }
 
-function askDaemonkeyForWish() {
+function askOpusForWish() {
   spawnTask(
     '看一眼 self-evolve 域 (信息雷达里) 现在抓到的 GitHub 同类工程·' +
     '挑 1-3 个 Daemonkey 自己应该学的能力·调 wish_add 写成心愿 · 每条都要有 why + design_sketch + 优先级 · ' +

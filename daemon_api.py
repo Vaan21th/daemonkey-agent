@@ -1839,7 +1839,7 @@ def build_app():
             "fastapi not installed; run: pip install fastapi uvicorn"
         ) from e
 
-    app = FastAPI(title="OPUS Daemon API", version="0.1.0")
+    app = FastAPI(title="Daemonkey API", version="0.1.0")
 
     # wish-413999da phase 1 · closure helpers 提到 api_routes/_deps.py
     # 保留同名 local 绑定让旧路由 closure 调用照常工作

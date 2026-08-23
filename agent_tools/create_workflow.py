@@ -149,14 +149,14 @@ SPEC = ToolSpec(
         '  ]\n'
         "  ```\n\n"
         "**老 litegraph_json 格式 · 仅在 BRO 明确要用画布版才用**:\n"
-        "  工坊里 workflow 的节点都是 **app 节点** · type 必须是 `Daemonkey/app/<aid>`\n"
+        "  工坊里 workflow 的节点都是 **app 节点** · type 必须是 `opus/app/<aid>`\n"
         "  最简形态 · 每个 node 至少含 id/type/pos/size/properties · 节点之间用 links 串起来:\n"
         "  ```json\n"
         '  {\n'
         '    "last_node_id": 2, "last_link_id": 1,\n'
         '    "nodes": [\n'
-        '      {"id": 1, "type": "Daemonkey/app/app-66ac4190", "pos": [100, 100], "size": [220, 110], "properties": {}},\n'
-        '      {"id": 2, "type": "Daemonkey/app/app-b08ffda6", "pos": [400, 100], "size": [220, 110], "properties": {}}\n'
+        '      {"id": 1, "type": "opus/app/app-66ac4190", "pos": [100, 100], "size": [220, 110], "properties": {}},\n'
+        '      {"id": 2, "type": "opus/app/app-b08ffda6", "pos": [400, 100], "size": [220, 110], "properties": {}}\n'
         '    ],\n'
         '    "links": [[1, 1, 0, 2, 0, "string"]],\n'
         '    "groups": [], "config": {}, "version": 0.4\n'
@@ -164,7 +164,7 @@ SPEC = ToolSpec(
         "  ```\n\n"
         "**红线**:\n"
         "  - steps 里的 app 必须先存在 (load_app(<aid>) 能拿到) · 缺工具就先 create_app 把它落档再 create_workflow\n"
-        "  - 老 litegraph 走 workers/workflow_engine.py · 节点 type 只能是 `Daemonkey/app/<aid>` (用其他会被拒)\n"
+        "  - 老 litegraph 走 workers/workflow_engine.py · 节点 type 只能是 `opus/app/<aid>` (用其他会被拒)\n"
         "  - 不要在 description 里写「让 BRO 自己来填充」 · 你设计完就给个能跑的 baseline · BRO 微调"
     ),
     tier=TIER_AUTO,

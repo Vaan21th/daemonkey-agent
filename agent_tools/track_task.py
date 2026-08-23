@@ -2,13 +2,13 @@
 agent_tools/track_task.py
 =========================
 
-任务账本工具 —— 让 OPUS 把"哪条路通了/死了/做了什么决策"沉淀进 data/ledgers/<slug>.json，
+任务账本工具 —— 让 Daemonkey 把"哪条路通了/死了/做了什么决策"沉淀进 data/ledgers/<slug>.json，
 每轮自动回灌进上下文(见 workers/task_ledger + closure_check.ledger_hint)，抗"套娃"。
 
 档位：AUTO
   记账是纯沉淀、无破坏(只往 data/ledgers/ 写 json)。误记也只是多一条，可改可删。
 
-NLP 触发场景(OPUS 自己判断时机)：
+NLP 触发场景(Daemonkey 自己判断时机)：
   - 多步调试/搭建任务里，某方案【验证通了】→ track_task(action='note', kind='verified', ...)
   - 某思路【走死了】→ kind='ruledout'(带原因，下次别再走)
   - 定了个【关键决策】→ kind='decision'

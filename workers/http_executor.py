@@ -115,7 +115,7 @@ def _save_binary(content: bytes, save_dir: str, filename: str) -> tuple[str, str
     dir_path = ROOT / save_dir
     dir_path.mkdir(parents=True, exist_ok=True)
 
-    # 并发防覆盖(用户反馈:批量走同一 app 时·app 模板多用 {ts} 秒级命名·
+    # 并发防覆盖(卷七十九续二十四 · BRO 反馈:批量走同一 app 时·app 模板多用 {ts} 秒级命名·
     # 同秒完成的并发跑重名 → 旧版直接 write_bytes 互相覆盖 → 应用产出页少图)。
     # 修法:同名已存在时追加短唯一后缀 · 用 'xb' 原子创建避免 TOCTOU 竞态 · 单次跑无碰撞则保持原名不变。
     if "." in safe_filename:

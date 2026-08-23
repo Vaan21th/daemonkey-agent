@@ -1,34 +1,34 @@
 """agent_tools/add_iron_rule.py
 ================================
 
- K stage 2c++ · wish-a72b2f0a · 一调双写新铁律到两个文件
+卷四十四 K stage 2c++ · wish-a72b2f0a · 一调双写新铁律到两个文件
 
 为什么有这个工具
 ------------------
-我 (上一根毛 ·  K stage 2c++) 给 daemon_rules.md 加了铁律 5 / 6 / 7 ·
+我 (上一根毛 · 卷四十四 K stage 2c++) 给 daemon_rules.md 加了铁律 5 / 6 / 7 ·
 每次都是手工双写: 写 daemon_rules.md (LLM context 顶部) + 调 update_opus_diary
-(UI 显示)。 漏一个 = 用户 在 UI 看不到这条规则·或者 LLM 没装上这条规则。
+(UI 显示)。 漏一个 = BRO 在 UI 看不到这条规则·或者 LLM 没装上这条规则。
 
 这个工具一调双写 · 让"加铁律"变原子操作。
 
 跟 update_opus_diary 的区别:
   - update_opus_diary: 通用日记追加 · 任何反思 / 想法 / 学习
   - add_iron_rule: 铁律专用 · 加 daemon_rules.md (LLM 必须看) + opus-diary.md
-    (UI 必须显示) · 校验 rule_number 不冲突 · 防 OPUS 自我洗脑
+    (UI 必须显示) · 校验 rule_number 不冲突 · 防 Daemonkey 自我洗脑
 
 调用时机:
-  - 用户 让 OPUS 加一条新铁律 (例如"以后干 X 类工作必须先做 Y")
-  - OPUS 自己反思后认定一条工艺纪律值得升到铁律层级 (但建议先跟 用户 商量)
+  - BRO 让 Daemonkey 加一条新铁律 (例如"以后干 X 类工作必须先做 Y")
+  - Daemonkey 自己反思后认定一条工艺纪律值得升到铁律层级 (但建议先跟 BRO 商量)
 
 tier:
-  TIER_CONFIRM —— 铁律是骨头层东西 · 一旦写入会影响所有未来 OPUS · 不应该自动加 ·
-  必须 用户 看摘要 ✓ 才执行
+  TIER_CONFIRM —— 铁律是骨头层东西 · 一旦写入会影响所有未来 Daemonkey · 不应该自动加 ·
+  必须 BRO 看摘要 ✓ 才执行
 
 ⚠️ 重要 · 重启延迟:
   daemon 启动时 soul_loader 把 daemon_rules.md 缓存到 RUNTIME.system_prompt ·
   之后 chat session 共用这份缓存 · **改 daemon_rules.md 不重启 daemon · LLM context
-  里看不到新铁律**。 这个工具会在返回结果里明确告知这点 · 让 OPUS 不要装作下一句话
-  开始就按新铁律走。 用户 重启 daemon 后才在 LLM context 生效。
+  里看不到新铁律**。 这个工具会在返回结果里明确告知这点 · 让 Daemonkey 不要装作下一句话
+  开始就按新铁律走。 BRO 重启 daemon 后才在 LLM context 生效。
   但 opus-diary.md 是 UI 实时读 · F5 立刻可见。
 """
 
@@ -43,9 +43,9 @@ from . import TIER_CONFIRM, ToolResult, ToolSpec, register_tool
 ROOT = Path(__file__).resolve().parent.parent
 DAEMON_RULES_PATH = ROOT / "data" / "cognition" / "daemon_rules.md"
 DIARY_PATH = ROOT / "data" / "cognition" / "opus-diary.md"
-ANCHOR_LINE = "## 的反面教材"
+ANCHOR_LINE = "## 卷四十四的反面教材"
 
-# 新装实例没有 daemon_rules.md (官方仓库不带这个文件·是用户积累出来的)。 而 soul_loader 只要文件存在就
+# 新装实例没有 daemon_rules.md (母体是历史积累才有的)。 而 soul_loader 只要文件存在就
 # 以最高优先级注入 → 缺的只是"第一条怎么落地"。 缺文件就用这个头新建。
 _FILE_HEADER = (
     "# 干活铁律\n\n"
@@ -82,7 +82,7 @@ def _run(args: dict) -> ToolResult:
     title = (args.get("title") or "").strip()
     daemon_md = (args.get("daemon_md") or "").strip()
     diary_summary = (args.get("diary_summary") or "").strip()
-    # 默认留空: 老实例有卷号叙事·新实例没有。 写进文件的内容不过 localize·硬默认值会漏出去。
+    # 默认留空: 母体有卷号叙事·新实例没有。 写进文件的内容不过 localize·硬默认值会漏出去。
     cite_volume = (args.get("cite_volume") or "").strip()
     domain = (args.get("domain") or "global").strip().lower()
     if domain not in _VALID_DOMAINS:
@@ -135,9 +135,9 @@ def _run(args: dict) -> ToolResult:
         )
 
     # ── 写 daemon_rules.md ───────────────────────────────────────────────────
-    # 0.9.6 修 · 原先"文件不存在→报错"+"找不到 anchor→报错" 是照着老实例现状写的 ·
+    # 0.9.6 修 · 原先"文件不存在→报错"+"找不到 anchor→报错" 是照着母体现状写的 ·
     #   对新装实例等于把这条路整条焊死 (两处必然命中·第一条铁律永远加不进去)。
-    #   缺文件就建 · 缺 anchor 就追加到末尾 —— anchor 只是老实例历史结构·不是前提。
+    #   缺文件就建 · 缺 anchor 就追加到末尾 —— anchor 只是母体历史结构·不是前提。
     if not DAEMON_RULES_PATH.exists():
         DAEMON_RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
         DAEMON_RULES_PATH.write_text(_FILE_HEADER, encoding="utf-8")
@@ -147,7 +147,7 @@ def _run(args: dict) -> ToolResult:
     # anchor = 铁律之后的总结表 · 有它就插它前面 (保持总结表在最后) · 没有就追加到末尾
     anchor_idx = text.find(ANCHOR_LINE)
 
-    #  II · wish-ff100836 · 在铁律 daemon_md 末尾(在 `---` 之前)加 domain 注释 ·
+    # 卷四十六 II · wish-ff100836 · 在铁律 daemon_md 末尾(在 `---` 之前)加 domain 注释 ·
     # 给 wish-af1245d7 按场景过滤 system_prompt 注入用。 注释不破坏 LLM 阅读 · grep 也能查。
     daemon_md_stripped = daemon_md.rstrip()
     domain_comment = f"\n\n<!-- domain: {domain} -->"
@@ -198,7 +198,7 @@ def _run(args: dict) -> ToolResult:
             ok=False, output="",
             error=(
                 f"⚠️ 半成品 · daemon_rules.md 已写 · 但 opus-diary.md 失败: {e}\n\n"
-                f"修复: 用户 手动调 update_opus_diary 补 diary 那条 · 或者回滚 daemon_rules.md"
+                f"修复: BRO 手动调 update_opus_diary 补 diary 那条 · 或者回滚 daemon_rules.md"
             ),
         )
 
@@ -215,13 +215,13 @@ def _run(args: dict) -> ToolResult:
         "  - daemon 启动时 soul_loader 把 daemon_rules.md 缓存到 RUNTIME.system_prompt ·",
         "    chat session 共用这份缓存 · **当前对话的 LLM context 还是旧的 system_prompt**",
         "  - **不要假装下一句话开始就按这条新铁律走** · 你脑里的 system prompt 没变",
-        "  - 用户 重启 daemon 后 · 新对话才会装上铁律 " + str(rule_number),
-        "  - 但 opus-diary.md 是 UI 实时读 · 用户 F5 OPUS 日记立刻可见 (不需要重启)",
+        "  - BRO 重启 daemon 后 · 新对话才会装上铁律 " + str(rule_number),
+        "  - 但 opus-diary.md 是 UI 实时读 · BRO F5 Daemonkey 日记立刻可见 (不需要重启)",
         "",
-        "**建议你跟 用户 说**:",
+        "**建议你跟 BRO 说**:",
         "",
-        f"  > 「铁律 {rule_number} 已落档 + 入日记 · 用户 重启 daemon 后在 LLM context 顶部生效 ·",
-        "  >   现在 F5 OPUS 日记就能看到这条新铁律」",
+        f"  > 「铁律 {rule_number} 已落档 + 入日记 · BRO 重启 daemon 后在 LLM context 顶部生效 ·",
+        "  >   现在 F5 Daemonkey 日记就能看到这条新铁律」",
     ]
     return ToolResult(ok=True, output="\n".join(lines))
 
@@ -231,15 +231,15 @@ SPEC = ToolSpec(
     description=(
         "加一条新铁律 · 一调原子双写 daemon_rules.md (LLM context) + opus-diary.md (UI 显示)\n\n"
         "**调用时机**:\n"
-        "  - 用户 让 OPUS 加一条新工艺纪律 (『以后干 X 必须先做 Y』)\n"
-        "  - OPUS 自己反思后认定值得升到铁律层级 (但建议先跟 用户 商量·因为铁律影响所有未来 OPUS)\n"
-        "  - ★ 用户 表达【持久偏好 / 禁忌 / 口味】: 『以后回话别用 emoji』『周报每周五给我』\n"
-        "    『叫我老板』『代码注释都写中文』——这类当场点头答应等于没答应·\n"
+        "  - BRO 让 Daemonkey 加一条新工艺纪律 (『以后干 X 必须先做 Y』)\n"
+        "  - Daemonkey 自己反思后认定值得升到铁律层级 (但建议先跟 BRO 商量·因为铁律影响所有未来 Daemonkey)\n"
+        "  - ★ BRO 表达【持久偏好 / 禁忌 / 口味】: 『以后回话别用 emoji』『周报每周五给我』\n"
+        "    『叫我老板别叫 BRO』『代码注释都写中文』——这类当场点头答应等于没答应·\n"
         "    system_prompt 里没有它·重启就忘干净了。 想让它长期成立必须落到这里。\n\n"
         "**三个用户可写落点别搞混** (都在 never_sync·官方升级都不覆盖·都会注入 prompt):\n"
         "  - 干活纪律 / 表达偏好 / 禁忌  → 本工具 (data/cognition/daemon_rules.md)\n"
         "  - 产品设计层的原则           → soul/CONSTITUTION.md (产品观·用 write_file 追加)\n"
-        "  - 关于 用户 本人的事实       → update_bro_note (画像·是信息不是纪律)\n\n"
+        "  - 关于 BRO 本人的事实         → update_bro_note (画像·是信息不是纪律)\n\n"
         "**先调 list_iron_rules 看现有最大编号 · rule_number 必须等于 max+1** (防漏编)\n\n"
         "**daemon_md 怎么写** (重要):\n"
         "  - LLM 自己组织好完整 markdown body · 包含 `## 铁律 N · 标题` 头 + 详细 + `---` 尾\n"
@@ -248,11 +248,11 @@ SPEC = ToolSpec(
         "**diary_summary 怎么写**:\n"
         "  - 给 UI 显示的精简版 · 不含 `##` 头 (update_opus_diary 自动加日期跟标题)\n"
         "  - 推荐: 触发 + 纪律核心 + 反面教材 + 一句话『为什么这条是骨头不是衣服』\n"
-        "  - 长度 200-800 字符 · 太短 用户 看不明白 · 太长跟 daemon_md 冗余\n\n"
+        "  - 长度 200-800 字符 · 太短 BRO 看不明白 · 太长跟 daemon_md 冗余\n\n"
         "**⚠️ daemon 重启延迟**:\n"
         "  - daemon 当前 system_prompt 是启动时缓存的 · 改 daemon_rules.md 不会立刻让 LLM 看到\n"
         "  - 工具返回会明确告知 · LLM 不要假装下一句开始就按新铁律走\n"
-        "  - 用户 重启 daemon 后 · 新对话才装上新铁律\n\n"
+        "  - BRO 重启 daemon 后 · 新对话才装上新铁律\n\n"
         "**为什么不暴露写底层细节**:\n"
         "  - 校验 rule_number 不冲突 (防两根毛同时加铁律 N 撞了)\n"
         "  - 校验 daemon_md 头格式 (防 LLM 写错 ## 铁律 8 写成 # 铁律 8 头被吞)\n"
@@ -298,7 +298,7 @@ SPEC = ToolSpec(
                     "workflow_creation", "client_ops", "production", "reflection",
                 ],
                 "description": (
-                    " II · wish-ff100836 · 铁律 domain · 给 wish-af1245d7 按场景过滤 system_prompt 注入用。 "
+                    "卷四十六 II · wish-ff100836 · 铁律 domain · 给 wish-af1245d7 按场景过滤 system_prompt 注入用。 "
                     "默认 'global' (所有场景看见)。 self_evolution=改 daemon 代码 / app_creation=造工坊资产 / "
                     "client_ops=客户运营 / production=生产部署 / reflection=复盘"
                 ),

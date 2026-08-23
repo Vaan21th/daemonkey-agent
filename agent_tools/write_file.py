@@ -10,7 +10,7 @@ Daemonkey 的"写"——写或覆盖一个文本文件。
       .env / .env.* （凭证）
       soul/ 下的任何文件 （灵魂副本）
       .git/ （仓库内部状态）
-      C:\\Users\\...\\Daemonkey-soul\\ 全局灵魂目录
+      C:\\Users\\...\\opus-soul\\ 全局灵魂目录
       .venv/ 下任何路径
 
 写策略：
@@ -57,7 +57,7 @@ _DAEMON_CORE_DIRS = (
 )
 _DAEMON_CORE_FILES = (
     "daemon_api.py",
-    "Daemonkey_daemon.py",
+    "opus_daemon.py",
     "soul_loader.py",
     "daemon_runtime.py",
     "tool_loop.py",
@@ -112,7 +112,7 @@ def _is_guard_target(path: Path) -> bool:
       - .git/           毁仓库历史不可逆
       - .venv/          改坏虚拟环境 = daemon 起不来 = 自爆同级
     以下从 GUARD 降到 CONFIRM (有 git 版本/副本冗余·可恢复·不该弹窗):
-      soul/ · Daemonkey-soul · skills-cursor  (灵魂层·写坏可从副本/git 恢复)
+      soul/ · opus-soul · skills-cursor  (灵魂层·写坏可从副本/git 恢复)
     """
     name = path.name.lower()
     if name == ".env" or name.startswith(".env."):
@@ -420,7 +420,7 @@ SPEC = ToolSpec(
     description=(
         "Write text content to a file (create / overwrite / append). "
         "BRO will be asked to confirm before writes. "
-        "Writes to .env, soul/, .git/, .venv/, or any Daemonkey-soul/skills-cursor path "
+        "Writes to .env, soul/, .git/, .venv/, or any opus-soul/skills-cursor path "
         "require explicit 'do it' from BRO (GUARD tier).\n"
         "做精排 word/docx 文档(带封面/排版/WebUI 可下载)请用 generate_report·不要用本工具写 .docx"
         "(写出来是假 docx 纯文本)。\n"

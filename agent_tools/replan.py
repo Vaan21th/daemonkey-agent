@@ -239,6 +239,7 @@ def _run(args: dict) -> ToolResult:
             inject_budget_mandate=True,
             progress=_advisor_progress,
             cancel_check=_cancel_check,
+            ledger_source="replan",   # 0.9.7 D7 · 总监重规划用量也落账
         )
     finally:
         # 不管顾问跑成什么样 · live 状态必须收尾 (否则刷新页面后 live 卡永远转圈)

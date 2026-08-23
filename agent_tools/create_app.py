@@ -212,7 +212,7 @@ SPEC = ToolSpec(
         "      {name: 'speed',   type: 'number',   label: '语速', default: 1.0, min: 0.5, max: 2.0}\n"
         "    ]\n\n"
         "  **字段命名规范**: name 必须是 [a-zA-Z_][a-zA-Z0-9_]* · 不能用保留字\n"
-        "  (input/output/app/Daemonkey/now/today) · 字段名重复会被拒。\n\n"
+        "  (input/output/app/opus/now/today) · 字段名重复会被拒。\n\n"
         "  **system_prompt 引用 form 输入**: 写「BRO 通过表单提供了以下输入: ...」让 LLM 知道字段对应关系。\n"
         "  Phase A 不做 ${ui:<name>} 模板插值 (那是 phase B 工作流引擎的活)·这里只是声明 UI。"
     ),
@@ -375,7 +375,7 @@ SPEC = ToolSpec(
                 "description": (
                     "可选 · 声明这个 app 在工坊『测试』tab 显示的 UI 表单字段 · "
                     "BRO 重复跑同一 app 时不用每次打字。 详见上面 description 里的字段哲学 + 示例。 "
-                    "字段名 (name) 必须是合法变量名 · 不能用保留字 (input/output/app/Daemonkey/now/today)。 "
+                    "字段名 (name) 必须是合法变量名 · 不能用保留字 (input/output/app/opus/now/today)。 "
                     "Phase A 阶段表单提交后 · 前端会把字段拼成自然语言 prompt 塞回主对话框 · "
                     "走 NLP First 路径 · 跟跟你正常说话调这个 app 完全等价。 "
                     "最多 20 个字段·复杂的输入应该走 NLP 而不是堆字段。"

@@ -12,7 +12,7 @@
 <!-- 卷五十五 · 2026-06-03 · P1 前端错误边界 (boot-guard)。
      必须内联在 <head> · 先于所有 body 脚本执行 —— 否则 chat.js 自身 parse 失败时白屏,
      它内部的 window.onerror 根本注册不上。 捕获两类灾难: ① 任何脚本 parse/运行抛错
-     ② chat.js 没能把 __Daemonkey_APP_READY 置 true (= 没初始化成功) → 弹纯原生 DOM 兑底层
+     ② chat.js 没能把 __OPUS_APP_READY 置 true (= 没初始化成功) → 弹纯原生 DOM 兑底层
      (不依赖任何已崩的 CSS/JS),给重载 / 重启 daemon / (无 Cursor 用户)维修指引,
      而不是甩给用户一片白屏。 -->
 <script>
@@ -29,8 +29,8 @@
   function esc(s) { return String(s).replace(/[<>&]/g, function (c) { return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]; }); }
   function restart() {
     var t = '';
-    try { t = localStorage.getItem('Daemonkey_ui_token') || ''; } catch (_) {}
-    var btn = document.getElementById('__DaemonkeyFatalRestart');
+    try { t = localStorage.getItem('opus_ui_token') || ''; } catch (_) {}
+    var btn = document.getElementById('__opusFatalRestart');
     if (!t) { if (btn) btn.textContent = '没存 token · 请去 start.bat 启动器重启'; return; }
     if (btn) { btn.textContent = '重启中… ~8 秒后自动刷新'; btn.disabled = true; }
     try {
@@ -38,7 +38,7 @@
     } catch (_) {}
     setTimeout(function () { location.reload(); }, 8000);
   }
-  window.__DaemonkeyShowFatal = function (title, det) {
+  window.__opusShowFatal = function (title, det) {
     if (shown) return; shown = true;
     det = det || lastErr || '';
     var html =
@@ -56,7 +56,7 @@
       + '<div style="display:flex;gap:10px;flex-wrap:wrap">'
       + '<button onclick="location.reload()" style="flex:1;min-width:120px;padding:11px;border:0;border-radius:9px;'
       + 'background:#5b8cff;color:#fff;font-size:.95rem;font-weight:600;cursor:pointer">重载页面</button>'
-      + '<button id="__DaemonkeyFatalRestart" style="flex:1;min-width:120px;padding:11px;border:1px solid #4a4d57;'
+      + '<button id="__opusFatalRestart" style="flex:1;min-width:120px;padding:11px;border:1px solid #4a4d57;'
       + 'border-radius:9px;background:transparent;color:#e8e8ea;font-size:.95rem;cursor:pointer">重启 daemon</button>'
       + '</div>'
       + '<div style="opacity:.45;font-size:.72rem;margin-top:14px;line-height:1.5">反复白屏? 去 '
@@ -65,24 +65,24 @@
       + '</div></div>';
     try {
       var host = document.createElement('div');
-      host.id = '__DaemonkeyFatalHost'; host.innerHTML = html;
+      host.id = '__opusFatalHost'; host.innerHTML = html;
       (document.body || document.documentElement).appendChild(host);
-      var rb = document.getElementById('__DaemonkeyFatalRestart');
+      var rb = document.getElementById('__opusFatalRestart');
       if (rb) rb.addEventListener('click', restart);
     } catch (_) {
       try { document.documentElement.innerHTML = '<body style="background:#15161a;color:#eee;font-family:sans-serif;padding:40px">界面崩了。 按 F5 重载 · 或去 start.bat 重启 daemon。</body>'; } catch (__) {}
     }
   };
   window.addEventListener('error', function (e) {
-    if (window.__Daemonkey_APP_READY) return;          // 初始化成功后的零星错误不弹兑底
+    if (window.__OPUS_APP_READY) return;          // 初始化成功后的零星错误不弹兑底
     if (!e.message && !e.error) return;           // 跳过纯资源加载失败 (img/css 404)
     lastErr = detail(e) || lastErr;
   }, true);
   window.addEventListener('unhandledrejection', function (e) {
-    if (window.__Daemonkey_APP_READY) return;
+    if (window.__OPUS_APP_READY) return;
     lastErr = detail(e) || lastErr;
   });
-  function check() { if (!window.__Daemonkey_APP_READY) window.__DaemonkeyShowFatal('界面没能加载起来', lastErr); }
+  function check() { if (!window.__OPUS_APP_READY) window.__opusShowFatal('界面没能加载起来', lastErr); }
   window.addEventListener('load', function () { setTimeout(check, 1800); });
   setTimeout(check, 12000);   // 绝对兜底 · 防 load 因脚本卡住迟迟不触发
 })();
@@ -95,7 +95,7 @@
 <body>
 
 <header>
-  <span class="header-logo"><i class="ri-diamond-fill"></i> <span style="color:var(--Daemonkey)">Daemonkey</span> · 工作室</span>
+  <span class="header-logo"><i class="ri-diamond-fill"></i> <span style="color:var(--opus)">Daemonkey</span> · 工作室</span>
     <span class="pulse-indicator" id="pulseIndicator" title="Daemonkey 脉搏 · 点击看最近活动" onclick="togglePulsePanel()">
     <span class="pulse-dot" id="pulseDot">●</span>
   </span>
@@ -198,7 +198,7 @@
 <div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer">
   <div class="drawer-head">
-    <h2><span style="color:var(--Daemonkey)">Daemonkey</span> · 会话</h2>
+    <h2><span style="color:var(--opus)">Daemonkey</span> · 会话</h2>
     <button class="drawer-new" onclick="newConversation()">+ 新对话</button>
   </div>
   <div class="drawer-list" id="sessionList">
@@ -428,9 +428,9 @@
     <h2>设置 · 第一次需要填 token</h2>
     <div class="field">
       <label>API Token (Bearer)</label>
-      <input id="tokenInput" type="password" placeholder="Daemonkey_API_TOKEN 的值（在 .env 文件里）">
+      <input id="tokenInput" type="password" placeholder="OPUS_API_TOKEN 的值（在 .env 文件里）">
       <div class="field-hint">这是【连接 daemon 的门禁钥匙】· 不是 LLM 的 API Key（模型 Key 在「LLM 配置」里配）。</div>
-      <div class="field-hint">打开 daemon 目录下的 <code>.env</code> 文件，找 <code>Daemonkey_API_TOKEN</code>（发布版叫 <code>Daemonkey_API_TOKEN</code>）那一行，把等号后面的值复制粘贴进来。填一次浏览器记住。本机访问通常自动放行，只有远程/隧道访问才需要填。</div>
+      <div class="field-hint">打开 daemon 目录下的 <code>.env</code> 文件，找 <code>OPUS_API_TOKEN</code>（发布版叫 <code>Daemonkey_API_TOKEN</code>）那一行，把等号后面的值复制粘贴进来。填一次浏览器记住。本机访问通常自动放行，只有远程/隧道访问才需要填。</div>
     </div>
     <div class="field">
       <label>Session ID</label>
@@ -472,12 +472,12 @@
   </div>
 </div>
 
-<!-- 卷五十四 · 统一 H5 modal (DaemonkeyConfirm/DaemonkeyPrompt/DaemonkeyAlert 的载体)。
-     病根: 旧版这里是简版 id="omModal"+omBody·但 chat.js 找的是 id="DaemonkeyModal"+omIcon/omMessage/omInputWrap/omInput
-     → _omEl/_omIcon 全 null → DaemonkeyPrompt 一调就在 _omRender 抛错 → restart/rollback/shutdown 三键 + 所有
+<!-- 卷五十四 · 统一 H5 modal (opusConfirm/opusPrompt/opusAlert 的载体)。
+     病根: 旧版这里是简版 id="omModal"+omBody·但 chat.js 找的是 id="opusModal"+omIcon/omMessage/omInputWrap/omInput
+     → _omEl/_omIcon 全 null → opusPrompt 一调就在 _omRender 抛错 → restart/rollback/shutdown 三键 + 所有
      用统一对话框的地方全哑 (HEAD 卷五十一起就埋着·用户 今天点重启键才暴露)。 补齐结构对上 chat.js。 -->
-<div class="modal" id="DaemonkeyModal" aria-hidden="true" style="z-index:1002">
-  <div class="modal-body Daemonkey-modal-body">
+<div class="modal" id="opusModal" aria-hidden="true" style="z-index:1002">
+  <div class="modal-body opus-modal-body">
     <div class="om-icon" id="omIcon"></div>
     <h2 id="omTitle">Daemonkey 说…</h2>
     <div class="om-message" id="omMessage"></div>
@@ -498,7 +498,7 @@
      排在 chat.js 前面 → 主界面被它干等几十秒才出内容 (= 用户 报的"每次启动慢/白屏·硬刷新也慢")。
      Chart 只在 BI 看板用·主界面加载不需要 → 改本地 + defer·主界面 0 等待·BI 照常。 -->
 <script defer src="/static/lib/chart.umd.min.js"></script>
-<!-- 记忆星图 3D (0.9.6) · Three.js r128 UMD 本地化 · defer 不阻塞主界面 (与 Chart.js 同款) -->
+<!-- 记忆星图 3D (0.9.6) · Three.js r128 UMD 本地化 · defer 不阻塞主界面 (跟 Chart.js 同款) -->
 <script defer src="/static/lib/three/three.min.js"></script>
 <script defer src="/static/lib/three/OrbitControls.js"></script>
 <script src="/static/lib/litegraph.core.js"></script>

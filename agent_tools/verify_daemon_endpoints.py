@@ -70,8 +70,8 @@ def _run(args: dict) -> ToolResult:
 
     # 1. 确保 token 在环境里 + sys.path
     if deep:
-        token = os.environ.get("Daemonkey_API_TOKEN") or "test-smoke-token"
-        os.environ["Daemonkey_API_TOKEN"] = token  # deep: app auth 与请求头同值 → handler 真跑
+        token = os.environ.get("OPUS_API_TOKEN") or "test-smoke-token"
+        os.environ["OPUS_API_TOKEN"] = token  # deep: app auth 与请求头同值 → handler 真跑
     else:
         # fast: 环境保持原样 · 请求头带【保证不匹配】的 token → auth 401 早退 (1.2s 的关键)。
         # 教训: 千万别把 os.environ 也改成假值——那样请求头与 auth 比对一致 → handler 真跑
@@ -178,7 +178,7 @@ def _run(args: dict) -> ToolResult:
 
         if resp.status_code == 503:
             r["verdict"] = "skip"
-            r["lines"].append(f"{_SKIP} {method:6} {path_pattern}  (503 · Daemonkey_API_TOKEN 未配)")
+            r["lines"].append(f"{_SKIP} {method:6} {path_pattern}  (503 · OPUS_API_TOKEN 未配)")
             return r
 
         if resp.status_code == 401:
@@ -365,7 +365,7 @@ def _extract_error(resp) -> str:
 
 _SUBPROCESS_SNIPPET = (
     "import os,sys; sys.path.insert(0,'.'); "
-    "os.environ.setdefault('Daemonkey_API_TOKEN','verify-gate-token'); "
+    "os.environ.setdefault('OPUS_API_TOKEN','verify-gate-token'); "
     "from agent_tools.verify_daemon_endpoints import _run; "
     "r=_run({'mode': os.environ.get('VERIFY_SMOKE_MODE','fast')}); "
     "print(r.output); sys.exit(0 if r.ok else 1)"

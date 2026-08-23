@@ -211,7 +211,7 @@ def _run(args: dict) -> ToolResult:
 
 
 SPEC = ToolSpec(
-    name="update_bro_note",
+    name="update_owner_note",
     description=(
         "Update OPUS's living profile of BRO (6-dimensional cognitive notebook). "
         "Use this when BRO reveals new info about his life, mood, schedule, projects, "
@@ -275,3 +275,15 @@ SPEC = ToolSpec(
 
 
 register_tool(SPEC)
+
+# 0.9.7 尾巴4: 工具名中性化 update_bro_note → update_owner_note (LLM 可见面不该带母体称谓) ·
+# 老名保留为别名注册 —— 老 playbook/flow/会话历史里 tool_calls 引用 update_bro_note 的不会断。
+_ALIAS_SPEC = ToolSpec(
+    name="update_bro_note",
+    description="[已改名 update_owner_note · 此别名仅为兼容老引用保留] " + (SPEC.description or "")[:150],
+    tier=SPEC.tier,
+    input_schema=SPEC.input_schema,
+    run=SPEC.run,
+    summarize=SPEC.summarize,
+)
+register_tool(_ALIAS_SPEC)

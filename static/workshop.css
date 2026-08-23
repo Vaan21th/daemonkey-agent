@@ -4,7 +4,7 @@
  * 设计:
  *   - 全部样式 scope 在 .workshop-view 下 · 不污染主 chat.css
  *   - 二栏:左工具集 (固定 248px · 可隐藏) + 右工作台 (canvas 铺满)
- *   - 视觉跟主 UI 一致 (深色 + 紫 #9F7AEA · 复用 var(--Daemonkey) 等)
+ *   - 视觉跟主 UI 一致 (深色 + 紫 #9F7AEA · 复用 var(--opus) 等)
  *   - 在 detail-pane 里·继承 detail-pane 的 100% 高度
  */
 
@@ -55,7 +55,7 @@
 }
 .workshop-view .ws-tab.active {
   background: rgba(159, 122, 234, .14);
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   border-color: rgba(159, 122, 234, .3);
 }
 .workshop-view .ws-tabs-spacer { flex: 1; }
@@ -151,8 +151,8 @@
   flex-shrink: 0;
 }
 .workshop-view .wash-collapse:hover {
-  color: var(--Daemonkey, #9F7AEA);
-  border-color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
+  border-color: var(--opus, #9F7AEA);
 }
 .workshop-view .ws-apps-side-search {
   padding: 0 14px 8px;
@@ -171,7 +171,7 @@
   outline: none;
 }
 .workshop-view #wsAppsSideFilter:focus {
-  border-color: var(--Daemonkey, #9F7AEA);
+  border-color: var(--opus, #9F7AEA);
 }
 .workshop-view #wsAppsSideFilter::-webkit-search-cancel-button { display: none; }
 
@@ -256,11 +256,11 @@
   background: transparent;
 }
 .workshop-view .ws-apps-sidebar .ws-app-card.ws-app-add:hover {
-  border-color: var(--Daemonkey, #9F7AEA);
+  border-color: var(--opus, #9F7AEA);
   background: rgba(159,122,234,.08);
 }
 .workshop-view .ws-apps-sidebar .ws-app-card.ws-app-add .wac-icon {
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
 }
 
 /* 折叠态下卡片只显示 icon · 居中 */
@@ -323,7 +323,7 @@
   color: var(--dim2, #6f6685);
 }
 .workshop-view .wawm-stat b {
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   font-size: 22px;
   font-weight: 600;
   display: block;
@@ -366,7 +366,7 @@
   min-height: 110px;
 }
 .workshop-view .ws-app-card:hover {
-  border-color: var(--Daemonkey, #9F7AEA);
+  border-color: var(--opus, #9F7AEA);
   background: var(--bg3, #241e34);
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(0,0,0,.25);
@@ -403,7 +403,7 @@
 }
 .workshop-view .ws-app-card .wac-kind {
   background: rgba(159,122,234,.18);
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   padding: 2px 7px;
   border-radius: 4px;
 }
@@ -421,7 +421,7 @@
   background: linear-gradient(135deg, #232328, #2c2230);
 }
 .workshop-view .ws-app-card.ws-app-add .wac-icon {
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
 }
 
 /* ─── 卷四十四 K stage 2a · 应用详情 (产物历史 / 配置 / 测试) ─── */
@@ -449,12 +449,12 @@
   font-size: 12px;
   font-family: inherit;
 }
-.workshop-view .ws-ad-back:hover { background: var(--border, #352c4d); color: var(--Daemonkey, #9F7AEA); }
+.workshop-view .ws-ad-back:hover { background: var(--border, #352c4d); color: var(--opus, #9F7AEA); }
 .workshop-view .ws-ad-icon { font-size: 24px; line-height: 1; }
 .workshop-view .ws-ad-title { font-size: 16px; font-weight: 600; color: var(--text, #ece8f5); }
 .workshop-view .ws-ad-kind {
   background: rgba(159,122,234,.18);
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   padding: 2px 7px;
   border-radius: 4px;
   font-size: 10px;
@@ -486,8 +486,8 @@
 }
 .workshop-view .ws-ad-tab:hover { color: var(--dim, #9a90b3); }
 .workshop-view .ws-ad-tab.active {
-  color: var(--Daemonkey, #9F7AEA);
-  border-bottom-color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
+  border-bottom-color: var(--opus, #9F7AEA);
 }
 .workshop-view .ws-ad-pane {
   flex: 1;
@@ -561,7 +561,7 @@
   text-align: center;
 }
 .workshop-view .ws-ad-stub .ws-stub-icon { font-size: 40px; margin-bottom: 12px; opacity: .6; }
-.workshop-view .ws-ad-stub h3 { color: var(--Daemonkey, #9F7AEA); margin: 0 0 12px 0; font-size: 16px; }
+.workshop-view .ws-ad-stub h3 { color: var(--opus, #9F7AEA); margin: 0 0 12px 0; font-size: 16px; }
 .workshop-view .ws-ad-stub p { color: var(--dim, #9a90b3); line-height: 1.7; margin: 8px 0; font-size: 13px; }
 .workshop-view .ws-ad-stub ul { text-align: left; color: var(--dim, #9a90b3); line-height: 1.8; padding-left: 22px; margin: 12px 0; }
 .workshop-view .ws-ad-stub ul li b { color: var(--text, #ece8f5); }
@@ -609,7 +609,7 @@
 }
 .workshop-view .wamc-chip code {
   background: rgba(159,122,234,.15);
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   padding: 1px 6px;
   border-radius: 3px;
   font-size: 11px;
@@ -667,7 +667,7 @@
   top: 8px;
   right: 8px;
   font-size: 10px;
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   background: rgba(159,122,234,.12);
   border: 1px solid rgba(159,122,234,.3);
   border-radius: 3px;
@@ -681,7 +681,7 @@
   margin-left: auto;
   background: rgba(159,122,234,.12);
   border: 1px solid rgba(159,122,234,.35);
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   border-radius: 4px;
   padding: 2px 10px;
   font-size: 12px;
@@ -725,7 +725,7 @@ dialog.ws-asset-modal::backdrop {
   background: rgba(159,122,234,.18);
   padding: 2px 6px;
   border-radius: 3px;
-  color: var(--Daemonkey, #B595EF);
+  color: var(--opus, #B595EF);
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
   font-size: 13px;
 }
@@ -746,7 +746,7 @@ dialog.ws-asset-modal::backdrop {
   display: inline-block;
   margin-left: 6px;
   background: rgba(159,122,234,.18);
-  color: var(--Daemonkey, #B595EF);
+  color: var(--opus, #B595EF);
   border: 1px solid rgba(159,122,234,.3);
   border-radius: 3px;
   padding: 0 5px;
@@ -835,8 +835,8 @@ dialog.ws-asset-modal::backdrop {
   background: rgba(255,255,255,.12);
 }
 .ws-asset-modal button.ws-am-primary {
-  background: var(--Daemonkey, #9F7AEA);
-  border-color: var(--Daemonkey, #9F7AEA);
+  background: var(--opus, #9F7AEA);
+  border-color: var(--opus, #9F7AEA);
   color: #fff;
   font-weight: 500;
 }
@@ -854,7 +854,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-app-section-hint code {
   background: rgba(159,122,234,.1);
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   padding: 1px 5px;
   border-radius: 3px;
   font-size: 11px;
@@ -942,7 +942,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-app-slot-empty-hint code {
   background: rgba(159,122,234,.08);
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   font-style: normal;
   padding: 1px 5px;
   border-radius: 3px;
@@ -988,7 +988,7 @@ dialog.ws-asset-modal::backdrop {
   line-height: 1.5;
 }
 .workshop-view .ws-app-changelog li b {
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   margin-right: 6px;
 }
 
@@ -1007,7 +1007,7 @@ dialog.ws-asset-modal::backdrop {
   font-weight: 600;
 }
 .workshop-view .ws-app-md h1 { font-size: 17px; }
-.workshop-view .ws-app-md h2 { font-size: 15px; color: var(--Daemonkey, #9F7AEA); }
+.workshop-view .ws-app-md h2 { font-size: 15px; color: var(--opus, #9F7AEA); }
 .workshop-view .ws-app-md h3 { font-size: 14px; }
 .workshop-view .ws-app-md h4 { font-size: 13px; color: var(--dim, #9a90b3); }
 .workshop-view .ws-app-md p { margin: 8px 0; }
@@ -1067,7 +1067,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-app-md td { color: var(--dim, #9a90b3); }
 .workshop-view .ws-app-md tr:nth-child(even) td { background: var(--bg2, #1f1a2c); }
 .workshop-view .ws-app-md a {
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   text-decoration: none;
   border-bottom: 1px dashed rgba(159,122,234,.4);
 }
@@ -1091,7 +1091,7 @@ dialog.ws-asset-modal::backdrop {
   gap: 16px;
 }
 /* ─── 测试/运行 tab · UI 设计感统一 (2026-08-10 用户 拍板) ───
-   对齐 daemonkey 变量体系 (--Daemonkey 紫 / --bg 深底 / --text) ·
+   对齐 daemonkey 变量体系 (--opus 紫 / --bg 深底 / --text) ·
    卡片层次 + 渐变 + 状态色 · 让每个 app 跑出来都清晰易用有说明 */
 .workshop-view .ws-form-head {
   display: flex;
@@ -1187,7 +1187,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-form-field textarea:focus,
 .workshop-view .ws-form-field select:focus {
   outline: none;
-  border-color: var(--Daemonkey, #9F7AEA);
+  border-color: var(--opus, #9F7AEA);
   background: #1c1a24;
   box-shadow: 0 0 0 3px rgba(159, 122, 234, .12);
 }
@@ -1206,7 +1206,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-form-bool input[type="checkbox"] {
   width: 14px;
   height: 14px;
-  accent-color: var(--Daemonkey, #9F7AEA);
+  accent-color: var(--opus, #9F7AEA);
   cursor: pointer;
 }
 .workshop-view .ws-form-actions {
@@ -1229,11 +1229,11 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-form-autosend input[type="checkbox"] {
   width: 12px;
   height: 12px;
-  accent-color: var(--Daemonkey, #9F7AEA);
+  accent-color: var(--opus, #9F7AEA);
   cursor: pointer;
 }
 .workshop-view .ws-btn-primary {
-  background: linear-gradient(135deg, var(--Daemonkey, #9F7AEA), var(--Daemonkey-dim, #b794f6));
+  background: linear-gradient(135deg, var(--opus, #9F7AEA), var(--opus-dim, #b794f6));
   border-color: transparent;
   color: #fff;
   font-weight: 600;
@@ -1243,7 +1243,7 @@ dialog.ws-asset-modal::backdrop {
   transition: filter .12s, transform .12s, box-shadow .12s;
 }
 .workshop-view .ws-btn-primary:hover {
-  background: linear-gradient(135deg, var(--Daemonkey-dim, #b794f6), var(--Daemonkey, #9F7AEA));
+  background: linear-gradient(135deg, var(--opus-dim, #b794f6), var(--opus, #9F7AEA));
   filter: brightness(1.08);
   transform: translateY(-1px);
   box-shadow: 0 4px 14px rgba(159, 122, 234, .32);
@@ -1314,7 +1314,7 @@ dialog.ws-asset-modal::backdrop {
   margin-bottom: 9px;
 }
 .workshop-view .ws-form-run-title {
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   font-size: 13px;
   font-weight: 600;
   display: inline-flex;
@@ -1332,7 +1332,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-form-run-status[data-st="running"],
 .workshop-view .ws-form-run-status.running {
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   border-color: rgba(159,122,234,.4);
   background: rgba(159,122,234,.1);
 }
@@ -1381,7 +1381,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-fre-tool .ws-fre-kind { color: #5DA3F0; }
 .workshop-view .ws-fre-tool-ok .ws-fre-kind { color: #48BB78; }
-.workshop-view .ws-fre-llm .ws-fre-kind { color: var(--Daemonkey, #9F7AEA); }
+.workshop-view .ws-fre-llm .ws-fre-kind { color: var(--opus, #9F7AEA); }
 .workshop-view .ws-fre-err .ws-fre-kind,
 .workshop-view .ws-fre-err .ws-fre-text { color: #e07070; }
 .workshop-view .ws-form-run-outputs {
@@ -1477,12 +1477,12 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-btn-emphasis {
   background: rgba(159, 122, 234, .14);
   border-color: rgba(159, 122, 234, .35);
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   font-weight: 600;
 }
 .workshop-view .ws-btn-emphasis:hover {
   background: rgba(159, 122, 234, .22);
-  border-color: var(--Daemonkey, #9F7AEA);
+  border-color: var(--opus, #9F7AEA);
   color: #e0d0ff;
 }
 .workshop-view .ws-btn-divider {
@@ -1518,7 +1518,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-tb-title {
   font-weight: 600;
   font-size: 13px;
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
 }
 .workshop-view .ws-tb-toggle {
   background: transparent;
@@ -1536,7 +1536,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-tb-toggle:hover {
   background: var(--border, #352c4d);
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
 }
 
 .workshop-view .ws-tb-search {
@@ -1555,7 +1555,7 @@ dialog.ws-asset-modal::backdrop {
   outline: none;
 }
 .workshop-view .ws-tb-search input:focus {
-  border-color: var(--Daemonkey, #9F7AEA);
+  border-color: var(--opus, #9F7AEA);
 }
 
 .workshop-view .ws-tb-body {
@@ -1670,7 +1670,7 @@ dialog.ws-asset-modal::backdrop {
   width: 100%;
   background: linear-gradient(135deg, #2c2c30, #232328);
   border: 1px dashed #4a3a6c;
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   padding: 8px;
   border-radius: 5px;
   cursor: pointer;
@@ -1678,7 +1678,7 @@ dialog.ws-asset-modal::backdrop {
   transition: all .12s;
 }
 .workshop-view .ws-tb-add button:hover {
-  border-color: var(--Daemonkey, #9F7AEA);
+  border-color: var(--opus, #9F7AEA);
   background: #2c2230;
 }
 
@@ -1691,7 +1691,7 @@ dialog.ws-asset-modal::backdrop {
   z-index: 5;
   background: var(--border, #352c4d);
   border: 1px solid var(--border, #352c4d);
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   width: 22px;
   height: 60px;
   border-radius: 0 6px 6px 0;
@@ -1728,7 +1728,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-canvas-title {
   font-weight: 600;
-  color: var(--Daemonkey, #9F7AEA);
+  color: var(--opus, #9F7AEA);
   font-size: 13px;
   white-space: nowrap;
 }
@@ -1755,8 +1755,8 @@ dialog.ws-asset-modal::backdrop {
 }
 .workshop-view .ws-btn:hover {
   background: #3a2a4a;
-  border-color: var(--Daemonkey, #9F7AEA);
-  color: var(--Daemonkey, #9F7AEA);
+  border-color: var(--opus, #9F7AEA);
+  color: var(--opus, #9F7AEA);
 }
 .workshop-view .ws-lang-btn {
   width: 36px;
@@ -2164,7 +2164,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .litecontextmenu .litemenu-entry:hover {
   background: #3a2a4a !important;
-  color: var(--Daemonkey, #9F7AEA) !important;
+  color: var(--opus, #9F7AEA) !important;
 }
 .litecontextmenu .litemenu-entry.separator {
   border-top: 1px solid var(--border, #352c4d) !important;
@@ -2172,7 +2172,7 @@ dialog.ws-asset-modal::backdrop {
 }
 .litegraph.litesearchbox {
   background: var(--bg3, #241e34) !important;
-  border: 1px solid var(--Daemonkey, #9F7AEA) !important;
+  border: 1px solid var(--opus, #9F7AEA) !important;
   color: var(--text, #ece8f5) !important;
 }
 
@@ -2476,26 +2476,26 @@ dialog.ws-asset-modal::backdrop {
   margin-top: 6px;
 }
 
-/* Daemonkey app 产出 tab · 应用说明头 */
-.workshop-view .ws-Daemonkey-app-header {
+/* opus app 产出 tab · 应用说明头 */
+.workshop-view .ws-opus-app-header {
   background: #1a1a20;
   border: 1px solid var(--border, #352c4d);
   border-radius: 8px;
   padding: 14px 16px;
   margin-bottom: 14px;
 }
-.workshop-view .ws-Daemonkey-app-desc {
+.workshop-view .ws-opus-app-desc {
   font-size: 13px;
   color: var(--dim, #9a90b3);
   line-height: 1.6;
   margin-bottom: 10px;
 }
-.workshop-view .ws-Daemonkey-app-tools-label {
+.workshop-view .ws-opus-app-tools-label {
   font-size: 11px;
   color: var(--dim2, #6f6685);
   margin-top: 8px;
 }
-.workshop-view .ws-Daemonkey-app-tools-label code {
+.workshop-view .ws-opus-app-tools-label code {
   background: var(--bg3, #241e34);
   padding: 1px 5px;
   border-radius: 3px;

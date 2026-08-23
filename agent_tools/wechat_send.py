@@ -87,7 +87,7 @@ def _run_media(media_path: str, caption: str) -> ToolResult:
             ),
         )
     if err == "silent_mode":
-        return ToolResult(ok=True, output="wechat_send · 微信处于静默 (Daemonkey stop)·没发。等 BRO 发 Daemonkey start 再说。")
+        return ToolResult(ok=True, output="wechat_send · 微信处于静默 (opus stop)·没发。等 BRO 发 opus start 再说。")
     return ToolResult(ok=False, output="", error=f"发媒体失败: {err} {r.get('resp', '')}".strip())
 
 

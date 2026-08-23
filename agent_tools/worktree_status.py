@@ -43,7 +43,7 @@ SPEC = ToolSpec(
     description=(
         "查当前 git 工作区的真相 + 该怎么处理 (卷五十五 · P2)。 返回: 当前分支及类型、"
         "相对 master 的领先/落后、未提交改动、有几个工作树 (检测 Cursor 等其它 agent 是否"
-        "在并行改 / 是否占着 master)、遗留 stash、Daemonkey-last-good 回退点 · 外加大白话的"
+        "在并行改 / 是否占着 master)、遗留 stash、opus-last-good 回退点 · 外加大白话的"
         "处理建议。 在 merge 合主干 / 切分支 / checkpoint / 自我升级重启之前先调它自检 · "
         "避免'两个 agent 抢同一棵树'或'把别人的改动卷进自己 commit'这类坑。"
     ),

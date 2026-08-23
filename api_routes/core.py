@@ -160,7 +160,7 @@ _OUTPUT_MIME = {
 async def root():
     # 不验证 · 给 cloudflared / 监控的 health probe 用
     # 不暴露任何 daemon 内部状态
-    return "OPUS daemon · alive"
+    return "Daemonkey · alive"
 
 
 @router.get("/api/ping-test")

@@ -916,6 +916,7 @@ def run_tool_loop(
     reasoning_effort: str | None = None,
     wall_clock_sec: float | None = None,
     llm_timeout_sec: float | None = None,
+    pending_messages: Callable[[], list] | None = None,
 ) -> tuple[str, list[dict], UsageStats]:
     """
     多轮 tool use 循环。返回 (最终 OPUS 文本回复, 更新后的 messages, UsageStats)。
@@ -1028,6 +1029,7 @@ def run_tool_loop(
             allowed_tool_names=allowed_tool_names,
             system_suffix=system_suffix,
             thinking=thinking, reasoning_effort=reasoning_effort,
+            pending_messages=pending_messages,
         )
     elif provider == "anthropic":
         return _loop_anthropic(
@@ -1040,6 +1042,7 @@ def run_tool_loop(
             on_message_commit=on_message_commit,
             system_suffix=system_suffix,
             thinking=thinking, reasoning_effort=reasoning_effort,
+            pending_messages=pending_messages,
         )
     else:
         raise RuntimeError(f"unknown provider: {provider}")
@@ -1102,6 +1105,7 @@ def _loop_openai(
     system_suffix: str = "",
     thinking: str | None = None,
     reasoning_effort: str | None = None,
+    pending_messages=None,
 ) -> tuple[str, list[dict], UsageStats]:
     def _commit(entry: dict) -> None:
         if on_message_commit is None:
@@ -1174,6 +1178,16 @@ def _loop_openai(
             final_text = "[OPUS aborted by BRO]"
             _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
             break
+        # 0.9.7 · followup 运行中消息 (P0-3): 每轮迭代头收一次外部塞进来的消息
+        # (主对话对运行中分身追加指令) · 注入为 user 消息 · 分身下一轮自然看到。
+        if pending_messages is not None:
+            try:
+                _pending = pending_messages() or []
+            except Exception:
+                _pending = []
+            for _pm in _pending:
+                if isinstance(_pm, str) and _pm.strip():
+                    oai_messages.append({"role": "user", "content": _pm.strip()})
         # wish-8f122254 · max_tokens 动态封顶:
         # 用户全局 max_tokens 固定占坑 (如 393216) · messages 涨到 ~650K 时
         # messages+completion 超窗口 → 按窗口动态收窄输出预算。
@@ -1678,6 +1692,7 @@ def _loop_anthropic(
     system_suffix: str = "",
     thinking: str | None = None,
     reasoning_effort: str | None = None,
+    pending_messages=None,
 ) -> tuple[str, list[dict], UsageStats]:
     def _commit(entry: dict) -> None:
         if on_message_commit is None:
@@ -1718,6 +1733,15 @@ def _loop_anthropic(
             final_text = "[OPUS aborted by BRO]"
             _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
             break
+        # 0.9.7 · followup 运行中消息 (与 openai 循环同款)
+        if pending_messages is not None:
+            try:
+                _pending = pending_messages() or []
+            except Exception:
+                _pending = []
+            for _pm in _pending:
+                if isinstance(_pm, str) and _pm.strip():
+                    ant_messages.append({"role": "user", "content": _pm.strip()})
         kwargs: dict[str, Any] = dict(
             model=model,
             max_tokens=max_tokens,

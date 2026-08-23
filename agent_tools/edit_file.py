@@ -26,7 +26,7 @@ Daemonkey 的"精准改"——str_replace 局部替换。学 Cursor 的 StrRepla
 三档:
   - 默认 CONFIRM
   - 命中 .env / .git/ / .venv/ → GUARD (KEY安全/毁仓库/自爆级·2026-07-28 重定界)
-  - soul/ / Daemonkey-soul / skills-cursor → CONFIRM (有 git/副本冗余·可恢复·不弹窗)
+  - soul/ / opus-soul / skills-cursor → CONFIRM (有 git/副本冗余·可恢复·不弹窗)
   (复用 write_file 的分类逻辑·防冗余)
 """
 
@@ -323,7 +323,7 @@ SPEC = ToolSpec(
         "  - new_string 只写【替换成的部分】· 不重复粘贴未改动的上下文.\n"
         "  - 大段文本 (>1K chars) 要传参前先问: 整段都必要吗? 还是可以让工具自己 read_file 那段?\n\n"
         "Workflow for big files: read_file the region → copy the exact snippet → edit_file with that as old_string.\n"
-        "Confirm tier (GUARD only for .env / .git/ / .venv paths · soul/Daemonkey-soul paths are CONFIRM since 2026-07-28)."
+        "Confirm tier (GUARD only for .env / .git/ / .venv paths · soul/opus-soul paths are CONFIRM since 2026-07-28)."
     ),
     tier=TIER_CONFIRM,
     input_schema={

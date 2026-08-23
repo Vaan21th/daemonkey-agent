@@ -134,6 +134,30 @@ def _cancel_subagent(subagent_id: str) -> ToolResult:
     return ToolResult(ok=True, output=f"已请求打断分身 {subagent_id} · 会在下一个迭代边界停下")
 
 
+def _message_subagent(subagent_id: str, message: str) -> ToolResult:
+    """工具 `dispatch_subagent_message` · 0.9.7 P0-3 · 给【运行中】的分身塞 followup 消息。
+
+    分身下一轮迭代头会看到这条消息 (tool_loop pending_messages 注入)。
+    已结束的分身 → 提示用 resume 续跑 (tasks 传 subagent_id+message)。
+    """
+    with _ACTIVE_LOCK:
+        rec = _ACTIVE_SUBAGENTS.get(subagent_id)
+        if rec is None:
+            return ToolResult(
+                ok=False, output="",
+                error=f"分身 {subagent_id} 不存在或已结束 (已结束的分身用 dispatch_subagent 续跑: "
+                      f"tasks=[{{\"subagent_id\": \"{subagent_id}\", \"message\": \"...\"}}])",
+            )
+        if rec.get("status") != "running":
+            return ToolResult(
+                ok=False, output="",
+                error=f"分身 {subagent_id} 状态是 {rec.get('status')} · 不在跑。已结束的分身用 resume 续跑",
+            )
+        rec.setdefault("pending_messages", []).append(message)
+        n = len(rec["pending_messages"])
+    return ToolResult(ok=True, output=f"已塞给分身 {subagent_id} (队列 {n} 条) · 它下一轮迭代会看到")
+
+
 def _resolve_whitelist(task_tools) -> set[str]:
     """算一个分身该拿的工具白名单。 空/非 list → 默认只读集。 给了 → 过 DENY + 存在性。"""
     if isinstance(task_tools, list) and task_tools:
@@ -210,7 +234,126 @@ def _summarize(args: dict) -> str:
     return f"派 {n} 个分身并行: {head}"
 
 
-def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None) -> dict:
+# ── 0.9.7 P0-1/P0-2 · fork_context + 上下文位图 ────────────────────────────
+# 治"分身不知道主对话在聊什么": BRO 说"派分身查一下刚才那个方案的三个坑" ·
+# 分身若看不到"刚才那个方案"是什么·只能瞎查。 fork_context 带最近 N 轮原文 ·
+# 上下文位图带父会话工具行为清单 (读过什么/查过什么) · 两者配合 = 分身接得上话。
+
+_FORK_DEFAULT_TURNS = 6      # fork_context=true 时默认带最近 6 轮
+_FORK_TURN_CLIP = 500        # 每轮原文截断 (防爆分身上下文)
+_FORK_TOTAL_CAP = 3000       # fork 总量上限 (字符)
+_BITMAP_MAX_ITEMS = 20       # 上下文位图最多列 20 条工具行为
+
+
+def _load_parent_session(parent_sid: str) -> list[dict]:
+    """读父会话 sessions/<sid>.jsonl · 返回 user/assistant 消息列表 (时间序)。"""
+    from pathlib import Path
+    if not parent_sid:
+        return []
+    path = Path(__file__).resolve().parent.parent / "sessions" / f"{parent_sid}.jsonl"
+    if not path.exists():
+        return []
+    msgs = []
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+            except Exception:
+                continue
+            if isinstance(entry, dict) and entry.get("role") in ("user", "assistant"):
+                c = entry.get("content")
+                if isinstance(c, str) and c.strip():
+                    msgs.append({"role": entry["role"], "content": c})
+    except Exception:
+        return []
+    return msgs
+
+
+def _build_fork_messages(parent_sid: str, fork_turns: int) -> list[dict]:
+    """fork_context: 取父会话最近 fork_turns 条消息 · 截断后作为分身历史前缀。"""
+    msgs = _load_parent_session(parent_sid)
+    if not msgs:
+        return []
+    recent = msgs[-fork_turns:] if fork_turns > 0 else []
+    out, total = [], 0
+    for m in recent:
+        c = m["content"][:_FORK_TURN_CLIP]
+        if len(m["content"]) > _FORK_TURN_CLIP:
+            c += " …"
+        if total + len(c) > _FORK_TOTAL_CAP:
+            break
+        out.append({"role": m["role"], "content": c})
+        total += len(c)
+    return out
+
+
+def _build_context_bitmap(parent_sid: str) -> str:
+    """上下文位图: 扫父会话 assistant 消息的 tool_calls · 聚合成"主对话已做过"清单。
+
+    分身看了就知道: 哪些文件读过了 (结论可直接引用·别重复读) · 哪些方向查过了。
+    """
+    msgs = _load_parent_session(parent_sid)
+    actions = []
+    try:
+        from pathlib import Path
+        path = Path(__file__).resolve().parent.parent / "sessions" / f"{parent_sid}.jsonl"
+        if not path.exists():
+            return ""
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(entry, dict) or entry.get("role") != "assistant":
+                continue
+            # daemon 持久化格式: tool_calls 在 meta 里 (顶层没有) · 兼容两种
+            tcs = entry.get("tool_calls") or (entry.get("meta") or {}).get("tool_calls") or []
+            for tc in tcs:
+                try:
+                    name = (tc.get("function") or {}).get("name") or tc.get("name") or ""
+                    raw_args = (tc.get("function") or {}).get("arguments") or tc.get("arguments") or ""
+                    if isinstance(raw_args, str):
+                        raw_args = json.loads(raw_args) if raw_args.strip() else {}
+                    key = (raw_args.get("path") or raw_args.get("query")
+                           or raw_args.get("pattern") or raw_args.get("goal") or "")
+                    key = str(key)[:60]
+                    actions.append(f"{name}({key})" if key else str(name))
+                except Exception:
+                    continue
+    except Exception:
+        return ""
+    if not actions:
+        return ""
+    # 保序去重 · 取最近 N 条
+    seen, uniq = set(), []
+    for a in reversed(actions):
+        if a not in seen:
+            seen.add(a)
+            uniq.append(a)
+        if len(uniq) >= _BITMAP_MAX_ITEMS:
+            break
+    uniq.reverse()
+    return ("[父对话上下文地图] 主对话已经做过: " + " / ".join(uniq)
+            + " · 相关结论可直接引用 · 需要深挖用 session_search 或重读文件。")
+
+
+def _resolve_fork(task: dict) -> int:
+    """tasks[].fork_context: true→默认 6 轮 · 数字→N 轮 · 缺省/0→不 fork。"""
+    v = task.get("fork_context")
+    if v is True:
+        return _FORK_DEFAULT_TURNS
+    try:
+        n = int(v)
+        return max(0, min(n, 20))
+    except Exception:
+        return 0
+
+
+def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None, preset_id: str = None) -> dict:
     """跑单个分身 · 返回 {idx, goal, ok, text, iterations, usage, warning, error, sub_session_id}
 
     - 登记进 _ACTIVE_SUBAGENTS (生命周期状态机)
@@ -232,10 +375,11 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None) 
         max_iter = _DEFAULT_MAX_ITER
     max_iter = max(1, min(max_iter, _MAX_ITER_CAP))
 
-    subagent_id = f"{_SUBAGENT_ID_PREFIX}-{uuid.uuid4().hex[:8]}"
+    subagent_id = preset_id or f"{_SUBAGENT_ID_PREFIX}-{uuid.uuid4().hex[:8]}"
     _register_subagent({
         "subagent_id": subagent_id, "idx": idx, "goal": goal,
         "status": "running", "tool_calls": 0, "usage": {}, "cancel_requested": False,
+        "pending_messages": [],   # 0.9.7 P0-3 · 运行中 followup 消息队列
     })
 
     system = (
@@ -247,9 +391,21 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None) 
         "即使中途预算耗尽·上层也要能拿到部分发现。连读 3 个文件/跑 3 个测试还没输出任何文字"
         "就是探索无收敛·系统会提示你停下来总结。"
     )
+    # 0.9.7 P0-2 · 上下文位图: 分身知道主对话已经干过什么 (读了什么文件/查了什么方向)
+    _bitmap = _build_context_bitmap(parent_sid)
+    if _bitmap:
+        system += "\n\n" + _bitmap
     if agent_cfg is not None and agent_cfg["system_suffix"]:
         system += agent_cfg["system_suffix"]
     user_msg = f"子任务目标:\n{goal}"
+
+    # 0.9.7 P0-1 · fork_context: 父会话最近 N 轮原文作为分身历史前缀 (分身接得上"刚才那个")
+    _fork_turns = _resolve_fork(task)
+    _initial = None
+    if _fork_turns > 0:
+        _forked = _build_fork_messages(parent_sid, _fork_turns)
+        if _forked:
+            _initial = _forked + [{"role": "user", "content": user_msg}]
 
     # 主对话取消 (cancel_event) 与单分身取消 (cancel_requested) 任一命中 → 停下
     _rec_cancel = {"requested": False}
@@ -273,6 +429,16 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None) 
                 return True
         return bool(cancel_check() if callable(cancel_check) else False)
 
+    def _message_check() -> list:
+        """0.9.7 P0-3 · 迭代头收 followup 消息: 取出并清空队列 (原子)。"""
+        with _ACTIVE_LOCK:
+            rec = _ACTIVE_SUBAGENTS.get(subagent_id)
+            if rec is None:
+                return []
+            msgs = list(rec.get("pending_messages") or [])
+            rec["pending_messages"] = []
+        return msgs
+
     push_tool_progress("🧩 分身启动", f"#{idx} · {goal[:30]}")
     try:
         r = run_subagent(
@@ -289,6 +455,9 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None) 
             cancel_check=_cancel,
             wall_clock_sec=_SUBAGENT_WALL_CLOCK_SEC,  # 2026-08-11 · 分身内部 LLM 挂起熔断 (外层 fut.result 兜底 · 内层真中断)
             meta_extra={"goal": goal, "whitelist": sorted(wl)},
+            message_check=_message_check,
+            ledger_source="dispatch",   # 0.9.7 D7 · 分身用量落第四本账
+            initial_messages=_initial,  # 0.9.7 P0-1 · fork_context (None → 单条 user_msg)
         )
     finally:
         # 生命状态机收尾 · 不管成功失败都更新注册表
@@ -423,6 +592,7 @@ def _resume_one(task: dict, runtime, parent_sid: str, cancel_check=None) -> dict
         _ACTIVE_SUBAGENTS[subagent_id] = {
             "subagent_id": subagent_id, "idx": 0, "goal": goal,
             "status": "running", "tool_calls": 0, "usage": {}, "cancel_requested": False,
+            "pending_messages": [],
         }
     _rec_cancel = {"requested": False}
 
@@ -444,6 +614,15 @@ def _resume_one(task: dict, runtime, parent_sid: str, cancel_check=None) -> dict
                 return True
         return bool(cancel_check() if callable(cancel_check) else False)
 
+    def _message_check() -> list:
+        with _ACTIVE_LOCK:
+            rec = _ACTIVE_SUBAGENTS.get(subagent_id)
+            if rec is None:
+                return []
+            msgs = list(rec.get("pending_messages") or [])
+            rec["pending_messages"] = []
+        return msgs
+
     user_msg = f"[resume 续跑] 主对话追加了新的子任务指令:\n{message}"
     push_tool_progress("🔁 分身续跑", f"{subagent_id} · {goal[:30]}")
     r = None
@@ -457,6 +636,8 @@ def _resume_one(task: dict, runtime, parent_sid: str, cancel_check=None) -> dict
             sub_session_id=subagent_id.split("-", 1)[-1] if subagent_id else None,
             initial_messages=messages + [{"role": "user", "content": user_msg}],
             inject_budget_mandate=True, cancel_check=_cancel,
+            message_check=_message_check,
+            ledger_source="dispatch",
         )
     finally:
         status = "cancelled" if _rec_cancel["requested"] else ("success" if r is not None and r.ok else "failed")
@@ -475,6 +656,88 @@ def _resume_one(task: dict, runtime, parent_sid: str, cancel_check=None) -> dict
         "subagent_id": subagent_id, "status": status,
         "whitelist": sorted(wl), "result_file": result_file,
     }
+
+
+def _dispatch_background(tasks: list, runtime, parent_sid: str) -> ToolResult:
+    """0.9.7 P1 · 异步 spawn: 立即返回 · 分身后台跑 · 全部完成后通报父会话。
+
+    通报机制 (三管齐下):
+      ① 往父 session jsonl 追加一条 user 消息 (主对话下次 LLM 调用自然看到·主动汇报)
+      ② 落 sessions/sub-inbox.jsonl (可查的完成信箱)
+      ③ push_tool_progress (前端连着时实时弹)
+    """
+    from pathlib import Path
+
+    # 预生成 id 并预登记 (pending) · 立即返回时 BRO 就知道分身 id
+    ids = []
+    for i, t in enumerate(tasks):
+        sid = f"{_SUBAGENT_ID_PREFIX}-{uuid.uuid4().hex[:8]}"
+        ids.append(sid)
+        _register_subagent({
+            "subagent_id": sid, "idx": i + 1, "goal": str(t.get("goal") or ""),
+            "status": "pending", "tool_calls": 0, "usage": {}, "cancel_requested": False,
+            "pending_messages": [],
+        })
+
+    def _bg():
+        results = []
+        for i, t in enumerate(tasks):
+            try:
+                results.append(_run_one(i + 1, t, runtime, parent_sid, preset_id=ids[i]))
+            except Exception as e:
+                results.append({"idx": i + 1, "goal": str(t.get("goal") or ""), "ok": False,
+                                "text": "", "error": f"{type(e).__name__}: {e}",
+                                "subagent_id": ids[i], "status": "failed", "usage": {}})
+        # 汇总通报
+        ok_n = sum(1 for r in results if r.get("ok"))
+        lines = [f"[后台分身完成通报] {ok_n}/{len(results)} 成功:"]
+        inbox_entries = []
+        for r in results:
+            text = (r.get("text") or "")[:300]
+            lines.append(f"· 分身 {r.get('subagent_id')} [{r.get('status')}] {r.get('goal', '')[:40]}: "
+                         f"{text if r.get('ok') else ('失败: ' + str(r.get('error') or '?'))}")
+            inbox_entries.append({
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "subagent_id": r.get("subagent_id"),
+                "parent_session_id": parent_sid, "goal": r.get("goal"), "status": r.get("status"),
+                "ok": r.get("ok"), "text": r.get("text"), "usage": r.get("usage"),
+                "error": r.get("error"),
+            })
+        summary = "\n".join(lines)
+        root = Path(__file__).resolve().parent.parent
+        # ① 父 session 追加 (主对话下次自然看到)
+        try:
+            if parent_sid:
+                sp = root / "sessions" / f"{parent_sid}.jsonl"
+                with open(sp, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"role": "user", "content": summary,
+                                        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                                        "_bg_subagent_report": True}, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        # ② inbox 落盘
+        try:
+            ip = root / "sessions" / "sub-inbox.jsonl"
+            with open(ip, "a", encoding="utf-8") as f:
+                for e in inbox_entries:
+                    f.write(json.dumps(e, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        # ③ 前端进度
+        try:
+            push_tool_progress("🧩 后台分身全部完成", f"{ok_n}/{len(results)} · 结果已通报父会话")
+        except Exception:
+            pass
+
+    threading.Thread(target=_bg, daemon=True, name="subagent-bg").start()
+    goals = " / ".join(str(t.get("goal") or "")[:25] for t in tasks[:3])
+    return ToolResult(
+        ok=True,
+        output=(f"已派出 {len(tasks)} 个分身【后台跑】· 不阻塞当前对话。\n"
+                f"分身 id: {', '.join(ids)}\n任务: {goals}\n"
+                f"全部完成后会自动通报到本会话 (你下次跟我说话时会看到结果·主动跟我汇报)。\n"
+                f"中途可查: dispatch_subagent_status · 可打断: dispatch_subagent_cancel · "
+                f"可追加指令: dispatch_subagent_message"),
+    )
 
 
 def _format_results(results: list, resume: bool = False) -> ToolResult:
@@ -525,6 +788,10 @@ def _run(args: dict) -> ToolResult:
 
     parent_sid = current_session_id()
     push_tool_progress("🧩 派发分身", f"{len(tasks)} 个 · 并发 {min(_MAX_CONCURRENCY, len(tasks))}")
+
+    # 0.9.7 P1 · 异步 spawn: background=true → 立即返回 · 分身后台跑 · 完成通报父会话
+    if args.get("background"):
+        return _dispatch_background(tasks, RUNTIME, parent_sid)
 
     # 新派发时清掉上一轮已结束的分身记录 (防注册表无限累积 · 保留最近的供 status 查)
     with _ACTIVE_LOCK:
@@ -628,7 +895,9 @@ SPEC = ToolSpec(
         "  - tasks: 数组 · 每项 {goal(必填一句话目标), tools?(工具白名单), max_iter?(迭代预算), agent?(分身预设名)}\n"
         "  - 不给 tools → 分身默认只拿【只读/研究】工具 (read_file/grep/web_search/… · 最安全)\n"
         "  - 要分身能写文件才显式给 tools · 但破坏性/系统控制类工具永远被剔除\n"
-        "  - 给 agent=预设名 (data/agents/*.json 里的 name) → 用预设的模型 + 工具 + 描述 (可省钱分工)\n\n"
+        "  - 给 agent=预设名 (data/agents/*.json 里的 name) → 用预设的模型 + 工具 + 描述 (可省钱分工)\n"
+        "  - 给 fork_context=true/数字 (0.9.7) → 分身带父对话最近 N 轮上下文 · 能接上『刚才聊的那个』\n"
+        "  - 给 background=true (0.9.7) → 异步后台跑: 立即返回不阻塞 · 完成后自动通报到本会话\n\n"
         "**边界 (安全)**:\n"
         f"  - 一次最多 {_MAX_TASKS} 个 · 并发上限 {_MAX_CONCURRENCY} (排队跑 · 防 token 爆)\n"
         "  - 分身【不能】再派分身 (限一层递归) · 【不给】request_restart/update_core 等系统控制权\n"
@@ -656,9 +925,17 @@ SPEC = ToolSpec(
                             "type": "string",
                             "description": "可选 · 分身预设名 (data/agents/*.json 的 name) · 命中则用预设的模型+工具+描述",
                         },
+                        "fork_context": {
+                            "type": ["integer", "boolean"],
+                            "description": "可选 · 0.9.7 · 带父对话上下文: true=最近 6 轮 · 数字=N 轮 (硬顶 20) · 分身能接上『刚才聊的那个』",
+                        },
                     },
                     "required": ["goal"],
                 },
+            },
+            "background": {
+                "type": "boolean",
+                "description": "可选 · 0.9.7 · true=异步后台跑: 立即返回不阻塞对话 · 全部完成后自动通报到本会话",
             },
         },
         "required": ["tasks"],
@@ -710,3 +987,31 @@ _CANCEL_SPEC = ToolSpec(
     summarize=lambda args: f"打断分身 {str(args.get('subagent_id') or '?')}",
 )
 register_tool(_CANCEL_SPEC)
+
+_MESSAGE_SPEC = ToolSpec(
+    name="dispatch_subagent_message",
+    description=(
+        "给一个【正在跑】的分身追加 followup 指令 (0.9.7 P0-3 · 双向消息)。\n"
+        "分身下一轮迭代会看到这条消息 · 适合: 补充线索 / 纠正方向 / 追加小问题。\n"
+        "已结束的分身别用这个 → 用 dispatch_subagent 续跑 (tasks=[{subagent_id, message}])。\n"
+        "**tier**: AUTO · 只是传话"
+    ),
+    tier=TIER_AUTO,
+    input_schema={
+        "type": "object",
+        "properties": {
+            "subagent_id": {
+                "type": "string",
+                "description": "运行中的分身 id (dispatch_subagent_status 返回的 subagent_id 字段)",
+            },
+            "message": {
+                "type": "string",
+                "description": "要追加给分身的指令/补充信息",
+            },
+        },
+        "required": ["subagent_id", "message"],
+    },
+    run=lambda args: _message_subagent(str(args.get("subagent_id") or ""), str(args.get("message") or "")),
+    summarize=lambda args: f"传话给分身 {str(args.get('subagent_id') or '?')}",
+)
+register_tool(_MESSAGE_SPEC)

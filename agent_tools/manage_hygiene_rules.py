@@ -4,7 +4,7 @@ agent_tools/manage_hygiene_rules.py
 
 0.9.6 · 噪音治理搭档自治 (BRO 拍板: "你可以判断你要记哪些东西·哪些我完全不关心")。
 
-OPUS 反刍自己的记忆库时发现噪音模式 → 自己写一条本地规则 →
+Daemonkey 反刍自己的记忆库时发现噪音模式 → 自己写一条本地规则 →
 下次清理 (启动时 migrate / 手动) 自动生效。 规则落在 data/my_hygiene_rules.json ·
 跟母体内置规则 (workers/memory_hygiene.py) 并行 · 互不覆盖。
 

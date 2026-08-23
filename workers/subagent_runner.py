@@ -74,6 +74,39 @@ def _no_observe(*args, **kwargs) -> None:
     pass
 
 
+def _write_ledger(source: Optional[str], sub_session_id: Optional[str],
+                  parent_session_id: Optional[str], model: str,
+                  usage: Optional[dict], ok: bool, iterations: int) -> None:
+    """0.9.7 D7 · 分身用量落第四本账 data/runtime/subagent_usage.jsonl。
+
+    为什么需要: 以前分身烧的 token 只落在 sessions/sub-*.jsonl (回看用) ·
+    BI 账单 (chat_turns/app_runs/advisor_wakes 三本) 完全不含 → 子代理/flow 成本漏记。
+    转发收费前必须补上 —— 漏记 = 替用户垫钱。
+    source 区分来处 ("dispatch" 主对话分身 / "flow" 工作流步) · app_runner 有自己的账不传。
+    尽力写: 落账失败不能把子任务搞崩。
+    """
+    if not source:
+        return
+    try:
+        root = Path(__file__).resolve().parent.parent
+        path = root / "data" / "runtime" / "subagent_usage.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "source": source,
+            "sub_session_id": sub_session_id,
+            "parent_session_id": parent_session_id,
+            "model": model,
+            "usage": usage or {},
+            "ok": ok,
+            "iterations": iterations,
+        }
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def _budget_mandate(max_iterations: int) -> str:
     """通用调度预算纪律 (治并行分身 token 失控)。
 
@@ -129,6 +162,9 @@ def run_subagent(
     wall_clock_sec: Optional[float] = None,
     initial_messages: Optional[list] = None,
     meta_extra: Optional[dict] = None,
+    message_check: Optional[Callable[[], list]] = None,
+    ledger_source: Optional[str] = None,
+    sub_session_id: Optional[str] = None,
 ) -> SubagentResult:
     """跑一个子执行器 · 返回结构化结果。
 
@@ -150,13 +186,19 @@ def run_subagent(
         initial_messages: 起始 messages · None → 单条 user_msg (默认)。
             (wish-48566053 · resume 续跑: 恢复的历史消息 + 新 user 指令)
         meta_extra: 额外元数据 (goal / whitelist 等) · 落进 _meta 首行 · 血缘可追溯。
+        message_check: 0.9.7 P0-3 · 每轮迭代头调一次 · 返回的新消息注入分身上下文
+            (主对话对运行中分身追加指令)。 None → 不收。
+        ledger_source: 0.9.7 D7 · 记账来源 ("dispatch"/"flow") · 跑了就落
+            data/runtime/subagent_usage.jsonl。 None → 不记 (app_runner 有自己的账·防重复)。
+        sub_session_id: 指定子会话 id (resume 续跑时续写同一个 sub-*.jsonl) ·
+            None → persist 时自动生成新 id。
 
     Returns:
         SubagentResult
     """
     from tool_loop import run_tool_loop
 
-    sub_session_id = uuid.uuid4().hex[:12] if persist else None
+    sub_session_id = sub_session_id or (uuid.uuid4().hex[:12] if persist else None)
 
     sys_prompt = system or ""
     if inject_budget_mandate:
@@ -211,8 +253,11 @@ def run_subagent(
             on_message_commit=on_commit,
             allowed_tool_names=tools_whitelist,
             wall_clock_sec=wall_clock_sec,
+            pending_messages=message_check,
         )
     except Exception as e:
+        _write_ledger(ledger_source, sub_session_id, parent_session_id,
+                      getattr(runtime, "model", ""), None, False, 0)
         return SubagentResult(
             ok=False, max_iterations=max_iterations,
             sub_session_id=sub_session_id,
@@ -227,6 +272,8 @@ def run_subagent(
     }
 
     iterations = max(1, (len(messages) - initial_len + 1) // 2)
+    _write_ledger(ledger_source, sub_session_id, parent_session_id,
+                  used_model, result_usage, True, iterations)
     hit_budget = iterations >= max_iterations
     near_budget = iterations >= max(1, max_iterations - 1) and not hit_budget
     warning = None
