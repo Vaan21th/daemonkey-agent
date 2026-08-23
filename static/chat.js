@@ -17,14 +17,14 @@
 // === AI 名字本地化 (Daemonkey 分家) ===
 // 用户在『相遇』里给这只 Daemonkey 起的名字·由后端注成 window.__AI_NAME__。
 // 界面里历史遗留写死的 "Daemonkey" 全部换成它——一个集中机制·不必逐处改 100+ 串。
-// 正则 /Daemonkey(?![\w-])/ 只换"Daemonkey"作为称呼出现的地方·跳过 DAEMONKEY_API_TOKEN / Daemonkey 这类技术标识。
+// 正则 /Daemonkey(?![\w-])/ 只换"Daemonkey"作为称呼出现的地方·跳过 OPUS_API_TOKEN / Daemonkey 这类技术标识。
 (function () {
   var NAME = (window.__AI_NAME__ || '').trim();
   var OWNER = (window.__OWNER_NAME__ || '').trim();
   var doAI = NAME && NAME !== 'Daemonkey';           // AI 自己的名字
   var doOwner = OWNER && OWNER !== '用户';        // 主人的称呼 (UI 里的 用户 也换掉)
   if (!doAI && !doOwner) return;                // 母体两者都默认 → 保持原样
-  // 正则跳过 DAEMONKEY_API_TOKEN / Daemonkey / OWNER-NOTEBOOK 这类技术标识·只换作为称呼出现的词
+  // 正则跳过 OPUS_API_TOKEN / Daemonkey / OWNER-NOTEBOOK 这类技术标识·只换作为称呼出现的词
   var RE_AI = /Daemonkey(?![\w-])/g;
   var RE_OWNER = /\bBRO(?![\w-])/g;
   // Daemonkey 分家: 取了自己名字的实例·把母体私有 lore「<名字> 的家」中性成「<名字> 的家」。
@@ -3995,9 +3995,9 @@ function renderSettingsAccess() {
       <div class="llm-section-head"><h3>🔑 API Token · 决定 WebUI 能否连 daemon</h3></div>
       <div class="field">
         <label>API Token (Bearer)</label>
-        <input id="accTokenIn" type="password" value="${escHtml(token || '')}" placeholder="DAEMONKEY_API_TOKEN / Daemonkey_API_TOKEN">
+        <input id="accTokenIn" type="password" value="${escHtml(token || '')}" placeholder="OPUS_API_TOKEN 的值">
         <div class="field-hint">⚠ 这是【连接 daemon 的门禁钥匙】· 不是 LLM 的 API Key（模型 Key 在「模型/Provider」里配）</div>
-        <div class="field-hint">在 daemon 目录的 <code>.env</code> 文件里找 <code>DAEMONKEY_API_TOKEN</code>（发布版叫 <code>Daemonkey_API_TOKEN</code>）· 复制粘贴进来 · 填一次浏览器记住 · 本机访问通常自动放行不用填</div>
+        <div class="field-hint">在 daemon 目录的 <code>.env</code> 文件里找 <code>OPUS_API_TOKEN</code> 那一行 · 复制粘贴进来 · 填一次浏览器记住 · 本机访问通常自动放行不用填</div>
       </div>
 
       <div class="llm-section-head" style="margin-top:18px"><h3>📂 当前 Session</h3></div>
