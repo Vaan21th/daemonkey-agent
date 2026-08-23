@@ -142,12 +142,12 @@ def _append_to_flow(text: str, section_key: str, operation: str, preview: str = 
         detail += f"：{preview}"
     new_row = f"| {timestamp} | OPUS · update_owner_note | {detail} |"
 
-    # find the last line that starts with "|" inside this section
+    # 找段内最后一个 "|" 开头的行：新表(只有表头+分隔行)插在分隔行后·老表插在最后一条数据后
     flow_body = text[flow_start:flow_end]
     lines = flow_body.split("\n")
     last_table_line = -1
     for i, line in enumerate(lines):
-        if line.startswith("|") and not line.startswith("|---"):
+        if line.startswith("|"):
             last_table_line = i
 
     if last_table_line < 0:
