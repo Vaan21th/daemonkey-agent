@@ -486,6 +486,10 @@ def load_session_for_ui(session_id: str) -> list[dict]:
             # 卷六十 · 主动 CALL · 注入的 user turn 带 reason · 前端渲染成系统提示
             if meta.get("proactive_reason"):
                 turn["proactive_reason"] = meta["proactive_reason"]
+            # 0.9.8 · 异步分身完成通报 · 前端渲染成系统通报卡 (不是 user 气泡)
+            # 双源: 汇报轮落的带 meta._bg_subagent_report · 老版降级落的在顶层
+            if meta.get("_bg_subagent_report") or rec.get("_bg_subagent_report"):
+                turn["bg_subagent_report"] = True
             # BRO 2026-07-28 · 顾问协同卡持久化 · 历史渲染重建金卡用
             if meta.get("advisor_blueprint"):
                 turn["advisor_blueprint"] = meta["advisor_blueprint"]

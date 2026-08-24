@@ -1997,6 +1997,43 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+// ─── 0.9.8 · 异步分身完成通报 · 常驻守望 ───────────────────────────────
+// 后端汇报轮走 background_turn_status 状态机 (scheduled→running→completed)。
+// 之前只有「切回标签/重启恢复」才查这个状态 · 用户 盯着页面时分身跑完了 UI 毫无动静 (断链)。
+// 这里常驻 6s 轻轮询当前会话: 发现后台 turn 就 _probeAndStartPoll 接管 (锁输入+3s 实时轮询),
+// 看到 completed 就重载历史把 AI 的主动汇报显示出来。 首次只建基线 · 不对页面加载前的残留状态反应。
+let _bgWatchLast = {};   // sid -> 上次查到的状态
+function _startBgReportWatch() {
+  setInterval(() => {
+    try {
+      if (!token) return;
+      const st = activeSession();
+      if (!st || !st.sessionId || st.sessionId.startsWith('tmp-')) return;
+      if (st.pending || st.pollIntervalId) return;   // 主对话/轮询进行中 · 不抢
+      const sid = st.sessionId;
+      fetch(`/sessions/${encodeURIComponent(sid)}/background_turn_status`, {
+        headers: { 'Authorization': 'Bearer ' + token },
+      }).then(r => r.ok ? r.json() : null).then(j => {
+        if (!j) return;
+        const cur = j.status || 'none';
+        const prev = _bgWatchLast[sid];
+        _bgWatchLast[sid] = cur;
+        if (prev === undefined) return;              // 首次只建基线
+        if (cur === 'scheduled' || cur === 'running') {
+          if (prev !== 'scheduled' && prev !== 'running') {
+            _probeAndStartPoll(st, 8000);            // 抓 active turn → 3s 轮询自动刷新
+          }
+        } else if (cur === 'completed' && prev !== 'completed') {
+          _loadSessionHistory(sid).catch(() => {});  // 汇报轮跑完 · 重载显示 AI 汇报
+        }
+      }).catch(() => {});
+    } catch (_) {}
+  }, 6000);
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _startBgReportWatch, { once: true });
+} else { _startBgReportWatch(); }
+
 // ─── wish-fb6b7427 事项C · 标签闪烁通道 · 客户端配置缓存 ───
 let _ntfCfg = null;   // null=还没拉过 · 保守不闪
 async function _loadNotifyCfg() {
@@ -5592,6 +5629,13 @@ async function _loadSessionHistory(sid, opts) {
             addSys('🧭 顾问验收未通过 · 意见已注入 · 执行者自动修正了一轮', s.$container);
           } else if (t.src === 'proactive') {
             addSys('Daemonkey 主动醒来' + (t.proactive_reason ? ' · ' + t.proactive_reason : ''), s.$container);
+          } else if (t.bg_subagent_report) {
+            // 0.9.8 · 异步分身完成通报 → 系统通报卡 · 剥掉汇报轮注入的指令段 (只留通报要点)
+            let _rpt = t.content || '';
+            const _cut = _rpt.indexOf('\n\n请用一两句话');
+            if (_cut >= 0) _rpt = _rpt.slice(0, _cut);
+            _rpt = _rpt.replace('【系统 · 后台分身完成通报】(这条不是用户发的·是后台分身全部跑完自动触发的汇报轮)\n', '');
+            addSys('🧩 ' + (_rpt || '后台分身完成 · 结果已通报'), s.$container);
           } else {
             // 用户 2026-07-29 · 协同轮 user content 被 daemon 注入了『系统指令+施工单全文』
             // (daemon_api.py:1258-1272) · 历史重建若整条渲染 = 绿色大气泡重复金卡内容·很难看。

@@ -83,7 +83,9 @@ def _wait_runtime_ready(max_wait_sec: int = _MAX_WAIT_RUNTIME_SEC) -> bool:
     return False
 
 
-def _run_background_turn(message: str, session_id: str) -> dict:
+def _run_background_turn(message: str, session_id: str,
+                         turn_prefix: str = "resume",
+                         user_meta: Optional[dict] = None) -> dict:
     """在 daemon 进程里以 background thread 跑一次 _chat_impl
 
     返 dict (跟 _chat_impl 一样) 或 raise · 调用方负责包 try/except
@@ -93,11 +95,15 @@ def _run_background_turn(message: str, session_id: str) -> dict:
       能查到这个 background turn · 前端 _maybeStartPoll 才能启 polling 自动 reload
       (不然 BRO reload session 看到 follow_up turn 跑一半的快照 · 后续 reply 不出现 ·
       必须手动 F5 才能看到 final reply)
+
+    0.9.8 · turn_prefix/user_meta 参数化: 异步分身完成通报的「自动汇报轮」也走这条
+    (dispatch_subagent._report_to_parent) · turn_id 加短 uuid 防同 sid 撞名。
     """
     import threading
+    import uuid as _uuid
     from daemon_api import _chat_impl, register_turn, unregister_turn
 
-    turn_id = "resume-" + (session_id[-8:] if session_id else "x")
+    turn_id = f"{turn_prefix}-" + (session_id[-8:] if session_id else "x") + "-" + _uuid.uuid4().hex[:6]
     cancel_event = threading.Event()
     register_turn(turn_id, session_id, cancel_event)
     try:
@@ -117,6 +123,7 @@ def _run_background_turn(message: str, session_id: str) -> dict:
                 progress=None,
                 cancel_event=cancel_event,
                 turn_id=turn_id,
+                user_meta=user_meta,
             )
         finally:
             # 恢复现场 · 不污染同进程其它路径 (主对话不应被墙钟限制)

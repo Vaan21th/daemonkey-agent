@@ -661,10 +661,11 @@ def _resume_one(task: dict, runtime, parent_sid: str, cancel_check=None) -> dict
 def _dispatch_background(tasks: list, runtime, parent_sid: str) -> ToolResult:
     """0.9.7 P1 · 异步 spawn: 立即返回 · 分身后台跑 · 全部完成后通报父会话。
 
-    通报机制 (三管齐下):
-      ① 往父 session jsonl 追加一条 user 消息 (主对话下次 LLM 调用自然看到·主动汇报)
-      ② 落 sessions/sub-inbox.jsonl (可查的完成信箱)
-      ③ push_tool_progress (前端连着时实时弹)
+    通报机制 (0.9.8 闭环修复 · 详见 _report_to_parent):
+      ① 自动汇报轮: 父会话跑一次 background turn · AI 主动开口汇报 (前端轮询自动刷新)
+         跑不了 (非 api- 会话/开关关/已有后台 turn) → 降级: 内存注入 + 文件落盘
+      ② 落 sessions/sub-inbox.jsonl (可查的完成信箱 · 无条件)
+      ③ daemon 控制台留痕 (push_tool_progress 在后台线程无 hook · 不指望)
     """
     from pathlib import Path
 
@@ -704,17 +705,7 @@ def _dispatch_background(tasks: list, runtime, parent_sid: str) -> ToolResult:
             })
         summary = "\n".join(lines)
         root = Path(__file__).resolve().parent.parent
-        # ① 父 session 追加 (主对话下次自然看到)
-        try:
-            if parent_sid:
-                sp = root / "sessions" / f"{parent_sid}.jsonl"
-                with open(sp, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"role": "user", "content": summary,
-                                        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                                        "_bg_subagent_report": True}, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
-        # ② inbox 落盘
+        # ② inbox 落盘 (无条件保留 · 可查的完成信箱)
         try:
             ip = root / "sessions" / "sub-inbox.jsonl"
             with open(ip, "a", encoding="utf-8") as f:
@@ -722,11 +713,11 @@ def _dispatch_background(tasks: list, runtime, parent_sid: str) -> ToolResult:
                     f.write(json.dumps(e, ensure_ascii=False) + "\n")
         except Exception:
             pass
-        # ③ 前端进度
-        try:
-            push_tool_progress("🧩 后台分身全部完成", f"{ok_n}/{len(results)} · 结果已通报父会话")
-        except Exception:
-            pass
+        # ③ daemon 控制台留痕 (push_tool_progress 在后台线程无 SSE hook·静默跳过·别指望它)
+        print(f"[bg-subagent] 全部完成 {ok_n}/{len(results)} · parent={parent_sid or '-'}", flush=True)
+        # ① 通报父会话: 优先自动汇报轮 (AI 主动开口) · 跑不了降级内存注入 (治断链)
+        if parent_sid:
+            _report_to_parent(root, parent_sid, summary)
 
     threading.Thread(target=_bg, daemon=True, name="subagent-bg").start()
     goals = " / ".join(str(t.get("goal") or "")[:25] for t in tasks[:3])
@@ -734,10 +725,98 @@ def _dispatch_background(tasks: list, runtime, parent_sid: str) -> ToolResult:
         ok=True,
         output=(f"已派出 {len(tasks)} 个分身【后台跑】· 不阻塞当前对话。\n"
                 f"分身 id: {', '.join(ids)}\n任务: {goals}\n"
-                f"全部完成后会自动通报到本会话 (你下次跟我说话时会看到结果·主动跟我汇报)。\n"
+                f"全部完成后我会在本会话主动开口汇报结果 (不用你来问)。\n"
                 f"中途可查: dispatch_subagent_status · 可打断: dispatch_subagent_cancel · "
                 f"可追加指令: dispatch_subagent_message"),
     )
+
+
+def _autoreport_enabled() -> bool:
+    import os
+    return (os.environ.get("OPUS_BG_SUBAGENT_AUTOREPORT") or "1").strip().lower() not in (
+        "0", "false", "off", "no", "")
+
+
+def _report_to_parent(root, parent_sid: str, summary: str) -> None:
+    """0.9.8 · 分身完成通报父会话 · 闭环修复 (2026-08-24 BRO 实测断链: 只写文件·内存上下文看不到)。
+
+    优先: 自动汇报轮 —— 复用 resume_runner 后台 turn 机制在父会话跑一次 _chat_impl,
+          AI 主动开口汇报 · 落盘 user(带 _bg_subagent_report 标记)+assistant 双turn ·
+          前端轮询 background_turn_status 自动刷新显示。
+    降级: 内存注入 (_API_SESSIONS / RUNTIME.messages) + 文件落盘 —— 下轮 LLM 必然看到。
+    两条路互斥 · 不会重复通报。
+    """
+    if _autoreport_enabled() and parent_sid.startswith("api-"):
+        try:
+            from workers import resume_runner as _rr
+            with _rr._bg_status_lock:
+                busy = _rr._bg_turn_status.get(parent_sid, "none") in ("scheduled", "running")
+                if not busy:
+                    _rr._bg_turn_status[parent_sid] = "scheduled"
+            if busy:
+                print(f"[bg-subagent] 父会话已有后台 turn 在跑 · 降级注入", flush=True)
+            else:
+                try:
+                    from identity import localize_narration as _ln
+                except Exception:
+                    _ln = lambda s: s  # noqa: E731
+                instruction = _ln(
+                    "【系统 · 后台分身完成通报】(这条不是用户发的·是后台分身全部跑完自动触发的汇报轮)\n"
+                    + summary + "\n\n"
+                    "请用一两句话自然地向用户汇报: 哪个分身完成了、结果要点是什么、"
+                    "有没有需要他打开看的文件。别复述『系统通报』四个字·像助手顺手汇报一样开口。"
+                    "结果长就给要点+文件路径·别贴全文。"
+                )
+
+                def _report():
+                    try:
+                        with _rr._bg_status_lock:
+                            _rr._bg_turn_status[parent_sid] = "running"
+                        _rr._run_background_turn(
+                            instruction, parent_sid, turn_prefix="bgreport",
+                            user_meta={"src": "bg_subagent_report", "_bg_subagent_report": True})
+                        with _rr._bg_status_lock:
+                            _rr._bg_turn_status[parent_sid] = "completed"
+                        print(f"[bg-subagent] 汇报轮完成 · parent={parent_sid}", flush=True)
+                    except Exception as e:
+                        print(f"[bg-subagent] 汇报轮失败: {type(e).__name__}: {e} · 降级注入", flush=True)
+                        with _rr._bg_status_lock:
+                            _rr._bg_turn_status[parent_sid] = "failed"
+                        _inject_fallback(root, parent_sid, summary)
+
+                threading.Thread(target=_report, daemon=True, name="subagent-report").start()
+                return
+        except Exception as e:
+            print(f"[bg-subagent] 汇报轮调度失败: {type(e).__name__}: {e} · 降级注入", flush=True)
+    _inject_fallback(root, parent_sid, summary)
+
+
+def _inject_fallback(root, parent_sid: str, summary: str) -> None:
+    """降级通报: 文件落盘 (持久化兜底) + 内存注入 (LLM 上下文真相源·只写文件它看不到)。"""
+    # ① 文件落盘 (标记进 meta · 跟 _chat_impl 的 user_meta 落盘格式对齐 · UI 透传渲染通报卡)
+    try:
+        sp = root / "sessions" / f"{parent_sid}.jsonl"
+        with open(sp, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"role": "user", "content": summary,
+                                "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                                "meta": {"src": "bg_subagent_report",
+                                         "_bg_subagent_report": True}}, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    # ② 内存注入 · WebUI 走 _API_SESSIONS (带 session 锁) · 终端 REPL 走 RUNTIME.messages
+    try:
+        if parent_sid.startswith("api-"):
+            from daemon_api import _API_SESSIONS, _get_session_lock
+            with _get_session_lock(parent_sid):
+                msgs = _API_SESSIONS.get(parent_sid)
+                if msgs is not None:
+                    msgs.append({"role": "user", "content": summary})
+        else:
+            from daemon_runtime import RUNTIME
+            if getattr(RUNTIME, "session_id", None) == parent_sid and RUNTIME.messages is not None:
+                RUNTIME.messages.append({"role": "user", "content": summary})
+    except Exception:
+        pass
 
 
 def _format_results(results: list, resume: bool = False) -> ToolResult:
