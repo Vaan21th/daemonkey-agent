@@ -5611,6 +5611,7 @@ async function _loadSessionHistory(sid, opts) {
     if (_hidden > 0) _ensureLoadEarlierSentinel(s.$container);
     const _seq = (s._histSeq = (s._histSeq || 0) + 1);  // 防交错: 重复加载/切会话后旧渲染停笔
     let _bad = 0;
+    let _skipBgReportAi = false;  // 0.9.7-hf1 · 通报气泡后紧随的汇报轮 assistant 转述跳过 (内容重复)
     // 卷三十六 · 历史回放 · 跟实时 SSE 那一套对齐 · reasoning / tool_call / tool_result 全渲染
     // wish-5256d2a4 · index 循环 · assistant 的 tool_calls 与紧随的 role=tool turns 配对成时间线
     for (let _ti = 0; _ti < _turns.length; _ti++) {
@@ -5630,12 +5631,30 @@ async function _loadSessionHistory(sid, opts) {
           } else if (t.src === 'proactive') {
             addSys('Daemonkey 主动醒来' + (t.proactive_reason ? ' · ' + t.proactive_reason : ''), s.$container);
           } else if (t.bg_subagent_report) {
-            // 0.9.8 · 异步分身完成通报 → 系统通报卡 · 剥掉汇报轮注入的指令段 (只留通报要点)
+            // 0.9.7-hf1 · 异步分身完成通报 → 渲染成普通 AI 气泡 (用户: 和其他消息一样·别搞特殊系统卡)
+            // 剥掉汇报轮注入的指令段 · 首行 [后台分身完成通报] 2/3 成功 提炼成加粗标题
             let _rpt = t.content || '';
             const _cut = _rpt.indexOf('\n\n请用一两句话');
             if (_cut >= 0) _rpt = _rpt.slice(0, _cut);
             _rpt = _rpt.replace('【系统 · 后台分身完成通报】(这条不是用户发的·是后台分身全部跑完自动触发的汇报轮)\n', '');
-            addSys('🧩 ' + (_rpt || '后台分身完成 · 结果已通报'), s.$container);
+            let _title = '分身完成';
+            const _tm = /\[后台分身完成通报\]\s*(\d+\/\d+)\s*成功/.exec(_rpt);
+            if (_tm) _title = '分身完成 · ' + _tm[1] + ' 成功';
+            _rpt = _rpt.replace(/^\[后台分身完成通报\][^\n]*\n?/, '').trim();
+            const _hm = formatTime(t.ts);
+            const _bub = addMsg('opus', '**' + _title + (_hm ? ' · ' + _hm : '') + '**\n\n'
+              + (_rpt || '后台分身完成 · 结果已通报'), null, t.ts, s.$container);
+            if (_bub) {
+              const _acts = document.createElement('div');
+              _acts.className = 'advisor-actions';
+              const _btn = document.createElement('button');
+              _btn.className = 'adv-btn';
+              _btn.innerHTML = '<i class="ri-file-list-3-line"></i> 查看完整结果';
+              _btn.addEventListener('click', function() { _bgReportFullToggle(_bub, sid, _btn); });
+              _acts.appendChild(_btn);
+              _bub.appendChild(_acts);
+            }
+            _skipBgReportAi = true;  // 汇报轮 assistant 一两句话是同一内容转述 · 跳过
           } else {
             // 用户 2026-07-29 · 协同轮 user content 被 daemon 注入了『系统指令+施工单全文』
             // (daemon_api.py:1258-1272) · 历史重建若整条渲染 = 绿色大气泡重复金卡内容·很难看。
@@ -5674,6 +5693,7 @@ async function _loadSessionHistory(sid, opts) {
             }
           }
         } else if (t.role === 'assistant') {
+          if (_skipBgReportAi) { _skipBgReportAi = false; continue; }  // 0.9.7-hf1 · 汇报轮转述 · 通报气泡已含要点
           if (t.reasoning_content) {
             renderReasoningBubble(t.reasoning_content, { collapsed: true, historical: true }, s.$container);
           }
@@ -7131,6 +7151,39 @@ function addMsg(role, text, className, ts, target, opts) {
   return div;
 }
 function addSys(text, target) { return addMsg('sys', text, null, null, target); }
+
+// 0.9.7-hf1 · 通报气泡「查看完整结果」· 拉 sub-inbox 里本会话的分身全文 · 展开/收起
+async function _bgReportFullToggle(bubble, sid, btn) {
+  const exist = bubble.querySelector('.advisor-trace');
+  if (exist) { exist.remove(); btn.innerHTML = '<i class="ri-file-list-3-line"></i> 查看完整结果'; return; }
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ri-loader-4-line"></i> 拉取中...';
+  try {
+    const r = await fetch('/sessions/' + encodeURIComponent(sid) + '/sub_results', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const j = r.ok ? await r.json() : null;
+    const rows = (j && j.results) || [];
+    const div = document.createElement('div');
+    div.className = 'advisor-trace';
+    if (!rows.length) {
+      div.innerHTML = '<div style="color:var(--dim);padding:4px 0">sub-inbox 里没有本会话的分身记录</div>';
+    } else {
+      div.innerHTML = rows.slice().reverse().map(function(e) {
+        return '<div style="margin:6px 0 2px"><b>' + escHtml(e.subagent_id || '?') + '</b>'
+          + ' <span style="color:var(--dim)">' + escHtml(e.ts || '') + ' · ' + escHtml(e.status || '') + '</span></div>'
+          + '<div style="color:var(--dim);font-size:11px;margin-bottom:2px">' + escHtml((e.goal || '').slice(0, 80)) + '</div>'
+          + '<div style="white-space:pre-wrap">' + escHtml(e.text || e.error || '(无产出)') + '</div>';
+      }).join('<hr style="border:none;border-top:1px dashed rgba(255,255,255,0.08);margin:8px 0">');
+    }
+    bubble.appendChild(div);
+    btn.innerHTML = '<i class="ri-arrow-up-s-line"></i> 收起';
+  } catch (_) {
+    btn.innerHTML = '<i class="ri-file-list-3-line"></i> 查看完整结果';
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 /* wish-7c579a20 · 历史重建 用户 气泡附件（刷新后图不丢）
  * 数据双源: ①新格式 t.attachments（后端 meta 结构化落盘）

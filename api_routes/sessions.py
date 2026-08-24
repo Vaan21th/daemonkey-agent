@@ -466,3 +466,32 @@ async def session_bg_turn_status(sid: str, authorization: Optional[str] = Header
     from workers.resume_runner import get_background_turn_status
     status = get_background_turn_status(sid)
     return {"session_id": sid, "status": status}
+
+
+@router.get("/sessions/{sid}/sub_results")
+async def session_sub_results(sid: str, authorization: Optional[str] = Header(None)):
+    """0.9.7-hf1 · 异步分身完整结果 · 通报气泡「查看完整结果」按钮的数据源
+
+    读 sessions/sub-inbox.jsonl (dispatch_subagent._bg 落的完成信箱) ·
+    按 parent_session_id 过滤 · 只回最近 20 条 (单条 text 可能几千字·防大包)。
+    """
+    check_auth(authorization)
+    import json as _json
+    ip = session_path(sid).parent / "sub-inbox.jsonl"
+    rows = []
+    if ip.exists():
+        try:
+            with open(ip, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        e = _json.loads(line)
+                    except Exception:
+                        continue
+                    if e.get("parent_session_id") == sid:
+                        rows.append(e)
+        except Exception:
+            pass
+    return {"session_id": sid, "results": rows[-20:]}
