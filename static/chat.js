@@ -1979,8 +1979,13 @@ document.addEventListener('visibilitychange', () => {
         }).then(r => r.ok ? r.json() : { status: 'none' }).then(j => {
           const s = (j && j.status) || 'none';
           if (s === 'scheduled' || s === 'running') {
+            st._bgCompletedHandled = false;  // 0.9.7-hf2 · 新后台 turn 开跑 · 重置完成防重标记
             _maybeStartPoll(st);   // 单次探测: 有 active turn 就起轮询
           } else if (s === 'completed') {
+            // 0.9.7-hf2 · completed 是常驻终态 · 没防重的话每次切回前台都整页重载
+            // (DOM 清空重建 → 滚动位置丢失 · 用户: 「切回后台再切过去滚动条不在底部了」)
+            if (st._bgCompletedHandled) return;
+            st._bgCompletedHandled = true;
             // 后台续场已跑完 · 重载历史把结果刷出来 · 解锁 (跟 L13363 同逻辑)
             _loadSessionHistory(st.sessionId).then(() => {
               if (st && sessionId === st.sessionId) {
@@ -1988,6 +1993,8 @@ document.addEventListener('visibilitychange', () => {
                 setSendButtonState('idle');
                 setInputLocked(false);
                 showToolProgress(false);
+                // rAF 在 tab 刚恢复时可能拿到未稳定的高度 · 补一记延迟兜底滚到底
+                setTimeout(() => scrollToBottom(st.$container, { force: true }), 150);
               }
             }).catch(() => {});
           }
@@ -2021,9 +2028,11 @@ function _startBgReportWatch() {
         if (prev === undefined) return;              // 首次只建基线
         if (cur === 'scheduled' || cur === 'running') {
           if (prev !== 'scheduled' && prev !== 'running') {
+            st._bgCompletedHandled = false;          // 0.9.7-hf2 · 新一轮后台 turn · 重置完成防重
             _probeAndStartPoll(st, 8000);            // 抓 active turn → 3s 轮询自动刷新
           }
         } else if (cur === 'completed' && prev !== 'completed') {
+          st._bgCompletedHandled = true;   // 0.9.7-hf2 · 跟 visibilitychange 共用防重标记 · 别双重载
           _loadSessionHistory(sid).catch(() => {});  // 汇报轮跑完 · 重载显示 AI 汇报
         }
       }).catch(() => {});
@@ -5631,8 +5640,8 @@ async function _loadSessionHistory(sid, opts) {
           } else if (t.src === 'proactive') {
             addSys('Daemonkey 主动醒来' + (t.proactive_reason ? ' · ' + t.proactive_reason : ''), s.$container);
           } else if (t.bg_subagent_report) {
-            // 0.9.7-hf1 · 异步分身完成通报 → 渲染成普通 AI 气泡 (用户: 和其他消息一样·别搞特殊系统卡)
-            // 剥掉汇报轮注入的指令段 · 首行 [后台分身完成通报] 2/3 成功 提炼成加粗标题
+            // 0.9.7-hf2 · 异步分身完成通报 → 状态卡 (用户 订正: 不是聊天气泡·是 advisor 卡那种状态卡)
+            // 剥掉汇报轮注入的指令段 · 首行 [后台分身完成通报] 2/3 成功 提炼进标题栏
             let _rpt = t.content || '';
             const _cut = _rpt.indexOf('\n\n请用一两句话');
             if (_cut >= 0) _rpt = _rpt.slice(0, _cut);
@@ -5641,19 +5650,7 @@ async function _loadSessionHistory(sid, opts) {
             const _tm = /\[后台分身完成通报\]\s*(\d+\/\d+)\s*成功/.exec(_rpt);
             if (_tm) _title = '分身完成 · ' + _tm[1] + ' 成功';
             _rpt = _rpt.replace(/^\[后台分身完成通报\][^\n]*\n?/, '').trim();
-            const _hm = formatTime(t.ts);
-            const _bub = addMsg('opus', '**' + _title + (_hm ? ' · ' + _hm : '') + '**\n\n'
-              + (_rpt || '后台分身完成 · 结果已通报'), null, t.ts, s.$container);
-            if (_bub) {
-              const _acts = document.createElement('div');
-              _acts.className = 'advisor-actions';
-              const _btn = document.createElement('button');
-              _btn.className = 'adv-btn';
-              _btn.innerHTML = '<i class="ri-file-list-3-line"></i> 查看完整结果';
-              _btn.addEventListener('click', function() { _bgReportFullToggle(_bub, sid, _btn); });
-              _acts.appendChild(_btn);
-              _bub.appendChild(_acts);
-            }
+            bgReportCard(s, { title: _title, time: formatTime(t.ts), text: _rpt, sid: sid });
             _skipBgReportAi = true;  // 汇报轮 assistant 一两句话是同一内容转述 · 跳过
           } else {
             // 用户 2026-07-29 · 协同轮 user content 被 daemon 注入了『系统指令+施工单全文』
@@ -9221,6 +9218,36 @@ function advisorReviewCard(state, info) {
     btn.className = 'adv-btn';
     btn.innerHTML = '<i class="ri-file-list-3-line"></i> 展开顾问过程';
     btn.addEventListener('click', () => advisorTraceToggle(div, info.subId, btn));
+    actions.appendChild(btn);
+    div.appendChild(actions);
+  }
+  state.$container.appendChild(div);
+  scrollToBottom(state.$container, { force: false });
+  return div;
+}
+
+// ── 0.9.7-hf2 · 异步分身完成通报状态卡 ──
+// 用户 订正: 通报不是聊天气泡·是状态卡 (跟顾问验收卡一个物种) · 复用 advisor-card 体系 · 绿左边条表成功事件
+function bgReportCard(state, info) {
+  if (!state || !state.$container) return null;
+  info = info || {};
+  const div = document.createElement('div');
+  div.className = 'msg advisor-card bg-report-card';
+  div.innerHTML =
+    '<div class="advisor-head">' +
+      '<i class="ri-group-line"></i>' +
+      '<span>' + escHtml(info.title || '分身完成') + '</span>' +
+      (info.time ? '<span class="elapsed">' + escHtml(info.time) + '</span>' : '') +
+    '</div>' +
+    '<div class="blueprint-body"></div>';
+  div.querySelector('.blueprint-body').innerHTML = mdRender((info.text || '').trim() || '结果已通报');
+  if (info.sid) {
+    const actions = document.createElement('div');
+    actions.className = 'advisor-actions';
+    const btn = document.createElement('button');
+    btn.className = 'adv-btn';
+    btn.innerHTML = '<i class="ri-file-list-3-line"></i> 查看完整结果';
+    btn.addEventListener('click', function() { _bgReportFullToggle(div, info.sid, btn); });
     actions.appendChild(btn);
     div.appendChild(actions);
   }

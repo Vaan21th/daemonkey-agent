@@ -350,6 +350,11 @@ header {
   max-width: 88%;
 }
 
+/* 0.9.7-hf2 · 分身完成通报状态卡 · 复用 advisor 卡体系 · 绿左边条表成功事件
+   (用户 订正: 通报是状态卡不是聊天气泡 · --bg2 气泡贴在 --bg2 面板上会隐形) */
+.msg.advisor-card.bg-report-card { border-left: 3px solid #58b368; }
+.msg.advisor-card.bg-report-card .advisor-head > i:first-child { color: #58b368; }
+
 /* 卷三十 · markdown 渲染容器（在 .msg.opus 里）
    把 .msg 默认的 white-space:pre-wrap 让位给真正的 markdown 块元素 */
 .md-body {
