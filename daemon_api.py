@@ -564,6 +564,15 @@ def _build_remote_system(base: str, session_id: str = "") -> str:
     return base + _REMOTE_SYSTEM_HINT
 
 
+def _safe_style_note() -> str:
+    """四维档位进 system_suffix。失败 → 空，不把 daemon 搞挂。"""
+    try:
+        from identity import style_dims_guide
+        return style_dims_guide()
+    except Exception:
+        return ""
+
+
 def _build_remote_tail(session_id: str = "") -> str:
     """易变尾巴 · 动态 telemetry (当前时间 / git 脏区 / daemon uptime · wish-1d286099)。
 
@@ -1547,7 +1556,13 @@ def _chat_impl(
         #   走 system_suffix 留在缓存断点之外 → 尾巴变也不冲掉灵魂缓存 (省钱关键)。
         #   localize 对两段分别做 (纯 token 替换·分段等价)。
         _sys_stable = _build_remote_system(RUNTIME.system_prompt)
-        _sys_tail = _build_remote_tail(sid) + _pb_hint + _mem_hint + _workshop_hint + _docs_hint + _memwrite_hint + _client_hint + _casual_hint + _care_hint + _ledger_hint
+        _style_note = _safe_style_note()
+        _sys_tail = (
+            ("\n\n## 你们现在的相处风格\n" + _style_note if _style_note else "")
+            + _build_remote_tail(sid)
+            + _pb_hint + _mem_hint + _workshop_hint + _docs_hint
+            + _memwrite_hint + _client_hint + _casual_hint + _care_hint + _ledger_hint
+        )
         if _user_meta.get("src") == "wechat":
             _sys_tail = _sys_tail + _WECHAT_CHANNEL_NOTE
         try:

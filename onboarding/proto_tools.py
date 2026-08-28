@@ -92,10 +92,13 @@ def _run_set_identity(args: dict) -> tuple[bool, str]:
         # wish-9585aa62: 设定风格时 LLM 蒸馏叙事风格包 (开场白/安抚/完成语变体池)
         # 失败 (网络/JSON) → 不阻塞 · 保持原 persona_style · 叙事器回退默认包
         try:
-            from identity import distill_narration_pack
+            from identity import distill_narration_pack, distill_style_band_pack
             pack = distill_narration_pack(style)
             if pack:
                 payload["narration_pack"] = pack
+            band = distill_style_band_pack(style)
+            if band:
+                payload["style_band_pack"] = band
         except Exception:
             pass
     # owner_name = 该怎么称呼他 (localize 把代码里的占位名换成这个)·空就先不写·之后可补
@@ -107,6 +110,12 @@ def _run_set_identity(args: dict) -> tuple[bool, str]:
     IDENTITY_PATH.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    if style:
+        try:
+            from identity import set_she_profile
+            set_she_profile(voice=style)
+        except Exception:
+            pass
     bits = [f"我叫「{payload.get('name', '')}」"]
     if owner:
         bits.append(f"称呼你为「{owner}」")

@@ -162,6 +162,17 @@ def _load_identity(daemon_root: Path) -> dict:
         return {}
 
 
+def _persona_style_block(name: str, style: str) -> str:
+    """初见口吻：近因位一句，出厂风格服从它。"""
+    if not name or not style:
+        return ""
+    return (
+        "\n\n=== 相处口吻 ===\n\n"
+        f"他第一次见你时说过，要用这个口吻：{style}。"
+        "上面出厂说话风格服从这句。体现在句子里，不要旁白，不要另换人设。\n"
+    )
+
+
 # 单条 entry 注入到 system prompt 时的最大字符数（超出截断 + 省略号）
 _EVOLUTION_ENTRY_MAX_CHARS = 4500
 # 默认注入末尾几条 entries
@@ -662,6 +673,7 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
         + middle
         + memories_text
         + closer
+        + _persona_style_block(_name, _style)
     )
 
     if with_runtime:

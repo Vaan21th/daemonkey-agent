@@ -72,7 +72,8 @@
                    "身份与灵魂加载机制":  [
                                      "identity.py",
                                      "soul_loader.py",
-                                     "product_constitution.py"
+                                     "product_constitution.py",
+                                     "agent_tools/set_persona_style.py"
                                  ],
                    "相遇 onboarding 机制(L1·开源用户首启命脉·相遇→生成身份/画像→热重载主daemon)":  [
                                                                                "api_routes/onboarding.py",
