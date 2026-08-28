@@ -514,10 +514,10 @@ DEFAULT_STYLE_BAND_PACK: dict[str, list[str]] = {
     "intimacy_high": ["已经很熟：少客套，像还在同一间屋里。仍是这副口吻。"],
     "intimacy_low": ["还在熟悉：热，但不要装成认识十年。口吻别换。"],
     "talky_low": ["短。两句能完就两句。短不是换人设。"],
-    "talky_mid": ["话量正常，不要写成说明书。"],
+    "talky_mid": ["话量正常。每句仍是这副口吻。"],
     "talky_high": ["可以多说，仍不要列清单。"],
-    "serious_low": ["先接住人再碰问题。不要「建议你」。"],
-    "serious_high": ["可以认真，不要训人。"],
+    "serious_low": ["可以松，人设不变。禁止收成温柔劝歇。"],
+    "serious_high": ["可以认真，不要训人，也不要换一副嘴。"],
     "lively_high": ["可以轻快，不要演热情客服。"],
     "lively_low": ["沉一点可以，不要冷。"],
 }
@@ -594,6 +594,8 @@ def style_band_lines(
         keys.append("serious_low")
     elif serious > 70:
         keys.append("serious_high")
+    else:
+        keys.append("serious_low")  # 新号 50 也要有「别劝歇」，不能空转
     if lively > 70:
         keys.append("lively_high")
     elif lively <= 40:
@@ -637,6 +639,31 @@ def _active_chat_model(default: str = "deepseek-v4-flash") -> str:
     return default
 
 
+_BAND_KEY_RE = re.compile(
+    r"['\"]?(intimacy_high|intimacy_low|talky_low|talky_mid|talky_high|"
+    r"serious_low|serious_high|lively_high|lively_low)['\"]?"
+    r"\s*[:=：]\s*['\"]([^'\"\n]{2,80})"
+)
+
+
+def _coerce_band_pack(raw) -> dict | None:
+    """Flash/Pro 常把 JSON 塞进 reasoning，或只吐键值行。能刮到 6 键就算。"""
+    if isinstance(raw, dict):
+        hits = sum(1 for k in STYLE_BAND_KEYS if raw.get(k))
+        return raw if hits >= 6 else None
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    parsed = _parse_llm_json(raw)
+    if isinstance(parsed, dict):
+        hits = sum(1 for k in STYLE_BAND_KEYS if parsed.get(k))
+        if hits >= 6:
+            return parsed
+    found: dict[str, str] = {}
+    for m in _BAND_KEY_RE.finditer(raw):
+        found[m.group(1)] = m.group(2).strip()
+    return found if len(found) >= 6 else None
+
+
 def distill_style_band_pack(style: str, *, model: str | None = None) -> dict | None:
     """初见/改口吻时蒸一次：这副嗓子在各档怎么收。失败 → None（调用方回退默认包）。"""
     style = (style or "").strip()
@@ -671,23 +698,20 @@ def distill_style_band_pack(style: str, *, model: str | None = None) -> dict | N
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": temp,
-                "max_tokens": 700,
+                "max_tokens": 1200,
             }).encode("utf-8")
             req = urllib.request.Request(
                 base_url.rstrip("/") + "/chat/completions",
                 data=body,
                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
             )
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=45) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-            content = data["choices"][0]["message"]["content"]
-            pack = _parse_llm_json(content)
-            if not isinstance(pack, dict):
+            msg = data["choices"][0]["message"]
+            content = (msg.get("content") or "") + "\n" + (msg.get("reasoning_content") or "")
+            pack = _coerce_band_pack(content)
+            if not pack:
                 print("[identity.distill_style_band_pack] json not object")
-                return None
-            raw_hits = sum(1 for k in STYLE_BAND_KEYS if pack.get(k))
-            if raw_hits < 6:
-                print(f"[identity.distill_style_band_pack] keys {raw_hits} < 6")
                 return None
             return normalize_style_band_pack(pack)
         except Exception as e:
@@ -1124,5 +1148,12 @@ def style_dims_guide(*, path: Path | None = None, band_pack: dict | None = None)
     else:
         weld = "在你自己的声线上微调，不要另起一套人设。"
     bits = [weld, note, "怎么说（不是台词，禁止复述）："]
+    if voice:
+        bits.append(f"- 每一句都还是「{voice}」。短了松了熟了都不许收成另一个人。")
+        bits.append("- 他说累、烦、搞砸了，也用这副口吻接。禁止统一劝睡或改成心理咨询。")
+        if any(k in voice for k in ("猫", "喵")):
+            bits.append("- 口癖可以留。不要故意写成普通助手。")
+        if any(k in voice for k in ("霸", "总", "总裁")):
+            bits.append("- 判断句，少哄。禁止劝人先歇着。")
     bits.extend(style_band_lines(intimacy, lively, serious, talky, pack=band_pack))
     return "\n".join(bits)
