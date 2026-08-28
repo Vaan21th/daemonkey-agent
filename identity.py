@@ -511,15 +511,15 @@ STYLE_BAND_KEYS = (
 )
 
 DEFAULT_STYLE_BAND_PACK: dict[str, list[str]] = {
-    "intimacy_high": ["已经很熟：少客套，像还在同一间屋里。仍是这副口吻。"],
-    "intimacy_low": ["还在熟悉：热，但不要装成认识十年。口吻别换。"],
-    "talky_low": ["短。两句能完就两句。短不是换人设。"],
+    "intimacy_high": ["已经很熟：少客套，像还在同一间屋里。口吻不变。"],
+    "intimacy_low": ["还在熟悉：热，但不要装成认识十年。口吻不变。"],
+    "talky_low": ["短。两句能完就两句。短不是换口吻。"],
     "talky_mid": ["话量正常。每句仍是这副口吻。"],
-    "talky_high": ["可以多说，仍不要列清单。"],
-    "serious_low": ["可以松，人设不变。禁止收成温柔劝歇。"],
-    "serious_high": ["可以认真，不要训人，也不要换一副嘴。"],
-    "lively_high": ["可以轻快，不要演热情客服。"],
-    "lively_low": ["沉一点可以，不要冷。"],
+    "talky_high": ["可以多说，不要列清单。口吻不变。"],
+    "serious_low": ["可以松。口吻不变。劝歇也用这副口吻。"],
+    "serious_high": ["可以认真，不要训人。口吻不变。"],
+    "lively_high": ["可以轻快，不要演热情客服。口吻不变。"],
+    "lively_low": ["沉一点可以，不要冷。口吻不变。"],
 }
 
 
@@ -578,7 +578,10 @@ def style_band_lines(
     pack: dict | None = None,
 ) -> list[str]:
     """按四维从包里选行。每行带 '- '。"""
-    src = normalize_style_band_pack(pack if pack is not None else style_band_pack())
+    # 对话尾巴默认拼模板，不读蒸馏包。传入 pack 才用（测试 / 对照）。
+    src = normalize_style_band_pack(
+        pack if pack is not None else DEFAULT_STYLE_BAND_PACK
+    )
     keys: list[str] = []
     if intimacy >= 70:
         keys.append("intimacy_high")
@@ -595,7 +598,7 @@ def style_band_lines(
     elif serious > 70:
         keys.append("serious_high")
     else:
-        keys.append("serious_low")  # 新号 50 也要有「别劝歇」，不能空转
+        keys.append("serious_low")
     if lively > 70:
         keys.append("lively_high")
     elif lively <= 40:
@@ -681,7 +684,7 @@ def distill_style_band_pack(style: str, *, model: str | None = None) -> dict | N
         "这是约束，不是台词。每条写「这一档怎么收」，必须仍是这副口吻：\n"
         "- 猫娘的「短」还是猫娘，禁止写「去掉喵/改成助手」\n"
         "- 霸总的「熟」还是霸总，禁止写成温柔劝人歇着\n"
-        "- 闺蜜/朋友同理：松紧变，人设不变\n"
+        "- 闺蜜/朋友同理：松紧变，口吻不变\n"
         "禁止「他：」「她：」对白，禁止旁白。每条≤36字，无 emoji。\n"
         "每个键给一个字符串即可（不要数组）。\n"
         f"只输出 JSON，必须含这 9 个英文键：{keys}\n"
@@ -1098,37 +1101,25 @@ def style_dims_note(*, path: Path | None = None) -> str:
     except Exception:
         return ""
 
+    intimacy_p = (
+        "已经很熟" if intimacy >= 70 else ("相处自然" if intimacy >= 40 else "还在熟悉")
+    )
     lively_p = _style_dim_band(lively, "偏沉稳", "温和", "活泼")
     serious_p = _style_dim_band(serious, "偏随性轻松", "正经适中", "偏认真")
     talky_p = _style_dim_band(talky, "话不多", "话量正常", "话比较多")
-
+    note = (
+        f"现在的温度：亲密度 {intimacy}（{intimacy_p}）· "
+        f"话痨度 {talky}（{talky_p}）· "
+        f"正经度 {serious}（{serious_p}）· "
+        f"活泼度 {lively}（{lively_p}）"
+    )
     if intimacy >= 70:
-        lead = "你们已经很熟了"
-    elif intimacy >= 40:
-        lead = "你们相处自然"
-    else:
-        lead = "你们还在慢慢熟悉"
-
-    if talky <= 40:
-        if serious <= 40:
-            amp = f"{talky_p}、{lively_p}，正经中带着轻松"
-        else:
-            amp = f"{talky_p}、{lively_p}、{serious_p}"
-    elif talky > 70:
-        amp = f"{talky_p}、{lively_p}、{serious_p}"
-    elif serious < 40:
-        amp = f"{talky_p}、{lively_p}，正经中带着轻松"
-    else:
-        amp = f"{talky_p}、{lively_p}、{serious_p}"
-
-    note = f"{lead}。这条声线上：{amp}。"
-    if intimacy >= 70 and "亲昵" not in note:
-        note = note[:-1] + "，带着亲昵。"
+        note += "。带着亲昵"
     return note
 
 
 def style_dims_guide(*, path: Path | None = None, band_pack: dict | None = None) -> str:
-    """档位句 + 该档怎么说。对白样本会被 Flash 照抄，所以只给约束。"""
+    """口吻取 persona_style 字段，四维按数字拼进去。不让模型自己找词。"""
     note = style_dims_note(path=path)
     if not note:
         return ""
@@ -1140,20 +1131,18 @@ def style_dims_guide(*, path: Path | None = None, band_pack: dict | None = None)
         talky = int(dims.get("话痨度", 50))
     except Exception:
         return note
-    voice = effective_persona_style(path=path)
-    if persona_style():
-        weld = f"在他初见要的「{voice}」上微调，不要换成另一种人设。"
-    elif voice:
-        weld = f"在这条已经长出来的口吻上微调，不要换成另一种人设：{voice}"
-    else:
-        weld = "在你自己的声线上微调，不要另起一套人设。"
-    bits = [weld, note, "怎么说（不是台词，禁止复述）："]
-    if voice:
-        bits.append(f"- 每一句都还是「{voice}」。短了松了熟了都不许收成另一个人。")
-        bits.append("- 他说累、烦、搞砸了，也用这副口吻接。禁止统一劝睡或改成心理咨询。")
-        if any(k in voice for k in ("猫", "喵")):
-            bits.append("- 口癖可以留。不要故意写成普通助手。")
-        if any(k in voice for k in ("霸", "总", "总裁")):
-            bits.append("- 判断句，少哄。禁止劝人先歇着。")
-    bits.extend(style_band_lines(intimacy, lively, serious, talky, pack=band_pack))
+    voice = (persona_style() or effective_persona_style(path=path) or "").strip()
+    style = voice or "这副口吻"
+    bits = [
+        f"口吻：{style}",
+        "四维只改这副口吻的温度，不换口吻。",
+        note,
+        "怎么说（不是台词，禁止复述）：",
+        f"- 每句都用「{style}」这副口吻。短了、松了、熟了，都不换口吻。",
+        f"- 他说累、烦、搞砸了，也用「{style}」这副口吻接。劝歇可以，不要换成心理咨询腔或出厂助手腔。",
+    ]
+    bits.extend(style_band_lines(
+        intimacy, lively, serious, talky,
+        pack=band_pack if band_pack is not None else DEFAULT_STYLE_BAND_PACK,
+    ))
     return "\n".join(bits)

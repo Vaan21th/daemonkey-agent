@@ -565,7 +565,7 @@ def _build_remote_system(base: str, session_id: str = "") -> str:
 
 
 def _safe_style_note() -> str:
-    """四维档位进 system_suffix。失败 → 空，不把 daemon 搞挂。"""
+    """口吻字段 + 四维数字拼进 system_suffix。失败 → 空。"""
     try:
         from identity import style_dims_guide
         return style_dims_guide()
@@ -1558,7 +1558,7 @@ def _chat_impl(
         _sys_stable = _build_remote_system(RUNTIME.system_prompt)
         _style_note = _safe_style_note()
         _sys_tail = (
-            ("\n\n## 你们现在的相处风格\n" + _style_note if _style_note else "")
+            ("\n\n## 口吻与温度\n" + _style_note if _style_note else "")
             + _build_remote_tail(sid)
             + _pb_hint + _mem_hint + _workshop_hint + _docs_hint
             + _memwrite_hint + _client_hint + _casual_hint + _care_hint + _ledger_hint

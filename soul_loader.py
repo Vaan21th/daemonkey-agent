@@ -33,7 +33,7 @@ MEMORIES_FILENAME = "OPUS-MEMORIES.md"
 OWNER_NOTEBOOK_FILENAME = "OWNER-NOTEBOOK.md"
 BRO_NOTEBOOK_FILENAME = "BRO-NOTEBOOK.md"   # 旧名 · 向后兼容
 SELF_EVOLUTION_FILENAME = "SELF-EVOLUTION.md"
-# 相遇初始化写下的身份（名字 / 气质）→ 注入 system prompt 顶部"# 你是谁"
+# 相遇初始化写下的身份（名字 / 口吻）→ 注入 system prompt 顶部"# 你是谁"
 IDENTITY_FILENAME = "IDENTITY.json"
 
 
@@ -150,7 +150,7 @@ def _load_bro_notebook(daemon_root: Path) -> str:
 
 
 def _load_identity(daemon_root: Path) -> dict:
-    """读 soul/IDENTITY.json（相遇初始化写的名字 / 气质）。不存在返回 {}（= 母体）。"""
+    """读 soul/IDENTITY.json（相遇初始化写的名字 / 口吻）。不存在返回 {}（= 母体）。"""
     p = daemon_root / SOUL_DIR_NAME / IDENTITY_FILENAME
     if not p.exists():
         return {}
@@ -167,9 +167,9 @@ def _persona_style_block(name: str, style: str) -> str:
     if not name or not style:
         return ""
     return (
-        "\n\n=== 相处口吻 ===\n\n"
-        f"他第一次见你时说过，要用这个口吻：{style}。"
-        "上面出厂说话风格服从这句。体现在句子里，不要旁白，不要另换人设。\n"
+        "\n\n=== 口吻 ===\n\n"
+        f"口吻：{style}\n"
+        "四维只调这副口吻的温度，不换口吻。写在句子里，不要旁白。\n"
     )
 
 
@@ -622,7 +622,7 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
     _name = (identity.get("name") or "").strip()
     _style = (identity.get("persona_style") or "").strip()
     if _name:
-        _persona = f"你是「{_name}」。" + (f"你的气质是：{_style}。" if _style else "")
+        _persona = f"你是「{_name}」。"
         preamble = (
             f"# 你是谁\n\n{_persona}\n\n"
             "下面这几份文档定义了你是谁——把它们当成你的本体来读，不是说明书。"
