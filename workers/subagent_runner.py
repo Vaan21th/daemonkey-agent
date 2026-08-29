@@ -82,8 +82,17 @@ def _auto_confirm(spec, args, *more) -> str:
             return ("reject:分身超出只读白名单后，CONFIRM 级写入要回主对话让他拍。"
                     "把这步交回去，或只用只读手。")
     except Exception:
-        pass
+        return ("reject:分身无法判定这只手的危险度 · 交回主对话。"
+                "不要重试同一只手。")
     return "yes"
+
+
+def _should_strict_expand(tools_whitelist, strict_confirm: bool) -> bool:
+    """只给 dispatch 开。工坊 / 顾问走各自确认，不被这把尺误伤。"""
+    if not strict_confirm:
+        return False
+    wl = set(tools_whitelist or ())
+    return bool(wl) and not wl.issubset(_READONLY_DEFAULT)
 
 
 def _no_observe(*args, **kwargs) -> None:
@@ -181,6 +190,7 @@ def run_subagent(
     message_check: Optional[Callable[[], list]] = None,
     ledger_source: Optional[str] = None,
     sub_session_id: Optional[str] = None,
+    strict_confirm: bool = False,
 ) -> SubagentResult:
     """跑一个子执行器 · 返回结构化结果。
 
@@ -208,6 +218,8 @@ def run_subagent(
             data/runtime/subagent_usage.jsonl。 None → 不记 (app_runner 有自己的账·防重复)。
         sub_session_id: 指定子会话 id (resume 续跑时续写同一个 sub-*.jsonl) ·
             None → persist 时自动生成新 id。
+        strict_confirm: True 仅 dispatch · 白名单超出只读集后 CONFIRM 打回主对话。
+            工坊 / 顾问保持 False，避免写入 app 被误伤。
 
     Returns:
         SubagentResult
@@ -252,9 +264,7 @@ def run_subagent(
         except Exception:
             pass
 
-    wl = set(tools_whitelist or ())
-    expanded = bool(wl) and not wl.issubset(_READONLY_DEFAULT)
-    _exp_tok = _expanded_cv.set(expanded)
+    _exp_tok = _expanded_cv.set(_should_strict_expand(tools_whitelist, strict_confirm))
     try:
         text, messages, usage = run_tool_loop(
             client=client or runtime.client,

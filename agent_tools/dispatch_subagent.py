@@ -16,7 +16,9 @@
   - **不递归**: 分身白名单里剔除 dispatch_subagent 自身 (v0.6.0 限一层)
   - **不给系统控制权**: 硬 DENY 掉 request_restart / update_core / summon_cursor 等
   - **默认只读**: 不显式给 tools 时 · 分身只拿【只读/研究】白名单 (查证类)
+  - **不能写**: 写文件 / shell / python / 改本子 / MCP 调用即使点名也剔除 · 要改东西回主对话
   - **并发上限 2** + 每分身迭代预算 + 汇总截断 —— 防 token 爆 / 爆父上下文
+    同步派发和 background=true 共用线程池，后台不再串行叠墙钟
 """
 
 from __future__ import annotations
@@ -52,12 +54,17 @@ _SUBAGENT_WALL_CLOCK_SEC = 600.0  # 墙钟熔断 (2026-08-11 · 墨言贡献评�
 
 # 永不下放给分身的工具 (递归 + 系统控制 + 破坏性 + 真实世界副作用)。 即便调用方显式点名也剔除。
 _ALWAYS_DENY = frozenset({
-    "dispatch_subagent",   # 防无限递归 (v0.6.0 限一层)
+    "dispatch_subagent", "dispatch_subagent_status",
+    "dispatch_subagent_cancel", "dispatch_subagent_message",
     "request_restart", "update_core", "summon_cursor", "set_model",
     "empty_trash", "delete_app_to_trash",
     "service_start", "service_stop",
-    # 真实世界副作用 (分身 _auto_confirm 全自动批准 · 不能让它无确认发微信/开应用/写剪贴板)
     "wechat_send", "open_app", "write_clipboard",
+    "write_file", "edit_file", "python_exec", "shell_exec",
+    "update_owner_note", "update_bro_note", "update_self_evolution",
+    "mcp_call_tool", "mcp_list", "mcp_describe_tool",
+    "catalog_call", "catalog_search",
+    "run_app", "create_app", "update_app",
 })
 
 # 不显式给 tools 时的默认白名单 = 只读 / 研究 / 查证类 (最安全 · 覆盖"并行调研"主场景)。
@@ -458,6 +465,7 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None, 
             message_check=_message_check,
             ledger_source="dispatch",   # 0.9.7 D7 · 分身用量落第四本账
             initial_messages=_initial,  # 0.9.7 P0-1 · fork_context (None → 单条 user_msg)
+            strict_confirm=True,
         )
     finally:
         # 生命状态机收尾 · 不管成功失败都更新注册表
@@ -578,7 +586,8 @@ def _resume_one(task: dict, runtime, parent_sid: str, cancel_check=None) -> dict
         return fail(f"分身 {subagent_id} 的会话档案不存在或缺少 _meta · 无法 resume "
                     "(只有本次升级后派发的分身体血缘可恢复)")
     goal = str((meta.get("extra_meta") or {}).get("goal") or "resume")
-    wl = set((meta.get("extra_meta") or {}).get("whitelist") or [])
+    wl = {t for t in ((meta.get("extra_meta") or {}).get("whitelist") or [])
+          if t in REGISTRY and t not in _ALWAYS_DENY}
     model = meta.get("model") or None
     system = meta.get("system_full") or ""
     if not system:
@@ -638,6 +647,7 @@ def _resume_one(task: dict, runtime, parent_sid: str, cancel_check=None) -> dict
             inject_budget_mandate=True, cancel_check=_cancel,
             message_check=_message_check,
             ledger_source="dispatch",
+            strict_confirm=True,
         )
     finally:
         status = "cancelled" if _rec_cancel["requested"] else ("success" if r is not None and r.ok else "failed")
@@ -656,6 +666,46 @@ def _resume_one(task: dict, runtime, parent_sid: str, cancel_check=None) -> dict
         "subagent_id": subagent_id, "status": status,
         "whitelist": sorted(wl), "result_file": result_file,
     }
+
+
+def _pool_fail(idx: int, goal: str, err: str) -> dict:
+    return {
+        "idx": idx, "goal": goal, "ok": False, "text": "",
+        "iterations": 0, "usage": {}, "warning": None, "error": err,
+        "sub_session_id": None, "whitelist": [],
+    }
+
+
+def _run_pool(tasks, runtime, parent_sid, cancel_check=None, preset_ids=None):
+    """同步派发和后台派发共用 · 最多 2 路并行 · 单路墙钟熔断。"""
+    results: list = [None] * len(tasks)
+    workers = min(_MAX_CONCURRENCY, max(1, len(tasks)))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+        futs = {}
+        for i, t in enumerate(tasks):
+            pid = preset_ids[i] if preset_ids else None
+            futs[pool.submit(
+                _run_one, i + 1, t, runtime, parent_sid, cancel_check, pid,
+            )] = i
+        for fut, i in futs.items():
+            goal = str(tasks[i].get("goal") or "")
+            try:
+                results[i] = fut.result(timeout=_SUBAGENT_WALL_CLOCK_SEC + 30)
+            except concurrent.futures.TimeoutError:
+                fail = _pool_fail(
+                    i + 1, goal,
+                    f"墙钟熔断: 子代理超过 {_SUBAGENT_WALL_CLOCK_SEC}s 未完成 (LLM 挂起?) · 已释放占位",
+                )
+            except Exception as e:
+                fail = _pool_fail(i + 1, goal, f"{type(e).__name__}: {e}")
+            else:
+                fail = None
+            if fail is not None:
+                if preset_ids:
+                    fail["subagent_id"] = preset_ids[i]
+                    fail["status"] = "failed"
+                results[i] = fail
+    return results
 
 
 def _dispatch_background(tasks: list, runtime, parent_sid: str) -> ToolResult:
@@ -681,14 +731,7 @@ def _dispatch_background(tasks: list, runtime, parent_sid: str) -> ToolResult:
         })
 
     def _bg():
-        results = []
-        for i, t in enumerate(tasks):
-            try:
-                results.append(_run_one(i + 1, t, runtime, parent_sid, preset_id=ids[i]))
-            except Exception as e:
-                results.append({"idx": i + 1, "goal": str(t.get("goal") or ""), "ok": False,
-                                "text": "", "error": f"{type(e).__name__}: {e}",
-                                "subagent_id": ids[i], "status": "failed", "usage": {}})
+        results = _run_pool(tasks, runtime, parent_sid, None, ids)
         # 汇总通报
         ok_n = sum(1 for r in results if r.get("ok"))
         lines = [f"[后台分身完成通报] {ok_n}/{len(results)} 成功:"]
@@ -829,7 +872,6 @@ def _format_results(results: list, resume: bool = False) -> ToolResult:
 
 
 def _run(args: dict) -> ToolResult:
-    from concurrent.futures import ThreadPoolExecutor
     from daemon_runtime import RUNTIME
 
     raw = args.get("tasks")
@@ -887,36 +929,7 @@ def _run(args: dict) -> ToolResult:
         except Exception:
             _cancel_check = None
 
-    # 并发跑 · max_workers 卡 2 · 即便派 6 个也只 2 个同时烧 (token 安全)
-    # 2026-08-11 墙钟熔断 (墨言贡献评估 · 08-09 卡死事故同源):
-    #   fut.result() 裸等 → 子代理 LLM 挂起时永远等 → 占 session 锁 40+ 分钟 (08-09 16:47 事故根因)。
-    #   _SUBAGENT_WALL_CLOCK_SEC 硬墙钟 + fut.result(timeout=墙钟+30s) 兜底 · 到点标记超时返回。
-    results: list[dict] = [None] * len(tasks)  # type: ignore
-    with ThreadPoolExecutor(max_workers=min(_MAX_CONCURRENCY, len(tasks))) as pool:
-        futs = {
-            pool.submit(_run_one, i + 1, t, RUNTIME, parent_sid, _cancel_check): i
-            for i, t in enumerate(tasks)
-        }
-        for fut in futs:
-            i = futs[fut]
-            try:
-                results[i] = fut.result(timeout=_SUBAGENT_WALL_CLOCK_SEC + 30)
-            except concurrent.futures.TimeoutError:
-                results[i] = {
-                    "idx": i + 1, "goal": str(tasks[i].get("goal") or ""),
-                    "ok": False, "text": "",
-                    "iterations": 0, "usage": {},
-                    "warning": None,
-                    "error": f"墙钟熔断: 子代理超过 {_SUBAGENT_WALL_CLOCK_SEC}s 未完成 (LLM 挂起?) · 已释放占位",
-                    "sub_session_id": None, "whitelist": [],
-                }
-            except Exception as e:
-                results[i] = {
-                    "idx": i + 1, "goal": str(tasks[i].get("goal") or ""),
-                    "ok": False, "text": "", "iterations": 0, "usage": {},
-                    "warning": None, "error": f"{type(e).__name__}: {e}",
-                    "sub_session_id": None, "whitelist": [],
-                }
+    results = _run_pool(tasks, RUNTIME, parent_sid, _cancel_check)
 
     ok_n = sum(1 for r in results if r and r.get("ok"))
     tot_in = sum((r.get("usage") or {}).get("input_tokens", 0) for r in results if r)
@@ -963,7 +976,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="dispatch_subagent",
     description=(
-        "派 1~6 个子执行器并行调研/查证，独立上下文+工具白名单。tasks[].goal 必填。默认只读工具；要写文件须显式给 tools。background=true 异步。不能再派分身。CONFIRM（烧 token）。"
+        "派 1~6 个只读专员并行调研。tasks[].goal 必填。不能写文件、不能跑 shell/python、不能再派分身；要改东西回主对话。background=true 异步（仍最多 2 路并行）。CONFIRM（烧 token）。"
     ),
     tier=TIER_CONFIRM,
     input_schema={
@@ -979,7 +992,7 @@ SPEC = ToolSpec(
                         "tools": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "可选 · 该分身的工具白名单 · 空则默认只读/研究集",
+                            "description": "可选 · 只读工具白名单 · 写/执行类即使点名也会被剔除",
                         },
                         "max_iter": {"type": "integer", "description": f"可选 · 迭代预算 · 默认 {_DEFAULT_MAX_ITER} · 硬顶 {_MAX_ITER_CAP}"},
                         "agent": {
