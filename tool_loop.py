@@ -235,6 +235,194 @@ def _tool_signature(name: str, args_str: str) -> str:
     return f"{name}({snippet})"
 
 
+def _stuck_tail_count(signatures: list[str]) -> tuple[str, int]:
+    if not signatures:
+        return "", 0
+    top_sig = signatures[-1]
+    top_count = 1
+    for i in range(len(signatures) - 2, -1, -1):
+        if signatures[i] == top_sig:
+            top_count += 1
+        else:
+            break
+    return top_sig, top_count
+
+
+def _stuck_action(top_count: int, inject_count: int) -> str:
+    if top_count < _STUCK_REPEAT_THRESHOLD:
+        return ""
+    if inject_count < _STUCK_INJECT_CAP:
+        return "nudge"
+    return "break"
+
+
+def _stuck_break_text(top_sig: str, top_count: int, window: int) -> str:
+    return (
+        f"[OPUS 真的卡死了 · 已经提示 {_STUCK_INJECT_CAP} 次"
+        f"还在重复调 `{top_sig}` ({top_count}/{window})]\n\n"
+        f"BRO 这是 stuck 死锁·我自己绕不出来。可能原因:\n"
+        f"  - 工具一直返同样的错·我没识别到\n"
+        f"  - 我对当前任务的理解有偏差\n"
+        f"  - args 里有某个字段我一直填错\n\n"
+        f"建议你看一下最近 {window} 条 tool 调用·"
+        f"告诉我换什么思路·或者直接说\"放弃这个 wish\"。"
+    )
+
+
+MAX_LENGTH_RESUME = 3
+_LENGTH_RESUME_USER = (
+    "你刚才的回答被 max_tokens 截断了 · 请**从断点接着写**·不要重复前面已经说过的内容。"
+    "如果还有工具要调·继续调。如果是文字回复·直接续上。"
+    "目标: 让这次任务有完整结果。"
+)
+
+
+class _StreamCancelGuard:
+    """50ms 心跳看 cancel · 触发就 close 流，避免等满 HTTP timeout。"""
+
+    def __init__(self, resp, cancel_check):
+        self._resp = resp
+        self._cancel_check = cancel_check
+        self._done = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def __enter__(self):
+        def _watch():
+            while not self._done.is_set():
+                try:
+                    if self._cancel_check and self._cancel_check():
+                        try:
+                            self._resp.close()
+                        except Exception:
+                            pass
+                        return
+                except Exception:
+                    pass
+                self._done.wait(timeout=0.05)
+
+        self._thread = threading.Thread(target=_watch, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *_exc):
+        self._done.set()
+        if self._thread is not None:
+            self._thread.join(timeout=0.2)
+        return False
+
+
+class _AntBlock:
+    def __init__(self, type: str, id: str = "", name: str = "", input: Any = None, text: str = ""):
+        self.type = type
+        self.id = id
+        self.name = name
+        self.input = input if input is not None else {}
+        self.text = text
+
+
+def _usage_from_ant(obj) -> UsageStats:
+    if obj is None:
+        return UsageStats()
+    return UsageStats(
+        input_tokens=getattr(obj, "input_tokens", 0) or 0,
+        output_tokens=getattr(obj, "output_tokens", 0) or 0,
+        cache_creation_tokens=getattr(obj, "cache_creation_input_tokens", 0) or 0,
+        cache_read_tokens=getattr(obj, "cache_read_input_tokens", 0) or 0,
+    )
+
+
+def _consume_anthropic_stream(resp, cancel_check, progress):
+    """把 Anthropic stream 收成 (text, tool_use_blocks, usage, stop_reason, aborted)。"""
+    text = ""
+    blocks: dict[int, _AntBlock] = {}
+    usage = UsageStats()
+    stop_reason: str | None = None
+    aborted = False
+
+    def _close():
+        try:
+            resp.close()
+        except Exception:
+            pass
+
+    try:
+        with _StreamCancelGuard(resp, cancel_check):
+            for event in resp:
+                if cancel_check is not None and cancel_check():
+                    _close()
+                    aborted = True
+                    break
+                et = getattr(event, "type", "") or ""
+                if et == "message_start":
+                    msg = getattr(event, "message", None)
+                    usage = _usage_from_ant(getattr(msg, "usage", None) if msg is not None else None)
+                elif et == "content_block_start":
+                    idx = getattr(event, "index", 0) or 0
+                    cb = getattr(event, "content_block", None)
+                    btype = getattr(cb, "type", "text") if cb is not None else "text"
+                    if btype == "tool_use":
+                        blocks[idx] = _AntBlock(
+                            "tool_use",
+                            id=getattr(cb, "id", "") or "",
+                            name=getattr(cb, "name", "") or "",
+                            input=getattr(cb, "input", None) or {},
+                        )
+                    else:
+                        blocks[idx] = _AntBlock(btype, text=getattr(cb, "text", "") or "")
+                elif et == "content_block_delta":
+                    idx = getattr(event, "index", 0) or 0
+                    delta = getattr(event, "delta", None)
+                    dtype = getattr(delta, "type", "") if delta is not None else ""
+                    if dtype == "text_delta":
+                        piece = getattr(delta, "text", "") or ""
+                        text += piece
+                        if idx in blocks and blocks[idx].type == "text":
+                            blocks[idx].text += piece
+                        _push(progress, "assistant_delta", {"text": piece})
+                    elif dtype == "input_json_delta":
+                        piece = getattr(delta, "partial_json", "") or ""
+                        if idx in blocks:
+                            blocks[idx].text += piece
+                    elif dtype == "thinking_delta":
+                        piece = getattr(delta, "thinking", None) or getattr(delta, "text", "") or ""
+                        if piece:
+                            _push(progress, "reasoning_delta", {"text": piece})
+                elif et == "message_delta":
+                    delta = getattr(event, "delta", None)
+                    sr = getattr(delta, "stop_reason", None) if delta is not None else None
+                    if sr:
+                        stop_reason = sr
+                    ev_usage = getattr(event, "usage", None)
+                    if ev_usage is not None:
+                        extra = _usage_from_ant(ev_usage)
+                        if extra.output_tokens:
+                            usage.output_tokens = extra.output_tokens
+                        if extra.input_tokens:
+                            usage.input_tokens = extra.input_tokens
+    except Exception:
+        if cancel_check is not None and cancel_check():
+            aborted = True
+        else:
+            raise
+
+    tool_use_blocks: list[_AntBlock] = []
+    for idx in sorted(blocks):
+        b = blocks[idx]
+        if b.type != "tool_use":
+            continue
+        if b.text:
+            try:
+                parsed = json.loads(b.text)
+                if parsed:
+                    b.input = parsed
+            except json.JSONDecodeError:
+                pass
+        tool_use_blocks.append(b)
+    if not text:
+        text = "".join(b.text for b in blocks.values() if b.type == "text")
+    return text, tool_use_blocks, usage, stop_reason, aborted
+
+
 # ---------- callback signatures ----------
 
 # 当 LLM 决定调一个工具时，loop 会先问上层"这一步该走吗？"
@@ -1284,7 +1472,6 @@ def _loop_openai(
     # 策略: 检测到 length · 自动注入一条 user 继续指令 · 接着 LLM 把没说完的写完
     # 上限 3 次 · 防无限烧 token (每次 max_tokens 大的话 · 3 次累计输出可达 100K+)
     length_resume_count = 0
-    MAX_LENGTH_RESUME = 3
 
     # 卷四十四 · stuck detection 状态 · 跟踪最近 N 次 tool call signature
     # 同 signature 连续出现 ≥ THRESHOLD 次 · 注入 user 提示让 LLM 反思
@@ -1352,98 +1539,63 @@ def _loop_openai(
         usage = None
         finish_reason: str | None = None
 
-        # === wish-b6c1d8e3 phase 2b · 真终止 watcher ===
-        # cancel_check 仅在 chunk 间被调用 · LLM 长时间没 chunk 时 (思考 / 服务端慢) 进不去 ·
-        # 必须等 60s LLM_HTTP_TIMEOUT_SEC 才能 raise · BRO 体感是"⏹按了没用·要等一分钟"。
-        # 改: 起 watcher thread · 50ms 心跳 check cancel_event · 触发就强 close stream ·
-        # 让 for chunk in resp 立刻抛异常·走 abort path · 释放 session_lock。
-        # 副作用: chunk 内若 cancel_check fire 时 close stream 也是双保险 (无害)。
-        import threading as _th_for_watcher
-        _stream_done = _th_for_watcher.Event()
-
-        def _cancel_watcher():
-            while not _stream_done.is_set():
-                if cancel_check is not None and cancel_check():
-                    try:
-                        resp.close()
-                    except Exception:
-                        pass
-                    return
-                _stream_done.wait(timeout=0.05)
-
-        _watcher = _th_for_watcher.Thread(target=_cancel_watcher, daemon=True)
-        _watcher.start()
-
-        # 走 abort path 的两个理由: chunk 内 cancel_check fire / watcher close 引起异常
         _aborted_inline = False
 
         try:
-            for chunk in resp:
-                # cancel check inside stream loop · 中断 LLM 长 reasoning
-                if cancel_check is not None and cancel_check():
-                    # 优雅关闭流·尽量回收已经收到的 partial 文本
-                    try:
-                        resp.close()
-                    except Exception:
-                        pass
-                    _aborted_inline = True
-                    break
+            with _StreamCancelGuard(resp, cancel_check):
+                for chunk in resp:
+                    if cancel_check is not None and cancel_check():
+                        try:
+                            resp.close()
+                        except Exception:
+                            pass
+                        _aborted_inline = True
+                        break
 
-                # usage 只在最后一个 chunk 出现 (DeepSeek / OpenAI 都这样)
-                ch_usage = getattr(chunk, "usage", None)
-                if ch_usage is not None:
-                    usage = ch_usage
+                    ch_usage = getattr(chunk, "usage", None)
+                    if ch_usage is not None:
+                        usage = ch_usage
 
-                if not chunk.choices:
-                    continue
-                choice = chunk.choices[0]
-                delta = getattr(choice, "delta", None)
-                if delta is None:
-                    continue
+                    if not chunk.choices:
+                        continue
+                    choice = chunk.choices[0]
+                    delta = getattr(choice, "delta", None)
+                    if delta is None:
+                        continue
 
-                # reasoning_content delta (DeepSeek thinking)
-                rc_delta = getattr(delta, "reasoning_content", None)
-                if rc_delta:
-                    reasoning += rc_delta
-                    _push(progress, "reasoning_delta", {"text": rc_delta})
+                    rc_delta = getattr(delta, "reasoning_content", None)
+                    if rc_delta:
+                        reasoning += rc_delta
+                        _push(progress, "reasoning_delta", {"text": rc_delta})
 
-                # content delta (普通文本回复)
-                content_delta = getattr(delta, "content", None)
-                if content_delta:
-                    text += content_delta
-                    _push(progress, "assistant_delta", {"text": content_delta})
+                    content_delta = getattr(delta, "content", None)
+                    if content_delta:
+                        text += content_delta
+                        _push(progress, "assistant_delta", {"text": content_delta})
 
-                # tool_calls delta (按 index 累加 · arguments 是切片来的 JSON 字符串)
-                tcs_delta = getattr(delta, "tool_calls", None)
-                if tcs_delta:
-                    for tcd in tcs_delta:
-                        idx = getattr(tcd, "index", 0) or 0
-                        if idx not in tool_calls_acc:
-                            tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
-                        if getattr(tcd, "id", None):
-                            tool_calls_acc[idx]["id"] = tcd.id
-                        fn = getattr(tcd, "function", None)
-                        if fn is not None:
-                            if getattr(fn, "name", None):
-                                tool_calls_acc[idx]["name"] = fn.name
-                            if getattr(fn, "arguments", None):
-                                tool_calls_acc[idx]["arguments"] += fn.arguments
+                    tcs_delta = getattr(delta, "tool_calls", None)
+                    if tcs_delta:
+                        for tcd in tcs_delta:
+                            idx = getattr(tcd, "index", 0) or 0
+                            if idx not in tool_calls_acc:
+                                tool_calls_acc[idx] = {"id": "", "name": "", "arguments": ""}
+                            if getattr(tcd, "id", None):
+                                tool_calls_acc[idx]["id"] = tcd.id
+                            fn = getattr(tcd, "function", None)
+                            if fn is not None:
+                                if getattr(fn, "name", None):
+                                    tool_calls_acc[idx]["name"] = fn.name
+                                if getattr(fn, "arguments", None):
+                                    tool_calls_acc[idx]["arguments"] += fn.arguments
 
-                fr = getattr(choice, "finish_reason", None)
-                if fr:
-                    finish_reason = fr
-        except Exception as _stream_exc:
-            # watcher 强 close 引起的异常 (httpx.ReadError / RemoteProtocolError 等) ·
-            # 也可能是 LLM 服务端真错。 通过 cancel_check 区分:
+                    fr = getattr(choice, "finish_reason", None)
+                    if fr:
+                        finish_reason = fr
+        except Exception:
             if cancel_check is not None and cancel_check():
                 _aborted_inline = True
             else:
-                _stream_done.set()
-                _watcher.join(timeout=0.2)
                 raise
-        finally:
-            _stream_done.set()
-            _watcher.join(timeout=0.2)
 
         if _aborted_inline:
             final_text = text or "[OPUS aborted by BRO · partial only]"
@@ -1560,11 +1712,7 @@ def _loop_openai(
             })
             resume_user_entry = {
                 "role": "user",
-                "content": (
-                    "你刚才的回答被 max_tokens 截断了 · 请**从断点接着写**·不要重复前面已经说过的内容。"
-                    "如果还有工具要调·继续调。如果是文字回复·直接续上。"
-                    "目标: 让这次任务有完整结果。"
-                ),
+                "content": _LENGTH_RESUME_USER,
             }
             oai_messages.append(resume_user_entry)
             _commit(resume_user_entry)
@@ -1761,54 +1909,36 @@ def _loop_openai(
         #   根因: _tool_signature 只取 args 前 120 字符 · 同工具多次不同调用 args 开头
         #   相似（如 {"code": "import ..."}）会被误判成同一 signature · 累计计数就误报。
         if recent_signatures:
-            # 只看连续尾部: 从末尾往前数连续相同的 signature 个数
-            top_sig = recent_signatures[-1]
-            top_count = 1
-            for i in range(len(recent_signatures) - 2, -1, -1):
-                if recent_signatures[i] == top_sig:
-                    top_count += 1
-                else:
-                    break
-            if top_count >= _STUCK_REPEAT_THRESHOLD:
-                if stuck_inject_count < _STUCK_INJECT_CAP:
-                    stuck_inject_count += 1
-                    _push(progress, "stuck_detected", {
-                        "signature": top_sig,
-                        "repeat": top_count,
-                        "window": len(recent_signatures),
-                        "inject_count": stuck_inject_count,
-                        "cap": _STUCK_INJECT_CAP,
-                    })
-                    nudge_entry = {
-                        "role": "user",
-                        "content": _STUCK_NUDGE_PROMPT.format(
-                            signature=top_sig,
-                            repeat=top_count,
-                            window=len(recent_signatures),
-                        ),
-                    }
-                    oai_messages.append(nudge_entry)
-                    _commit(nudge_entry)
-                    # 清空窗口 · 让 LLM 有干净环境换思路
-                    recent_signatures.clear()
-                    continue  # 下一轮 LLM 看到 nudge 自纠
-                else:
-                    # 已经提示过 CAP 次还在重复 · 真死循环 · break
-                    final_text = (
-                        f"[OPUS 真的卡死了 · 已经提示 {_STUCK_INJECT_CAP} 次"
-                        f"还在重复调 `{top_sig}` ({top_count}/{len(recent_signatures)})]\n\n"
-                        f"BRO 这是 stuck 死锁·我自己绕不出来。可能原因:\n"
-                        f"  - 工具一直返同样的错·我没识别到\n"
-                        f"  - 我对当前任务的理解有偏差\n"
-                        f"  - args 里有某个字段我一直填错\n\n"
-                        f"建议你看一下最近 {len(recent_signatures)} 条 tool 调用·"
-                        f"告诉我换什么思路·或者直接说\"放弃这个 wish\"。"
-                    )
-                    _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
-                    stuck_entry = {"role": "assistant", "content": final_text}
-                    oai_messages.append(stuck_entry)
-                    _commit(stuck_entry)
-                    break
+            top_sig, top_count = _stuck_tail_count(recent_signatures)
+            action = _stuck_action(top_count, stuck_inject_count)
+            if action == "nudge":
+                stuck_inject_count += 1
+                _push(progress, "stuck_detected", {
+                    "signature": top_sig,
+                    "repeat": top_count,
+                    "window": len(recent_signatures),
+                    "inject_count": stuck_inject_count,
+                    "cap": _STUCK_INJECT_CAP,
+                })
+                nudge_entry = {
+                    "role": "user",
+                    "content": _STUCK_NUDGE_PROMPT.format(
+                        signature=top_sig,
+                        repeat=top_count,
+                        window=len(recent_signatures),
+                    ),
+                }
+                oai_messages.append(nudge_entry)
+                _commit(nudge_entry)
+                recent_signatures.clear()
+                continue
+            if action == "break":
+                final_text = _stuck_break_text(top_sig, top_count, len(recent_signatures))
+                _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
+                stuck_entry = {"role": "assistant", "content": final_text}
+                oai_messages.append(stuck_entry)
+                _commit(stuck_entry)
+                break
     else:
         # 卷四十三 · 撞 max_iterations 时·之前只设了局部 final_text·没 push 给前端
         # 也没 commit 到 oai_messages·BRO 看到的是"OPUS 安静地停下"——一脸懵
@@ -1876,6 +2006,9 @@ def _loop_anthropic(
     fail_circuit = _FailCircuit()
     circuit_break = False
     _fc_nudge_pending = False
+    recent_signatures: list[str] = []
+    stuck_inject_count = 0
+    length_resume_count = 0
 
     iteration = 0
     while iteration < max_iterations:
@@ -1908,16 +2041,30 @@ def _loop_anthropic(
             if _budget >= 1024:
                 kwargs["thinking"] = {"type": "enabled", "budget_tokens": _budget}
 
+        kwargs["stream"] = True
         resp = client.messages.create(**kwargs)
-        usage = resp.usage
-        turn_stats = UsageStats(
-            input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens,
-            cache_creation_tokens=getattr(usage, "cache_creation_input_tokens", 0) or 0,
-            cache_read_tokens=getattr(usage, "cache_read_input_tokens", 0) or 0,
+        text, tool_use_blocks, turn_stats, stop_reason, _aborted_inline = _consume_anthropic_stream(
+            resp, cancel_check, progress,
         )
+        if _aborted_inline:
+            final_text = text or "[OPUS aborted by BRO · partial only]"
+            _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
+            if text or tool_use_blocks:
+                _partial = []
+                if text:
+                    _partial.append({"type": "text", "text": text})
+                for _tu in tool_use_blocks:
+                    _partial.append({
+                        "type": "tool_use",
+                        "id": _tu.id,
+                        "name": _tu.name,
+                        "input": _tu.input or {},
+                    })
+                _pe = {"role": "assistant", "content": _partial}
+                ant_messages.append(_pe)
+                _commit(_pe)
+            break
         total.add(turn_stats)
-        # v2 · anthropic 路径同样喂真实 usage (wish-7f0adf2c · best-effort)
         try:
             from workers import memory_compression as _mc
             _mc.note_real_usage(turn_stats.input_tokens, ant_messages)
@@ -1931,21 +2078,40 @@ def _loop_anthropic(
             "iteration": iteration,
         })
 
-        text_blocks = [b for b in resp.content if b.type == "text"]
-        tool_use_blocks = [b for b in resp.content if b.type == "tool_use"]
-        text = "".join(b.text for b in text_blocks)
-
         if text:
             _push(progress, "assistant_text", {"text": text, "has_tool_calls": bool(tool_use_blocks)})
 
-        ant_assistant_entry = {
-            "role": "assistant",
-            "content": [_serialize_anthropic_block(b) for b in resp.content],
-        }
+        _content_out = []
+        if text:
+            _content_out.append({"type": "text", "text": text})
+        for _tu in tool_use_blocks:
+            _content_out.append({
+                "type": "tool_use",
+                "id": _tu.id,
+                "name": _tu.name,
+                "input": _tu.input or {},
+            })
+        ant_assistant_entry = {"role": "assistant", "content": _content_out}
         ant_messages.append(ant_assistant_entry)
         _commit(ant_assistant_entry)
 
-        if resp.stop_reason != "tool_use" or not tool_use_blocks:
+        if (
+            stop_reason == "max_tokens"
+            and not tool_use_blocks
+            and length_resume_count < MAX_LENGTH_RESUME
+        ):
+            length_resume_count += 1
+            _push(progress, "auto_resume", {
+                "reason": "length",
+                "count": length_resume_count,
+                "max": MAX_LENGTH_RESUME,
+                "note": f"上一轮 max_tokens 用光 · 自动续第 {length_resume_count}/{MAX_LENGTH_RESUME} 次",
+            })
+            ant_messages.append({"role": "user", "content": _LENGTH_RESUME_USER})
+            _commit(ant_messages[-1])
+            continue
+
+        if stop_reason != "tool_use" or not tool_use_blocks:
             final_text = text
             break
 
@@ -2061,6 +2227,11 @@ def _loop_anthropic(
                 "is_error": not result.ok,
             })
 
+            _sig_args = json.dumps(args, ensure_ascii=False) if isinstance(args, dict) else str(args or "")
+            recent_signatures.append(_tool_signature(name, _sig_args))
+            if len(recent_signatures) > _STUCK_WINDOW:
+                recent_signatures.pop(0)
+
             # 失败熔断器 (墨言 094 wish-d2c2aa9a) · 同类错误连续失败 → nudge 合并进 tool_results → 再撞硬 break
             _fc_action = fail_circuit.observe(result)
             if _fc_action == "nudge":
@@ -2124,8 +2295,46 @@ def _loop_anthropic(
                     "text": _FAIL_CIRCUIT_NUDGE_PROMPT.format(
                         count=fail_circuit.streak, category=fail_circuit.current),
                 }]
+        _stuck_nudge = False
+        _stuck_break = False
+        _top_sig, _top_count = "", 0
+        if recent_signatures:
+            _top_sig, _top_count = _stuck_tail_count(recent_signatures)
+            _st_act = _stuck_action(_top_count, stuck_inject_count)
+            _stuck_nudge = _st_act == "nudge"
+            _stuck_break = _st_act == "break"
+        if _stuck_nudge:
+            stuck_inject_count += 1
+            _push(progress, "stuck_detected", {
+                "signature": _top_sig,
+                "repeat": _top_count,
+                "window": len(recent_signatures),
+                "inject_count": stuck_inject_count,
+                "cap": _STUCK_INJECT_CAP,
+            })
+            _nudge = {
+                "type": "text",
+                "text": _STUCK_NUDGE_PROMPT.format(
+                    signature=_top_sig,
+                    repeat=_top_count,
+                    window=len(recent_signatures),
+                ),
+            }
+            _cur = ant_tool_entry["content"]
+            ant_tool_entry["content"] = (list(_cur) if isinstance(_cur, list) else [{"type": "text", "text": str(_cur)}]) + [_nudge]
+            ant_messages.append(ant_tool_entry)
+            _commit(ant_tool_entry)
+            recent_signatures.clear()
+            continue
         ant_messages.append(ant_tool_entry)
         _commit(ant_tool_entry)
+        if _stuck_break:
+            final_text = _stuck_break_text(_top_sig, _top_count, len(recent_signatures))
+            _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
+            _se = {"role": "assistant", "content": final_text}
+            ant_messages.append(_se)
+            _commit(_se)
+            break
     else:
         # 卷四十三 · 同 OpenAI 路径修法 · 撞 max_iterations 时 push + commit 让前端看到
         final_text = (

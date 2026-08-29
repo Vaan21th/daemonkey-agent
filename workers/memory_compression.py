@@ -46,6 +46,7 @@ SUMMARY_TAG_CLOSE = "</compaction-summary>"
 PRUNED_MARKER = "[已修剪工具结果 — "
 MIN_FOLD_TOKENS = 400            # 经济性: 可折叠区低于此 token 不值一次摘要调用
 TAIL_TOKEN_BUDGET = int(os.environ.get("OPUS_COMPACT_TAIL_TOKENS") or "16384")
+TAIL_USER_TURNS = int(os.environ.get("OPUS_TAIL_USER_TURNS") or "2")
 TAIL_MAX_WINDOW_FRAC = 0.5       # 尾部 token 预算不超窗口此比例
 PRUNE_MIN_CHARS = int(os.environ.get("OPUS_PRUNE_MIN_CHARS") or "1024")
 PRUNE_RATIO = float(os.environ.get("OPUS_COMPACT_PRUNE_RATIO") or "0.6")  # 先修剪档
@@ -335,6 +336,25 @@ def _is_compaction_summary(m: dict) -> bool:
         return False
     content = m.get("content")
     return isinstance(content, str) and content.lstrip().startswith(SUMMARY_TAG_OPEN)
+
+
+def tail_protect_index(msgs: list, user_turns: int | None = None) -> int:
+    """从尾往头数 N 个真 user 回合 · 返回该回合起点。整段 [i:] 不 diet / 不 prune。"""
+    n = TAIL_USER_TURNS if user_turns is None else user_turns
+    if n <= 0:
+        return len(msgs)
+    seen = 0
+    for i in range(len(msgs) - 1, -1, -1):
+        m = msgs[i]
+        if not isinstance(m, dict) or m.get("role") != "user":
+            continue
+        content = m.get("content") or ""
+        if isinstance(content, str) and content.lstrip().startswith(SUMMARY_TAG_OPEN):
+            continue
+        seen += 1
+        if seen >= n:
+            return i
+    return 0
 
 
 def _pinnable_user_turn(m: dict, ctx_window: int) -> bool:

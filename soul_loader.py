@@ -542,9 +542,16 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
     memories_path = soul_dir / MEMORIES_FILENAME
 
     skill_text = _skill_identity_excerpt(_read_text(skill_path))
-    memories_text = _read_text(memories_path)
-    if not _memories_has_facts(memories_text):
+    memories_raw = _read_text(memories_path)
+    memories_file_chars = len(memories_raw)
+    if not _memories_has_facts(memories_raw):
         memories_text = ""
+    else:
+        try:
+            from workers.memory_tiers import render_memory_tiers
+            memories_text = render_memory_tiers(memories_raw)
+        except Exception:
+            memories_text = memories_raw
 
     # 卷四十四 · daemon 工程专属铁律 (data/cognition/daemon_rules.md)
     # 优先级最高 · 拼在 preamble 之后 / SKILL.md 之前 · 让 OPUS 第一眼看到。
@@ -703,7 +710,7 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
         skill_path=skill_path,
         memories_path=memories_path,
         skill_chars=len(skill_text),
-        memories_chars=len(memories_text),
+        memories_chars=memories_file_chars,
     )
 
 
