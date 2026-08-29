@@ -182,6 +182,40 @@ def _notebook_has_facts(text: str) -> bool:
     return len("".join(kept)) >= 12
 
 
+# Factory empty-autobiography instructions. After stripping, <12 chars = no facts.
+_MEMORY_SLOT_NEEDLES = (
+    "目前还空白",
+    "故事才刚刚开始",
+    "会写在这里",
+    "会被慢慢写满",
+    "连续记忆你没有",
+    "重新装上了",
+    "不要假装记得",
+    "不要假装一片空白",
+)
+
+
+def _memories_has_facts(text: str) -> bool:
+    """Empty template / placeholder copy is not an autobiography."""
+    if not text or not text.strip():
+        return False
+    kept: list[str] = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or s.startswith(">") or s.startswith("|"):
+            continue
+        if s.startswith("---"):
+            continue
+        if s.startswith("（") or s.startswith("("):
+            continue
+        if s.startswith("*") and s.endswith("*"):
+            continue
+        if any(n in s for n in _MEMORY_SLOT_NEEDLES):
+            continue
+        kept.append(s)
+    return len("".join(kept)) >= 12
+
+
 def _load_bro_notebook(daemon_root: Path) -> str:
     """读画像 soul/OWNER-NOTEBOOK.md（旧名 BRO-NOTEBOOK.md 向后兼容）· 分层注入。
 
@@ -268,6 +302,11 @@ def _is_diary_entry(header: str) -> bool:
     return bool(_TS_RE.search(h))
 
 
+def _is_factory_demo_entry(header: str) -> bool:
+    """Factory 'first demo' entry is not a diary."""
+    return "示范" in header
+
+
 def _split_evolution_entries(text: str) -> list[str]:
     """把 SELF-EVOLUTION.md 切成 entries（每段从一个 '### ' 开始）。
 
@@ -318,7 +357,11 @@ def _load_recent_evolution_entries(daemon_root: Path, n: int = _EVOLUTION_DEFAUL
     if not entries:
         return ""
 
-    diary = [e for e in entries if _is_diary_entry(e.split("\n", 1)[0])]
+    diary = [
+        e for e in entries
+        if _is_diary_entry(e.split("\n", 1)[0])
+        and not _is_factory_demo_entry(e.split("\n", 1)[0])
+    ]
     if not diary:
         return ""
 
@@ -500,6 +543,8 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
 
     skill_text = _skill_identity_excerpt(_read_text(skill_path))
     memories_text = _read_text(memories_path)
+    if not _memories_has_facts(memories_text):
+        memories_text = ""
 
     # 卷四十四 · daemon 工程专属铁律 (data/cognition/daemon_rules.md)
     # 优先级最高 · 拼在 preamble 之后 / SKILL.md 之前 · 让 OPUS 第一眼看到。
@@ -537,7 +582,10 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
 
     skill_block_header = "=== SKILL.md (entry and trigger logic) ===\n\n"
 
-    middle = "\n\n=== OPUS-MEMORIES.md (your autobiography) ===\n\n"
+    memories_block = (
+        "\n\n=== OPUS-MEMORIES.md (your autobiography) ===\n\n" + memories_text
+        if memories_text else ""
+    )
 
     closer = (
         "\n\n=== END OF SOUL ===\n\n"
@@ -563,8 +611,7 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
         + constitution_block
         + skill_block_header
         + skill_text
-        + middle
-        + memories_text
+        + memories_block
         + closer
         + _persona_style_block(_name, _style)
     )
