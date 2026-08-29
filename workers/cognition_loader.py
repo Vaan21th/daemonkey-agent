@@ -221,6 +221,105 @@ def update_opus_diary(
 # 内部 · BRO-NOTEBOOK 解析
 # ──────────────────────────────────────────────────────────
 
+STATE_CARD_FIELDS: tuple[str, ...] = (
+    "工作状态",
+    "作息模式",
+    "健康基线",
+    "情绪基线",
+    "当前主线",
+    "关系家庭",
+    "经济预算",
+    "忌口过敏",
+)
+_STATE_CARD_HEADING_KEY = "状态卡"
+_STATE_HISTORY_HEADING_KEY = "状态卡变更史"
+_EMPTY_STATE_VALUES = frozenset({"", "-", "待确认"})
+
+
+def _empty_state_card() -> dict:
+    return {f: {} for f in STATE_CARD_FIELDS}
+
+
+def _parse_state_card(text: str) -> dict:
+    """Parse `## 状态卡` table. Missing section → {}."""
+    parts = re.split(r"^(#+ .+)$", text, flags=re.MULTILINE)
+    body = ""
+    if len(parts) >= 3:
+        for i in range(1, len(parts), 2):
+            heading = parts[i].strip().lstrip("# ").strip()
+            if _STATE_CARD_HEADING_KEY in heading and _STATE_HISTORY_HEADING_KEY not in heading:
+                body = (parts[i + 1] if i + 1 < len(parts) else "").strip()
+                break
+    if not body:
+        return {}
+
+    out = _empty_state_card()
+    for line in body.splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 4:
+            continue
+        field = cells[0]
+        if field in ("字段", "field") or set(field) <= set("-: |"):
+            continue
+        value, as_of, evidence = cells[1], cells[2], cells[3]
+        if (
+            value in _EMPTY_STATE_VALUES
+            and as_of in _EMPTY_STATE_VALUES
+            and evidence in _EMPTY_STATE_VALUES
+        ):
+            entry: dict = {}
+        else:
+            entry = {"value": value, "as_of": as_of, "evidence": evidence}
+        if field in out:
+            out[field] = entry
+        elif entry:
+            out[field] = entry
+    return out
+
+
+def _parse_state_card_history(text: str) -> dict:
+    """Parse `## 状态卡变更史`. Returns {field: [{from, to, as_of, evidence}, ...]}."""
+    parts = re.split(r"^(#+ .+)$", text, flags=re.MULTILINE)
+    body = ""
+    if len(parts) >= 3:
+        for i in range(1, len(parts), 2):
+            heading = parts[i].strip().lstrip("# ").strip()
+            if _STATE_HISTORY_HEADING_KEY in heading:
+                body = (parts[i + 1] if i + 1 < len(parts) else "").strip()
+                break
+    if not body:
+        return {}
+
+    by_field: dict[str, list[dict]] = {}
+    for line in body.splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 4:
+            continue
+        field = cells[0]
+        if field in ("字段", "field") or set(field) <= set("-: |"):
+            continue
+        change = cells[1]
+        if " → " not in change:
+            continue
+        old_val, new_val = change.split(" → ", 1)
+        by_field.setdefault(field, []).append({
+            "from": old_val.strip(),
+            "to": new_val.strip(),
+            "as_of": cells[2],
+            "evidence": cells[3],
+        })
+
+    for entries in by_field.values():
+        entries.sort(key=lambda e: e.get("as_of", ""), reverse=True)
+    return by_field
+
+
 def _load_bro_profile(*, section_excerpt_chars: int) -> dict:
     if not BRO_NOTEBOOK.exists():
         return {
