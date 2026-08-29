@@ -435,6 +435,34 @@ def _run_tool(spec, args, progress, cancel_check):
         reset_cancel_check(ctok)
 
 
+def _cancel_requested(cancel_check) -> bool:
+    try:
+        return bool(cancel_check and cancel_check())
+    except Exception:
+        return False
+
+
+def _should_stub_remaining(aborted, cancel_check) -> bool:
+    return bool(aborted) or _cancel_requested(cancel_check)
+
+
+def _is_user_abort(result) -> bool:
+    err = (getattr(result, "error", None) or "").lower()
+    return "aborted by user" in err or err.strip() == "aborted"
+
+
+def _abort_stub() -> ToolResult:
+    return ToolResult(ok=False, output="", error="aborted by user")
+
+
+def _trace_abort(reason: str) -> None:
+    try:
+        from workers.turn_trace import emit as _ab
+        _ab("abort", reason=reason)
+    except Exception:
+        pass
+
+
 def _result_preview(result: ToolResult, max_chars: int = 300, tool_name: str = "") -> str:
     out = result.output or ""
     # replan (顾问施工单/验收) 是决策依据 · 用户要完整看 · 不截断 (卷八十一续 · BRO 反馈)
@@ -1576,7 +1604,13 @@ def _loop_openai(
             name, args = _rewrite_tool_use(name, args)
             spec = REGISTRY.get(name)
 
-            if spec is None:
+            if _should_stub_remaining(aborted, cancel_check):
+                if not aborted:
+                    aborted = True
+                    _trace_abort("stop")
+                result = _abort_stub()
+                _push(progress, "tool_call", {"name": name, "summary": "(aborted)", "tier": "abort"})
+            elif spec is None:
                 from agent_tools._desc_budget import unknown_tool_error
                 result = ToolResult(ok=False, output="", error=unknown_tool_error(name))
                 _push(progress, "tool_call", {"name": name, "summary": "(unknown tool)", "tier": "?"})
@@ -1601,12 +1635,8 @@ def _loop_openai(
                 decision = _call_confirm(confirm, spec, args, text, tool_call_id=(tc.get("id") or f"call_{iteration}_{idx}"))
                 if decision == "abort":
                     aborted = True
-                    try:
-                        from workers.turn_trace import emit as _ab
-                        _ab("abort", reason="confirm")
-                    except Exception:
-                        pass
-                    break
+                    _trace_abort("confirm")
+                    result = _abort_stub()
                 elif decision == "skip":
                     result = ToolResult(
                         ok=False, output="",
@@ -1638,6 +1668,10 @@ def _loop_openai(
                             _pet_write_pulse_end(name, ok=result.ok, summary=_pulse_summary(result))
                         except Exception:
                             pass
+
+            if (not aborted) and (_is_user_abort(result) or _cancel_requested(cancel_check)):
+                aborted = True
+                _trace_abort("stop")
 
             _imgs = _take_image_urls(result)
             _open_path = _take_open_path(result)
@@ -1676,6 +1710,20 @@ def _loop_openai(
                 recent_signatures.pop(0)
 
         if aborted:
+            _seen = {m.get("tool_call_id") for m in oai_messages if m.get("role") == "tool"}
+            for _m in oai_messages:
+                if _m.get("role") == "assistant" and _m.get("tool_calls"):
+                    for _tc in _m["tool_calls"]:
+                        _tid = (_tc.get("id") or "") if isinstance(_tc, dict) else ""
+                        if _tid and _tid not in _seen:
+                            _tm = {
+                                "role": "tool",
+                                "tool_call_id": _tid,
+                                "content": "aborted by user",
+                            }
+                            oai_messages.append(_tm)
+                            _commit(_tm)
+                            _seen.add(_tid)
             final_text = text or "[OPUS aborted by BRO]"
             break
         if circuit_break:
@@ -1924,7 +1972,13 @@ def _loop_anthropic(
             name, args = _rewrite_tool_use(tu.name, tu.input or {})
             spec = REGISTRY.get(name)
 
-            if spec is None:
+            if _should_stub_remaining(aborted, cancel_check):
+                if not aborted:
+                    aborted = True
+                    _trace_abort("stop")
+                result = _abort_stub()
+                _push(progress, "tool_call", {"name": name, "summary": "(aborted)", "tier": "abort"})
+            elif spec is None:
                 from agent_tools._desc_budget import unknown_tool_error
                 result = ToolResult(ok=False, output="", error=unknown_tool_error(name))
                 _push(progress, "tool_call", {"name": name, "summary": "(unknown tool)", "tier": "?"})
@@ -1949,12 +2003,8 @@ def _loop_anthropic(
                 decision = _call_confirm(confirm, spec, args, text, tool_call_id=getattr(tu, "id", "") or "")
                 if decision == "abort":
                     aborted = True
-                    try:
-                        from workers.turn_trace import emit as _ab
-                        _ab("abort", reason="confirm")
-                    except Exception:
-                        pass
-                    break
+                    _trace_abort("confirm")
+                    result = _abort_stub()
                 elif decision == "skip":
                     result = ToolResult(
                         ok=False, output="",
@@ -1985,6 +2035,10 @@ def _loop_anthropic(
                             _pet_write_pulse_end(tu.name, ok=result.ok, summary=_pulse_summary(result))
                         except Exception:
                             pass
+
+            if (not aborted) and (_is_user_abort(result) or _cancel_requested(cancel_check)):
+                aborted = True
+                _trace_abort("stop")
 
             _imgs = _take_image_urls(result)
             _open_path = _take_open_path(result)
