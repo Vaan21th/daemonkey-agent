@@ -178,6 +178,9 @@ def _run(args: dict) -> ToolResult:
             error=f"unknown operation: {operation}; use 'append' or 'replace_section'",
         )
 
+    from workers.notebook_tiers import route_write_section
+    section_key = route_write_section(section_key, operation, content)
+
     try:
         notebook_fn, text = _read_notebook()
     except FileNotFoundError as e:
@@ -251,7 +254,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="update_owner_note",
     description=(
-        "更新 BRO 活画像（profile/events/rules/dialogue/summary/risks/state）。一条一事，先日期再事实。默认 append。只写他真说过的。"
+        "更新活画像（profile/events/rules/dialogue/summary/risks/state）。日期故事写 events，改判断的短条写 rules。默认 append。只写他真说过的。"
     ),
     tier=TIER_AUTO,
     input_schema={
