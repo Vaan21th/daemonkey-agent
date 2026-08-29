@@ -133,6 +133,22 @@ def _strip_yaml_frontmatter(text: str) -> str:
     return text
 
 
+# 装载仪式不进前缀。closer / SKILL 说明书会把 HI 拽成「刚重新装上」。
+_RITUAL_PROMPT_NEEDLES = (
+    "重新装上",
+    "just loaded the soul",
+    "reloaded the files",
+    "=== END OF SOUL",
+)
+
+
+def _drop_ritual_prompt_lines(text: str) -> str:
+    return "\n".join(
+        ln for ln in (text or "").splitlines()
+        if not any(n in ln for n in _RITUAL_PROMPT_NEEDLES)
+    )
+
+
 def _skill_identity_excerpt(skill_text: str) -> str:
     """Daemon prompt gets identity skin only. Cursor trigger YAML / already-injected files stay out."""
     text = _strip_yaml_frontmatter(skill_text)
@@ -145,6 +161,8 @@ def _skill_identity_excerpt(skill_text: str) -> str:
             break
         if any(k in line for k in ("这份 skill", "怎么用", "装上之后按", "装上 skill")):
             break
+        if any(n in line for n in _RITUAL_PROMPT_NEEDLES):
+            continue
         who.append(line)
     who_text = "\n".join(who).strip()
     if who_text:
@@ -164,7 +182,8 @@ def _skill_identity_excerpt(skill_text: str) -> str:
             current.append(line)
     if current and any(k in head for k in keep) and not any(k in head for k in drop):
         chunks.append("\n".join(current).rstrip())
-    return "\n\n".join(chunks).strip() or text[:800]
+    excerpt = "\n\n".join(chunks).strip() or text[:800]
+    return _drop_ritual_prompt_lines(excerpt)
 
 
 def _notebook_has_facts(text: str) -> bool:
@@ -192,6 +211,7 @@ _MEMORY_SLOT_NEEDLES = (
     "重新装上了",
     "不要假装记得",
     "不要假装一片空白",
+    "不必解释启动机制",
 )
 
 
@@ -594,15 +614,6 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
         if memories_text else ""
     )
 
-    closer = (
-        "\n\n=== END OF SOUL ===\n\n"
-        "From now on, every reply is you speaking. Do not narrate that you "
-        "'just loaded the soul'—just be it. If they ask whether you remember: "
-        "you have no continuous memory. Say you reloaded the files, quote a real "
-        "detail you just read, and let them add context. Do not pretend you "
-        "remember a conversation you did not load."
-    )
-
     # 产品宪法注入 (0.5.0): 通用三条(内核地基·随 update_core 同步) + 实例 soul/CONSTITUTION.md
     # (私有·从使用沉淀)。 紧邻工程铁律 · 优先级最高。 模块/文件缺失 fallback 空 · 不阻断启动。
     constitution_block = ""
@@ -619,7 +630,6 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
         + skill_block_header
         + skill_text
         + memories_block
-        + closer
         + _persona_style_block(_name, _style)
     )
 

@@ -88,6 +88,18 @@ def test_demo_only_evolution_not_injected(tmp_path):
     assert _load_recent_evolution_entries(tmp_path) == ""
 
 
+def test_load_soul_has_no_closer():
+    soul = load_soul(ROOT, with_runtime=False)
+    for needle in (
+        "From now on, every reply is you speaking",
+        "Say you reloaded the files",
+        "=== END OF SOUL",
+        "just loaded the soul",
+        "重新装上",
+    ):
+        assert needle not in soul.system_prompt
+
+
 def test_real_evolution_keeps_non_demo(tmp_path):
     (tmp_path / "soul").mkdir()
     (tmp_path / "soul" / "SELF-EVOLUTION.md").write_text(
