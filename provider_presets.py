@@ -408,28 +408,37 @@ def safe_max_tokens(requested, model_id: str) -> int:
     return req
 
 
-def context_window_for(model_id: str) -> int:
-    """按 model_id 查 context_window · 给 UI 显示用 · 找不到返 0."""
+def _recommended_model(model_id: str) -> Optional[dict]:
+    """精确 id 优先 · 否则最长前缀 (flash-vision-exp → deepseek-v4-flash)。"""
     if not model_id:
-        return 0
-    model_lower = model_id.lower()
+        return None
+    key = model_id.lower()
+    best: Optional[dict] = None
+    best_len = -1
     for preset in PRESETS:
         for m in preset.recommended_models:
-            if m.get("id", "").lower() == model_lower:
-                return int(m.get("context_window") or 0)
-    return 0
+            mid = (m.get("id") or "").lower()
+            if not mid:
+                continue
+            if key == mid:
+                return m
+            if key.startswith(mid + "-") or key.startswith(mid + "."):
+                if len(mid) > best_len:
+                    best = m
+                    best_len = len(mid)
+    return best
+
+
+def context_window_for(model_id: str) -> int:
+    """按 model_id 查 context_window · 给 UI 显示用 · 找不到返 0."""
+    m = _recommended_model(model_id)
+    return int(m.get("context_window") or 0) if m else 0
 
 
 def max_output_for(model_id: str) -> int:
     """按 model_id 查 max_output 上限 · 给 UI 限制用户输入用."""
-    if not model_id:
-        return 0
-    model_lower = model_id.lower()
-    for preset in PRESETS:
-        for m in preset.recommended_models:
-            if m.get("id", "").lower() == model_lower:
-                return int(m.get("max_output") or 0)
-    return 0
+    m = _recommended_model(model_id)
+    return int(m.get("max_output") or 0) if m else 0
 
 
 def default_max_tokens_for(model_id: str) -> int:
@@ -438,14 +447,8 @@ def default_max_tokens_for(model_id: str) -> int:
     后台 turn (定时任务/未来需长输出的自驱任务) 该用这个·而不是 proactive 搭话的小常量——
     搭话一句话 2048 够·但生成完整文档/报告 2048 会被截断 (卷七十四续二十九事故)。
     """
-    if not model_id:
-        return 0
-    model_lower = model_id.lower()
-    for preset in PRESETS:
-        for m in preset.recommended_models:
-            if m.get("id", "").lower() == model_lower:
-                return int(m.get("max_tokens_default") or 0)
-    return 0
+    m = _recommended_model(model_id)
+    return int(m.get("max_tokens_default") or 0) if m else 0
 
 
 def guess_preset_id(base_url: str, provider_kind: str = "openai") -> str:

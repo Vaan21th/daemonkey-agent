@@ -426,7 +426,7 @@ SPEC = ToolSpec(
             },
             "cwd": {
                 "type": "string",
-                "description": "Working directory (relative paths resolve from OPUS-DAEMON root). Default: project root.",
+                "description": "Working directory (relative paths resolve from Daemonkey root). Default: project root.",
             },
             "timeout": {
                 "type": "integer",

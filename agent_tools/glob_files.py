@@ -31,6 +31,7 @@ MAX_RESULTS = 300
 _SKIP_PARTS = {
     ".git", ".venv", "node_modules", "__pycache__", "site-packages",
     "_backups", "browser_profile_standalone", ".pytest_cache",
+    "edge_cdp_profile", "webview2_main", "EBWebView", ".npm-cache",
 }
 
 
@@ -50,27 +51,32 @@ def _skip(rel: str) -> bool:
     return any(part in _SKIP_PARTS for part in Path(rel).parts)
 
 
-def _try_rg(base: Path, pattern: str) -> tuple[bool, list[str]]:
-    """rg --files 列全部文件 · Python 侧 fnmatch 过滤 (rg 的 -g 语义跟 Path.glob 不完全一致·统一交给 fnmatch)。"""
+def _try_rg(base: Path, pattern: str) -> tuple[str, list[str]]:
+    """status: ok / missing / timeout / error"""
     try:
         proc = subprocess.run(
             ["rg", "--files", str(base)],
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=20, **no_window_kwargs(),
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False, []
+    except FileNotFoundError:
+        return "missing", []
+    except subprocess.TimeoutExpired:
+        return "timeout", []
     if proc.returncode not in (0, 1):
-        return False, []
+        return "error", []
     files = [ln.strip() for ln in (proc.stdout or "").splitlines() if ln.strip()]
-    return True, files
+    return "ok", files
 
 
 def _rglob_fallback(base: Path) -> list[str]:
     out = []
     for p in base.rglob("*"):
-        if p.is_file():
-            out.append(str(p))
+        if not p.is_file():
+            continue
+        if any(part in _SKIP_PARTS for part in p.parts):
+            continue
+        out.append(str(p))
     return out
 
 
@@ -84,13 +90,19 @@ def _run(args: dict) -> ToolResult:
     if not base.is_absolute():
         base = ROOT / base
     base = base.resolve()
+    try:
+        base.relative_to(ROOT.resolve())
+    except ValueError:
+        return ToolResult(ok=False, output="", error="path 必须在工程根内")
     if not base.exists():
         return ToolResult(ok=False, output="", error=f"path not found: {base}")
 
     norm = _norm(pattern)
 
-    ok, files = _try_rg(base, pattern)
-    if not ok:
+    status, files = _try_rg(base, pattern)
+    if status == "timeout":
+        return ToolResult(ok=False, output="", error="glob timed out (20s) · 把 path 收到子目录再找")
+    if status != "ok":
         files = _rglob_fallback(base)
 
     # 统一用 fnmatch 过滤 (相对 base 的 posix 路径 + 纯文件名两种都试·命中其一即可)
@@ -102,6 +114,8 @@ def _run(args: dict) -> ToolResult:
         except ValueError:
             rel = fp.name
         if _skip(rel):
+            continue
+        if fp.name.startswith(".env"):
             continue
         if fnmatch.fnmatch(rel, norm) or fnmatch.fnmatch(fp.name, pattern):
             matched.append(fp)

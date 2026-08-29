@@ -429,3 +429,48 @@ def _normalize_pricing(p) -> dict | None:
         "note": (p.get("note") or "").strip()[:200],
     }
     return out if (out["input"] is not None or out["output"] is not None) else None
+
+
+def _normalize_context_window(v) -> int | None:
+    """用户填的窗户 · 空/0 = 未设 (跟目录走) · 钳在 1024–1000 万。"""
+    if v in (None, "", 0, "0"):
+        return None
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return None
+    if n <= 0:
+        return None
+    return max(1024, min(n, 10_000_000))
+
+
+def window_for_model(model_id: str) -> int:
+    """这条 model id 在用户配置里填过窗户就返回 · 否则 0。
+
+    当前 active 且 model 对得上优先 · 否则任一条同 id。
+    """
+    key = (model_id or "").strip().lower()
+    if not key:
+        return 0
+    try:
+        data = load_configs()
+    except Exception:
+        return 0
+    configs = data.get("configs") or []
+    active_id = data.get("active_id")
+
+    def _cw(c: dict) -> int:
+        n = _normalize_context_window(c.get("context_window"))
+        return n or 0
+
+    for c in configs:
+        if c.get("id") == active_id and (c.get("model") or "").strip().lower() == key:
+            n = _cw(c)
+            if n:
+                return n
+    for c in configs:
+        if (c.get("model") or "").strip().lower() == key:
+            n = _cw(c)
+            if n:
+                return n
+    return 0

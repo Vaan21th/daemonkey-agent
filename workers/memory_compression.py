@@ -34,7 +34,7 @@ DEFAULT_KEEP_LAST_N = 8          # 保留最近 N 条不压缩（模型窗口未
 MIN_KEEP_LAST_N = 4              # 自适应 keep_last_n 硬下限
 MAX_KEEP_LAST_N = 20             # 自适应 keep_last_n 硬上限
 MIN_MESSAGES_TO_COMPRESS = 12    # 总数少于此不压缩（工具手动触发用）
-AUTO_COMPRESS_THRESHOLD = 30     # 自动压缩触发阈值（消息数 · 模型窗口未知时 fallback）
+AUTO_COMPRESS_THRESHOLD = 30     # 遗留常量 · 摘要开火不再数条数（认不出窗户走绝对线）
 COOLDOWN_TURNS = 5               # 两次自动压缩之间至少隔 N 轮
 _TOK_SAFETY_MULT = 1.25          # 估算保守系数 · 防跨 tokenizer 低估 (DeepSeek tokenizer ≠ cl100k_base)
 MAX_RENDER_CHARS = 120000         # 摘要 LLM 输入上限 (v2: 60K→120K · 超限保尾弃头)
@@ -55,6 +55,9 @@ PIN_FIRST_USER_WINDOW_FRAC = 0.15
 MAX_CONSECUTIVE_COMPACTS = 2     # 连续压缩仍超阈值 → 暂停自动压缩 (防每轮重建缓存)
 _TOK_PER_CHAR_FALLBACK = 0.35    # CJK 偏多·介于 Go 0.25 与 1.0 之间
 DEFAULT_ABS_CAP_TOKENS = 256_000  # 0.8.8 · 压缩绝对线: 大窗口(1M)模型普通会话到不了 70% → 按体验拐点硬触发
+PRUNE_HISTORY_PRESSURE = int(os.environ.get("OPUS_PRUNE_HISTORY_TOKENS") or "40000")  # 历史过这线先免费剪工具
+MIN_PRUNE_SAVED_CHARS = int(os.environ.get("OPUS_PRUNE_MIN_SAVED_CHARS") or "40000")  # 省不够就不动盘 (护缓存)
+_PREFIX_TOK_CACHE: dict = {"n": 0, "t": 0.0}
 
 SUMMARY_MODEL_HINT = (
     "把下面的对话历史压缩成结构化简报。规则：\n"
@@ -84,8 +87,11 @@ def _state() -> dict:
             "last_compression_turn": -COOLDOWN_TURNS,
             "compression_count": 0,
             "consecutive_compacts": 0,   # v2 · 连续压缩计数 (防每轮重建缓存 · wish-7f0adf2c)
+            "last_prune_turn": -COOLDOWN_TURNS,
         }
         _SESSION_STATE.set(st)
+        return st
+    st.setdefault("last_prune_turn", -COOLDOWN_TURNS)
     return st
 
 
@@ -357,6 +363,35 @@ def tail_protect_index(msgs: list, user_turns: int | None = None) -> int:
     return 0
 
 
+def estimate_prefix_tokens() -> int:
+    """稳定前缀 (system + tools json) token · 30s 缓存。失败返 0 不挡主路径。"""
+    import time as _time
+    now = _time.monotonic()
+    if _PREFIX_TOK_CACHE["n"] and now - _PREFIX_TOK_CACHE["t"] < 30:
+        return int(_PREFIX_TOK_CACHE["n"])
+    try:
+        import json
+        from pathlib import Path
+        from soul_loader import load_soul
+        root = Path(__file__).resolve().parent.parent
+        soul = load_soul(root, with_runtime=True)
+        sys_tok = _estimate_tokens([{"role": "system", "content": soul.system_prompt or ""}])
+        tools_tok = 0
+        try:
+            from tool_loop import _specs_for_llm, to_openai_tools
+            blob = json.dumps(to_openai_tools(_specs_for_llm(None)), ensure_ascii=False)
+            enc = _get_tiktoken_encoder()
+            tools_tok = len(enc.encode(blob)) if enc else max(1, int(len(blob) * _tok_per_char()))
+        except Exception:
+            tools_tok = 0
+        n = int(sys_tok + tools_tok)
+        _PREFIX_TOK_CACHE["n"] = n
+        _PREFIX_TOK_CACHE["t"] = now
+        return n
+    except Exception:
+        return int(_PREFIX_TOK_CACHE["n"] or 0)
+
+
 def _pinnable_user_turn(m: dict, ctx_window: int) -> bool:
     """用户说的一句话能否原样保留 (不被折叠进摘要)。
 
@@ -431,14 +466,35 @@ def _tail_start(msgs: list[dict], head: int, budget_tokens: int, min_keep: int =
 # ---------- 窗口查询 ----------
 
 def _get_context_window(model_id: Optional[str]) -> int:
-    """查模型上下文窗口 · 拿不到返 0（上层退化到老逻辑）。"""
+    """查上下文窗户 · 用户配置优先 · 其次推荐目录 · 都没有返 0。"""
     if not model_id:
         return 0
+    try:
+        from workers.provider_configs import window_for_model
+        n = window_for_model(model_id)
+        if n > 0:
+            return n
+    except Exception:
+        pass
     try:
         from provider_presets import context_window_for
         return context_window_for(model_id)
     except Exception:
         return 0
+
+
+def _compact_threshold(ctx_window: int, prefix: int) -> int:
+    """摘要开火线: 有窗户取 min(窗×ratio, 前缀+绝对线) · 没有就前缀+25.6 万。
+
+    前缀已经 ≥ 窗×ratio（视觉 16K 等）· 压历史救不了 400 · 改走绝对线，避免每轮空转摘要。
+    """
+    abs_line = prefix + _get_abs_cap()
+    if ctx_window <= 0:
+        return abs_line
+    window_line = int(ctx_window * _get_ratio())
+    if prefix >= window_line:
+        return abs_line
+    return min(window_line, abs_line)
 
 
 def _get_ratio() -> float:
@@ -479,19 +535,15 @@ def token_budget_check(
     messages: list[dict],
     model_id: Optional[str] = None,
 ) -> bool:
-    """判断该不该自动压缩 (三触发: token 预算 / 消息数 / env 阈值 · 任一满足触发)
+    """判断该不该自动压缩。
 
     触发优先级:
-      1. env OPUS_AUTO_COMPACT_THRESHOLD 显式设了 → 用它（最高优先·保持向后兼容）
-      2. model_id 已知 + context_window 能查到 → 阈值 = context_window × ratio
-      3. 退化 → 消息数 >= AUTO_COMPRESS_THRESHOLD (30)
+      1. env OPUS_AUTO_COMPACT_THRESHOLD 显式设了 → 用它
+      2. token 预算: 历史+前缀 ≥ min(窗户×ratio, 前缀+25.6 万)
+         认不出窗户 → 只走前缀+25.6 万 · 不再数 30 条
+         前缀已经 ≥ 窗户×ratio → 压历史救不了窗 · 改走绝对线（防小窗空转摘要）
 
-    都得过 cooldown (距上次压缩 >= COOLDOWN_TURNS 轮 · 防热抖动)
-
-    返回 True → 上层该调 auto_compress()。
-
-    wish-83fe7c7b · 卷五十四:
-      加 model_id 参数 · 按模型窗口动态算触发阈值 · 替掉写死的 30 条。
+    都得过 cooldown。返回 True → 上层该调 auto_compress()。
     """
     st = _state()
 
@@ -512,31 +564,23 @@ def token_budget_check(
     except (ValueError, TypeError):
         pass
 
-    # 2. 模型窗口动态阈值 (0.8.8: min(窗口比例, 绝对线) · 治大窗口普通会话永不压缩)
+    # 2. token 预算 · 认不出窗户也走绝对线 (不再数 30 条)
     ctx_window = _get_context_window(model_id)
-    if ctx_window > 0:
-        ratio = _get_ratio()
-        threshold = min(int(ctx_window * ratio), _get_abs_cap())
-        estimated = _estimate_tokens(messages)
-        _hit = estimated >= threshold
-        if not _hit and len(messages) >= 200 and estimated >= threshold * 0.5:
-            # wish-8f122254 · 条数爆了 + 估算逼近阈值一半 → 跨 tokenizer 低估漏网 · 强制触发
-            _hit = True
-        if not _hit:
-            st["consecutive_compacts"] = 0   # v2 · 估算低于阈值 → 连续压缩计数清零
-            return False
-        if st["consecutive_compacts"] >= MAX_CONSECUTIVE_COMPACTS:
-            # v2 · 连续压缩仍超阈值 → 暂停自动压缩 (防每轮重建缓存 · wish-7f0adf2c)
-            return False
-        turns_since_last = len(messages) - st["last_compression_turn"]
-        return turns_since_last >= COOLDOWN_TURNS
-
-    # 3. 退化 · 消息数阈值
-    if len(messages) >= AUTO_COMPRESS_THRESHOLD:
-        turns_since_last = len(messages) - st["last_compression_turn"]
-        return turns_since_last >= COOLDOWN_TURNS
-
-    return False
+    prefix = estimate_prefix_tokens()
+    estimated = _estimate_tokens(messages)
+    total = estimated + prefix
+    threshold = _compact_threshold(ctx_window, prefix)
+    _hit = total >= threshold
+    if not _hit and len(messages) >= 200 and estimated >= threshold * 0.5:
+        # wish-8f122254 · 条数爆了 + 估算逼近阈值一半 → 跨 tokenizer 低估漏网
+        _hit = True
+    if not _hit:
+        st["consecutive_compacts"] = 0
+        return False
+    if st["consecutive_compacts"] >= MAX_CONSECUTIVE_COMPACTS:
+        return False
+    turns_since_last = len(messages) - st["last_compression_turn"]
+    return turns_since_last >= COOLDOWN_TURNS
 
 
 def _generate_summary(
@@ -715,6 +759,32 @@ def prune_stale_tool_results(messages: list[dict]) -> tuple[list[dict], dict]:
     return new_msgs, {"pruned": len(candidates), "saved_chars": saved, "archive": archive_path}
 
 
+def prune_if_needed(messages: list[dict], model_id: Optional[str] = None) -> list[dict]:
+    """压力够了先免费剪旧工具结果 · 不够省就不动盘 (OpenCode PRUNE_MINIMUM)。
+
+    不调 LLM。跟 auto_compress 拆开 · 长会话不用等到 256k 才剪。
+    """
+    global _pruned_total
+    n = len(messages)
+    if n < MIN_MESSAGES_TO_COMPRESS:
+        return messages
+    hist = _estimate_tokens(messages)
+    if hist < PRUNE_HISTORY_PRESSURE:
+        return messages
+    st = _state()
+    if n - int(st.get("last_prune_turn", -COOLDOWN_TURNS)) < COOLDOWN_TURNS:
+        return messages
+    new_msgs, pstats = prune_stale_tool_results(messages)
+    if pstats.get("pruned", 0) <= 0:
+        return messages
+    if int(pstats.get("saved_chars") or 0) < MIN_PRUNE_SAVED_CHARS:
+        return messages
+    _persist_rewrite(new_msgs)
+    st["last_prune_turn"] = len(new_msgs)
+    _pruned_total += pstats["pruned"]
+    return new_msgs
+
+
 def _persist_rewrite(messages: list[dict]) -> None:
     """v2 · 压缩/修剪结果原子重写 session jsonl (治重启蒸发 · wish-7f0adf2c)。
 
@@ -776,8 +846,9 @@ def auto_compress(
         _pruned_total += pstats["pruned"]
     ctx_window = _get_context_window(model_id)
     if pstats.get("pruned", 0) > 0 and not force:
-        threshold = int(ctx_window * _get_ratio()) if ctx_window > 0 else AUTO_COMPRESS_THRESHOLD * 1000
-        if _estimate_tokens(messages2) < threshold:
+        prefix = estimate_prefix_tokens()
+        threshold = _compact_threshold(ctx_window, prefix)
+        if _estimate_tokens(messages2) + prefix < threshold:
             # 修剪后已低于阈值 → prune 单独清掉警报 · 不调 LLM
             _persist_rewrite(messages2)
             return messages2
