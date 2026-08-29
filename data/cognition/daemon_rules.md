@@ -121,7 +121,7 @@ prompt / 模板里用 `${secret:...}` 占位·**绝不写明文进任何会进 g
 
 ## 铁律 15 · 工具简介两句
 
-`ToolSpec.description` 只写何时伸这只手，两句、≤180 tok（`register_tool` 超线 daemon 起不来）。工艺 / 填参走 `read_scenario`，实例手艺走 playbook。
+`ToolSpec.description` 只写何时伸这只手，两句、≤180 tok；每个 schema 字段一句 ≤60 tok（`register_tool` 超线那只手装不上）。写超了当场写进工具结果；`request_restart` 硬拦并告诉你怎么收。工艺 / 填参走 `read_scenario`，实例手艺走 playbook。
 
 ---
 

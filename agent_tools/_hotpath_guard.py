@@ -11,6 +11,11 @@ from urllib.parse import urlparse
 
 _channel: contextvars.ContextVar[str] = contextvars.ContextVar("hotpath_channel", default="")
 _fetch_blocks: contextvars.ContextVar[int] = contextvars.ContextVar("hotpath_fetch_blocks", default=0)
+# 可变 set：copy_context 进线程池后仍是同一对象，worker 的 add 主线程看得见。
+# 不能用 frozenset + set()——那只改 worker 自己的 ContextVar，闸永远 blocked。
+_scenarios: contextvars.ContextVar[set[str] | None] = contextvars.ContextVar(
+    "hotpath_scenarios", default=None
+)
 
 _PYTHON_C_RE = re.compile(
     r"(?:^|[;&|]\s*)(?:py(?:thon(?:3)?)?(?:\.exe)?)\s+(?:-\d+\s+)*-c\b",
@@ -31,10 +36,36 @@ _CHALLENGE_RE = re.compile(
 def begin_turn(channel: str = "") -> None:
     _channel.set(channel or "")
     _fetch_blocks.set(0)
+    _scenarios.set(set())
 
 
 def set_channel(channel: str) -> None:
     _channel.set(channel or "")
+
+
+def _turn_scenarios() -> set[str]:
+    cur = _scenarios.get()
+    if cur is None:
+        cur = set()
+        _scenarios.set(cur)
+    return cur
+
+
+def mark_scenario_read(name: str) -> None:
+    key = (name or "").strip().lower()
+    if key:
+        _turn_scenarios().add(key)
+
+
+def require_scenario(name: str) -> str | None:
+    key = (name or "").strip().lower()
+    seen = _scenarios.get()
+    if key and seen is not None and key in seen:
+        return None
+    return (
+        f"blocked: read_scenario(name={key!r}) first. "
+        "Craft contract is in the scenario, not the tool schema."
+    )
 
 
 def block_shell(cmd: str) -> str | None:

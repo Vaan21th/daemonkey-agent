@@ -237,6 +237,17 @@ def _run(args: dict) -> ToolResult:
     except ImportError:
         pass  # 校验器本身缺失不阻塞重启 · 降级放行
 
+    try:
+        from agent_tools._desc_budget import audit_tools_dir, format_budget_hint
+        overs = audit_tools_dir()
+        if overs:
+            return ToolResult(
+                ok=False, output="",
+                error=format_budget_hint(overs, blocked_restart=True),
+            )
+    except ImportError:
+        pass
+
     # 卷四十八 · ①号机制 · 重启前自动 checkpoint commit
     # 病根 (卷四十七): 写完代码 request_restart · 改动是裸的工作区改动 · 一旦后续
     # crash → rollback (stash) 就灰飞烟灭 (日历功能就是这么没的)。 这里在自爆前先把
@@ -323,19 +334,7 @@ SPEC = ToolSpec(
             },
             "follow_up_message": {
                 "type": "string",
-                "description": (
-                    "**自动续场任务** (卷四十六 III 补丁 3 · 2026-05-26 BRO 反馈加的)。 "
-                    "重启完成后 · 新 daemon 自动以这条作为 user message 触发 background LLM turn。 "
-                    "用于『重启完成后请你帮我验证 X / 跑一遍 Y / 检查 Z 是否生效』这种场景。 "
-                    "BRO 不用手动发消息触发 · 进 WebUI 直接看你的验证结果。\n\n"
-                    "**注意**: \n"
-                    "  - 后台 turn auto_confirm='confirm' (跟主对话 WebUI 同级 · 卷四十六续14) · AUTO + CONFIRM 自动 go·\n"
-                    "    能跑 read_file / grep / curl / python_exec / write_file / git commit 等 (够你验证自己刚写的代码)\n"
-                    "  - 只有 GUARD 工具 (rm / git push --force / 大改文件) 会被后台 skip/deny (没 SSE 接收方)·\n"
-                    "    那时把结论讲给 BRO 由 BRO 来确认下一步\n"
-                    "  - max 1000 chars\n"
-                    "  - 留空 = 不自动续场 · 只注 system message · BRO 手动发消息触发"
-                ),
+                "description": "重启后自动续场的验证任务。99% 该带。留空则等他手动开口。细则：read_scenario('self_evolution')。",
             },
         },
         "required": ["reason"],

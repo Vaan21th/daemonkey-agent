@@ -120,3 +120,38 @@ def selfcheck_changed(before: dict[str, float]) -> tuple[bool, str]:
     if not changed:
         return True, ""
     return selfcheck(changed)
+
+
+def _agent_tool_rels(paths: list[str]) -> list[str]:
+    out = []
+    for p in paths:
+        rel = _rel(p).replace("\\", "/")
+        name = Path(rel).name
+        if rel.startswith("agent_tools/") and rel.endswith(".py") and not name.startswith("_"):
+            out.append(rel)
+    return out
+
+
+def budget_check(paths: list[str]) -> tuple[bool, str]:
+    """agent_tools 名片超线 · 只告警不回退（跟语法自检同一面镜子）。"""
+    rels = _agent_tool_rels(paths)
+    if not rels:
+        return True, ""
+    try:
+        from agent_tools._desc_budget import audit_file, format_budget_hint
+    except Exception:
+        return True, ""
+    overs = []
+    for rel in rels:
+        overs.extend(audit_file(ROOT / rel))
+    if not overs:
+        return True, ""
+    return False, format_budget_hint(overs)
+
+
+def budget_check_changed(before: dict[str, float]) -> tuple[bool, str]:
+    after = snapshot_mtimes()
+    changed = [p for p, m in after.items() if before.get(p) != m]
+    if not changed:
+        return True, ""
+    return budget_check(changed)

@@ -81,6 +81,9 @@ def _run(args: dict) -> ToolResult:
     except Exception as e:
         return ToolResult(ok=False, output="", error=f"读 {path.name} 失败: {e}")
 
+    from ._hotpath_guard import mark_scenario_read
+    mark_scenario_read(name)
+
     # 给一点导言 · 让 LLM 知道这是 scenario 不是普通文档
     output = (
         f"# [scenario: {name}] 完整细则\n\n"

@@ -39,6 +39,11 @@ def _summarize(args: dict) -> str:
 
 
 def _run(args: dict) -> ToolResult:
+    from ._hotpath_guard import require_scenario
+    blocked = require_scenario("app_creation")
+    if blocked:
+        return ToolResult(ok=False, output="", error=blocked)
+
     from workers.workshop_assets import save_app
     import re
 
@@ -164,20 +169,11 @@ SPEC = ToolSpec(
             },
             "system_prompt": {
                 "type": "string",
-                "description": (
-                    "应用被调用时给底层 LLM 的角色 + 任务指令 · 写得越具体效果越好。"
-                    "agentic app 必须含六段 markdown 标题: 角色/输入/动作/输出规范/坑清单"
-                    "(+资产引用·有 asset_slots 时) · 缺段会被内核拒绝"
-                ),
+                "description": "agentic 的角色指令。六段标题见 read_scenario('app_creation')。缺段内核拒。",
             },
             "asset_slots": {
                 "type": "array",
-                "description": (
-                    "可选 · 声明这个 app 需要的用户个性资产槽 (配置页渲染依据)。"
-                    "真值走 manage_app_asset 落 data/workshop/assets/<app_id>.json · 不写进 prompt。"
-                    "例: [{name:'ip_images',type:'images',label:'IP 形象图'},"
-                    "{name:'style_ref',type:'text',label:'画面风格参考'}]"
-                ),
+                "description": "可选资产槽声明。真值走 manage_app_asset。形状见 read_scenario('app_creation')。",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -205,83 +201,17 @@ SPEC = ToolSpec(
                 "type": "string",
                 "enum": ["agentic", "scripted"],
                 "description": (
-                    "执行模式 · 默认 'agentic' (向后兼容 phase B 行为)\n\n"
-                    "**agentic** (默认 · LLM session 调度):\n"
-                    "  - form 提交后走 LLM session · LLM 读 system_prompt · 调工具 (shell_exec / read_file 等) · 拿结果\n"
-                    "  - 适合: '帮我整理周报' '分析竞品报告' '看图说话' '写代码改 bug' 这种需要智能决策的 app\n"
-                    "  - 优点: 灵活 · 能处理边界情况 · 工具链丰富\n"
-                    "  - 缺点: 慢 (LLM 思考 + 工具循环) · 贵 (每次烧 token · 即使只是参数转发)\n\n"
-                    "**scripted** (0 LLM · 直接 HTTP 转发):\n"
-                    "  - form 字段直接拼 HTTP 请求 · 不过 LLM · 后端拼好直接发 · 拿 response 提字段\n"
-                    "  - 适合: GPT Image 2 / SOVITS / ElevenLabs / OpenAI Vision 这种纯 API 转发 app\n"
-                    "  - 必填 exec_template · system_prompt 可空 (LLM 不会读)\n"
-                    "  - 优点: 快 (秒级 vs 分钟级) · 省 ($0 vs $0.01-0.1) · 稳 (没 LLM 跑偏风险)\n"
-                    "  - 缺点: 不能动态决策 · 输入格式固定 · 错误处理硬编码\n\n"
-                    "**怎么选**:\n"
-                    "  - app 主要功能是『按参数发请求拿结果』→ scripted\n"
-                    "  - app 主要功能是『理解需求 + 多步执行』→ agentic\n"
-                    "  - 混合场景 (LLM 拼参数 + 多次 API) → agentic · 但里面用 shell_exec 调 curl"
+                    "agentic=LLM 调度（理解需求/多步）；scripted=0 LLM 直转发 API。"
+                    "怎么选、四步法 → read_scenario(name='app_creation')。"
                 ),
             },
             "exec_template": {
                 "type": "object",
-                "description": (
-                    "**scripted app 必填** · agentic 不填 (写了也忽略)\n\n"
-                    "HTTP 调用模板 · 故意做窄·避免变成 mini Jinja DSL:\n\n"
-                    "```json\n"
-                    "{\n"
-                    '  "kind": "http",\n'
-                    '  "routes": [\n'
-                    '    {\n'
-                    '      "when": "mode==edits",  // 简单等于匹配 · 不支持复杂表达式 · 或 \\"default\\" 兜底\n'
-                    '      "method": "POST",\n'
-                    '      "url": "https://aipg.work/v1/images/edits",  // 含 ${ui:field} ${secret:key} 插值\n'
-                    '      "headers": {"Authorization": "Bearer ${secret:app-66ac4190:api_key}"},  // 铁律 7 推荐: ${secret:<app_id>:<name>} 三段式\n'
-                    '      "body": {"prompt": "${ui:prompt}", "size": "${ui:size:1024x1024}"},\n'
-                    '      "body_kind": "json",  // json / multipart_form / form_urlencoded / raw\n'
-                    '      "timeout_sec": 300\n'
-                    '    },\n'
-                    '    {"when": "default", ...}  // 必须有一条 when=default 兜底\n'
-                    '  ],\n'
-                    '  "response": {\n'
-                    '    "kind": "b64_save",  // json / text / binary_save / b64_save\n'
-                    '    "extract": "data[0].b64_json",  // jq-like path (b64_save 必填)\n'
-                    '    "save": {  // binary_save / b64_save 必填\n'
-                    '      "dir": "data/workshop/outputs/${app_id}",\n'
-                    '      "filename": "img-${ts}.png"\n'
-                    '    },\n'
-                    '    "mapping": {  // output_schema.name → 取值 path · __saved_path__ 特殊值\n'
-                    '      "image_url": "__saved_path__",  // 保存后的相对 URL (前端会拼成 /workshop/outputs/...)\n'
-                    '      "revised_prompt": "data[0].revised_prompt"\n'
-                    '    }\n'
-                    '  }\n'
-                    "}\n"
-                    "```\n\n"
-                    "**插值语法 (只支持这些·没了)**:\n"
-                    "  - ${ui:field}        · form 字段值\n"
-                    "  - ${ui:field:default} · 字段缺失时用 default (default 是字面量·不递归)\n"
-                    "  - ${secret:<app_id>:<name>} · 铁律 7 标准·走 workers.app_secrets 跟 shell_exec 同一存储\n"
-                    "                                  daemon Daemonkey 先调 app_set_secret 落 KEY · 再用 placeholder 引用\n"
-                    "  - ${secret:<name>}   · 单段简写·自动用 context.app_id (只能拿自己 app 的 secret · 不能跨 app)\n"
-                    "  - ${upstream:node_id:port} · 工作流上游 node output (workflow_engine 用)\n"
-                    "  - ${app_id} / ${ts} / ${ts_ms} · 自动注入\n\n"
-                    "**multipart 上传文件**: body 字段值写 '@file:<path>' · 例 'image': '@file:${ui:input_path}'\n\n"
-                    "**做不到的**:\n"
-                    "  ❌ ${ui:a} + ${ui:b} (字符串拼接除外) ❌ 三元 ❌ 循环 ❌ 嵌套 \n"
-                    "  需要这些 → 改用 exec_kind=agentic"
-                ),
+                "description": "scripted 必填的 HTTP 模板。形状和插值 → read_scenario('app_creation')。",
             },
             "output_schema": {
                 "type": "array",
-                "description": (
-                    "可选 · 声明这个 app 的输出端口 · 给工作流编辑器把 app 当 node 时挂下游用 · "
-                    "wish-165ea1f6 phase B 2026-05-26 上线。 不填默认 app 输出单个 'output' 字符串 "
-                    "(LLM 最终回答全文 · 一般够用)。 填多端口时:\n\n"
-                    "  - 比如图像生成 app: output_schema=[{name:'image_url',type:'string'},{name:'prompt_used',type:'string'}]\n"
-                    "  - 比如 TTS app: output_schema=[{name:'audio_path',type:'file'},{name:'duration_sec',type:'number'}]\n\n"
-                    "type 选项: string / number / boolean / array / object / file (输出形态比 input 多 array/object)。 "
-                    "字段名要让下游节点能直观引用 · 不要叫 'data1','data2' 这种没语义的。 最多 10 个。"
-                ),
+                "description": "可选输出端口。不填默认单个 output。形状见 read_scenario('app_creation')。",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -298,14 +228,7 @@ SPEC = ToolSpec(
             },
             "ui_form_schema": {
                 "type": "array",
-                "description": (
-                    "可选 · 声明这个 app 在工坊『测试』tab 显示的 UI 表单字段 · "
-                    "BRO 重复跑同一 app 时不用每次打字。 详见上面 description 里的字段哲学 + 示例。 "
-                    "字段名 (name) 必须是合法变量名 · 不能用保留字 (input/output/app/opus/now/today)。 "
-                    "Phase A 阶段表单提交后 · 前端会把字段拼成自然语言 prompt 塞回主对话框 · "
-                    "走 NLP First 路径 · 跟跟你正常说话调这个 app 完全等价。 "
-                    "最多 20 个字段·复杂的输入应该走 NLP 而不是堆字段。"
-                ),
+                "description": "可选测试表单。字段哲学和保留字 → read_scenario('app_creation')。",
                 "items": {
                     "type": "object",
                     "properties": {

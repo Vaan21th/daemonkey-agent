@@ -176,10 +176,7 @@ SPEC = ToolSpec(
             "action": {
                 "type": "string",
                 "enum": ["open", "note", "list", "plan", "step"],
-                "description": (
-                    "plan=列/重列有序步骤清单(多步任务开工先做这个); step=推进某一步的状态; "
-                    "open=建/取任务账本并设为活跃; note=追加一条结论; list=列出所有账本。默认 note。"
-                ),
+                "description": "plan=列步骤 · step=推进 · open=建账本 · note=结论 · list=列出。默认 note。",
             },
             "task": {
                 "type": "string",
@@ -188,10 +185,7 @@ SPEC = ToolSpec(
             "steps": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": (
-                    "仅 action='plan' 用 · 按执行顺序的步骤数组(每步一句话·动词开头·别写成大段)。"
-                    "重列会整份替换·但文案没变的步骤会保留已有进度。上限 40 步。"
-                ),
+                "description": "仅 plan：按序步骤，每步一句话。上限 40。重列保留未改步骤的进度。",
             },
             "step": {
                 "type": "integer",
@@ -200,11 +194,7 @@ SPEC = ToolSpec(
             "status": {
                 "type": "string",
                 "enum": ["todo", "doing", "done", "skip"],
-                "description": (
-                    "仅 action='step' 用 · done=做完(默认) / doing=正在做 / todo=退回待做 / "
-                    "skip=计划有变不做了(配 note 说原因)。注意: 某步【尝试失败】不是 skip · "
-                    "那是结论·用 action='note' kind='ruledout' 记。"
-                ),
+                "description": "仅 step。尝试失败不是 skip，用 note kind=ruledout。",
             },
             "kind": {
                 "type": "string",
@@ -221,11 +211,7 @@ SPEC = ToolSpec(
             },
             "wish": {
                 "type": "string",
-                "description": (
-                    "仅 action='plan' 用 · 这份计划是在做哪条心愿单(wish-xxxxxxxx)。"
-                    "做 wish 就带上 —— 计划条会显示归属·心愿单那边也能看到这活干到第几步了。"
-                    "必须是真实存在的 wish id(不确定先查·别凭印象填)。"
-                ),
+                "description": "仅 plan：挂到真实存在的 wish-xxxxxxxx。不确定先查。",
             },
         },
         "required": ["action"],

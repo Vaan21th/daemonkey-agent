@@ -236,15 +236,7 @@ SPEC = ToolSpec(
             },
             "body": {
                 "type": "string",
-                "description": (
-                    "报告主体 markdown · OPUS 自己组装好的完整正文。"
-                    "不必含 # 一级标题（封面会用 title）。"
-                    "支持 ## ### 标题 / 段落 / **加粗** / `代码` / 列表 / "
-                    "表格 / > 引用 / ``` 代码块 / --- 分割线 / "
-                    "![alt](xxx.png) 图片。\n"
-                    "【可选】不传 body 时 · 工具自动抓你【本条回复的正文】当报告主体——"
-                    "所以长文档可以:先把完整 markdown 写在回复里 · 再调本工具只给 title。"
-                ),
+                "description": "报告正文 markdown。不传则抓本条回复。封面用 title，不必再写一级标题。",
             },
             "subtitle": {
                 "type": "string",

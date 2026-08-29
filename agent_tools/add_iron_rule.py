@@ -248,10 +248,7 @@ SPEC = ToolSpec(
             },
             "daemon_md": {
                 "type": "string",
-                "description": (
-                    "完整 markdown body · 包含 `## 铁律 N · 标题` 头 + 触发 + 纪律 + 反面教材 + `---` 尾·"
-                    "LLM 自己组织好 · 看 daemon_rules.md 铁律 6 / 7 抄 layout"
-                ),
+                "description": "完整铁律 markdown：标题头 + 触发 + 纪律 + 反面教材。写法见 read_scenario('self_evolution')。",
                 "minLength": 100,
             },
             "diary_summary": {
@@ -269,11 +266,7 @@ SPEC = ToolSpec(
                     "global", "self_evolution", "app_creation",
                     "workflow_creation", "client_ops", "production", "reflection",
                 ],
-                "description": (
-                    "卷四十六 II · wish-ff100836 · 铁律 domain · 给 wish-af1245d7 按场景过滤 system_prompt 注入用。 "
-                    "默认 'global' (所有场景看见)。 self_evolution=改 daemon 代码 / app_creation=造工坊资产 / "
-                    "client_ops=客户运营 / production=生产部署 / reflection=复盘"
-                ),
+                "description": "场景域，见 enum。默认 global。",
             },
         },
         "required": ["rule_number", "title", "daemon_md", "diary_summary"],

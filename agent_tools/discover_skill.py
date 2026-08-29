@@ -204,10 +204,7 @@ SPEC = ToolSpec(
         "properties": {
             "lead": {
                 "type": "string",
-                "description": (
-                    "可选 · BRO 投喂的线索 (产品名 / up 主说法 / 链接 / 一句话描述)。 "
-                    "顺着它去 GitHub/官网找真实现。 视频本身抓不了·但关键词够定位。"
-                ),
+                "description": "可选线索：产品名 / 说法 / 链接。顺着找实现，视频本身抓不了。",
             },
             "focus": {
                 "type": "string",

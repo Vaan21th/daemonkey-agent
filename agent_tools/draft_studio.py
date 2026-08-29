@@ -129,11 +129,7 @@ SPEC = ToolSpec(
             },
             "body": {
                 "type": "string",
-                "description": (
-                    "完整 markdown 正文 · OPUS 自己组装好。可以用 # ## 标题 / 列表 / 表格 / "
-                    "代码块 / 引用 / 行内格式。文件头 yaml frontmatter 由工具自动加 · "
-                    "正文不必含 frontmatter。"
-                ),
+                "description": "完整 markdown 正文。frontmatter 由工具加，正文不必含。",
             },
             "kind": {
                 "type": "string",

@@ -405,10 +405,13 @@ def _run(args: dict) -> ToolResult:
 
     # 卷五十四 · B4 · 编辑后即时自检 (告警·不拦·"锁出口不锁动作")
     try:
-        from workers.edit_selfcheck import selfcheck
+        from workers.edit_selfcheck import budget_check, selfcheck
         sc_ok, sc_warn = selfcheck([str(path)])
         if not sc_ok:
             base_output = f"{base_output}\n\n{sc_warn}"
+        b_ok, b_warn = budget_check([str(path)])
+        if not b_ok:
+            base_output = f"{base_output}\n\n{b_warn}"
     except Exception:
         pass
 
@@ -430,11 +433,7 @@ SPEC = ToolSpec(
             },
             "content": {
                 "type": "string",
-                "description": (
-                    "Full content to write (or to append in append mode). "
-                    "【可选】不传 content 时·工具自动抓你【本条回复的正文】当文件内容——"
-                    "长文档可:先把完整内容写在回复里·再调本工具只给 path。"
-                ),
+                "description": "要写入的全文。不传则抓本条回复正文。长文可先写在回复里再只给 path。",
             },
             "mode": {
                 "type": "string",

@@ -395,7 +395,7 @@ def runtime_context_addendum(daemon_root: Path) -> str:
         + (
             "You are on Windows running PowerShell. Use PowerShell idioms, NOT POSIX:\n"
             "  - List files:        Get-ChildItem  (alias: ls / dir — both work)\n"
-            "  - Read file:         Get-Content    (alias: cat / type — both work)\n"
+            "  - Read file:         read_file tool (not Get-Content / type / cat)\n"
             "  - Count lines:       (Get-Content X | Measure-Object -Line).Lines\n"
             "                       NOT `wc -l` (does not exist on Windows)\n"
             "  - Search text:       Select-String  (or use the grep_files tool — better)\n"
@@ -459,7 +459,14 @@ def runtime_context_addendum(daemon_root: Path) -> str:
     if recent_evo:
         evolution_section = f"\n\n=== SELF-EVOLUTION ===\n\n{recent_evo}\n"
 
-    return base + notebook_section + evolution_section
+    boot_note = ""
+    try:
+        from agent_tools._desc_budget import boot_discovery_notice
+        boot_note = boot_discovery_notice()
+    except Exception:
+        boot_note = ""
+
+    return base + notebook_section + evolution_section + boot_note
 
 
 def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: bool = True) -> Soul:

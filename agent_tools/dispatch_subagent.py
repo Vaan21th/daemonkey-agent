@@ -988,7 +988,7 @@ SPEC = ToolSpec(
                         },
                         "fork_context": {
                             "type": ["integer", "boolean"],
-                            "description": "可选 · 0.9.7 · 带父对话上下文: true=最近 6 轮 · 数字=N 轮 (硬顶 20) · 分身能接上『刚才聊的那个』",
+                            "description": "带父对话：true=最近 6 轮，数字=N 轮（硬顶 20）。",
                         },
                     },
                     "required": ["goal"],

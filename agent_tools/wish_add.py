@@ -126,14 +126,7 @@ SPEC = ToolSpec(
             },
             "estimated_token_cost_usd": {
                 "type": "number",
-                "description": (
-                    "预计 token 成本 (美元) · 默认 1.0 · 大改才超 5 · "
-                    "**口径参考 (2026-05-24 实测)**: "
-                    "Claude Sonnet 4.5 ≈ $0.7-2.0 / 个深勘察 wish (14 turn · 80K input) · "
-                    "aihubmix deepseek-v4-pro ≈ $0.6-1.0 同 wish · "
-                    "DeepSeek 官方 deepseek-chat ≈ $0.05-0.15 同 wish (便宜但慢) · "
-                    "**默认按 Claude 报价填 · 用户 看真实账单换算**"
-                ),
+                "description": "预计 token 成本（美元）。默认 1.0，大改才超 5。",
             },
             "priority": {
                 "type": "integer",

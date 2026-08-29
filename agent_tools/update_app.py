@@ -41,6 +41,11 @@ def _summarize(args: dict) -> str:
 
 
 def _run(args: dict) -> ToolResult:
+    from ._hotpath_guard import require_scenario
+    blocked = require_scenario("app_creation")
+    if blocked:
+        return ToolResult(ok=False, output="", error=blocked)
+
     from workers.workshop_assets import load_app, save_app
 
     aid = (args.get("app_id") or "").strip()
@@ -229,11 +234,7 @@ SPEC = ToolSpec(
             },
             "output_schema": {
                 "type": "array",
-                "description": (
-                    "新 output schema · 不传保留原值 · 传 [] 清空 · phase B 工作流给 LiteGraph "
-                    "output ports 用。 不填默认单 'output' string 端口。 type 选 string/number/boolean/"
-                    "array/object/file。 详见 create_app 同字段说明。"
-                ),
+                "description": "新输出端口。不传保留，[] 清空。形状见 read_scenario('app_creation')。",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -251,22 +252,11 @@ SPEC = ToolSpec(
             "exec_kind": {
                 "type": "string",
                 "enum": ["agentic", "scripted"],
-                "description": (
-                    "改执行模式 · agentic (LLM session) 或 scripted (0 LLM 直接 HTTP)。 "
-                    "改成 scripted 时必须同时传 exec_template · 不然 daemon save 时拒绝。 "
-                    "改成 agentic 时 exec_template 可以保留但不会用 · 想清空就传 exec_template={} "
-                    "详见 create_app 同字段说明。"
-                ),
+                "description": "改执行模式。改 scripted 必须同传 exec_template。怎么选 → read_scenario('app_creation')。",
             },
             "exec_template": {
                 "type": "object",
-                "description": (
-                    "改 HTTP 模板 · 仅 scripted app 用 · 传 {} 清空。 "
-                    "schema: {kind:'http', routes:[{when,method,url,headers,body,body_kind,timeout_sec}], "
-                    "response:{kind,extract,save,mapping}}。 "
-                    "插值: ${ui:field} / ${ui:field:default} / ${secret:k} / ${upstream:nid:port} / "
-                    "${app_id} / ${ts}。 详见 create_app 同字段说明。"
-                ),
+                "description": "改 HTTP 模板。仅 scripted；{} 清空。形状见 read_scenario('app_creation')。",
             },
         },
         "required": ["app_id"],

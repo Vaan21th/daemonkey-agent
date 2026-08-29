@@ -239,11 +239,7 @@ SPEC = ToolSpec(
             "mode": {
                 "type": "string",
                 "enum": ["list", "full", "agent"],
-                "description": (
-                    "list(默认)=只返 id+单行摘要·省 token·先用这个; "
-                    "full=取全文·需配合 ids=[...] (上一步 list 给的 id)·或不给 ids 时按 query 直接全文搜(兼容老用法); "
-                    "agent=多轮自主检索 (问题驱动·自动多工具循环·适合复杂/参照性提问·贵·日常先用 list)。"
-                ),
+                "description": "list=摘要（先用）· full=按 ids 取全文 · agent=多轮检索（贵）。",
                 "default": "list",
             },
             "ids": {
@@ -265,11 +261,7 @@ SPEC = ToolSpec(
             "scope": {
                 "type": "string",
                 "enum": ["all", "bro", "self", "sessions", "skill", "docs", "clients"],
-                "description": (
-                    "搜索范围: all(全部) / bro(BRO画像) / self(Daemonkey自传+日记+SKILL) / "
-                    "sessions(历史对话) / skill(playbook · 卷四十六 II wish-1c229865) / "
-                    "docs(私有文档知识库 · 用户灌进来的资料/合同/PDF) / clients(客户档案备注)。默认 all。"
-                ),
+                "description": "搜索范围，见 enum。默认 all。",
                 "default": "all",
             },
             "context_window": {

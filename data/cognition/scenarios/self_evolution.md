@@ -139,6 +139,12 @@ request_restart(
 
 ---
 
+## 铁律 15 · 工具简介两句
+
+写超了怎么知道：`write_file` / `edit_file` / `python_exec` 当场把超了几 tok、怎么收写进工具结果；`request_restart` 硬拦（跟前端 JS 闸同一根管子）。启动时没挂上的手会进 Runtime 告警；调那只手会收到 unknown tool + 原因。别去翻终端日志。
+
+---
+
 ## 反面教材汇总 (self_evolution 域)
 
 | 错在哪 | 学到 |

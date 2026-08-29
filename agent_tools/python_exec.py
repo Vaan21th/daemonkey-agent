@@ -199,10 +199,13 @@ def _run(args: dict) -> ToolResult:
 
         # 卷五十四 · B4 · 编辑后即时自检: 本次若改动过 daemon 表面 .py / static js 且语法坏了 → 告警 (不拦)
         try:
-            from workers.edit_selfcheck import selfcheck_changed
+            from workers.edit_selfcheck import budget_check_changed, selfcheck_changed
             sc_ok, sc_warn = selfcheck_changed(_pre_snapshot)
             if not sc_ok:
                 output = f"{output}\n\n{sc_warn}"
+            b_ok, b_warn = budget_check_changed(_pre_snapshot)
+            if not b_ok:
+                output = f"{output}\n\n{b_warn}"
         except Exception:
             pass
 

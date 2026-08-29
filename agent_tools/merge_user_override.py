@@ -204,9 +204,7 @@ SPEC = ToolSpec(
         "properties": {
             "action": {"type": "string",
                        "enum": ["list", "diff", "apply", "rescue", "rescue_apply"],
-                       "description": ("list=列备份 / diff=看某文件对比 / apply=写回合并结果 / "
-                                       "rescue=从历次升级存档里找被吞掉的魔改(只读) / "
-                                       "rescue_apply=把找到的捞进备份区")},
+                       "description": "list=列备份 · diff=对比 · apply=写回 · rescue=捞被吞魔改 · rescue_apply=捞进备份。"},
             "file": {"type": "string", "description": "diff/apply 用 · 目标文件路径 (备份里的原始路径)"},
             "content": {"type": "string", "description": "apply 用 · 合并后的完整文件内容"},
         },

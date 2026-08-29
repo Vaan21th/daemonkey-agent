@@ -157,10 +157,13 @@ def _run_batch(args: dict, raw: str, edits: list) -> ToolResult:
     if warn:
         base = f"{base}\n\n{warn}"
     try:
-        from workers.edit_selfcheck import selfcheck
+        from workers.edit_selfcheck import budget_check, selfcheck
         sc_ok, sc_warn = selfcheck([str(path)])
         if not sc_ok:
             base = f"{base}\n\n{sc_warn}"
+        b_ok, b_warn = budget_check([str(path)])
+        if not b_ok:
+            base = f"{base}\n\n{b_warn}"
     except Exception:
         pass
     return ToolResult(ok=True, output=base)
@@ -295,10 +298,13 @@ def _run(args: dict) -> ToolResult:
         base = f"{base}\n\n{warn}"
 
     try:
-        from workers.edit_selfcheck import selfcheck
+        from workers.edit_selfcheck import budget_check, selfcheck
         sc_ok, sc_warn = selfcheck([str(path)])
         if not sc_ok:
             base = f"{base}\n\n{sc_warn}"
+        b_ok, b_warn = budget_check([str(path)])
+        if not b_ok:
+            base = f"{base}\n\n{b_warn}"
     except Exception:
         pass
 
@@ -332,12 +338,7 @@ SPEC = ToolSpec(
             },
             "edits": {
                 "type": "array",
-                "description": (
-                    "批量模式 (wish-ff69e29c): [{old_string, new_string, replace_all?}, ...] 一次改同文件多处 · "
-                    "内存逐对唯一命中替换 · 全部成功才写盘 · 任一失败返回 edits[i] 定位不动盘 · "
-                    "复用全部安全网 (CRLF 归一化/空文件兜底/并发软锁/roundtrip/语法自检)。"
-                    "适合同构多处修复 (如 19 处 except-pass 补日志)。单次用 old_string/new_string 即可。"
-                ),
+                "description": "批量改同文件多处。全部成功才写盘。单次用 old_string/new_string。",
                 "items": {
                     "type": "object",
                     "properties": {

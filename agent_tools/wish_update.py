@@ -255,12 +255,7 @@ SPEC = ToolSpec(
             "daemon_phase": {
                 "type": "string",
                 "enum": ["plan_pending", "blocked"],
-                "description": (
-                    "子标记 (仅 status=active 时有意义·UI 挂小 chip):\n"
-                    "  plan_pending · (daemon 路径) OPUS 出完方案·停下等 用户 批方案 (关卡1)\n"
-                    "  blocked      · OPUS 撞墙·等 用户 看\n"
-                    "  传 null/不传 = 正常推进 (勘察/写码)\n"
-                ),
+                "description": "仅 active：等他批方案，或撞墙。不传=正常推进。",
             },
             "implementation_plan": {
                 "type": "string",
@@ -280,12 +275,7 @@ SPEC = ToolSpec(
             },
             "closure_ack": {
                 "type": "boolean",
-                "description": (
-                    "收尾三问豁免 ( · 铁律9代码闸的狡辩出路):\n"
-                    "  标 review/live 时若本回合干了活却没沉淀·会被拦下逼你过三问。\n"
-                    "  确实啥也不用沉淀 (用户 没新信号 / 无可复用经验 / 无能力缺口) → 传 closure_ack=true 放行·\n"
-                    "  并在 reflection 里一句话说明为什么不用沉淀。 别为了过闸乱标·这是给真无需沉淀的情况留的。"
-                ),
+                "description": "真无需沉淀时标 true 过三问闸，并在 reflection 写一句为什么。",
             },
         },
         "required": ["wish_id"],

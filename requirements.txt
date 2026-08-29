@@ -4,6 +4,7 @@ python-dotenv>=1.0.0
 rich>=13.7.0
 fastapi>=0.115.0
 uvicorn>=0.30.0
+tiktoken>=0.7.0
 
 # 卷四十四 K stage 2c++ · wish-8d6b76a6 · service_start 跨平台进程检测
 psutil>=5.9.0

@@ -744,6 +744,18 @@ def _maybe_parallel_auto(
             _TOOL_PROGRESS_HOOK.reset(token)
 
     out: dict[int, ToolResult] = {}
+    # read_scenario 写本回合闸。copy_context 进池后 ContextVar.set 回不来；
+    # 即便闸改成共享 set，跟 create_app 同批并行仍会竞态。先在当前线程落地。
+    rest: list[tuple[int, ToolSpec, dict]] = []
+    for idx, spec, args in jobs:
+        if spec.name == "read_scenario":
+            out[idx] = _work(spec, args)
+        else:
+            rest.append((idx, spec, args))
+    jobs = rest
+    if len(jobs) < 2:
+        return out
+
     workers = min(_PARALLEL_MAX_WORKERS, len(jobs))
     # 每个 job 带一份**独立的** context 副本进线程 (2026-08-19 修)。
     #
@@ -943,6 +955,11 @@ def run_tool_loop(
                   run_app / python_exec 等大权限工具(审稿 app 调 run_app 跑了 5 分钟
                   内容制作 = 此条修补真实触发场景)。
     """
+    try:
+        from agent_tools._hotpath_guard import begin_turn as _hp_begin, _channel as _hp_ch
+        _hp_begin(_hp_ch.get() or "")
+    except Exception:
+        pass
     # ── 会话结构自愈（卷五十五 · 2026-06-03 · 防 [500] · P3 升级为完整体检）─────
     # 病根: turn 在 tool 执行前被打断 (重启/abort/网断) → 历史里留下 assistant.tool_calls
     # 没有对应 tool result → 下次发给 LLM 报 400 "An assistant message with 'tool_calls'
@@ -1474,7 +1491,8 @@ def _loop_openai(
             spec = REGISTRY.get(name)
 
             if spec is None:
-                result = ToolResult(ok=False, output="", error=f"unknown tool: {name}")
+                from agent_tools._desc_budget import unknown_tool_error
+                result = ToolResult(ok=False, output="", error=unknown_tool_error(name))
                 _push(progress, "tool_call", {"name": name, "summary": "(unknown tool)", "tier": "?"})
             elif allowed_tool_names is not None and name not in allowed_tool_names:
                 # 卷七十二 · 白名单越权拦截 (审稿 app 调 run_app 跑 5 分钟内容制作 = 真实触发场景)
@@ -1816,7 +1834,8 @@ def _loop_anthropic(
             args = tu.input or {}
 
             if spec is None:
-                result = ToolResult(ok=False, output="", error=f"unknown tool: {tu.name}")
+                from agent_tools._desc_budget import unknown_tool_error
+                result = ToolResult(ok=False, output="", error=unknown_tool_error(tu.name))
                 _push(progress, "tool_call", {"name": tu.name, "summary": "(unknown tool)", "tier": "?"})
             elif allowed_tool_names is not None and tu.name not in allowed_tool_names:
                 # 卷七十二 · 白名单越权拦截 (审稿 app 调 run_app 跑 5 分钟内容制作 = 真实触发场景)

@@ -260,15 +260,7 @@ SPEC = ToolSpec(
             "section": {
                 "type": "string",
                 "enum": list(SECTIONS.keys()),
-                "description": (
-                    "Which dimension to update: "
-                    "'profile' (current state - schedule/mood/projects), "
-                    "'events' (timeline entry), "
-                    "'rules' (lasting trait), "
-                    "'dialogue' (signature phrase), "
-                    "'summary' (monthly compression), "
-                    "'risks' (BRO's structural weakness or forward-looking risk + OPUS's voicing discipline)"
-                ),
+                "description": "要写的维度，见 enum。",
             },
             "content": {
                 "type": "string",

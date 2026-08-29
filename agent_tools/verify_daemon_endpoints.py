@@ -283,18 +283,32 @@ def _run(args: dict) -> ToolResult:
 
     desc_ok = True
     try:
-        from agent_tools._desc_budget import MAX_DESC_TOKENS, audit_registry
+        from agent_tools._desc_budget import (
+            MAX_DESC_TOKENS,
+            MAX_FIELD_TOKENS,
+            audit_registry,
+            audit_schema_registry,
+        )
         from agent_tools import REGISTRY
         over = audit_registry(REGISTRY)
-        desc_ok = not over
+        over_field = audit_schema_registry(REGISTRY)
+        desc_ok = not over and not over_field
         lines.append("")
         lines.append("── 工具简介预算 ──")
         if desc_ok:
-            lines.append(f"OK · {len(REGISTRY)} 个工具 description ≤ {MAX_DESC_TOKENS} tok")
+            lines.append(
+                f"OK · {len(REGISTRY)} 个工具 description ≤ {MAX_DESC_TOKENS} tok · "
+                f"字段 ≤ {MAX_FIELD_TOKENS} tok"
+            )
         else:
-            lines.append(f"FAIL · {len(over)} 个超 {MAX_DESC_TOKENS} tok:")
-            for o in over:
-                lines.append(f"  {o['name']} {o['tok']} (+{o['over']})")
+            if over:
+                lines.append(f"FAIL · {len(over)} 个 description 超 {MAX_DESC_TOKENS} tok:")
+                for o in over:
+                    lines.append(f"  {o['name']} {o['tok']} (+{o['over']})")
+            if over_field:
+                lines.append(f"FAIL · {len(over_field)} 个字段超 {MAX_FIELD_TOKENS} tok:")
+                for o in over_field:
+                    lines.append(f"  {o['path']} {o['tok']} (+{o['over']})")
     except Exception as e:
         desc_ok = False
         lines.append("")
@@ -321,7 +335,7 @@ def _run(args: dict) -> ToolResult:
         if not fe_ok:
             summary.append("⚠️  前端 JS 语法坏了 · 重启后 WebUI 会白屏 · 先修再 commit (见『前端 JS 语法』节)。")
         if not desc_ok:
-            summary.append("工具简介超线 · 先收到两句再 commit（工艺进 read_scenario）。")
+            summary.append("工具简介或 schema 字段超线 · 先收到一句再 commit（工艺进 read_scenario）。")
 
     lines = summary + lines
 

@@ -438,11 +438,7 @@ SPEC = ToolSpec(
             "domain": {
                 "type": "string",
                 "enum": list(_DOMAIN_HANDLERS.keys()),
-                "description": (
-                    "维度: radar (信息雷达) / trends (今日趋势) / reports (报告库) / "
-                    "cognition (OPUS 日记 + 用户 画像) / content / design / dev / docs / "
-                    "all (全维度概览 · 每维 3 条)"
-                ),
+                "description": "维度，见 enum。all=每维 3 条概览。",
             },
             "head": {
                 "type": "integer",

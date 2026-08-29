@@ -180,8 +180,9 @@ def register_tool(spec: ToolSpec) -> ToolSpec:
         raise ValueError(f"tool name conflict: {spec.name}")
     if spec.tier not in (TIER_AUTO, TIER_CONFIRM, TIER_GUARD):
         raise ValueError(f"invalid tier: {spec.tier}")
-    from ._desc_budget import assert_description_budget
+    from ._desc_budget import assert_description_budget, assert_schema_budget
     assert_description_budget(spec.name, spec.description)
+    assert_schema_budget(spec.name, spec.input_schema)
     REGISTRY[spec.name] = spec
     return spec
 
@@ -213,3 +214,8 @@ if _discovery_failures:
     for _n, _err in _discovery_failures:
         print(f"[agent_tools] WARN · 工具模块 {_n} 加载失败 (跳过·不影响其余): {_err}",
               file=_sys.stderr, flush=True)
+
+
+def discovery_failures() -> list[tuple[str, str]]:
+    """启动时没挂上的工具模块 · 给 Runtime / unknown-tool 回写给模型。"""
+    return list(_discovery_failures)

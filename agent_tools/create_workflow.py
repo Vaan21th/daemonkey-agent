@@ -46,6 +46,11 @@ def _summarize(args: dict) -> str:
 
 
 def _run(args: dict) -> ToolResult:
+    from ._hotpath_guard import require_scenario
+    blocked = require_scenario("app_creation")
+    if blocked:
+        return ToolResult(ok=False, output="", error=blocked)
+
     from workers.workshop_assets import save_flow
 
     steps = args.get("steps")
@@ -124,11 +129,7 @@ SPEC = ToolSpec(
             },
             "steps": {
                 "type": "array",
-                "description": (
-                    "**推荐** · 线性步骤清单 (沉淀闭环 v2 刀②本体格式) · 画布视图由这个自动投影 · "
-                    "run_flow 沿这个执行带状态落盘。 每一步要么是【单 app 步】(给 app + goal) · "
-                    "要么是【并行组步】(给 parallel 数组 · 组内 2~4 个分支并发跑 · app 和 parallel 二选一)。"
-                ),
+                "description": "线性步骤。单 app 步或 parallel 组。合同见 read_scenario('app_creation')。",
                 "items": {
                     "type": "object",
                     "properties": {
@@ -137,7 +138,7 @@ SPEC = ToolSpec(
                         "substeps": {"type": "array", "items": {"type": "string"}, "description": "站内清单 · 进度可见用"},
                         "parallel": {
                             "type": "array",
-                            "description": "并行组步: 2~4 个分支 · 组内并发跑 · 各拿同一份上游 · 跑完合并喂下一步。 与 app 二选一。 同一 app 可出现多次 (同 app 并行不同输入)",
+                            "description": "并行组：2~4 分支，互不依赖才写。与 app 二选一。",
                             "items": {
                                 "type": "object",
                                 "properties": {

@@ -328,11 +328,7 @@ SPEC = ToolSpec(
             },
             "domain": {
                 "type": "string",
-                "description": (
-                    "领域桶 · slug · 默认有 ai/super-individual/game-money/wildcard · "
-                    "卷三十二起 BRO 通过 init_domain 工具可以加任意新 domain · "
-                    "所以本字段不限定 enum · 但写错 domain add_source/update_source 会校验拒绝。"
-                ),
+                "description": "领域桶 slug。写错会被校验拒绝。可用 init_domain 加新桶。",
             },
         },
         "required": ["action"],

@@ -163,6 +163,11 @@ def _autofill_images(slides, here_dir, auto_image: bool, cover: dict | None = No
 
 
 def _run(args: dict) -> ToolResult:
+    from ._hotpath_guard import require_scenario
+    blocked = require_scenario("presentation")
+    if blocked:
+        return ToolResult(ok=False, output="", error=blocked)
+
     title = (args.get("title") or "").strip()
     if not title:
         return ToolResult(ok=False, output="", error="title 必填 · 演示稿标题 + 落盘文件名来源")
@@ -324,45 +329,25 @@ SPEC = ToolSpec(
             "title": {"type": "string", "description": "演示稿标题 · 封面 + 文件名 · 必填"},
             "body": {
                 "type": "string",
-                "description": (
-                    "分页 markdown 正文 · 一行 `---` 分页 · 每页可带 <!-- layout: ... --> 等指令"
-                    "(cover/section/bullets/image/statement/two_col/metrics/pillars/chart/flow/sources/closing)。"
-                    "不传则自动抓你本条回复的正文(适合长稿 / 弱模型)。"
-                ),
+                "description": "分页 markdown。`---` 分页。不传则抓本条回复。版式见 read_scenario('presentation')。",
             },
             "style": {
                 "type": "string",
                 "enum": ["light_studio", "dark_keynote", "editorial", "glass", "neon_glitch", "sketch"],
-                "description": (
-                    "基底风格 · light_studio(浅商务)· dark_keynote(深色发布会)· editorial(杂志编辑)· "
-                    "glass(玻璃拟态·磨砂半透明)· neon_glitch(霓虹故障·扫描线等宽字)· sketch(手绘涂鸦·方格纸手写体)"
-                ),
+                "description": "基底风格，见 enum。含义见 read_scenario('presentation')。",
             },
             "accent": {
                 "type": "string",
-                "description": (
-                    "主色 · 从用户需求理解后传 · 俗名(蓝/科技蓝/紫/green/橙/黑…)或 hex(#2563EB / 2563EB)。"
-                    "引擎自动派生配套色与对比,保证自洽 · 不传用基底色。"
-                ),
+                "description": "主色：俗名或 hex。不传用基底色。",
             },
             "mood": {
                 "type": "string",
                 "enum": ["calm", "vivid", "sharp"],
-                "description": "气质 · calm 沉稳(默认)/ vivid 活泼(字更大、上色块)/ sharp 锐利(去色块、更利落)· 也认中文沉稳/活泼/锐利",
+                "description": "气质，见 enum。也认中文沉稳/活泼/锐利。",
             },
             "style_spec": {
                 "type": "object",
-                "description": (
-                    "【高级 · LLM 直接作曲风格】当用户要的方向现成基底/accent/mood 覆盖不了时,你自己产一组设计 token(此对象)"
-                    "叠加在基底上。 引擎会校验 + 夹紧 + 兜对比度(你飞不出'能看'的底线)。 可用 token:\n"
-                    "  颜色(hex 或俗名): bg / bg_alt / ink_title / ink_body / ink_muted / accent / accent2 / on_accent / rule\n"
-                    "  材质: surface_alpha(8-100·面板透明度,玻璃用低值) · corner_radius(0-0.5·0=硬边) · panel_gradient(bool)\n"
-                    "  效果: shadow_style(none|soft|glow|hard) · texture(none|grid|dots|scanline|beams) · stroke_style(clean|hairline|hard|sketch)\n"
-                    "  个性: font_role(sans|serif|mono|hand) · accent_shape(bar|underline|dot|slash|none) · decor(none|blob 装饰圆|corner 取景框) · is_dark(bool) · uppercase_kicker(bool)\n"
-                    "  字阶: pt_cover_title/pt_title/pt_section/pt_heading/pt_body/pt_kpi/pt_statement(9-96)\n"
-                    "例:磨砂玻璃暖橙 → style=glass + style_spec={\"accent\":\"橙\",\"surface_alpha\":20}；"
-                    "复古打字机 → {\"font_role\":\"mono\",\"texture\":\"grid\",\"bg\":\"F4EFE3\",\"accent\":\"8A3B2E\",\"shadow_style\":\"none\"}。"
-                ),
+                "description": "高级设计 token。现成 style/accent/mood 盖不住时才用。字段见 read_scenario('presentation')。",
             },
             "subtitle": {"type": "string", "description": "封面副标题 · 可选"},
             "audience": {"type": "string", "description": "封面眉标/面向 · 可选"},
@@ -375,10 +360,7 @@ SPEC = ToolSpec(
             },
             "cover_prompt": {
                 "type": "string",
-                "description": (
-                    "封面配图提示词 · 配了生图模型(auto_image)会自动生成大图做封面;没配退回渐变封面。"
-                    "要有艺术感:主体+光线+明暗对比+构图+镜头+色调,且左侧/暗部留干净负空间给标题,画面别带文字。"
-                ),
+                "description": "封面配图提示词。画面里不要有字。细则见 read_scenario('presentation')。",
             },
             "cover_layout": {
                 "type": "string",
@@ -391,11 +373,7 @@ SPEC = ToolSpec(
             },
             "auto_image": {
                 "type": "boolean",
-                "description": (
-                    "自动配图 · 默认 True。 对「有 <!-- prompt: 画面描述 --> 但没 <!-- image -->」"
-                    "的页,若配了生图模型(DAEMONKEY_IMAGE_MODEL)就自动生成图填入;没配则留提示词占位卡。"
-                    "设 False 则一律只留占位卡(自己后面用豆包/生图补)。"
-                ),
+                "description": "有 prompt 无图时是否自动生图。默认 True；False 只留占位卡。",
             },
         },
         "required": ["title"],

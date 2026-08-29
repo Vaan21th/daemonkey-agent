@@ -215,4 +215,66 @@ system_prompt 是 agentic app 的"操作手册"。写好了 LLM 像老兵，写�
 
 ---
 
+## scripted · exec_template 合同
+
+schema 只留「scripted 必填」。形状在这里。agentic 不填（写了也忽略）。
+
+```json
+{
+  "kind": "http",
+  "routes": [
+    {
+      "when": "mode==edits",
+      "method": "POST",
+      "url": "https://example.com/v1/images/edits",
+      "headers": {"Authorization": "Bearer ${secret:<app_id>:api_key}"},
+      "body": {"prompt": "${ui:prompt}", "size": "${ui:size:1024x1024}"},
+      "body_kind": "json",
+      "timeout_sec": 300
+    },
+    {"when": "default", "method": "POST", "url": "...", "body": {}, "body_kind": "json"}
+  ],
+  "response": {
+    "kind": "b64_save",
+    "extract": "data[0].b64_json",
+    "save": {"dir": "data/workshop/outputs/${app_id}", "filename": "img-${ts}.png"},
+    "mapping": {"image_url": "__saved_path__", "revised_prompt": "data[0].revised_prompt"}
+  }
+}
+```
+
+- 必须有一条 `when=default` 兜底。`when` 只做简单等于匹配。
+- `body_kind`: json / multipart_form / form_urlencoded / raw
+- `response.kind`: json / text / binary_save / b64_save
+- 插值只支持：`${ui:field}` · `${ui:field:default}` · `${secret:<app_id>:<name>}` · `${secret:<name>}`（本 app）· `${upstream:node_id:port}` · `${app_id}` / `${ts}` / `${ts_ms}`
+- 上传文件：body 值写 `@file:<path>`
+- 做不到字符串拼接以外的运算 / 三元 / 循环 / 嵌套 → 改 agentic
+- KEY 走 `app_set_secret`，prompt 里只写 placeholder（铁律 7）
+
+**output_schema**：可选输出端口，最多 10 个。不填默认单个 `output` 字符串。type: string / number / boolean / array / object / file。名字要有语义，别叫 data1。
+
+**ui_form_schema**：测试 tab 表单，最多 20 字段。`name` 合法变量名，不能用保留字 input/output/app/opus/now/today。复杂输入走对话，别堆字段。
+
+**asset_slots**：配置页槽声明。真值走 `manage_app_asset`，不写进 prompt。
+
+---
+
+## create_workflow · steps 合同
+
+schema 只留字段名。排工作流之前读这一节。缺 app 先 `create_app`，steps 里的 app 必须已存在。
+
+**第一刀就落档**：他说「排个工作流」→ 先 `create_workflow`（name + description + steps），再调节点。
+
+| 字段 | 含义 |
+|---|---|
+| `app` | 单 app 步必填。`app-xxxxxxxx` 或唯一命中的名字。与 `parallel` 二选一 |
+| `goal` | 单 app 步必填。这一步要达成什么 |
+| `substeps` | 可选站内清单 |
+| `on_fail` | 可选 `stop`（默认）或 `goto:N` |
+| `parallel` | 并行组：2~4 分支，互不依赖才写。与 `app` 二选一 |
+
+默认串行。黄金搭配 = 并行收集 → 串行合成。
+
+---
+
 *工艺指南是活的——每次翻车后回来加一条。*
