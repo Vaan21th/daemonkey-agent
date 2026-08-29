@@ -880,6 +880,17 @@ except Exception:
         return t
 
 
+def _specs_for_llm(allowed_tool_names: set[str] | None) -> list[ToolSpec]:
+    from agent_tools._tool_catalog import set_catalog_allowed, visible_specs
+    set_catalog_allowed(allowed_tool_names)
+    return visible_specs(allowed_tool_names)
+
+
+def _rewrite_tool_use(name: str, args: dict) -> tuple[str, dict]:
+    from agent_tools._tool_catalog import resolve_call
+    return resolve_call(name, args)
+
+
 def to_openai_tools(specs: list[ToolSpec]) -> list[dict]:
     return [
         {
@@ -1131,10 +1142,7 @@ def _loop_openai(
             on_message_commit(entry)
         except Exception:
             logger.warning("openai 循环 _commit 落盘失败 · 增量消息可能丢 (kill -9 风险)", exc_info=True)
-    if allowed_tool_names is None:
-        specs = list(REGISTRY.values())
-    else:
-        specs = [s for n, s in REGISTRY.items() if n in allowed_tool_names]
+    specs = _specs_for_llm(allowed_tool_names)
     tools_param = to_openai_tools(specs) if specs else None
 
     # wish-8f122254 · DeepSeek 自动 disk cache 修复:
@@ -1479,7 +1487,8 @@ def _loop_openai(
                 _a = json.loads(_tc["arguments"] or "{}")
             except json.JSONDecodeError:
                 _a = {}
-            _sa_names.append((REGISTRY.get(_tc["name"]), _a, _tc["name"]))
+            _rn, _ra = _rewrite_tool_use(_tc["name"], _a)
+            _sa_names.append((REGISTRY.get(_rn), _ra, _rn))
         parallel_results = _maybe_parallel_auto(_sa_names, progress)
 
         for idx, tc in enumerate(tool_calls):
@@ -1488,6 +1497,7 @@ def _loop_openai(
                 args = json.loads(tc["arguments"] or "{}")
             except json.JSONDecodeError:
                 args = {}
+            name, args = _rewrite_tool_use(name, args)
             spec = REGISTRY.get(name)
 
             if spec is None:
@@ -1719,10 +1729,7 @@ def _loop_anthropic(
             on_message_commit(entry)
         except Exception:
             logger.warning("anthropic 循环 _commit 落盘失败 · 增量消息可能丢 (kill -9 风险)", exc_info=True)
-    if allowed_tool_names is None:
-        specs = list(REGISTRY.values())
-    else:
-        specs = [s for n, s in REGISTRY.items() if n in allowed_tool_names]
+    specs = _specs_for_llm(allowed_tool_names)
     tools_param = to_anthropic_tools(specs) if specs else None
 
     # Anthropic 原生：system 用 list-of-blocks。
@@ -1825,34 +1832,38 @@ def _loop_anthropic(
         tool_results: list[dict] = []
         aborted = False
         # 卷五十八续 ⑤ · 整批全只读 AUTO → 并发预跑 (否则 {} · 主循环照常串行)
+        _sa_ant = []
+        for _tu in tool_use_blocks:
+            _rn, _ra = _rewrite_tool_use(_tu.name, _tu.input or {})
+            _sa_ant.append((REGISTRY.get(_rn), _ra, _rn))
         parallel_results = _maybe_parallel_auto(
-            [(REGISTRY.get(_tu.name), (_tu.input or {}), _tu.name) for _tu in tool_use_blocks],
+            _sa_ant,
             progress,
         )
         for idx, tu in enumerate(tool_use_blocks):
-            spec = REGISTRY.get(tu.name)
-            args = tu.input or {}
+            name, args = _rewrite_tool_use(tu.name, tu.input or {})
+            spec = REGISTRY.get(name)
 
             if spec is None:
                 from agent_tools._desc_budget import unknown_tool_error
-                result = ToolResult(ok=False, output="", error=unknown_tool_error(tu.name))
-                _push(progress, "tool_call", {"name": tu.name, "summary": "(unknown tool)", "tier": "?"})
-            elif allowed_tool_names is not None and tu.name not in allowed_tool_names:
+                result = ToolResult(ok=False, output="", error=unknown_tool_error(name))
+                _push(progress, "tool_call", {"name": name, "summary": "(unknown tool)", "tier": "?"})
+            elif allowed_tool_names is not None and name not in allowed_tool_names:
                 # 卷七十二 · 白名单越权拦截 (审稿 app 调 run_app 跑 5 分钟内容制作 = 真实触发场景)
                 allowed_list = ", ".join(sorted(allowed_tool_names)) or "(empty)"
                 result = ToolResult(
                     ok=False, output="",
-                    error=f"tool '{tu.name}' not allowed in this app scope · whitelist: {allowed_list}",
+                    error=f"tool '{name}' not allowed in this app scope · whitelist: {allowed_list}",
                 )
                 _push(progress, "tool_call", {
-                    "name": tu.name,
-                    "summary": f"(denied · not in app whitelist) {tu.name}",
+                    "name": name,
+                    "summary": f"(denied · not in app whitelist) {name}",
                     "tier": "denied",
                 })
             else:
                 _push(progress, "tool_call", {
-                    "name": tu.name,
-                    "summary": spec.summarize(args) if hasattr(spec, "summarize") else tu.name,
+                    "name": name,
+                    "summary": spec.summarize(args) if hasattr(spec, "summarize") else name,
                     "tier": getattr(spec, "tier", "?"),
                 })
                 decision = _call_confirm(confirm, spec, args, text, tool_call_id=getattr(tu, "id", "") or "")
@@ -1869,11 +1880,11 @@ def _loop_anthropic(
                 elif isinstance(decision, str) and decision.startswith("reject:"):
                     result = ToolResult(ok=False, output="", error=decision[7:].strip())
                 else:
-                    schema_err = _validate_args(args, spec.input_schema, tu.name)
+                    schema_err = _validate_args(args, spec.input_schema, name)
                     if schema_err is not None:
                         result = ToolResult(ok=False, output="", error=schema_err)
                     else:
-                        _pet_write_activity(tu.name)
+                        _pet_write_activity(name)
                         try:
                             # 卷五十八续 ⑤ · 已并发预跑过就直接取·否则当场跑
                             if idx in parallel_results:

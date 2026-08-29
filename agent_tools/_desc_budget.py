@@ -267,5 +267,8 @@ def unknown_tool_error(name: str) -> str:
         if name == mod or f"'{name}'" in err or f'"{name}"' in err
     ]
     if not matched:
-        return f"unknown tool: {name}"
+        return (
+            f"unknown tool: {name}. "
+            "核心手在 tools[] 里直接调；其余先 catalog_search，再 catalog_call。"
+        )
     return f"unknown tool: {name}\n启动时没挂上: {matched[0]}\n{_FIX}"

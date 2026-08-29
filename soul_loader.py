@@ -390,7 +390,9 @@ def runtime_context_addendum(daemon_root: Path) -> str:
         "  - 1 read with start/end lines (or just the full file if small) to see content\n"
         "  - 1 write or shell action if the user asked for one\n"
         "Craft contracts are not in tool schemas: create_app / create_workflow → "
-        "read_scenario(name='app_creation'); PPT / 生图 → read_scenario(name='presentation').\n\n"
+        "read_scenario(name='app_creation'); PPT / 生图 → read_scenario(name='presentation').\n"
+        "Only core file/shell/memory tools sit in tools[]. Everything else: catalog_search "
+        "or catalog_call(name, args). Directory below. tools[] must stay byte-stable.\n\n"
         "## shell_exec\n\n"
         + (
             "You are on Windows running PowerShell. Use PowerShell idioms, NOT POSIX:\n"
@@ -466,7 +468,14 @@ def runtime_context_addendum(daemon_root: Path) -> str:
     except Exception:
         boot_note = ""
 
-    return base + notebook_section + evolution_section + boot_note
+    catalog_note = ""
+    try:
+        from agent_tools._tool_catalog import directory_block
+        catalog_note = directory_block()
+    except Exception:
+        catalog_note = ""
+
+    return base + notebook_section + evolution_section + boot_note + catalog_note
 
 
 def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: bool = True) -> Soul:
