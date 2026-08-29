@@ -429,9 +429,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="read_dashboard",
     description=(
-        "读 OPUS 工作室任意一维的实际数据 · 让 OPUS 在对话里能引用「第 3 条雷达」/"
-        "「这周第一份报告」/「上次写的口播稿」这样的具体内容。"
-        " 任何时候 用户 指向看板内容 · OPUS 都应该先读这个工具拿到事实再操作。"
+        "读 OPUS 工作室任意一维的实际数据 · 让 OPUS 在对话里能引用「第 3 条雷达」/「这周第一份报告」/「上次写的口播稿」这样的具体内容。 任何时候 BRO 指向看板内容 · OPUS 都应该先读这个工具拿到事实再操作。"
     ),
     tier=TIER_AUTO,
     input_schema={

@@ -209,22 +209,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="session_search",
     description=(
-        " II · wish-2a92774d · session 聚合搜索 (hermes 风格 L2)\n\n"
-        "**跟 recall_memory 的区别**:\n"
-        "  - recall_memory · 通用 memory 搜 (OWNER-NOTEBOOK + SELF-EVOLUTION + sessions) · 返 message 碎片\n"
-        "  - session_search · 专搜 sessions/*.jsonl · 按 session 聚合 (1 session 多 hits) + 时间过滤\n\n"
-        "**调用时机** (LLM 主动判断):\n"
-        "  - 用户 问『上次我们聊过 X 是哪个 session』『5/24 那次对话讨论的什么』『XX 主题在哪些 session 提过』\n"
-        "  - 用户 提某个具体话题 · 你想找历史上 OPUS 跟 用户 怎么谈过\n"
-        "  - 你要拉某个 session 完整上下文还原决策路径 (action=get)\n"
-        "  - 想看 sessions/ 整体概况 (action=stats)\n\n"
-        "**actions**:\n"
-        "  - search · query 聚合搜 · 按 session 分组返 + 每 session 前 N 命中\n"
-        "  - list · 列最近 N 个 session · 含创建时间 / msg 数 / 首句 用户\n"
-        "  - get · 拉取单个 session 全 messages (limit 默认 200)\n"
-        "  - stats · sessions/ 全局统计 (个数 / 总 msg / FTS5 索引覆盖率)\n\n"
-        "**FTS5 语法**: 支持 AND/OR/NOT · 短语用双引号 · 中文直接写 · 前缀 *\n\n"
-        "**时间过滤**: since/until 接 ISO date (e.g. '2026-05-23' or '2026-05-23T18:00:00')"
+        "专搜 sessions/*.jsonl，按会话聚合。通用记忆用 recall_memory。actions: search/list/get/stats。支持 FTS5 与 since/until。"
     ),
     tier=TIER_AUTO,
     input_schema={

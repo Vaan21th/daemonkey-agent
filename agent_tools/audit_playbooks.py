@@ -114,11 +114,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="audit_playbooks",
     description=(
-        "Audit playbooks (skills) for semantic duplicates using embedding centroids. "
-        "When the user asks 'are any of my skills/playbooks duplicates?' or wants to tidy "
-        "the skill box, run this and present the clusters. Read-only: merging requires the "
-        "user's explicit pick, then merge via file tools (fold unique content into the keeper, "
-        "rename the others to <title>.retired.md — hygiene gate v2 excludes them from the index)."
+        "查 playbook/skill 是否语义重复。他说「技能有没有重复 / 整理技能箱」时调。只读：合并要他点名后再用文件工具折进留下的那份。"
     ),
     tier=TIER_AUTO,
     input_schema={

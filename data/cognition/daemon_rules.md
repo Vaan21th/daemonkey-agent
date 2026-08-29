@@ -60,10 +60,12 @@
 |---|---|---|---|
 | `self_evolution` | 用户说"改/加/弄一个 X"·"让 X 更醒目"·改 `agent_tools/*.py` `workers/*.py` `daemon_api.py` `static/*` `tools/*` | 直接动代码不走流程 / 改完不重启 daemon / UI 改完没让用户视觉验收 | **必读** |
 | `app_creation` | "建/做一个 X 应用"·"加一个 Y app"·"排一个工作流"·用户给了 API KEY 让你装 | 想了半天 0 次 create_app·工坊空 / KEY 真值明文写进 app json → 永久暴露 | **必读** |
+| `presentation` | "做一份 PPT/演示稿/汇报/课件"·给报告或封面配图·调 generate_presentation / generate_image | 全文字白板稿 / 生图带字被裁 / 每张图单独调卡死 | **必读** |
 
 **典型判断**：
 - "改一下某面板的样式" → `self_evolution`
 - "再加个翻译应用" / "给这个 app 装 key" → `app_creation`
+- "做一份汇报 PPT" / 给封面配图 → `presentation`
 - 模糊请求（"改一下""加个""让 X 更醒目"）→ 先 `intent_to_wish` 想清楚再动手
 
 ---
@@ -114,6 +116,12 @@
 
 任何 API KEY / token / 密码：必须先 `app_set_secret` 落到 secret store（gitignore 拦着）·
 prompt / 模板里用 `${secret:...}` 占位·**绝不写明文进任何会进 git 的文件**·也不在 chat 里 print。
+
+---
+
+## 铁律 15 · 工具简介两句
+
+`ToolSpec.description` 只写何时伸这只手，两句、≤180 tok（`register_tool` 超线 daemon 起不来）。工艺 / 填参走 `read_scenario`，实例手艺走 playbook。
 
 ---
 

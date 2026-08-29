@@ -131,11 +131,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="list_flows",
     description=(
-        "List all workflows (flows) in the workshop (data/workshop/flows/*.json). "
-        "Use whenever you want to know what flows exist — DO NOT use glob_files for this "
-        "(.gitignore hides flows/*.json from rg). "
-        "Returns id / name / steps chain (with app names, not ids). "
-        "Filter by query (substring match) or detailed=true for per-step goals + substeps. Read-only."
+        "List all workflows (flows) in the OPUS workshop (data/workshop/flows/*.json). Use whenever you want to know what flows exist — DO NOT use glob_files for this (.gitignore hides flows/*.json from rg). Returns id / name / steps chain (with app names, not ids). Filter by query (substring match) or detailed=true for per-step goals + substeps. Read-only."
     ),
     tier=TIER_AUTO,
     input_schema={

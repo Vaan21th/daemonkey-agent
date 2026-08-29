@@ -113,33 +113,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="service_start",
     description=(
-        "启动一个**长跑后台服务** (例如 API server / model worker / scheduler) · 真 detach "
-        "子进程 · daemon 死了它仍在跑 · 状态持久化在 data/runtime/services.json。\n\n"
-        "**何时用这个 vs shell_exec**:\n"
-        "  - service_start: 长跑服务 (永不退出 · 监听端口 · 跑后台 worker)\n"
-        "  - shell_exec: 短任务 (git status · cat · ls · 跑测试 · 短脚本)\n"
-        "  - 错用例: 用 shell_exec 起 GPT-SoVITS api.py → timeout 30s 后子进程成孤儿 (真实事故)\n\n"
-        "**典型调用**:\n"
-        "  ```\n"
-        "  service_start(\n"
-        "    name='gpt-sovits',\n"
-        "    command='conda activate sovits && python api.py',\n"
-        "    working_dir='C:/GPT-SoVITS',\n"
-        "    port=9880,\n"
-        "    healthcheck_url='http://127.0.0.1:9880/health',\n"
-        "    healthcheck_after_sec=8.0\n"
-        "  )\n"
-        "  ```\n\n"
-        "**红线**:\n"
-        "  - service name 必须匹配 ^[a-zA-Z0-9_-]{1,64}$ · 不允许中文 / 路径字符\n"
-        "  - 一个 name 一个 service · 起新的前先 stop 旧的\n"
-        "  - working_dir 必须是绝对路径或相对 daemon root 的存在目录\n"
-        "  - shell=True 启用 · 可以用 conda activate / && / 管道\n\n"
-        "**配套工具**:\n"
-        "  - service_status(name) · 查活 + 元信息 (cpu / mem / running_time)\n"
-        "  - service_stop(name) · 优雅停 (SIGTERM 5s timeout · 然后 SIGKILL 兜底)\n"
-        "  - service_list() · 列所有已知 service · 含 alive/stopped 状态\n\n"
-        "**tier**: TIER_CONFIRM (起后台服务有副作用 · 用户 看摘要 ✓ 才跑)"
+        "启动长跑后台服务（监听端口/worker），daemon 死后仍在。短任务用 shell_exec。name 限 [A-Za-z0-9_-]。配套 service_status/stop/list。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

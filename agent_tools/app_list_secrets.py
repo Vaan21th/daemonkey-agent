@@ -50,11 +50,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="app_list_secrets",
     description=(
-        "列一个 app 已存的 secret 字段名 · 不显示真值 (LLM 安全)\n\n"
-        "**用途**:\n"
-        "  - 写 system_prompt 前 · 看 用户 之前给过哪些 KEY · 用对的 placeholder 名\n"
-        "  - 调 app_set_secret 后 verify 落到位\n"
-        "  - 调试 shell_exec 报『env 变量缺失』时 · 验 secret 名是不是打错"
+        "列一个 app 已存的 secret 字段名，不显示真值。"
+        "写 prompt 前看他给过哪些 KEY、set 之后核对、或查 env 变量名是不是打错。"
     ),
     tier=TIER_AUTO,
     input_schema={

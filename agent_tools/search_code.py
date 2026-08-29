@@ -237,12 +237,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="search_code",
     description=(
-        "Semantic code search — find code by MEANING, not exact text (complements grep_files's literal regex). "
-        "Ask conceptual questions like 'where do we resume a turn after restart' or 'how are attachments parsed'. "
-        "Default backend is offline TF-IDF with camelCase/snake_case tokenization (so 'load session' matches "
-        "loadSession / _load_session_history); if OPUS_EMBED_BASE_URL/API_KEY/MODEL env are set it upgrades to "
-        "neural embedding rerank (bounded cost, falls back to TF-IDF on any error). "
-        "Returns ranked file:line ranges — then read_file that range / outline_file the file / edit_file. Read-only."
+        "按意思找代码，不是字面正则（字面用 grep_files）。问「重启后续场在哪」这类概念。返回文件:行号，再 read_file / outline_file / edit_file。"
     ),
     tier=TIER_AUTO,
     input_schema={

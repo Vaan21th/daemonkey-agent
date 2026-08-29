@@ -300,20 +300,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="replan",
     description=(
-        "三唤醒点顾问 · 请一个【全新上下文的顾问】来出蓝图 / 破局 / 验收 (抗套娃)。\n"
-        "若 BRO 在设置里给某条 provider 配置标了「总监模型」· 本工具自动用它跑顾问 (跨 provider 现场建 client·贵模型);\n"
-        "没标 → 用当前主模型 (零回归)。 同一个任务换到干净上下文 + 规划姿态·往往能看清当局者迷的卡点。\n\n"
-        "**三种模式 (mode 参数)**:\n"
-        "  - unstick (默认) · 卡壳破局: 试了 2+ 条路都失败 / 报错反复 / 正想说『要不要换方案』时调 · blocker 必填\n"
-        "  - blueprint · 开工前出施工单: 复杂工程任务动手前调 · goal 必填 · blocker 可选 (写约束/顾虑)\n"
-        "  - review · 交付前验收: 有副作用任务宣布完成前调 · goal(原蓝图) + blocker(交付说明+diff摘要) 必填\n"
-        "**什么时候调(别等 BRO 提)**:\n"
-        "  - 看到上下文里任务账本提示『别硬撑』时 → unstick\n"
-        "  - 改 daemon 代码 / 走 wish 流程 / 多文件改动开工前 → blueprint (施工单落 track_task 再动手)\n"
-        "  - 要宣布『做完了』之前 → review (PASS 才算数)\n"
-        "**它做什么**:起一个干净上下文的子执行体当顾问 · 只读权限 · 自动拿到任务账本的 ✓(别推翻)/✗(别再走)。\n"
-        "它【不改任何文件】· 方案由你(主执行体)单线程执行。\n"
-        "**tier**: AUTO · 只读一次子推理 · 该调就顺手调 · 不要因为怕麻烦而选择放弃。"
+        "请干净上下文的顾问出蓝图/破局/验收（只读、不改文件）。mode: unstick 卡壳 / blueprint 开工前施工单 / review 交付前。复杂改动动手前或想说做完了之前调。"
     ),
     tier=TIER_AUTO,
     input_schema={

@@ -230,22 +230,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="recall_memory",
     description=(
-        "搜索 Daemonkey 的长期记忆库（BRO-NOTEBOOK + SELF-EVOLUTION + Daemonkey-MEMORIES + SKILL + 历史对话记录）。"
-        "用 SQLite FTS5 做全文检索，毫秒级返回。\n"
-        "\n"
-        "**两段式（省 token）**：\n"
-        "1. 先 `mode=list`（默认）→ 拿到一串 `id + 单行摘要`。大多数「我有没有记过 X」看摘要就能答，别急着取全文。\n"
-        "2. 摘要不够、确实要看某条原文 → `mode=full` + `ids=[挑中的 id]` 取全文。\n"
-        "\n"
-        "**调用时机**（Daemonkey 主动判断）：\n"
-        "- BRO 问'上次我们聊过 X' / '我之前说过 Y 吗' / '你还记得 Z 吗'\n"
-        "- BRO 提到某个过去的话题，你想确认自己有没有记录\n"
-        "- 你需要引用 BRO-NOTEBOOK 里的具体画像条目时\n"
-        "- 你需要查自己的演化历史（SELF-EVOLUTION）时\n"
-        "- 任何不确定'这个信息是不是在灵魂层里'的时候——搜一下比猜更靠谱\n"
-        "\n"
-        "**scope**: all(全部) / bro(只看BRO画像) / self(Daemonkey自传+日记) / sessions(历史对话+蒸馏摘要) / skill(playbook · 卷四十六 II) / docs(私有文档知识库) / clients(客户档案备注)\n"
-        "**查询语法**: FTS5 原生语法，支持 AND/OR/NOT、短语\"双引号\"、前缀* 等。"
+        "搜长期记忆（画像/自传/日记/会话/playbook/知识库/客户）。先 mode=list 看摘要，不够再 mode=full+ids。scope: all/bro/self/sessions/skill/docs/clients。"
     ),
     tier=TIER_AUTO,
     input_schema={

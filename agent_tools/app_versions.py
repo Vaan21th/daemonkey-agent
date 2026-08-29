@@ -135,16 +135,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="app_versions",
     description=(
-        "查工坊 app 的历史版本快照 · 可读 / diff / 回滚 (沉淀闭环 v2 刀④)\n\n"
-        "**什么时候用**:\n"
-        "  - 用户说『上次那版 prompt 是怎么写的』 → list + show\n"
-        "  - 调坏了想知道改了啥 → diff 当前 vs 上一版\n"
-        "  - update_app 改坏了要回滚 → rollback (会自动+1 新 version · 不毁现版)\n\n"
-        "**机制**:\n"
-        "  - save_app 每次 update 时·会把覆盖前的状态快照到 data/workshop/apps/_versions/<aid>/v<N>.json\n"
-        "  - 保留最近 30 版 · 创建新 app 不快照 (没东西可快照)\n"
-        "  - rollback 走 save_app 路径 · 同样会过结构校验 · 老版本不合规也能拒\n\n"
-        "**红线**: 不直接覆盖当前 · 永远走 save_app · 留全程留痕。"
+        "查工坊 app 历史快照。list/show/diff/rollback。回滚会 +1 新 version，不直接覆盖当前。"
     ),
     tier=TIER_AUTO,
     classify=_classify,

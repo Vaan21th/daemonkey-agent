@@ -224,23 +224,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="wish_update",
     description=(
-        "更新一条 OPUS 心愿的状态 / 集成路径 / 反思 ( · 四态精简)\n\n"
-        "**状态机 (4+1 态 · 砍掉了老的 drafted/approved/in_progress/done/ready_for_merge)**:\n"
-        "  pending → active → review → live    任何态 → rejected\n"
-        "  - pending  = 等 用户 拍板 (批 / 弃)\n"
-        "  - active   = 归 OPUS 推进 (勘察 / 写码 / 自测) · 球在 OPUS 半场\n"
-        "  - review   = OPUS 完工·代码在分支上·等 用户 看 diff + 验收\n"
-        "  - live     = 已真合进 master 主干 (标 live 会自动 merge·合不进就拒绝·防谎报上线)\n"
-        "  - rejected = 弃\n\n"
-        "**子标记 daemon_phase (仅 active 时有意义·UI 挂小 chip)**:\n"
-        "  - plan_pending = (daemon 路径) OPUS 出完方案·停下等 用户 批方案 (关卡1)\n"
-        "  - blocked      = OPUS 撞墙·等 用户 看\n\n"
-        "**典型场景**:\n"
-        "  - 用户 批准让 daemon 装 → status=active + integration_path=daemon (会先勘察出方案·设 daemon_phase=plan_pending 等批)\n"
-        "  - 用户 批方案 → daemon_phase=null (清空·自动从 master 切分支开始写码)\n"
-        "  - OPUS 写完自测过 → status=review (等 用户 看 diff)\n"
-        "  - 用户 验收通过 → status=live (自动 merge 回 master)\n"
-        "  - 撞墙 → daemon_phase=blocked · 不靠谱 → status=rejected\n"
+        "更新心愿状态。状态机 pending→active→review→live，任何态可 rejected。active 可带 daemon_phase=plan_pending/blocked。标 live 会尝试 merge。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

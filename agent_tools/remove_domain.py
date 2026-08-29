@@ -78,19 +78,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="remove_domain",
     description=(
-        "删除一个雷达领域。\n\n"
-        "领域都是用户在相遇 / 对话里挖出来的关注方向（add_focus_domain / init_domain 建的）·"
-        "用户 说不要了就能删。\n\n"
-        "**调用时机**:\n"
-        "  - 用户: '把 X 领域删了' / '我不关注 Y 了' / '清理一下雷达类目'\n"
-        "  - 用户 明确说不想再看某领域的内容时·调本工具\n\n"
-        "**默认安全策略**: sources_action=reassign · 保留信源·只把它们归到合理 fallback\n"
-        "  - 不传 target_domain 时自动归到 self-evolve\n"
-        "  - 想指定 target 也可以·传 target_domain=某 slug\n"
-        "  - 真要连源一起删·明确传 sources_action=delete\n\n"
-        "**红线**:\n"
-        "  - **self-evolve 永远不能删** —— 它是看 GitHub 同类工程的镜子·没了就失去自我演化能力\n"
-        "  - 其他 domain 都可以删（都是用户自建的）"
+        "删雷达领域。默认 sources_action=reassign 把源归到 fallback。self-evolve 永远不能删。真要连源删须显式 delete。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

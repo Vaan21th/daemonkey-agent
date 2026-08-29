@@ -85,18 +85,7 @@ def _run(args: dict) -> ToolResult:
 _SPEC = ToolSpec(
     name="delete_app_to_trash",
     description=(
-        "**软删一个工坊 app**·移到 `data/workshop/apps/_trash/`·加 deleted_at 字段·**可走 restore_app 恢复**。\n\n"
-        "🔴 **关键调用次序**:\n"
-        "用户 说 `把 app-xxxx 删了` / `清理一下旧的 GPT Image / SOVITS app` 时·**第一刀就是这个工具**·**不要** 自己写 shell_exec 跑 rm/Remove-Item — 那样会跳过回收站语义。\n\n"
-        "**调用规则**:\n"
-        "- `app_id` 必填·必须以 `app-` 开头 (e.g. `app-35ed6c86`)\n"
-        "- TIER_CONFIRM·用户 看到摘要按 ✓ 才执行\n"
-        "- 删完返回会提示 用户 如何恢复 / 永久删\n\n"
-        "**反面教材**:\n"
-        "用户 让 daemon OPUS 删 app-xxx · OPUS 调 shell_exec 跑 `Remove-Item data/workshop/apps/app-xxx.json` → 跳过回收站 · 删了就找不回。 这种调用方式是工艺事故。\n\n"
-        "**配套工具**:\n"
-        "- `restore_app` — 从回收站恢复\n"
-        "- `empty_trash` — 真删 · 不可恢复 (TIER_GUARD)"
+        "软删工坊 app 到回收站（可 restore_app）。BRO 说删 app 时第一刀就是本工具，禁止 shell_exec rm。永久删走 empty_trash。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

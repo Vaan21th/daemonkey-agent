@@ -235,26 +235,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="intent_to_wish",
     description=(
-        "【铁律 0 · 模糊请求时的强制第一调用】把 用户 的模糊请求结构化为 wish_add 草稿。\n\n"
-        "**触发条件 (任一命中 · 第一个工具调用必须是这个)**:\n"
-        "  - 用户 用词: 『改一下』/『加个』/『弄个』/『让 X 更醒目』/『搞点 Y』/『我想要 X』/『来 wish 一下 X』\n"
-        "  - 用户 给的是目标描述·不是文件路径 + 操作指令\n"
-        "  - 你听完不能立刻写出 design_sketch (改哪个文件 + 第几行 + 改成啥)\n\n"
-        "**严格禁止 (在调本工具之前)**:\n"
-        "  - ❌ 不许先 grep_files / read_file / web_fetch / shell_exec 自己『摸清楚』\n"
-        "  - ❌ 不许先 write_file 改任何东西\n"
-        "  - ❌ 不许先 wish_create 跳过意图守护直接进 wish 流程\n"
-        "  > 反面教材: session api-2026-05-25_002346_9f1bc0 · 跳过本工具先 grep+read 然后改文件 = 工艺羞辱\n\n"
-        "**为什么必须第一动作**: 这工具的目的是『让 用户 看见 OPUS 怎么理解模糊请求』· 不是『让 OPUS 给出最准确方案』。用户 看草稿可以 push back/refine·这是工程纪律不是 token 优化。草稿浅没关系·重点是 用户 进了 review 流程。\n\n"
-        "**何时不调本工具**:\n"
-        "  - 用户 给了明确『在 X 文件 N 行改 Y』 → 走铁律 1 (wish_create + 分支 + 改)\n"
-        "  - 只读任务 (『chat.js 有什么可以优化』『心愿单几条 drafted』) → 调研类工具直接用\n"
-        "  - 已经在 wish-XXX 分支上继续打磨原 wish → 直接改\n\n"
-        "**调用之后**:\n"
-        "  - 工具会返回渲染好的 6 字段草稿 markdown (title / why / design_sketch / complexity / hours / priority / rationale)\n"
-        "  - 你 review 字段·觉得 OK → 调 `wish_add` 落档 (status=drafted)\n"
-        "  - 草稿不准 → 再调一次 intent_to_wish · context 写细一点·或者直接调 wish_add 自己改字段\n"
-        "  - **不要自动 wish_add** · 等你 review·这是设计约束"
+        "模糊请求的强制第一调用：把「改一下/加个/弄个」落成 wish 草稿。调之前禁止 grep/read/write。明确到文件行号或只读调研不用。返回草稿后你 review 再 wish_add，不要自动落档。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

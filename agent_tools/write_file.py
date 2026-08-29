@@ -418,14 +418,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="write_file",
     description=(
-        "Write text content to a file (create / overwrite / append). "
-        "BRO will be asked to confirm before writes. "
-        "Writes to .env, soul/, .git/, .venv/, or any opus-soul/skills-cursor path "
-        "require explicit 'do it' from BRO (GUARD tier).\n"
-        "做精排 word/docx 文档(带封面/排版/WebUI 可下载)请用 generate_report·不要用本工具写 .docx"
-        "(写出来是假 docx 纯文本)。\n"
-        "两步法(长文档/对长参数不稳的模型推荐): 先把完整内容写在你的回复正文里 · 再调本工具"
-        "【只给 path·不带 content】 · 会自动抓你回复的正文当文件内容。"
+        "创建/覆盖/追加文本文件。大文件改动用 edit_file。精排 docx 用 generate_report。长内容可只传 path，抓本轮回复正文。.env/soul/.git 是 GUARD。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

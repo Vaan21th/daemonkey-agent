@@ -99,17 +99,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="trust_flow",
     description=(
-        "信任账本 (trust ledger) 手动控制 · 用户一句话信任 / 收回信任某条 flow。\n\n"
-        "level 含义:\n"
-        "  0 = 完全审 · 每步 CONFIRM 都要 y/n (默认)\n"
-        "  1 = 入口不打断 · 内部 CONFIRM 仍要 y/n\n"
-        "  2 = 整条 run 内 CONFIRM 全自动放行 (推荐 · 用户一句话信任)\n"
-        "  3 = 用户钦定 · 不会被自动失败逻辑降级\n\n"
-        "GUARD tier 工具 (shell_exec rm / 改 .env / 重启 daemon) 永远不在信任范围内。\n"
-        "调用时机:\n"
-        "  - 用户说'信任这条 flow' / '别再问我' / '直接跑' → level=2 或 3\n"
-        "  - 用户说'重新审' / '不靠谱' → level=0\n"
-        "  - 不传 level · 只查当前状态。"
+        "手动设置某条 flow 的信任等级 0–3。level=2 整条 CONFIRM 自动放行。GUARD 永远不在信任范围内。不传 level 只查询。"
     ),
     tier=TIER_AUTO,
     input_schema={

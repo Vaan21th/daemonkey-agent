@@ -170,29 +170,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="init_domain",
     description=(
-        " · 一句话建领域 · 自动加信源 + 立即刷雷达。\n\n"
-        "**调用时机**（OPUS 主动判断）:\n"
-        "  - 用户 说'帮我关注 D4 新赛季淘金' / '帮我加一个文玩类目' → OPUS 直接调本工具\n"
-        "  - 用户 说'我要开始追 AI 视频生成这个方向' → 同上\n"
-        "  - 任何'帮我关注 X' / '加一个 Y 领域' 都触发\n\n"
-        "**源配比标准（硬指标）**:\n"
-        "  - **大陆 70% + 海外 30%**——每加一批源都按这个比例配（如加 5 个 → 3~4 个国内 + 1~2 个海外）\n"
-        "  - 国内源优先用原生 RSS（量子位/36氪/雷锋网/IT之家/少数派/InfoQ中国/爱范儿/虎嗅… 视领域而定）·大陆抓得快、不踩墙\n"
-        "  - 海外只挑'大陆能直连 + 高价值'的（arxiv 论文 / 官方 blog / GitHub releases.atom）·**别加 Hacker News / HuggingFace 这类大陆超时的**\n"
-        "  - 加之前最好用 web_fetch 验证 URL 真返回 RSS/Atom·宁可少加几个真能抓的·也别凑数塞死链接\n\n"
-        "**优先策略**:\n"
-        "  - **可以先建空领域占位**（sources=[]）·然后慢慢加源·不要求一次找齐\n"
-        "  - 找不到可用 RSS·**先建领域**·再用 manage_info_source 单加\n"
-        "  - 比起'卡死在 search'·**先建占位再补源**几乎总是更好的策略\n\n"
-        "**理想路径**:\n"
-        "  1. 先调 web_search（360 主引擎·大陆中文搜得准）找 2-3 个像样的 RSS·按 70/30 配比挑\n"
-        "  2. 找不到也没关系·sources=[] 也能调·领域先建出来\n"
-        "  3. domain_slug 用 ascii + dash · 比如 'd4-gold' 'ai-video' 'wenwan'\n"
-        "  4. label 用中文 · 给 UI 看的\n"
-        "  5. icon 选 emoji 时要扣题 · 不要硬上 🧭\n\n"
-        "**示例 sources**:\n"
-        "  [{\"name\": \"Diablo 4 Subreddit\", \"url\": \"https://www.reddit.com/r/diablo4/.rss\", "
-        "\"source_type\": \"rss\", \"category\": \"community\"}]"
+        "一句话建雷达领域，可选立刻刷源。BRO 说「帮我关注 X」时调。源配比大陆约 70%/海外约 30%；海外只挂大陆能直连的（arxiv / 官方 blog / GitHub releases），别加 HN / HuggingFace。找不到 RSS 也可 sources=[] 先占位，再 manage_info_source 补。slug 用 ascii-dash，label 中文。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

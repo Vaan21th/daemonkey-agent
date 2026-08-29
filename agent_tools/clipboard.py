@@ -69,6 +69,13 @@ def _write_summarize(args: dict) -> str:
 
 
 def _write_run(args: dict) -> ToolResult:
+    try:
+        from ._hotpath_guard import block_clipboard_write
+        blocked = block_clipboard_write()
+        if blocked:
+            return ToolResult(ok=False, output="", error=blocked)
+    except Exception:
+        pass
     if not _IS_WIN:
         return ToolResult(ok=False, output="", error="only Windows supported in v0.1")
 

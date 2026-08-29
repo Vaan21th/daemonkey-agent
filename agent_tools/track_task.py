@@ -167,15 +167,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="track_task",
     description=(
-        "任务账本+计划 · 多步任务的工作记忆。两条腿:【计划】= 有序步骤和进度(用户在对话框上方看得见)·"
-        "【结论】= 已验证✓/已排除✗/关键决策。都每轮自动回灌·长会话被压缩或换窗口都不丢。\n"
-        "**多步任务(3 步以上 / 预计要跑一阵的)开工前先 action='plan' 把步骤列出来** —— "
-        "让用户看见你打算怎么干、干到哪了;也让你自己在长任务里不跑偏。\n"
-        "做完一步立刻 action='step' 勾掉(别攒到最后)。计划发现不对就重列或把某步标 skip。\n"
-        "时机: 某方案验证通了/走死了/定了关键决策 → action='note';"
-        "开始或接手任务(尤其新窗口续上次)→ 先 action='open' 把旧账和旧计划拉回来。\n"
-        "action='plan'(steps=步骤数组) / 'step'(step=第几步 + status) / "
-        "'open'(task=任务名) / 'note'(kind+text) / 'list'。"
+        "多步任务账本。三步以上开工先 action=plan；做完一步立刻 step=done。结论用 note。新窗口先 open。action: plan/step/open/note/list。"
     ),
     tier=TIER_AUTO,
     input_schema={

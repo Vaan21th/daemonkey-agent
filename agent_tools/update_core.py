@@ -216,27 +216,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="update_core",
     description=(
-        "Selectively upgrade the L1 KERNEL infrastructure of this Daemonkey from the central "
-        "repo (gitee/github), touching ONLY the files whitelisted in core_manifest.json. "
-        "The user's own apps, workflows, and soul/ memories are NEVER overwritten — they are "
-        "not even passed to git's checkout command, so they are physically untouchable.\n\n"
-        "This is how an open-source Daemonkey user pulls shared infrastructure fixes (write-file "
-        "safety, edit lock, git discipline, daemon self-rescue) without losing their own evolution.\n\n"
-        "Actions:\n"
-        "  list     · show the kernel whitelist + the never-sync list (read-only)\n"
-        "  remotes  · show configured upgrade sources / git remotes (read-only)\n"
-        "  check    · fetch + report which whitelist files have updates (read-only)\n"
-        "  preview  · like check, plus the actual git diff text (read-only)\n"
-        "  apply    · checkpoint-commit first, then overwrite ONLY differing whitelist files "
-        "from the remote, then commit the update (CONFIRM · needs restart to take effect)\n\n"
-        "Safety: apply always git-commits the working tree first (checkpoint), so every change "
-        "is revertable. Soul/data/apps are excluded by the manifest and never appear in the "
-        "checkout command.\n\n"
-        "NLP triggers:\n"
-        "  - '看看内核有没有更新' → check\n"
-        "  - '内核更新改了啥' → preview\n"
-        "  - '升级内核 / 同步最新内核' → apply\n"
-        "  - '能从哪几个源拉' → remotes"
+        "从中央仓库选择性升级内核白名单文件，不碰用户 apps/soul。actions: list/remotes/check/preview/apply。apply 先 checkpoint commit。"
     ),
     tier=TIER_AUTO,
     input_schema={

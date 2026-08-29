@@ -196,18 +196,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="discover_skill",
     description=(
-        "🔭 能力发现引擎 (入口 A) · 画像驱动地去外部发现『别人做出来的 AI 能力』·"
-        "评估后落成 playbook / app / 心愿。\n\n"
-        "**调用时机**:\n"
-        "  - BRO 看板点「能力发现」/ 每周一节律提醒 → 本工具\n"
-        "  - BRO 投喂线索 (『抖音看到个 X』/ 甩链接) → lead 带上\n"
-        "  - BRO『去挖点 X 方向的 skill』→ focus 带上\n\n"
-        "**它做什么**: 不替你判断·把『为谁搜/怎么搜/怎么评/落成什么身体/已有什么/红线』"
-        "组装成作战简报递到你手边。 你照着用 web_search/web_fetch 去搜·按 BRO 画像筛·"
-        "出『发现报告』·落地 (extract_playbook/create_app/wish) 一律等 BRO 拍。\n\n"
-        "**为什么 AUTO**: 本工具只读 (onboarding + 已有 playbook) + 组装简报·零副作用。\n\n"
-        "**画像驱动 (命门)**: BRO 画像已在你 context·用它定方向 (设计师≠程序员)·别泛搜·"
-        "收的时候不相关的丢掉。"
+        "按 BRO 画像去外部发现别人的 AI 能力，组装作战简报。落地 extract_playbook/create_app/wish 等 BRO 拍。可带 lead 或 focus。"
     ),
     tier=TIER_AUTO,
     input_schema={

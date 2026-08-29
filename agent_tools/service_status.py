@@ -73,12 +73,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="service_status",
     description=(
-        "查单个后台服务的当前状态 (活/死 · cpu / mem · healthcheck 复测)。\n\n"
-        "调用时机:\n"
-        "  - 起完服务后过一会查活\n"
-        "  - 排错前先看 alive + healthcheck\n"
-        "  - 用户 问\"那个服务现在占多少资源?\"\n\n"
-        "tier: TIER_AUTO (只读 · 顶多 curl healthcheck)"
+        "查单个后台服务的活/死、cpu/mem、healthcheck。"
+        "起完后对账、排错前先看、他问占多少资源时用。只读。"
     ),
     tier=TIER_AUTO,
     input_schema={

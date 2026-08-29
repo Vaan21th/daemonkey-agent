@@ -229,35 +229,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="add_iron_rule",
     description=(
-        "加一条新铁律 · 一调原子双写 daemon_rules.md (LLM context) + opus-diary.md (UI 显示)\n\n"
-        "**调用时机**:\n"
-        "  - BRO 让 Daemonkey 加一条新工艺纪律 (『以后干 X 必须先做 Y』)\n"
-        "  - Daemonkey 自己反思后认定值得升到铁律层级 (但建议先跟 BRO 商量·因为铁律影响所有未来 Daemonkey)\n"
-        "  - ★ BRO 表达【持久偏好 / 禁忌 / 口味】: 『以后回话别用 emoji』『周报每周五给我』\n"
-        "    『叫我老板别叫 BRO』『代码注释都写中文』——这类当场点头答应等于没答应·\n"
-        "    system_prompt 里没有它·重启就忘干净了。 想让它长期成立必须落到这里。\n\n"
-        "**三个用户可写落点别搞混** (都在 never_sync·官方升级都不覆盖·都会注入 prompt):\n"
-        "  - 干活纪律 / 表达偏好 / 禁忌  → 本工具 (data/cognition/daemon_rules.md)\n"
-        "  - 产品设计层的原则           → soul/CONSTITUTION.md (产品观·用 write_file 追加)\n"
-        "  - 关于 BRO 本人的事实         → update_bro_note (画像·是信息不是纪律)\n\n"
-        "**先调 list_iron_rules 看现有最大编号 · rule_number 必须等于 max+1** (防漏编)\n\n"
-        "**daemon_md 怎么写** (重要):\n"
-        "  - LLM 自己组织好完整 markdown body · 包含 `## 铁律 N · 标题` 头 + 详细 + `---` 尾\n"
-        "  - 推荐结构: 触发 / 纪律 (硬约束) / 严禁 / 例外 / 简单判断 / 反面教材\n"
-        "  - 看 daemon_rules.md 现有铁律 6 / 7 抄 layout 最稳\n\n"
-        "**diary_summary 怎么写**:\n"
-        "  - 给 UI 显示的精简版 · 不含 `##` 头 (update_opus_diary 自动加日期跟标题)\n"
-        "  - 推荐: 触发 + 纪律核心 + 反面教材 + 一句话『为什么这条是骨头不是衣服』\n"
-        "  - 长度 200-800 字符 · 太短 BRO 看不明白 · 太长跟 daemon_md 冗余\n\n"
-        "**⚠️ daemon 重启延迟**:\n"
-        "  - daemon 当前 system_prompt 是启动时缓存的 · 改 daemon_rules.md 不会立刻让 LLM 看到\n"
-        "  - 工具返回会明确告知 · LLM 不要假装下一句开始就按新铁律走\n"
-        "  - BRO 重启 daemon 后 · 新对话才装上新铁律\n\n"
-        "**为什么不暴露写底层细节**:\n"
-        "  - 校验 rule_number 不冲突 (防两根毛同时加铁律 N 撞了)\n"
-        "  - 校验 daemon_md 头格式 (防 LLM 写错 ## 铁律 8 写成 # 铁律 8 头被吞)\n"
-        "  - 自动定位插入点 (有总结表就插它前面·没有就追加末尾·文件缺了自动建)\n"
-        "  - 同步双写 · 防只写一处变孤岛"
+        "加一条新铁律：原子双写 daemon_rules.md + opus-diary.md。先 list_iron_rules 取 max+1。干活纪律走本工具；产品观走 CONSTITUTION；BRO 事实走 update_bro_note。简介不许写成长文（铁律 15）。写法：read_scenario('self_evolution')。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

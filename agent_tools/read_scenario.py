@@ -38,6 +38,7 @@ _AVAILABLE_SCENARIOS = (
     "client_ops",
     "production",
     "reflection",
+    "presentation",
 )
 
 
@@ -70,8 +71,8 @@ def _run(args: dict) -> ToolResult:
             output="",
             error=(
                 f"scenario '{name}' 还没建 · 当前已有: {existing}\n"
-                f"建议: 这条 wish 当前阶段只覆盖 self_evolution + app_creation · "
-                f"其他 domain 待 用户 立铁律 + 拆 scenario md (参考 scenarios/README.md)"
+                f"建议: 已落档 self_evolution / app_creation / presentation · "
+                f"其他 domain 待立铁律 + 拆 scenario md (参考 scenarios/README.md)"
             ),
         )
 
@@ -93,23 +94,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="read_scenario",
     description=(
-        " II · wish-af1245d7 · 按需读场景化铁律细则 (取代 daemon_rules.md 全注入)\n\n"
-        "**调用时机** (LLM 触发):\n"
-        "  1. system_prompt 末尾『场景索引』section 提示当前任务匹配某 domain\n"
-        "  2. 准备改 daemon .py / 改 static / 走 wish 流程 → read_scenario(name='self_evolution')\n"
-        "  3. 准备 create_app / create_workflow / app_set_secret → read_scenario(name='app_creation')\n"
-        "  4. 不确定该走哪个工艺时 · 优先调本工具看 scenario\n\n"
-        "**可选 name**:\n"
-        "  - self_evolution · 改 daemon 代码 / 走 wish / UI 自检 / 验装上 (铁律 0-5)\n"
-        "  - app_creation · 造工坊资产 / 装 API key (铁律 6-7)\n"
-        "  - workflow_creation · 留 · 待 用户 拆\n"
-        "  - client_ops · 留 · 待 用户 立\n"
-        "  - production · 留 · 待 用户 立\n"
-        "  - reflection · 留 · 待 用户 立\n\n"
-        "**为什么按需读不是默认全注入**:\n"
-        "  - 当前 daemon_rules.md 14000 字全注入 · 每 turn 强读 · OPUS 注意力稀释\n"
-        "  - 按需读 · 不相关 scenario 不占 token · 触发时单 turn 注入\n"
-        "  - 节省 70-80% system prompt 大小 · DeepSeek 响应快几倍"
+        "按需读场景细则（system 里只有索引）。改 daemon/wish → self_evolution；造 app/workflow/密钥 → app_creation；PPT/生图 → presentation；月报复盘 → reflection。不确定就先读。"
     ),
     tier=TIER_AUTO,
     input_schema={
@@ -118,7 +103,7 @@ SPEC = ToolSpec(
             "name": {
                 "type": "string",
                 "enum": list(_AVAILABLE_SCENARIOS),
-                "description": "scenario 名 · 跟 cognition_loader._VALID_DOMAINS 一致 (去 'global')",
+                "description": "scenario 名 · 铁律 domain（去 global）+ presentation 工艺合同",
             },
         },
         "required": ["name"],

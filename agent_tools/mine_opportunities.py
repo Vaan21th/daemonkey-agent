@@ -140,18 +140,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="mine_opportunities",
     description=(
-        "·掘金机会引擎 · 做'市场信号(雷达/趋势) × 用户 画像'的交叉分析，"
-        "找出对 用户 这个**超级个体**最值得切的掘金点。\n\n"
-        "**调用时机** (OPUS 主动判断):\n"
-        "  - 用户 问'最近有啥可以做'/'挖掘机会'/'有什么能搞钱的' → 直接 action=mine\n"
-        "  - 用户 打开 💎 掘金机会 维度 / BI 看板 而 opportunities.json 空 → action=mine\n"
-        "  - 雷达 / 趋势刚刷新 · 需要把'信号→机会'走完 → action=mine\n"
-        "  - 用户 问'之前挖的机会还有什么' → action=list (不重新调 LLM)\n\n"
-        "**actions**:\n"
-        "  - mine · 调 LLM 跑一次完整挖掘 (~5s ~$0.05) · 覆写 opportunities.json\n"
-        "  - list · 只读现有 opportunities.json · 不动 LLM\n\n"
-        "**输出**：3-5 个机会卡 · 每个含: 推荐度/适配度/投入/收益/具体 next_steps · "
-        "fit_reason 引用 用户 画像具体段。"
+        "雷达/趋势 × BRO 画像挖掘金机会。actions: mine（跑 LLM 覆写）/ list（只读）。输出 3–5 张卡，形态须多样，fit_reason 引用画像。"
     ),
     tier=TIER_AUTO,
     input_schema={

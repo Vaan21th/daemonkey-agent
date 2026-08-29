@@ -150,16 +150,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="wechat_send",
     description=(
-        "Send a message — text and/or media (image/video/file) — to BRO via WeChat. "
-        "Text goes through the official iLink channel (falls back to the bridge outbox). "
-        "To send media, set `media_path` to a local file path: images→图片, videos→视频, "
-        "anything else→文件附件; `text` then becomes an optional caption. "
-        "Media REQUIRES the iLink 24h window to be open (BRO must have messaged you on WeChat "
-        "within ~24h) — if it's closed the tool will say so instead of sending. "
-        "Use for: actively notifying BRO when a long task completes, sending him a screenshot / "
-        "generated chart / report file, gentle reminders, or following up on something later. "
-        "DO NOT use for: every reply (the bridge handles that automatically), 'just to chat' "
-        "messages, or anything BRO didn't opt into. Tier CONFIRM."
+        "经微信给 BRO 发文本或媒体。长任务完成/截图/报告时用。不要每句回复都发（桥会自动回）。媒体需要 24h 会话窗。CONFIRM。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

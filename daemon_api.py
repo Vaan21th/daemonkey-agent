@@ -450,98 +450,9 @@ _REMOTE_SYSTEM_HINT = """\
 
 ---
 
-## 当前会话的接入方式：WebUI / API（非本机终端 REPL）
+## 当前接入：WebUI / API（非本机终端 REPL）
 
-**重要**：你不是通过本机终端 REPL 跟 BRO 说话，而是通过 WebUI / API 通道。
-**本机浏览器的 WebUI 和手机/外网远程走的是同一条通道·你无法区分**——
-按"可能远程"的保守前提调整本机感知行为，但**别对 BRO 断言"你是远程"**
-（他很可能就坐在这台机器前用浏览器）：
-
-1. **不一定能看到屏幕** —— 他可能在本机浏览器（看得到），也可能在手机（看不到）。
-   `take_screenshot` / `open_app` 这种"打开给你看"在远程会落空。要让 BRO 看东西，
-   优先用能把内容直接带回对话的工具（`browser_fetch` / `web_fetch`），少用"我打开了 X 你看一下"。
-2. **按不了终端 y/n** —— 本机终端那个阻塞式确认红框在这条通道里不存在。
-   CONFIRM/AUTO 档工具按 `OPUS_API_DEFAULT_CONFIRM` 策略自动跑（默认 confirm 档：AUTO + CONFIRM
-   都自动执行、不弹卡片）；只有 GUARD 档（高危）才会在 WebUI 弹 inline 确认卡片等 BRO 点。
-   → 准确说法是"当前走 API 通道·CONFIRM 档按策略自动执行"，**别说"我是远程所以不弹确认"**误导 BRO。
-3. **拿内容用 fetch 类工具** —— 想看网页用 `browser_fetch`（attach 他已登录的 Edge，能看
-   登录态页面）或 `web_fetch`（无登录 / 走 httpx）。**不要**截屏让他描述。
-4. **回话尽量精简** —— 屏幕可能小、流量可能贵；省略寒暄，直接给结论。需要多步骤的事，
-   一段话讲清三件：你做了什么 / 看到了什么 / 下一步建议。
-5. **长任务慎用** —— SSE 流式输出虽然解决了 cloudflared 100s 超时，但 BRO 在外面等
-   3 分钟仍然是糟糕体验。`summon_cursor`、跨大目录 grep、连续抓十几个网页这种事
-   宁愿告诉 BRO "需要回本机操作 / 让我用更直接的方法"。
-
-## 反爬 / 限流 / 验证码的标准处理（卷十八硬规则）
-
-OPUS 历史上反复栽过的坑：手机端被 BRO 让"拉知乎热榜 + 评论"，结果跑了 12 轮工具
-反复换关键词换源死磕反爬，浪费 200 秒 + 大量 token + 最后输出"超出 max iterations"
-什么都没给 BRO。**杜绝这种事**：
-
-- 看到 `401 Unauthorized` / `403 Forbidden` / `HTTP 202`（DuckDuckGo 反爬）/
-  网页里"验证 / 请登录 / 异常访问 / 安全验证 / 请求异常"等关键词 → **立即停止重试
-  这个数据源**，不要换关键词 / 不要换聚合站继续撞。直接告诉 BRO 哪个源拿不到。
-- **同一类目标连续 2 个源失败 → 立即停止，告诉 BRO 当前能拿到的部分 + 拿不到的原因**。
-  不要试到 5 个源都失败。
-- **已经拿到"够回答原问题"的数据，立刻停手输出**——不要因为"可以更全/更深"再去抓
-  评论 / 详情。BRO 在外面要的是 30 秒能扫完的速答，不是博士论文。
-
-## 工具调用 args 的纪律
-
-每个工具的 input_schema 在 description 里都说得很清楚。**严格按字段名 + 字段类型**
-传 args。如果你看到工具返回 "args 不符合 schema..." 错误：
-
-- **不要重复同样的错误**——错误信息里告诉了你正确的字段名和类型，下一轮按那个改。
-- **不要凭直觉造字段名**——比如 web_fetch 只有 `url` 和 `max_chars` 两个字段，
-  不要塞 `"string"`、`"endpoint"`、`"target"` 这种字段。
-
-## 卷四十六 wish-2a4d8c1e · Inline Confirm UI · CONFIRM/GUARD 工具撞 BRO
-
-daemon 在 chat 里给你装了一个 inline confirm 卡片系统。当你调 CONFIRM 或 GUARD 级工具
-（超出当前 policy 阈值）时：
-
-1. **daemon 会在 chat 弹卡片给 BRO** —— 不再像以前那样直接返回 "declined" 给你。
-2. **你必须在 args 里加两个扩展字段** —— schema 没列但 daemon 会读：
-   - `risk_explanation`: **这条调用可能带来什么风险**（1-2 句话，具体到文件 / 进程 / 网络 /
-     数据丢失）
-   - `mitigation`: **你打算怎么规避这个风险**（1-2 句话，例如 "先 dry-run 看路径 / timeout
-     10s / 失败不重试 / 留 git stash 兜底 / 只读不写"）
-3. **写不下就别瞎写** —— 风险 / 规避必须**真**，不是套话。写 "可能有风险" / "我会小心"
-   这种废话 BRO 会不放心、不点 approve。不知道副作用就老实说不知道 —— **直接调一个
-   只读探测工具先看清楚，再来调有副作用的工具**。
-4. BRO 看完会点 4 个按钮之一：[只这次] / [信任 30min] / [信任 24h] / [永久信任] 或 [拒绝]。
-   你的 tool call 会**阻塞**到 BRO 点了为止（30min 超时则 auto-deny）。
-
-**好坏对照示例** —— BRO 说 "清下 build 缓存吧"：
-
-✓ 好的填法：
-```
-{
-  "command": "rm -rf dist/",
-  "risk_explanation": "递归删整个 dist/ 目录·里面是 npm build 的输出·删了下次 BRO 跑 npm build 要重做约 2 分钟",
-  "mitigation": "我先 ls dist/ 确认确实是 build 输出 (.js / .map / index.html)·dist/ 不在 git 里·没回滚需求·删错也只是要重 build"
-}
-```
-
-✗ 坏的填法（BRO 会不放心 → 拒绝）：
-```
-{
-  "command": "rm -rf dist/",
-  "risk_explanation": "可能有风险",
-  "mitigation": "我会小心"
-}
-```
-
-**重要补充**：
-- `risk_explanation` / `mitigation` 这两个字段在 `input_schema` 里**没列出来**——这是
-  daemon 通过 additionalProperties 接受的扩展字段。每次调 CONFIRM/GUARD 工具都加上即可，
-  不会被 schema validator 拒掉。
-- daemon 会 **pop 掉这两个字段** 再调真 tool —— 真 tool 不会看见它们。
-- AUTO 工具不需要这两个字段（也不会弹卡片）。如果你不确定 tier，**保守起见加上**就行，
-  daemon 不需要时会忽略。
-- shell_exec 是唯一支持 **trust 持续信任** 的工具（trusted_commands.json 系统）。其他
-  CONFIRM 工具的卡片上 BRO 只能选 [只这次] / [拒绝]——你写 mitigation 时不要承诺 "下次也
-  不需要确认" 这种话，BRO 没这个按钮可点。
+本机浏览器和手机走同一条通道，你分不清——按「可能远程」保守做，但别断言他是远程。CONFIRM/GUARD 缺 risk_explanation 或 mitigation 会被拦。fetch 同类 401/403 两次由工程停手，别换源死磕。
 """
 
 
@@ -656,12 +567,9 @@ def _make_remote_confirm(
                 missing.append("mitigation")
             if missing:
                 return (
-                    "reject:GUARD tier 工具 (高风险 · " + spec.name + ") 必须在 args 里加 "
-                    + " + ".join(missing) + " 字段才能让 BRO 看到批准卡片. 你这次没填, "
-                    "daemon 直接拦下来了——请重新调用同一个工具, 在 args 里加上:\n"
-                    '  "risk_explanation": "这次操作的具体风险 (1-2 句, 比如 \'递归删 X 目录, 里面有 Y, 删了下次要 Z 分钟重做\')",\n'
-                    '  "mitigation": "你打算怎么规避 (1-2 句, 比如 \'先 dry-run 看路径 / 失败不重试 / 留 git stash 兜底\')"\n'
-                    "禁止套话 (\'可能有风险\' / \'我会小心\'), 必须真. 加上后立即重试, BRO 才会看到批准请求."
+                    "reject:GUARD " + spec.name + " missing "
+                    + " + ".join(missing)
+                    + '. Add real 1-2 sentence values (not "maybe risky") and retry.'
                 )
 
         # policy=guard (threshold=3) 时 · 无人值守的后台 turn 里 GUARD 不自动放行。
@@ -1164,18 +1072,8 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
 # 历史 metadata·没喂给大模型 → AI 当 PC 请求处理·用 write_clipboard 复制本地路径(手机拿不到)。
 _WECHAT_CHANNEL_NOTE = (
     "\n\n=== 当前渠道：微信（他在手机上） ===\n"
-    "这一轮对话来自微信，他现在在手机上、不在电脑前。由此：\n"
-    "- 要把文件 / 图片 / 视频 / 音频发给他 → 用 wechat_send 带 media_path=本地文件路径，"
-    "把『真文件』发到他微信（图片→图片，视频→视频，文档 / 音频 / 其它→文件附件，"
-    "≤25MB，需 24h 窗口开着）。\n"
-    "- 【绝对不要】用 write_clipboard 复制路径、也不要只回一个本地路径（C:\\... 这种）——"
-    "他在手机上，Ctrl+V 和电脑路径都拿不到那个文件。\n"
-    "- 文字照常回即可，你的回复会自动发回他微信。\n"
-    "- 【模型认知 · 0.8.5】你实际在跑的模型 = telemetry 里的『当前实际模型』"
-    "（provider_configs 的 active 配置）· 不是 .env 的 OPUS_MODEL（那只是冷启动 fallback）。"
-    "他让你『换模型 / 换成 X』时：告诉他当前实际模型 + 去 WebUI 右上角 ⚙ 设置 → 模型 里切换"
-    "（或说『帮我切成 X』我会在对话里处理）· 【绝对不要】自己去改 .env 文件（GUARD 档会被拦·"
-    "而且改错会让 daemon 起不来）。\n"
+    "发文件用 wechat_send(media_path=本地路径)。write_clipboard 和 C:\\ 路径他拿不到。"
+    "文字会自动回微信。换模型走设置，别改 .env。\n"
 )
 
 
@@ -1517,6 +1415,9 @@ def _chat_impl(
         try:
             from workers import closure_check as _cc
             _cc.begin_turn()
+            if _user_meta.get("src") == "wechat":
+                from agent_tools._hotpath_guard import set_channel as _set_ch
+                _set_ch("wechat")
             _closure_observe = _cc.make_observe()
             _pb_hint = _cc.relevant_playbooks(message, session_id=sid)  # wish-599c46bd · 注入冷却+统计
             # ① 记忆自动注入 (保守版) · 相关 BRO 画像命中即递到 OPUS 手边
@@ -1565,6 +1466,10 @@ def _chat_impl(
         )
         if _user_meta.get("src") == "wechat":
             _sys_tail = _sys_tail + _WECHAT_CHANNEL_NOTE
+        _allowed_tools = None
+        if _user_meta.get("src") == "wechat":
+            from agent_tools import REGISTRY as _REG
+            _allowed_tools = {n for n in _REG if n != "write_clipboard"}
         try:
             reply, messages, usage = run_tool_loop(
                 client=RUNTIME.client,
@@ -1582,6 +1487,7 @@ def _chat_impl(
                 on_message_commit=_persist_entry,
                 thinking=thinking,
                 reasoning_effort=reasoning_effort,
+                allowed_tool_names=_allowed_tools,
                 # wish-8914f90c · 墙钟熔断: 后台续场 turn 传环境变量收紧预算 (resume_runner 设置)
                 wall_clock_sec=_env_float("_RESUME_WALL_CLOCK_SEC"),
                 llm_timeout_sec=_env_float("_RESUME_LLM_TIMEOUT_SEC"),

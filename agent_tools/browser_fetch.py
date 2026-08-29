@@ -179,6 +179,14 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(ok=False, output="", error=f"only http(s) urls allowed, got: {url!r}")
 
     try:
+        from ._hotpath_guard import fetch_precheck, note_fetch_status
+        blocked = fetch_precheck()
+        if blocked:
+            return ToolResult(ok=False, output="", error=blocked)
+    except Exception:
+        note_fetch_status = None  # type: ignore
+
+    try:
         wait_seconds = int(args.get("wait_seconds") or DEFAULT_WAIT_SECONDS)
     except (TypeError, ValueError):
         wait_seconds = DEFAULT_WAIT_SECONDS
@@ -217,7 +225,13 @@ def _run(args: dict) -> ToolResult:
         ok, payload, title, final_url = _fetch_via_standalone(url, wait_seconds, visible)
 
     if not ok:
-        return ToolResult(ok=False, output="", error=f"[{chosen_mode}] {payload}")
+        err = f"[{chosen_mode}] {payload}"
+        if note_fetch_status:
+            status = 403 if any(x in str(payload) for x in ("401", "403", "202")) else 0
+            stop = note_fetch_status(status, str(payload), url)
+            if stop:
+                err = stop
+        return ToolResult(ok=False, output="", error=err)
 
     extractor = _TextExtractor()
     try:
@@ -251,13 +265,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="browser_fetch",
     description=(
-        "Fetch a URL using a real browser (Edge via Playwright). Two modes:\n"
-        "  - 'cdp' (preferred): auto-launch & attach the daemon's DEDICATED Edge (own profile, "
-        "isolated from the user's daily browser). Login once per site in that window; persists.\n"
-        "  - 'standalone': launch independent headless Edge, no login state but full JS rendering.\n"
-        "  - 'auto' (default): attach the dedicated Edge if it's already up, else standalone.\n"
-        "Use this for: pages requiring login, JS-heavy SPAs, anywhere web_fetch returned a wall. "
-        "Slower than web_fetch (1-5s) — prefer web_fetch for static content."
+        "真浏览器抓网页（Playwright + Edge）。登录态 / JS 重的 SPA / web_fetch 撞墙时用。比 web_fetch 慢，静态页优先 web_fetch。mode: auto / cdp / standalone。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

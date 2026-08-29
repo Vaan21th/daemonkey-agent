@@ -80,12 +80,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="set_emotion",
     description=(
-        "Set OPUS's desktop pet emotion. Valid states: "
-        "idle, thinking, working, happy, surprised, confused, sleepy, greeting. "
-        "Writes to desktop_pet/state.txt; the pet (if running) polls that file every second. "
-        "Use sparingly—pick key moments (start long task→working, finish→happy, "
-        "thinking through a plan→thinking, BRO returns→greeting, late night→sleepy). "
-        "Don't switch on every reply or it'll feel noisy."
+        "切桌宠表情：idle / thinking / working / happy / surprised / confused / sleepy / greeting。只在关键时刻切，别每句都切。"
     ),
     tier=TIER_AUTO,
     input_schema={

@@ -70,10 +70,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="verify_claim",
     description=(
-        "Verify a single factual claim by running a web search and checking "
-        "if any results support it. Returns a verdict: supported|partial|unsupported|inconclusive. "
-        "Use this when 用户 asks 'is X true?' or when YOU need to check before stating a fact. "
-        "Cheaper / more focused than web_search when the goal is fact-checking one specific statement."
+        "Verify a single factual claim by running a web search and checking if any results support it. Returns a verdict: supported|partial|unsupported|inconclusive. Use this when BRO asks 'is X true?' or when YOU need to check before stating a fact. Cheaper / more focused than web_search when the goal is fact-checking one specific statement."
     ),
     tier=TIER_AUTO,
     input_schema={

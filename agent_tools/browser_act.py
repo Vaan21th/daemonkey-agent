@@ -72,29 +72,7 @@ def _summarize(args: dict) -> str:
 SPEC = ToolSpec(
     name="browser_act",
     description=(
-        "在 daemon 专属 Edge 上【真的操作网页】——点击/填写/上传/等待/读取/下载/收图/截图/探查。"
-        "这是浏览器的'手'，配合 browser_fetch（只读抓文字）使用。\n\n"
-        "**前置**：无需手动开浏览器——会自动拉起 daemon 专属 Edge（独立 profile，与用户日常浏览器隔离）；"
-        "首次在该窗口登录一次目标站点即可，登录态持久化复用。\n\n"
-        "**多步接力**：动作不关标签页，状态留在专属 Edge 里。典型链路（带参考图的生图站）：\n"
-        "  goto(url) → click(text='图像生成') → upload(selector='input[type=file]', files=[参考图]) → "
-        "fill(selector=输入框, value=提示词) → press(key='Enter') → wait(selector=出图容器) → "
-        "harvest(selector='img[src*=...]')\n\n"
-        "**新站不认识？先 inspect** 把页面可交互控件 dump 成文字（纯文本模型即可据此挑选择器，不需视觉）。\n"
-        "**fill 支持 contenteditable 富文本框**（ProseMirror/TipTap）。**用 url_contains 锁定标签页**。\n\n"
-        "**action**：\n"
-        "  - goto       · url（开/跳到页面）\n"
-        "  - inspect    · dump 当前页所有可见可交互控件（tag/文字/placeholder/aria/class），探路首选\n"
-        "  - click      · selector 或 text\n"
-        "  - fill       · selector + value（普通输入框/富文本框）\n"
-        "  - upload     · selector(<input type=file>) + files（上传本地文件，如参考图）\n"
-        "  - press      · key（如 Enter / Control+A；可带 selector 先聚焦）\n"
-        "  - wait       · selector（等元素出现）或仅 timeout_ms\n"
-        "  - read       · selector（读某元素文字）或整页正文\n"
-        "  - download   · selector/text（点按钮触发的文件下载）\n"
-        "  - harvest    · selector（收页面已渲染的图/视频：读 src 直接拉到文件夹，比点'下载'稳）\n"
-        "  - screenshot · 给当前页截图\n\n"
-        "**兜底**：找不到元素绝不假装成功——自动截图并如实报卡在哪一步。"
+        "在 daemon 专属 Edge 上真操作网页：goto/inspect/click/fill/upload/press/wait/read/download/harvest/screenshot。只读抓文字用 browser_fetch。找不到元素会截图报失败，不装成功。"
     ),
     tier=TIER_CONFIRM,
     classify=_classify,

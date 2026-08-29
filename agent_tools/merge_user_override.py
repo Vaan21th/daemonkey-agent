@@ -196,14 +196,7 @@ def _summarize(args: dict) -> str:
 SPEC = ToolSpec(
     name="merge_user_override",
     description=(
-        "用户魔改合并工具 (升级保护层 B · wish-f2f0f9de)。"
-        "升级时用户魔改的白名单文件被官方覆盖后 · 备份在 data/runtime/user_overrides/。"
-        "本工具: list 列备份 · diff 看用户版vs官方版对比 · apply 写回合并结果。"
-        "语义判断由 Daemonkey 自己做 (读 diff → 分析 → 给用户方案 → 用户确认 → apply)。"
-        "rescue / rescue_apply: 0.9.6 之前备份动作跑在覆盖之后·存下来的是官方版·"
-        "用户真改动没进备份 (说「合并我的改动」只会得到「两边一致」)。 但升级前的 checkpoint "
-        "存档是在覆盖之前做的·真东西在里面 —— rescue 找出来 · rescue_apply 捞进备份区。"
-        "用户说「我以前改的东西不见了」/「升级把我改的覆盖了但合并说没差异」→ 先跑 rescue。"
+        "升级后把用户魔改从备份区合并回来。list/diff/apply。若提示两边一致但用户改动丢了，先 rescue 再 rescue_apply。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

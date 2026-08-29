@@ -205,10 +205,7 @@ def _run(_args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="propose_next_move",
     description=(
-        "OPUS 主动汇报「我现在看到 用户 这边几个可能的方向」——基于 OWNER-NOTEBOOK 画像 "
-        "+ 工作室各维度的当前空缺/产出 · 不调 LLM · 纯数据计算。"
-        " 不是建议 用户 一定做什么 · 是把 OPUS 当下的观察整理给 用户 看。"
-        " 用户 问「最近做啥」/「你有什么建议」/「下一步」时可以调。"
+        "OPUS 主动汇报「我现在看到 BRO 这边几个可能的方向」——基于 BRO-NOTEBOOK 画像 + 工作室各维度的当前空缺/产出 · 不调 LLM · 纯数据计算。 不是建议 BRO 一定做什么 · 是把 OPUS 当下的观察整理给 BRO 看。 BRO 问「最近做啥」/「你有什么建议」/「下一步」时可以调。"
     ),
     tier=TIER_AUTO,
     input_schema={

@@ -229,21 +229,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="manage_knowledge",
     description=(
-        "管理 BRO 的私有文档知识库(第二大脑)——把资料/合同/PDF/Word/PPT 灌进来,"
-        "之后能被召回并 cite 回原文。这是 recall_memory(scope='docs') 的数据来源。\n\n"
-        "**调用时机**(Daemonkey 主动判断):\n"
-        "  - BRO 说'把这份文件/合同/资料加进知识库' / 给了本地文件路径要你记住 → action=add\n"
-        "  - BRO 问'知识库里有啥' / '我存过哪些资料' → action=list\n"
-        "  - BRO 说'那篇先别参考了 / 重新参考' → action=disable / enable\n"
-        "  - BRO 问'我资料里关于 X 的部分' → action=search\n\n"
-        "  - BRO 说'把那篇归到 X 文件夹 / 整理一下分类' → action=move\n\n"
-        "**支持格式**: md / txt / docx / pptx / pdf(文本型)。扫描件/图片型 PDF 需 OCR,暂不支持。\n"
-        "**参考开关**: disable = 从召回里静音但保留原文;enable = 重新进召回。\n"
-        "**文件夹**: 每篇可归到一个文件夹(folder)· 前端知识库按文件夹分组显示 · move 改归属。\n"
-        "**敏感**: 标 sensitive 的文档不再自动进 system prompt / 召回目录(避免私密资料每轮外送),"
-        "但仍留在索引里 · 只有显式 recall_memory(scope='docs') / search 才取用。\n"
-        "**挂客户**: link 把一篇文档挂到某个客户档案(client)· 之后在客户档案里能看到他名下所有资料。\n"
-        "**actions**: add / list / remove / enable / disable / search / tag / move / sensitive / link"
+        "私有文档知识库（recall_memory scope=docs 的来源）。actions: add/list/remove/enable/disable/search/tag/move/sensitive/link。支持 md/txt/docx/pptx/文本 PDF。"
     ),
     tier=TIER_AUTO,
     input_schema={

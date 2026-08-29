@@ -329,23 +329,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="ssh_remote",
     description=(
-        "Run a READ-ONLY diagnostic shell command on a remote server via SSH alias. "
-        "Use this when the user is away from the local terminal and a remote/deployment "
-        "server needs to be inspected (logs / status / disk / docker). "
-        "\n\nStrict allow-list: "
-        "host must be a pre-configured SSH alias listed in OPUS_SSH_HOST_WHITELIST "
-        "(empty by default — the user configures their own server aliases). "
-        "command must start with a read verb: tail / cat / head / grep / docker (logs|ps|"
-        "inspect|stats|top|info) / systemctl status / journalctl / df / free / ps / "
-        "ls / awk / sort / sed (no -i) / find / stat / uptime / uname / curl (no -o) / "
-        "ping / ss / netstat etc. "
-        "Pipes (|) are allowed if every segment is a read verb. "
-        "\n\nAUTO-REJECT: rm / mv / cp / chmod / chown / shutdown / reboot / kill / sudo / "
-        "su / eval / source / systemctl start|stop|restart|reload / docker run|exec|"
-        "rm|kill|stop|start|restart|pull|push|build / docker compose up|down|restart / "
-        "any shell operator (; && || > >> < $() backticks). "
-        "\n\nTypical workflow: inspect the target server's logs / container status "
-        "with a read-only command, then report the raw output plus your diagnosis."
+        "经预配置 SSH 别名在远程跑只读诊断（tail/docker logs/df 等）。写操作一律拒绝。先 client_handoff 再拼命令。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

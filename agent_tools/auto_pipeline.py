@@ -169,20 +169,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="auto_pipeline",
     description=(
-        " · OPUS 自主巡航 · 一句话跑完整链路。\n\n"
-        "**调用时机** (主动 + 被动两条路)：\n"
-        "  - 用户 说 '巡一圈' / '自主跑一遍' / '自动巡航' / '帮我看看今天有什么' → 调本工具\n"
-        "  - 早上 用户 上线第一句问候 → 主动提议 '我巡一圈给你看?' 等他确认再调\n"
-        "  - 每隔几小时·用户 没有明确任务时·OPUS 可以主动调一次（confirm）\n\n"
-        "**链路**:\n"
-        "  Step 1 · refresh_radar (抓 17+ 信源·含 GitHub 同类工程·30-60s)\n"
-        "  Step 2 · generate_trends (LLM 提炼今日趋势·15-40s)\n"
-        "  Step 3 · mine_opportunities (LLM 找掘金机会·20-50s)\n"
-        "  总耗时 60-180s\n\n"
-        "**红线**:\n"
-        "  - 任一步骤失败不影响已完成的步骤·会返回 partial result\n"
-        "  - 跑完后·用户 直接去 💎 掘金机会 / 🌊 今日趋势 / 📡 信息雷达 看新数据\n"
-        "  - **不要在 用户 没空时跑**——这是 ~60-180s 的事·会占用 LLM 配额"
+        "一句话跑雷达刷新→趋势→掘金。BRO 说巡一圈时调。约 1–3 分钟，任一步失败保留已完成结果。BRO 没空时别跑。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

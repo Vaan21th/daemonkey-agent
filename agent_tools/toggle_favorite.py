@@ -178,14 +178,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="toggle_favorite",
     description=(
-        " · 收藏 / 取消收藏掘金机会 + 可行性分析。\n\n"
-        "**注意**：雷达条目的 ⭐ 走 `tag_radar_item` (feedback=starred) · 这里不重复。\n\n"
-        "**调用时机**:\n"
-        "  - 用户 说'收藏第 2 个机会' → action=toggle, kind=opportunity, ref_index=2\n"
-        "  - 用户 说'把那个 MCP 可行性收藏起来' → action=toggle, kind=feasibility, query='MCP'\n"
-        "  - 用户 说'看看收藏了什么' → action=list (默认全部) 或 action=list, kind=opportunity\n\n"
-        "**actions**: toggle(默认) / remove / list\n"
-        "**kinds**: opportunity / feasibility"
+        "收藏/取消收藏掘金机会或可行性分析。雷达条目标星走 tag_radar_item。actions: toggle/remove/list。"
     ),
     tier=TIER_AUTO,
     input_schema={

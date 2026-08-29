@@ -116,13 +116,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="manage_hygiene_rules",
     description=(
-        "Manage LOCAL memory-hygiene rules (data/my_hygiene_rules.json) — the companion's own "
-        "layer, parallel to the built-in rules. When you notice a recurring noise pattern in "
-        "recalled memories (e.g. a template sentence, a test artifact), add a rule: match is a "
-        "literal substring (min 6 chars · pick a phrase unique to the noise), optional source "
-        "limits it to one source (session/skill/...). Rules take effect on next hygiene migrate "
-        "(daemon restart). Deletions are recoverable (session jsonl originals always exist) — "
-        "but be conservative anyway: prefer narrow matches over broad ones."
+        "管本地记忆卫生规则（data/my_hygiene_rules.json）。回忆里反复出现的噪音模板就 add 一条字面子串。重启后生效。宁窄勿宽。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

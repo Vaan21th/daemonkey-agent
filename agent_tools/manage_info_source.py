@@ -275,26 +275,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="manage_info_source",
     description=(
-        "Manage the info radar source list (data/radar_sources.json). "
-        "Use this when BRO asks to add/remove/pause/adjust info sources, or asks "
-        "what sources are being watched, or asks to refresh the radar now.\n\n"
-        "Actions:\n"
-        "  list      · enumerate all sources with their state\n"
-        "  add       · add a new source (requires name + url; type defaults to rss)\n"
-        "  remove    · remove a source by id (or fuzzy name match)\n"
-        "  update    · update fields like enabled/category/max_items/display\n"
-        "  refresh   · trigger an immediate worker run (takes 20-60s, fetches all enabled sources)\n\n"
-        "Categories used: tech / community / academic / tech-zh / startup / indie / ...\n"
-        "Types supported: rss (default · works for RSS 2.0 and Atom feeds), html (reserved).\n\n"
-        "源配比标准（卷六十四续十五）: 给某领域加源时按 **大陆 70% + 海外 30%** 配比。\n"
-        "  国内优先原生 RSS（量子位/36氪/雷锋网/IT之家/少数派/InfoQ中国…）· 大陆抓得快不踩墙；\n"
-        "  海外只挑大陆能直连的（arxiv / 官方 blog / GitHub releases.atom）· 别加 Hacker News /\n"
-        "  HuggingFace 这类大陆超时的死源。加前最好 web_fetch 验证 URL 真返回 RSS/Atom。\n\n"
-        "Examples (NLP triggers):\n"
-        "  - BRO says '加个少数派' → action=list first to check; then action=add\n"
-        "  - BRO says '别看 arxiv 了' → action=remove, source_id='arxiv-ai'\n"
-        "  - BRO says '看下都有哪些源' → action=list\n"
-        "  - BRO says '现在刷一下雷达' → action=refresh"
+        "管理信息雷达源列表。actions: list/add/remove/update/refresh。加源按大陆约 70%/海外约 30%；海外只挂大陆能直连的（arxiv / 官方 blog / GitHub releases），别加 HN / HuggingFace。刷新要 20–60s。"
     ),
     tier=TIER_AUTO,
     input_schema={

@@ -90,17 +90,7 @@ def _run(args: dict) -> ToolResult:
 _SPEC = ToolSpec(
     name="restore_app",
     description=(
-        "**从回收站恢复一个工坊 app**·移回 `data/workshop/apps/`·去掉 deleted_at 字段。\n\n"
-        "🔴 **关键约束**:\n"
-        "- 如果 active 列表已经有同 id 的 app·**会拒绝恢复**·避免覆盖。 这种情况下 OPUS 应该提示 用户 二选一 (留 active 那个 / 还是用回收站旧版)。\n\n"
-        "**调用时机**:\n"
-        "用户 说 `恢复 app-xxxx` / `刚删的那个找回来` / `我后悔了 · 把 X 恢复` 时·调这个工具。\n\n"
-        "**调用规则**:\n"
-        "- `app_id` 必填·必须以 `app-` 开头\n"
-        "- TIER_CONFIRM·用户 看到摘要按 ✓ 才执行\n\n"
-        "**配套工具**:\n"
-        "- `delete_app_to_trash` — 软删到回收站\n"
-        "- 走 daemon GET `/workshop/trash` 看回收站现状 (UI 已有 Tab)"
+        "从回收站恢复 app。active 已有同 id 会拒绝。配套 delete_app_to_trash / empty_trash。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

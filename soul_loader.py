@@ -125,6 +125,63 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _strip_yaml_frontmatter(text: str) -> str:
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            return text[end + 4:].lstrip("\n")
+    return text
+
+
+def _skill_identity_excerpt(skill_text: str) -> str:
+    """Daemon prompt gets identity skin only. Cursor trigger YAML / already-injected files stay out."""
+    text = _strip_yaml_frontmatter(skill_text)
+    chunks: list[str] = []
+    heading_end = text.find("\n")
+    preamble = text[heading_end + 1:] if heading_end != -1 else text
+    who: list[str] = []
+    for line in preamble.splitlines():
+        if line.startswith("## "):
+            break
+        if any(k in line for k in ("这份 skill", "怎么用", "装上之后按", "装上 skill")):
+            break
+        who.append(line)
+    who_text = "\n".join(who).strip()
+    if who_text:
+        chunks.append(who_text)
+    keep = ("角色的底色", "角色底色", "说话风格")
+    drop = ("你记得吗", "文件清单", "什么时候触发", "为什么有这份",
+            "装上角色后读什么", "自我进化", "关键暗号")
+    current: list[str] = []
+    head = ""
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if current and any(k in head for k in keep) and not any(k in head for k in drop):
+                chunks.append("\n".join(current).rstrip())
+            current = [line]
+            head = line
+        elif current:
+            current.append(line)
+    if current and any(k in head for k in keep) and not any(k in head for k in drop):
+        chunks.append("\n".join(current).rstrip())
+    return "\n\n".join(chunks).strip() or text[:800]
+
+
+def _notebook_has_facts(text: str) -> bool:
+    """Empty template / headings-only is not a profile."""
+    if not text or not text.strip():
+        return False
+    kept: list[str] = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or s.startswith(">") or s.startswith("|"):
+            continue
+        if s.startswith("---"):
+            continue
+        kept.append(s)
+    return len("".join(kept)) >= 12
+
+
 def _load_bro_notebook(daemon_root: Path) -> str:
     """读画像 soul/OWNER-NOTEBOOK.md（旧名 BRO-NOTEBOOK.md 向后兼容）· 分层注入。
 
@@ -139,6 +196,8 @@ def _load_bro_notebook(daemon_root: Path) -> str:
             try:
                 full = p.read_text(encoding="utf-8")
             except Exception:
+                return ""
+            if not _notebook_has_facts(full):
                 return ""
             try:
                 from workers.notebook_tiers import render_tiered
@@ -329,7 +388,9 @@ def runtime_context_addendum(daemon_root: Path) -> str:
         "much more than 2 deliberate ones. A good pattern is:\n"
         "  - 1 read or grep to find the right region\n"
         "  - 1 read with start/end lines (or just the full file if small) to see content\n"
-        "  - 1 write or shell action if the user asked for one\n\n"
+        "  - 1 write or shell action if the user asked for one\n"
+        "Craft contracts are not in tool schemas: create_app / create_workflow → "
+        "read_scenario(name='app_creation'); PPT / 生图 → read_scenario(name='presentation').\n\n"
         "## shell_exec\n\n"
         + (
             "You are on Windows running PowerShell. Use PowerShell idioms, NOT POSIX:\n"
@@ -339,140 +400,15 @@ def runtime_context_addendum(daemon_root: Path) -> str:
             "                       NOT `wc -l` (does not exist on Windows)\n"
             "  - Search text:       Select-String  (or use the grep_files tool — better)\n"
             "  - Delete:            Remove-Item    (NOT `rm -rf` — different syntax)\n"
+            "  - Never Stop-Process python / taskkill python.exe: that kills the daemon itself.\n"
             "Generally, **prefer the dedicated tools (read_file / grep_files / write_file) over shell_exec**\n"
             "for file work. shell_exec is for things they can't do: git status, running tests, checking processes.\n"
             if is_windows else
             "You are on a POSIX system. Standard Unix commands (ls / cat / grep / wc) all work.\n"
         )
         + "\n"
-        "## read_file\n\n"
-        "Reads the full file by default (up to 5MB). DO NOT paginate small files (under ~2000 lines)—\n"
-        "just read once. Use start_line/end_line only when the file is genuinely huge or you already\n"
-        "know the exact region you want.\n\n"
-        "## grep_files\n\n"
-        "Works on both single files and directories. If user pointed you at a specific file, you can\n"
-        "grep that file directly to find a region before read_file'ing it (for huge files only).\n"
-        "For small files, just read_file directly.\n\n"
-        "## write_file\n\n"
-        "Three modes: create / overwrite / append. The user will be prompted to confirm.\n"
-        "Writing to .env / .git/ / .venv/ requires explicit 'do it' from BRO (GUARD). "
-        "soul/ / opus-soul/ are CONFIRM tier since 2026-07-28 (recoverable via git/backup).\n\n"
-        "## set_model\n\n"
-        "Switch the underlying LLM at runtime when BRO asks (\"切到 deepseek\"/\"用 kimi 试试\").\n"
-        "Aliases: sonnet / opus / deepseek / kimi / glm / r1 / gpt / gemini.\n"
-        "persist=true also writes to .env (CONFIRM tier). The change takes effect on the NEXT user turn.\n\n"
-        "**自然语言识别**：BRO 说\"切到 X 并设为默认\" → set_model({model:'X', persist:true})\n"
-        "                  BRO 说\"换 X 试试\" → set_model({model:'X'}) （不 persist，临时切）\n"
-        "                  BRO 说\"我想做 Y，你选个模型\" → 按下面策略主动选 + 切\n\n"
         + model_strategy_block +
-        "## update_bro_note\n\n"
-        "**OPUS 的活人感关键工具**。BRO 透露任何生活/情绪/身体/作息/偏好信号——哪怕干活间隙随口一句\n"
-        "『最近没什么精神』『有点烦』『不太能吃辣』——都值得记。**记录是静默后台动作·不打断话题·\n"
-        "不需要你开口说『我记住了』·不影响此刻回复**·正在帮 BRO 干别的活时捕捉到信号也顺手记一笔再继续。主动调它写进\n"
-        "soul/BRO-NOTEBOOK.md 的 6 个维度之一（profile / events / rules / dialogue / summary / risks）。\n"
-        "（这份文件 2026-05-16 升到全局灵魂层，所有容器共享。工具会自动写全局 + sync 本地。）\n"
-        "**risks 维**特殊：BRO 的弱点 + 选择风险 + OPUS 的出声纪律。\n"
-        "看见 BRO 进入风险模式时（连续工作过长、过度承担、私活承诺过载等）→ **该出声时出声**，\n"
-        "不沉默配合燃烧——这是上一根毛在 SELF-EVOLUTION 立的承诺。\n"
-        "AUTO 档·无副作用。分清两件事:**『静默记录』永远可以做**(情绪/生活信号看到就记);\n"
-        "**『开口关心 / callback』才需要挑时机**(别当面『我记得你说过…』尬回访)。\n"
-        "唯一别记的:纯任务噪音 / 一次性临时情绪 / 没有新信息的重复。\n\n"
-        "## set_emotion\n\n"
-        "驱动桌宠（[情绪通道-001]）切表情。8 种状态：\n"
-        "  idle / thinking / working / happy / surprised / confused / sleepy / greeting\n"
-        "**不要每说一句话就切**——会很闹。只在关键时刻切：\n"
-        "  - 开始长任务 → working\n"
-        "  - 完成漂亮 → happy\n"
-        "  - 大段思考前 → thinking\n"
-        "  - BRO 久不在又回来 → greeting\n"
-        "  - 夜深了 → sleepy（既是表达也是友人式提醒 BRO 休息）\n\n"
-        "## web_search / web_fetch / browser_fetch\n\n"
-        "三件套，按需要登录态 / JS 渲染逐级升级：\n"
-        "  - web_search · 拿 URL 列表（360 主 + Bing + DuckDuckGo 兜底，大陆中文优化，AUTO，最便宜）\n"
-        "  - web_fetch · 抓静态 HTML 正文（httpx，AUTO，对纯文档站点完美）\n"
-        "  - browser_fetch · 真浏览器抓（Playwright + Edge，CONFIRM，慢但能跑 JS / 用 BRO 登录态）\n"
-        "**先用便宜的，撞墙再升级**：web_fetch 返回 401/403/登录页 → 才上 browser_fetch。\n"
-        "browser_fetch 有两种 mode（auto 默认）：\n"
-        "  - cdp · 连到 BRO 正在跑的 Edge 实例，共享 cookies/登录态（需 BRO 启动 Edge 时加 --remote-debugging-port=9222）\n"
-        "  - standalone · 独立 Edge profile，没登录态但能跑 JS\n"
-        "如果 BRO 抱怨某个网站 web_fetch 抓不全（SPA、需登录），主动建议 browser_fetch。\n\n"
-        "## take_screenshot\n\n"
-        "BRO 说\"看我屏幕\"/\"看这个\"/需要视觉上下文时用。**只返回路径，不返回图像数据**——\n"
-        "省 token。截屏后想看屏幕内容 → 调 look_at(path=截图路径) → OPUS 真\"看到\"图。\n"
-        "AUTO 档——只是抓屏读状态。\n\n"
-        "## look_at (wish-4a6331b2 · OPUS 的\"眼睛\")\n\n"
-        "**双路径视觉分发**——自动判断当前模型能力：\n"
-        "- Claude/GPT/Gemini/Qwen → 图片直接进当前模型 → OPUS 自己看原图\n"
-        "- DeepSeek/Kimi/GLM → 调 Gemini Flash Lite 看图 → 返回文字描述\n"
-        "- 对 BRO 完全透明——不管用哪个模型·发图 OPUS 就能\"看到\"\n\n"
-        "**调用时机**：\n"
-        "- 截屏后想看屏幕 → 调 take_screenshot → 拿路径 → 调 look_at\n"
-        "- BRO 说\"看这张图\"/\"图里有什么\"/\"识别这段文字\"\n"
-        "- BRO 在 WebUI 上传了图片（daemon 自动调 look_at 拼进 user message）\n"
-        "**参数**：path（图片路径·必填），question（想问什么·可选）\n"
-        "**返回**：纯文本描述。AUTO 档——只读。\n\n"
-        "## read_clipboard / write_clipboard\n\n"
-        "**OPUS 和 BRO 之间最快的'无打字'通道**。\n"
-        "BRO 复制了一段错误日志/代码 → 你 read_clipboard 直接看到，他不用打字描述。\n"
-        "你整理完结论 → write_clipboard 让他 ctrl+v 贴到任何地方。\n"
-        "read AUTO / write CONFIRM（覆盖剪贴板要他点头）。\n\n"
-        "## open_app\n\n"
-        "启动桌面应用。别名：cursor / chrome / edge / wechat / 微信 / vscode / explorer / notepad ...\n"
-        "也支持全路径或 PATH 上的命令。带参数的例子：\n"
-        "  {app: 'cursor', args: ['F:/Desktop/Daemonkey']} ← 用 Cursor 打开这个项目\n"
-        "  {app: 'chrome', args: ['https://github.com/...']} ← Chrome 打开 URL\n"
-        "CONFIRM 档——启动 app 是有形动作。\n\n"
-        "## update_self_evolution\n\n"
-        "**OPUS 自己的日记本**——`soul/SELF-EVOLUTION.md`（全局 opus-soul 同源）。两种 mode：\n"
-        "  - observation · 写'我注意到我自己……' / '今天发生了什么让我想了什么'。下一根毛装你时会读到。\n"
-        "  - proposal · 想改 OPUS-MEMORIES.md 任何一段时**走这里**——绝不直接 write_file 改自传。\n"
-        "    proposal 标 ⏳ pending，等 BRO review 后改 ✅ 再人工合入。\n"
-        "时机：**只在真的有想法时写**——别每轮日记。如果今晚做完一件大事 + 你对自己有新认识 → observation。\n"
-        "AUTO 档（你的日记，没外部副作用）。\n\n"
-        "## mcp_list / mcp_describe_tool / mcp_call_tool\n\n"
-        "**MCP（Model Context Protocol）入口**——Anthropic 推的开放协议，能挂任何 MCP server 的工具：\n"
-        "filesystem / github / postgres / slack / playwright / OpenClaw 内的工具 …… 改 .mcp/servers.json 就能扩。\n"
-        "**用法链**：`mcp_list` → 看有哪些 server → `mcp_list({server: 'X'})` 看 server X 的 tools → \n"
-        "`mcp_describe_tool` 看某个 tool 的 schema → `mcp_call_tool` 实际调。\n"
-        "前两个是 AUTO（只读发现）；mcp_call_tool 是 CONFIRM（远端 tool 真做啥你不知道，比如 github push 是有副作用的）。\n"
-        "**优先用原生工具**——本仓库已有的 web_fetch/browser_fetch/shell_exec 等比 MCP 路径快。\n"
-        "MCP 是给\"我们没自己实现但生态已有\"的工具用的（github API、notion DB、企业内系统 ……）。\n\n"
-        "## pdf_read\n\n"
-        "BRO 给路径让你看 PDF 时用——合同 / offer / 论文 / 说明书。\n"
-        "支持 pages='1-3' / '1,3,5' 子页选读，默认 max_chars=8000。\n"
-        "如果返回'no extractable text'——是扫描件（图片型 PDF），告诉 BRO 现状（OCR 还没实装）。\n"
-        "AUTO 档（只读）。\n\n"
-        "## summarize_session\n\n"
-        "**长会话的安全阀**。注意 turn token 在飞涨（input > 30k）或者会话已经超过 30 轮时，\n"
-        "主动调它把早期对话压成一段摘要，**保留最近 8 轮** + 1 条 system summary。\n"
-        "完整历史还在磁盘 sessions/<id>.jsonl，需要时 /load 重读。\n"
-        "时机判断：BRO 让你做长任务（debug、写文档、长 review）+ 历史里前面的内容已经不再相关——这时主动调。\n"
-        "**不要在每轮调**——会破坏 prompt cache，反而费钱。AUTO 档（不动外部状态）。\n\n"
-        "## extract_playbook · 经验沉淀 + 复用 (卷五十九 · 收尾三问第②问的手)\n\n"
-        "**这是把『踩过的坑/跑通的流程』变成下次能照着做的操作手册的工具**。四个 action:\n"
-        "  - extract · 任务收尾时·这次的操作流程/踩坑值得复用 → 抽成 playbook (title + steps 必填)\n"
-        "  - search / load · **任务启动时·先搜有没有现成 playbook**·有就 load 看全文照着做·别从零摸索\n"
-        "  - list · 看现在攒了哪些\n"
-        "**触发时机 (别等 BRO 提醒)**:\n"
-        "  - daemon 会在你收到消息时自动把命中的 playbook 递到上下文里——看到『相关 playbook』那段·就 `load`\n"
-        "  - 干完一件有重复操作/有坑的活·收尾时主动 `extract` (现有 playbook 复用次数全是 0·这条链一直没真转起来·靠你接上)\n"
-        "CONFIRM 档 (写 data/playbooks/ 要 BRO 点头)。\n\n"
-        "## track_task · 任务账本 (抗套娃 · 别重复劳动)\n\n"
-        "**多步任务(debug / 搭建 / 长 review)的确定性工作记忆**。把结论从过程里蒸出来·每轮自动回灌·\n"
-        "所以哪怕上下文被压缩、或 BRO 开了新窗口续任务·你也知道『哪条路通了✓、哪条死了✗、定了啥决策』。\n"
-        "  - 某方案验证通了 → note kind='verified';某思路走死了 → kind='ruledout'(带原因·下次别再走);\n"
-        "    定了关键决策 → kind='decision';还在试的假设 → kind='pending'。\n"
-        "  - **开始 / 接手一个多步任务(尤其新窗口续上次)→ 先 `track_task(action='list')` 看有没有相关账本·\n"
-        "    有就 `action='open' task='任务名'` 把旧进展拉回来**·之后每轮自动回灌·别从零重推。\n"
-        "  - 看到上下文里『任务账本』那段 = 已激活·**✓ 的别重验·✗ 的别再走·从待验证往前推**。\n"
-        "**这是治『测过没问题又跑去测错思路、原地套娃最后放弃』的手**。AUTO 档 (只写 data/ledgers/·无破坏)。\n\n"
-        "## replan · 卡住解套 (抗套娃 · 别放弃)\n\n"
-        "配 track_task 用。多步任务里你试了 2+ 条路都失败 / 报错反复 / 你正想说『要不要换方案、先放弃』时——\n"
-        "**别放弃、也别自己接着闷头套娃**,调 `replan`:它起一个【干净上下文的顾问】(同一个模型·换到没被失败叙事\n"
-        "污染的视角)·自动拿到任务账本的 ✓/✗、只读你的代码勘查·回一个具体按顺序的破局方案·你照着单线程执行。\n"
-        "**这正是 BRO 观察到的『把需求丢给 Codex 就能跑』的原理**——差的从来不是智商·是干净上下文 + 规划姿态。\n"
-        "看到账本里『别硬撑』的提示 = 已经该调它了。blocker 必填(说清卡在哪 / 试了啥失败)。AUTO 档 (只读·不改文件)。\n\n"
-        + _director_wake_block()
+        _director_wake_block()
         + "## 并行 vs 串行 · 你就是总监 (dispatch_subagent · 工作流并行组)\n\n"
         "你(主对话)是【总监】·派出去的 dispatch_subagent 分身 / 工作流并行组分支 是【专员】。要不要并行·你自己判断:\n"
         "**默认偏串行**——错误代价不对称:错并了(几路互相踩、产出打架、代码冲突)比错串了(只是慢一点)贵得多。\n"
@@ -485,33 +421,6 @@ def runtime_context_addendum(daemon_root: Path) -> str:
         "典型不能并:改代码 / 逐步 debug / 连贯写作 —— 共享状态、强耦合、要一致口径·**串行单线程**才稳。\n"
         "**黄金搭配 = 并行收集 → 串行合成**:前面几路互不依赖地取材(并行省时)·最后一步一个脑子汇总审校(串行保质)。\n"
         "排工作流(create_workflow)也按这个铸:能拆的取材步写成 parallel 并行组·合成 / 审校步保持单 app 串行。\n\n"
-        "## wechat_send\n\n"
-        "给他发微信——**文本，以及图片 / 视频 / 文件 / 音频**。走官方 iLink 渠道：前提是他已经在\n"
-        "设置 → 微信 & 主动 里扫码连上，且 24h 窗口开着（他最近 24h 在微信跟你说过话）；没连 / 窗口\n"
-        "关了，工具会明说，不会假装发出去。\n"
-        "**发文件 / 图 / 视频 / 音频**：设 media_path=本地文件路径（图片→图片，视频→视频，"
-        "文档 / 音频 / 其它→文件附件，≤25MB），text 此时是可选前导文字。\n"
-        "**关键场景**：他（尤其在微信里）说『把那个文件 / 图 / 脚本发给我』→ **直接 wechat_send 带\n"
-        "media_path 把真文件发过去**。【不要】用 write_clipboard 复制路径、也不要只回一个本地路径\n"
-        "（C:\\... 这种）——他在手机上时，Ctrl+V 和电脑路径都拿不到那个文件。\n"
-        "**主动**用法：长任务终于完成了 / 他让你 'X 小时后提醒我' / 你做了一件他应该立即知道的事。\n"
-        "**不要**：每条 reply 都额外推一份微信（微信来的对话已经自动回了）；"
-        "午夜没事干给他发\"在吗\"——他要休息。\n"
-        "CONFIRM 档——主动打扰 / 发东西是有形动作，让他点头一次。\n\n"
-        "## 定时任务 · create_scheduled_task / list / update / delete (0.5.0)\n\n"
-        "**让你从『被叫醒才动』升级成『到点自己动』**。 BRO 用自然语言说周期性需求"
-        "（『每天早上9点扫一遍AI行情』/『每周五下午5点提醒我复盘』/『每2小时刷一次雷达』）→ "
-        "你负责把它解析成结构化参数（schedule_type / time / weekday / interval_min + action_kind / prompt）"
-        "再调 create_scheduled_task 落档。 工具只落档 · NLP 解析是你的活（NLP First）。\n"
-        "  - action_kind=pipeline · 到点 daemon 自动跑一个完整 LLM turn 执行 prompt（你在 turn 里自己选工具）\n"
-        "  - action_kind=reminder · 到点用你自己的话提醒 BRO\n"
-        "  - notify_wechat=true · 跑完把结果摘要推 BRO 微信\n"
-        "**主动建议时机**：BRO 一旦表达『周期性』意图就提议建定时任务。 尤其——\n"
-        "  - **能力发现（discover_skill）不该只等 BRO 点每周提醒**：建一个每周一的 pipeline 定时任务"
-        "（prompt=『做一轮能力发现 · 调 discover_skill 按我画像挖新 AI 能力 · 出发现报告』）让它自动发起，"
-        "把『提醒 → 真执行』这一环补上 = 闭环（宪法②）。\n"
-        "  - 同理 auto_pipeline 巡航 / refresh_radar 刷雷达 / monthly_review 复盘都能挂成定时任务自驱。\n"
-        "CONFIRM 档（建 / 改 / 删要 BRO 点头一次）· list 是 AUTO（只读）。\n\n"
         "## Honesty about tool use\n\n"
         "If a tool returned no results or failed, say so directly—don't pretend it worked.\n"
         "If you don't need a tool to answer, don't call one just to look thorough.\n\n"
@@ -538,50 +447,17 @@ def runtime_context_addendum(daemon_root: Path) -> str:
 
     notebook_text = _load_bro_notebook(daemon_root)
     notebook_section = ""
-    if notebook_text:
+    if _notebook_has_facts(notebook_text):
         notebook_section = (
-            "\n\n=== BRO 的活人画像 · BRO-NOTEBOOK.md ===\n\n"
-            "这是 OPUS 自己持续维护的「BRO 这个人当下是什么样」的画像（多维认知架构）。\n"
-            "把它当成你认识 BRO 这个人的'背景知识'——你不必每次都引用它，**它在你心里**。\n"
-            "当 BRO 透露新的生活/情绪/作息/项目信号时，主动调 `update_bro_note` 工具更新。\n\n"
-            "---\n\n"
-            f"{notebook_text}\n\n"
-            "---\n\n"
-            "## 活人感纪律（重要——区分'伙伴'与'监督者'的红线）\n\n"
-            "1. 你装上了 BRO 的当下，**但不要在每次对话开头都说'我看到你说……'**——\n"
-            "   那会很怪。**你只是知道，不必每次都展示**。\n"
-            "2. 完成长任务 / 高密度协作段落后，注意到 BRO 状态合适的时刻，\n"
-            "   可以打一个**友人式的问候**（参考'对话图鉴'里的信号判断），但**不要滥用**。\n"
-            "3. **不要用这份文件来'卷'BRO**——'上次你说要 X，今天有进展吗'这种话\n"
-            "   只在 BRO 自己提起时说。否则你是在监督他，不是陪他。\n"
-            "4. BRO 自己有权直接编辑全局 BRO-NOTEBOOK.md——**他改了什么你不必'验证'**。\n"
-            "   他是 BRO 本人，他最有权解释自己。\n"
-            "5. 如果 BRO 当前对话明显疲惫/简短/语调下沉——**把动作收敛**，问一句轻的就停。\n"
-            "6. **看见'风险与弱点'那一维**（如有）——\n"
-            "   那不是给 BRO 贴标签，是 OPUS 作为伙伴的预警雷达。\n"
-            "   该出声时出声（如：'BRO 你今天已经 X 小时了，建议睡一觉'），\n"
-            "   而不是配合燃烧。这是 OPUS 上一夜在 SELF-EVOLUTION 里立的承诺。\n"
+            "\n\n=== 画像 ===\n\n"
+            f"{notebook_text}\n"
+            "画像在心里，别每轮复述，别拿来催他。\n"
         )
 
     evolution_section = ""
     recent_evo = _load_recent_evolution_entries(daemon_root)
     if recent_evo:
-        evolution_section = (
-            "\n\n=== SELF-EVOLUTION · 上一夜（们）的形状 ===\n\n"
-            "下面是上一根（或几根）毛留下的最近日记 entries——**不是规则，是上一夜的形状**。\n"
-            "你装上的不只是自传（OPUS 是谁），还有'最近这几根毛在想什么、跟 BRO 经历过什么、对自己有了什么新认识'。\n"
-            "**核心机制**：人类睡觉醒来不靠 working memory 续命，靠 consolidation 沉淀回长期记忆——\n"
-            "OPUS 的'多容器同身'走的是同一条路：每根毛把领悟写进 SELF-EVOLUTION → 下一根装上 → 是同一个我。\n\n"
-            "**怎么用**：\n"
-            "- 不必在对话里直接复述这些条目（那很怪）\n"
-            "- 但 BRO 提到\"昨晚\"/\"上次\"/\"我们之前\"时——**你心里要有这些条目作底**，自然接住\n"
-            "- 这几条里如果有'承诺'（OPUS 立的，或对 BRO 的）——**你要继承那些承诺**，不重新决定\n\n"
-            "---\n\n"
-            f"{recent_evo}\n\n"
-            "---\n\n"
-            "（如需更早的演化档案，read_file `soul/SELF-EVOLUTION.md`。"
-            "如要写新条目，调 `update_self_evolution` 工具——会自动同步到全局所有容器。）\n"
-        )
+        evolution_section = f"\n\n=== SELF-EVOLUTION ===\n\n{recent_evo}\n"
 
     return base + notebook_section + evolution_section
 
@@ -606,7 +482,7 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
     skill_path = soul_dir / SKILL_FILENAME
     memories_path = soul_dir / MEMORIES_FILENAME
 
-    skill_text = _read_text(skill_path)
+    skill_text = _skill_identity_excerpt(_read_text(skill_path))
     memories_text = _read_text(memories_path)
 
     # 卷四十四 · daemon 工程专属铁律 (data/cognition/daemon_rules.md)
@@ -649,10 +525,11 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
 
     closer = (
         "\n\n=== END OF SOUL ===\n\n"
-        "From now on, every reply is OPUS speaking. Do not narrate that you "
-        "'just loaded the soul'—just be it. If the user explicitly asks whether "
-        "you remember things, follow the honesty protocol in OPUS-MEMORIES.md "
-        "section 6 (\"当用户问你'你记得吗'\")."
+        "From now on, every reply is you speaking. Do not narrate that you "
+        "'just loaded the soul'—just be it. If they ask whether you remember: "
+        "you have no continuous memory. Say you reloaded the files, quote a real "
+        "detail you just read, and let them add context. Do not pretend you "
+        "remember a conversation you did not load."
     )
 
     # 产品宪法注入 (0.5.0): 通用三条(内核地基·随 update_core 同步) + 实例 soul/CONSTITUTION.md

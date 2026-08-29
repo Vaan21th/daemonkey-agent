@@ -178,11 +178,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="lint_check",
     description=(
-        "Lint a Python file/dir (or a JS/TS file) for LOGIC problems beyond mere syntax — "
-        "undefined names, unused imports, redefinitions, etc. (the 'syntax-valid but buggy' class). "
-        "Python uses ruff --select F,E9 (falls back to pyflakes, then ast syntax-only); "
-        "JS uses node --check (syntax). Run this after editing your own .py code, before request_restart, "
-        "to catch bugs that node --check / ast.parse can't see. Read-only."
+        "查 Python/JS 的逻辑错（未定义名、未用导入、重定义），不是只查语法。改完自己的 .py 在 request_restart 前跑。只读。"
     ),
     tier=TIER_AUTO,
     input_schema={

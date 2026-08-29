@@ -119,15 +119,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="kernel_takeover",
     description=(
-        "内核文件接管 (0.9.6)。 用户说「这个文件我自己管 · 官方别碰」时用这个。"
-        "接管后 update_core 物理上不会把官方版落进这些文件 (连 checkout 参数都不带它)。"
-        "list=看接管了哪些 · add=声明接管 · remove=交还给官方管。"
-        "与 merge_user_override 的分工: 接管是事前不让覆盖 · 合并是事后把被覆盖的改动融回来。"
-        "升级机制自身的文件会被拒绝接管 (冻住它们=以后所有内核修复都进不来)。"
-        "★ 用户想改前端界面时先别急着接管: 加面板/改配色/加维度/显示 token 消耗 这类"
-        "写 static/user/user.js 或 user.css 就行 —— 那个目录在 never_sync 里·官方永不覆盖·"
-        "且排在所有官方资源之后加载(API 是 window.Daemonkey · 示例见 static/user/EXAMPLES.js)。"
-        "只有『要直接大改 chat.js 这种内核文件本身』才需要接管。"
+        "声明某内核文件由用户自己管，update_core 不再覆盖。改配色/加面板优先写 static/user/。list/add/remove。升级机制自身不能接管。"
     ),
     tier=TIER_CONFIRM,
     classify=_classify,

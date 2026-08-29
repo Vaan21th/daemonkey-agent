@@ -308,10 +308,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="expand_trend_to_report",
     description=(
-        "把今日趋势里的某一条 · 用 LLM 展开成 3000-4500 字的完整 docx 报告 · "
-        "自动落 data/reports/。 适合: 用户 在趋势卡片上点'写报告' · 或对话里"
-        "「把第 N 个趋势做成报告」。这是 信息雷达→今日趋势→报告库 链路上"
-        "「趋势→报告」这一环的快路径。"
+        "把今日趋势里的某一条 · 用 LLM 展开成 3000-4500 字的完整 docx 报告 · 自动落 data/reports/。 适合: BRO 在趋势卡片上点'写报告' · 或对话里「把第 N 个趋势做成报告」。这是 信息雷达→今日趋势→报告库 链路上「趋势→报告」这一环的快路径。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

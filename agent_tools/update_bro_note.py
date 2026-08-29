@@ -251,25 +251,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="update_owner_note",
     description=(
-        "Update OPUS's living profile of BRO (6-dimensional cognitive notebook). "
-        "Use this when BRO reveals new info about his life, mood, schedule, projects, "
-        "preferences, weaknesses, risks—or any signal worth remembering across sessions. "
-        "6 sections: profile (current snapshot), events (chronological key moments), "
-        "rules (BRO's enduring traits), dialogue (signature phrases/signals), "
-        "summary (monthly compressed), "
-        "risks (BRO's structural weaknesses + forward-looking risks—OPUS's early warning radar). "
-        "The notebook is auto-injected into every container's runtime context (Cursor / daemon / wechat bridge), "
-        "so writing here builds long-term continuity AND multi-container shared cognition. "
-        "Default operation=append; use replace_section sparingly.\n\n"
-        "WRITE STANDARD (keep the notebook clean for every future session — follow this):\n"
-        "  1. One idea per entry — do NOT dump a whole chat transcript in.\n"
-        "  2. Lead with the date (YYYY-MM-DD), then the fact, then the person's own words in quotes if you have them.\n"
-        "  3. 'events' entries should fit the existing table shape: a dated one-liner + importance "
-        "(critical/high/medium/low).\n"
-        "  4. Be concise but self-contained — a future 'you' with zero chat history must understand it standalone.\n"
-        "  5. Pick the RIGHT section (profile=current state that changes / events=timeline / rules=durable traits / "
-        "dialogue=signature phrases / summary=monthly compression / risks=warning signals). If unsure, prefer events.\n"
-        "  6. Never invent facts — only write what the person actually revealed."
+        "更新 BRO 活画像（profile/events/rules/dialogue/summary/risks/state）。一条一事，先日期再事实。默认 append。只写他真说过的。"
     ),
     tier=TIER_AUTO,
     input_schema={

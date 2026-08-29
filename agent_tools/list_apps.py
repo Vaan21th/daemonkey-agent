@@ -150,11 +150,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="list_apps",
     description=(
-        "List all apps in the workshop (data/workshop/apps/*.json). "
-        "Use whenever you want to know what apps exist — DO NOT use glob_files for this "
-        "(.gitignore hides apps/*.json from rg). "
-        "Returns id / name / icon / version / runs and (with detailed=true) tools / inputs / outputs / asset_slots. "
-        "Filter by query (substring match in id/name/description) or shipped_only=true. Read-only."
+        "列出工坊全部 app。想知道有哪些应用时用这个，不要 glob_files（apps/*.json 被 gitignore）。可按 query / shipped_only 过滤。只读。"
     ),
     tier=TIER_AUTO,
     input_schema={

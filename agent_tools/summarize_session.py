@@ -87,14 +87,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="summarize_session",
     description=(
-        "Compress earlier messages in the current session into a single summary, "
-        "to free up context window for long sessions. Use when:\n"
-        "  - You notice messages are >30 turns and input tokens climbing\n"
-        "  - BRO says 'summarize' / 'compress' / 'free up context'\n"
-        "  - You feel earlier context is no longer relevant to current work\n"
-        "Keeps the last N messages (default 8) intact, summarizes everything before. "
-        "Disk session file is NOT modified—full history stays for later /load. "
-        "Tier AUTO (in-memory only, no side effects)."
+        "把当前会话更早的消息压成一段摘要，腾窗口。超过约 30 轮或他说压缩时调。最近 N 条（默认 8）不动。磁盘 jsonl 不改。"
     ),
     tier=TIER_AUTO,
     input_schema={

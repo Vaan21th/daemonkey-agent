@@ -92,6 +92,15 @@ def _run(args: dict) -> ToolResult:
     if not (url.startswith("http://") or url.startswith("https://")):
         return ToolResult(ok=False, output="", error=f"only http(s) urls allowed, got: {url!r}")
 
+    try:
+        from ._hotpath_guard import fetch_precheck, note_fetch_status
+        blocked = fetch_precheck()
+        if blocked:
+            return ToolResult(ok=False, output="", error=blocked)
+    except Exception:
+        fetch_precheck = None  # type: ignore
+        note_fetch_status = None  # type: ignore
+
     max_chars = int(args.get("max_chars") or DEFAULT_MAX_CHARS)
     max_chars = max(500, min(max_chars, 50000))
 
@@ -110,10 +119,12 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(ok=False, output="", error=f"network error: {e!r}")
 
     if resp.status_code != 200:
-        return ToolResult(
-            ok=False, output="",
-            error=f"HTTP {resp.status_code} from {resp.url}",
-        )
+        err = f"HTTP {resp.status_code} from {resp.url}"
+        if note_fetch_status:
+            stop = note_fetch_status(resp.status_code, "", str(resp.url))
+            if stop:
+                err = stop
+        return ToolResult(ok=False, output="", error=err)
 
     raw_bytes = resp.content
     if len(raw_bytes) > MAX_RESPONSE_BYTES:

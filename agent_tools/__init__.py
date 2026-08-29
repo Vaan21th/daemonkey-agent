@@ -180,6 +180,8 @@ def register_tool(spec: ToolSpec) -> ToolSpec:
         raise ValueError(f"tool name conflict: {spec.name}")
     if spec.tier not in (TIER_AUTO, TIER_CONFIRM, TIER_GUARD):
         raise ValueError(f"invalid tier: {spec.tier}")
+    from ._desc_budget import assert_description_budget
+    assert_description_budget(spec.name, spec.description)
     REGISTRY[spec.name] = spec
     return spec
 

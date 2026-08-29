@@ -167,22 +167,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="update_app",
     description=(
-        "改一个已有 app 的字段 · 包括给老 app 补 ui_form_schema (UI 表单)\n\n"
-        "**典型场景**:\n"
-        "  - 用户 在工坊看到一张老卡片 · 跟你说『给它加个表单』\n"
-        "  - 用户 跟你聊到一个 app 用得不顺手 · 想改 system_prompt / 加 tool / 换 model\n"
-        "  - 你自己审视到一个 app 缺 ui_form_schema · 主动补\n\n"
-        "**只传你要改的字段** · 没传的字段保留原值。\n"
-        "**特殊情形**:\n"
-        "  - `ui_form_schema: []` 显式清空表单 · 这个 app 回归纯 NLP 触发\n"
-        "  - 改 name/description 等于换卡片『名片』· 谨慎\n\n"
-        "**ui_form_schema 字段哲学** · 跟 create_app 完全一样:\n"
-        "  - 每个元素是 {name, type, label, required, default, help, ...} 的 dict\n"
-        "  - type: text / textarea / number / select / boolean / file\n"
-        "  - name 必须是合法变量名 · 不能撞保留字 (input/output/app/opus/now/today)\n"
-        "  - select 必须有 options\n"
-        "  - 最多 20 个字段\n\n"
-        "**重命名注意**: 把 name 改成完全不同的语义等于偷换卡片 · 建议新造 + 软删老的。"
+        "改已有工坊 app 的字段（只传要改的）。每次应带 change_note。六段标准见 read_scenario('app_creation')。ui_form_schema:[] 清空表单。改 name 等于换名片，谨慎。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

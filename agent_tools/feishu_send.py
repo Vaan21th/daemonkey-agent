@@ -135,14 +135,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="feishu_send",
     description=(
-        "Proactively send a message to the user on Feishu (Lark) — text and/or a file. "
-        "`media_path` → sends the local file as a Feishu file message (≤20 MB); `text` then becomes "
-        "an optional leading text message. Without media_path, `text` is sent as a plain text message. "
-        "`receive_id` defaults to the current session's Feishu open_id (auto-resolved when the session "
-        "is an api-feishu-* session); pass it explicitly (with receive_id_type) when auto-resolution "
-        "fails or you target a chat. Use for: delivering packaged code / reports / files, "
-        "notifying the user of long-task completion on Feishu. DO NOT use for: every reply "
-        "(incoming Feishu chats are auto-answered). Tier CONFIRM."
+        "主动往飞书发文字或本地文件（≤20MB）。长任务做完、要递报告/代码包时用。日常飞书来信会自动回，别每句都调这个。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

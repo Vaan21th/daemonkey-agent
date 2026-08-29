@@ -187,11 +187,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="outline_file",
     description=(
-        "Show a file's structural outline — every function / class / top-level constant (and markdown "
-        "headings) with line numbers. Use this BEFORE editing a big file (e.g. static/chat.js, 9000+ lines) "
-        "to find where the thing you want to change lives, then read_file that line range, then edit_file it. "
-        "This is the navigation half of safe big-file editing (read_file alone truncates at ~40K chars).\n"
-        "Supports: .py (ast) · .js/.ts/.mjs/.jsx/.tsx (regex) · .md (headings)."
+        "列出文件骨架（函数/类/常量/标题 + 行号）。改大文件先用这个定位，再 read_file 那一段，再 edit_file。支持 py / js / ts / md。"
     ),
     tier=TIER_AUTO,
     input_schema={

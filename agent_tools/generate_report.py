@@ -224,13 +224,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="generate_report",
     description=(
-        "把 markdown 正文一键渲染成精排 DOCX 报告 · 自动加封面 + 视觉规范 · "
-        "落 data/reports/ · 之后 用户 在 WebUI 可下载。"
-        "适合：本周雷达汇总 / 对客户的方案文档 / 把某段对话整理成档案 / 任何"
-        "需要交付正式格式文档的场景。\n"
-        "两种用法 · ① 直接把正文放 body 参数;② 长文档推荐——先把完整 markdown 正文"
-        "写在你的回复里 · 再调本工具【只给 title · 不带 body】 · 工具自动抓你回复的正文。"
-        "(② 适合正文很长、或当前模型对超长结构化参数不稳时 · 走文本流更稳)"
+        "把 markdown 渲染成精排 DOCX 落到 data/reports/。短文直接传 body；长文先写在回复里再只传 title。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

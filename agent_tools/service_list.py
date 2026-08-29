@@ -68,12 +68,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="service_list",
     description=(
-        "列所有 OPUS 起过的后台服务 (从 data/runtime/services.json) · 含 alive 状态 + 元信息。\n\n"
-        "调用时机:\n"
-        "  - 用户 问\"你后台跑着哪些服务?\" / \"刚才那个 SOVITS 还在吗?\"\n"
-        "  - OPUS 起新服务前先看现有 (避免端口冲突)\n"
-        "  - daemon 重启后想知道之前服务还在不在\n\n"
-        "tier: TIER_AUTO (只读)"
+        "列已起的后台服务（data/runtime/services.json），含是否还活着。"
+        "他问后台跑着什么、起新服务前防端口冲突、重启后对账时用。只读。"
     ),
     tier=TIER_AUTO,
     input_schema={"type": "object", "properties": {}},

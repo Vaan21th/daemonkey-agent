@@ -407,18 +407,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="look_at",
     description=(
-        "让 Daemonkey 看一张图片并返回文字描述。双路径：当前模型支持多模态（Claude/GPT/"
-        "Gemini/Qwen）→ 直接看图；当前模型纯文本（DeepSeek/Kimi/GLM）→ 多通道竞速池"
-        "（Gemini/GLM 等并发 first-success + 磁盘缓存）看图。\n\n"
-        "**调用时机**：\n"
-        "  - 截屏后想看屏幕内容（配合 take_screenshot）\n"
-        "  - BRO 在 WebUI 上传了图片\n"
-        "  - BRO 让你看某张图片 / 截图 / 照片\n"
-        "  - 需要从图片中提取文字 / 错误信息\n\n"
-        "**参数**：path（图片路径·必填），question（想问什么·可选·默认描述整张图），"
-        "no_cache（可选·true 跳过磁盘缓存强制重识别）\n"
-        "**返回**：纯文本描述。多模态模型看到的是原图（更精确），纯文本模型看到的是"
-        "竞速池 winner 的文字描述（够用）。同图同问二次命中缓存零调用。"
+        "看一张本地图片并返回文字描述。截屏/上传/提取图中文字时用。path 必填，question 可选。"
     ),
     tier=TIER_AUTO,
     input_schema={

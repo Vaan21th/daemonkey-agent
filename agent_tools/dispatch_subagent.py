@@ -963,25 +963,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="dispatch_subagent",
     description=(
-        "派 1~N 个『子执行器分身』并行完成子任务 · 各自独立上下文 + 收紧工具白名单 · "
-        "跑完自动汇总结论回到本轮。 适合【并行调研 / 多方向查证 / 分头取材再汇总】。\n\n"
-        "**什么时候用**:\n"
-        "  - 一个请求天然拆成几个独立子任务 (查 A、查 B、查 C 再对比) → 并行比自己逐个查省时\n"
-        "  - 想把一段查证隔离出去 · 不让中间过程占满主对话上下文\n"
-        "  - 也可放进某个工坊 app 的 tools · 让 app 步内并行 (如『素材并行查询』把每个镜头的\n"
-        "    检索词一次并行搜) → app 跑到这步会自动放行 · 不打断你\n\n"
-        "**用法**:\n"
-        "  - tasks: 数组 · 每项 {goal(必填一句话目标), tools?(工具白名单), max_iter?(迭代预算), agent?(分身预设名)}\n"
-        "  - 不给 tools → 分身默认只拿【只读/研究】工具 (read_file/grep/web_search/… · 最安全)\n"
-        "  - 要分身能写文件才显式给 tools · 但破坏性/系统控制类工具永远被剔除\n"
-        "  - 给 agent=预设名 (data/agents/*.json 里的 name) → 用预设的模型 + 工具 + 描述 (可省钱分工)\n"
-        "  - 给 fork_context=true/数字 (0.9.7) → 分身带父对话最近 N 轮上下文 · 能接上『刚才聊的那个』\n"
-        "  - 给 background=true (0.9.7) → 异步后台跑: 立即返回不阻塞 · 完成后自动通报到本会话\n\n"
-        "**边界 (安全)**:\n"
-        f"  - 一次最多 {_MAX_TASKS} 个 · 并发上限 {_MAX_CONCURRENCY} (排队跑 · 防 token 爆)\n"
-        "  - 分身【不能】再派分身 (限一层递归) · 【不给】request_restart/update_core 等系统控制权\n"
-        "  - 每个分身跑完落 sessions/sub-*.jsonl 可回看 (可追溯)\n\n"
-        "**tier**: CONFIRM · 会并行烧 token · 派之前让你拍一下确认 (信任 flow 内自动放行)"
+        "派 1~6 个子执行器并行调研/查证，独立上下文+工具白名单。tasks[].goal 必填。默认只读工具；要写文件须显式给 tools。background=true 异步。不能再派分身。CONFIRM（烧 token）。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

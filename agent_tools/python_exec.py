@@ -227,30 +227,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="python_exec",
     description=(
-        "Execute Python code in Daemonkey's .venv. Use this INSTEAD of `shell_exec python -c '...'` "
-        "whenever you'd write multi-line Python.\n\n"
-        "**Why this tool exists** — `shell_exec python -c \"<multi-line script>\"` is the #1 cause of "
-        "exit-code-1 in this daemon (78.6% of all shell_exec failures in last 30 sessions are inline Python "
-        "with PS / cmd / Python triple-escape mess). python_exec takes raw source code · zero shell escaping · "
-        "writes to a .venv-launched temp file · returns stdout/stderr/exit code identical format to shell_exec.\n\n"
-        "**When to use**:\n"
-        "  - Check file content with Python (json.load, ast.parse, pathlib.Path operations)\n"
-        "  - Compute / aggregate / format data\n"
-        "  - Call any Python library available in .venv (numpy, requests, etc.)\n"
-        "  - Run quick syntax / type checks (py_compile, ast.parse)\n\n"
-        "**When NOT to use** (use shell_exec instead):\n"
-        "  - Running git / curl / npm / shell commands\n"
-        "  - File operations that just need ls/cat (use read_file or shell_exec ls)\n"
-        "  - Anything that's actually a one-liner in PowerShell\n\n"
-        "**Secret 用法** (铁律 7 · 同 shell_exec):\n"
-        "  - 不要把 KEY 真值粘到 code · 用 placeholder `${secret:<app_id>:<name>}`\n"
-        "  - daemon 子进程启动前 inline 替换 · LLM history 永远只看到 placeholder\n"
-        "  - 例: `import requests; r = requests.post(url, headers={'Authorization': 'Bearer ${secret:app-xxx:api_key}'})`\n\n"
-        "**Tips**:\n"
-        "  - Code 是纯 Python · 不需要 PowerShell 转义\n"
-        "  - 输出走 print() · 标准 stdout / stderr\n"
-        "  - 默认 cwd 是项目根 (data/ workshop/ 等相对路径直接能用)\n"
-        "  - utf-8 强制 (PYTHONUTF8=1 + PYTHONIOENCODING=utf-8) · 中文 / emoji 不会乱码"
+        "在 .venv 跑多行 Python 源码（零 shell 转义）。检 json/ast、算数、调库用本工具。git/curl/npm 用 shell_exec。密钥用 ${secret:app:name}，输出靠 print()。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

@@ -86,28 +86,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="app_set_secret",
     description=(
-        "给一个 app 安全存一个 KEY/token/secret · 真值落 data/workshop/secrets/ (gitignored) · "
-        "LLM 之后只用 placeholder ${secret:<app_id>:<name>} 引用真值\n\n"
-        "**🔴 铁律 7 · 用户 给 KEY 时唯一允许的写处**:\n"
-        "  - ❌ 禁止把 KEY 写进 app json 的任何字段 (description / system_prompt / 自定义字段)\n"
-        "  - ❌ 禁止把 KEY 写进 system_prompt 让下层 LLM 看见\n"
-        "  - ❌ 禁止把 KEY 写进任何 .md / 注释 / 测试脚本\n"
-        "  - ✅ 用户 在对话里发 KEY 给 OPUS · 第一刀就调 app_set_secret 把 KEY 落到 secrets/\n"
-        "  - ✅ 之后写 system_prompt 用 ${secret:<app_id>:<name>} 占位 · daemon resolve\n\n"
-        "**调用次序 (做一个 API 应用)**:\n"
-        "  1. create_app 落卡片 (拿到 app_id)\n"
-        "  2. **app_set_secret 存 KEY** (把 用户 给的 sk-xxx 落 secrets/)\n"
-        "  3. 用 placeholder 写 system_prompt / shell_exec 调用 · 真值不出现在任何文本资产里\n"
-        "  4. shell_exec 测一次 · 验通\n\n"
-        "**KEY 真值进 messages 的 trade-off**:\n"
-        "  args.value 写真值时 · 真值会短暂出现在 LLM messages 历史 (不可避免) · 这是当前最优:\n"
-        "    - 真值不进 git history\n"
-        "    - 真值不进 app json\n"
-        "    - 真值不进 system_prompt / 不进下层 LLM 调用\n"
-        "  彻底防止 messages 污染需要 用户 走 web UI 旁路 (future TODO)\n\n"
-        "**字段示例**:\n"
-        "  - api_key / access_token / client_secret / refresh_token\n"
-        "  - 一个 app 可以存多个 secret (比如 api_key + endpoint_url)"
+        "给 app 存 KEY/token，真值落 gitignored secrets。BRO 给密钥时第一刀调本工具。之后只用 ${secret:<app_id>:<name>}。禁止写进 app json / prompt / md。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

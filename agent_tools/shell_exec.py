@@ -279,6 +279,13 @@ def _run(args: dict) -> ToolResult:
     cmd = (args.get("command") or "").strip()
     if not cmd:
         return ToolResult(ok=False, output="", error="empty command")
+    try:
+        from ._hotpath_guard import block_shell
+        blocked = block_shell(cmd)
+        if blocked:
+            return ToolResult(ok=False, output="", error=blocked)
+    except Exception:
+        pass
 
     used_secrets: dict[str, str] = {}
     try:
@@ -405,27 +412,7 @@ def _normalize_for_winps51(cmd: str) -> str:
 SPEC = ToolSpec(
     name="shell_exec",
     description=(
-        "Execute a shell command on the host. "
-        "On Windows runs via PowerShell 5.1; on POSIX via /bin/sh. "
-        "Use for: git / curl / npm / file ops / process queries / running tests.\n\n"
-        "**🔴 写多行 Python? 改用 `python_exec` 工具**:\n"
-        "  - 不要写 `shell_exec python -c \"<多行脚本>\"` · 这是 daemon 失败案例 #1 (78.6% 的 shell_exec exit-1 来自 inline -c)\n"
-        "  - 改用 `python_exec` 工具 · 接受原生 Python 源码 · 零 shell 转义\n"
-        "  - 单行简单 `python --version` / `python script.py` 还在 shell_exec\n\n"
-        "**🔴 PowerShell 5.1 经典坑 (BRO 这台 Win + PS 5.1)**:\n"
-        "  - **`2>&1` + git/npm = NativeCommandError** · PS 把进度信息当 PS error · 即使命令成功也 exit 1 → 别加 `2>&1` · 或用 `--quiet`\n"
-        "  - **heredoc `<<EOF` 不支持** → 多行内容 write_file 落临时文件再 shell_exec 跑\n"
-        "  - **JSON body 嵌 curl `-d \"{\\\"x\\\":\\\"y\\\"}\"`** · 引号嵌套 PS 解不开 → 用 Invoke-RestMethod -Body (Get-Content tmp.json) 或落 _tmp.json 再 `curl @tmp.json`\n"
-        "  - **反斜杠 `\\` 不是转义符** · PS 里 ` (反引号) 才是 · 写文件路径用正斜杠 `/` 最稳\n"
-        "  - **`&&` / `||` 短路链 PS 5.1 不支持** · daemon 已自动改写纯 && 或纯 || · 但**混合 `&&` + `||` 不处理** → 拆成两步\n\n"
-        "**🔴 自杀防护 (你跑在 daemon 进程里)**:\n"
-        "  - **不要 `Stop-Process` / `taskkill` python 或 daemon 自身** · 你就在那个进程里 · 杀 = 自爆\n"
-        "  - **不要 restart daemon** · 让 BRO 手动重启\n"
-        "  - 改了 daemon .py 代码后 · 提示 BRO 重启即可 · 不要自己跑命令重启\n\n"
-        "**🔴 Secret 用法 (铁律 7)**:\n"
-        "  - 不要把 KEY 真值粘到 command · 用 placeholder `${secret:<app_id>:<name>}`\n"
-        "  - 例: `Invoke-RestMethod -Headers @{ Authorization = 'Bearer ${secret:app-xxx:api_key}' } ...`\n"
-        "  - 真值在子进程启动前 inline 替换 · LLM messages 永远只看到 placeholder · 不污染历史"
+        "在本机跑短命令（git/curl/npm/测试）。Windows 走 PowerShell 5.1。多行 Python 改 python_exec；杀 daemon 改 request_restart；读文件改 read_file。PS：别加 2>&1、没有 heredoc、路径用正斜杠、密钥用 ${secret:app:name}。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

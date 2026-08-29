@@ -182,21 +182,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="run_flow",
     description=(
-        "沿 steps 工作流执行 · 每步状态落盘 · 断点续跑 (Plan 模式的执行半边)\n\n"
-        "**🔴 铁律 · 复合任务先排流程再动手**:\n"
-        "  任务要 2 个以上 app 接力 (如: 做视频 = 文案→配音→渲染) → 先 create_workflow(steps=[...]) 落档\n"
-        "  → 用户认了 → run_flow(action=start) 沿轨道跑。**严禁跳过流程 ad-hoc 手搓接力** ·\n"
-        "  那是 2026-06-09 做视频 8 小时混乱的根因。\n\n"
-        "**异步语义 (P0 · 2026-06-10 改)**:\n"
-        "  - start/resume **立刻返回** · 后台 thread 真跑 · 你拿到的是 status=running 的初始 state\n"
-        "  - 不要 LLM 内部等 · 不要追问 'run 完了吗' · 用户在 chat banner 看进度色 / workshop_context\n"
-        "    每轮自动注入活跃 run 状态 · 跑完 / 失败下轮你会自然知道 · 主动用 status 查最新进度即可\n"
-        "  - 启动后这一轮就给用户报 '已启动 run-xxx · 后台跑中' · 别在原 tool turn 里堵着等\n\n"
-        "**断点哲学 (精确到环·不整体重来)**:\n"
-        "  - 某步挂了 → run 状态保留 → 修好对应 app (update_app 留版本) → resume 从失败步续跑\n"
-        "  - 想单独重跑第 N 环 → resume + from_step=N\n"
-        "  - 状态文件: data/workshop/runs/<run_id>.json · 对话忘了它也在\n\n"
-        "**只支持 steps 格式 flow** · 老画布 flow 在工坊画布里跑 (或重建为 steps 格式)"
+        "沿 steps 工作流执行，状态落盘、断点续跑。两个以上 app 接力须先 create_workflow 再 start。start/resume 立刻返回，后台跑。失败用 resume；指定步重做用 rerun_flow_step。"
     ),
     tier=TIER_CONFIRM,
     classify=_classify,

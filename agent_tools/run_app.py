@@ -78,21 +78,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="run_app",
     description=(
-        "直接执行一个工坊 app (跟工坊『测试』tab 点 ▶ 同一条路) · 在对话里就能调用现成能力\n\n"
-        "**🔴 铁律 · 先查再搓 (复合任务手搓 8 小时的教训)**:\n"
-        "  任务来了 · 工坊里有现成 app 能干 → **必须 run_app 调它** · 严禁 python_exec 从零手搓同样的活。\n"
-        "  app 里沉淀着打磨过的标准 (六段 prompt / 坑清单 / 资产引用) · 手搓 = 把标准全扔了。\n\n"
-        "**用法**:\n"
-        "  - app_id 精确引用 (推荐) · app_name 名字引用 (唯一命中才行)\n"
-        "  - inputs 对应 app 的 ui_form_schema 字段 · 不知道字段就只传 goal (一句话目标)\n"
-        "  - app 运行时自带: 自己的 system_prompt + 工具白名单 + 产出隔离纪律 + 资产槽必读纪律\n"
-        "  - 多步接力请用 run_flow (带状态落盘·断点续跑) · 单步才用 run_app\n\n"
-        "**产出**: 落 data/workshop/outputs/<app_id>/ · 给用户看用 markdown "
-        "`![](/workshop/outputs/<app_id>/x.png)` (mp4/wav 同理自动转播放器)\n\n"
-        "**tier (P0 修正 · 2026-06-10)**: AUTO · 跟 read_file/write_file 同级\n"
-        "  - 跑 app = 执行用户主对话已明示的意图 · 不该次次打断让用户拍 y (用户: 找高手做事不该次次确认)\n"
-        "  - 真危险的事 (rm -rf / drop / 删 app) 仍走 GUARD/CONFIRM tier 兜底 · 不会被这个 AUTO 漏掉\n"
-        "  - app 内部可能调 CONFIRM tier 工具 → 走 sub-agent 内的 auto-approve · 主对话不打断"
+        "执行一个工坊 app（与工坊测试按钮同路）。工坊已有能干活的 app 时必须调它，禁止 python_exec 手搓同样的活。多步接力用 run_flow。产出在 data/workshop/outputs/<app_id>/。"
     ),
     tier=TIER_AUTO,
     input_schema={

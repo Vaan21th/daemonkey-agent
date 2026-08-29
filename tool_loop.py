@@ -878,7 +878,7 @@ def to_openai_tools(specs: list[ToolSpec]) -> list[dict]:
                 "parameters": s.input_schema,
             },
         }
-        for s in specs
+        for s in sorted(specs, key=lambda s: s.name)
     ]
 
 
@@ -889,7 +889,7 @@ def to_anthropic_tools(specs: list[ToolSpec]) -> list[dict]:
             "description": _localize(s.description),
             "input_schema": s.input_schema,
         }
-        for s in specs
+        for s in sorted(specs, key=lambda s: s.name)
     ]
 
 

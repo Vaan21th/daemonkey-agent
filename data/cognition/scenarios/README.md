@@ -12,8 +12,9 @@
 
 | domain | 文件 | 触发关键词 | 涉及铁律 |
 |---|---|---|---|
-| self_evolution | `self_evolution.md` | 改 daemon .py · 改 static · "改这个工具" · "重写 worker" | 铁律 0 / 1 / 2 / 3 / 4 / 5 |
+| self_evolution | `self_evolution.md` | 改 daemon .py · 改 static · "改这个工具" · "重写 worker" | 铁律 0 / 1 / 2 / 3 / 4 / 5 / 15 |
 | app_creation | `app_creation.md` | "建一个 X 应用" · "排个 X 工作流" · "提炼 skill" · 装 API key | 铁律 6 / 7 |
+| presentation | `presentation.md` | "做一份 PPT" · 演示稿 / 汇报 / 课件 · 生图配图 | 工艺合同（非铁律） |
 
 ## 未来 scenarios (用 add_iron_rule 时建)
 

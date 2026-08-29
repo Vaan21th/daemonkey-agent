@@ -293,20 +293,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="extract_playbook",
     description=(
-        "Post-task playbook extractor + external skill importer. "
-        "After finishing a reusable task, call this to save the pattern as a markdown playbook in data/playbooks/. "
-        "Anti-Hermes design: no mid-task interruption; extract only after task completion.\n"
-        "Actions:\n"
-        "  - extract: save a playbook you summarized yourself (requires title+steps)\n"
-        "  - import: feed an EXTERNAL skill markdown (via source_content / source_url / source_path); "
-        "the tool auto-normalizes it (LLM) into a playbook. This is the '接住' step of the "
-        "discover -> import -> recall loop. Use when you found a useful skill (e.g. a GitHub SKILL.md / README) "
-        "and want daemon to absorb it. Runs at CONFIRM tier, so the user nods before each import.\n"
-        "  - search (find by query/task_type/tag), load (read full content), list (all playbooks).\n"
-        "  - feedback: report execution result of a playbook (playbook_id + success + note) → \n"
-        "    updates confidence (wish-0ecdbbd8): success refreshes verified_at · failure bumps stale_hits → stale state.\n"
-        "Once saved or imported, memory_index auto-indexes it and closure_check auto-recalls it on relevant "
-        "tasks (no manual search needed). Output is plain markdown files, not new tool infrastructure."
+        "任务结束后把可复用步骤存成 playbook，或 import 外部 SKILL.md。actions: extract/import/search/load/list/feedback。不要任务中途打断。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

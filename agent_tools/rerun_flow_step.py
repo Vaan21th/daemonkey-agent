@@ -131,14 +131,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="rerun_flow_step",
     description=(
-        "从某条 run 的指定步重跑 (用户看到某步产出不满意 · 主动要求重做时调)。\n\n"
-        "跟 run_flow(action=resume) 的区别:\n"
-        "  - resume 默认从【失败步】续跑 · 那是修 bug 场景\n"
-        "  - rerun_flow_step 是用户主动 '第 N 步不行重做' · 即使该步状态是 done 也强制重\n\n"
-        "调用时机 (典型对话):\n"
-        "  - 用户看 banner: '第 3 步图不好 · 重新生一遍' → rerun_flow_step(run_id, step_idx=3, reason='图不好')\n"
-        "  - 用户: '回到第 2 步重做' → rerun_flow_step(run_id, step_idx=2)\n\n"
-        "信任 flow (trust_level≥2) 调本工具不打断·跟 run_flow 行为一致。"
+        "BRO 对某步产出不满意时强制重跑该步（即使已 done）。修 bug 从失败步续跑用 run_flow resume。"
     ),
     tier=TIER_CONFIRM,
     classify=_classify,

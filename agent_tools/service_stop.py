@@ -60,12 +60,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="service_stop",
     description=(
-        "停一个 OPUS 起的后台服务 · 先 SIGTERM 等 5s · 不停就 SIGKILL 兜底 · log 保留。\n\n"
-        "调用时机:\n"
-        "  - 用户 说\"把那个 sovits 停了\"\n"
-        "  - OPUS 起的临时 service 用完了\n"
-        "  - 端口冲突要重启服务前\n\n"
-        "tier: TIER_CONFIRM (停服务有副作用)"
+        "停一个后台服务：先 SIGTERM，不停再 SIGKILL。他说停、临时服务用完、重启腾端口时用。"
+        "CONFIRM。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

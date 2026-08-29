@@ -281,6 +281,25 @@ def _run(args: dict) -> ToolResult:
         lines.append("")
         lines.append(f"── 前端 JS 语法 ── (校验跳过: {type(e).__name__})")
 
+    desc_ok = True
+    try:
+        from agent_tools._desc_budget import MAX_DESC_TOKENS, audit_registry
+        from agent_tools import REGISTRY
+        over = audit_registry(REGISTRY)
+        desc_ok = not over
+        lines.append("")
+        lines.append("── 工具简介预算 ──")
+        if desc_ok:
+            lines.append(f"OK · {len(REGISTRY)} 个工具 description ≤ {MAX_DESC_TOKENS} tok")
+        else:
+            lines.append(f"FAIL · {len(over)} 个超 {MAX_DESC_TOKENS} tok:")
+            for o in over:
+                lines.append(f"  {o['name']} {o['tok']} (+{o['over']})")
+    except Exception as e:
+        desc_ok = False
+        lines.append("")
+        lines.append(f"── 工具简介预算 ── (校验失败: {type(e).__name__}: {e})")
+
     # 7. 汇总
     total = passed + failed + skipped
     summary = [
@@ -290,20 +309,23 @@ def _run(args: dict) -> ToolResult:
         f"总计 {total} 路由 · {_PASS} {passed} pass · {_FAIL} {failed} fail · {_SKIP} {skipped} skip",
         f"🔒 需鉴权: {auth_routes} · 🌐 无需鉴权: {noauth_routes}",
         f"前端 JS: {'✅ OK' if fe_ok else '❌ 语法坏 (见下方·先修再 commit)'}",
+        f"工具简介: {'OK' if desc_ok else '超线 (见下方·先收再 commit)'}",
     ]
-    if failed == 0 and fe_ok:
+    if failed == 0 and fe_ok and desc_ok:
         summary.append("")
-        summary.append("🎉 全路由 smoke + 前端 JS 通过 · daemon 代码没有 import / 参数雷 · chat.js 没改断。")
+        summary.append("全路由 smoke + 前端 JS + 简介预算通过 · daemon 没有 import / 参数雷 · chat.js 没改断。")
     else:
         summary.append("")
         if failed:
             summary.append(f"⚠️  {failed} 个路由 smoke 失败 · 上面有 traceback · 先修再 commit。")
         if not fe_ok:
             summary.append("⚠️  前端 JS 语法坏了 · 重启后 WebUI 会白屏 · 先修再 commit (见『前端 JS 语法』节)。")
+        if not desc_ok:
+            summary.append("工具简介超线 · 先收到两句再 commit（工艺进 read_scenario）。")
 
     lines = summary + lines
 
-    ok = (failed == 0) and fe_ok
+    ok = (failed == 0) and fe_ok and desc_ok
     return ToolResult(ok=ok, output="\n".join(lines))
 
 
@@ -416,20 +438,7 @@ def _run_tool(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="verify_daemon_endpoints",
     description=(
-        "对 daemon 所有 HTTP 路由做一次快速 smoke test · 用 FastAPI TestClient"
-        "（不是 curl）· 能拿 Python traceback。 **外加前端 static/*.js 语法校验** "
-        "(node --check · 卷五十四加)。\n"
-        "\n"
-        "**调用时机**: Daemonkey 改完 daemon_api.py / agent_tools/*.py / static/*.js 后、commit 前。\n"
-        "改完自称「改好了」之前必须先跑这个——不漏 import / 参数雷 · 也不漏把 chat.js 改断 "
-        "(卷五十四事故: python_exec 切片把 chat.js 尾部吞了·route smoke 全绿但 WebUI 白屏)。\n"
-        "\n"
-        "**跳过**: /restart-daemon /shutdown-daemon (有不可逆副作用) · static/lib/ 下三方 vendor JS\n"
-        "**SSE**: /chat/stream 走流首帧 · /api/pulse/stream 走 probe=1 诊断分支\n"
-        "**实现 (2026-07-29)**: 全新子进程跑 (不堵 daemon 事件循环) + 双模式:\n"
-        "  mode=fast (默认) 假token+并行 ~秒级 · 验 import雷/参数雷/前端JS —— 日常自检用;\n"
-        "  mode=deep 真token+串行+单请求8s超时 ~分钟级 · 深测 auth handler 本体 —— 大改路由后用。\n"
-        "  (根因教训: 真token下 auth handler 全真跑·并行共享锁会雪崩——140/6×10s=慢到发指的真相)"
+        "改完 daemon/.py/static 自称改好了之前必跑的 HTTP+JS smoke。mode=fast 日常秒级；deep 真 token 深测路由。跳过 restart/shutdown。"
     ),
     tier=TIER_AUTO,
     input_schema={

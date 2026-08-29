@@ -85,13 +85,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="safe_merge",
     description=(
-        "把指定分支【安全】合回 master —— wish-e19edb92 三件套之③ · 治『合主干出问题直接崩』。"
-        "BRO 说『把 X 合主干 / 合并 X 分支』时·这是第一选择 (别用 shell_exec git merge 裸奔)。"
-        "五道保护: ①已合过幂等放行 ②分支安全门 (防错分支/junk 文件) ③分支先吃最新 master·"
-        "冲突在分支上预演·自动 abort 报告冲突清单·master 不被污染 ④上线闸 (建 app + 路由 smoke + "
-        "前端 JS 哨兵)·过不了不合 ⑤任何失败自动回到干净 master·不留半合状态。"
-        "一句话: 要么全绿落 commit·要么当没发生过。 allow_override=true 可跳过安全门和上线闸 "
-        "(仅 BRO 明确知道自己在干嘛时用)。"
+        "把指定分支安全合回 master。BRO 说合主干时用这个，不要裸 git merge。失败自动回到干净 master。allow_override 仅 BRO 明确知道时用。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

@@ -253,21 +253,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="web_search_image",
     description=(
-        "按 query 搜图片 · 返回缩略图本地链 + 来源页 URL · LLM 把返回的 markdown 块直接贴进最终回答 · "
-        "用户 在 chat 看到嵌入的缩略图 · 点击进 source page 看上下文。\n\n"
-        "**何时用**:\n"
-        "  - 用户 让 OPUS 找某个人 / 地点 / 物品的照片 (滨崎步 / 樱花 / 故宫 / iPhone 16 等)\n"
-        "  - 给 用户 找参考图 / inspiration / illustration\n"
-        "  - 验证某个视觉概念 (logo / 截图 / 商品外观) 跟 用户 描述是否一致\n\n"
-        "**红线**:\n"
-        "  - 只下载缩略图 (百度 CDN · ~30-100KB) 落 `data/workshop/outputs/searches/<hash>/` · 不下载原图\n"
-        "  - 来源页 URL 必须保留 · 让 用户 能溯源\n"
-        "  - 直接把返回的 markdown 块贴进回答 · 不要拆字段重新拼\n\n"
-        "**实战提示**:\n"
-        "  - 用百度图片 backend · 中文 / 英文 / 中英混合都好使\n"
-        "  - 中文 query 准 (滨崎步 → 真的滨崎步图)\n"
-        "  - 长 query 比短 query 准 ('滨崎步 演唱会' 比 '滨崎步' 更精)\n"
-        "  - 来源主要是抖音 / 微博 / 百度百科 / 摄影站 · 用户 点进去能看完整内容\n"
+        "按 query 搜图，返回缩略图本地链+来源页。直接把返回的 markdown 贴进回答。只下缩略图，必须保留来源 URL。"
     ),
     tier=TIER_AUTO,
     input_schema={

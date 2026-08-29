@@ -195,19 +195,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="tag_radar_item",
     description=(
-        " · 信息雷达条目打标 · 4 种反馈 + 闭环反哺。\n\n"
-        "**调用时机**（OPUS 主动判断）:\n"
-        "  - 用户 说'把第 3 条 thumbs down' → action=set, item_index=3, feedback=thumbs_down\n"
-        "  - 用户 说'收藏那条 Anthropic 的' → action=set, query='Anthropic', feedback=starred\n"
-        "  - 用户 说'把那条藏起来' → action=set, item_index=N, feedback=hidden\n"
-        "  - 用户 说'看看我收藏了什么' → action=list, only=starred\n"
-        "  - 用户 在 WebUI 上点 👍/👎/⭐/🗑 按钮也会落到同一份 data\n\n"
-        "**actions**:\n"
-        "  - set · 主路径 · 必填 feedback + (item_id/item_index/query 之一)\n"
-        "  - list · 列已标记·可加 only=starred 等过滤\n"
-        "  - clear · 清掉某条标记（留 history）\n\n"
-        "**反馈机制**：所有标会被 mine_opportunities / trend_finder 在跑 LLM 前读到·"
-        "👎 的源被记为'用户 拒过'·next time OPUS 会避开同源同类。"
+        "给雷达条目打标（thumbs/starred/hidden）并反哺挖掘。actions: set/list/clear。WebUI 按钮写同一份数据。"
     ),
     tier=TIER_AUTO,
     input_schema={

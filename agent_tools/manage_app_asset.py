@@ -127,20 +127,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="manage_app_asset",
     description=(
-        "读写 app 资产登记表 · 用户个性化沉淀的单一事实源 (data/workshop/assets/<app_id>.json)\n\n"
-        "**什么是资产**: voice 克隆(active voice_id+历史版本) / IP 形象图路径 / 画面风格参考 /\n"
-        "文本风格参考 / 代码规范——『用户打磨出来的、跨对话必须记住的东西』。\n"
-        "跟 app_set_secret 的区别: secret=凭证(敏感) · asset=业务资产(可读可引用)。\n\n"
-        "**🔴 铁律 (2026-06-09 三版声音克隆只剩废版的教训)**:\n"
-        "  1. app 运行要用到个性资产时 · **先 get/list 读登记表** · 严禁凭记忆/上下文硬编码\n"
-        "  2. 用户打磨出新版本 (新 voice_id / 新风格参考) · **当场 set 登记** · 不等用户提醒\n"
-        "  3. set 必须带 note 说明这版是什么·能不能用 · 旧值自动压历史·永不丢\n"
-        "  4. 大文件 (图/音频) 不存值 · 存其在 outputs/ 或磁盘的路径\n\n"
-        "**app_id 用 '_shared'** = 跨 app 共享资产 (IP 形象/品牌色这种不属于单一 app 的)。\n"
-        "**典型用法**:\n"
-        "  - 配音前: get(app_id='app-6f439831', name='voice') → 用 value.active 的 voice_id\n"
-        "  - 克隆出新版: set(..., name='voice', value={active: 'voice-v2', ...}, note='第二版·试听满意')\n"
-        "  - 看打磨史: history(...) → 每版何时被替换·当时的说明"
+        "读写 app 资产登记表（voice/形象/风格）。凭证走 app_set_secret。用前先 get/list，打磨后当场 set 带 note。跨 app 用 app_id=_shared。"
     ),
     tier=TIER_AUTO,
     input_schema={

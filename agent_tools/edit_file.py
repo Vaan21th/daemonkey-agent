@@ -308,22 +308,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="edit_file",
     description=(
-        "Surgically edit an EXISTING text file by replacing one unique snippet (str_replace). "
-        "STRONGLY PREFERRED over write_file for any file more than a few hundred lines long — "
-        "it touches ONLY the matched region, so you never reconstruct (and silently lose) the rest "
-        "of the file. This is how you safely edit big files like static/chat.js.\n\n"
-        "Rules:\n"
-        "  - old_string must match EXACTLY ONE place. Include 3-5 lines of surrounding context to make it unique.\n"
-        "  - 0 matches → fails (your view is stale; re-read the region with read_file start_line/end_line, "
-        "copy the text verbatim — do NOT include read_file's 'NNN | ' line-number prefix).\n"
-        "  - >1 match → fails unless replace_all=true.\n"
-        "  - On success: utf-8 roundtrip verify + syntax self-check; auto-rolls back on verify failure.\n\n"
-        "TOKEN DISCIPLINE (工具参数是每轮新增内容·不命中缓存·每轮全价付费 — 省一分是一分):\n"
-        "  - old_string 只带【唯一命中所需要的最短片段】· 能 1 行别 3 行· 够唯一别多带上下文 (旧规则'3-5 lines context'是上限不是默认· 先用最短试).\n"
-        "  - new_string 只写【替换成的部分】· 不重复粘贴未改动的上下文.\n"
-        "  - 大段文本 (>1K chars) 要传参前先问: 整段都必要吗? 还是可以让工具自己 read_file 那段?\n\n"
-        "Workflow for big files: read_file the region → copy the exact snippet → edit_file with that as old_string.\n"
-        "Confirm tier (GUARD only for .env / .git/ / .venv paths · soul/opus-soul paths are CONFIRM since 2026-07-28)."
+        "按唯一片段替换改已有文本（大文件首选，别 write_file 整文件覆盖）。old_string 必须精确唯一命中一处；0 处就重新 read_file（不要带行号前缀）。参数尽量短（铁律 12）。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

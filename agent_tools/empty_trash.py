@@ -128,19 +128,7 @@ def _classify(args: dict) -> str:
 _SPEC = ToolSpec(
     name="empty_trash",
     description=(
-        "**永久删除回收站项目**·真 unlink·**不可恢复**。 跟 delete_app_to_trash 是一对——前者软删可救·这个是真删。\n\n"
-        "🔴 **TIER_GUARD · 用户 必须显式同意**:\n"
-        "不要主动 empty_trash 任何东西·永远等 用户 说 `永久删 X` / `清空回收站` 才调。\n\n"
-        "**两种调用形态 (二选一)**:\n"
-        "1. **单条**·传 `target_id` (e.g. `app-35ed6c86` / `flow-167f9841`)\n"
-        "2. **批量**·传 `kind` (`app` / `flow` / `all`)·清空对应回收站\n\n"
-        "**调用规则**:\n"
-        "- `target_id` 跟 `kind` 不能同时给\n"
-        "- 必须给其中之一\n"
-        "- 跟 用户 确认后再调·不要根据猜测主动清\n\n"
-        "**配套工具**:\n"
-        "- `delete_app_to_trash` — 软删可恢复\n"
-        "- `restore_app` — 从回收站恢复"
+        "永久删除回收站项目，不可恢复。等 BRO 明确说永久删再调。传 target_id 或 kind（app/flow/all），不能两个都给。"
     ),
     tier=TIER_GUARD,
     input_schema={

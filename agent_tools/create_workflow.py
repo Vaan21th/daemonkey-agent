@@ -104,68 +104,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="create_workflow",
     description=(
-        "在出品工坊里造一个新 workflow · 把多个 app + 工具串起来的 LiteGraph 流程\n\n"
-        "**🔴 关键调用次序 · BRO 说『排个 X 工作流』时第一刀就是这个工具**:\n"
-        "  1. **先 create_workflow 落档** · 把 name + description + litegraph_json 落到\n"
-        "     data/workshop/flows/<id>.json · BRO 在『⚛ 工作流画布』tab 点 📂 加载就能拉出来\n"
-        "  2. 第二刀再去做实际事 (调试某个节点 / 验证某个 API / 测一段连线是否通)\n"
-        "  3. 哪怕节点功能还没跑通 · 流程图先在 · BRO 至少有一份『Daemonkey 帮我排好的图』可看\n\n"
-        "  跟 create_app 同理 — 不要把『落档』推到最后 · 推到最后碰上 typo / timeout 就丢图\n\n"
-        "**什么时候调**:\n"
-        "  - BRO 说「我想做 X · 你看怎么排工作流实现」时 · 第一刀\n"
-        "  - Daemonkey 设计完一条多步骤管线 · create_workflow 落档让 BRO 看图\n"
-        "  - 缺工具就先 create_app 把工具落档 · 再来 create_workflow 用上它\n\n"
-        "**🟢 推荐格式 · steps 线性步骤清单 (沉淀闭环 v2 刀② · 2026-06-10 BRO 拍板)**:\n"
-        "  flow 本体 = `[{app, goal, substeps?, on_fail?}]` 这种线性 list · 画布视图由 steps 自动投影。\n"
-        "  执行器是 `run_flow` (workers/flow_runner) · 状态全程落盘 data/workshop/runs/<run_id>.json ·\n"
-        "  支持断点续跑 (某步挂了改完对应 app · resume from_step=N · 不用整条重来)。\n\n"
-        "  steps 字段:\n"
-        "  - `app` (必填) app-id 精确引用 (推荐) 或 app 名字 (唯一命中才行)\n"
-        "  - `goal` (必填) 这一步要达成什么 · 会作为 step_goal 传给 app · 像导演给演员的剧本\n"
-        "  - `substeps` (可选) list[str] 站内清单 · 比如分镜稿可以列『1-1 图片收集 · 1-2 图片生成 · 1-3 标题』·\n"
-        "     作用是进度可见 + 站内断点 · 子步骤常常运行时由蓝图动态展开 · 模板里能写多确定就写多确定\n"
-        "  - `on_fail` (可选) `stop` (默认) 或 `goto:N` 回跳第 N 步 · 字段留着 · runner 当前只 stop\n\n"
-        "**⚡ 并行组步 (v0.6.0 · 一步里几路同时跑)**:\n"
-        "  某一步的活能拆成【互不依赖】的几路时 · 把这步写成并行组 · 用 `parallel` 代替 `app`:\n"
-        "  该步 = `{parallel: [{app, goal, substeps?}, ...], goal?, on_fail?}` (parallel 和 app 二选一)。\n"
-        "  组内 2~4 个分支【并发跑】· 各拿同一份上游 · 全跑完输出自动合并喂下一步。 覆盖两种诉求:\n"
-        "  - 多个不同 app 并行: parallel=[{app:出图app,goal:'按分镜生图'},{app:搜索app,goal:'搜B-roll素材'}]\n"
-        "  - 同一 app 并行(不同输入): parallel=[{app:浏览器app,goal:'搜素材A的图'},{app:浏览器app,goal:'搜素材B的图'}]\n"
-        "  什么时候用: 几路活谁也不等谁 (并行省时) · 不要把有先后依赖的硬塞进一个组。\n"
-        "  **黄金搭配 = 并行收集 → 串行合成**: 前面互不依赖的取材步拆成并行组 (省时) · 最后合成/审校步保持单 app 串行 (一个脑子写才稳)。\n"
-        "  拿不准某步能不能并 → 默认串行 (错并了几路互相踩比错串了只是慢·代价大得多)。\n"
-        "  合并后下游怎么读: 上游 key 会带 `<app名>#<序号>.` 前缀区分各路 (同 app 也不撞)。\n\n"
-        "  示例 (做条带 IP 的科普视频 · 第 2 步生图与搜素材并行):\n"
-        "  ```json\n"
-        '  [\n'
-        '    {"app": "app-66ac4190", "goal": "出导演蓝图: 口播文案 + 分镜表 + IP 槽位",\n'
-        '     "substeps": ["1-1 选题敲死", "1-2 文案口播", "1-3 分镜表"]},\n'
-        '    {"parallel": [\n'
-        '        {"app": "app-b08ffda6", "goal": "按分镜表里标了 AI 生图 的镜头生图"},\n'
-        '        {"app": "app-searchmat", "goal": "按分镜表里标了 搜素材 的镜头并行搜 B-roll"}\n'
-        '      ], "goal": "生图与搜素材同时干 (互不依赖)"},\n'
-        '    {"app": "app-6f439831", "goal": "用 active voice 配音 (TTS)"},\n'
-        '    {"app": "app-render", "goal": "FFmpeg 合成"}\n'
-        '  ]\n'
-        "  ```\n\n"
-        "**老 litegraph_json 格式 · 仅在 BRO 明确要用画布版才用**:\n"
-        "  工坊里 workflow 的节点都是 **app 节点** · type 必须是 `opus/app/<aid>`\n"
-        "  最简形态 · 每个 node 至少含 id/type/pos/size/properties · 节点之间用 links 串起来:\n"
-        "  ```json\n"
-        '  {\n'
-        '    "last_node_id": 2, "last_link_id": 1,\n'
-        '    "nodes": [\n'
-        '      {"id": 1, "type": "opus/app/app-66ac4190", "pos": [100, 100], "size": [220, 110], "properties": {}},\n'
-        '      {"id": 2, "type": "opus/app/app-b08ffda6", "pos": [400, 100], "size": [220, 110], "properties": {}}\n'
-        '    ],\n'
-        '    "links": [[1, 1, 0, 2, 0, "string"]],\n'
-        '    "groups": [], "config": {}, "version": 0.4\n'
-        '  }\n'
-        "  ```\n\n"
-        "**红线**:\n"
-        "  - steps 里的 app 必须先存在 (load_app(<aid>) 能拿到) · 缺工具就先 create_app 把它落档再 create_workflow\n"
-        "  - 老 litegraph 走 workers/workflow_engine.py · 节点 type 只能是 `opus/app/<aid>` (用其他会被拒)\n"
-        "  - 不要在 description 里写「让 BRO 自己来填充」 · 你设计完就给个能跑的 baseline · BRO 微调"
+        "在出品工坊造一个 workflow，把多个 app 串成可跑的流程。他说「排个工作流」时第一刀：先落档，再调节点。推荐 steps 线性清单；互不依赖的取材可写成 parallel 组（默认仍串行）。steps 字段、并行纪律、litegraph 老格式 → read_scenario(name='app_creation')。缺 app 先 create_app。steps 里的 app 必须已存在。"
     ),
     tier=TIER_AUTO,
     input_schema={

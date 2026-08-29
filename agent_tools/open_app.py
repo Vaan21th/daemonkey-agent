@@ -136,13 +136,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="open_app",
     description=(
-        "Launch a desktop application. Use when 用户 says '打开/启动/开 X' or '帮我打开 X'. "
-        "Built-in aliases: cursor / chrome / edge / wechat / 微信 / vscode / code / explorer / "
-        "notepad / powershell / calc / terminal. "
-        "You can also pass a full path or a command on PATH. "
-        "Optional 'args' list passes extra arguments (e.g. open Cursor at a project: "
-        "{app:'cursor', args:['F:/Desktop/Daemonkey']}). "
-        "CONFIRM tier — 用户 sees the launch and confirms."
+        "启动桌面应用。他说「打开/启动 X」时用。别名：cursor / chrome / edge / wechat / vscode。也可传完整路径 + args。CONFIRM。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

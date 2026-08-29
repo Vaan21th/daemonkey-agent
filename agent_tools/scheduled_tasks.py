@@ -88,15 +88,7 @@ def _create_run(args: dict) -> ToolResult:
 SPEC_CREATE = ToolSpec(
     name="create_scheduled_task",
     description=(
-        "建一个定时任务。 BRO 用自然语言说(\"每天早上9点帮我扫AI行情\" / \"每周五下午5点提醒我复盘\" / "
-        "\"每2小时刷一次雷达\")→ 你(LLM)负责把它解析成结构化参数再调本工具——工具不做 NLP 解析。\n"
-        "schedule_type: daily(每天·配 time) / weekly(每周·配 time+weekday) / interval(每N分钟·配 interval_min) / "
-        "once(一次性·配 once_at)。\n"
-        "time 是本地时区 HH:MM(BRO 说的'9点'=本地)。 weekday: 0=周一..6=周日。\n"
-        "action_kind: pipeline(到点跑一个 LLM turn 执行 prompt·你会在 turn 里自己选工具) / "
-        "reminder(到点用你的话提醒 BRO)。\n"
-        "prompt: pipeline 型=执行目标(\"扫一遍AI行情并汇总\") · reminder 型=提醒内容(\"该复盘了\")。\n"
-        "notify_wechat: 执行完是否微信通知 BRO(默认 false)。"
+        "创建定时任务。你把自然语言解析成参数再调。schedule_type: daily/weekly/interval/once。action_kind: pipeline 或 reminder。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

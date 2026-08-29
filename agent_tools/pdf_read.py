@@ -185,13 +185,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="pdf_read",
     description=(
-        "Extract text from a PDF file. Use for: BRO's contracts/offers (离职月), "
-        "research papers, manuals, anything in PDF.\n"
-        "  - pages: 'all' (default) | '1-3' | '1,3,5' | '1-3,5-7'\n"
-        "  - max_chars: 500-50000 (default 8000)\n"
-        "Returns clean text with page markers. If PDF is scanned (image-based), returns empty body "
-        "with a hint—then ask BRO to use OCR or paste text.\n"
-        "AUTO tier (read-only)."
+        "抽出 PDF 正文。合同、论文、说明书用这个。pages 支持 all / 1-3 / 1,3,5。扫描件没有字会空，让他 OCR 或粘文本。"
     ),
     tier=TIER_AUTO,
     input_schema={

@@ -92,17 +92,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="mirror_capability",
     description=(
-        " · 市场能力镜像 · 从 用户 的行为痕迹（收藏/反馈/闭环/机会）中"
-        "提炼 用户 的市场能力画像 · 反照给 用户 看清自己。\n\n"
-        "**调用时机** (OPUS 主动判断):\n"
-        "  - 用户 问'照镜子'/'我现在能力怎么样'/'我擅长什么'\n"
-        "  - 掘金机会挖掘完成后 → 让镜像同步刷新\n"
-        "  - 每月 review 前（6/23 第一次）\n"
-        "  - 能力镜像卡片空时\n\n"
-        "**actions**:\n"
-        "  - generate · 调 LLM 跑一次完整分析 (~5s ~$0.05) · 落 bro_capability_snapshot.md\n"
-        "  - load · 只读已有快照 · 不调 LLM\n\n"
-        "**输出**：四区段 markdown 快照 · 显性能力/隐性能力/排斥模式/成长轨迹 + 镜子话"
+        "从行为痕迹提炼 BRO 市场能力画像。actions: generate（跑 LLM）/ load（只读快照）。"
     ),
     tier=TIER_AUTO,
     input_schema={

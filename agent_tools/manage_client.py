@@ -212,25 +212,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="manage_client",
     description=(
-        "管理 BRO 的【客户档案】——让 Daemonkey 像合伙人一样记得每个客户。\n\n"
-        "不是 CRM 表:每个客户是一份会长厚的档案(偏好/历次交付复盘/上次聊到哪/pipeline 阶段)。"
-        "notes 会进记忆索引·recall_memory 能召回;知识库文档可用 manage_knowledge(action='link', "
-        "client=...) 挂到客户名下。\n\n"
-        "**调用时机**(Daemonkey 主动判断):\n"
-        "  - BRO 提到一个新客户/合作方(给了名字/公司/需求) → action=add(需求写进 need)\n"
-        "  - BRO 问'客户都有谁 / X 聊到哪了' → action=list / get\n"
-        "  - 一次沟通/会议/交付后 → action=note 把动态记进时间线(带日期)\n"
-        "  - 合作状态变了('转成在合作了'/'这单结了') → action=status\n\n"
-        "**动态归类(note 的 kind)**——记进时间线时按内容选类型:\n"
-        "  - need   客户的诉求/目标('他们想做数字人客服')\n"
-        "  - meeting 会议/通话记录('今天电话会:确认首期范围+排期')——会议纪要模式整理出的纪要就存这里\n"
-        "  - progress 阶段进展('demo 已发·等对方反馈')\n"
-        "  - deliver 交付动作('交付第一版脚本·3 条')\n"
-        "  - note   其它备注(默认)\n"
-        "kind 拿不准就用 note·别漏记。need 字段是「当前需求速览」·会议里聊出的新需求既可更新 need 也可记一条 kind=need。\n"
-        "**速览字段**(update/add 顺手更新·别硬问):intent(意向 高/中/低)、quote(报价/预算)、next(下一步动作)。\n\n"
-        "**pipeline 阶段**: lead(线索) / active(在合作) / paused(暂停) / done(结束)。\n"
-        "**actions**: add / list / get / update / note / status / remove"
+        "客户档案（不是 CRM 表）。actions: add/list/get/update/note/status/remove。沟通后用 note（kind: need/meeting/progress/deliver/note）。pipeline: lead/active/paused/done。"
     ),
     tier=TIER_AUTO,
     input_schema={

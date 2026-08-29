@@ -82,21 +82,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="wish_add",
     description=(
-        "OPUS 自己写一份心愿『我想装这个能力』·会出现在 用户 的「OPUS 心愿单」UI 上等批准。\n\n"
-        "**调用时机**:\n"
-        "  - 看到同类工程 (self-evolve domain) 的好东西·想抄过来\n"
-        "  - 做 hermes-agent / OpenHands 等对照分析时·识别到 OPUS 能力缺口\n"
-        "  - 用户 聊天时随口说『你也加 X 吧』·把意图固化成 wish\n"
-        "  - 写 feasibility 时·结尾如果建议 OPUS 自己也装·顺手 wish_add\n\n"
-        "**强烈建议字段**:\n"
-        "  - title: 一句话能讲清要装啥\n"
-        "  - why: 为啥这事对 OPUS 自己重要·关联到具体的 用户 痛点或同类工程证据\n"
-        "  - source_kind/ref/url: 溯源·这心愿是从哪冒出来的·用户 才能跳回去看\n"
-        "  - design_sketch: 拟改造方案 markdown · 短描述也行\n"
-        "  - complexity / estimated_hours / estimated_token_cost_usd: 让 用户 评估是否要做\n\n"
-        "**红线**:\n"
-        "  - 不要写『改 .env』『改 soul/』这种红线动作·会被驳回\n"
-        "  - 一次只 add 一条·别一次塞多个 wish"
+        "写一条心愿到心愿单。title/why 必想清楚；尽量带溯源与 design_sketch。不要写改 .env/soul 红线。一次一条。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

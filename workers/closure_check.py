@@ -71,6 +71,11 @@ _TURN_TOOLS: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
 def begin_turn() -> None:
     """一个 chat turn 开始时清台账 (在 _chat_impl 入口调)。"""
     _TURN_TOOLS.set([])
+    try:
+        from agent_tools._hotpath_guard import begin_turn as _hp_begin
+        _hp_begin()
+    except Exception:
+        pass
 
 
 def record_tool(name: str) -> None:

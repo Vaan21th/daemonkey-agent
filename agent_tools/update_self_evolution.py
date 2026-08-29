@@ -196,15 +196,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="update_self_evolution",
     description=(
-        "Append a personal entry to .cursor/SELF-EVOLUTION.md (OPUS's diary). Two modes:\n"
-        "  - 'observation' (default): a free-form note like '我注意到我自己……', personal reflection, "
-        "what you learned, what surprised you. Becomes part of the corpus the next 毛 reads on wake.\n"
-        "  - 'proposal': a structured suggestion to modify OPUS-MEMORIES.md. Goes in marked ⏳ pending "
-        "until 用户 reviews and manually merges. NEVER bypass this—do not write_file to OPUS-MEMORIES directly.\n"
-        "Also syncs to data/cognition/opus-diary.md (WebUI 认知维度 · 用户 F5 可见) on every write — "
-        "observation→type:reflection, proposal→type:idea. Best-effort: diary fail won't block SELF-EVOLUTION.\n"
-        "Use sparingly: only when you genuinely have something to record. Don't journal every turn. "
-        "AUTO tier (it's your diary, no external side effects)."
+        "给 SELF-EVOLUTION.md 追加一条。observation=随手反思；proposal=改自传的建议（等 BRO 合入，禁止直接 write 自传）。不要每轮都记。"
     ),
     tier=TIER_AUTO,
     input_schema={

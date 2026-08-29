@@ -266,30 +266,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="monthly_review",
     description=(
-        " II · 月度复盘工具 (wish-bf190d9c · 用户 5/23 A1 决议 6/23 第一次截止)\n\n"
-        "**调用时机** (OPUS 主动判断):\n"
-        "  - 每月固定周期 (5/23 → 6/23 → 7/23 ...) · 不凑自然月\n"
-        "  - 每周期前 1-2 天 用户 提『复盘』/『月报』/『我这个月做了啥』 时\n"
-        "  - 6/22 / 7/22 这类前夜 OPUS 主动起草\n"
-        "  - 用户 在 WebUI 报告库点 『月度复盘』 入口 (后续 wish-149eab3f 加)\n\n"
-        "**actions**:\n"
-        "  - draft · 起草新月度复盘 (生成 4 块 + 落 data/reviews/<period_end>-draft.md · ~$0.20)\n"
-        "  - final · 用户 批注后归档 final + 提示 OPUS 手动合并回 OWNER-NOTEBOOK\n"
-        "  - reflow · 对账闭环最后一棒 · 不传 period_end=列出所有待回流 final · 传了=盖回流戳\n"
-        "             (先 update_bro_note 合并批注 · 再 reflow 盖戳 · 否则闭环温度计一直亮红)\n"
-        "  - list · 列出所有已有 review\n"
-        "  - load · 读某一份 review markdown\n\n"
-        "**4 块产物**:\n"
-        "  1. OWNER-NOTEBOOK 30 天 git log 变更摘要\n"
-        "  2. 用户 能力镜像切片 (调 capability_mirror)\n"
-        "  3. CAPTAINS-LOG 工程里程碑 LLM 提炼\n"
-        "  4. 下月能力建议 (LLM 综合 1+2+3 · 6 种掘金形态 ≥ 2)\n\n"
-        "**⚠ 沉淀位说明 · 别误导 用户**:\n"
-        "  - reviews 落 `data/reviews/<period>-{draft,final}.md` · **不在 docs 报告库** (报告库是 data/docs)\n"
-        "  - WebUI 当前**没有 reviews 卡片入口** (wish-149eab3f phase B 才会做)\n"
-        "  - 告诉 用户 看 review 时 · 给具体路径 `data/reviews/<filename>` 或浏览器开 `http://127.0.0.1:7860/reviews/preview/<filename>?token=$tok`\n"
-        "  - **不要**说 『进 WebUI 报告库就能看到』 / 『在报告库找』 · 那是错的\n\n"
-        "**注意**: draft 跑一次约 5-15s ($0.10-0.30) · CONFIRM 是因为它会调 LLM 多次。"
+        "月度复盘。actions: draft 起草 / final 归档 / reflow 回流画像 / list / load。产物落 data/reviews/，不在报告库。细则：read_scenario('reflection')。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

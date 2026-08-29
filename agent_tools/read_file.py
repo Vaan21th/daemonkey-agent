@@ -262,17 +262,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="read_file",
     description=(
-        "Read a text file from the Daemonkey project (or absolute path on the host). "
-        "Returns the file with line numbers prepended. Use start_line/end_line for big files.\n\n"
-        "**Binary detection** (卷四十六 III · 2026-05-26 调宽容):\n"
-        "  - 误判时 error 信息含: 拒绝原因 + 前 64 字节 hexdump · 让你判断是不是真 binary\n"
-        "  - 看到 header 像文本 (UTF-8 CJK 片段 / 大量 ASCII) → 用 force=true 强读\n"
-        "  - 看到真 binary header (PK\\x03\\x04 / \\x89PNG / SQLite) → 别 force · 换 parser\n"
-        "  - **永远不要** fallback 到 `shell_exec Get-Content` —— PS 5.1 编码踩坑会污染 context (反面教材)\n\n"
-        "**Encoding**:\n"
-        "  - 默认严格 UTF-8 · 拒绝隐式 GBK 回退 (防 mojibake · 卷四十四 P)\n"
-        "  - BRO 已知文件是 GBK / UTF-16 / latin-1 → 显式传 encoding='gb18030' 之类\n"
-        "  - 解码错误时 LLM 会看到具体失败位置 + 选项菜单"
+        "读项目或本机文本，带行号。大文件用 start_line/end_line。误判 binary 看 hexdump 再 force。禁止 shell_exec Get-Content。默认 UTF-8。"
     ),
     tier=TIER_AUTO,
     input_schema={

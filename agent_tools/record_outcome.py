@@ -192,27 +192,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="record_outcome",
     description=(
-        " · 闭环反馈 · 记录一个掘金机会的真实状态/产出。\n\n"
-        "**调用时机**（OPUS 主动判断）:\n"
-        "  - 用户 说'我不做 #1 因为...' → action=record, status=abandoned, decision_reason=...\n"
-        "  - 用户 说'#2 我开干了' → action=record, status=in_progress\n"
-        "  - 用户 说'#3 完成了·上线一周收入 800' → action=record, status=completed, actual_revenue_cny=800\n"
-        "  - 用户 问'之前我都做了 / 拒了哪些机会' → action=list\n"
-        "  - 用户 问'#N 我之前怎么决定的' → action=load\n\n"
-        "**actions**:\n"
-        "  - record · 写入/更新一条反馈（主路径）\n"
-        "  - list · 列出所有反馈记录\n"
-        "  - load · 读单条反馈\n\n"
-        "**输入**:\n"
-        "  - opp_id 或 opp_index（必填·指定哪个机会）\n"
-        "  - status: not_started/in_progress/completed/abandoned\n"
-        "  - decision_reason: 文本 · 为什么做/不做（**最关键字段** · 抓 用户 的能力边界）\n"
-        "  - actual_revenue_cny / actual_cost_cny: 数字 · 完成后填\n"
-        "  - efficiency_gain: 文字 · 节省了多少时间/带来了什么效率\n"
-        "  - lessons_learned: 文字 · 经验教训\n"
-        "  - note: 文字 · 自由备注（也会写进 updates 历史）\n\n"
-        "**反馈机制**: outcomes 会自动塞进 mine_opportunities / analyze_feasibility 的 prompt·"
-        "让 OPUS 越用越懂 用户·避免重复推已经拒过的机会。"
+        "记录掘金机会的真实状态。actions: record/list/load。BRO 说不做/开干/赚了多少时调。decision_reason 最重要。会反哺 mine_opportunities。"
     ),
     tier=TIER_AUTO,
     input_schema={

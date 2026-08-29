@@ -303,18 +303,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="analyze_feasibility",
     description=(
-        " · 把一个掘金机会展开成完整可行性分析: "
-        "风险 / 资源 / 能力对照 / 成本拆解 / 替代方案 / Go-No-Go。\n\n"
-        "**调用时机** (OPUS 主动判断):\n"
-        "  - 用户 问'分析第 N 个机会能不能干'/'XX 这事可行性怎么样' → action=analyze\n"
-        "  - 用户 点机会卡里'💰估算成本'按钮自动调 (BI 看板 / 💎 维度) → action=analyze\n"
-        "  - 用户 问'之前分析过哪些机会' → action=list (不调 LLM)\n\n"
-        "**actions**:\n"
-        "  - analyze · 跑一次 LLM 深度分析 (~5s ~$0.05-0.1) · 落 data/feasibility/<id>.json\n"
-        "  - list · 列所有已分析的机会\n"
-        "  - load · 看某个机会的已有分析 (不重新调 LLM)\n\n"
-        "**输入**: opp_id 或 opp_index (1-based 从 opportunities.json 数)\n"
-        "**输出**: 综合可行性 0-100 + verdict (go/conditional/wait/skip) + 完整结构化分析"
+        "把一个掘金机会展开成可行性分析。actions: analyze/list/load。用 opp_id 或 opp_index。可行性只给 BRO 看，须挂在机会上。"
     ),
     tier=TIER_AUTO,
     input_schema={
