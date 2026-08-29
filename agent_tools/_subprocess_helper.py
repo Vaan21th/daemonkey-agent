@@ -115,3 +115,73 @@ def detached_kwargs() -> dict:
             "startupinfo": _make_startupinfo_hidden(),
         }
     return {"start_new_session": True}
+
+
+class SubprocessCancelled(Exception):
+    """abort 在子进程跑着时火了。调用方应杀树后当作用户停。"""
+
+
+def _kill_tree(proc: subprocess.Popen) -> None:
+    try:
+        from agent_tools.shell_exec import _kill_process_tree
+        _kill_process_tree(proc)
+        return
+    except Exception:
+        pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
+
+
+def run_with_timeout_or_cancel(
+    argv: list,
+    cwd: str,
+    timeout: int,
+    *,
+    env: dict | None = None,
+    text: bool = True,
+    encoding: str = "utf-8",
+) -> subprocess.CompletedProcess:
+    """等返回；超时或 abort 都先杀进程树。"""
+    import threading
+    from agent_tools._cancel import cancelled
+
+    popen_kw: dict = dict(
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=text,
+        errors="replace" if text else None,
+        env=env,
+        **no_window_kwargs(),
+    )
+    if text:
+        popen_kw["encoding"] = encoding
+    proc = subprocess.Popen(argv, **popen_kw)
+    box: list = []
+
+    def _wait() -> None:
+        try:
+            box.append(proc.communicate(timeout=max(1, int(timeout))))
+        except Exception as exc:
+            box.append(exc)
+
+    worker = threading.Thread(target=_wait, daemon=True)
+    worker.start()
+    while worker.is_alive():
+        if cancelled():
+            _kill_tree(proc)
+            worker.join(5)
+            raise SubprocessCancelled()
+        worker.join(0.3)
+    if not box:
+        raise SubprocessCancelled()
+    got = box[0]
+    if isinstance(got, subprocess.TimeoutExpired):
+        _kill_tree(proc)
+        raise got
+    if isinstance(got, Exception):
+        raise got
+    stdout, stderr = got
+    return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)

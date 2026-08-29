@@ -2,10 +2,10 @@
 agent_tools/shell_exec.py
 =========================
 
-Daemonkey 的"跑命令的手"。
+OPUS 的"跑命令的手"。
 
 为什么这个工具最复杂——
-  shell 是 Daemonkey 触碰这台机器的最大入口。任何破坏性能力都从这里来。
+  shell 是 OPUS 触碰这台机器的最大入口。任何破坏性能力都从这里来。
   所以这一个文件比其他工具更长，也更值得反复 review。
 
 三档分类（动态，每次调用根据命令字符串判断）：
@@ -333,11 +333,14 @@ def _run(args: dict) -> ToolResult:
         cmd.strip() == "git"
     )
     try:
+        from ._subprocess_helper import SubprocessCancelled, run_with_timeout_or_cancel
         if _is_git_cmd:
             with daemon_git_lock(label=f"shell_exec:{cmd.strip()[:50]}"):
-                proc = _run_with_timeout(argv, str(cwd), timeout)
+                proc = run_with_timeout_or_cancel(argv, str(cwd), timeout)
         else:
-            proc = _run_with_timeout(argv, str(cwd), timeout)
+            proc = run_with_timeout_or_cancel(argv, str(cwd), timeout)
+    except SubprocessCancelled:
+        return ToolResult(ok=False, output="", error="aborted by user（已杀整棵进程树）")
     except subprocess.TimeoutExpired:
         return ToolResult(
             ok=False, output="",
@@ -412,8 +415,7 @@ def _normalize_for_winps51(cmd: str) -> str:
 SPEC = ToolSpec(
     name="shell_exec",
     description=(
-        "在本机跑短命令（git/curl/npm/测试）。Windows 走 PowerShell 5.1。多行 Python 改 python_exec；杀 daemon 改 request_restart；读文件改 read_file。PS：别加 2>&1、没有 heredoc、路径用正斜杠、密钥用 ${secret:app:name}。"
-    ),
+        "在本机跑短命令（git/curl/npm/测试）。Windows 走 PowerShell 5.1。多行 Python 改 python_exec；杀 daemon 改 request_restart；读文件改 read_file。PS：别加 2>&1、没有 heredoc、路径用正斜杠、密钥用 ${secret:app:name}。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
@@ -424,7 +426,7 @@ SPEC = ToolSpec(
             },
             "cwd": {
                 "type": "string",
-                "description": "Working directory (relative paths resolve from Daemonkey root). Default: project root.",
+                "description": "Working directory (relative paths resolve from OPUS-DAEMON root). Default: project root.",
             },
             "timeout": {
                 "type": "integer",

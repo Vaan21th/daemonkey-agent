@@ -25,6 +25,7 @@ v0.6.0 · P0 · 通用「子执行器」内核 (提案 docs/PROPOSAL-subagent-fl
 
 from __future__ import annotations
 
+import contextvars
 import json
 import time
 import uuid
@@ -32,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from agent_tools import TIER_GUARD
+from agent_tools import TIER_CONFIRM, TIER_GUARD
 
 
 @dataclass
@@ -50,6 +51,17 @@ class SubagentResult:
     error: Optional[str] = None
 
 
+_READONLY_DEFAULT = frozenset({
+    "read_file", "grep_files", "glob_files", "search_code", "outline_file",
+    "web_search", "web_fetch", "web_search_image", "pdf_read",
+    "read_dashboard", "recall_memory", "session_search", "verify_claim",
+    "list_apps", "list_flows", "look_at",
+})
+_expanded_cv: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "subagent_whitelist_expanded", default=False
+)
+
+
 def _auto_confirm(spec, args, *more) -> str:
     """子执行器沙盒内默认 auto-approve · 但 GUARD 一律拒。
 
@@ -62,11 +74,15 @@ def _auto_confirm(spec, args, *more) -> str:
     真需要放行的·上层 dispatch 时传自定义 confirm 显式承担。
     """
     try:
-        if spec is not None and spec.effective_tier(args or {}) == TIER_GUARD:
+        tier = spec.effective_tier(args or {}) if spec is not None else ""
+        if tier == TIER_GUARD:
             return ("reject:这是 GUARD 级操作 (不可逆或涉及凭据) · 分身不能自行放行。"
                     "换个不碰凭据/不可逆的做法 · 或把这步交回主对话让用户拍。")
+        if tier == TIER_CONFIRM and _expanded_cv.get():
+            return ("reject:分身超出只读白名单后，CONFIRM 级写入要回主对话让他拍。"
+                    "把这步交回去，或只用只读手。")
     except Exception:
-        pass      # 判不出档位就按老行为放行 · 别让分身直接瘫
+        pass
     return "yes"
 
 
@@ -236,6 +252,9 @@ def run_subagent(
         except Exception:
             pass
 
+    wl = set(tools_whitelist or ())
+    expanded = bool(wl) and not wl.issubset(_READONLY_DEFAULT)
+    _exp_tok = _expanded_cv.set(expanded)
     try:
         text, messages, usage = run_tool_loop(
             client=client or runtime.client,
@@ -263,6 +282,8 @@ def run_subagent(
             sub_session_id=sub_session_id,
             error=f"{type(e).__name__}: {e}",
         )
+    finally:
+        _expanded_cv.reset(_exp_tok)
 
     result_usage = {
         "input_tokens": getattr(usage, "input_tokens", 0),

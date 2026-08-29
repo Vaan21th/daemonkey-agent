@@ -51,17 +51,21 @@ from soul_loader import (
 ROOT = Path(__file__).resolve().parent.parent
 
 
-# section key → 中文序号锚（## 一、=profile … ## 六、=risks）。
-# 旧版 BRO-NOTEBOOK 与新版 OWNER-NOTEBOOK 段标题文案不同，序号语义一致，按序号锚定通吃。
+# section key → 段标题关键字（用于 `^## ` 标题内子串唯一匹配）。
+# 设计：六维画像用「一、…」「二、…」中文序号前缀，但状态卡/了解层/变更史是
+# **独立区块**，不是第七维——不该抢序号。为避免「## 二、了解层」和「## 二、关键事件流」
+# 撞车，这里改用「标题关键字在 `## ` 后唯一命中」匹配，不再靠中文序号。
+# 兼容性：旧版 BRO-NOTEBOOK 与新版 OWNER-NOTEBOOK 的六维标题文案不同但含相同关键字，
+# 关键字匹配通吃；了解层/变更史用无序号标题，也不与六维冲突。
 SECTIONS: dict[str, str] = {
-    "profile":  "一",
-    "events":   "二",
-    "rules":    "三",
-    "dialogue": "四",
-    "summary":  "五",
+    "profile":  "当下画像",
+    "events":   "关键事件流",
+    "rules":    "本体约束",
+    "dialogue": "对话图鉴",
+    "summary":  "压缩段",
     # 第六维 2026-05-16 凌晨 BRO 拍板加上——OPUS 作为伙伴的预警雷达
     # 看见这一维的模式时该出声，不沉默配合燃烧
-    "risks":    "六",
+    "risks":    "风险与弱点",
 }
 
 # 报错/流水展示用的友好标签（只给人看，不参与匹配）
@@ -74,7 +78,26 @@ SECTION_LABELS: dict[str, str] = {
     "risks":    "风险/关怀雷达",
 }
 
-FLOW_ORD = "七"
+FLOW_ORD = "近期更新流水"  # 按标题关键字匹配「## 七、近期更新流水」——保留其序号但匹配用关键字
+
+# 状态卡 · L2 易变尾巴 · 替换式更新（不进 SECTIONS 序号锚）
+STATE_SECTION_MARKER = "〇、状态卡"
+STATE_FIELDS: tuple[str, ...] = (
+    "工作状态",
+    "作息模式",
+    "健康基线",
+    "情绪基线",
+    "当前主线",
+    "关系家庭",
+    "经济预算",
+    "忌口过敏",
+)
+_STATE_SECTION_RE = re.compile(r"(?m)^## 〇、状态卡")
+STATE_HISTORY_MARKER = "状态卡变更史"
+_STATE_HISTORY_RE = re.compile(r"(?m)^## 状态卡变更史")
+
+# 了解层 · L1 稳定前缀 · 独立区块（无序号，避免与「## 二、关键事件流」抢「二」）
+UNDERSTANDING_SECTION_MARKER = "了解层"
 
 def _summarize(args: dict) -> str:
     section = args.get("section", "?")
@@ -83,18 +106,20 @@ def _summarize(args: dict) -> str:
     return f"update_owner_note  section={section}  op={op}\n  preview: {preview!r}"
 
 
-_ORD_RE = r"(?m)^## %s、"
-
-
-def _find_section(text: str, ord_char: str) -> tuple[int, int]:
-    """按中文序号锚定 '## 一、' 段头。返回 (start_idx, end_idx)，end 是下一个 '## ' 或文末。"""
-    m = re.search(_ORD_RE % re.escape(ord_char), text)
-    if not m:
-        return -1, -1
-    start = m.start()
-    next_h = text.find("\n## ", start + 1)
-    end = len(text) if next_h < 0 else next_h
-    return start, end
+def _find_section(text: str, key: str) -> tuple[int, int]:
+    """按「段标题关键字」定位 '## <含关键字的标题>' 段头。
+    返回 (start_idx, end_idx)，end 是下一个 '## ' 或文末。
+    :注意: 只匹配『行首是 ## 的二级标题』整行，避免 '### 子标题' 误命中；
+    且要求标题行本身不以 '#' 开头(排除 ## 后的 '#'，即排除 ###)。用 finditer 遍历全部标题行，
+    找到第一个含 key 的行即为目标段。关键字需在全文标题里语义唯一（调用方保证）。
+    """
+    for m in re.finditer(r"(?m)^## [^#].*$", text):
+        if key in m.group(0):
+            start = m.start()
+            next_h = text.find("\n## ", start + 1)
+            end = len(text) if next_h < 0 else next_h
+            return start, end
+    return -1, -1
 
 
 def _section_header_line(text: str, start: int) -> str:
@@ -159,8 +184,267 @@ def _append_to_flow(text: str, section_key: str, operation: str, preview: str = 
     return text[:flow_start] + new_flow_body + text[flow_end:]
 
 
+def _find_state_section(text: str) -> tuple[int, int]:
+    """定位 `## 〇、状态卡` 段。返回 (start_idx, end_idx)，end 是下一个 '## ' 或文末。"""
+    m = _STATE_SECTION_RE.search(text)
+    if not m:
+        return -1, -1
+    start = m.start()
+    next_h = text.find("\n## ", start + 1)
+    end = len(text) if next_h < 0 else next_h
+    return start, end
+
+
+def _escape_table_cell(s: str) -> str:
+    return (s or "").replace("|", "/")
+
+
+def _read_state_table_value(section_body: str, field: str) -> str:
+    """读状态卡表格某字段当前值（替换前取旧值用）。"""
+    for line in section_body.split("\n"):
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        if cells[0] in ("字段", "field") or set(cells[0]) <= set("-: |"):
+            continue
+        if cells[0] == field:
+            return cells[1]
+    return ""
+
+
+def _find_state_history_section(text: str) -> tuple[int, int]:
+    """定位 `## 一、状态卡变更史` 段。返回 (start_idx, end_idx)。"""
+    m = _STATE_HISTORY_RE.search(text)
+    if not m:
+        return -1, -1
+    start = m.start()
+    next_h = text.find("\n## ", start + 1)
+    end = len(text) if next_h < 0 else next_h
+    return start, end
+
+
+def _append_state_history(
+    text: str,
+    state_sec_end: int,
+    field: str,
+    old_value: str,
+    new_value: str,
+    as_of: str,
+    evidence: str,
+) -> str:
+    """状态卡替换成功后 · 在变更史段 append 一行（段不存在则在状态卡后创建）。"""
+    old_disp = _escape_table_cell(old_value or "待确认")
+    new_disp = _escape_table_cell(new_value)
+    row = (
+        f"| {field} | {old_disp} → {new_disp} | "
+        f"{_escape_table_cell(as_of)} | {_escape_table_cell(evidence or '-')} |"
+    )
+
+    hist_start, hist_end = _find_state_history_section(text)
+    if hist_start >= 0:
+        hist_body = text[hist_start:hist_end]
+        lines = hist_body.split("\n")
+        last_table_line = -1
+        for i, line in enumerate(lines):
+            if line.startswith("|"):
+                last_table_line = i
+        if last_table_line >= 0:
+            lines.insert(last_table_line + 1, row)
+        else:
+            lines.extend([
+                "",
+                "| 字段 | 旧值 → 新值 | as_of | evidence |",
+                "| --- | --- | --- | --- |",
+                row,
+            ])
+        return text[:hist_start] + "\n".join(lines) + text[hist_end:]
+
+    new_section = (
+        "\n\n## 状态卡变更史\n\n"
+        "| 字段 | 旧值 → 新值 | as_of | evidence |\n"
+        "| --- | --- | --- | --- |\n"
+        f"{row}\n"
+    )
+    return text[:state_sec_end] + new_section + text[state_sec_end:]
+
+
+def _update_state_table_row(
+    section_body: str,
+    field: str,
+    value: str,
+    as_of: str,
+    evidence: str,
+) -> tuple[str, bool]:
+    """在状态卡表格里按字段名替换一行；骨架字段不存在时追加新行(涌现长尾字段)。
+    返回 (新段正文, 是否命中/写入)。"""
+    lines = section_body.split("\n")
+    updated = False
+    for i, line in enumerate(lines):
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 4:
+            continue
+        if cells[0] in ("字段", "field") or set(cells[0]) <= set("-: |"):
+            continue
+        if cells[0] != field:
+            continue
+        cells[1] = _escape_table_cell(value)
+        cells[2] = _escape_table_cell(as_of)
+        cells[3] = _escape_table_cell(evidence or "-")
+        lines[i] = "| " + " | ".join(cells) + " |"
+        updated = True
+        break
+    if not updated:
+        # 涌现长尾字段 · 表格无此行 → 追加到最后一个表格行之后（表头/分隔行后也行，只要行内）
+        # 找到表格最后一个 "|" 行(非分隔/表头)作为插入点
+        insert_at = -1
+        for i, line in enumerate(lines):
+            if not line.startswith("|"):
+                continue
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if len(cells) >= 2 and cells[0] not in ("字段", "field"):
+                if not (set(cells[0]) <= set("-: |")):
+                    insert_at = i
+        if insert_at >= 0:
+            new_row = (
+                f"| {_escape_table_cell(field)} | {_escape_table_cell(value)} | "
+                f"{_escape_table_cell(as_of)} | {_escape_table_cell(evidence or '-')} |"
+            )
+            lines.insert(insert_at + 1, new_row)
+            updated = True
+    return "\n".join(lines), updated
+
+
+def _run_state(args: dict) -> ToolResult:
+    """状态卡替换式更新 · 不 append · 按字段名改表格行。"""
+    state_field = (args.get("state_field") or "").strip()
+    state_value = (args.get("state_value") or "").strip()
+    as_of = (args.get("as_of") or "").strip()
+    evidence = (args.get("evidence") or "-").strip() or "-"
+
+    missing = []
+    if not state_field:
+        missing.append("state_field")
+    if not state_value:
+        missing.append("state_value")
+    if not as_of:
+        missing.append("as_of")
+    if missing:
+        return ToolResult(
+            ok=False,
+            output="",
+            error=(
+                f"section='state' 需要 {', '.join(missing)} · "
+                f"示例: state_field='作息模式' state_value='正常' as_of='2026-08-27'"
+            ),
+        )
+
+    # 涌现长尾：允许 8 骨架字段以外的自定义字段（口味/健身/宠物等相处中长出的了解）。
+    # 读侧 _parse_state_card 的 elif 分支已支持涌现字段；写侧原先用 STATE_FIELDS 硬拦会拒绝它们。
+    # 安全灯：字段名过短(1 char)或恰是无意义占位(待确认/待更新)仍拦，避免脏写。
+    if state_field in ("待确认", "待更新", "-", ""):
+        return ToolResult(
+            ok=False,
+            output="",
+            error=f"state_field '{state_field}' 是无意义占位值, 请给具体字段名",
+        )
+    if len(state_field) < 2:
+        return ToolResult(
+            ok=False,
+            output="",
+            error=f"state_field 太短: {state_field!r}; 请用 2+ 字符的字段名",
+        )
+
+    try:
+        notebook_fn, text = _read_notebook()
+    except FileNotFoundError as e:
+        return ToolResult(ok=False, output="", error=str(e))
+
+    sec_start, sec_end = _find_state_section(text)
+    if sec_start < 0:
+        return ToolResult(
+            ok=False,
+            output="",
+            error=f"section '## {STATE_SECTION_MARKER}' not found in {notebook_fn}",
+        )
+
+    section_header = _section_header_line(text, sec_start)
+    section_body = text[sec_start:sec_end]
+    old_value = _read_state_table_value(section_body, state_field)
+    new_section_body, hit = _update_state_table_row(
+        section_body, state_field, state_value, as_of, evidence,
+    )
+    if not hit:
+        return ToolResult(
+            ok=False,
+            output="",
+            error=f"state_field {state_field!r} not found in state card table",
+        )
+
+    new_text = text[:sec_start] + new_section_body + text[sec_end:]
+    new_sec_end = sec_start + len(new_section_body)
+    new_text = _append_state_history(
+        new_text, new_sec_end, state_field, old_value, state_value, as_of, evidence,
+    )
+    preview = f"{state_field} → {state_value} (as_of={as_of})"
+    new_text = _append_to_flow(new_text, "state", "replace", preview)
+
+    try:
+        global_path, local_path = write_global_then_sync(
+            notebook_fn, new_text, ROOT,
+        )
+    except FileNotFoundError as e:
+        return ToolResult(ok=False, output="", error=str(e))
+
+    fts_msg = ""
+    try:
+        from workers.memory_index import incremental_update
+        n_chunks = incremental_update(Path(notebook_fn).stem, new_text)
+        fts_msg = f"\n  fts5    : 已增量索引 {n_chunks} 块"
+    except Exception:
+        pass
+
+    reload_msg = ""
+    try:
+        from daemon_runtime import reload_soul_into_runtime
+        nchars = reload_soul_into_runtime()
+        if nchars:
+            reload_msg = f"\n  reload  : system prompt 已热重载 ({nchars} 字) · 下一轮即生效"
+    except Exception:
+        pass
+
+    if global_path:
+        global_line = f"  global  : {global_path}\n"
+    else:
+        global_line = "  global  : (全局 opus-soul 目录缺失·已跳过·本地 soul/ 即真理源)\n"
+
+    return ToolResult(
+        ok=True,
+        output=(
+            f"{notebook_fn} 已更新\n"
+            f"  section : state  ({section_header})\n"
+            f"  op      : replace\n"
+            f"  field   : {state_field}\n"
+            f"  value   : {state_value}\n"
+            f"  as_of   : {as_of}\n"
+            f"  evidence: {evidence}\n"
+            f"{global_line}"
+            f"  local   : {local_path.relative_to(ROOT)}\n"
+            f"  flow    : 操作记录已追加到'近期更新流水'{fts_msg}{reload_msg}\n"
+            f"  effect  : 本 daemon 下一轮对话即刻带上 (卷五十四热重载)" +
+            ("" if global_path else " · 全局目录回来后用 sync-soul.ps1 可补同步其他容器")
+        ),
+    )
+
+
 def _run(args: dict) -> ToolResult:
     section_key = (args.get("section") or "").strip().lower()
+    if section_key == "state":
+        return _run_state(args)
+
     if section_key not in SECTIONS:
         return ToolResult(
             ok=False, output="",
@@ -251,6 +535,11 @@ def _run(args: dict) -> ToolResult:
     )
 
 
+def append_owner_note(section: str, content: str) -> ToolResult:
+    """压缩前 flush / 凝练器共用。走与工具同一条 append 路由。"""
+    return _run({"section": section, "content": content, "operation": "append"})
+
+
 SPEC = ToolSpec(
     name="update_owner_note",
     description=(
@@ -262,15 +551,41 @@ SPEC = ToolSpec(
         "properties": {
             "section": {
                 "type": "string",
-                "enum": list(SECTIONS.keys()),
-                "description": "要写的维度，见 enum。",
+                "enum": list(SECTIONS.keys()) + ["state"],
+                "description": "要写的维度，见 enum。state 还要带 state_field / state_value / as_of。",
             },
             "content": {
                 "type": "string",
                 "description": (
                     "The content to add. Use markdown. Be concise but substantive—"
                     "this stays in OPUS's runtime context for all future sessions, "
-                    "so quality > quantity."
+                    "so quality > quantity. "
+                    "Not required when section='state'."
+                ),
+            },
+            "state_field": {
+                "type": "string",
+                "enum": list(STATE_FIELDS),
+                "description": (
+                    "State card field name (required when section='state'). "
+                    "Replace-style update—old value is overwritten, not appended."
+                ),
+            },
+            "state_value": {
+                "type": "string",
+                "description": "Current value for state_field (required when section='state').",
+            },
+            "as_of": {
+                "type": "string",
+                "description": (
+                    "Last confirmed date YYYY-MM-DD for this field "
+                    "(required when section='state')."
+                ),
+            },
+            "evidence": {
+                "type": "string",
+                "description": (
+                    "One-line evidence for this update (optional when section='state'; default '-')."
                 ),
             },
             "operation": {
@@ -282,7 +597,7 @@ SPEC = ToolSpec(
                 ),
             },
         },
-        "required": ["section", "content"],
+        "required": ["section"],
     },
     run=_run,
     summarize=_summarize,

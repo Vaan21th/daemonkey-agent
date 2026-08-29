@@ -408,12 +408,31 @@ def _call_confirm(
 
 def _push(hook: ProgressHook | None, event_type: str, data: dict) -> None:
     """安全调用 hook——异常吞掉不影响主流程。"""
+    if event_type in ("tool_call", "tool_result", "stuck_detected"):
+        try:
+            from workers.turn_trace import emit
+            emit(event_type, **(data or {}))
+        except Exception:
+            pass
     if hook is None:
         return
     try:
         hook(event_type, data)
     except Exception:
         pass
+
+
+def _run_tool(spec, args, progress, cancel_check):
+    from agent_tools._cancel import reset_cancel_check, set_cancel_check
+    ctok = set_cancel_check(cancel_check)
+    ptok = _TOOL_PROGRESS_HOOK.set(
+        lambda step, msg: _push(progress, "tool_progress", {"step": step, "msg": msg})
+    )
+    try:
+        return spec.run(args)
+    finally:
+        _TOOL_PROGRESS_HOOK.reset(ptok)
+        reset_cancel_check(ctok)
 
 
 def _result_preview(result: ToolResult, max_chars: int = 300, tool_name: str = "") -> str:
@@ -477,7 +496,7 @@ def _take_image_urls(result: ToolResult) -> list:
 #       都跟着重发 · 直到压缩层 (60% 窗口) 才收拾 · 窗口前这段是纯烧钱。
 # 修法: 只在【发给 API 的那一份 payload】上 · 把"旧的、超大的"工具输出截成 head + 省略提示。
 #       - 落盘的 session jsonl / 返回给 daemon 的 messages / UI 显示 · 全部不动 (真源完整)。
-#       - 当轮刚产出的工具输出必须全量 (LLM 要用) → 保留最近 KEEP_TAIL 条不瘦身。
+#       - 当轮刚产出的工具输出必须全量 (LLM 要用) → 最近 N 个 user 回合不瘦身 (OpenCode tail turns)。
 #       - 截断是确定性的 → 同一条旧输出每轮截成同样结果 → 不破坏 prefix cache 命中。
 #       - OPUS_TOOL_HISTORY_CAP=0 关闭整条 · 退回老行为。
 def _tool_hist_cap() -> int:
@@ -488,9 +507,6 @@ def _tool_hist_cap() -> int:
         except (ValueError, TypeError):
             pass
     return 8000
-
-
-_TOOL_HIST_KEEP_TAIL = 8  # 最近这么多条消息不瘦身 · 保当轮 + 最近几轮工具输出全量
 
 
 def _diet_tool_text(text: Any, cap: int) -> tuple[Any, bool]:
@@ -516,7 +532,8 @@ def _diet_messages_for_send(msgs: list) -> list:
     cap = _tool_hist_cap()
     if cap <= 0:
         return _inject_pending_images(msgs)
-    cutoff = len(msgs) - _TOOL_HIST_KEEP_TAIL
+    from workers.memory_compression import tail_protect_index
+    cutoff = tail_protect_index(msgs)
     if cutoff <= 0:
         return _inject_pending_images(msgs)
     any_change = False
@@ -667,7 +684,9 @@ def _validate_args(args: dict, schema: dict | None, tool_name: str) -> str | Non
 
     unknown = [k for k in args.keys() if k not in properties]
 
-    if not (missing or type_errors or unknown):
+    # B-② · 2026-08-27 · unknown 不再单独硬失败 · 工具 schema 可声明 additionalProperties
+    # 扩展字段 (CONFIRM 工具的 risk_explanation/mitigation 就走这个) · unknown 只作附带提示 (Grok 全量审计)
+    if not (missing or type_errors):
         return None
 
     parts = [f"工具 `{tool_name}` 的 args 不符合 schema："]
@@ -714,18 +733,25 @@ def _batch_all_auto(specs_args: list[tuple[ToolSpec | None, dict]]) -> bool:
 def _maybe_parallel_auto(
     specs_args_names: list[tuple[ToolSpec | None, dict, str]],
     progress: "ProgressHook | None",
+    allowed_tool_names: set[str] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict[int, ToolResult]:
     """整批全只读 AUTO → 并发预跑·返回 {index: ToolResult}。 否则返 {} (主循环走原串行路)。
 
     只对 args 合 schema 的调用并发跑 (不合的留给主循环报 schema 错·不浪费一次运行)。
     每个 worker 在自己线程里设进度钩子 · 跑完即 reset。
+    abort 时不再 `with Executor` 死等跑完 —— 那会让停止钮停在「正在停」、下一轮 self_heal。
     """
     if not _batch_all_auto([(s, a) for s, a, _ in specs_args_names]):
         return {}
 
     jobs: list[tuple[int, ToolSpec, dict]] = []
     for i, (spec, args, name) in enumerate(specs_args_names):
-        if spec is not None and _validate_args(args, spec.input_schema, name) is None:
+        if spec is None:
+            continue
+        if allowed_tool_names is not None and name not in allowed_tool_names:
+            continue  # Grok-2 · 2026-08-27 · 白名单外不并行预跑 · 留给主循环报 denied
+        if _validate_args(args, spec.input_schema, name) is None:
             jobs.append((i, spec, args))
     if len(jobs) < 2:
         return {}
@@ -737,7 +763,7 @@ def _maybe_parallel_auto(
             lambda step, msg: _push(progress, "tool_progress", {"step": step, "msg": msg})
         )
         try:
-            return spec.run(args)
+            return _run_tool(spec, args, progress, cancel_check)
         except Exception as e:
             return ToolResult(ok=False, output="", error=f"{type(e).__name__}: {e}")
         finally:
@@ -770,13 +796,42 @@ def _maybe_parallel_auto(
     #
     # 必须每个 job 单独 copy: 同一个 Context 对象不能被两个线程同时 `run`
     # (RuntimeError: cannot enter context - it is already entered)。
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
-        fut_to_idx = {}
+    ex = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+    fut_to_idx: dict[concurrent.futures.Future, int] = {}
+    try:
         for idx, spec, args in jobs:
             ctx = contextvars.copy_context()
             fut_to_idx[ex.submit(ctx.run, _work, spec, args)] = idx
-        for fut in concurrent.futures.as_completed(fut_to_idx):
-            out[fut_to_idx[fut]] = fut.result()
+        pending = set(fut_to_idx)
+        aborted = False
+        while pending:
+            if cancel_check is not None and cancel_check():
+                aborted = True
+                break
+            done, pending = concurrent.futures.wait(
+                pending, timeout=0.15, return_when=concurrent.futures.FIRST_COMPLETED
+            )
+            for fut in done:
+                idx = fut_to_idx[fut]
+                try:
+                    out[idx] = fut.result()
+                except Exception as e:
+                    out[idx] = ToolResult(ok=False, output="", error=f"{type(e).__name__}: {e}")
+        if aborted:
+            for fut in pending:
+                fut.cancel()
+                idx = fut_to_idx[fut]
+                if idx in out:
+                    continue
+                if fut.done() and not fut.cancelled():
+                    try:
+                        out[idx] = fut.result()
+                    except Exception as e:
+                        out[idx] = ToolResult(ok=False, output="", error=f"{type(e).__name__}: {e}")
+                else:
+                    out[idx] = ToolResult(ok=False, output="", error="aborted")
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
     return out
 
 
@@ -892,6 +947,7 @@ def _rewrite_tool_use(name: str, args: dict) -> tuple[str, dict]:
 
 
 def to_openai_tools(specs: list[ToolSpec]) -> list[dict]:
+    # 按名字排序锁死 tools[] 顺序 · 导入顺序漂移会打穿 DeepSeek 前缀缓存
     return [
         {
             "type": "function",
@@ -997,12 +1053,30 @@ def run_tool_loop(
     # 在每次 tool_loop 入口按 token 预算 + 模型窗口动态触发压缩，
     # 省 token + 避免长对话爆 context。对所有路径（终端/API/SSE）生效。
     try:
-        from workers.memory_compression import auto_compress, token_budget_check, get_last_compression_stats
+        from workers.memory_compression import (
+            auto_compress, token_budget_check, get_last_compression_stats, prune_if_needed,
+        )
+        pruned = prune_if_needed(messages, model_id=model)
+        if pruned is not messages:
+            messages.clear()
+            messages.extend(pruned)
         if token_budget_check(messages, model_id=model):
+            try:
+                from workers.compact_flush import flush_before_compact
+                from workers.turn_trace import emit as _trace
+                _flush = flush_before_compact(messages, client, model, provider)
+                _trace("compact_flush", **_flush)
+            except Exception:
+                pass
             compressed = auto_compress(messages, client, model, provider, model_id=model)
             if compressed is not messages:
                 messages.clear()
                 messages.extend(compressed)
+                try:
+                    from workers.turn_trace import emit as _trace2
+                    _trace2("compact", n=len(messages))
+                except Exception:
+                    pass
                 # v2 · 压缩/修剪 stats log (wish-7f0adf2c)
                 try:
                     _push(progress, "usage", {
@@ -1219,7 +1293,7 @@ def _loop_openai(
         _mt_safe = max_tokens
         try:
             from workers.memory_compression import _estimate_tokens as _est_tok
-            from provider_presets import context_window_for as _cw_for
+            from workers.memory_compression import _get_context_window as _cw_for
             _ctx = _cw_for(model)
             if _ctx and _ctx > 0:
                 _est_now = _est_tok(oai_messages)
@@ -1489,7 +1563,9 @@ def _loop_openai(
                 _a = {}
             _rn, _ra = _rewrite_tool_use(_tc["name"], _a)
             _sa_names.append((REGISTRY.get(_rn), _ra, _rn))
-        parallel_results = _maybe_parallel_auto(_sa_names, progress)
+        # Grok-2 · 2026-08-27 · 并行预跑必须知道白名单 · 否则白名单外的 AUTO 只读工具
+        # 会被先跑掉 (绕过卷七十二拦截) · 白名单由 _maybe_parallel_auto 内部过滤
+        parallel_results = _maybe_parallel_auto(_sa_names, progress, allowed_tool_names, cancel_check)
 
         for idx, tc in enumerate(tool_calls):
             name = tc["name"]
@@ -1522,9 +1598,14 @@ def _loop_openai(
                     "summary": spec.summarize(args) if hasattr(spec, "summarize") else name,
                     "tier": getattr(spec, "tier", "?"),
                 })
-                decision = _call_confirm(confirm, spec, args, text, tool_call_id=(tc.get("id") or ""))
+                decision = _call_confirm(confirm, spec, args, text, tool_call_id=(tc.get("id") or f"call_{iteration}_{idx}"))
                 if decision == "abort":
                     aborted = True
+                    try:
+                        from workers.turn_trace import emit as _ab
+                        _ab("abort", reason="confirm")
+                    except Exception:
+                        pass
                     break
                 elif decision == "skip":
                     result = ToolResult(
@@ -1547,13 +1628,10 @@ def _loop_openai(
                                 result = parallel_results[idx]
                             else:
                                 # 卷五十八 · wish-f30d571d · 设进度钩子 · 长跑工具可调 push_tool_progress() 推 SSE
-                                _prog_token = _TOOL_PROGRESS_HOOK.set(
-                                    lambda step, msg: _push(progress, "tool_progress", {"step": step, "msg": msg})
-                                )
                                 try:
-                                    result = spec.run(args)
-                                finally:
-                                    _TOOL_PROGRESS_HOOK.reset(_prog_token)
+                                    result = _run_tool(spec, args, progress, cancel_check)
+                                except Exception as e:
+                                    result = ToolResult(ok=False, output="", error=f"{type(e).__name__}: {e}")
                         except Exception as e:
                             result = ToolResult(ok=False, output="", error=f"{type(e).__name__}: {e}")
                         try:
@@ -1839,6 +1917,8 @@ def _loop_anthropic(
         parallel_results = _maybe_parallel_auto(
             _sa_ant,
             progress,
+            allowed_tool_names,
+            cancel_check,
         )
         for idx, tu in enumerate(tool_use_blocks):
             name, args = _rewrite_tool_use(tu.name, tu.input or {})
@@ -1869,6 +1949,11 @@ def _loop_anthropic(
                 decision = _call_confirm(confirm, spec, args, text, tool_call_id=getattr(tu, "id", "") or "")
                 if decision == "abort":
                     aborted = True
+                    try:
+                        from workers.turn_trace import emit as _ab
+                        _ab("abort", reason="confirm")
+                    except Exception:
+                        pass
                     break
                 elif decision == "skip":
                     result = ToolResult(
@@ -1884,20 +1969,16 @@ def _loop_anthropic(
                     if schema_err is not None:
                         result = ToolResult(ok=False, output="", error=schema_err)
                     else:
-                        _pet_write_activity(name)
+                        _pet_write_activity(tu.name)
                         try:
                             # 卷五十八续 ⑤ · 已并发预跑过就直接取·否则当场跑
                             if idx in parallel_results:
                                 result = parallel_results[idx]
                             else:
-                                # 卷五十八 · wish-f30d571d · 设进度钩子 · 长跑工具可调 push_tool_progress() 推 SSE
-                                _prog_token = _TOOL_PROGRESS_HOOK.set(
-                                    lambda step, msg: _push(progress, "tool_progress", {"step": step, "msg": msg})
-                                )
                                 try:
-                                    result = spec.run(args)
-                                finally:
-                                    _TOOL_PROGRESS_HOOK.reset(_prog_token)
+                                    result = _run_tool(spec, args, progress, cancel_check)
+                                except Exception as e:
+                                    result = ToolResult(ok=False, output="", error=f"{type(e).__name__}: {e}")
                         except Exception as e:
                             result = ToolResult(ok=False, output="", error=f"{type(e).__name__}: {e}")
                         try:

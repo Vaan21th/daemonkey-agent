@@ -23,7 +23,8 @@
                                     "workers/safe_write.py",
                                     "workers/edit_selfcheck.py",
                                     "workers/schema_guard.py",
-                                    "workers/secret_redactor.py"
+                                    "workers/secret_redactor.py",
+                                    "agent_tools/_desc_budget.py"
                                 ],
                    "代码读搜执行":  [
                                   "agent_tools/read_file.py",
@@ -33,7 +34,8 @@
                                   "agent_tools/search_code.py",
                                   "agent_tools/lint_check.py",
                                   "agent_tools/python_exec.py",
-                                  "agent_tools/shell_exec.py"
+                                  "agent_tools/shell_exec.py",
+                                  "agent_tools/_cancel.py"
                               ],
                    "git纪律与上线闸":  [
                                      "agent_tools/verify_daemon_endpoints.py",
@@ -84,6 +86,9 @@
                                                                            ],
                    "核心循环与路由骨架":  [
                                      "tool_loop.py",
+                                     "agent_tools/_tool_catalog.py",
+                                     "agent_tools/catalog_search.py",
+                                     "agent_tools/catalog_call.py",
                                      "daemon_api.py",
                                      "daemon_runtime.py",
                                      "daemon_session.py",
@@ -123,6 +128,8 @@
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            "workers/memory_index.py",
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            "workers/memory_hygiene.py",
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            "workers/notebook_tiers.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "workers/compact_flush.py",
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           "workers/turn_trace.py",
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            "workers/memory_rerank.py",
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            "workers/memory_map.py",
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            "workers/closure_check.py",

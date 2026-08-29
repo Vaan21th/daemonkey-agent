@@ -2,7 +2,7 @@
 agent_tools/python_exec.py
 ==========================
 
-Daemonkey 跑 Python 代码的手——绕过 shell 转义地狱。
+OPUS 跑 Python 代码的手——绕过 shell 转义地狱。
 
 为什么造这个工具——
   扫最近 30 个 session 的 224 次 shell_exec · 42 次 (18.8%) 失败 ·
@@ -43,7 +43,7 @@ from . import (
     ToolSpec,
     register_tool,
 )
-from ._subprocess_helper import no_window_kwargs
+from ._subprocess_helper import SubprocessCancelled, run_with_timeout_or_cancel
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -163,17 +163,11 @@ def _run(args: dict) -> ToolResult:
 
         # 卷四十六续 IV · 用统一 helper · 防黑框 (Windows 父无 console 时 spawn 子进程默认弹新 console)
         try:
-            proc = subprocess.run(
-                argv,
-                cwd=str(cwd),
-                timeout=timeout,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=env,
-                **no_window_kwargs(),
+            proc = run_with_timeout_or_cancel(
+                argv, str(cwd), timeout, env=env, text=True, encoding="utf-8",
             )
+        except SubprocessCancelled:
+            return ToolResult(ok=False, output="", error="aborted by user（已杀进程树）")
         except subprocess.TimeoutExpired:
             return ToolResult(ok=False, output="", error=f"code timed out after {timeout}s")
         except FileNotFoundError as e:
@@ -230,8 +224,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="python_exec",
     description=(
-        "在 .venv 跑多行 Python 源码（零 shell 转义）。检 json/ast、算数、调库用本工具。git/curl/npm 用 shell_exec。密钥用 ${secret:app:name}，输出靠 print()。"
-    ),
+        "在 .venv 跑多行 Python 源码（零 shell 转义）。检 json/ast、算数、调库用本工具。git/curl/npm 用 shell_exec。密钥用 ${secret:app:name}，输出靠 print()。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
@@ -242,7 +235,7 @@ SPEC = ToolSpec(
             },
             "cwd": {
                 "type": "string",
-                "description": "Working directory (relative paths resolve from Daemonkey root). Default: project root.",
+                "description": "Working directory (relative paths resolve from OPUS-DAEMON root). Default: project root.",
             },
             "timeout": {
                 "type": "integer",
