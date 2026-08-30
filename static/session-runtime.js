@@ -303,6 +303,23 @@
     if (opts.drain) drainHandler = opts.drain;
   }
 
+  function _isQueueImage(a) {
+    if (!a) return false;
+    if (a.type === 'image') return true;
+    const mime = String(a.mime || '').toLowerCase();
+    if (mime.indexOf('image/') === 0) return true;
+    return /^data:image\//i.test(String(a.data_url || a.url || ''));
+  }
+
+  function _safeThumbUrl(a) {
+    if (!a) return '';
+    const url = String(a.data_url || a.url || '');
+    if (/^data:image\//i.test(url)) return url;
+    if (/^https?:\/\//i.test(url)) return url;
+    if (url.charAt(0) === '/' && url.charAt(1) !== '/') return url;
+    return '';
+  }
+
   function paintQueueBar(host, sid) {
     if (!host) return;
     host.dataset.queueSid = sid || '';
@@ -318,17 +335,38 @@
     }
     host.innerHTML = items.map(function (it, i) {
       return '<div class="oq-item" data-qid="' + it.id + '" title="拖动改顺序">'
+        + '<span class="oq-thumb" hidden></span>'
         + '<span class="oq-grip" aria-hidden="true"><i class="ri-draggable"></i></span>'
         + '<span class="oq-n">' + (i + 1) + '</span>'
         + '<span class="oq-t"></span>'
         + '<button type="button" class="oq-x" data-qid="' + it.id + '" title="取消这条">'
         + '<i class="ri-close-line"></i></button></div>';
     }).join('');
-    const texts = host.querySelectorAll('.oq-t');
+    const rows = host.querySelectorAll('.oq-item');
     items.forEach(function (it, i) {
+      const row = rows[i];
+      if (!row) return;
+      const atts = it.attachments || [];
+      const imgs = atts.filter(_isQueueImage);
+      const src = imgs.length ? _safeThumbUrl(imgs[0]) : '';
+      const thumb = row.querySelector('.oq-thumb');
+      if (thumb && src) {
+        const img = document.createElement('img');
+        img.alt = '';
+        img.src = src;
+        thumb.appendChild(img);
+        if (imgs.length > 1) {
+          const more = document.createElement('span');
+          more.className = 'oq-thumb-n';
+          more.textContent = '+' + (imgs.length - 1);
+          thumb.appendChild(more);
+        }
+        thumb.hidden = false;
+      }
       const label = (it.text || '').trim()
-        || (it.attachments && it.attachments.length ? ('附件 ×' + it.attachments.length) : '（空）');
-      if (texts[i]) texts[i].textContent = label.length > 36 ? label.slice(0, 36) + '…' : label;
+        || (atts.length ? ('附件 ×' + atts.length) : '（空）');
+      const t = row.querySelector('.oq-t');
+      if (t) t.textContent = label.length > 36 ? label.slice(0, 36) + '…' : label;
     });
     host.querySelectorAll('.oq-x').forEach(function (btn) {
       btn.addEventListener('click', function (e) {
