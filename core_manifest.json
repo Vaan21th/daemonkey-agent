@@ -284,6 +284,7 @@
       "desktop_pet/clip_map.py",
       "desktop_pet/room_pet.py",
       "desktop_pet/room_live.py",
+      "desktop_pet/room_sync.py",
       "desktop_pet/room_dock.py",
       "desktop_pet/room_menu.py",
       "desktop_pet/room_bubble.py",

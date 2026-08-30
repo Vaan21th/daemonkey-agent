@@ -30,9 +30,7 @@ from desktop_pet.clip_map import (
 from desktop_pet.expressions import DEFAULT_STATE
 from desktop_pet.room_hit import alpha_at_widget
 from desktop_pet.room_live import (
-    arm_rest,
     arm_side,
-    go_rest,
     move_drag,
     play_side,
     press_drag,
@@ -42,7 +40,7 @@ from desktop_pet.room_live import (
 from desktop_pet.room_sync import finish_once
 from desktop_pet.room_dock import expand, load_dock, load_flip, paint_ape
 from desktop_pet.room_menu import apply_geom, build_menu, open_chat
-from desktop_pet.room_rest import wake_from_rest, write_live
+from desktop_pet.room_rest import arm_rest, go_rest, wake_from_rest, write_live
 from desktop_pet.room_bubble import RoomBubble
 from desktop_pet.room_frames import load_clip_pixmaps, preload_scale
 from desktop_pet.room_win32 import enable_dpi, force_show, reveal
