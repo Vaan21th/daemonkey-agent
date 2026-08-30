@@ -32,7 +32,6 @@ from desktop_pet.room_hit import alpha_at_widget
 from desktop_pet.room_live import (
     arm_rest,
     arm_side,
-    finish_once,
     go_rest,
     move_drag,
     play_side,
@@ -40,6 +39,7 @@ from desktop_pet.room_live import (
     release_drag,
     tick_poll,
 )
+from desktop_pet.room_sync import finish_once
 from desktop_pet.room_dock import expand, load_dock, load_flip, paint_ape
 from desktop_pet.room_menu import apply_geom, build_menu, open_chat
 from desktop_pet.room_rest import wake_from_rest, write_live

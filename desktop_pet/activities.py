@@ -55,13 +55,13 @@ TOOL_DESC_TEMPLATES: dict[str, str] = {
     "open_app":         "启动应用",
     "set_model":        "切换模型",
     "set_emotion":      "切换表情",
-    "update_bro_note":  "更新画像",
+    "update_bro_note":  "更新 BRO 画像",
     "update_self_evolution": "写日记",
     "summarize_session":     "压缩会话",
     "wechat_send":      "发微信",
-    "summon_cursor":    "在干活",
+    "summon_cursor":    "召唤 Cursor",
     "ssh_remote":       "远程诊断",
-    "client_handoff":   "在干活",
+    "client_handoff":   "查客户档案",
     "manage_info_source": "管理信源",
     "generate_report":  "生成报告",
     "draft_studio":     "工作室出品",
@@ -150,8 +150,20 @@ def tool_desc(tool_name: str) -> str:
 
 
 def state_for_tool(tool_name: str) -> str:
-    """工具名 → 桌宠应该显示的状态（idle 表示工具结束）。"""
+    """工具名 → 桌宠活动词。工具结束不等于这一轮结束。"""
     return TOOL_TO_ACTIVITY.get(tool_name, "working")
+
+
+def pulse_is_busy() -> bool:
+    evs = read_last_events(1)
+    return bool(evs) and (evs[-1].get("status") or "") != "idle"
+
+
+def should_stay_working(state_txt: str = "") -> bool:
+    """对话还在跑：state.txt 是干活，或脉搏最后一条还不是 idle。"""
+    if (state_txt or "").strip() in ("working", "thinking"):
+        return True
+    return pulse_is_busy()
 
 
 def write_activity(tool_name: str) -> None:
@@ -231,14 +243,23 @@ def _write_pulse_event(tool_name: str, status: str, desc: str = "", ok: bool = T
 
         _ACTIVITY_JSONL.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-        # 向后兼容：写 activity.txt（状态单词）
-        state = state_for_tool(tool_name) if tool_name else IDLE_ACTIVITY
+        # activity.txt 给老橙猫；state.txt 跟房间桌宠。工具 end ≠ 待机。
         if status == "idle":
-            state = IDLE_ACTIVITY
+            face = IDLE_ACTIVITY
+            word = IDLE_ACTIVITY
         elif status == "error":
-            state = "confused"
+            face = "working"
+            word = "confused"
+        elif tool_name:
+            face = "working"
+            word = state_for_tool(tool_name)
+        else:
+            face = "working"
+            word = "working"
         _ACTIVITY_TXT.parent.mkdir(parents=True, exist_ok=True)
-        _ACTIVITY_TXT.write_text(state, encoding="utf-8")
+        _ACTIVITY_TXT.write_text(word, encoding="utf-8")
+        _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _STATE_FILE.write_text(face, encoding="utf-8")
 
     except Exception:
         pass
