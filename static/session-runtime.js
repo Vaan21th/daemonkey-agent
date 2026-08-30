@@ -1,0 +1,269 @@
+/* session-runtime.js · 真并行多会话内核
+   从 static/chat.js wish-3fef4bc7 抽出。工作台 / 陪伴同一份。
+
+   合同: 每个 sid 自己的 fetch / abort / pending / DOM 容器。
+   切会话只切 visibility · 不杀 stream · 停只停当前看见的那本。
+   2026-08-29 · 每本自己的发送队列 · 这轮跑着也能再丢一句。 */
+'use strict';
+
+(function (global) {
+  const sessions = {};
+  let cidCounter = 0;
+  let panel = null;
+  let activeSid = '';
+  const CONTAINER_CLASS = 'session-msgs';
+  const QUEUE_MAX = 8;
+  let queuePainter = null;
+  let drainHandler = null;
+
+  function escSid(sid) {
+    if (global.CSS && CSS.escape) return CSS.escape(sid);
+    return String(sid).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  }
+
+  function newState(sid) {
+    return {
+      sessionId: sid,
+      pending: false,
+      currentTurnId: null,
+      currentAbortController: null,
+      streamGen: 0,
+      currentStreamingReasoning: null,
+      currentStreamingAssistant: null,
+      assistantBubbles: [],
+      sawAssistantText: false,
+      finalUsage: null,
+      finalSessionId: null,
+      finalModel: null,
+      errorShown: false,
+      lastFinishReason: null,
+      autoResumeCount: 0,
+      streamHadToolCall: false,
+      toolCallCount: 0,
+      lastDashboardRefreshAt: 0,
+      toolStartedAt: 0,
+      $container: null,
+      hasUnreadCompletion: false,
+      inputDraft: '',
+      title: null,
+      progressText: '',
+      outboundQueue: [],
+      chatMode: '',
+    };
+  }
+
+  function get(sid) {
+    return sid ? (sessions[sid] || null) : null;
+  }
+
+  function getOrCreate(sid) {
+    if (!sid) return null;
+    if (!sessions[sid]) sessions[sid] = newState(sid);
+    return sessions[sid];
+  }
+
+  function allocCid() {
+    cidCounter += 1;
+    return 'tmp-' + Date.now().toString(36) + '-' + cidCounter.toString(36);
+  }
+
+  function swapId(oldSid, newSid) {
+    if (!oldSid || !newSid || oldSid === newSid) return false;
+    if (!sessions[oldSid]) return false;
+    const s = sessions[oldSid];
+    s.sessionId = newSid;
+    sessions[newSid] = s;
+    delete sessions[oldSid];
+    if (s.$container) s.$container.dataset.sid = newSid;
+    if (activeSid === oldSid) activeSid = newSid;
+    return true;
+  }
+
+  function attachPanel(el) {
+    panel = el || null;
+  }
+
+  function getOrCreateContainer(sid) {
+    if (!sid || !panel) return null;
+    let c = panel.querySelector('.' + CONTAINER_CLASS + '[data-sid="' + escSid(sid) + '"]');
+    if (!c) {
+      c = document.createElement('div');
+      c.className = CONTAINER_CLASS;
+      c.dataset.sid = sid;
+      c.hidden = true;
+      panel.appendChild(c);
+      const s = getOrCreate(sid);
+      if (s) s.$container = c;
+    }
+    return c;
+  }
+
+  function setActiveContainer(sid) {
+    if (panel) {
+      Array.from(panel.children).forEach(function (child) {
+        if (child.classList && child.classList.contains(CONTAINER_CLASS)) child.hidden = true;
+      });
+    }
+    activeSid = sid || '';
+    if (!sid) return null;
+    const c = getOrCreateContainer(sid);
+    if (c) c.hidden = false;
+    return c;
+  }
+
+  function activeContainer() {
+    if (!activeSid) return null;
+    const s = sessions[activeSid];
+    return (s && s.$container) || null;
+  }
+
+  function isVisible(sid) {
+    return !!sid && sid === activeSid;
+  }
+
+  function isPending(sid) {
+    const s = sessions[sid];
+    return !!(s && s.pending);
+  }
+
+  function isBusy(sid) {
+    const s = sessions[sid];
+    return !!(s && (s.pending || s.currentAbortController || s.currentTurnId));
+  }
+
+  function abortSession(sid) {
+    const s = sessions[sid];
+    if (!s) return;
+    s.streamGen = (s.streamGen || 0) + 1;
+    try { if (s.currentAbortController) s.currentAbortController.abort(); } catch (e) {}
+    s.currentAbortController = null;
+    if (s.currentTurnId) {
+      var tok = '';
+      try {
+        tok = (typeof global.token === 'string' && global.token)
+          || localStorage.getItem('opus_ui_token')
+          || localStorage.getItem('Daemonkey_ui_token')
+          || '';
+      } catch (e) {}
+      var headers = tok ? { 'Authorization': 'Bearer ' + tok } : {};
+      fetch('/turns/' + encodeURIComponent(s.currentTurnId) + '/abort', {
+        method: 'POST',
+        headers: headers,
+      }).catch(function () {});
+    }
+    s.currentTurnId = null;
+    s.pending = false;
+  }
+
+  function queueOf(sid) {
+    const s = get(sid);
+    return (s && s.outboundQueue) ? s.outboundQueue.slice() : [];
+  }
+
+  function _emitQueue(sid) {
+    if (typeof queuePainter === 'function') {
+      try { queuePainter(sid, queueOf(sid)); } catch (e) {}
+    }
+  }
+
+  function enqueue(sid, item) {
+    if (!sid) return { ok: false, error: 'no-sid' };
+    const s = getOrCreate(sid);
+    if (!s.outboundQueue) s.outboundQueue = [];
+    if (s.outboundQueue.length >= QUEUE_MAX) return { ok: false, error: 'full' };
+    const rec = {
+      id: 'q-' + Date.now().toString(36) + '-' + (++cidCounter).toString(36),
+      text: (item && item.text) ? String(item.text) : '',
+      attachments: (item && item.attachments) ? item.attachments.slice() : [],
+    };
+    if (!rec.text && !rec.attachments.length) return { ok: false, error: 'empty' };
+    s.outboundQueue.push(rec);
+    _emitQueue(sid);
+    return { ok: true, item: rec };
+  }
+
+  function cancelQueued(sid, id) {
+    const s = get(sid);
+    if (!s || !s.outboundQueue) return false;
+    const i = s.outboundQueue.findIndex(function (x) { return x.id === id; });
+    if (i < 0) return false;
+    s.outboundQueue.splice(i, 1);
+    _emitQueue(sid);
+    return true;
+  }
+
+  function kick(sid) {
+    const s = get(sid);
+    if (!s || s.pending) return false;
+    if (!s.outboundQueue || !s.outboundQueue.length) return false;
+    s.pending = true;
+    const rec = s.outboundQueue.shift();
+    _emitQueue(sid);
+    queueMicrotask(function () {
+      if (typeof drainHandler === 'function') drainHandler(sid, rec);
+      else s.pending = false;
+    });
+    return true;
+  }
+
+  function bindQueue(opts) {
+    opts = opts || {};
+    if (opts.paint) queuePainter = opts.paint;
+    if (opts.drain) drainHandler = opts.drain;
+  }
+
+  function paintQueueBar(host, sid) {
+    if (!host) return;
+    const items = queueOf(sid);
+    host.hidden = items.length === 0;
+    if (!items.length) {
+      host.innerHTML = '';
+      return;
+    }
+    host.innerHTML = items.map(function (it, i) {
+      return '<div class="oq-item">'
+        + '<span class="oq-n">' + (i + 1) + '</span>'
+        + '<span class="oq-t"></span>'
+        + '<button type="button" class="oq-x" data-qid="' + it.id + '" title="取消这条">'
+        + '<i class="ri-close-line"></i></button></div>';
+    }).join('');
+    const texts = host.querySelectorAll('.oq-t');
+    items.forEach(function (it, i) {
+      const label = (it.text || '').trim()
+        || (it.attachments && it.attachments.length ? ('附件 ×' + it.attachments.length) : '（空）');
+      if (texts[i]) texts[i].textContent = label.length > 36 ? label.slice(0, 36) + '…' : label;
+    });
+    host.querySelectorAll('.oq-x').forEach(function (btn) {
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelQueued(sid, btn.dataset.qid);
+      });
+    });
+  }
+
+  global.SessionRuntime = {
+    sessions: sessions,
+    newState: newState,
+    get: get,
+    getOrCreate: getOrCreate,
+    allocCid: allocCid,
+    swapId: swapId,
+    attachPanel: attachPanel,
+    getOrCreateContainer: getOrCreateContainer,
+    setActiveContainer: setActiveContainer,
+    activeContainer: activeContainer,
+    activeSid: function () { return activeSid; },
+    isVisible: isVisible,
+    isPending: isPending,
+    isBusy: isBusy,
+    abortSession: abortSession,
+    QUEUE_MAX: QUEUE_MAX,
+    enqueue: enqueue,
+    cancelQueued: cancelQueued,
+    queueOf: queueOf,
+    kick: kick,
+    bindQueue: bindQueue,
+    paintQueueBar: paintQueueBar,
+  };
+})(window);

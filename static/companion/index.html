@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>陪伴模式</title>
+<link rel="icon" type="image/png" href="/static/favicon.png?v=20260830q">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=20260830q">
+<link rel="stylesheet" href="/static/lib/remixicon/remixicon.css">
+<link rel="stylesheet" href="/static/chat.css?v=20260830t">
+<link rel="stylesheet" href="companion.css?v=20260830v">
+<script>
+(function () {
+  try {
+    var raw = sessionStorage.getItem('dk_mode_transit');
+    if (!raw) return;
+    document.documentElement.classList.add('dk-transit-hold');
+    var st = JSON.parse(raw);
+    if (st && st.dark) document.documentElement.classList.add('dk-transit-dark');
+  } catch (e) {}
+  setTimeout(function () {
+    document.documentElement.classList.remove('dk-transit-hold', 'dk-transit-dark');
+  }, 2500);
+})();
+</script>
+</head>
+<body class="day">
+<div id="dkTransit" class="dk-transit" aria-hidden="true">
+  <div class="dk-transit-stage">
+    <span class="dk-transit-ring"></span>
+    <span class="dk-transit-ring r2"></span>
+    <img class="dk-transit-face" src="/companion/assets/daimon-face.png?v=20260830q" alt="">
+  </div>
+</div>
+
+<div id="topbar">
+  <div class="logo" id="brand-name">她</div>
+  <div class="sub">陪伴模式</div>
+  <script>
+    (function () {
+      var n = (window.__AI_NAME__ || '').trim();
+      if (!n) return;
+      document.getElementById('brand-name').textContent = n;
+      document.title = n + ' · 陪伴模式';
+    })();
+  </script>
+  <div class="spacer"></div>
+  <a class="tbtn" data-mode-transit href="/ui" title="回工作室"><i class="ri-macbook-line"></i></a>
+  <button class="tbtn" id="mic-toggle" title="麦克风开关"><i class="ri-mic-line"></i></button>
+  <button class="tbtn" id="tts-btn" title="她的声音开关"><i class="ri-volume-mute-line"></i></button>
+  <div class="model-switch" id="modelSwitch">
+    <button type="button" class="model-btn" id="modelBtn" title="切换模型" onclick="toggleModelMenu()">
+      <i class="ri-cpu-line"></i>
+      <span class="model-name" id="modelNameLabel">--</span>
+      <i class="ri-arrow-down-s-line"></i>
+    </button>
+    <div class="model-menu" id="modelMenu">
+      <div class="model-menu-head">切换模型</div>
+      <div id="modelMenuList"><div class="model-menu-empty">加载中…</div></div>
+      <div class="mm-behavior">
+        <div class="model-menu-head">模型行为 <span class="mb-tag">本机记住 · 每次对话生效</span></div>
+        <label class="mmb-row">
+          <span class="mmb-label"><i class="ri-brain-line"></i> 思考模式</span>
+          <select id="mbThinking">
+            <option value="auto" selected>自动(推荐)</option>
+            <option value="on">开 · 强制深度思考</option>
+            <option value="off">关 · 直接答(更快)</option>
+          </select>
+        </label>
+        <label class="mmb-row">
+          <span class="mmb-label"><i class="ri-flashlight-line"></i> 推理强度</span>
+          <select id="mbEffort">
+            <option value="" selected>默认</option>
+            <option value="low">低 · 快</option>
+            <option value="medium">中</option>
+            <option value="high">高 · 更深</option>
+          </select>
+        </label>
+        <label class="mmb-row">
+          <span class="mmb-label"><i class="ri-text-spacing"></i> 输出上限</span>
+          <input id="mbMaxTokens" type="number" min="0" step="1024" placeholder="留空 = 模型推荐">
+        </label>
+        <div class="mmb-hint">思考仅 DeepSeek·GLM·Claude 生效 · 强度仅 GPT-5·o 系·grok 生效 · 其他自动忽略不报错。<br>输出上限<b>留空最稳</b>(用模型推荐值)· 填小了易提前截断(有自动续写兜底·但更慢)。</div>
+      </div>
+    </div>
+  </div>
+  <button class="tbtn" id="settings-btn" title="设置"><i class="ri-settings-3-line"></i></button>
+</div>
+
+<div id="main">
+  <div id="room-wrap">
+    <div id="room">
+      <div class="plx" id="plx-bg">
+        <div class="layer-img" style="position:absolute;inset:0">
+          <img src="assets/bg-day.webp" draggable="false" style="width:100%;height:100%;object-fit:fill">
+        </div>
+        <div class="layer-img" id="bg-night" style="position:absolute;inset:0">
+          <img src="assets/bg-night.webp" draggable="false" style="width:100%;height:100%;object-fit:fill">
+        </div>
+      </div>
+      <div class="plx" id="plx-spots">
+        <div id="spots" style="position:absolute;inset:0"></div>
+      </div>
+      <div class="plx" id="ip-plx">
+        <div id="ip-feet" aria-hidden="true">
+          <i class="ip-sole ip-sole-l"></i>
+          <i class="ip-sole ip-sole-r"></i>
+        </div>
+        <div id="ip-shadow">
+          <img class="sh-main" src="assets/ip-stand.png" draggable="false">
+          <img class="sh-alt" src="assets/ip-happy.png" draggable="false">
+        </div>
+        <div id="ip-img-wrap">
+          <img class="ip-main" src="assets/ip-stand.png" draggable="false">
+          <img class="ip-alt" src="assets/ip-happy.png" draggable="false">
+          <div id="ip-head">
+            <div class="pat-tip"><i class="ri-hand-heart-line"></i> 摸摸头</div>
+          </div>
+        </div>
+      </div>
+      <div id="pat-bubble"></div>
+      <div id="tool-bubble"></div>
+      <div id="say-bubble"></div>
+      <div id="say-log" hidden>
+        <div class="say-log-card">
+          <div class="say-log-head">
+            <i class="ri-chat-quote-line"></i>
+            <div>
+              <b>这篇的对白</b>
+              <small id="say-log-meta"></small>
+            </div>
+            <button type="button" id="say-log-close" title="收起"><i class="ri-close-line"></i></button>
+          </div>
+          <div id="say-log-body"></div>
+        </div>
+      </div>
+      <div id="room-confirm"></div>
+      <div id="shelf-pop" hidden>
+        <button type="button" class="shelf-pop-scrim" id="shelf-pop-scrim" aria-label="关掉"></button>
+        <div class="shelf-pop-card">
+          <div class="shelf-pop-body"></div>
+          <div class="gm-acts" id="shelf-pop-acts" hidden></div>
+        </div>
+      </div>
+      <div id="play-table" hidden>
+        <button type="button" class="play-scrim" id="play-scrim" aria-label="收起来"></button>
+        <div class="play-sheet">
+          <div class="play-head">
+            <b><i class="ri-box-3-line"></i> 翻牌盒</b>
+            <span id="play-left">还剩 6 对</span>
+            <button type="button" id="play-close" title="收起来"><i class="ri-close-line"></i></button>
+          </div>
+          <div id="play-board"></div>
+          <div id="play-foot" hidden></div>
+        </div>
+      </div>
+      <div id="listen-dock">
+        <div id="voice-live" hidden></div>
+        <div id="attach-bar"></div>
+        <div id="voicePanel" class="voice-panel" hidden>
+          <div class="voice-panel-head">
+            <span class="voice-panel-title"><i class="ri-mic-fill"></i> <span id="voicePanelMode">语音对话</span></span>
+            <label class="voice-tts-toggle" id="voiceTtsWrap" hidden title="AI 回复自动朗读">
+              <span class="voice-tts-label"><i class="ri-volume-up-line"></i> TTS</span>
+              <input type="checkbox" id="voiceTtsToggle">
+              <span class="sw"></span>
+            </label>
+            <span class="voice-timer" id="voiceTimer">00:00</span>
+            <span class="voice-panel-spacer"></span>
+            <button type="button" class="voice-close" id="voiceClose" title="关闭"><i class="ri-close-line"></i></button>
+          </div>
+          <div class="voice-transcript" id="voiceTranscript"></div>
+          <div class="voice-rec-note" id="voiceRecNote" hidden></div>
+          <div class="voice-panel-actions">
+            <button type="button" class="voice-act primary" data-act="minutes"><i class="ri-file-list-3-line"></i> 整理成纪要</button>
+            <button type="button" class="voice-act" data-act="toclient"><i class="ri-contacts-book-2-line"></i> 存成客户会议</button>
+            <button type="button" class="voice-act" data-act="insert"><i class="ri-corner-down-left-line"></i> 插入输入框</button>
+            <button type="button" class="voice-act" data-act="clear"><i class="ri-eraser-line"></i> 清空</button>
+            <button type="button" class="voice-act stop" data-act="stop" hidden><i class="ri-stop-circle-line"></i> 停止</button>
+          </div>
+        </div>
+        <div id="outboundQueue" class="outbound-queue" hidden></div>
+        <div class="strip mic-group" id="listen-strip">
+          <span class="talk-ripple" aria-hidden="true"><i></i><i></i><i></i></span>
+          <button class="hub" id="hubBtn" type="button" title="点笔展开 · 长按切换语音模式">
+            <svg id="wave-ring" class="wave-ring" viewBox="0 0 88 88" aria-hidden="true"></svg>
+            <span class="mouth-halo" aria-hidden="true"></span>
+            <span class="ico pen"><i class="ri-quill-pen-line"></i></span>
+            <span class="ico ape" aria-hidden="true">
+              <svg viewBox="0 0 64 64">
+                <circle class="ape-ink" cx="13.6" cy="35.8" r="10.4"/>
+                <circle class="ape-ink" cx="50.4" cy="35.8" r="10.4"/>
+                <path class="ape-c" d="M17.2 30a5.6 5.6 0 0 0 0 11.4"/>
+                <path class="ape-c" d="M46.8 30a5.6 5.6 0 0 1 0 11.4"/>
+                <circle class="ape-ink" cx="32" cy="36.2" r="20.6"/>
+                <path class="ape-cream" d="M17.6 38.2C17.6 25.8 24.2 21.4 29.2 26.4C30.6 27.8 31.4 28.8 32 27.2C32.6 28.8 33.4 27.8 34.8 26.4C39.8 21.4 46.4 25.8 46.4 38.2C46.4 48.6 40.2 53.4 32 53.4S17.6 48.6 17.6 38.2z"/>
+                <circle class="ape-ink" cx="25.4" cy="37.2" r="2.7"/>
+                <circle class="ape-ink" cx="38.6" cy="37.2" r="2.7"/>
+                <ellipse class="ape-blush" cx="21.2" cy="42.2" rx="3.8" ry="2.2"/>
+                <ellipse class="ape-blush" cx="42.8" cy="42.2" rx="3.8" ry="2.2"/>
+                <circle class="ape-ink" cx="32" cy="42.6" r=".85"/>
+                <path class="ape-w" d="M24.8 45.2q3.6 5.2 7.2 0q3.6 5.2 7.2 0"/>
+              </svg>
+            </span>
+            <span class="ico mic"><i class="ri-mic-line"></i></span>
+          </button>
+          <button id="micBtn" type="button" class="sr-mic" tabindex="-1" aria-hidden="true"></button>
+          <button id="micMode" type="button" title="三种语音模式" aria-label="选择语音模式"><i class="ri-arrow-down-s-line"></i></button>
+          <button id="attach-btn" type="button" title="发图片 / 文件 (也支持 Ctrl+V 粘贴)"><i class="ri-attachment-2"></i></button>
+          <input type="file" id="attach-file" accept="image/*,.txt,.md,.pdf,.json,.csv" multiple hidden>
+          <textarea id="chat-input" placeholder="对着她说…"></textarea>
+          <button id="send-btn" type="button" title="发送"><i class="ri-send-plane-2-fill"></i></button>
+        </div>
+        <div id="micMenu" class="mic-menu" hidden>
+          <button type="button" class="mic-menu-item" data-mode="dictation">
+            <i class="ri-mic-line"></i><span><b>语音输入</b><small>说完自动填进输入框</small></span>
+          </button>
+          <button type="button" class="mic-menu-item" data-mode="transcribe">
+            <i class="ri-chat-voice-line"></i><span><b>语音对话</b><small>打开就能对着说 · 停约 1 秒自动发</small></span>
+          </button>
+          <button type="button" class="mic-menu-item" data-mode="meeting">
+            <i class="ri-group-line"></i><span><b>会议纪要</b><small>持续录成文本 · 停止后整理拆分</small></span>
+          </button>
+        </div>
+      </div>
+      <div id="ip-card">
+        <div class="nm"><i class="ri-sparkling-2-fill"></i> <span id="st-name">她</span></div>
+        <div class="mood"><i class="ri-sun-line"></i> <span id="st-mood">安定</span></div>
+        <p class="weather-line" id="st-weather-line">没什么特别的。我就在这儿。</p>
+        <button type="button" id="st-weather-veto" hidden>不是这样</button>
+        <div class="she-mood-line" id="st-she-mood" hidden></div>
+        <div class="she-dims" id="st-she-dims" hidden></div>
+        <button type="button" class="she-bond-line" id="st-she-bond" hidden></button>
+        <div class="stats">
+          <div class="stat">当前时段<b id="st-time">--</b></div>
+          <div class="stat">当前模型<b id="st-model">--</b></div>
+          <div class="stat">状态<b style="color:var(--green)">在线</b></div>
+          <div class="stat">记忆<b style="color:var(--gold)">长期</b></div>
+        </div>
+      </div>
+      <div id="room-hint"><i class="ri-cursor-line"></i> 点击物件探索功能 · 点她看状态 · 摸头顶有惊喜</div>
+    </div>
+    <button id="chat-fab" title="打开话题架"><i class="ri-book-open-line"></i></button>
+  </div>
+
+  <div id="rail-clock" aria-hidden="true">
+    <span class="rc-face" id="rail-clock-face">
+      <i class="ri-time-line"></i>
+      <b id="rail-clock-hm">--:--</b>
+    </span>
+  </div>
+
+  <aside id="chat" class="rail">
+    <div class="shelf" id="topic-shelf">
+      <div class="rail-head">
+        <div class="k">话题架</div>
+        <div class="rail-title">
+          <div class="t">她记得的几本</div>
+        </div>
+        <div class="sub">先选话题，再看产物。回看铺满右边整栏，不弹框盖住人。</div>
+      </div>
+      <button class="topic-new" id="topic-new" type="button"><i class="ri-add-line"></i> 开个新话题</button>
+      <button class="topic-hangout" id="topic-hangout" type="button">
+        <i class="ri-chat-smile-2-line"></i>
+        <span id="topicHangoutLabel"></span>
+      </button>
+      <div class="stack" id="topic-stack"></div>
+      <div id="chat-status"></div>
+      <div class="rail-foot">换一本 = 她转过去。回看这篇 = 本子铺满右边，她还在左边。</div>
+    </div>
+    <div class="journal" id="topic-journal">
+      <div class="journal-head">
+        <button class="back" id="journal-back" type="button"><i class="ri-arrow-left-s-line"></i> 回到话题架</button>
+        <div class="t" id="j-title"></div>
+        <div class="k" id="j-meta"></div>
+      </div>
+      <div class="j-log" id="j-log"></div>
+      <div class="j-foot">这是这篇的底稿。她正在说的那句，还在房间里人旁边。</div>
+    </div>
+    <div id="pane-chat" hidden></div>
+  </aside>
+</div>
+
+<div id="art-pop" hidden>
+  <div class="art-pop-card">
+    <div class="art-pop-h">
+      <b id="art-pop-title">产物</b>
+      <button type="button" id="art-pop-close" title="关掉"><i class="ri-close-line"></i></button>
+    </div>
+    <div id="art-pop-list"></div>
+  </div>
+</div>
+
+<div id="modal-mask">
+  <div id="modal">
+    <div id="modal-head">
+      <div class="micon"><i id="modal-icon" class="ri-macbook-line"></i></div>
+      <div>
+        <div class="title" id="modal-title">工作台</div>
+        <div class="desc" id="modal-desc"></div>
+      </div>
+      <button id="modal-close"><i class="ri-close-line"></i></button>
+    </div>
+    <div id="modal-tabs"></div>
+    <div id="modal-main">
+      <div id="dashView" class="theme-sepia"></div>
+    </div>
+  </div>
+</div>
+
+<script src="mode-transit.js?v=20260830b"></script>
+<script src="/static/dashboard-panels.js?v=20260826b"></script>
+<script src="/static/voice-mic.js?v=20260829a"></script>
+<script src="tool-cards.js?v=20260826r1"></script>
+<script src="listen-dock.js?v=20260826r11"></script>
+<script src="/static/session-runtime.js?v=20260829q2"></script>
+<script src="/static/chat-lightbox.js?v=20260829a"></script>
+<script src="topic-rail.js?v=20260828r17"></script>
+<script src="panels.js?v=20260830a"></script>
+<script src="/static/model-switch.js?v=20260826b"></script>
+<script src="/static/settings-pane.js?v=20260828a"></script>
+<!-- 成长档案 hub · 母体整包复用 (依赖 panels.js 的 $dashView / token / loadDashboard) -->
+<script defer src="/static/lib/chart.umd.min.js"></script>
+<script defer src="/static/lib/three/three.min.js"></script>
+<script defer src="/static/lib/three/OrbitControls.js"></script>
+<script src="/static/depot.js?v=20260830t"></script>
+<script src="companion.js?v=20260830r"></script>
+<!-- 0.9.6 装修区 · 官方永不覆盖 · 排在所有官方脚本之后 · 文件不存在时 404 可忽略 -->
+<link rel="stylesheet" href="/static/user/user.css?v=1">
+<script src="/static/user/user.js?v=2"></script>
+</body>
+</html>

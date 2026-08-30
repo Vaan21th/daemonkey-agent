@@ -1107,6 +1107,18 @@ def _care_save(d: dict) -> None:
         pass
 
 
+def peek_care_signal(message: str) -> str:
+    """只看有没有身体/情绪信号 · 不写盘。技术话里的假信号当没有。"""
+    msg = (message or "").strip()
+    if len(msg) < 2:
+        return ""
+    low = msg.lower()
+    hit = next((s for s in _CARE_SIGNALS if (s in msg) or (s in low)), None)
+    if hit and _is_tech_noise(msg, low):
+        return ""
+    return hit or ""
+
+
 def note_care_signals(message: str) -> None:
     """每轮跑一遍(便宜)· BRO 提到身体/情绪/大生活节点 → 记一个"待回访候选"。
 

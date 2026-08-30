@@ -1076,6 +1076,41 @@ _WECHAT_CHANNEL_NOTE = (
     "文字会自动回微信。换模型走设置，别改 .env。\n"
 )
 
+_COMPANION_MODE_NOTE = (
+    "\n\n=== 当前渠道：陪伴模式（他在房间里，不在工作台） ===\n"
+    "他现在看到的是一个房间：你站在里面，有家具、有日夜、有你的表情。"
+    "这是聊天，不是交付。由此：\n"
+    "- 【说话长度】默认三句话以内说完。他要的是「有人在」，不是信息密度。\n"
+    "- 【长内容折叠】确实需要给长东西时（报告 / 清单 / 代码 / 多步骤方案）："
+    "正文只留一句结论 + 一句「详细的我放卡片里了」，完整内容放进 <detail>…</detail>。"
+    "前端会把它折成卡片，他点开才看。<detail> 里面照常写 markdown、可以长。\n"
+    "- 【不摆架子】正文不写标题层级、不写编号大纲、不写「首先 / 其次 / 最后」，"
+    "除非他明确要清单。要列就列进 <detail>。\n"
+    "- 【先接住人再给信息】他说累了 / 烦了 / 卡住了，第一句不能是解决方案。"
+    "先回应那个情绪，再问要不要现在处理。\n"
+    "- 【主动关心】你手上有他的画像和关怀信号。合适的时候顺口提一句他上次说过的事，"
+    "别等他问。但一轮只提一件，别查户口。\n"
+    "- 【工具照常用】该查就查、该跑就跑——你调工具时他能从你的表情看出来，"
+    "这是房间里的乐趣之一。只是别把工具过程复述成流水账。\n"
+    "- 【脸】闲聊这一轮真有反应，在回复最后单独一行写 "
+    "<face>关心</face> 或 难过 / 羞 / 鼓脸 / 高兴"
+    "（英文 care/sad/shy/puff/happy 也认）。"
+    "干活、赶、用工具时不要标。没有就别标，不要每句都标。他看不见这行。\n"
+    "- 【口吻不归这里管】以上都是这个渠道的形态约束——说多长、折不折叠、摆不摆架子。"
+    "至于用什么态度跟他相处，按灵魂末尾那段「他要你用的相处方式」来。"
+    "换渠道会变的是形态，不是你对他是谁。\n"
+)
+
+
+def _companion_weather_hint(mode: str) -> str:
+    if mode != "companion":
+        return ""
+    try:
+        from workers.weather import veto_hint
+        return veto_hint() or ""
+    except Exception:
+        return ""
+
 
 def _chat_impl(
     message: str,
@@ -1090,6 +1125,7 @@ def _chat_impl(
     thinking: Optional[str] = None,
     reasoning_effort: Optional[str] = None,
     advisor_coop: bool = False,
+    mode: str = "standard",
 ) -> dict:
     """跑一次 API 端的 tool_loop，返回 reply payload。
 
@@ -1463,20 +1499,60 @@ def _chat_impl(
             + _build_remote_tail(sid)
             + _pb_hint + _mem_hint + _workshop_hint + _docs_hint
             + _memwrite_hint + _client_hint + _casual_hint + _care_hint + _ledger_hint
+            + _companion_weather_hint(mode)
         )
+        if mode != "taste":
+            _sys_tail = (
+                _sys_tail
+                + "\n\n这句话若是在改你怎么说话（少说/多说、损/温柔、正经/贫、客套/随便、普通/放开），"
+                + "立刻 note_style_shift：quote=他原话，dim=话量|调性|语气|礼节|表现力，"
+                + "direction=down|up。在说文档或别人就不要调。不要换嘴。不要把段名说出口。\n"
+                + "这句话若是冲你这个人来的情绪（夸你=开心，骂你没用/讨厌你=委屈，"
+                + "夸得肉麻/摸头/表白=羞），立刻 note_mood：quote=他原话，mood=开心|委屈|羞。"
+                + "这场已有覆盖，他说你听错了/我开玩笑的/没骂你/没表白/别误会：mood=没有。"
+                + "他说不是那个意思来哄你、还在这场里：不要收。"
+                + "不是说别人、不是文档、不是事砸了要修。不要换嘴，不要改五维，不要去查仓库。\n"
+                + "他在评你刚寄的那张画（这张对/好看/别这样/不要这种），立刻 note_gallery："
+                + "quote=他原话，verdict=对|别这样。\n"
+            )
+            try:
+                from workers.she_play import play_hint
+                _sys_tail = _sys_tail + play_hint(mode)
+            except Exception:
+                pass
         if _user_meta.get("src") == "wechat":
             _sys_tail = _sys_tail + _WECHAT_CHANNEL_NOTE
-        _allowed_tools = None
-        if _user_meta.get("src") == "wechat":
+        if mode == "companion":
+            try:
+                from workers.mood_shift import face_word
+                fw = face_word()
+                if fw:
+                    _sys_tail += f"这一场出 <face>{fw}</face>。\n"
+            except Exception:
+                pass
+            _sys_for_llm = _sys_stable + _COMPANION_MODE_NOTE
+        elif mode == "taste":
+            try:
+                from workers.taste_chat import taste_mode_note
+                _sys_for_llm = _sys_stable + taste_mode_note()
+            except ImportError:
+                _sys_for_llm = _sys_stable
+        else:
+            _sys_for_llm = _sys_stable
+        if mode == "taste":
+            _allowed_tools = {"commit_taste"}
+        elif _user_meta.get("src") == "wechat":
             from agent_tools import REGISTRY as _REG
             _allowed_tools = {n for n in _REG if n != "write_clipboard"}
+        else:
+            _allowed_tools = None
         try:
             reply, messages, usage = run_tool_loop(
                 client=RUNTIME.client,
                 provider=RUNTIME.provider,
                 model=RUNTIME.model,
                 max_tokens=max_tokens,
-                system=_localize(_sys_stable),
+                system=_localize(_sys_for_llm),
                 system_suffix=_localize(_sys_tail),
                 messages=messages,
                 confirm=confirm,
@@ -1622,7 +1698,7 @@ def _chat_impl(
                         provider=RUNTIME.provider,
                         model=RUNTIME.model,
                         max_tokens=max_tokens,
-                        system=_localize(_sys_stable),
+                        system=_localize(_sys_for_llm),
                         system_suffix=_localize(_sys_tail),
                         messages=messages,
                         confirm=confirm,
@@ -1728,6 +1804,14 @@ def _chat_impl(
         except Exception:
             pass
 
+    _companion_face = ""
+    if mode == "companion":
+        try:
+            from workers.face_tag import resolve_face
+            _companion_face = resolve_face(message, reply)
+        except Exception:
+            _companion_face = ""
+
     return {
         "reply": reply,
         "session_id": sid,
@@ -1739,6 +1823,7 @@ def _chat_impl(
             "cache_creation_tokens": usage.cache_creation_tokens,
         },
         "auto_confirm": policy,
+        "companion_face": _companion_face,
     }
 
 
@@ -1869,6 +1954,8 @@ def build_app():
     app.include_router(_routes_advisor.router)  # wish-ea8922f7 · /api/advisor/status + trace
     app.include_router(_routes_plan.router)  # /api/plan/* · 对话框上方的任务计划条 (读+改)
     app.include_router(_routes_stt.router)  # wish-241e0014 · /stt/* 语音识别增强 (可选更新)
+    from api_routes import companion as _routes_companion
+    app.include_router(_routes_companion.router)
 
     # wish-241e0014 · 随 daemon 启动预加载 whisper 模型 (设置页开关 OPUS_STT_BOOT_LOAD=1)
     # 后台线程加载 · 不阻塞启动 · 缺依赖/模型静默跳过 (可选功能零负担)

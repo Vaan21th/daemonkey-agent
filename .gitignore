@@ -13,6 +13,7 @@ soul/IDENTITY.json
 soul/onboarding.json
 # 用户画像 —— 每个用户的私人内容·首次相遇由 _ensure_data 自动重建空模板·不入库
 soul/OWNER-NOTEBOOK.md
+soul/SHE-STATE.md
 # 实例宪法 —— 实例私有·从使用中沉淀(通用三条在 product_constitution.py·内核共享)·不入库
 soul/CONSTITUTION.md
 
@@ -53,3 +54,7 @@ __pycache__/
 # 构建产物 (Mac/Windows 包·release 附件分发·不进 git)
 /dist/
 /*.dmg
+
+desktop_pet/confirm.txt
+
+desktop_pet/bubble.txt

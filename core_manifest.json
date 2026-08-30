@@ -103,6 +103,7 @@
       "api_routes/governance.py",
       "api_routes/models.py",
       "api_routes/dashboard.py",
+      "api_routes/companion.py",
       "opus_daemon.py"
     ],
     "provider机制(provider_configs 是配置面板后端机制代码·KEY 真值在 data/provider_configs.json[L3·never_sync·.gitignore]·本清单只同步代码永不碰 KEY)": [
@@ -119,11 +120,28 @@
       "static/clients.js",
       "static/workshop.js",
       "static/chat.html",
+      "static/favicon.ico",
+      "static/favicon.png",
       "static/chat.css",
       "static/workshop.css",
       "static/user/EXAMPLES.js",
       "static/lib/three/three.min.js",
-      "static/lib/three/OrbitControls.js"
+      "static/lib/three/OrbitControls.js",
+      "static/session-runtime.js",
+      "static/dashboard-panels.js",
+      "static/voice-mic.js",
+      "static/model-switch.js",
+      "static/settings-pane.js",
+      "static/chat-lightbox.js",
+      "static/companion/companion.js",
+      "static/companion/topic-rail.js",
+      "static/companion/panels.js",
+      "static/companion/index.html",
+      "static/companion/companion.css",
+      "static/companion/listen-dock.js",
+      "static/companion/tool-cards.js",
+      "static/companion/mode-transit.js",
+      "static/companion/assets/daimon-face.png"
     ],
     "记忆系统(L1·通用基础能力·跨会话检索/自动注入/收尾闭环。cognition_loader 是画像/OPUS日记的数据源·卷·2026-07-12 画像查看器重构[时间序章节取尾部=最新·加'最近记了什么'时间线·profile 时间戳动态化]需随内核下发·只读 soul/data[never_sync]不碰用户数据。0.9.6 纳入 add_iron_rule/list_iron_rules:用户说「以后回话别用 emoji」「周报每周五给我」这类持久偏好·当场答应等于没答应[重启就忘]·这两个工具把它固化进 data/cognition/daemon_rules.md[L3·never_sync·soul_loader 以最高优先级拼在 prompt 最前]。原先两工具照母体现状写死[缺文件报错 + 找不到母体历史 anchor 报错]·对新装实例整条路是焊死的·0.9.6 改成缺文件自动建/缺 anchor 追加末尾/cite_volume 默认留空)": [
       "workers/memory_index.py",
@@ -197,8 +215,27 @@
       "workers/info_radar.py",
       "agent_tools/manage_info_source.py"
     ],
+    "陪伴房间情感(L1·天气账本+画廊回声+听懂情绪/换挡+相处质感。companion.py 已白名单。数据在 data/runtime 与 soul[L3 never_sync]·本组只同步机制)": [
+      "workers/weather.py",
+      "workers/she_gallery.py",
+      "workers/she_gallery_gate.py",
+      "workers/she_gallery_feedback.py",
+      "workers/she_gallery_bond.py",
+      "workers/mood_shift.py",
+      "workers/style_shift.py",
+      "workers/taste_chat.py",
+      "workers/bond_ledger.py",
+      "workers/face_tag.py",
+      "workers/she_play.py",
+      "agent_tools/note_gallery.py",
+      "agent_tools/note_mood.py",
+      "agent_tools/note_style_shift.py",
+      "agent_tools/commit_taste.py",
+      "agent_tools/invite_play.py"
+    ],
     "主动关怀与情感回访(L1·情感内核·proactive scheduler[已在核心循环]每节拍调 proactive_call.tick·跑防骚扰门控[静默时段/每天上限/最小间隔/同类去重/随机性]。care 信号来自 closure_check[已白名单·情感轨]·成熟后到点主动一句慰问·经 ilink_client 推到微信[配了才发·没配 no-op]。rituals=月度复盘等节律;dynamic_telemetry=距上次多久/上次聊啥[也供 daemon_api telemetry]。注入文案作 message 走不到 system 那道 localize·已在 proactive_call 显式过 localize_narration 去母体化[母体测不出的Daemonkey漏点在此堵死]。用户的 proactive 台账/偏好在 data/runtime[never_sync]·永不覆盖)": [
       "workers/proactive_call.py",
+      "workers/care_desk.py",
       "workers/rituals.py",
       "workers/dynamic_telemetry.py",
       "workers/ilink_client.py",
@@ -237,6 +274,7 @@
     "桌宠(L1·情绪通道实体化·桌面宠物本体+动作绑定+表情映射·通知气泡[干完了/等你拍板]随内核下发即生效。pet.py import activities+expressions·三件套必须同批同步防 import 断裂。sprites 默认美术资源随发布包全量下发不进白名单[避免覆盖用户自定义皮肤]·本批更新纯代码未动美术;notify.jsonl/state.txt/position.txt 是运行时状态·never_sync)": [
       "desktop_pet/pet.py",
       "desktop_pet/activities.py",
+      "desktop_pet/pet_notes.py",
       "desktop_pet/expressions.py"
     ],
     "内核自升级机制(L1·含升级保护层全套·三层缺一不可。A 备份[core_update 侧·必须在 checkout 之前抓·放到之后存下来的就是官方版·合并功能整条哑火] + B 合并[merge_user_override 读备份/看对比/写回] + C 接管[kernel_takeover 事前声明「这文件归我管」·官方版根本不进 checkout 参数表]。只有 A 没有 B = 备份躺在 data/runtime/user_overrides/ 但用户无法合并回来·0.8.5 承诺的「合并我的改动」对增量升级老用户成空头。零外部依赖[stdlib + 本包]·pkgutil 自动发现下发即激活。0.9.6 加第 0 层 D 基线指纹[core_fingerprint + core_fingerprints.json]:A/B/C 三层全都建立在「认得出哪些文件用户改过」之上·而原本这件事靠 git status —— 它只看工作区 vs 最后一次 commit·任何一次 commit[daemon 自己 checkpoint / 用户手动落袋 / 别的工具] 都让它变干净·下次升级就认为用户没改过·静默覆盖·改动只剩在 git 历史里而用户不一定懂 git。指纹比的是【实际内容 vs 官方内容】·跟 commit 几次无关。基线由发布链对纯净版 transform 后的内容生成[必须是用户实际拿到的那份·拿母体原文算=用户一装上满屏「你改过」]·随 update_core 一起更新所以基线自动前进。hash 归一化换行[防 git autocrlf 在 Windows 上把全部文件误判成改过]。老用户第一次升上来时本机还没基线·那次仍走 git status 兜底·之后各次才享受完整保护。0.9.6 另加救援 E[override_rescue + merge_user_override rescue/rescue_apply]:0.8.4~0.9.5 那段时期备份跑在覆盖之后·存下来的是官方版·用户真改动一个都没进备份[那时说「合并我的改动」只会得到「两边一致」]。但同流程的 checkpoint 是在覆盖之前做的·真东西一直在那条 commit 里 —— rescue 按文件取最晚一次 checkpoint 的内容捞出来写回备份区·之后正常走合并。已用「修复前那一版真实现」造真现场端到端验过[母体自己从不 update_core·历史里一条 update_core 存档都没有·在母体上跑 rescue 永远返回『没东西可捞』·那句话什么都证明不了])": [
@@ -277,6 +315,14 @@
       "assets/launcher.html",
       "assets/guard-panel.html",
       "assets/daemonkey.ico",
+      "assets/skins/daimon/bg.png",
+      "assets/skins/daimon/splash.png",
+      "assets/skins/daimon/icon.ico",
+      "assets/skins/daimon/face.png",
+      "assets/skins/classic/bg.jpg",
+      "assets/skins/classic/splash.png",
+      "assets/skins/classic/icon.ico",
+      "assets/skins/classic/face.png",
       "assets/webview2/Microsoft.Web.WebView2.Core.dll",
       "assets/webview2/Microsoft.Web.WebView2.WinForms.dll",
       "assets/webview2/WebView2Loader.dll",

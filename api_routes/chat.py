@@ -52,6 +52,7 @@ async def chat(
     _thinking = payload.get("thinking") or None            # 卷七十五续五 · 模型行为
     _reasoning_effort = payload.get("reasoning_effort") or None
     _advisor_coop = bool(payload.get("advisor_coop"))      # wish-0e749752 · 顾问协同模式
+    _mode = str(payload.get("mode") or "standard")
 
     # 卷四十六 III 补丁 5 · Y7 · audit log
     _audit_start = time.monotonic()
@@ -70,6 +71,7 @@ async def chat(
             thinking=_thinking,
             reasoning_effort=_reasoning_effort,
             advisor_coop=_advisor_coop,
+            mode=_mode,
         )
         _audit_result_sid = result.get("session_id", "") if isinstance(result, dict) else ""
     except ValueError as e:
@@ -124,6 +126,7 @@ async def chat_stream(
     _thinking = payload.get("thinking") or None            # 卷七十五续五 · 模型行为
     _reasoning_effort = payload.get("reasoning_effort") or None
     _advisor_coop = bool(payload.get("advisor_coop"))      # wish-0e749752 · 顾问协同模式
+    _mode = str(payload.get("mode") or "standard")
 
     if not message or not message.strip():
         raise HTTPException(400, "message is required and cannot be empty")
@@ -168,6 +171,7 @@ async def chat_stream(
                 thinking=_thinking,
                 reasoning_effort=_reasoning_effort,
                 advisor_coop=_advisor_coop,
+                mode=_mode,
             )
             push_event("done", result)
         except ValueError as e:
