@@ -110,6 +110,7 @@
   }
   .toggle.on { background: var(--accent); }
   .toggle.on::after { transform: translateX(19px); }
+  .row .btn { flex: 0 0 auto; width: 76px; height: 28px; }
 
   /* ── 事件区 (原型 pv-events) ── */
   .events { flex: 1; min-height: 0; padding: 10px 0 6px; overflow: hidden; }
@@ -190,6 +191,12 @@
       <div class="hint">daemon 异常退出后 90 秒自动恢复</div>
     </div>
     <div class="toggle" id="toggle"></div>
+  </div>
+  <div class="row">
+    <div class="lbl">桌宠
+      <div class="hint">小房间关了从这里再开</div>
+    </div>
+    <button class="btn btn-ghost" id="btnPet">打开</button>
   </div>
 
   <!-- 事件 -->
@@ -278,6 +285,7 @@ document.getElementById('toggle').addEventListener('click', function () {
   send('toggle', { on: on });
 });
 document.getElementById('btnOpen').addEventListener('click', function () { send('open'); });
+document.getElementById('btnPet').addEventListener('click', function () { send('pet'); });
 document.getElementById('btnRestart').addEventListener('click', function () { send('restart'); });
 document.getElementById('btnStop').addEventListener('click', function () { send('stop'); });
 </script>

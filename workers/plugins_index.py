@@ -159,22 +159,13 @@ _TRANSLATE_PROMPT = """请把下面 {n} 条 OPUS 工具描述从英文翻译成�
 
 
 def _get_translator():
-    """构造翻译用 client · 复用 OPUS_BASE_URL/API_KEY · 默认用 deepseek-chat"""
+    """跟雷达翻译同一条通道 · 不再写死 deepseek-chat。"""
     try:
-        import openai
-    except ImportError:
-        return None, None
-    base_url = (os.environ.get("OPUS_BASE_URL") or "").strip()
-    api_key = (os.environ.get("OPUS_API_KEY") or "").strip()
-    model = (os.environ.get("OPUS_TRANSLATOR_MODEL") or "deepseek-chat").strip()
-    if not base_url or not api_key:
-        return None, None
-    try:
-        client = openai.OpenAI(base_url=base_url, api_key=api_key)
+        from workers.translator import _get_translator_client
+        return _get_translator_client()
     except Exception as e:
         logger.warning("plugins translator client 起不来: %s", e)
         return None, None
-    return client, model
 
 
 def _translate_descriptions(tasks: list[tuple[str, str]]) -> dict[str, str]:

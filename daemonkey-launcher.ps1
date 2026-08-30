@@ -715,6 +715,26 @@ function Start-DesktopPet {
     }
 }
 
+function Open-DesktopPet {
+    $existing = Get-PetProcessInfo
+    if ($existing) {
+        Add-Log "桌宠已在跑 (pid=$($existing.Pid))" 'info'
+        try { Add-GuardEvent '桌宠已在跑' 'ok' } catch {}
+        Write-GuardCue 'open'
+        return $existing.Process
+    }
+    $p = Start-DesktopPet
+    if ($p -and -not $p.HasExited) {
+        Add-Log "桌宠已打开 (pid=$($p.Id))" 'ok'
+        try { Add-GuardEvent '桌宠已打开' 'ok' } catch {}
+        Write-GuardCue 'open'
+        return $p
+    }
+    Add-Log '桌宠没起来 · 看 _pet.err' 'warn'
+    try { Add-GuardEvent '桌宠没起来' 'err' } catch {}
+    return $null
+}
+
 # 三选一对话框 · 返回 'restart' / 'keep' / 'cancel'
 function Show-RestartChoice {
     param([string]$Name, [int]$Pid_, [int]$AgeMin)
@@ -1136,6 +1156,7 @@ $script:trayEvtOpen = $null
 $script:trayEvtAuto = $null
 $script:trayEvtRestart = $null
 $script:trayEvtQuit = $null
+$script:trayEvtPet = $null
 $script:trayEvtMenuOpening = $null
 $script:trayEvtFormClosed = $null
 # 崩溃自启状态容器 (面板已删 · 用不可见 CheckBox 承载 .Checked · 蟹子代码引用它)
@@ -1187,6 +1208,9 @@ if (Test-Path $icoFile) {
         $mOpen.Add_Click({
             if ($script:OnTrayOpen) { & $script:OnTrayOpen }
         })
+        $script:trayEvtPet = { Open-DesktopPet }
+        $mPet = New-Object System.Windows.Forms.ToolStripMenuItem('打开桌宠')
+        $mPet.Add_Click($script:trayEvtPet)
         $mAuto = New-Object System.Windows.Forms.ToolStripMenuItem('崩溃自动拉起')
         $mAuto.CheckOnClick = $true
         $mAuto.Add_Click($script:trayEvtAuto)
@@ -1195,12 +1219,13 @@ if (Test-Path $icoFile) {
         $mQuit = New-Object System.Windows.Forms.ToolStripMenuItem('退出守护')
         $mQuit.Add_Click($script:trayEvtQuit)
         [void]$script:trayMenu.Items.Add($mOpen)
+        [void]$script:trayMenu.Items.Add($mPet)
         [void]$script:trayMenu.Items.Add($mAuto)
         [void]$script:trayMenu.Items.Add($mRestart)
         [void]$script:trayMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
         [void]$script:trayMenu.Items.Add($mQuit)
         # 菜单项也存 script 强引用 (防 GC 吃菜单项)
-        $script:trayMenuItems = @($mOpen, $mAuto, $mRestart, $mQuit)
+        $script:trayMenuItems = @($mOpen, $mPet, $mAuto, $mRestart, $mQuit)
         $script:trayIcon.ContextMenuStrip = $script:trayMenu
         # 菜单打开时同步自启开关状态 (命名委托)
         $script:trayEvtMenuOpening = {
@@ -1669,6 +1694,7 @@ function New-GuardPanel {
                         $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
                         $form.BringToFront()
                     }
+                    'pet' { Open-DesktopPet }
                     'restart' { Invoke-StartButton }
                     'stop' {
                         $port = 7860
@@ -3173,6 +3199,7 @@ if ($env:DK_PREVIEW_GUARD -eq '1') {
 [GC]::KeepAlive($script:trayMenu)
 [GC]::KeepAlive($script:trayIcoObj)
 [GC]::KeepAlive($script:trayMenuItems)
+[GC]::KeepAlive($script:trayEvtPet)
 
 # ═══════════════════════════════════════════════════════════════════
 # 2026-08-15 · 主界面 HTML 化 (覆盖式 Overlay · 月光操作台)

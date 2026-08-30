@@ -34,6 +34,7 @@
     --accent: #C98A4B;
     --accent-hi: #E8A862;
     --accent-glow: rgba(201,138,75,0.35);
+    --toggle-off: #C4B49A;
     --moon: #e8ecf6;
     --ok: #3ddc84;
     --warn: #f5b942;
@@ -60,6 +61,7 @@
     --accent: #7c6cf0;
     --accent-hi: #9a8df7;
     --accent-glow: rgba(124,108,240,0.45);
+    --toggle-off: #4a5168;
   }
   body.skin-daimon {
     --deep: #FDFBF6;
@@ -74,6 +76,7 @@
     --accent: #C98A4B;
     --accent-hi: #E8A862;
     --accent-glow: rgba(201,138,75,0.35);
+    --toggle-off: #C4B49A;
   }
   body.skin-daimon .titlebar { background: linear-gradient(180deg, rgba(253,251,246,0.94), rgba(253,251,246,0.6)); }
   body.skin-daimon .lg-brand {
@@ -159,8 +162,8 @@
   .opt-row { display: flex; align-items: center; justify-content: space-between; padding: 7px 0; }
   .opt-row .lbl { font-size: 12px; }
   .opt-row .hint { font-size: 10px; color: var(--muted); margin-top: 1px; }
-  .toggle { width: 38px; height: 21px; border-radius: 99px; background: rgba(255,255,255,0.14); position: relative; cursor: pointer; flex-shrink: 0; }
-  .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px; border-radius: 50%; background: #fff; transition: transform .15s ease; }
+  .toggle { width: 38px; height: 21px; border-radius: 99px; background: var(--toggle-off); position: relative; cursor: pointer; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(67,52,34,0.18); }
+  .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.22); transition: transform .15s ease; }
   .toggle.on { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
   .toggle.on::after { transform: translateX(17px); }
   .lg-port { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 11.5px; color: var(--muted); }

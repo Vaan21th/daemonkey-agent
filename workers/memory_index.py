@@ -120,6 +120,8 @@ def _tokenize_for_query(query: str) -> str:
     # M5 (wish-6ff9d89b) · 超长 query 防御: >500 字截断 (防 jieba 切 5000 字全丢成空 / 烧时间)
     if len(query) > 500:
         query = query[:500]
+    # [ ] { } 不是我们开放的 FTS5 语法 · 日志行 / wish-id 带方括号会 syntax error 退化 LIKE
+    query = query.replace("[", " ").replace("]", " ").replace("{", " ").replace("}", " ")
     # C1 · 显式 FTS5 语法检测: 引号短语 / 大写操作符 / 前缀* / 括号分组 / 排除-
     # wish-0d021aea · 操作符检测只认大写 (AND|OR|NOT|NEAR) ·
     #   根因: 英文普通句 "I like X and Y" 里的小写 "and" 被 IGNORECASE 误判为 FTS5 操作符
@@ -176,6 +178,7 @@ def _tokenize_for_query(query: str) -> str:
         # 注意: 这是"尽力召回"兜底 · 停用词仍留在 _QUERY_STOPWORDS 正常路径过滤·
         # 只有 query 全是停用词时才走到这 (正常查询不受影响)。
         fallback = [w.strip() for w in jieba.cut_for_search(query) if w and w.strip()]
+        fallback = [w for w in fallback if _FTS5_SAFE_RE.match(w)]
         fallback = list(dict.fromkeys(fallback))  # 去重保序
         if fallback:
             return " OR ".join(fallback)

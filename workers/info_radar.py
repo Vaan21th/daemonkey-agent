@@ -65,6 +65,13 @@ USER_AGENT = "Daemonkey-Radar/0.2 (Studio - BRO + OPUS)"
 # HTTP header 必须 ASCII · 中文中点会触发 httpx urllib3 的 'ascii' codec can't encode
 DEFAULT_TIMEOUT = 15.0
 DEFAULT_MAX_ITEMS_PER_SOURCE = 15
+# 雷达永远直连 · 这几个大陆常不通 · 短超时别拖整轮，也不当硬错误刷屏
+_DIRECT_SLOW_HOSTS = (
+    "hnrss.org",
+    "news.ycombinator.com",
+    "huggingface.co",
+    "www.indiehackers.com",
+)
 
 logger = logging.getLogger("opus.radar")
 
@@ -824,6 +831,24 @@ def update_source(source_id: str, **changes) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _host_of(url: str) -> str:
+    try:
+        from urllib.parse import urlparse
+        return (urlparse(url).hostname or "").lower()
+    except Exception:
+        return ""
+
+
+def _fetch_timeout(url: str) -> float:
+    host = _host_of(url)
+    if not host:
+        return DEFAULT_TIMEOUT
+    for h in _DIRECT_SLOW_HOSTS:
+        if host == h or host.endswith("." + h):
+            return 5.0
+    return DEFAULT_TIMEOUT
+
+
 def _fetch(url: str) -> Optional[str]:
     """抓单个 URL · 失败返回 None · **绝不抛异常**
 
@@ -838,16 +863,20 @@ def _fetch(url: str) -> Optional[str]:
        arxiv/GitHub/TheDecoder 海外源实测 200 · 只有 HN 这类被墙死的需代理。
        雷达是后台定时任务 · 不能依赖 Clash GUI 活着 → 抓取层永远直连。
     """
+    timeout = _fetch_timeout(url)
     try:
         import urllib.request
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         opener.addheaders = [("User-Agent", USER_AGENT)]
-        with opener.open(url, timeout=DEFAULT_TIMEOUT) as r:
+        with opener.open(url, timeout=timeout) as r:
             if r.status == 200:
                 return r.read().decode("utf-8", errors="replace")
             logger.warning("%s returned %s", url, r.status)
     except Exception as e:
-        logger.warning("fetch %s failed: %s", url, e)
+        if timeout <= 5.0:
+            logger.info("fetch %s skipped (直连海外源常超时): %s", url, e)
+        else:
+            logger.warning("fetch %s failed: %s", url, e)
     return None
 
 
@@ -940,10 +969,73 @@ def _parse_rss_or_atom(
     return items
 
 
+_ALT_LINK_RE = re.compile(r'<link[^>]+rel=["\']alternate["\'][^>]*>', re.I)
+_HREF_RE = re.compile(r'href=["\']([^"\']+)["\']', re.I)
+_TYPE_RE = re.compile(r'type=["\']([^"\']+)["\']', re.I)
+_A_RE = re.compile(
+    r'<a[^>]+href=["\'](https?://[^"\']+|/[^\s"\']+)["\'][^>]*>(.*?)</a>',
+    re.I | re.S,
+)
+
+
+def _parse_html(html_text: str, source: dict) -> list[RadarItem]:
+    """静态 html 尽力抽条 · 动态站允许空，不再报 unknown type。"""
+    text = html_text or ""
+    head = text[:5000].lower()
+    if "<rss" in head or "<feed" in head or "xmlns:atom" in head:
+        return _parse_rss_or_atom(text, source)
+    from urllib.parse import urljoin
+    base = source.get("url") or ""
+    for tag in _ALT_LINK_RE.findall(text[:16000]):
+        typ = (_TYPE_RE.search(tag).group(1).lower() if _TYPE_RE.search(tag) else "")
+        if typ and not any(x in typ for x in ("rss", "atom", "xml")):
+            continue
+        href_m = _HREF_RE.search(tag)
+        if not href_m:
+            continue
+        raw = _fetch(urljoin(base, href_m.group(1)))
+        if raw:
+            items = _parse_rss_or_atom(raw, source)
+            if items:
+                return items
+    max_items = source.get("max_items", DEFAULT_MAX_ITEMS_PER_SOURCE)
+    fetched_at = datetime.now(timezone.utc).isoformat()
+    items: list[RadarItem] = []
+    seen: set[str] = set()
+    for m in _A_RE.finditer(text):
+        url = urljoin(base, m.group(1))
+        title = re.sub(r"<[^>]+>", " ", m.group(2) or "")
+        title = re.sub(r"\s+", " ", title).strip()
+        if len(title) < 8 or url in seen:
+            continue
+        if url.startswith("javascript:") or "#" in url.split("/")[-1] and len(title) < 12:
+            continue
+        seen.add(url)
+        items.append(
+            RadarItem(
+                title=title[:200],
+                url=url,
+                source=source["id"],
+                source_display=source.get("display", source["id"]),
+                category=source.get("category", "tech"),
+                summary="",
+                published_at="",
+                fetched_at=fetched_at,
+                domain=source.get("domain", _default_domain()),
+            )
+        )
+        if len(items) >= max_items:
+            break
+    if not items:
+        logger.info("html source %s · 没抽到条目（多半是动态页）", source.get("id"))
+    return items
+
+
 # 源类型注册表 · 加新 type 在这扩
 SOURCE_HANDLERS: dict[str, Callable[[str, dict], list[RadarItem]]] = {
     "rss": lambda xml_text, source: _parse_rss_or_atom(xml_text, source),
     "atom": lambda xml_text, source: _parse_rss_or_atom(xml_text, source),
+    "html": lambda html_text, source: _parse_html(html_text, source),
 }
 
 

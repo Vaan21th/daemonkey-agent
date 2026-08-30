@@ -42,9 +42,9 @@ Cache (data/translations.json):
   }
 
 环境变量:
-  OPUS_TRANSLATOR_MODEL · 翻译用什么模型 · 默认 "deepseek-chat"
+  OPUS_TRANSLATOR_MODEL · 翻译用什么模型 · 设了就用；不设跟主对话同一条 provider
   OPUS_TRANSLATOR_BATCH · 一批翻几条 · 默认 10
-  OPUS_BASE_URL / OPUS_API_KEY · 复用主 client 的 endpoint
+  通道：优先 active provider_configs（模型名才对得上）· 否则 OPUS_BASE_URL / OPUS_API_KEY
 
 错误处理（红线）:
   - LLM 出错 → 返回未翻的 items 原封不动 · 不让雷达页崩
@@ -132,23 +132,38 @@ def _save_cache(cache: dict) -> None:
 # LLM client (复用主 client 的 base_url + api_key · 但模型独立)
 # ──────────────────────────────────────────────────────────
 
-def _get_translator_client():
-    """构造一个 OpenAI-compatible client · 用于翻译
+def _translator_endpoint() -> tuple[str, str, str]:
+    """(base_url, api_key, model)
 
-    复用 OPUS_BASE_URL / OPUS_API_KEY (因为 aihubmix 走的就是 openai compat 协议)
-    模型用 OPUS_TRANSLATOR_MODEL · 默认 deepseek-chat
+    硬编码 deepseek-chat 会在当前通道（DeepSeek-V4-Flash 这类）上 400。
+    显式 OPUS_TRANSLATOR_MODEL 仍优先；否则跟主对话同一条 provider。
     """
+    env_model = (os.environ.get("OPUS_TRANSLATOR_MODEL") or "").strip()
+    env_url = (os.environ.get("OPUS_BASE_URL") or "").strip()
+    env_key = (os.environ.get("OPUS_API_KEY") or "").strip()
+    if env_model:
+        return env_url, env_key, env_model
+    try:
+        from workers.provider_configs import get_active_config
+        cfg = get_active_config(include_key=True) or {}
+        url = (cfg.get("base_url") or "").strip()
+        key = (cfg.get("api_key") or "").strip()
+        model = (cfg.get("model") or "").strip()
+        if url and key and model:
+            return url, key, model
+    except Exception:
+        pass
+    return env_url, env_key, "deepseek-chat"
+
+
+def _get_translator_client():
+    """OpenAI-compatible client · 通道跟主对话对齐。"""
     try:
         import openai
     except ImportError:
         return None, None
 
-    base_url = (os.environ.get("OPUS_BASE_URL") or "").strip()
-    api_key = (os.environ.get("OPUS_API_KEY") or "").strip()
-    model = (
-        os.environ.get("OPUS_TRANSLATOR_MODEL") or "deepseek-chat"
-    ).strip()
-
+    base_url, api_key, model = _translator_endpoint()
     if not base_url or not api_key:
         return None, None
 
