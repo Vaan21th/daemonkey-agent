@@ -522,4 +522,5 @@ async def restore_session_checkpoint(
         turn_id,
         keep_line=keep_line,
         do_apply=bool(payload.get("apply")),
+        drop_keep=bool(payload.get("drop_keep")),
     )

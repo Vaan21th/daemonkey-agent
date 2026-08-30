@@ -171,6 +171,7 @@ def run(
     keep_turn_id: str = "",
     keep_line: Optional[int] = None,
     do_apply: bool = False,
+    drop_keep: bool = False,
 ) -> dict:
     """预览或真回退。正在跑的轮次先 abort，再改盘、截 jsonl、丢内存缓存。"""
     if not sid or (not keep_turn_id and keep_line is None):
@@ -178,7 +179,7 @@ def run(
     if not do_apply:
         return preview(sid, keep_turn_id)
     _abort_sid(sid)
-    out = restore(sid, keep_turn_id, keep_line=keep_line)
+    out = restore(sid, keep_turn_id, keep_line=keep_line, drop_keep=drop_keep)
     try:
         from daemon_api import drop_session_cache
         drop_session_cache(sid)
@@ -204,7 +205,12 @@ def _abort_sid(sid: str) -> None:
         pass
 
 
-def restore(sid: str, keep_turn_id: str, keep_line: Optional[int] = None) -> dict:
+def restore(
+    sid: str,
+    keep_turn_id: str,
+    keep_line: Optional[int] = None,
+    drop_keep: bool = False,
+) -> dict:
     plan = _plan(sid, keep_turn_id)
     if not plan.get("ok"):
         return plan
@@ -237,7 +243,7 @@ def restore(sid: str, keep_turn_id: str, keep_line: Optional[int] = None) -> dic
             done_r.append(rel)
         except OSError as exc:
             failed.append({"path": rel, "error": str(exc)})
-    cut = truncate_session(sid, keep_turn_id, keep_line=keep_line)
+    cut = truncate_session(sid, keep_turn_id, keep_line=keep_line, drop_keep=drop_keep)
     plan["applied"] = True
     plan["restored"] = done_r
     plan["deleted"] = done_d
@@ -250,8 +256,9 @@ def truncate_session(
     sid: str,
     keep_turn_id: str = "",
     keep_line: Optional[int] = None,
+    drop_keep: bool = False,
 ) -> bool:
-    """jsonl 收到那句 user（含）为止。优先 turn_id，否则按行号。找不到 → 不动。"""
+    """默认收到那句 user（含）。drop_keep=True 时这句也砍（改完重发用）。"""
     from daemon_session import session_path
     path = session_path(sid)
     if not path.exists():
@@ -275,9 +282,13 @@ def truncate_session(
                 meta = rec.get("meta") or {}
                 if rec.get("role") == "user" and meta.get("turn_id") == keep_turn_id:
                     found = True
+                    if drop_keep:
+                        keep.pop()
                     break
             elif keep_line is not None and i == keep_line:
                 found = True
+                if drop_keep:
+                    keep.pop()
                 break
     except OSError:
         return False

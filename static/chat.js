@@ -5671,7 +5671,7 @@ async function _loadSessionHistory(sid, opts) {
             const _attS = _broAttachStrip(_uc);
             if (_attS.legacy.length || (t.attachments && t.attachments.length)) _uc = _attS.body || _uc;
             const _broB = addMsg('bro', _uc, null, t.ts, s.$container);
-            _attachCkpt(_broB, t.turn_id, t.line);
+            _attachCkpt(_broB, t.turn_id, t.line, _uc);
             _renderBroAttachments(_broB,
               (t.attachments && t.attachments.length)
                 ? t.attachments
@@ -6509,7 +6509,7 @@ async function _pollSession(state) {
           const _pAttS = _broAttachStrip(_pc);
           if (_pAttS.legacy.length || (t.attachments && t.attachments.length)) _pc = _pAttS.body || _pc;
           const _pBroB = addMsg('bro', _pc, null, t.ts, state.$container);
-          _attachCkpt(_pBroB, t.turn_id, t.line);
+          _attachCkpt(_pBroB, t.turn_id, t.line, _pc);
           _renderBroAttachments(_pBroB,
             (t.attachments && t.attachments.length)
               ? t.attachments
@@ -7151,10 +7151,20 @@ function addMsg(role, text, className, ts, target, opts) {
 }
 function addSys(text, target) { return addMsg('sys', text, null, null, target); }
 
-function _attachCkpt(el, turnId, line) {
+function _attachCkpt(el, turnId, line, text) {
   if (!el || !el.classList || !el.classList.contains('bro')) return;
   if (turnId) el.dataset.turnId = String(turnId);
   if (line === 0 || (line != null && line !== '')) el.dataset.line = String(line);
+  if (text != null) el.dataset.ckptText = String(text);
+  if (!el.dataset.boundCkptDbl) {
+    el.dataset.boundCkptDbl = '1';
+    el.title = (el.title || '') || '双击改这句再发';
+    el.addEventListener('dblclick', function(ev) {
+      if (ev.target.closest && ev.target.closest('.ckpt-btn,.ckpt-edit')) return;
+      ev.preventDefault();
+      _beginBroEdit(el);
+    });
+  }
   if (!el.dataset.turnId && el.dataset.line == null) return;
   if (el.querySelector('.ckpt-btn')) return;
   const btn = document.createElement('button');
@@ -7170,46 +7180,87 @@ function _attachCkpt(el, turnId, line) {
   el.appendChild(btn);
 }
 
-async function _restoreToTurn(el) {
-  const sid = sessionId;
-  if (!sid || !token) {
-    await opusAlert({ title: '回不去', message: '没有当前对话或还没填 token' });
-    return;
+function _broPlainText(el) {
+  if (el && el.dataset && el.dataset.ckptText != null && el.dataset.ckptText !== '') {
+    return el.dataset.ckptText;
   }
+  let t = '';
+  if (!el) return t;
+  for (let n = el.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType === 3) t += n.textContent;
+  }
+  return t;
+}
+
+function _beginBroEdit(el) {
+  if (!el || el.querySelector('.ckpt-edit')) return;
+  const cur = _broPlainText(el);
+  const editor = document.createElement('div');
+  editor.className = 'ckpt-edit';
+  const ta = document.createElement('textarea');
+  ta.value = cur;
+  ta.rows = Math.min(12, Math.max(3, String(cur).split('\n').length + 1));
+  const row = document.createElement('div');
+  row.className = 'ckpt-edit-row';
+  const ok = document.createElement('button');
+  ok.type = 'button';
+  ok.className = 'ckpt-edit-go';
+  ok.innerHTML = '<i class="ri-send-plane-line"></i> 从这儿重发';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'ckpt-edit-cancel';
+  cancel.textContent = '取消';
+  row.appendChild(cancel);
+  row.appendChild(ok);
+  editor.appendChild(ta);
+  editor.appendChild(row);
+  el.classList.add('ckpt-editing');
+  el.appendChild(editor);
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  function _quit() {
+    editor.remove();
+    el.classList.remove('ckpt-editing');
+  }
+  cancel.addEventListener('click', function(ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    _quit();
+  });
+  ok.addEventListener('click', function(ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const next = String(ta.value || '').trim();
+    if (!next) {
+      opusAlert({ title: '空的发不出去', message: '改完要有字。' });
+      return;
+    }
+    _quit();
+    _editResendFrom(el, next);
+  });
+  ta.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      _quit();
+    }
+  });
+}
+
+function _ckptIds(el) {
   const turnId = (el && el.dataset.turnId) || '';
   const line = el && el.dataset.line !== undefined && el.dataset.line !== ''
     ? Number(el.dataset.line) : null;
-  if (!turnId && (line == null || Number.isNaN(line))) {
-    await opusAlert({ title: '回不去', message: '这句没有检查点' });
-    return;
-  }
-  const headers = {
-    Authorization: 'Bearer ' + token,
-    'Content-Type': 'application/json',
-  };
-  const body = { apply: false };
-  if (turnId) body.turn_id = turnId;
-  if (line != null && !Number.isNaN(line)) body.line = line;
-  let plan;
-  try {
-    const r = await fetch('/sessions/' + encodeURIComponent(sid) + '/restore', {
-      method: 'POST', headers: headers, body: JSON.stringify(body),
-    });
-    plan = await r.json();
-    if (!r.ok || plan.ok === false) {
-      await opusAlert({ title: '预览失败', message: (plan && plan.error) || ('HTTP ' + r.status) });
-      return;
-    }
-  } catch (e) {
-    await opusAlert({ title: '预览失败', message: e.message || String(e) });
-    return;
-  }
-  const rest = plan.restore || [];
-  const del = plan.delete || [];
-  const skip = plan.skip || [];
-  let html = '<div>回到这句。后面的对话会砍掉。</div>';
-  if (!plan.has_snaps) {
-    html += '<div style="margin-top:8px;color:var(--dim)">这句之后没有文件快照（升级前的旧对话只有字能退）。文件保持现在这样。</div>';
+  return { turnId: turnId, line: (line == null || Number.isNaN(line)) ? null : line };
+}
+
+function _ckptFileHtml(plan, lead) {
+  const rest = (plan && plan.restore) || [];
+  const del = (plan && plan.delete) || [];
+  const skip = (plan && plan.skip) || [];
+  let html = '<div>' + lead + '</div>';
+  html += '<div style="margin-top:8px;color:var(--dim)">文件只退本会话用写文件/改文件碰过的。终端和手改还在。</div>';
+  if (!plan || !plan.has_snaps) {
+    html += '<div style="margin-top:8px;color:var(--dim)">这句没有文件快照（升级前的旧对话只有字能退）。</div>';
   } else {
     if (rest.length) {
       html += '<div style="margin-top:8px">写回：' + rest.map(function(x) { return escHtml(x.path); }).join('、') + '</div>';
@@ -7223,15 +7274,45 @@ async function _restoreToTurn(el) {
       }).join('、') + '</div>';
     }
   }
-  const ok = await opusConfirm({
-    title: '回到这句？',
-    message: { html: html },
-    okText: '回到这儿',
-    cancelText: '取消',
-    danger: true,
-    icon: '<i class="ri-arrow-go-back-line"></i>',
-  });
-  if (!ok) return;
+  return html;
+}
+
+async function _ckptPreview(el) {
+  const sid = sessionId;
+  const ids = _ckptIds(el);
+  if (!sid || !token) {
+    await opusAlert({ title: '回不去', message: '没有当前对话或还没填 token' });
+    return null;
+  }
+  if (!ids.turnId && ids.line == null) {
+    await opusAlert({ title: '回不去', message: '这句没有检查点' });
+    return null;
+  }
+  const headers = {
+    Authorization: 'Bearer ' + token,
+    'Content-Type': 'application/json',
+  };
+  const body = { apply: false };
+  if (ids.turnId) body.turn_id = ids.turnId;
+  if (ids.line != null) body.line = ids.line;
+  try {
+    const r = await fetch('/sessions/' + encodeURIComponent(sid) + '/restore', {
+      method: 'POST', headers: headers, body: JSON.stringify(body),
+    });
+    const plan = await r.json();
+    if (!r.ok || plan.ok === false) {
+      await opusAlert({ title: '预览失败', message: (plan && plan.error) || ('HTTP ' + r.status) });
+      return null;
+    }
+    return { sid: sid, headers: headers, body: body, plan: plan };
+  } catch (e) {
+    await opusAlert({ title: '预览失败', message: e.message || String(e) });
+    return null;
+  }
+}
+
+async function _ckptApply(ctx, dropKeep) {
+  const sid = ctx.sid;
   const s = (_sessions && _sessions[sid]) || (typeof activeSession === 'function' ? activeSession() : null);
   if (s && s.currentTurnId) {
     try {
@@ -7244,19 +7325,19 @@ async function _restoreToTurn(el) {
       try { s.currentAbortController.abort(); } catch (e) {}
     }
   }
-  body.apply = true;
+  const body = Object.assign({}, ctx.body, { apply: true, drop_keep: !!dropKeep });
   try {
     const r2 = await fetch('/sessions/' + encodeURIComponent(sid) + '/restore', {
-      method: 'POST', headers: headers, body: JSON.stringify(body),
+      method: 'POST', headers: ctx.headers, body: JSON.stringify(body),
     });
     const out = await r2.json();
     if (!r2.ok || out.ok === false) {
       await opusAlert({ title: '回退失败', message: (out && out.error) || ('HTTP ' + r2.status) });
-      return;
+      return null;
     }
   } catch (e) {
     await opusAlert({ title: '回退失败', message: e.message || String(e) });
-    return;
+    return null;
   }
   if (s && typeof _stopSessionPoll === 'function') {
     try { _stopSessionPoll(s); } catch (e) {}
@@ -7274,6 +7355,39 @@ async function _restoreToTurn(el) {
     showToolProgress(false);
   } catch (e) {}
   await _loadSessionHistory(sid, { full: true });
+  return true;
+}
+
+async function _restoreToTurn(el) {
+  const ctx = await _ckptPreview(el);
+  if (!ctx) return;
+  const ok = await opusConfirm({
+    title: '回到这句？',
+    message: { html: _ckptFileHtml(ctx.plan, '回到这句。后面的对话会砍掉。这句留下。') },
+    okText: '回到这儿',
+    cancelText: '取消',
+    danger: true,
+    icon: '<i class="ri-arrow-go-back-line"></i>',
+  });
+  if (!ok) return;
+  await _ckptApply(ctx, false);
+}
+
+async function _editResendFrom(el, text) {
+  const ctx = await _ckptPreview(el);
+  if (!ctx) return;
+  const ok = await opusConfirm({
+    title: '从这句重发？',
+    message: { html: _ckptFileHtml(ctx.plan, '用改过的字从这儿重发。这句和后面的对话会砍掉。') },
+    okText: '从这儿重发',
+    cancelText: '取消',
+    danger: true,
+    icon: '<i class="ri-send-plane-line"></i>',
+  });
+  if (!ok) return;
+  const applied = await _ckptApply(ctx, true);
+  if (!applied) return;
+  await send({ text: text, fromEdit: true });
 }
 
 function addStyleShiftNotice(text, target) {
@@ -7753,12 +7867,15 @@ function parseSseStream(buffer) {
 // wish-3fef4bc7 · 真并行多对话 UI · send 函数核心改造
 // 旧: 闭包局部变量 (assistantBubbles / sawAssistantText / 等) + 全局 currentAbortController
 // 新: 全部进 _sessions[mySid] · send 闭包绑定 state · 用户 切对话不影响 send 跑·send 后台继续写自己的 state
-async function send() {
-  const text = $input.value.trim();
-  if (!text && _attachments.length === 0) return;  // wish-4a6331b2 · 有附件时允许空文字
+async function send(opts) {
+  opts = opts || {};
+  const text = opts.fromEdit ? String(opts.text || '').trim() : $input.value.trim();
+  if (opts.fromEdit) {
+    if (!text) return;
+  } else if (!text && _attachments.length === 0) return;
 
   // 主题切换拦截 (wish-7b89146f)
-  if (interceptThemeCommand(text)) { $input.value = ''; $input.style.height = 'auto'; return; }
+  if (!opts.fromEdit && interceptThemeCommand(text)) { $input.value = ''; $input.style.height = 'auto'; return; }
   if (!token) {
     addSys('⚠ 还没填 token —— 点右上角 ⚙ 设置');
     openSettings();
@@ -7787,10 +7904,13 @@ async function send() {
   // 卷四十六续 3 · 用户 主动发消息 = 强制贴底 (期望看到自己刚发的话 · 且 reset"粘性底部")
   // wish-4a6331b2 · 图片附件显示在 用户 气泡里（直接插 img 不用 markdown——base64 太长会撑爆 md parser）
   // wish-4a6331b2 · 等所有附件异步读完再发
-  if (_attachmentPromises.length > 0) await Promise.all(_attachmentPromises);
-  _attachmentPromises.length = 0;
-  const _hasImgs = _attachments.length > 0;
-  addMsg('bro', text || '（图片）', null, new Date(), state.$container, { forceScroll: true });
+  if (!opts.fromEdit) {
+    if (_attachmentPromises.length > 0) await Promise.all(_attachmentPromises);
+    _attachmentPromises.length = 0;
+  }
+  const _hasImgs = !opts.fromEdit && _attachments.length > 0;
+  const _sentBro = addMsg('bro', text || '（图片）', null, new Date(), state.$container, { forceScroll: true });
+  if (_sentBro) _sentBro.dataset.ckptText = text || '';
   if (_hasImgs) {
     // wish-41ed72ef · 用户 气泡附件渲染：图片缩略图 + 文档卡片
     const _broBubble = state.$container ? state.$container.lastElementChild : null;
@@ -7826,9 +7946,11 @@ async function send() {
       _broBubble.appendChild(_attWrap);
     }
   }
-  $input.value = '';
-  $input.style.height = 'auto';
-  state.inputDraft = '';
+  if (!opts.fromEdit) {
+    $input.value = '';
+    $input.style.height = 'auto';
+    state.inputDraft = '';
+  }
   // clearAttachments() 移到 fetch 后面——payload 需要读 _attachments
 
   // 标 pending · 同步 visible UI
@@ -7904,7 +8026,7 @@ async function send() {
         message: text,
         session_id: reqSid,
         auto_confirm: autoConfirm,
-        attachments: _attachments.length > 0 ? _attachments.map(a => ({name: a.name, data_url: a.data_url})) : undefined,
+        attachments: (!opts.fromEdit && _attachments.length > 0) ? _attachments.map(a => ({name: a.name, data_url: a.data_url})) : undefined,
         advisor_coop: _advisorCoopOn() || undefined,   // wish-0e749752 · 顾问协同 toggle
         ...modelBehaviorPayload(),
       }),

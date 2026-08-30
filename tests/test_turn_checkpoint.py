@@ -126,3 +126,17 @@ def test_truncate_by_line_old_session(tmp_path, monkeypatch):
     assert lines[0]["content"] == "one"
     plan = tc.preview(sid, "")
     assert plan["has_snaps"] is False
+
+
+def test_drop_keep_cuts_the_edited_user_line(tmp_path, monkeypatch):
+    tc, sp = _boot(tmp_path, monkeypatch)
+    sid = "api-ckpt7"
+    _write_jsonl(sp(sid), [
+        {"role": "user", "content": "one", "meta": {"turn_id": "turn-a"}},
+        {"role": "assistant", "content": "a"},
+        {"role": "user", "content": "two", "meta": {"turn_id": "turn-b"}},
+        {"role": "assistant", "content": "b"},
+    ])
+    assert tc.truncate_session(sid, keep_turn_id="turn-b", drop_keep=True)
+    lines = [json.loads(x) for x in sp(sid).read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert [x["content"] for x in lines] == ["one", "a"]

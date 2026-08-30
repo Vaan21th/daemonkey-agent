@@ -363,6 +363,47 @@ header {
 @media (hover: none) {
   .ckpt-btn { display: flex; opacity: 0.5; }
 }
+.msg.bro.ckpt-editing > :not(.ckpt-edit) { display: none; }
+.ckpt-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+}
+.ckpt-edit textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  border: 0;
+  background: rgba(255, 255, 255, 0.14);
+  color: inherit;
+  font: inherit;
+  line-height: 1.45;
+  padding: 4px 0;
+  outline: none;
+}
+.ckpt-edit-row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.ckpt-edit-row button {
+  border: 0;
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.ckpt-edit-go {
+  background: var(--bg);
+  color: var(--text);
+}
+.ckpt-edit-go i { margin-right: 4px; }
+.ckpt-edit-cancel {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+}
 .msg.opus {
   /* 卷三十 · OPUS 输出常常是长 markdown（表格/列表/代码块）· 卡片化铺满
      · 替代旧的 align-self:flex-start + max-width:88%（右侧 12% 留白） */
