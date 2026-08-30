@@ -52,8 +52,23 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("_DOC_MIMES", "文档附件"),
         ("renderSettingsVision", "视觉模型设置 UI"),
     ],
+    "chat-md.js": [
+        ("function mdRender", "对话 Markdown 渲染"),
+        ("window.opusMdRender", "给工坊复用的 md 入口"),
+    ],
+    "chat-timeline.js": [
+        ("const TL_T2C", "工具时间线分类表"),
+        ("function renderToolTimeline", "历史回放时间线"),
+    ],
+    "chat-rail.js": [
+        ("function _ensureMsgRail", "提问轨道"),
+        ("_applyRailMagnet", "轨道磁性拉伸"),
+    ],
     "chat.html": [
         ('id="micBtn"', "语音输入按钮"),
+        ("chat-md.js", "Markdown 抽出"),
+        ("chat-timeline.js", "工具时间线抽出"),
+        ("chat-rail.js", "提问轨道抽出"),
         (".docx", "文档附件 accept 类型"),
     ],
     "chat.css": [

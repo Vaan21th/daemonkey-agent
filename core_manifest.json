@@ -117,6 +117,9 @@
       "workers/pricing.py"
     ],
     "核心前端机制(L1·机制层·非用户皮肤层。皮肤/主题由用户在 UI 里切换·选择存 localStorage 不落文件·所以同步这些结构文件不会丢用户选的主题。0.9.6 起前端装修有正式去处: static/user/user.js + user.css[never_sync·官方永不覆盖·排在所有官方资源之后加载→用户改动总能盖住默认]·API 是 window.Daemonkey[addDomain/addNavGroup/ready/pane/refresh/ctx]。本组只同步官方维护的 EXAMPLES.js[示例+API 说明·用户抄走用]·用户自己那两个文件官方碰不到。真要直接改内核前端文件 → 让用户走 kernel_takeover 接管·而不是任其被覆盖。卷·2026-07-12 拆单文件债:成长档案 hub[画像/日记/技能库] 抽到 depot.js·客户档案+用户运营抽到 clients.js·均在 chat.js 之前加载·零构建全局作用域共享·随内核下发保持母体/纯净版一致)": [
+      "static/chat-md.js",
+      "static/chat-timeline.js",
+      "static/chat-rail.js",
       "static/chat.js",
       "static/depot.js",
       "static/clients.js",
