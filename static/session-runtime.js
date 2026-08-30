@@ -13,6 +13,8 @@
   let activeSid = '';
   const CONTAINER_CLASS = 'session-msgs';
   const QUEUE_MAX = 8;
+  const LS_KEY = 'daemon_outbound_v1';
+  const ATT_DATA_MAX = 48 * 1024;
   let queuePainter = null;
   let drainHandler = null;
   let queueEditor = null;
@@ -61,7 +63,10 @@
 
   function getOrCreate(sid) {
     if (!sid) return null;
-    if (!sessions[sid]) sessions[sid] = newState(sid);
+    if (!sessions[sid]) {
+      sessions[sid] = newState(sid);
+      _hydrate(sessions[sid]);
+    }
     return sessions[sid];
   }
 
@@ -79,6 +84,8 @@
     delete sessions[oldSid];
     if (s.$container) s.$container.dataset.sid = newSid;
     if (activeSid === oldSid) activeSid = newSid;
+    _migrateStore(oldSid, newSid);
+    _persist(newSid);
     return true;
   }
 
@@ -157,20 +164,22 @@
     s.currentTurnId = null;
     s.pending = false;
     s.holdQueue = true;
+    _persist(sid);
   }
 
   function holdOutbound(sid) {
     const s = sid ? getOrCreate(sid) : null;
-    if (s) s.holdQueue = true;
+    if (s) { s.holdQueue = true; _persist(sid); }
   }
 
   function releaseOutbound(sid) {
     const s = get(sid);
-    if (s) s.holdQueue = false;
+    if (s) { s.holdQueue = false; _persist(sid); }
   }
 
   function queueOf(sid) {
-    const s = get(sid);
+    if (!sid) return [];
+    const s = getOrCreate(sid);
     return (s && s.outboundQueue) ? s.outboundQueue.slice() : [];
   }
 
@@ -178,6 +187,115 @@
     if (typeof queuePainter === 'function') {
       try { queuePainter(sid, queueOf(sid)); } catch (e) {}
     }
+  }
+
+  function _changed(sid) {
+    _persist(sid);
+    _emitQueue(sid);
+  }
+
+  function _loadAll() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      const o = raw ? JSON.parse(raw) : null;
+      return (o && typeof o === 'object' && !Array.isArray(o)) ? o : {};
+    } catch (e) { return {}; }
+  }
+
+  function _saveAll(all) {
+    const dump = JSON.stringify(all);
+    try {
+      localStorage.setItem(LS_KEY, dump);
+      return true;
+    } catch (e1) {
+      Object.keys(all).forEach(function (k) {
+        const b = all[k];
+        if (!b || !b.items) return;
+        b.items.forEach(function (it) {
+          (it.attachments || []).forEach(function (a) {
+            if (a && a.data_url && String(a.data_url).indexOf('data:') === 0) {
+              delete a.data_url;
+              a.lost = true;
+            }
+          });
+        });
+      });
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify(all));
+        return true;
+      } catch (e2) { return false; }
+    }
+  }
+
+  function _slimAtt(a) {
+    if (!a) return null;
+    const out = { name: a.name || '', type: a.type || '', mime: a.mime || '' };
+    if (a.path) out.path = String(a.path);
+    const url = String(a.url || '');
+    if (url && url.indexOf('data:') !== 0) out.url = url;
+    const du = String(a.data_url || '');
+    if (du && du.length <= ATT_DATA_MAX) out.data_url = du;
+    else if (du) out.lost = true;
+    if (a.lost) out.lost = true;
+    if (out.path && !out.url && !out.data_url) {
+      const base = String(out.path).replace(/\\/g, '/').split('/').pop();
+      if (base) out.url = '/attachments/' + encodeURIComponent(base);
+    }
+    if (!out.name && !out.data_url && !out.url && !out.path) return null;
+    return out;
+  }
+
+  function _slimItem(it) {
+    if (!it) return null;
+    const atts = (it.attachments || []).map(_slimAtt).filter(Boolean);
+    const text = (it.text != null) ? String(it.text) : '';
+    if (!text && !atts.length) return null;
+    return { id: it.id || '', text: text, attachments: atts };
+  }
+
+  function _snapshot(s) {
+    const items = (s.outboundQueue || []).map(_slimItem).filter(Boolean);
+    if (s.queueEdit && s.queueEdit.item) {
+      const parked = _slimItem(s.queueEdit.item);
+      if (parked) {
+        const dest = Math.max(0, Math.min(items.length, Number(s.queueEdit.index) || 0));
+        items.splice(dest, 0, parked);
+      }
+    }
+    return { items: items, hold: !!s.holdQueue };
+  }
+
+  function _persist(sid) {
+    if (!sid) return;
+    const s = get(sid);
+    const all = _loadAll();
+    if (!s) {
+      delete all[sid];
+      _saveAll(all);
+      return;
+    }
+    const snap = _snapshot(s);
+    if (!snap.items.length && !snap.hold) delete all[sid];
+    else all[sid] = snap;
+    _saveAll(all);
+  }
+
+  function _hydrate(s) {
+    if (!s || !s.sessionId) return;
+    const b = _loadAll()[s.sessionId];
+    if (!b || typeof b !== 'object') return;
+    s.holdQueue = !!b.hold;
+    s.outboundQueue = Array.isArray(b.items) ? b.items.map(_slimItem).filter(Boolean).slice(0, QUEUE_MAX) : [];
+    s.queueEdit = null;
+  }
+
+  function _migrateStore(oldSid, newSid) {
+    if (!oldSid || !newSid || oldSid === newSid) return;
+    const all = _loadAll();
+    if (!all[oldSid]) return;
+    if (!all[newSid]) all[newSid] = all[oldSid];
+    delete all[oldSid];
+    _saveAll(all);
   }
 
   function enqueue(sid, item) {
@@ -193,7 +311,7 @@
     if (!rec.text && !rec.attachments.length) return { ok: false, error: 'empty' };
     s.outboundQueue.push(rec);
     _noteInserted(s, s.outboundQueue.length - 1);
-    _emitQueue(sid);
+    _changed(sid);
     return { ok: true, item: rec };
   }
 
@@ -218,8 +336,8 @@
     const i = s.outboundQueue.findIndex(function (x) { return x.id === id; });
     if (i < 0) return null;
     const rec = s.outboundQueue.splice(i, 1)[0];
-    s.queueEdit = { id: rec.id, index: i };
-    _emitQueue(sid);
+    s.queueEdit = { id: rec.id, index: i, item: rec };
+    _changed(sid);
     return { item: rec, index: i };
   }
 
@@ -237,7 +355,7 @@
     const dest = Math.max(0, Math.min(s.outboundQueue.length, Number(index) || 0));
     s.outboundQueue.splice(dest, 0, rec);
     s.queueEdit = null;
-    _emitQueue(sid);
+    _changed(sid);
     return { ok: true, item: rec };
   }
 
@@ -260,7 +378,7 @@
     if (i < 0) return false;
     s.outboundQueue.splice(i, 1);
     _noteRemoved(s, i);
-    _emitQueue(sid);
+    _changed(sid);
     return true;
   }
 
@@ -277,7 +395,7 @@
     s.outboundQueue = next;
     _noteRemoved(s, from);
     _noteInserted(s, dest);
-    _emitQueue(sid);
+    _changed(sid);
     return true;
   }
 
@@ -366,7 +484,7 @@
     s.pending = true;
     const rec = s.outboundQueue.shift();
     _noteRemoved(s, 0);
-    _emitQueue(sid);
+    _changed(sid);
     queueMicrotask(function () {
       if (typeof drainHandler === 'function') drainHandler(sid, rec);
       else s.pending = false;
@@ -395,6 +513,10 @@
     if (/^data:image\//i.test(url)) return url;
     if (/^https?:\/\//i.test(url)) return url;
     if (url.charAt(0) === '/' && url.charAt(1) !== '/') return url;
+    if (a.path) {
+      const base = String(a.path).replace(/\\/g, '/').split('/').pop();
+      if (base) return '/attachments/' + encodeURIComponent(base);
+    }
     return '';
   }
 
@@ -442,8 +564,10 @@
         }
         thumb.hidden = false;
       }
-      const label = (it.text || '').trim()
+      const lost = atts.some(function (a) { return a && a.lost; });
+      let label = (it.text || '').trim()
         || (atts.length ? ('附件 ×' + atts.length) : '（空）');
+      if (lost) label = (label === '（空）' ? '' : label + ' · ') + '附件没了再贴';
       const t = row.querySelector('.oq-t');
       if (t) t.textContent = label.length > 36 ? label.slice(0, 36) + '…' : label;
     });
