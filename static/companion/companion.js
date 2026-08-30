@@ -2547,7 +2547,10 @@ async function send(opts) {
   const state = SessionRuntime.getOrCreate(mySid);
   if (!queued && SessionRuntime.isBusy(state.sessionId || mySid)) {
     const atts = _attachments.map(function (a) { return Object.assign({}, a); });
-    const r = SessionRuntime.enqueue(state.sessionId, { text: text, attachments: atts });
+    const payload = { text: text, attachments: atts };
+    const r = (SessionRuntime.editOf && SessionRuntime.editOf(state.sessionId))
+      ? SessionRuntime.putBack(state.sessionId, payload)
+      : SessionRuntime.enqueue(state.sessionId, payload);
     input.value = '';
     _attachments.splice(0);
     renderAttachBar();
@@ -2844,6 +2847,45 @@ input.addEventListener('keydown', e => {
   if (composerBusy() && !(input.value.trim() || _attachments.length)) return;
   send();
 });
+function _parkComposer(sid) {
+  const text = input ? input.value.trim() : '';
+  const atts = _attachments.map(function (a) { return Object.assign({}, a); });
+  if (!text && !atts.length) return { ok: true, empty: true };
+  const r = (SessionRuntime.editOf && SessionRuntime.editOf(sid))
+    ? SessionRuntime.putBack(sid, { text: text, attachments: atts })
+    : SessionRuntime.enqueue(sid, { text: text, attachments: atts });
+  if (r && r.ok) {
+    input.value = '';
+    _attachments.splice(0);
+    renderAttachBar();
+    refreshSendChrome();
+  }
+  return r || { ok: false };
+}
+
+function _fillComposerFromQueue(rec) {
+  if (input) input.value = (rec && rec.text) || '';
+  _attachments.splice(0);
+  ((rec && rec.attachments) || []).forEach(function (a) {
+    _attachments.push(Object.assign({}, a));
+  });
+  renderAttachBar();
+  refreshSendChrome();
+  if (input) input.focus();
+}
+
+function _editQueued(sid, id) {
+  if (!sid || !id || !SessionRuntime.takeQueued) return;
+  const park = _parkComposer(sid);
+  if (!park.ok) {
+    addMsg(park.error === 'full' ? '排队满了 · 最多 8 条' : '没排上', 'ai');
+    return;
+  }
+  const taken = SessionRuntime.takeQueued(sid, id);
+  if (!taken) return;
+  _fillComposerFromQueue(taken.item);
+}
+
 if (window.SessionRuntime && SessionRuntime.bindQueue) {
   SessionRuntime.bindQueue({
     paint: function (sid) {
@@ -2852,6 +2894,9 @@ if (window.SessionRuntime && SessionRuntime.bindQueue) {
     },
     drain: function (sid, item) {
       send({ fromQueue: item, sid: sid });
+    },
+    edit: function (sid, id) {
+      _editQueued(sid, id);
     },
   });
 }

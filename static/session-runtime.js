@@ -15,6 +15,7 @@
   const QUEUE_MAX = 8;
   let queuePainter = null;
   let drainHandler = null;
+  let queueEditor = null;
 
   function escSid(sid) {
     if (global.CSS && CSS.escape) return CSS.escape(sid);
@@ -50,6 +51,7 @@
       outboundQueue: [],
       chatMode: '',
       holdQueue: false,
+      queueEdit: null,
     };
   }
 
@@ -190,8 +192,65 @@
     };
     if (!rec.text && !rec.attachments.length) return { ok: false, error: 'empty' };
     s.outboundQueue.push(rec);
+    _noteInserted(s, s.outboundQueue.length - 1);
     _emitQueue(sid);
     return { ok: true, item: rec };
+  }
+
+  function _noteRemoved(s, at) {
+    if (!s || !s.queueEdit) return;
+    if (at < s.queueEdit.index) s.queueEdit.index -= 1;
+  }
+
+  function _noteInserted(s, at) {
+    if (!s || !s.queueEdit) return;
+    if (at <= s.queueEdit.index) s.queueEdit.index += 1;
+  }
+
+  function editOf(sid) {
+    const s = get(sid);
+    return (s && s.queueEdit) ? { id: s.queueEdit.id, index: s.queueEdit.index } : null;
+  }
+
+  function takeQueued(sid, id) {
+    const s = get(sid);
+    if (!s || !s.outboundQueue) return null;
+    const i = s.outboundQueue.findIndex(function (x) { return x.id === id; });
+    if (i < 0) return null;
+    const rec = s.outboundQueue.splice(i, 1)[0];
+    s.queueEdit = { id: rec.id, index: i };
+    _emitQueue(sid);
+    return { item: rec, index: i };
+  }
+
+  function insertQueued(sid, index, item) {
+    if (!sid) return { ok: false, error: 'no-sid' };
+    const s = getOrCreate(sid);
+    if (!s.outboundQueue) s.outboundQueue = [];
+    if (s.outboundQueue.length >= QUEUE_MAX) return { ok: false, error: 'full' };
+    const rec = {
+      id: (item && item.id) || ('q-' + Date.now().toString(36) + '-' + (++cidCounter).toString(36)),
+      text: (item && item.text) ? String(item.text) : '',
+      attachments: (item && item.attachments) ? item.attachments.slice() : [],
+    };
+    if (!rec.text && !rec.attachments.length) return { ok: false, error: 'empty' };
+    const dest = Math.max(0, Math.min(s.outboundQueue.length, Number(index) || 0));
+    s.outboundQueue.splice(dest, 0, rec);
+    s.queueEdit = null;
+    _emitQueue(sid);
+    return { ok: true, item: rec };
+  }
+
+  function putBack(sid, item) {
+    const s = get(sid);
+    const edit = s && s.queueEdit;
+    if (!edit) return enqueue(sid, item);
+    const rec = {
+      id: (item && item.id) || edit.id,
+      text: item && item.text,
+      attachments: item && item.attachments,
+    };
+    return insertQueued(sid, edit.index, rec);
   }
 
   function cancelQueued(sid, id) {
@@ -200,6 +259,7 @@
     const i = s.outboundQueue.findIndex(function (x) { return x.id === id; });
     if (i < 0) return false;
     s.outboundQueue.splice(i, 1);
+    _noteRemoved(s, i);
     _emitQueue(sid);
     return true;
   }
@@ -215,6 +275,8 @@
     next.splice(dest, 0, rec);
     if (next.every(function (x, i) { return x.id === s.outboundQueue[i].id; })) return false;
     s.outboundQueue = next;
+    _noteRemoved(s, from);
+    _noteInserted(s, dest);
     _emitQueue(sid);
     return true;
   }
@@ -267,7 +329,8 @@
     host.addEventListener('pointerdown', function (e) {
       if (e.button !== 0) return;
       if (e.target.closest && e.target.closest('.oq-x')) return;
-      const item = e.target.closest && e.target.closest('.oq-item');
+      if (!e.target.closest || !e.target.closest('.oq-grip')) return;
+      const item = e.target.closest('.oq-item');
       if (!item || !host.contains(item)) return;
       dragId = item.dataset.qid;
       originY = e.clientY;
@@ -302,6 +365,7 @@
     if (!s.outboundQueue || !s.outboundQueue.length) return false;
     s.pending = true;
     const rec = s.outboundQueue.shift();
+    _noteRemoved(s, 0);
     _emitQueue(sid);
     queueMicrotask(function () {
       if (typeof drainHandler === 'function') drainHandler(sid, rec);
@@ -314,6 +378,7 @@
     opts = opts || {};
     if (opts.paint) queuePainter = opts.paint;
     if (opts.drain) drainHandler = opts.drain;
+    if (opts.edit) queueEditor = opts.edit;
   }
 
   function _isQueueImage(a) {
@@ -347,11 +412,12 @@
       return;
     }
     host.innerHTML = items.map(function (it, i) {
-      return '<div class="oq-item" data-qid="' + it.id + '" title="拖动改顺序">'
+      return '<div class="oq-item" data-qid="' + it.id + '" title="点这条改，再发送回原位">'
         + '<span class="oq-thumb" hidden></span>'
-        + '<span class="oq-grip" aria-hidden="true"><i class="ri-draggable"></i></span>'
+        + '<span class="oq-grip" title="拖动改顺序" aria-hidden="true"><i class="ri-draggable"></i></span>'
         + '<span class="oq-n">' + (i + 1) + '</span>'
         + '<span class="oq-t"></span>'
+        + '<span class="oq-pen" aria-hidden="true"><i class="ri-pencil-line"></i></span>'
         + '<button type="button" class="oq-x" data-qid="' + it.id + '" title="取消这条">'
         + '<i class="ri-close-line"></i></button></div>';
     }).join('');
@@ -388,6 +454,13 @@
         cancelQueued(sid, btn.dataset.qid);
       });
     });
+    host.querySelectorAll('.oq-item').forEach(function (row) {
+      row.addEventListener('click', function (e) {
+        if (e.target.closest && (e.target.closest('.oq-x') || e.target.closest('.oq-grip'))) return;
+        const qid = row.dataset.qid;
+        if (qid && typeof queueEditor === 'function') queueEditor(sid, qid);
+      });
+    });
   }
 
   global.SessionRuntime = {
@@ -412,6 +485,10 @@
     enqueue: enqueue,
     cancelQueued: cancelQueued,
     moveQueued: moveQueued,
+    takeQueued: takeQueued,
+    insertQueued: insertQueued,
+    putBack: putBack,
+    editOf: editOf,
     queueOf: queueOf,
     kick: kick,
     bindQueue: bindQueue,

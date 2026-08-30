@@ -1030,7 +1030,7 @@ body.night {
   box-shadow: 2px 2px 0 var(--shade);
   border-radius: 8px;
   font-size: 12px;
-  cursor: grab; user-select: none;
+  cursor: pointer; user-select: none;
 }
 #listen-dock .oq-item.is-dragging { opacity: 0.4; cursor: grabbing; }
 #listen-dock .oq-item.is-drop-above { box-shadow: inset 0 2px 0 var(--accent), 2px 2px 0 var(--shade); }
@@ -1054,6 +1054,11 @@ body.night {
 #listen-dock .oq-grip {
   flex: none; width: 16px; color: #8a7f6e;
   display: grid; place-items: center; font-size: 14px;
+  cursor: grab;
+}
+#listen-dock .oq-pen {
+  flex: none; color: #8a7f6e; font-size: 13px;
+  display: grid; place-items: center;
 }
 #listen-dock .oq-n {
   flex: none; width: 16px; height: 16px;
