@@ -1037,6 +1037,9 @@ body.night {
   touch-action: none;
 }
 #listen-dock .outbound-queue[hidden] { display: none; }
+#listen-dock .oq-cap {
+  font-size: 11px; color: var(--muted); padding: 0 2px 2px;
+}
 #listen-dock .oq-item {
   display: flex; align-items: center; gap: 6px;
   max-width: 100%;
@@ -1075,6 +1078,13 @@ body.night {
   flex: none; color: #8a7f6e; font-size: 13px;
   display: grid; place-items: center;
 }
+#listen-dock .oq-now {
+  flex: none; width: 20px; height: 20px; padding: 0;
+  border: none; background: transparent; color: #8a7f6e;
+  border-radius: 50%; cursor: pointer;
+  display: grid; place-items: center; font-size: 13px;
+}
+#listen-dock .oq-now:hover { color: var(--ink); }
 #listen-dock .oq-n {
   flex: none; width: 16px; height: 16px;
   display: grid; place-items: center;

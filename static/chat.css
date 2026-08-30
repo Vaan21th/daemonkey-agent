@@ -2195,6 +2195,9 @@ header {
   touch-action: none;
 }
 .outbound-queue[hidden] { display: none; }
+.oq-cap {
+  font-size: 11px; color: var(--dim); padding: 0 2px 2px;
+}
 .oq-item {
   display: flex; align-items: center; gap: 6px;
   max-width: 100%;
@@ -2233,6 +2236,13 @@ header {
   flex: none; color: var(--dim); font-size: 13px;
   display: grid; place-items: center;
 }
+.oq-now {
+  flex: none; width: 20px; height: 20px; padding: 0;
+  border: none; background: transparent; color: var(--dim);
+  border-radius: 50%; cursor: pointer;
+  display: grid; place-items: center; font-size: 13px;
+}
+.oq-now:hover { color: var(--text); background: rgba(255,255,255,0.06); }
 .oq-n {
   flex: none; width: 16px; height: 16px;
   display: grid; place-items: center;
