@@ -49,6 +49,7 @@
       progressText: '',
       outboundQueue: [],
       chatMode: '',
+      holdQueue: false,
     };
   }
 
@@ -153,6 +154,17 @@
     }
     s.currentTurnId = null;
     s.pending = false;
+    s.holdQueue = true;
+  }
+
+  function holdOutbound(sid) {
+    const s = sid ? getOrCreate(sid) : null;
+    if (s) s.holdQueue = true;
+  }
+
+  function releaseOutbound(sid) {
+    const s = get(sid);
+    if (s) s.holdQueue = false;
   }
 
   function queueOf(sid) {
@@ -286,6 +298,7 @@
   function kick(sid) {
     const s = get(sid);
     if (!s || s.pending) return false;
+    if (s.holdQueue) return false;
     if (!s.outboundQueue || !s.outboundQueue.length) return false;
     s.pending = true;
     const rec = s.outboundQueue.shift();
@@ -393,6 +406,8 @@
     isPending: isPending,
     isBusy: isBusy,
     abortSession: abortSession,
+    holdOutbound: holdOutbound,
+    releaseOutbound: releaseOutbound,
     QUEUE_MAX: QUEUE_MAX,
     enqueue: enqueue,
     cancelQueued: cancelQueued,

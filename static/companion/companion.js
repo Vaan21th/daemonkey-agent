@@ -2375,6 +2375,7 @@ async function triggerStop() {
   setSendState('stopping');
   setStatus('正在让她停下…');
   const sid = getSid() || (window.SessionRuntime && SessionRuntime.activeSid());
+  if (sid && window.SessionRuntime && SessionRuntime.holdOutbound) SessionRuntime.holdOutbound(sid);
   const st = sid && window.SessionRuntime ? SessionRuntime.get(sid) : null;
   const turnId = (st && st.currentTurnId) || curTurnId;
   const ac = (st && st.currentAbortController) || curAbort;
@@ -2554,7 +2555,10 @@ async function send(opts) {
     if (!r.ok) addMsg(r.error === 'full' ? '排队满了 · 最多 8 条' : '没排上', 'ai');
     return;
   }
-  if (!queued) state.pending = true;
+  if (!queued) {
+    if (SessionRuntime.releaseOutbound) SessionRuntime.releaseOutbound(state.sessionId || mySid);
+    state.pending = true;
+  }
   SessionRuntime.getOrCreateContainer(mySid);
   if (!queued || SessionRuntime.isVisible(mySid)) SessionRuntime.setActiveContainer(mySid);
   if (!queued) {

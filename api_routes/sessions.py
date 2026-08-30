@@ -497,15 +497,7 @@ async def session_sub_results(sid: str, authorization: Optional[str] = Header(No
     return {"session_id": sid, "results": rows[-20:]}
 
 
-@router.post("/sessions/{sid}/restore")
-async def restore_session_checkpoint(
-    sid: str,
-    payload: dict = Body(default=None),
-    authorization: Optional[str] = Header(None),
-):
-    """回到某一句：砍后面的对话，撤这句之后本会话改过的文件。"""
-    check_auth(authorization)
-    payload = payload or {}
+def _run_restore(sid: str, payload: dict) -> dict:
     turn_id = str(payload.get("turn_id") or "").strip()
     raw_line = payload.get("line")
     keep_line = None
@@ -524,3 +516,28 @@ async def restore_session_checkpoint(
         do_apply=bool(payload.get("apply")),
         drop_keep=bool(payload.get("drop_keep")),
     )
+
+
+@router.post("/sessions/{sid}/restore")
+async def restore_session_checkpoint(
+    sid: str,
+    payload: dict = Body(default=None),
+    authorization: Optional[str] = Header(None),
+):
+    """回到某一句：砍后面的对话，撤这句之后本会话改过的文件。"""
+    check_auth(authorization)
+    return _run_restore(sid, payload or {})
+
+
+@router.post("/restore-checkpoint")
+async def restore_checkpoint_body(
+    payload: dict = Body(default=None),
+    authorization: Optional[str] = Header(None),
+):
+    """sid 放 body，避免路径被中间层吃掉。"""
+    check_auth(authorization)
+    payload = payload or {}
+    sid = str(payload.get("sid") or payload.get("session_id") or "").strip()
+    if not sid:
+        raise HTTPException(400, "sid required")
+    return _run_restore(sid, payload)

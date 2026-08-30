@@ -7205,7 +7205,7 @@ function _beginBroEdit(el) {
   const ok = document.createElement('button');
   ok.type = 'button';
   ok.className = 'ckpt-edit-go';
-  ok.innerHTML = '<i class="ri-send-plane-line"></i> 从这儿重发';
+  ok.innerHTML = '<i class="ri-send-plane-line"></i> 重新发送';
   const cancel = document.createElement('button');
   cancel.type = 'button';
   cancel.className = 'ckpt-edit-cancel';
@@ -7250,7 +7250,70 @@ function _ckptIds(el) {
   const turnId = (el && el.dataset.turnId) || '';
   const line = el && el.dataset.line !== undefined && el.dataset.line !== ''
     ? Number(el.dataset.line) : null;
-  return { turnId: turnId, line: (line == null || Number.isNaN(line)) ? null : line };
+  const ids = { turnId: turnId, line: (line == null || Number.isNaN(line)) ? null : line };
+  if (!ids.turnId && ids.line == null) {
+    const s = (typeof activeSession === 'function') ? activeSession() : null;
+    const running = (s && s.currentTurnId) || currentTurnId || '';
+    if (running) ids.turnId = running;
+  }
+  return ids;
+}
+
+function _ckptSid(el) {
+  const box = el && el.closest ? el.closest('.session-msgs') : null;
+  const fromBox = box && box.dataset && box.dataset.sid;
+  const s = (typeof activeSession === 'function') ? activeSession() : null;
+  const cand = [fromBox, s && s.sessionId, sessionId];
+  let tmp = '';
+  for (let i = 0; i < cand.length; i++) {
+    const v = cand[i] ? String(cand[i]) : '';
+    if (!v) continue;
+    if (v.indexOf('tmp-') !== 0) return v;
+    if (!tmp) tmp = v;
+  }
+  return tmp;
+}
+
+function _ckptErr(plan, status) {
+  if (!plan) return 'HTTP ' + status;
+  const d = plan.error || plan.detail;
+  if (typeof d === 'string' && d) return d;
+  if (d && typeof d === 'object') return JSON.stringify(d);
+  return 'HTTP ' + status;
+}
+
+async function _ckptAbortRunning(sid) {
+  const s = (sid && _sessions && _sessions[sid])
+    || (typeof activeSession === 'function' ? activeSession() : null);
+  const turnId = (s && s.currentTurnId) || currentTurnId || '';
+  if (turnId) {
+    try {
+      await fetch('/turns/' + encodeURIComponent(turnId) + '/abort', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token },
+      });
+    } catch (e) { /* 没在跑就当没有 */ }
+  }
+  if (s && s.currentAbortController) {
+    try { s.currentAbortController.abort(); } catch (e) {}
+  }
+  if (sid && window.SessionRuntime && SessionRuntime.holdOutbound) SessionRuntime.holdOutbound(sid);
+}
+
+async function _ckptPost(sid, body) {
+  const headers = {
+    Authorization: 'Bearer ' + token,
+    'Content-Type': 'application/json',
+  };
+  const r = await fetch('/sessions/' + encodeURIComponent(sid) + '/restore', {
+    method: 'POST', headers: headers, body: JSON.stringify(body),
+  });
+  if (r.status !== 404) return { r: r, headers: headers };
+  const r2 = await fetch('/restore-checkpoint', {
+    method: 'POST', headers: headers,
+    body: JSON.stringify(Object.assign({ sid: sid }, body)),
+  });
+  return { r: r2, headers: headers };
 }
 
 function _ckptFileHtml(plan, lead) {
@@ -7278,33 +7341,28 @@ function _ckptFileHtml(plan, lead) {
 }
 
 async function _ckptPreview(el) {
-  const sid = sessionId;
+  const sid = _ckptSid(el);
   const ids = _ckptIds(el);
   if (!sid || !token) {
     await opusAlert({ title: '回不去', message: '没有当前对话或还没填 token' });
     return null;
   }
   if (!ids.turnId && ids.line == null) {
-    await opusAlert({ title: '回不去', message: '这句没有检查点' });
+    await opusAlert({ title: '回不去', message: '这句还没挂上，等这轮出字再点，或硬刷后再试' });
     return null;
   }
-  const headers = {
-    Authorization: 'Bearer ' + token,
-    'Content-Type': 'application/json',
-  };
+  await _ckptAbortRunning(sid);
   const body = { apply: false };
   if (ids.turnId) body.turn_id = ids.turnId;
   if (ids.line != null) body.line = ids.line;
   try {
-    const r = await fetch('/sessions/' + encodeURIComponent(sid) + '/restore', {
-      method: 'POST', headers: headers, body: JSON.stringify(body),
-    });
-    const plan = await r.json();
-    if (!r.ok || plan.ok === false) {
-      await opusAlert({ title: '预览失败', message: (plan && plan.error) || ('HTTP ' + r.status) });
+    const got = await _ckptPost(sid, body);
+    const plan = await got.r.json();
+    if (!got.r.ok || plan.ok === false) {
+      await opusAlert({ title: '预览失败', message: _ckptErr(plan, got.r.status) });
       return null;
     }
-    return { sid: sid, headers: headers, body: body, plan: plan };
+    return { sid: sid, headers: got.headers, body: body, plan: plan };
   } catch (e) {
     await opusAlert({ title: '预览失败', message: e.message || String(e) });
     return null;
@@ -7314,25 +7372,13 @@ async function _ckptPreview(el) {
 async function _ckptApply(ctx, dropKeep) {
   const sid = ctx.sid;
   const s = (_sessions && _sessions[sid]) || (typeof activeSession === 'function' ? activeSession() : null);
-  if (s && s.currentTurnId) {
-    try {
-      await fetch('/turns/' + s.currentTurnId + '/abort', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + token },
-      });
-    } catch (e) { /* 没在跑就当没有 */ }
-    if (s.currentAbortController) {
-      try { s.currentAbortController.abort(); } catch (e) {}
-    }
-  }
+  await _ckptAbortRunning(sid);
   const body = Object.assign({}, ctx.body, { apply: true, drop_keep: !!dropKeep });
   try {
-    const r2 = await fetch('/sessions/' + encodeURIComponent(sid) + '/restore', {
-      method: 'POST', headers: ctx.headers, body: JSON.stringify(body),
-    });
-    const out = await r2.json();
-    if (!r2.ok || out.ok === false) {
-      await opusAlert({ title: '回退失败', message: (out && out.error) || ('HTTP ' + r2.status) });
+    const got = await _ckptPost(sid, body);
+    const out = await got.r.json();
+    if (!got.r.ok || out.ok === false) {
+      await opusAlert({ title: '回退失败', message: _ckptErr(out, got.r.status) });
       return null;
     }
   } catch (e) {
@@ -7377,9 +7423,9 @@ async function _editResendFrom(el, text) {
   const ctx = await _ckptPreview(el);
   if (!ctx) return;
   const ok = await opusConfirm({
-    title: '从这句重发？',
-    message: { html: _ckptFileHtml(ctx.plan, '用改过的字从这儿重发。这句和后面的对话会砍掉。') },
-    okText: '从这儿重发',
+    title: '重新发送？',
+    message: { html: _ckptFileHtml(ctx.plan, '用改过的字重新发送。正在跑的会停。这句和后面的对话会砍掉。') },
+    okText: '重新发送',
     cancelText: '取消',
     danger: true,
     icon: '<i class="ri-send-plane-line"></i>',
@@ -7910,7 +7956,7 @@ async function send(opts) {
   }
   const _hasImgs = !opts.fromEdit && _attachments.length > 0;
   const _sentBro = addMsg('bro', text || '（图片）', null, new Date(), state.$container, { forceScroll: true });
-  if (_sentBro) _sentBro.dataset.ckptText = text || '';
+  if (_sentBro) _attachCkpt(_sentBro, null, null, text || '');
   if (_hasImgs) {
     // wish-41ed72ef · 用户 气泡附件渲染：图片缩略图 + 文档卡片
     const _broBubble = state.$container ? state.$container.lastElementChild : null;

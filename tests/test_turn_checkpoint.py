@@ -210,3 +210,14 @@ def test_stale_turn_id_falls_back_to_line(tmp_path, monkeypatch):
     lines = [json.loads(x) for x in sp(sid).read_text(encoding="utf-8").splitlines() if x.strip()]
     assert len(lines) == 1
     assert lines[0]["content"] == "a"
+
+
+def test_run_restore_requires_anchor():
+    from fastapi import HTTPException
+    from api_routes.sessions import _run_restore
+
+    try:
+        _run_restore("api-x", {})
+        assert False, "should require turn_id or line"
+    except HTTPException as e:
+        assert e.status_code == 400
