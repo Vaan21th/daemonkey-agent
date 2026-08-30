@@ -140,3 +140,73 @@ def test_drop_keep_cuts_the_edited_user_line(tmp_path, monkeypatch):
     assert tc.truncate_session(sid, keep_turn_id="turn-b", drop_keep=True)
     lines = [json.loads(x) for x in sp(sid).read_text(encoding="utf-8").splitlines() if x.strip()]
     assert [x["content"] for x in lines] == ["one", "a"]
+
+
+def test_rewrite_session_keeps_turn_id(tmp_path, monkeypatch):
+    _, sp = _boot(tmp_path, monkeypatch)
+    import daemon_session as ds
+    monkeypatch.setattr(ds, "SESSIONS_DIR", tmp_path / "sessions")
+    sid = "api-ckpt8"
+    _write_jsonl(sp(sid), [
+        {"role": "user", "content": "hello", "meta": {"turn_id": "turn-keep"}},
+        {"role": "assistant", "content": "ok"},
+    ])
+    ds.rewrite_session(sid, [
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "ok"},
+    ])
+    rows = [json.loads(x) for x in sp(sid).read_text(encoding="utf-8").splitlines() if x.strip()]
+    users = [r for r in rows if r["role"] == "user"]
+    assert users[0]["meta"]["turn_id"] == "turn-keep"
+
+
+def test_restore_missing_anchor_leaves_files(tmp_path, monkeypatch):
+    tc, sp = _boot(tmp_path, monkeypatch)
+    sid = "api-ckpt9"
+    f = tmp_path / "stay.txt"
+    f.write_text("v1", encoding="utf-8")
+    tc.snapshot_before("stay.txt", sid=sid, turn_id="turn-aaa")
+    f.write_text("v2", encoding="utf-8")
+    _write_jsonl(sp(sid), [
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "ok"},
+    ])
+    before = sp(sid).read_text(encoding="utf-8")
+    out = tc.restore(sid, "turn-aaa")
+    assert out["truncated"] is False
+    assert out.get("applied") is False
+    assert f.read_text(encoding="utf-8") == "v2"
+    assert sp(sid).read_text(encoding="utf-8") == before
+
+
+def test_fence_blocks_append_turn(tmp_path, monkeypatch):
+    _, sp = _boot(tmp_path, monkeypatch)
+    import daemon_session as ds
+    sid = "api-ckpt10"
+    ds.set_restore_fence(sid, True)
+    try:
+        ds.append_turn(sid, "user", "should-not-land")
+        assert not sp(sid).exists()
+    finally:
+        ds.set_restore_fence(sid, False)
+
+
+def test_stale_turn_id_falls_back_to_line(tmp_path, monkeypatch):
+    tc, sp = _boot(tmp_path, monkeypatch)
+    sid = "api-ckpt11"
+    f = tmp_path / "foo.txt"
+    f.write_text("v1", encoding="utf-8")
+    tc.snapshot_before("foo.txt", sid=sid, turn_id="turn-aaa")
+    f.write_text("v2", encoding="utf-8")
+    _write_jsonl(sp(sid), [
+        {"role": "user", "content": "a"},
+        {"role": "assistant", "content": "ok"},
+        {"role": "user", "content": "b"},
+        {"role": "assistant", "content": "ok2"},
+    ])
+    out = tc.restore(sid, "turn-aaa", keep_line=0)
+    assert out["truncated"] is True
+    assert f.read_text(encoding="utf-8") == "v1"
+    lines = [json.loads(x) for x in sp(sid).read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(lines) == 1
+    assert lines[0]["content"] == "a"

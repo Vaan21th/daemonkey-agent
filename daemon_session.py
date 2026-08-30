@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -41,6 +42,28 @@ SESSIONS_DIR.mkdir(exist_ok=True)
 
 # 卷三十四补丁 · session 元数据集中存
 _META_PATH = SESSIONS_DIR / "_index.json"
+_RESTORE_FENCE: set[str] = set()
+_RESTORE_FENCE_LOCK = threading.Lock()
+
+
+def set_restore_fence(session_id: str, on: bool) -> None:
+    """回退期间拦住 append / 压缩重写，避免截断后又被写回去。"""
+    sid = str(session_id or "")
+    if not sid:
+        return
+    with _RESTORE_FENCE_LOCK:
+        if on:
+            _RESTORE_FENCE.add(sid)
+        else:
+            _RESTORE_FENCE.discard(sid)
+
+
+def is_restore_fenced(session_id: str) -> bool:
+    sid = str(session_id or "")
+    if not sid:
+        return False
+    with _RESTORE_FENCE_LOCK:
+        return sid in _RESTORE_FENCE
 
 
 def _load_meta_index() -> dict:
@@ -173,6 +196,8 @@ def session_path(session_id: str) -> Path:
 
 
 def append_turn(session_id: str, role: str, content, meta: dict | None = None) -> None:
+    if is_restore_fenced(session_id):
+        return
     if not isinstance(content, str):
         content = json.dumps(content, ensure_ascii=False)
     record: dict = {
@@ -210,7 +235,10 @@ def rewrite_session(session_id: str, messages: list[dict]) -> None:
     tool 消息匹配不到 → 用当前时间 (可接受)。tmp + os.replace 原子写。
     """
     path = session_path(session_id)
+    if is_restore_fenced(session_id):
+        return
     old_ts: dict = {}
+    old_user_tids: list[tuple[str, str]] = []
     if path.exists():
         try:
             with path.open("r", encoding="utf-8") as f:
@@ -218,8 +246,13 @@ def rewrite_session(session_id: str, messages: list[dict]) -> None:
                     rec = json.loads(line)
                     key = (rec.get("role"), rec.get("content"))
                     old_ts.setdefault(key, rec.get("ts"))
+                    if rec.get("role") == "user":
+                        tid = (rec.get("meta") or {}).get("turn_id") or ""
+                        if tid:
+                            old_user_tids.append((rec.get("content") or "", tid))
         except (OSError, json.JSONDecodeError):
             old_ts = {}
+            old_user_tids = []
 
     now = datetime.now().isoformat(timespec="seconds")
     records: list[dict] = []
@@ -240,7 +273,18 @@ def rewrite_session(session_id: str, messages: list[dict]) -> None:
             "content": content,
         }
         meta: dict = {}
-        if role == "assistant":
+        if role == "user":
+            mm = m.get("meta") if isinstance(m.get("meta"), dict) else {}
+            tid = str(mm.get("turn_id") or m.get("turn_id") or "")
+            if not tid:
+                for i, (c, t) in enumerate(old_user_tids):
+                    if c == content:
+                        tid = t
+                        old_user_tids.pop(i)
+                        break
+            if tid:
+                meta["turn_id"] = tid
+        elif role == "assistant":
             if m.get("tool_calls"):
                 meta["tool_calls"] = m["tool_calls"]
             if m.get("reasoning_content"):

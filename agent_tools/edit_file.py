@@ -41,7 +41,12 @@ from . import (
     current_session_id,
     register_tool,
 )
-from ._edit_lock import guard as _edit_guard, note_write as _edit_note, remember_before as _ckpt_before
+from ._edit_lock import (
+    guard as _edit_guard,
+    note_write as _edit_note,
+    remember_before as _ckpt_before,
+    blocked_by_restore as _restore_blocked,
+)
 from .write_file import _resolve, _classify, _branch_guard_warning
 
 
@@ -123,6 +128,8 @@ def _run_batch(args: dict, raw: str, edits: list) -> ToolResult:
 
     # 并发软锁 (force 语义同单次)
     _owner = current_session_id()
+    if _restore_blocked(_owner):
+        return ToolResult(ok=False, output="", error="会话已回退 · 停手")
     _lock_ok, _lock_note = _edit_guard(
         str(path), _owner, original, force=bool(args.get("force")), tool="edit_file"
     )
@@ -256,6 +263,8 @@ def _run(args: dict) -> ToolResult:
 
     # 编辑并发软锁: 另一个对话 TTL 内正改这文件 / 磁盘被外部改过 → 软提示排队 (可 force 过)
     _owner = current_session_id()
+    if _restore_blocked(_owner):
+        return ToolResult(ok=False, output="", error="会话已回退 · 停手")
     _lock_ok, _lock_note = _edit_guard(
         str(path), _owner, original, force=bool(args.get("force")), tool="edit_file"
     )

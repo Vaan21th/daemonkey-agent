@@ -161,3 +161,19 @@ def remember_before(path: str) -> None:
         snapshot_before(str(path))
     except Exception:
         pass
+
+
+def blocked_by_restore(owner: str = "") -> bool:
+    """回退栅栏开着时写盘工具停手。"""
+    sid = owner
+    if not sid:
+        try:
+            from agent_tools import current_session_id
+            sid = current_session_id()
+        except Exception:
+            return False
+    try:
+        from daemon_session import is_restore_fenced
+        return is_restore_fenced(sid)
+    except Exception:
+        return False

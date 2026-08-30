@@ -1,8 +1,4 @@
-"""对话内 checkpoint · 回到某一句并撤其后的工具改文件。
-
-不是头上那个整库 git 回档。只退本会话 write_file / edit_file 碰过的文件。
-shell / 外部编辑 / 别的会话不碰。从装上这天起才有快照·以前的句子只能砍对话。
-"""
+"""对话内 checkpoint · 只退本会话 write_file / edit_file。"""
 from __future__ import annotations
 
 import hashlib
@@ -16,12 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SNAP_ROOT = ROOT / "data" / "runtime" / "turn_checkpoints"
 MAX_BLOB = 2 * 1024 * 1024
 MAX_LEDGER = 400
-_BLOCK_PREFIX = (
-    ".git/",
-    "sessions/",
-    "data/runtime/",
-    "data/provider_configs",
-)
+_BLOCK_PREFIX = (".git/", "sessions/", "data/runtime/", "data/provider_configs")
 _BLOCK_EXACT = {".env", "soul/identity.json"}
 
 
@@ -76,7 +67,7 @@ def _read_ledger(sid: str) -> list[dict]:
 
 
 def snapshot_before(path: str, sid: str = "", turn_id: str = "") -> None:
-    """写盘前记一份。同一轮同一文件只记第一次（那才是这轮动手前的样子）。失败静默。"""
+    """写盘前记一份。同一轮同一文件只记第一次。失败静默。"""
     sid, turn_id = _ids(sid, turn_id)
     rel = _norm(path)
     if not sid or not turn_id or _blocked(rel):
@@ -104,20 +95,12 @@ def snapshot_before(path: str, sid: str = "", turn_id: str = "") -> None:
         (dest / digest).write_bytes(raw)
         blob = f"{turn_id}/{digest}"
     SNAP_ROOT.joinpath(sid).mkdir(parents=True, exist_ok=True)
-    rec = {
-        "ts": time.time(),
-        "sid": sid,
-        "turn_id": turn_id,
-        "path": rel,
-        "kind": kind,
-        "blob": blob,
-    }
+    rec = {"ts": time.time(), "sid": sid, "turn_id": turn_id, "path": rel, "kind": kind, "blob": blob}
     with _ledger(sid).open("a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
 def preview(sid: str, keep_turn_id: str) -> dict:
-    """dry-run：这句及之后会退哪些文件。"""
     return _plan(sid, keep_turn_id)
 
 
@@ -142,12 +125,8 @@ def _plan(sid: str, keep_turn_id: str) -> dict:
         else:
             restore.append(item)
     return {
-        "ok": True,
-        "sid": sid,
-        "turn_id": keep_turn_id,
-        "restore": restore,
-        "delete": delete,
-        "skip": skip,
+        "ok": True, "sid": sid, "turn_id": keep_turn_id,
+        "restore": restore, "delete": delete, "skip": skip,
         "has_snaps": start is not None,
     }
 
@@ -166,6 +145,14 @@ def _skip_why(rel: str, sid: str) -> str:
     return ""
 
 
+def _fence(sid: str, on: bool) -> None:
+    try:
+        from daemon_session import set_restore_fence
+        set_restore_fence(sid, on)
+    except Exception:
+        pass
+
+
 def run(
     sid: str,
     keep_turn_id: str = "",
@@ -173,19 +160,22 @@ def run(
     do_apply: bool = False,
     drop_keep: bool = False,
 ) -> dict:
-    """预览或真回退。正在跑的轮次先 abort，再改盘、截 jsonl、丢内存缓存。"""
     if not sid or (not keep_turn_id and keep_line is None):
         return {"ok": False, "error": "sid 和 turn_id 或 line 必填"}
     if not do_apply:
         return preview(sid, keep_turn_id)
-    _abort_sid(sid)
-    out = restore(sid, keep_turn_id, keep_line=keep_line, drop_keep=drop_keep)
+    _fence(sid, True)
     try:
-        from daemon_api import drop_session_cache
-        drop_session_cache(sid)
-    except Exception:
-        pass
-    return out
+        _abort_sid(sid)
+        out = restore(sid, keep_turn_id, keep_line=keep_line, drop_keep=drop_keep)
+        try:
+            from daemon_api import drop_session_cache
+            drop_session_cache(sid)
+        except Exception:
+            pass
+        return out
+    finally:
+        _fence(sid, False)
 
 
 def _abort_sid(sid: str) -> None:
@@ -213,6 +203,12 @@ def restore(
 ) -> dict:
     plan = _plan(sid, keep_turn_id)
     if not plan.get("ok"):
+        return plan
+    cut = truncate_session(sid, keep_turn_id, keep_line=keep_line, drop_keep=drop_keep)
+    if not cut:
+        plan["applied"] = False
+        plan["truncated"] = False
+        plan["error"] = "对话截不断 · 文件没动"
         return plan
     entries = _read_ledger(sid)
     start = next((i for i, e in enumerate(entries) if e.get("turn_id") == keep_turn_id), None)
@@ -243,12 +239,11 @@ def restore(
             done_r.append(rel)
         except OSError as exc:
             failed.append({"path": rel, "error": str(exc)})
-    cut = truncate_session(sid, keep_turn_id, keep_line=keep_line, drop_keep=drop_keep)
     plan["applied"] = True
     plan["restored"] = done_r
     plan["deleted"] = done_d
     plan["failed"] = failed
-    plan["truncated"] = cut
+    plan["truncated"] = True
     return plan
 
 
@@ -258,7 +253,7 @@ def truncate_session(
     keep_line: Optional[int] = None,
     drop_keep: bool = False,
 ) -> bool:
-    """默认收到那句 user（含）。drop_keep=True 时这句也砍（改完重发用）。"""
+    """默认收到那句 user（含）。drop_keep=True 时这句也砍。"""
     from daemon_session import session_path
     path = session_path(sid)
     if not path.exists():
@@ -292,6 +287,8 @@ def truncate_session(
                 break
     except OSError:
         return False
+    if not found and keep_turn_id and keep_line is not None:
+        return truncate_session(sid, "", keep_line, drop_keep)
     if not found:
         return False
     tmp = path.with_suffix(".jsonl.restore-tmp")

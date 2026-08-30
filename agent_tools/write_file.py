@@ -41,7 +41,12 @@ from . import (
 )
 from ._subprocess_helper import no_window_kwargs
 from ._git_lock import daemon_git_lock
-from ._edit_lock import guard as _edit_guard, note_write as _edit_note, remember_before as _ckpt_before
+from ._edit_lock import (
+    guard as _edit_guard,
+    note_write as _edit_note,
+    remember_before as _ckpt_before,
+    blocked_by_restore as _restore_blocked,
+)
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -298,6 +303,8 @@ def _run(args: dict) -> ToolResult:
     # 编辑并发软锁: 覆盖/追加已存在文件时·另一个对话正改它 / 磁盘被外部改过 → 软提示 (可 force 过)
     # create 模式是新建文件·没有覆盖风险(撞 already exists 已在上面拦)·跳过。
     _owner = current_session_id()
+    if _restore_blocked(_owner):
+        return ToolResult(ok=False, output="", error="会话已回退 · 停手")
     _lock_note = None
     if mode != "create" and path.exists():
         if old_content is not None:
