@@ -364,6 +364,7 @@ header {
   .ckpt-btn { display: flex; opacity: 0.5; }
 }
 .msg.bro.ckpt-editing > :not(.ckpt-edit) { display: none; }
+.msg.bro .ckpt-orig { display: none !important; }
 .ckpt-edit {
   display: flex;
   flex-direction: column;
@@ -372,14 +373,14 @@ header {
 }
 .ckpt-edit textarea {
   width: 100%;
-  min-height: 72px;
+  min-height: 1.45em;
   resize: vertical;
   border: 0;
-  background: rgba(255, 255, 255, 0.14);
+  background: transparent;
   color: inherit;
   font: inherit;
   line-height: 1.45;
-  padding: 4px 0;
+  padding: 0;
   outline: none;
 }
 .ckpt-edit-row {
@@ -398,6 +399,10 @@ header {
 .ckpt-edit-go {
   background: var(--bg);
   color: var(--text);
+}
+.ckpt-edit-go:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 .ckpt-edit-go i { margin-right: 4px; }
 .ckpt-edit-cancel {

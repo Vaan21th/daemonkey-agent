@@ -7195,11 +7195,15 @@ function _broPlainText(el) {
 function _beginBroEdit(el) {
   if (!el || el.querySelector('.ckpt-edit')) return;
   const cur = _broPlainText(el);
+  const hold = document.createElement('div');
+  hold.className = 'ckpt-orig';
+  hold.hidden = true;
+  while (el.firstChild) hold.appendChild(el.firstChild);
   const editor = document.createElement('div');
   editor.className = 'ckpt-edit';
   const ta = document.createElement('textarea');
   ta.value = cur;
-  ta.rows = Math.min(12, Math.max(3, String(cur).split('\n').length + 1));
+  ta.rows = Math.min(12, Math.max(1, String(cur).split('\n').length));
   const row = document.createElement('div');
   row.className = 'ckpt-edit-row';
   const ok = document.createElement('button');
@@ -7215,11 +7219,20 @@ function _beginBroEdit(el) {
   editor.appendChild(ta);
   editor.appendChild(row);
   el.classList.add('ckpt-editing');
+  el.appendChild(hold);
   el.appendChild(editor);
+  function _syncGo() {
+    ok.disabled = !String(ta.value || '').trim();
+  }
+  _syncGo();
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
   function _quit() {
     editor.remove();
+    if (hold.parentNode) {
+      while (hold.firstChild) el.insertBefore(hold.firstChild, hold);
+      hold.remove();
+    }
     el.classList.remove('ckpt-editing');
   }
   cancel.addEventListener('click', function(ev) {
@@ -7238,6 +7251,7 @@ function _beginBroEdit(el) {
     _quit();
     _editResendFrom(el, next);
   });
+  ta.addEventListener('input', _syncGo);
   ta.addEventListener('keydown', function(ev) {
     if (ev.key === 'Escape') {
       ev.preventDefault();
@@ -7422,15 +7436,6 @@ async function _restoreToTurn(el) {
 async function _editResendFrom(el, text) {
   const ctx = await _ckptPreview(el);
   if (!ctx) return;
-  const ok = await opusConfirm({
-    title: '重新发送？',
-    message: { html: _ckptFileHtml(ctx.plan, '用改过的字重新发送。正在跑的会停。这句和后面的对话会砍掉。') },
-    okText: '重新发送',
-    cancelText: '取消',
-    danger: true,
-    icon: '<i class="ri-send-plane-line"></i>',
-  });
-  if (!ok) return;
   const applied = await _ckptApply(ctx, true);
   if (!applied) return;
   await send({ text: text, fromEdit: true });
