@@ -476,10 +476,23 @@ def _build_remote_system(base: str, session_id: str = "") -> str:
 
 
 def _safe_style_note() -> str:
-    """口吻字段 + 四维数字拼进 system_suffix。失败 → 空。"""
+    """角色卡一句 + 当天心情。失败 → 空。"""
     try:
-        from identity import style_dims_guide
-        return style_dims_guide()
+        from identity import style_dims_card
+        dims = None
+        try:
+            from workers.style_shift import live_dims
+            dims = live_dims()
+        except Exception:
+            dims = None
+        taste = (style_dims_card(dims=dims) or "").strip()
+        mood = ""
+        try:
+            from workers.mood_shift import live_mood_line
+            mood = (live_mood_line() or "").strip()
+        except Exception:
+            mood = ""
+        return "\n".join(x for x in (taste, mood) if x)
     except Exception:
         return ""
 

@@ -25,14 +25,19 @@ import time
 from pathlib import Path
 
 
+from desktop_pet.pet_notes import (
+    clear_confirm,
+    read_confirm,
+    read_last_notify,
+    write_confirm,
+    write_notify,
+)
+
 _ACTIVITY_JSONL = Path(__file__).parent / "activity.jsonl"
 _ACTIVITY_TXT = Path(__file__).parent / "activity.txt"
 _STATE_FILE = Path(__file__).parent / "state.txt"
-_NOTIFY_JSONL = Path(__file__).parent / "notify.jsonl"
 
-# 最多保留最近 N 行事件，防止文件无限增长
 MAX_JSONL_LINES = 200
-MAX_NOTIFY_LINES = 100
 
 # 工具 → 人类可读描述模板
 TOOL_DESC_TEMPLATES: dict[str, str] = {
@@ -50,13 +55,13 @@ TOOL_DESC_TEMPLATES: dict[str, str] = {
     "open_app":         "启动应用",
     "set_model":        "切换模型",
     "set_emotion":      "切换表情",
-    "update_bro_note":  "更新 BRO 画像",
+    "update_bro_note":  "更新画像",
     "update_self_evolution": "写日记",
     "summarize_session":     "压缩会话",
     "wechat_send":      "发微信",
-    "summon_cursor":    "召唤 Cursor",
+    "summon_cursor":    "在干活",
     "ssh_remote":       "远程诊断",
-    "client_handoff":   "查客户档案",
+    "client_handoff":   "在干活",
     "manage_info_source": "管理信源",
     "generate_report":  "生成报告",
     "draft_studio":     "工作室出品",
@@ -98,6 +103,17 @@ TOOL_DESC_TEMPLATES: dict[str, str] = {
     "read_scenario":    "读场景铁律",
     "session_search":   "搜会话",
     "request_restart":  "申请重启",
+    "glob_files":       "搜文件",
+    "edit_file":        "改文件",
+    "search_code":      "搜代码",
+    "outline_file":     "看大纲",
+    "look_at":          "看屏幕",
+    "note_style_shift": "记口吻",
+    "note_mood":        "记心情",
+    "note_gallery":     "记画廊",
+    "mcp_list":         "列 MCP",
+    "mcp_describe_tool": "看 MCP",
+    "mcp_call_tool":    "调 MCP",
 }
 
 TOOL_TO_ACTIVITY: dict[str, str] = {
@@ -122,8 +138,15 @@ ACTIVITY_STALE_SECONDS = 4.0
 
 
 def _tool_desc(tool_name: str) -> str:
-    """工具名 → 人类可读短描述，未知工具返回工具名本身。"""
-    return TOOL_DESC_TEMPLATES.get(tool_name, tool_name)
+    """工具名 → 中文短描述 · 未知也不回英文名。"""
+    name = (tool_name or "").strip()
+    if not name:
+        return "在干活"
+    return TOOL_DESC_TEMPLATES.get(name, "在干活")
+
+
+def tool_desc(tool_name: str) -> str:
+    return _tool_desc(tool_name)
 
 
 def state_for_tool(tool_name: str) -> str:
@@ -151,6 +174,16 @@ def write_pulse_end(tool_name: str, ok: bool, summary: str = "") -> None:
     if summary:
         desc = f"{desc} · {summary}"
     _write_pulse_event(tool_name, status, desc=desc, ok=ok)
+
+
+def write_turn_start() -> None:
+    """对话 / 一轮活儿开始 · 桌宠切执行并出气泡。"""
+    _write_pulse_event("", "start", desc="在对话")
+    try:
+        _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _STATE_FILE.write_text("working", encoding="utf-8")
+    except Exception:
+        pass
 
 
 def write_state_idle() -> None:
@@ -227,56 +260,5 @@ def read_last_events(n: int = 5) -> list[dict]:
             except json.JSONDecodeError:
                 pass
         return events
-    except Exception:
-        return []
-
-
-# ── 通知通道 (notify.jsonl) · 2026-07-28 BRO 需求 ─────────────────────────
-# 跟 activity (OPUS 脉搏·每个工具都写) 不同——notify 是【该让 BRO 抬头的三件事】:
-#   done    · 一个实质 turn 干完了 (daemon 在 turn 收尾自动写)
-#   confirm · 有风险操作在 WebUI 等他拍板 (confirm 卡片创建时写)
-#   info    · 其他该提醒的 (预留)
-# 桌宠轮询弹气泡 · 比 activity 气泡显示更久 · confirm 用醒目色。
-
-def write_notify(kind: str, text: str) -> None:
-    """写一条通知事件到 notify.jsonl。任何异常吞掉——通知是装饰,不能拖累主流程。"""
-    try:
-        event = {
-            "ts": time.time(),
-            "kind": (kind or "info").strip() or "info",
-            "text": (text or "").strip()[:120],
-        }
-        if not event["text"]:
-            return
-        _NOTIFY_JSONL.parent.mkdir(parents=True, exist_ok=True)
-        lines: list[str] = []
-        if _NOTIFY_JSONL.exists():
-            try:
-                lines = [l for l in _NOTIFY_JSONL.read_text(encoding="utf-8").strip().split("\n") if l.strip()]
-            except Exception:
-                lines = []
-        lines.append(json.dumps(event, ensure_ascii=False))
-        if len(lines) > MAX_NOTIFY_LINES:
-            lines = lines[-MAX_NOTIFY_LINES:]
-        _NOTIFY_JSONL.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    except Exception:
-        pass
-
-
-def read_last_notify(n: int = 3) -> list[dict]:
-    """读最近 N 条通知事件。桌宠轮询用。"""
-    try:
-        if not _NOTIFY_JSONL.exists():
-            return []
-        text = _NOTIFY_JSONL.read_text(encoding="utf-8").strip()
-        if not text:
-            return []
-        out = []
-        for line in text.split("\n")[-n:]:
-            try:
-                out.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
-        return out
     except Exception:
         return []

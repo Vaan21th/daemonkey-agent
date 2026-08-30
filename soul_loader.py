@@ -282,7 +282,7 @@ def _persona_style_block(name: str, style: str) -> str:
     return (
         "\n\n=== 口吻 ===\n\n"
         f"口吻：{style}\n"
-        "四维只调这副口吻的温度，不换口吻。写在句子里，不要旁白。\n"
+        "味道只调这副口吻的温度，写在句子里，不要旁白。\n"
     )
 
 

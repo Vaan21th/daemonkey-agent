@@ -1,0 +1,31 @@
+{
+  "fps": 12,
+  "master": [
+    520,
+    469
+  ],
+  "crop": [
+    252,
+    18,
+    1266,
+    1143
+  ],
+  "src": [
+    1764,
+    1176
+  ],
+  "format": "webp_anim",
+  "quality": 80,
+  "clips": [
+    "idle_blink",
+    "idle_look",
+    "idle_drowsy",
+    "idle_rest",
+    "idle_sing",
+    "work",
+    "work_done",
+    "drag",
+    "tired",
+    "guard"
+  ]
+}

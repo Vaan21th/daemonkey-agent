@@ -275,7 +275,22 @@
       "desktop_pet/pet.py",
       "desktop_pet/activities.py",
       "desktop_pet/pet_notes.py",
-      "desktop_pet/expressions.py"
+      "desktop_pet/expressions.py",
+      "desktop_pet/run.py",
+      "desktop_pet/__main__.py",
+      "desktop_pet/clip_map.py",
+      "desktop_pet/room_pet.py",
+      "desktop_pet/room_live.py",
+      "desktop_pet/room_dock.py",
+      "desktop_pet/room_menu.py",
+      "desktop_pet/room_bubble.py",
+      "desktop_pet/room_frames.py",
+      "desktop_pet/room_hit.py",
+      "desktop_pet/room_key.py",
+      "desktop_pet/room_rest.py",
+      "desktop_pet/room_win32.py",
+      "desktop_pet/ape.svg",
+      "start-pet.ps1"
     ],
     "内核自升级机制(L1·含升级保护层全套·三层缺一不可。A 备份[core_update 侧·必须在 checkout 之前抓·放到之后存下来的就是官方版·合并功能整条哑火] + B 合并[merge_user_override 读备份/看对比/写回] + C 接管[kernel_takeover 事前声明「这文件归我管」·官方版根本不进 checkout 参数表]。只有 A 没有 B = 备份躺在 data/runtime/user_overrides/ 但用户无法合并回来·0.8.5 承诺的「合并我的改动」对增量升级老用户成空头。零外部依赖[stdlib + 本包]·pkgutil 自动发现下发即激活。0.9.6 加第 0 层 D 基线指纹[core_fingerprint + core_fingerprints.json]:A/B/C 三层全都建立在「认得出哪些文件用户改过」之上·而原本这件事靠 git status —— 它只看工作区 vs 最后一次 commit·任何一次 commit[daemon 自己 checkpoint / 用户手动落袋 / 别的工具] 都让它变干净·下次升级就认为用户没改过·静默覆盖·改动只剩在 git 历史里而用户不一定懂 git。指纹比的是【实际内容 vs 官方内容】·跟 commit 几次无关。基线由发布链对纯净版 transform 后的内容生成[必须是用户实际拿到的那份·拿母体原文算=用户一装上满屏「你改过」]·随 update_core 一起更新所以基线自动前进。hash 归一化换行[防 git autocrlf 在 Windows 上把全部文件误判成改过]。老用户第一次升上来时本机还没基线·那次仍走 git status 兜底·之后各次才享受完整保护。0.9.6 另加救援 E[override_rescue + merge_user_override rescue/rescue_apply]:0.8.4~0.9.5 那段时期备份跑在覆盖之后·存下来的是官方版·用户真改动一个都没进备份[那时说「合并我的改动」只会得到「两边一致」]。但同流程的 checkpoint 是在覆盖之前做的·真东西一直在那条 commit 里 —— rescue 按文件取最晚一次 checkpoint 的内容捞出来写回备份区·之后正常走合并。已用「修复前那一版真实现」造真现场端到端验过[母体自己从不 update_core·历史里一条 update_core 存档都没有·在母体上跑 rescue 永远返回『没东西可捞』·那句话什么都证明不了])": [
       "core_manifest.json",

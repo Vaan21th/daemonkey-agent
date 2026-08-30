@@ -738,13 +738,28 @@ def distill_style_band_pack(style: str, *, model: str | None = None) -> dict | N
 # ===========================================================================
 _SHE_STATE_FILE = _ROOT / "soul" / "SHE-STATE.md"
 _STYLE_DIMS_FILE = _SHE_STATE_FILE  # 旧名保留 · 调用方 path= 签名不变
-_STYLE_DIM_KEYS = ("亲密度", "活泼度", "正经度", "话痨度")
+_STYLE_DIM_KEYS = ("话量", "调性", "语气", "礼节", "表现力")
 _STYLE_ADJUST_KEYS = _STYLE_DIM_KEYS
 _DEFAULT_STYLE_DIMS = {k: 50 for k in _STYLE_DIM_KEYS}
+_DIM_ALIAS = {"力度": "语气"}
+_TASTE_CANON = {
+    "话量": ("无口", "寡言", "平常", "健谈", "话痨"),
+    "调性": ("正经", "自然", "梗多"),
+    "语气": ("毒舌", "随和", "温柔"),
+    "礼节": ("敬语", "得体", "随便"),
+    "表现力": ("棒读", "普通", "鲜活"),
+}
+_STYLE_TASTE_LABELS: dict[str, tuple[str, str, str]] = {
+    "话量": ("无口", "平常", "话痨"),
+    "调性": ("正经", "自然", "梗多"),
+    "语气": ("毒舌", "随和", "温柔"),
+    "礼节": ("敬语", "得体", "随便"),
+    "表现力": ("棒读", "普通", "鲜活"),
+}
 _MOOD_TTL_DAYS = 7
 
 _DIM_ROW_RE = re.compile(
-    r"^\|\s*(亲密度|活泼度|正经度|话痨度)\s*\|\s*(\d+)\s*\|\s*([^|]*)\|\s*([^|]*)\|",
+    r"^\|\s*(" + "|".join(_STYLE_DIM_KEYS + tuple(_DIM_ALIAS)) + r")\s*\|\s*(\d+)\s*\|\s*([^|]*)\|\s*([^|]*)\|",
     re.MULTILINE,
 )
 _MOOD_RE = re.compile(r"^心情:\s*(.*)$", re.MULTILINE)
@@ -1088,61 +1103,58 @@ def _style_dim_band(val: int, low: str, mid: str, high: str) -> str:
     return high
 
 
-def style_dims_note(*, path: Path | None = None) -> str:
-    """值 → 语气描述。文件不存在也用默认四维 50，纯净盘初见当天尾巴不能空。"""
-    p = path or _STYLE_DIMS_FILE
+def _style_taste_word(dim: str, val: int) -> str:
+    dim = _DIM_ALIAS.get(dim, dim)
     try:
-        data = style_dims(path=p)
-        dims = data.get("dims") or {}
-        intimacy = int(dims.get("亲密度", 50))
-        lively = int(dims.get("活泼度", 50))
-        serious = int(dims.get("正经度", 50))
-        talky = int(dims.get("话痨度", 50))
+        from workers.taste_chat import _BAND_VALUES
+        canon = _TASTE_CANON.get(dim) or ()
+        table = {w: _BAND_VALUES[dim][w] for w in canon if w in (_BAND_VALUES.get(dim) or {})}
+        if table:
+            return min(table, key=lambda w: abs(int(table[w]) - int(val)))
     except Exception:
-        return ""
+        pass
+    low, mid, high = _STYLE_TASTE_LABELS[dim]
+    return _style_dim_band(val, low, mid, high)
 
-    intimacy_p = (
-        "已经很熟" if intimacy >= 70 else ("相处自然" if intimacy >= 40 else "还在熟悉")
-    )
-    lively_p = _style_dim_band(lively, "偏沉稳", "温和", "活泼")
-    serious_p = _style_dim_band(serious, "偏随性轻松", "正经适中", "偏认真")
-    talky_p = _style_dim_band(talky, "话不多", "话量正常", "话比较多")
-    note = (
-        f"现在的温度：亲密度 {intimacy}（{intimacy_p}）· "
-        f"话痨度 {talky}（{talky_p}）· "
-        f"正经度 {serious}（{serious_p}）· "
-        f"活泼度 {lively}（{lively_p}）"
-    )
-    if intimacy >= 70:
-        note += "。带着亲昵"
-    return note
+
+def style_dims_note(*, path: Path | None = None, dims: dict | None = None) -> str:
+    """偏离中档的档位词。全中档只回「自然。」"""
+    try:
+        raw = dims if isinstance(dims, dict) else (style_dims(path=path).get("dims") or {})
+        vals = {k: int(raw.get(k, 50)) for k in _STYLE_DIM_KEYS}
+    except Exception:
+        return "自然。"
+
+    words: list[str] = []
+    for k in _STYLE_DIM_KEYS:
+        w = _style_taste_word(k, vals[k])
+        mid = _STYLE_TASTE_LABELS[k][1]
+        if w != mid:
+            words.append(w)
+    if not words:
+        return "自然。"
+    return "，".join(words) + "。"
+
+
+def style_dims_card(*, path: Path | None = None, dims: dict | None = None) -> str:
+    """角色卡一句：口吻 + 档位词。"""
+    words = style_dims_note(path=path, dims=dims)
+    style = ""
+    try:
+        style = (persona_style() or effective_persona_style(path=path) or "").strip()
+    except Exception:
+        style = ""
+    if style and words == "自然。":
+        return f"{style}。"
+    if style and words:
+        return f"{style}。{words}"
+    return words
+
+
+def compose_style_taste(*, path: Path | None = None) -> str:
+    return style_dims_card(path=path)
 
 
 def style_dims_guide(*, path: Path | None = None, band_pack: dict | None = None) -> str:
-    """口吻取 persona_style 字段，四维按数字拼进去。不让模型自己找词。"""
-    note = style_dims_note(path=path)
-    if not note:
-        return ""
-    try:
-        dims = (style_dims(path=path).get("dims") or {})
-        intimacy = int(dims.get("亲密度", 50))
-        lively = int(dims.get("活泼度", 50))
-        serious = int(dims.get("正经度", 50))
-        talky = int(dims.get("话痨度", 50))
-    except Exception:
-        return note
-    voice = (persona_style() or effective_persona_style(path=path) or "").strip()
-    style = voice or "这副口吻"
-    bits = [
-        f"口吻：{style}",
-        "四维只改这副口吻的温度，不换口吻。",
-        note,
-        "怎么说（不是台词，禁止复述）：",
-        f"- 每句都用「{style}」这副口吻。短了、松了、熟了，都不换口吻。",
-        f"- 他说累、烦、搞砸了，也用「{style}」这副口吻接。劝歇可以，不要换成心理咨询腔或出厂助手腔。",
-    ]
-    bits.extend(style_band_lines(
-        intimacy, lively, serious, talky,
-        pack=band_pack if band_pack is not None else DEFAULT_STYLE_BAND_PACK,
-    ))
-    return "\n".join(bits)
+    _ = band_pack
+    return style_dims_card(path=path)

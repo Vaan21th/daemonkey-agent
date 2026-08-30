@@ -36,7 +36,7 @@ import sys
 import time
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, QUrl
+from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, QUrl, pyqtSignal
 try:
     from PyQt6.QtMultimedia import QSoundEffect
 except ImportError:
@@ -234,6 +234,9 @@ class Bubble(QWidget):
 
 
 class OpusPet(QWidget):
+    # B2 · 2026-08-27 · 后台线程回 UI 的桥 (API 聊天回复经信号回主线程)
+    _reply_ready = pyqtSignal(str)
+
     def __init__(self) -> None:
         super().__init__(
             None,
@@ -244,6 +247,7 @@ class OpusPet(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setFixedSize(PET_SIZE)
+        self._reply_ready.connect(lambda t: self._show_bubble(t))
 
         self._state: str = DEFAULT_STATE
         self._last_state_file_text: str = ""
@@ -492,7 +496,10 @@ class OpusPet(QWidget):
         if _is_night():
             speed = max(1, int(speed * NIGHT_SLOWDOWN))
 
-        screen = QGuiApplication.primaryScreen().availableGeometry()
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return  # B-① · 2026-08-27 · 无显示器不崩 (Grok 全量审计)
+        screen = screen.availableGeometry()
         x = self.x() + self._direction * speed
         y = self.y()
 
@@ -667,11 +674,17 @@ class OpusPet(QWidget):
                 return
         except Exception:
             pass
-        screen = QGuiApplication.primaryScreen().availableGeometry()
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return  # B-① · 2026-08-27 · 无显示器不崩 (Grok 全量审计)
+        screen = screen.availableGeometry()
         self.move(screen.right() - self.width() - 60, screen.bottom() - self.height() - 100)
 
     def _recenter(self) -> None:
-        screen = QGuiApplication.primaryScreen().availableGeometry()
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return  # B-① · 2026-08-27 · 无显示器不崩 (Grok 全量审计)
+        screen = screen.availableGeometry()
         self.move(
             screen.center().x() - self.width() // 2,
             screen.bottom() - self.height() - 100,
@@ -725,13 +738,68 @@ class OpusPet(QWidget):
         if e.button() != Qt.MouseButton.LeftButton:
             return
         text, ok = QInputDialog.getText(
-            self, "对 OPUS 说一句", "（这会写到 desktop_pet/inbox.txt——daemon 端 v0.2 会读它）："
+            self, "对 OPUS 说一句", "（直连 daemon 对话 · daemon 不在线时降级存 inbox.txt）："
         )
         if ok and text.strip():
-            inbox = PET_DIR / "inbox.txt"
-            with inbox.open("a", encoding="utf-8") as f:
-                f.write(text.strip() + "\n")
+            self._api_chat(text.strip())
             self._show_bubble("(=^ω^=)φ_", BUBBLE_AUTO_HIDE_MS)
+
+    def _api_chat(self, text: str) -> None:
+        """B2 · 2026-08-27 · 优先直调本地 daemon /chat (API-only 模式也能对话) ·
+        失败降级写 inbox.txt (终端 REPL 模式仍读它) · 后台线程不卡 UI · 回复经信号回主线程。"""
+        import threading
+        import urllib.request
+
+        def _do() -> None:
+            try:
+                env: dict[str, str] = {}
+                try:
+                    for line in (PROJECT_ROOT / ".env").read_text(encoding="utf-8").splitlines():
+                        line = line.strip()
+                        if line and not line.startswith("#") and "=" in line:
+                            k, v = line.split("=", 1)
+                            env[k.strip()] = v.strip()
+                except Exception:
+                    pass
+                port = (env.get("OPUS_API_PORT") or env.get("PORT") or "7860").strip()
+                token = (env.get("OPUS_API_TOKEN") or "").strip()
+                sid_file = PET_DIR / "pet-session.txt"
+                sid = ""
+                try:
+                    sid = sid_file.read_text(encoding="utf-8").strip() if sid_file.exists() else ""
+                except Exception:
+                    sid = ""
+                payload = {"message": text, "session_id": sid or None, "auto_confirm": True}
+                headers = {"Content-Type": "application/json"}
+                if token:
+                    headers["Authorization"] = "Bearer " + token
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/chat",
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers=headers,
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                reply = str(data.get("reply") or "").strip() or "(OPUS 没回话)"
+                new_sid = str(data.get("session_id") or "").strip()
+                if new_sid:
+                    try:
+                        sid_file.write_text(new_sid, encoding="utf-8")
+                    except Exception:
+                        pass
+                self._reply_ready.emit(reply)
+            except Exception as e:
+                # 降级: daemon 没起 / 网络不通 → 写 inbox.txt (终端 REPL 模式会读它)
+                try:
+                    inbox = PET_DIR / "inbox.txt"
+                    with inbox.open("a", encoding="utf-8") as f:
+                        f.write(text.strip() + "\n")
+                except Exception:
+                    pass
+                self._reply_ready.emit(f"daemon 不在线 · 已存 inbox ({type(e).__name__})")
+
+        threading.Thread(target=_do, daemon=True).start()
 
 
 def main() -> int:

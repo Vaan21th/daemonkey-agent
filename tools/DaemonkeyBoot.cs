@@ -160,7 +160,7 @@ internal static class DaemonkeyBoot
 
         var psi = new ProcessStartInfo();
         psi.FileName = "powershell.exe";
-        psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + meat + "\"";
+        psi.Arguments = "-NoProfile -NoLogo -NonInteractive -WindowStyle Hidden -File \"" + meat + "\"";
         psi.WorkingDirectory = root;
         psi.WindowStyle = ProcessWindowStyle.Hidden;
         psi.UseShellExecute = false;
