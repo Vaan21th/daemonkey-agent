@@ -2278,8 +2278,10 @@ function startSubWatch(sid) {
 function startActivePoll(sid) {
   clearInterval(activePoll);
   const t0 = Date.now();
-  activePoll = setInterval(async () => {
-    if (!sid) return;
+  let ticking = false;
+  const tick = async () => {
+    if (!sid || ticking) return;
+    ticking = true;
     try {
       const r = await fetch(`/sessions/${sid}/active_turn`);
       if (!r.ok) return;
@@ -2287,13 +2289,23 @@ function startActivePoll(sid) {
       const active = d && (d.active === true || d.status === 'running' || d.turn_id);
       const here = !window.SessionRuntime || SessionRuntime.isVisible(sid) || getSid() === sid;
       if (active) {
+        const st = window.SessionRuntime ? SessionRuntime.getOrCreate(sid) : null;
+        // F5 切断 SSE · daemon 还在跑 · 不把 turn_id 接上 · 停止钮仍是发送、点了也停不了
+        if (st && !st.currentAbortController) {
+          st.pending = true;
+          if (d.turn_id) st.currentTurnId = d.turn_id;
+        } else if (st && d.turn_id && !st.currentTurnId) {
+          st.currentTurnId = d.turn_id;
+        }
         const secs = Math.floor((Date.now() - t0) / 1000);
         const tool = d.progress && d.progress.tool;
         const label = d.progress && d.progress.label;
         if (here) {
+          if (d.turn_id) curTurnId = d.turn_id;
           setStatus(tool ? `她在用 ${tool} · ${secs}s` : `她还在做事… ${secs}s`);
           if (curState === 'thinking' || curState === autoBaseState()) setState('working');
           showToolBubble(tool, label);
+          refreshSendChrome();
         }
         try {
           const turnId = d.turn_id;
@@ -2338,8 +2350,13 @@ function startActivePoll(sid) {
         }
       }
       /* spawn 状态不归这里管 · 分身看守 (startSubWatch) 负责切回 */
-    } catch {}
-  }, 3000);
+    } catch {
+    } finally {
+      ticking = false;
+    }
+  };
+  tick();
+  activePoll = setInterval(tick, 3000);
 }
 function stopActivePoll() {
   clearInterval(activePoll);
