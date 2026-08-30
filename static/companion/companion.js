@@ -1585,7 +1585,10 @@ function applyEmptyHistoryGreeting() {
 
 async function restoreConversation() {
   const sid = getSid();
-  if (!sid || String(sid).startsWith('tmp-')) return;
+  if (!sid || String(sid).startsWith('tmp-')) {
+    if (typeof refreshSendChrome === 'function') refreshSendChrome();
+    return;
+  }
   if (window.SessionRuntime) {
     SessionRuntime.getOrCreate(sid);
     SessionRuntime.setActiveContainer(sid);
@@ -1620,6 +1623,9 @@ async function restoreConversation() {
     if (greeting) showSayText(greeting);
   } catch {
     applyEmptyHistoryGreeting();
+  } finally {
+    // 队在 localStorage 里 · 开机若只 restore 不画条 · 强刷看起来像排队没了
+    if (typeof refreshSendChrome === 'function') refreshSendChrome();
   }
 }
 
@@ -3171,7 +3177,7 @@ setState('greet', 2600);
     showSayText(text);
   }
 })();
-if (getSid()) startActivePoll(getSid());
+if (getSid()) applyVisibleChrome(getSid());
 // 有旧对话就接上 (会顶掉上面那句问候 —— 她本来就在聊天中间, 不该重新打招呼);
 // 历史空 / 读失败时 restore 自己兜底问候, 不再留白窗。
 restoreConversation();
