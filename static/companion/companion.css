@@ -1404,15 +1404,16 @@ body.night #chat.rail::before { background: linear-gradient(180deg, #e08a4a, #8a
 }
 #chat.rail .topic-hangout i { color: #c4784a; }
 #chat.rail .topic-hangout:hover { color: var(--tx); }
-.topic-more {
-  width: 100%; margin: 2px 0 6px; padding: 10px 12px;
+.shelf-more {
+  flex: none; width: calc(100% - 38px); margin: 2px 16px 8px 22px; padding: 10px 12px;
   border: 1px dashed rgba(196,120,74,.45); background: transparent;
   color: #c4784a; border-radius: 12px; cursor: pointer;
   font-size: 13px; font-weight: 700;
   display: flex; align-items: center; justify-content: center; gap: 4px;
 }
-.topic-more:hover { background: rgba(196,120,74,.1); }
-.topic-more:disabled { opacity: .55; cursor: default; }
+.shelf-more[hidden] { display: none; }
+.shelf-more:hover { background: rgba(196,120,74,.1); }
+.shelf-more:disabled { opacity: .55; cursor: default; }
 .stack { flex: 1; overflow-x: hidden; overflow-y: auto; padding: 8px 14px 12px 22px; min-width: 0; min-height: 0; }
 .tcard.draft { border-style: dashed; border-color: #c4784a99; }
 .tcard {

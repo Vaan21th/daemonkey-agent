@@ -329,31 +329,23 @@ function _cardHtml(s) {
     </article>`;
 }
 function _paintMore() {
-  const stack = _stack();
-  if (!stack) return;
-  let btn = document.getElementById('topic-more');
+  const btn = document.getElementById('topic-more');
+  if (!btn) return;
+  // 不跟卡片上的 .topic-more（⋯）抢 class · 那条是 absolute 钉右上角
   if (!_shelfMore) {
-    if (btn) btn.remove();
+    btn.hidden = true;
     return;
   }
-  if (!btn) {
-    btn = document.createElement('button');
-    btn.id = 'topic-more';
-    btn.type = 'button';
-    btn.className = 'topic-more';
-    btn.addEventListener('click', loadMoreShelf);
-    stack.appendChild(btn);
-  }
+  btn.hidden = false;
   btn.disabled = false;
   btn.innerHTML = '<i class="ri-arrow-down-s-line"></i> 更早的话题';
 }
 function _appendCards(rows) {
   const stack = _stack();
   if (!stack || !rows.length) return;
-  const more = document.getElementById('topic-more');
   const hold = document.createElement('div');
   hold.innerHTML = rows.map(_cardHtml).join('');
-  while (hold.firstChild) stack.insertBefore(hold.firstChild, more);
+  while (hold.firstChild) stack.appendChild(hold.firstChild);
   _bindShelf(stack);
 }
 function renderShelf() {
@@ -362,6 +354,8 @@ function renderShelf() {
   if (!_rows.length) {
     stack.classList.remove('fresh');
     stack.innerHTML = '<div class="pane-empty"><i class="ri-book-open-line"></i>还没有说过话 · 第一句就开始有记忆</div>';
+    _shelfMore = false;
+    _paintMore();
     return;
   }
   const els = [...stack.querySelectorAll('.tcard')];
@@ -512,6 +506,8 @@ async function loadMoreShelf() {
 }
 
 function bootTopicRail() {
+  const more = document.getElementById('topic-more');
+  if (more) more.addEventListener('click', loadMoreShelf);
   const neu = document.getElementById('topic-new');
   if (neu) neu.addEventListener('click', () => {
     closeJournal();
