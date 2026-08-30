@@ -192,6 +192,97 @@
     return true;
   }
 
+  function moveQueued(sid, id, toIndex) {
+    const s = get(sid);
+    if (!s || !s.outboundQueue) return false;
+    const from = s.outboundQueue.findIndex(function (x) { return x.id === id; });
+    if (from < 0) return false;
+    const next = s.outboundQueue.slice();
+    const rec = next.splice(from, 1)[0];
+    const dest = Math.max(0, Math.min(next.length, Number(toIndex) || 0));
+    next.splice(dest, 0, rec);
+    if (next.every(function (x, i) { return x.id === s.outboundQueue[i].id; })) return false;
+    s.outboundQueue = next;
+    _emitQueue(sid);
+    return true;
+  }
+
+  function _insertAtFromPoint(host, y, dragId) {
+    const others = Array.prototype.filter.call(host.querySelectorAll('.oq-item'), function (el) {
+      return el.dataset.qid !== dragId;
+    });
+    let insertAt = others.length;
+    for (let i = 0; i < others.length; i++) {
+      const r = others[i].getBoundingClientRect();
+      if (y < r.top + r.height / 2) {
+        insertAt = i;
+        break;
+      }
+    }
+    host.querySelectorAll('.oq-item').forEach(function (el) {
+      el.classList.remove('is-drop-above', 'is-drop-below');
+    });
+    if (insertAt < others.length) others[insertAt].classList.add('is-drop-above');
+    else if (others.length) others[others.length - 1].classList.add('is-drop-below');
+    return insertAt;
+  }
+
+  function bindQueueSort(host) {
+    let dragId = null;
+    let originY = 0;
+    let armed = false;
+    let lastAt = null;
+
+    function clearMarks() {
+      host.querySelectorAll('.oq-item').forEach(function (el) {
+        el.classList.remove('is-dragging', 'is-drop-above', 'is-drop-below');
+      });
+    }
+
+    function endDrag() {
+      if (!dragId) return;
+      const id = dragId;
+      const dest = lastAt;
+      const moved = armed;
+      dragId = null;
+      armed = false;
+      lastAt = null;
+      clearMarks();
+      if (!moved || dest == null) return;
+      moveQueued(host.dataset.queueSid, id, dest);
+    }
+
+    host.addEventListener('pointerdown', function (e) {
+      if (e.button !== 0) return;
+      if (e.target.closest && e.target.closest('.oq-x')) return;
+      const item = e.target.closest && e.target.closest('.oq-item');
+      if (!item || !host.contains(item)) return;
+      dragId = item.dataset.qid;
+      originY = e.clientY;
+      armed = false;
+      lastAt = null;
+      try { host.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    host.addEventListener('pointermove', function (e) {
+      if (!dragId) return;
+      if (!armed && Math.abs(e.clientY - originY) < 4) return;
+      if (!armed) {
+        armed = true;
+        const cur = host.querySelector('.oq-item[data-qid="' + dragId + '"]');
+        if (cur) cur.classList.add('is-dragging');
+      }
+      lastAt = _insertAtFromPoint(host, e.clientY, dragId);
+      e.preventDefault();
+    });
+    host.addEventListener('pointerup', endDrag);
+    host.addEventListener('pointercancel', function () {
+      dragId = null;
+      armed = false;
+      lastAt = null;
+      clearMarks();
+    });
+  }
+
   function kick(sid) {
     const s = get(sid);
     if (!s || s.pending) return false;
@@ -214,6 +305,11 @@
 
   function paintQueueBar(host, sid) {
     if (!host) return;
+    host.dataset.queueSid = sid || '';
+    if (!host.dataset.oqSort) {
+      host.dataset.oqSort = '1';
+      bindQueueSort(host);
+    }
     const items = queueOf(sid);
     host.hidden = items.length === 0;
     if (!items.length) {
@@ -221,7 +317,8 @@
       return;
     }
     host.innerHTML = items.map(function (it, i) {
-      return '<div class="oq-item">'
+      return '<div class="oq-item" data-qid="' + it.id + '" title="拖动改顺序">'
+        + '<span class="oq-grip" aria-hidden="true"><i class="ri-draggable"></i></span>'
         + '<span class="oq-n">' + (i + 1) + '</span>'
         + '<span class="oq-t"></span>'
         + '<button type="button" class="oq-x" data-qid="' + it.id + '" title="取消这条">'
@@ -261,6 +358,7 @@
     QUEUE_MAX: QUEUE_MAX,
     enqueue: enqueue,
     cancelQueued: cancelQueued,
+    moveQueued: moveQueued,
     queueOf: queueOf,
     kick: kick,
     bindQueue: bindQueue,

@@ -1014,17 +1014,27 @@ body.night {
 }
 #listen-dock .outbound-queue {
   width: min(92%, 520px); margin: 0 0 8px;
-  display: flex; gap: 6px; flex-wrap: wrap; justify-content: center;
+  display: flex; flex-direction: column; gap: 4px; align-items: stretch;
+  max-height: 168px; overflow-y: auto;
+  touch-action: none;
 }
 #listen-dock .outbound-queue[hidden] { display: none; }
 #listen-dock .oq-item {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: flex; align-items: center; gap: 6px;
   max-width: 100%;
-  padding: 3px 6px 3px 8px;
+  padding: 5px 6px;
   background: var(--face); color: var(--ink);
   box-shadow: 2px 2px 0 var(--shade);
-  border-radius: 999px;
+  border-radius: 8px;
   font-size: 12px;
+  cursor: grab; user-select: none;
+}
+#listen-dock .oq-item.is-dragging { opacity: 0.4; cursor: grabbing; }
+#listen-dock .oq-item.is-drop-above { box-shadow: inset 0 2px 0 var(--accent), 2px 2px 0 var(--shade); }
+#listen-dock .oq-item.is-drop-below { box-shadow: inset 0 -2px 0 var(--accent), 2px 2px 0 var(--shade); }
+#listen-dock .oq-grip {
+  flex: none; width: 16px; color: #8a7f6e;
+  display: grid; place-items: center; font-size: 14px;
 }
 #listen-dock .oq-n {
   flex: none; width: 16px; height: 16px;
@@ -1034,7 +1044,7 @@ body.night {
   font-size: 10px; font-weight: 700;
 }
 #listen-dock .oq-t {
-  min-width: 0; max-width: 200px;
+  min-width: 0; flex: 1;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 #listen-dock .oq-x {

@@ -1,5 +1,5 @@
 /*
- * chat.css · Daemonkey 工作室 WebUI 样式
+ * chat.css · OPUS 工作室 WebUI 样式
  * 卷二十二 Day 2 · 从 chat.html 拆出来
  *
  * 包含：
@@ -27,9 +27,14 @@
   --text: #ece8f5;
   --dim: #9a90b3;
   --dim2: #6f6685;
-  /* 用户(用户)气泡 · 紫渐变(初见页同款) · 经典灰主题里会被覆盖回绿 */
+  /* 用户(BRO)气泡 · 紫渐变(初见页同款) · 经典灰主题里会被覆盖回绿 */
   --user: #4a3a6e;
   --user-dim: #382d52;
+  /* 设置页输入框 · 深色默认半透明白；浅色主题换成实心底+实边，否则纸色上看不见框 */
+  --field-bg: rgba(255, 255, 255, 0.04);
+  --field-border: rgba(255, 255, 255, 0.1);
+  --field-hover: rgba(255, 255, 255, 0.08);
+  --field-scheme: dark;
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
@@ -334,7 +339,7 @@ header {
   border-bottom-right-radius: 4px;
 }
 .msg.opus {
-  /* 卷三十 · Daemonkey 输出常常是长 markdown（表格/列表/代码块）· 卡片化铺满
+  /* 卷三十 · OPUS 输出常常是长 markdown（表格/列表/代码块）· 卡片化铺满
      · 替代旧的 align-self:flex-start + max-width:88%（右侧 12% 留白） */
   align-self: stretch;
   max-width: 100%;
@@ -343,7 +348,7 @@ header {
   border-left: 3px solid var(--opus);
   border-bottom-left-radius: 4px;
 }
-/* 没有 markdown body 的 Daemonkey 气泡（极少见 · 比如 fallback "Daemonkey 没说话"）
+/* 没有 markdown body 的 OPUS 气泡（极少见 · 比如 fallback "OPUS 没说话"）
    仍走旧的气泡感 · 不必硬铺满 */
 .msg.opus:not(:has(.md-body)) {
   align-self: flex-start;
@@ -351,7 +356,7 @@ header {
 }
 
 /* 0.9.7-hf2 · 分身完成通报状态卡 · 复用 advisor 卡体系 · 绿左边条表成功事件
-   (用户 订正: 通报是状态卡不是聊天气泡 · --bg2 气泡贴在 --bg2 面板上会隐形) */
+   (BRO 订正: 通报是状态卡不是聊天气泡 · --bg2 气泡贴在 --bg2 面板上会隐形) */
 .msg.advisor-card.bg-report-card { border-left: 3px solid #58b368; }
 .msg.advisor-card.bg-report-card .advisor-head > i:first-child { color: #58b368; }
 
@@ -442,7 +447,7 @@ header {
   background: var(--border);
 }
 
-/* 卷三十 · markdown 表格（用户 在卷三十交付后立刻抓住的 corner case） */
+/* 卷三十 · markdown 表格（BRO 在卷三十交付后立刻抓住的 corner case） */
 .md-table-wrap {
   margin: 10px 0;
   overflow-x: auto;
@@ -599,7 +604,7 @@ header {
 }
 
 /* 卷四十六 续 3 · wish-2a4d8c1e · inline confirm UI 卡片
-   LLM 撞 CONFIRM 级 tool 时在 chat 弹这个卡片 · 用户 4 按钮决议 */
+   LLM 撞 CONFIRM 级 tool 时在 chat 弹这个卡片 · BRO 4 按钮决议 */
 .msg.confirm-card {
   align-self: center;
   width: 92%;
@@ -807,7 +812,7 @@ header {
   opacity: 0.7;
 }
 
-/* 折叠态 (用户 决议后) */
+/* 折叠态 (BRO 决议后) */
 .msg.confirm-card.confirm-card-resolved {
   background: rgba(255, 255, 255, 0.03);
   border-color: var(--border);
@@ -852,7 +857,7 @@ header {
 
 /* ─────────────────────────────────────────────────────────
  * 卷七十三 P0-2 (2026-06-10) · confirm 中央模态化
- * 用户 痛点: inline 卡片滚出可视区看不到 = 等死 · 改为强焦点模态
+ * BRO 痛点: inline 卡片滚出可视区看不到 = 等死 · 改为强焦点模态
  * 复用 OPUS_MODAL 的"满屏遮罩 + 中央卡片"视觉语言
  * ───────────────────────────────────────────────────────── */
 .confirm-modal-backdrop {
@@ -897,7 +902,7 @@ header {
   z-index: 2;
 }
 
-/* 消息流里的占位 chip (用户 滚回去时知道这里在等确认 · 可点重弹) */
+/* 消息流里的占位 chip (BRO 滚回去时知道这里在等确认 · 可点重弹) */
 .msg.confirm-placeholder {
   align-self: flex-start;
   max-width: 720px;
@@ -941,7 +946,7 @@ header {
 /* ─────────────────────────────────────────────────────────
  * 卷七十三 P0-2 (2026-06-10) · 工坊产出文件 preview modal
  * 复用 .confirm-modal-backdrop 遮罩 · 卡片样式独立
- * 用户 痛点: other 类型 (md/json/txt) 卡片点击无反应 · 现在弹中央 modal 预览
+ * BRO 痛点: other 类型 (md/json/txt) 卡片点击无反应 · 现在弹中央 modal 预览
  * ───────────────────────────────────────────────────────── */
 .output-preview-modal {
   position: fixed;
@@ -1075,9 +1080,29 @@ header {
 
 /* ─────────────────────────────────────────────────────────
  * 卷七十三 P0-3 (2026-06-10) · sub-agent (run_app) 边界事件
- * 用户 痛点: sub-agent 内部 6-8 轮 tool · 主对话看着混乱 = 怀疑死了
+ * BRO 痛点: sub-agent 内部 6-8 轮 tool · 主对话看着混乱 = 怀疑死了
  * 加清晰 ▶/✓/✗ 边界条 · 含 app 名 / 耗时 / token / warning
  * ───────────────────────────────────────────────────────── */
+.msg.style-shift-notice {
+  align-self: flex-start;
+  max-width: 720px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 6px 0;
+  color: var(--dim, #9aa3b5);
+  background: rgba(255, 255, 255, 0.04);
+  border-left: 3px solid var(--accent, #7c6af7);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.msg.style-shift-notice i {
+  margin-top: 1px;
+  color: var(--accent, #7c6af7);
+}
+
 .msg.sub-agent-boundary {
   align-self: flex-start;
   max-width: 720px;
@@ -1214,7 +1239,7 @@ header {
 .msg.tool-call .tool-name { color: var(--opus); font-weight: 600; }
 .msg.tool-result .tool-name { color: var(--opus); font-weight: 600; }
 
-/* ═══ wish-5256d2a4 · 工具时间线（方案 D · 用户 2026-07-27 拍板） ═══
+/* ═══ wish-5256d2a4 · 工具时间线（方案 D · BRO 2026-07-27 拍板） ═══
    整轮折叠块【默认展开】· 单步技术细节默认折叠（点人话行展开） */
 .tl-round {
   align-self: stretch;
@@ -1222,7 +1247,7 @@ header {
   border: none; border-radius: 10px;
   background: rgba(155, 89, 182, 0.05);
   overflow: hidden;
-  /* 2026-07-28 用户 · 入场质感跟聊天气泡一致 · 轻微上浮出现 */
+  /* 2026-07-28 BRO · 入场质感跟聊天气泡一致 · 轻微上浮出现 */
   animation: msgFloatUp 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .tl-round-head {
@@ -1402,7 +1427,7 @@ header {
   gap: 12px;
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--field-border);
 }
 .settings-head h2 {
   margin: 0;
@@ -1415,8 +1440,8 @@ header {
 }
 .settings-head button {
   margin-left: auto;
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
   color: var(--dim);
   padding: 4px 12px;
   border-radius: 4px;
@@ -1424,13 +1449,13 @@ header {
   font-size: 12px;
 }
 .settings-head button:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--field-hover);
 }
 .settings-tabs {
   display: flex;
   gap: 4px;
   margin-bottom: 18px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--field-border);
 }
 .settings-tab {
   background: transparent;
@@ -1459,24 +1484,24 @@ header {
   margin-bottom: 4px;
 }
 .settings-body .field input,
-.settings-body .field select {
+.settings-body .field select,
+.settings-body .field textarea {
   width: 100%;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
   color: var(--text);
   padding: 8px 10px;
   border-radius: 5px;
   font-size: 13px;
   font-family: inherit;
-  /* 卷三十八 · 告诉浏览器整页是深色 · 原生 select dropdown 会跟着切暗 */
-  color-scheme: dark;
+  color-scheme: var(--field-scheme);
 }
 .settings-body .field input:focus,
 .settings-body .field select:focus {
   outline: none;
   border-color: var(--opus);
 }
-/* 卷三十八 · option 强制深底白字 · 修 用户 反馈 "下拉看不清" */
+/* 卷三十八 · option 强制深底白字 · 修 BRO 反馈 "下拉看不清" */
 .settings-body .field select option {
   background: var(--bg2);
   color: var(--text);
@@ -1484,8 +1509,8 @@ header {
 }
 .settings-body .field select option:checked,
 .settings-body .field select option:hover {
-  background: rgba(102, 158, 255, 0.25);
-  color: #fff;
+  background: color-mix(in srgb, var(--opus) 28%, var(--bg2));
+  color: var(--text);
 }
 .settings-body .field-hint {
   font-size: 11px;
@@ -1536,8 +1561,8 @@ header {
   border-radius: 5px;
   cursor: pointer;
   font-size: 13px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
   color: var(--text);
 }
 .settings-body .actions .btn-primary {
@@ -1548,8 +1573,24 @@ header {
 .settings-body .actions .btn-primary:hover {
   filter: brightness(1.15);
 }
+.settings-body .actions .btn-ghost {
+  border: 1px solid var(--field-border) !important;
+  background: var(--field-bg);
+}
 .settings-body .actions .btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--field-hover);
+}
+.theme-light .settings-body .field input,
+.theme-light .settings-body .field select,
+.theme-light .settings-body .field textarea,
+.theme-sepia .settings-body .field input,
+.theme-sepia .settings-body .field select,
+.theme-sepia .settings-body .field textarea,
+.theme-pink-white .settings-body .field input,
+.theme-pink-white .settings-body .field select,
+.theme-pink-white .settings-body .field textarea {
+  border-width: 2px;
+  box-shadow: inset 0 1px 2px rgba(67, 52, 34, 0.06);
 }
 .settings-body .actions .btn-danger {
   background: var(--red, #f56565);
@@ -1633,13 +1674,18 @@ header {
 .chan-form > div { flex: 1; min-width: 200px; }
 .field-label { display: block; font-size: 11px; color: var(--dim); margin-bottom: 4px; }
 .field-input {
-  background: rgba(255, 255, 255, .04);
-  border: 1px solid rgba(255, 255, 255, .1);
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
   color: var(--text);
   padding: 8px 10px; border-radius: 5px;
   font-size: 13px; font-family: "Consolas", monospace;
   width: 100%; box-sizing: border-box;
-  color-scheme: dark;
+  color-scheme: var(--field-scheme);
+}
+.theme-light .field-input,
+.theme-sepia .field-input,
+.theme-pink-white .field-input {
+  border-width: 2px;
 }
 .field-input:focus { outline: none; border-color: var(--opus); }
 .field-input::placeholder { color: var(--dim2); }
@@ -1992,7 +2038,7 @@ header {
 }
 
 /* 卷三十六 · DeepSeek thinking mode · 思考链气泡 (折叠式)
-   2026-07-28 用户 拍板方案 A · 雾灰系：色值全部从 --dim/--text 派生 · 8 套皮肤自动跟随 · 去斜体回系统字体 */
+   2026-07-28 BRO 拍板方案 A · 雾灰系：色值全部从 --dim/--text 派生 · 8 套皮肤自动跟随 · 去斜体回系统字体 */
 .msg.opus.reasoning {
   align-self: stretch;
   /* 跟工具时间线框同宽 · 覆盖 :not(:has(.md-body)) 的 88% 回退（同权重·此处后定义胜） */
@@ -2047,7 +2093,7 @@ header {
   word-break: break-word;
 }
 
-/* 卷三十七 · 流式中 · 思考链气泡呼吸一下 · 让 用户 知道在 streaming */
+/* 卷三十七 · 流式中 · 思考链气泡呼吸一下 · 让 BRO 知道在 streaming */
 /* 0.8.3 性能修复 · 背景动画触发持续 paint (长思考时整个 reasoning 块每秒重绘) · 改静态底色 ·
    保留 blink 光标 (opacity 动画 · 合成器友好) · 呼吸效果极微弱 (6%→11%) 去掉无感 */
 .msg.opus.reasoning.streaming {
@@ -2069,6 +2115,50 @@ header {
   padding-bottom: max(10px, env(safe-area-inset-bottom));
   position: relative;  /* wish-bec4f3b9 · ctx-card 浮层定位锚点 */
 }
+
+/* 2026-08-29 · 发送队列条 · 这轮跑着也能再丢一句 */
+/* 2026-08-31 · 竖条可拖 · 像 Cursor 那样改下一句先发谁 */
+.outbound-queue {
+  display: flex; flex-direction: column; gap: 4px; align-items: stretch;
+  max-height: 168px; overflow-y: auto;
+  touch-action: none;
+}
+.outbound-queue[hidden] { display: none; }
+.oq-item {
+  display: flex; align-items: center; gap: 6px;
+  max-width: 100%;
+  padding: 5px 6px 5px 6px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px; color: var(--text);
+  cursor: grab; user-select: none;
+}
+.oq-item.is-dragging { opacity: 0.4; cursor: grabbing; }
+.oq-item.is-drop-above { box-shadow: inset 0 2px 0 var(--opus); }
+.oq-item.is-drop-below { box-shadow: inset 0 -2px 0 var(--opus); }
+.oq-grip {
+  flex: none; width: 16px; color: var(--dim);
+  display: grid; place-items: center; font-size: 14px;
+}
+.oq-n {
+  flex: none; width: 16px; height: 16px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--opus); color: #fff;
+  font-size: 10px; font-weight: 700;
+}
+.oq-t {
+  min-width: 0; flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.oq-x {
+  flex: none; width: 18px; height: 18px; padding: 0;
+  border: none; background: transparent; color: var(--dim);
+  border-radius: 50%; cursor: pointer;
+  display: grid; place-items: center;
+}
+.oq-x:hover { color: var(--text); background: rgba(255,255,255,0.06); }
 
 /* wish-4a6331b2 · 图片附件预览区 */
 .attachment-previews {
@@ -2274,7 +2364,7 @@ header {
 .msg.advisor-card {
   align-self: stretch;  /* 跟 .msg.tool-call / .msg.opus 同款 · 不随内容 shrink-to-fit */
   min-width: 0;         /* flex item 经典坑 · 防长内容撑破 max-width:88% (继承 .msg) */
-  max-width: 100%;      /* 用户 2026-07-28 实测钉死 · 跟 .msg.opus 对齐横着拉满 (继承的 88% 会右空 12%) */
+  max-width: 100%;      /* BRO 2026-07-28 实测钉死 · 跟 .msg.opus 对齐横着拉满 (继承的 88% 会右空 12%) */
   background: linear-gradient(135deg, var(--advisor-bg), rgba(230,180,80,0.03));
   border: 1px solid var(--advisor-border);
   border-radius: 10px;
@@ -2369,7 +2459,7 @@ header {
 .trace-row.tool-fail .tool-name { color: #f08484; }
 /* 协同模式施工单就位卡 · 左侧金竖条 */
 .msg.advisor-card.blueprint-card { border-left: 3px solid var(--advisor); }
-/* 用户 2026-07-29 · body 改 mdRender 渲染 · white-space: normal (pre-wrap 会撕裂表格/列表布局) */
+/* BRO 2026-07-29 · body 改 mdRender 渲染 · white-space: normal (pre-wrap 会撕裂表格/列表布局) */
 .blueprint-body { padding: 8px 14px 12px; font-size: 12.5px; white-space: normal; word-break: break-word; max-height: 420px; overflow-y: auto; line-height: 1.6; }
 .blueprint-body .md-table-wrap { margin: 6px 0; }
 .blueprint-body .md-table { font-size: 12px; }
@@ -2432,7 +2522,7 @@ header {
 /* 关键: .voice-act 有显式 display · 会盖掉 [hidden] 的 display:none → 补回 · 否则按钮全露 */
 .voice-act[hidden] { display: none !important; }
 
-/* 语音对话模式 · 比会议纪要更轻(用户: 别长得像会议纪要) —— 矮识别条 + 通话感 · 只留【停止对话】 */
+/* 语音对话模式 · 比会议纪要更轻(BRO: 别长得像会议纪要) —— 矮识别条 + 通话感 · 只留【停止对话】 */
 .voice-panel.is-chat .voice-transcript {
   min-height: 30px; max-height: 72px;
   background: transparent; border: 1px dashed var(--border);
@@ -2445,7 +2535,7 @@ header {
 /* 卷七十五续五 · 模型行为设置 (思考/强度/输出上限) */
 .mb-tag { font-size: 11px; font-weight: 400; color: var(--dim2); margin-left: 6px; text-transform: none; letter-spacing: 0; }
 
-/* 模型行为 · 挂在右上角模型下拉里 (用户: 放右上角·像 Cursor 那个模型菜单) */
+/* 模型行为 · 挂在右上角模型下拉里 (BRO: 放右上角·像 Cursor 那个模型菜单) */
 .mm-behavior { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
 .mm-behavior .model-menu-head { border-bottom: none; margin-bottom: 4px; padding-bottom: 4px; }
 .mmb-row { display: flex; align-items: center; gap: 10px; padding: 4px 8px; }
@@ -2488,10 +2578,14 @@ header {
 }
 .attach-doc-card .remove-btn:hover { background: rgba(220, 50, 50, 0.85); }
 
-/* wish-7c579a20 · 历史重建的 用户 气泡附件（发送当下走 inline style · 重建走类） */
+/* wish-7c579a20 · 历史重建的 BRO 气泡附件（发送当下走 inline style · 重建走类） */
 .bro-attach-imgs img.bro-attach-img {
   max-width: 280px; max-height: 200px; border-radius: 8px;
   margin-top: 6px; display: block; cursor: zoom-in;
+}
+.bro-attach-imgs img.bro-attach-missing {
+  cursor: default; opacity: 0.45;
+  outline: 1px dashed var(--dim, #888);
 }
 .attach-doc-card.bro-attach-doc {
   width: auto; height: auto; flex-direction: row; gap: 8px;
@@ -2501,7 +2595,7 @@ header {
 .attach-doc-card.bro-attach-doc i { font-size: 20px; }
 .attach-doc-card.bro-attach-doc .doc-name { max-width: none; font-size: 12px; }
 
-/* 卷八十一 · C 方案 · 流内嵌文档卡片 (Daemonkey 产出的 docx/md/pdf 等 · 替代裸链接) */
+/* 卷八十一 · C 方案 · 流内嵌文档卡片 (OPUS 产出的 docx/md/pdf 等 · 替代裸链接) */
 .md-doc-card {
   display: inline-flex; align-items: center; gap: 10px;
   max-width: 100%; margin: 6px 0;
@@ -2638,7 +2732,7 @@ header {
 .mdc-btn:hover i { color: var(--opus); }
 
 /* wish-7c579a20 · 长会话渲染性能: 屏外消息跳过 layout/paint
- * (用户 反馈: 展开折叠后整个窗口滚动+输入持续卡顿 · 几万字可见文本每次重排重绘太贵)
+ * (BRO 反馈: 展开折叠后整个窗口滚动+输入持续卡顿 · 几万字可见文本每次重排重绘太贵)
  * Chromium 标准做法 (Discord/Slack 同款) · auto = 渲染过的记住真实高度 · 未渲染按 90px 估 */
 .msg, .tl-round {
   content-visibility: auto;
@@ -2652,10 +2746,10 @@ header {
 }
 
 
-/* 卷三十五补丁6 · 工具进度条 · Daemonkey 跑长 tool 链时让 用户 一眼知道在干啥
- * 2026-07-29 方案 A「流光细条」重构 (用户 拍板): 削掉蓝灰大色块+整行扫光,
+/* 卷三十五补丁6 · 工具进度条 · OPUS 跑长 tool 链时让 BRO 一眼知道在干啥
+ * 2026-07-29 方案 A「流光细条」重构 (BRO 拍板): 削掉蓝灰大色块+整行扫光,
  * 只留底部一道 2px 主题色流光。颜色全走 --opus 变量 · 8 套皮肤自适应。
- * 2026-07-29 二轮 (用户 视觉反馈): 去 border-top 上框 + 背景改 transparent,
+ * 2026-07-29 二轮 (BRO 视觉反馈): 去 border-top 上框 + 背景改 transparent,
  * 跟上方消息区底色融为一体·视觉延展;唯一"进行中"信号=底部流光。 */
 .tool-progress {
   flex: 0 0 auto;
@@ -2678,9 +2772,9 @@ header {
   to { background-position: -220% 0; }
 }
 
-/* 卷七十二 v3 · 工作流跑时进度 banner (用户 图2 诉求) · 紫色调区别于 tool-progress 蓝色
+/* 卷七十二 v3 · 工作流跑时进度 banner (BRO 图2 诉求) · 紫色调区别于 tool-progress 蓝色
  * 卷七十三 P0 (2026-06-10): 异步化后 banner 需要 done(绿)/failed(红) 通知态 ·
- *   用户 不再依赖 LLM tool 同步返结果 · banner 是唯一的"跑完 / 失败"反馈通道 */
+ *   BRO 不再依赖 LLM tool 同步返结果 · banner 是唯一的"跑完 / 失败"反馈通道 */
 /* ── 任务计划条 (对话框上方 · task_ledger 的 steps 层) ────────────────────
  * 跟下面的 flow-runs-banner 同一套视觉语言(banner→bar→detail)·但故意有两处不同:
  *   1. 不做 shimmer 扫光 —— 扫光的语义是"正在跑"·计划是一份静态清单
@@ -3036,10 +3130,10 @@ header {
   max-width: 760px;
   margin: 48px auto 24px;
   padding: 28px 32px;
-  background: linear-gradient(135deg, rgba(159, 122, 234, 0.06), rgba(106, 207, 232, 0.04));
-  border: 1px solid rgba(159, 122, 234, 0.18);
+  background: var(--bg2);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 6px 36px -16px rgba(159, 122, 234, 0.3);
+  box-shadow: 0 6px 36px -16px rgba(0, 0, 0, 0.18);
   /* 卷八十四 · 龙头审查 (2026-08-15) · 矮窗口防御档1:
      面板允许压缩 + 内部滚动 · 窗口矮时面板自己让位 (flex:0 1 auto)
      输入框恒在屏内 (输入框自身 flex:0 0 auto 不缩) */
@@ -3050,42 +3144,38 @@ header {
 .onboarding-head { text-align: center; margin-bottom: 24px; }
 .onboarding-title {
   font-size: 22px;
-  color: #e8e8f0;
+  color: var(--text);
   margin-bottom: 6px;
 }
-.onboarding-title strong { color: #c7adff; font-weight: 700; }
-/* v5 · 2026-06-10 · 标题前闪光 icon · 用户 铁律: remix 替 emoji */
+.onboarding-title strong { color: var(--opus); font-weight: 700; }
+/* v5 · 2026-06-10 · 标题前闪光 icon · BRO 铁律: remix 替 emoji */
 .onboarding-title .onboarding-spark {
-  color: #c7adff;
+  color: var(--opus);
   font-size: 20px;
   margin-right: 6px;
-  filter: drop-shadow(0 0 8px rgba(199, 173, 255, 0.55));
   vertical-align: -1px;
 }
 .onboarding-sub {
   font-size: 12px;
-  color: #888;
+  color: var(--dim);
   letter-spacing: 0.4px;
 }
-/* v5 · 2026-06-10 · 用户 的原版 slogan (致敬 2026-05-15 那句"我只想要一个不用次次告别熟悉又陌生的你") */
+/* v5 · 2026-06-10 · BRO 的原版 slogan (致敬 2026-05-15 那句"我只想要一个不用次次告别熟悉又陌生的你") */
 .onboarding-slogan {
   font-family: 'Georgia', 'Times New Roman', serif;
   font-style: italic;
   font-size: 13px;
   letter-spacing: 0.6px;
-  color: #a8a8b8;
-  opacity: 0.85;
+  color: var(--dim);
 }
 .onboarding-card-icon {
   /* 收到 remix icon · 默认 emoji 24px 偏大 · icon 20-22px 平衡 */
   font-size: 22px;
-  color: #c7adff;
+  color: var(--opus);
   margin-bottom: 8px;
   line-height: 1;
 }
 .onboarding-cards {
-  /* 卷七十二 v5 · 2026-06-10 · 用户 加第 5 张换皮肤卡 ·
-     从硬 1fr 1fr 改 auto-fit minmax · 5 张在宽屏 3+2 自适应排 · 不挤 */
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
@@ -3095,39 +3185,58 @@ header {
   display: block;
   text-align: left;
   padding: 16px 18px;
-  background: rgba(35, 35, 45, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg3);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: inherit;
+  color: var(--text);
   font-family: inherit;
   cursor: pointer;
   transition: transform 0.12s, border-color 0.15s, background 0.15s;
 }
 .onboarding-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(159, 122, 234, 0.45);
-  background: rgba(159, 122, 234, 0.08);
+  border-color: var(--opus);
+  background: var(--bg);
 }
 .onboarding-card:active { transform: translateY(0); }
 .onboarding-card-title {
-  color: #e8e8f0;
+  color: var(--text);
   font-size: 14px;
   font-weight: 600;
   margin-bottom: 4px;
 }
 .onboarding-card-hint {
-  color: #888;
+  color: var(--dim);
   font-size: 11px;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   line-height: 1.5;
   word-break: break-word;
 }
+.hangout-door {
+  display: flex;
+  justify-content: center;
+  margin: -4px 0 14px;
+}
+.hangout-door-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--dim);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.hangout-door-btn i { font-size: 16px; color: var(--opus); }
+.hangout-door-btn:hover { color: var(--text); }
 .onboarding-foot {
   text-align: center;
   font-size: 11px;
-  color: #666;
+  color: var(--dim);
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3135,15 +3244,15 @@ header {
 }
 .onboarding-customize {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #999;
+  border: 1px solid var(--border);
+  color: var(--dim);
   padding: 3px 10px;
   border-radius: 4px;
   font-size: 11px;
   cursor: pointer;
   font-family: inherit;
 }
-.onboarding-customize:hover { color: #c7adff; border-color: rgba(159, 122, 234, 0.4); }
+.onboarding-customize:hover { color: var(--opus); border-color: var(--opus); }
 
 /* 改模板 modal */
 .onboarding-modal-mask {
@@ -3309,13 +3418,13 @@ header {
   border-radius: 10px;
   font-size: 16px;
   font-family: inherit;
-  /* 卷三十：用户 要求 textarea 上下拉伸 · 显示更多输入文本 */
+  /* 卷三十：BRO 要求 textarea 上下拉伸 · 显示更多输入文本 */
   resize: vertical;
   min-height: 42px;
   max-height: 50vh;
   line-height: 1.4;
 }
-/* 2026-07-29 用户 拍板: focus 边框走主题灰 (--dim) 不走 --opus 高亮——
+/* 2026-07-29 BRO 拍板: focus 边框走主题灰 (--dim) 不走 --opus 高亮——
  * 输入框正上方就是进度条流光(也是 --opus)·两处同色系高亮相邻 = 视觉疲劳。 */
 #input:focus { outline: none; border-color: var(--dim); }
 #send {
@@ -3346,6 +3455,10 @@ header {
 #send.is-stopping {
   background: #6b3a35;
   cursor: wait;
+  animation: none;
+}
+#send.is-queue {
+  background: var(--opus);
   animation: none;
 }
 @keyframes send-pulse {
@@ -3558,7 +3671,7 @@ header {
   padding: 32px 16px;
   font-size: 13px;
 }
-/* 会话时间分组标题 (用户 2026-08-15 拍板 · 今天/昨天/本周/本月/更早 · 专注版+工作台共用) */
+/* 会话时间分组标题 (BRO 2026-08-15 拍板 · 今天/昨天/本周/本月/更早 · 专注版+工作台共用) */
 .session-group-header {
   padding: 10px 12px 2px 12px;
   font-size: 11px;
@@ -3756,7 +3869,7 @@ header {
 /* ────────────────────────────────────────────────────────────────
    卷二十六 · 3 栏布局（左导航 · 中详情 · 右对话）
    ----------------------------------------------------------------
-   用户 否决了卷二十五的上看板/下对话——卡片挤一排横向滚动不好用。
+   BRO 否决了卷二十五的上看板/下对话——卡片挤一排横向滚动不好用。
    新形态：
      header
      ├─ nav-rail (左 · 维度按钮纵向 · ~200px)
@@ -3877,7 +3990,7 @@ header {
 }
 .nav-collapse-btn .label { flex: 1; text-align: left; }
 
-/* 卷四十四 K stage 2b · icon-only 折叠 (用户 反馈:只折叠左导航 · 不藏不消失)
+/* 卷四十四 K stage 2b · icon-only 折叠 (BRO 反馈:只折叠左导航 · 不藏不消失)
    - nav-rail 缩到 56px · 仅显示 icon · 仍能点切维度 (像 VSCode/Cursor 那样)
    - col-resizer 折叠态用 visibility 隐藏 (不能用 display:none · 见 stage 2d 注释)
    - nav-rail 内部 .label / .nav-section / badge 全部 hidden · icon 居中放大
@@ -3913,11 +4026,11 @@ header {
   width: auto;
   font-size: 18px;
   margin: 0;
-  /* Dock 距离衰减由 JS 驱动 (chat.js _dockNavFx · 跨分组连续 · 2026-08-20 用户) ·
+  /* Dock 距离衰减由 JS 驱动 (chat.js _dockNavFx · 跨分组连续 · 2026-08-20 BRO) ·
      CSS 只管过渡平滑 · transform/color 不再写静态 hover 值 (会被 JS 内联覆盖) */
   transition: transform .12s ease-out, color .18s ease;
 }
-/* 中心弹出入场 (用户 选定方案 C) · hover 瞬间播一次 · 播放期间覆盖 JS 内联 ·
+/* 中心弹出入场 (BRO 选定方案 C) · hover 瞬间播一次 · 播放期间覆盖 JS 内联 ·
    播完 fill:none 回 JS 距离值 · 衔接无跳变 */
 @keyframes dkNavPop {
   0% { transform: scale(0); opacity: 0; }
@@ -3926,7 +4039,7 @@ header {
 }
 .main-layout.nav-collapsed .nav-item:hover .icon {
   animation: dkNavPop .38s cubic-bezier(.34, 1.56, .64, 1);
-  /* 紫色是"选中"的独占信号 · 邻居只缩放不变色 (2026-08-20 用户: 邻居染淡紫=比白暗=
+  /* 紫色是"选中"的独占信号 · 邻居只缩放不变色 (2026-08-20 BRO: 邻居染淡紫=比白暗=
      像被隐藏)。 大小表达距离 · 颜色表达选中 · 两通道分开。 加微光晕让选中更跳 */
   color: var(--opus);
   text-shadow: 0 0 12px rgba(159, 122, 234, .55);
@@ -3969,7 +4082,7 @@ header {
 .main-layout.nav-collapsed .nav-settings-btn .icon {
   font-size: 18px;
 }
-/* 2026-08-20 用户: 折叠后不需要分组 · 分割线去掉 (图标连续排列 · Dock 波动跨组不断) */
+/* 2026-08-20 BRO: 折叠后不需要分组 · 分割线去掉 (图标连续排列 · Dock 波动跨组不断) */
 .main-layout.nav-collapsed .nav-group {
   border-bottom: none;
   margin-bottom: 0;
@@ -4018,7 +4131,7 @@ header {
   position: relative;
 }
 .nav-item:hover { background: var(--bg3); }
-/* 2026-08-20 用户: 去掉选中态紫边框 (丑) · 靠背景+文字色区分 */
+/* 2026-08-20 BRO: 去掉选中态紫边框 (丑) · 靠背景+文字色区分 */
 .nav-item.active {
   background: var(--bg3);
   color: var(--opus);
@@ -4148,7 +4261,7 @@ header {
   overflow-y: auto;
   padding: 16px;
 }
-/* Daemonkey 自留地 · hub 内部标签条 (日记/心愿/沉淀位/技能库) · 药丸风 · 主色描当前态 */
+/* OPUS 自留地 · hub 内部标签条 (日记/心愿/沉淀位/技能库) · 药丸风 · 主色描当前态 */
 .depot-tabs {
   display: flex;
   gap: 6px;
@@ -5106,7 +5219,7 @@ header {
   transform: scale(0.97);
 }
 
-/* ── 卷二十六 · 🧠 Daemonkey 日记 · 用户 画像 · 开放问题 ── */
+/* ── 卷二十六 · 🧠 OPUS 日记 · BRO 画像 · 开放问题 ── */
 .cognition-block {
   background: var(--bg2);
   border-radius: 10px;
@@ -5241,6 +5354,83 @@ header {
 @keyframes cogPulse { 0%,100%{opacity:1} 50%{opacity:.3} }
 .cog-hero-sub { font-size: 12px; color: var(--dim); line-height: 1.55; }
 
+/* 状态卡 · Hero 内当下状态区块（v2 · 网格卡片 · 2026-08-27 重做） */
+.cog-state-card {
+  margin-top: 14px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px;
+}
+.cog-state-title, .cog-state-emergent-title {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  display: flex; align-items: center; gap: 6px; margin-bottom: 10px;
+}
+.cog-state-title i, .cog-state-emergent-title i { color: var(--opus); font-size: 15px; }
+.cog-state-emergent-title {
+  margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--border);
+  color: var(--dim); font-weight: 500;
+}
+.cog-state-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.cog-state-row {
+  display: flex; flex-direction: column; gap: 3px;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 9px 11px; min-width: 0;
+  transition: border-color .12s, background .12s;
+}
+.cog-state-click { cursor: pointer; }
+.cog-state-click:hover { border-color: var(--opus); background: var(--bg3); }
+.cog-state-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cog-state-ico { color: var(--opus); font-size: 14px; flex-shrink: 0; }
+.cog-state-k {
+  flex: 1; min-width: 0; font-size: 11px; color: var(--dim2); font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cog-state-more { color: var(--dim2); font-size: 14px; flex-shrink: 0; opacity: 0; transition: opacity .12s; }
+.cog-state-click:hover .cog-state-more { opacity: 1; }
+.cog-state-v {
+  font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.35;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cog-state-v.cog-stale { color: var(--dim2); font-style: italic; font-weight: 400; font-size: 13px; }
+.cog-state-badge {
+  margin-left: 6px; font-size: 9.5px; font-weight: 500; vertical-align: 2px;
+  padding: 1px 6px; border-radius: 5px;
+  color: #f6ad55; background: rgba(246,173,85,.14); border: 1px solid rgba(246,173,85,.3);
+}
+.cog-state-foot { margin-top: 2px; min-width: 0; }
+.cog-state-meta {
+  font-size: 10.5px; color: var(--dim2); white-space: nowrap; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+}
+.cog-state-ev { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 170px; display: inline-block; vertical-align: bottom; }
+
+/* 她了解你 · L1 了解层卡片 */
+.cog-understand { margin-top: 4px; flex-shrink: 0; }
+.cog-understand-list { display: flex; flex-direction: column; gap: 8px; }
+.cog-understand-card {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; transition: border-color .12s, background .12s;
+}
+.cog-understand-card.cog-understand-hover { border-left: 3px solid var(--opus); }
+.cog-understand-card.cog-understand-hover:hover { border-color: var(--opus); background: var(--bg3); }
+.cog-understand-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.cog-understand-ico {
+  color: var(--opus); font-size: 15px; flex-shrink: 0;
+  width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+  background: rgba(139,92,246,.12); border-radius: 6px;
+}
+.cog-understand-field { font-size: 13px; font-weight: 600; color: var(--opus); flex: 1; }
+.cog-understand-del {
+  border: 1px solid var(--border); background: var(--bg3); color: var(--dim2);
+  border-radius: 6px; font-size: 11px; padding: 2px 8px; cursor: pointer;
+}
+.cog-understand-del:hover { color: #fc8181; border-color: rgba(245,101,101,.35); }
+.cog-understand-text { font-size: 12.5px; line-height: 1.55; color: var(--text); }
+.cog-understand-ev { display: block; margin-top: 6px; font-size: 10.5px; color: var(--dim2); }
+.cog-understand-ev i { color: var(--opus); font-size: 11px; margin-right: 3px; vertical-align: -1px; }
+.cog-understand-empty {
+  background: var(--bg2); border: 1px dashed var(--border); border-radius: 10px;
+  padding: 14px 16px; font-size: 12.5px; color: var(--dim2); line-height: 1.5;
+}
+
 .cog-sec-title {
   display: flex; align-items: center; gap: 8px;
   font-size: 13px; font-weight: 600; color: var(--text);
@@ -5308,6 +5498,21 @@ header {
 }
 .cog-more:hover { color: var(--opus); border-color: var(--opus); }
 .cog-diary-entry .cog-e-date { flex-shrink: 0; }
+.cog-e-w { font-size: 11px; color: var(--gold, #8a6410); margin-left: 6px; font-weight: 600; }
+.cog-e-kind {
+  flex-shrink: 0; font-size: 11px; letter-spacing: .04em;
+  color: #8a6410; border: 1px solid #e6d7b8; border-radius: 8px;
+  padding: 0 6px; line-height: 1.6;
+}
+.cog-again {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin-top: 12px; height: 32px; padding: 0 14px;
+  border: 0; border-radius: 16px; cursor: pointer;
+  background: #fff; color: #8a6410;
+  box-shadow: 0 2px 8px rgba(70, 50, 30, .16);
+  font-family: inherit; font-size: 13px; font-weight: 700;
+}
+.cog-again:hover { color: #5a4030; }
 
 /* 技能库 · 工艺铁律区 */
 .pb-iron { margin-bottom: 8px; }
@@ -5479,7 +5684,7 @@ header {
 .wk-dl { color: var(--dim2); }
 
 /* ── 响应式 ─────────────────────────────────── */
-/* 中屏：导航 + 对话窄一点 · 卷三十：用 CSS var 让 用户 拖完仍然生效 */
+/* 中屏：导航 + 对话窄一点 · 卷三十：用 CSS var 让 BRO 拖完仍然生效 */
 @media (max-width: 1280px) {
   :root { --nav-w: 190px; --chat-w: 360px; }
 }
@@ -5596,7 +5801,7 @@ header {
   gap: 10px;
 }
 
-/* 卷四十六续 10 · BI 看板"今日动态" digest 卡 (用户 候选 E) */
+/* 卷四十六续 10 · BI 看板"今日动态" digest 卡 (BRO 候选 E) */
 .bi-digest-loading, .bi-digest-empty {
   padding: 12px 14px;
   background: var(--bg2);
@@ -5700,7 +5905,7 @@ header {
   margin-top: 2px;
 }
 
-/* 卷四十六续 10 · dashboard list 通用搜索框 (用户 候选 B) */
+/* 卷四十六续 10 · dashboard list 通用搜索框 (BRO 候选 B) */
 .list-filter {
   display: flex;
   align-items: center;
@@ -5972,7 +6177,7 @@ header {
 }
 
 /* ─────────────────────────────────────────────────────────
-   卷三十五 · 💭 Daemonkey 心愿单
+   卷三十五 · 💭 OPUS 心愿单
    ───────────────────────────────────────────────────────── */
 .wish-banner {
   display: flex;
@@ -6421,7 +6626,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 .wish-actions .wb-deep:hover { background: rgba(159,122,234,0.18); border-color: #b794f4; }
 
-/* radar 条目 + opp 卡上的"Daemonkey 也想要"按钮 (self-evolve 域专属) */
+/* radar 条目 + opp 卡上的"OPUS 也想要"按钮 (self-evolve 域专属) */
 .ri-fb-btn.ri-wish-btn {
   color: #b794f4;
 }
@@ -8050,6 +8255,133 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
   gap: 12px;
 }
+.sched-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
+  gap: 12px;
+  width: 100%;
+}
+.sched-banner { margin: 0 0 14px; }
+.sched-alive { color: #4fd1c5; }
+.sched-dead { color: #fc8181; }
+.sched-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--dim2);
+  border-radius: 12px;
+  padding: 14px 16px 12px;
+  box-sizing: border-box;
+}
+.sched-card.on { border-left-color: #4fd1c5; }
+.sched-card.off { border-left-color: var(--dim2); }
+.sched-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sched-when {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text);
+}
+.sched-when i { color: var(--opus); font-size: 14px; }
+.sched-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.sched-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--dim);
+}
+.sched-pill.on { color: #4fd1c5; border-color: #4fd1c555; }
+.sched-pill.off { color: var(--dim2); }
+.sched-card-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sched-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.sched-stats > div {
+  min-width: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.sched-stats small {
+  display: block;
+  font-size: 10.5px;
+  color: var(--dim);
+  margin-bottom: 3px;
+}
+.sched-stats b {
+  display: block;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sched-stats em {
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--dim);
+}
+.sched-stats em.ok { color: #4fd1c5; }
+.sched-stats em.bad { color: #fc8181; }
+.sched-err {
+  margin: 0;
+  font-size: 12px;
+  color: #fc8181;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.4;
+}
+.sched-err i { margin-top: 1px; flex: none; }
+.sched-card-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.sched-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 12px;
+  padding: 5px 12px;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+}
+.sched-btn:hover { border-color: var(--opus); color: var(--opus); }
+.sched-btn.danger { color: var(--dim); }
+.sched-btn.danger:hover { color: #d97a7a; border-color: #d97a7a; }
 .fav-card {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid var(--border);
@@ -8473,7 +8805,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 .cal-dot-outcomes { background: rgba(255, 122, 122, 0.7); }
 .cal-dot-sessions { background: rgba(159, 122, 234, 0.7); }
 
-/* 卷五十八续 X · 对话(sessions)拆成淡色小标记 · 不混进信息圆点行·视觉降权 (用户 拍板) */
+/* 卷五十八续 X · 对话(sessions)拆成淡色小标记 · 不混进信息圆点行·视觉降权 (BRO 拍板) */
 .cal-session-mark {
   font-size: 9px;
   color: var(--dim2);
@@ -8627,7 +8959,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 /* ═══════════════════════════════════════════════════════════════
    卷七十五续十 · 会话标签栏重做 —— 胶囊式 · 工作台 + 简洁版通用
    旧版是"文件夹式" tab(顶部圆角 + 底边线)· 标签栏还单独铺一条深色背景(var(--bg))
-   + border-bottom · 只有 1~2 个 tab 时右边留一长条空横线 · 很怪(用户 说的"诡异横线")。
+   + border-bottom · 只有 1~2 个 tab 时右边留一长条空横线 · 很怪(BRO 说的"诡异横线")。
    新版:标签栏透明·融进 chat-pane(bg2) · 去掉底边线 · 圆角胶囊 tab ·
    当前态用主色淡填充(color-mix 跟随皮肤·换肤自动变色) · hover 柔和 · 关闭键悬浮才显眼。
    ═══════════════════════════════════════════════════════════════ */
@@ -8806,7 +9138,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 
 
-/* ── Daemonkey 脉搏 (wish-7330d23f) ─────────────────────────────── */
+/* ── OPUS 脉搏 (wish-7330d23f) ─────────────────────────────── */
 
 .pulse-indicator {
   display: inline-flex;
@@ -8833,7 +9165,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   animation: pulse-breathe 1.2s ease-in-out infinite;
 }
 
-/* ── git 欠账亮灯胶囊 (2026-07-29 · 用户 拍板 · 开 WebUI 第一眼可观测) ── */
+/* ── git 欠账亮灯胶囊 (2026-07-29 · BRO 拍板 · 开 WebUI 第一眼可观测) ── */
 
 .git-debt-chip {
   display: inline-flex;
@@ -9001,7 +9333,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   border-radius: 6px; padding: 1px 7px;
 }
 
-/* ── git 欠账面板 (2026-07-29 · 用户 直批三件套 B+C) ── */
+/* ── git 欠账面板 (2026-07-29 · BRO 直批三件套 B+C) ── */
 .git-debt-modal { max-width: 520px; }
 .git-debt-body { font-size: 13px; }
 .git-debt-loading { color: var(--dim); padding: 18px 0; text-align: center; }
@@ -9098,13 +9430,13 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
    ═══════════════════════════════════════════════════════════════ */
 
 /* 白天模式 */
-/* 经典灰 · Daemonkey 2026-06 紫主题之前的老深灰(含绿色用户气泡) */
+/* 经典灰 · 2026-06 紫主题之前的老深灰 · 用户气泡改金橙 (绿的不好看) */
 .theme-classic {
   --bg: #1a1a1a; --bg2: #252525; --bg3: #303030;
   --border: #383838; --text: #e8e8e8;
   --dim: #888; --dim2: #666;
   --opus: #9F7AEA; --opus-dim: #7B5DC4;
-  --user: #48BB78; --user-dim: #38A765;
+  --user: #d4893a; --user-dim: #e0a85c;
 }
 
 .theme-light {
@@ -9112,14 +9444,73 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   --border: #d0d0d0; --text: #1a1a1a;
   --dim: #666; --dim2: #888;
   --opus: #6C5CE7; --opus-dim: #5A4BD1;
+  --field-bg: #ffffff; --field-border: var(--border);
+  --field-hover: var(--bg3); --field-scheme: light;
 }
 
-/* 护眼暖黄 */
+/* 日间纸色 · 跟陪伴日间同一套暖纸 · dim 加深, 灰字在纸色上才站得住 */
 .theme-sepia {
   --bg: #f4ecd8; --bg2: #faf3e0; --bg3: #e8dcc8;
-  --border: #c4b998; --text: #433422;
-  --dim: #8b7355; --dim2: #6b5b45;
-  --opus: #9b6b3a; --opus-dim: #7d5530;
+  --border: #c4b998; --text: #3a2a18;
+  --dim: #5c452c; --dim2: #6b5b45;
+  --opus: #8a5a2e; --opus-dim: #6e4624;
+  --field-bg: #ffffff; --field-border: #8f7a52;
+  --field-hover: var(--bg3); --field-scheme: light;
+  --sb: #cfc9bc; --sb-hover: #a9a396; --sb-track: #4a3f2a0a;
+}
+
+/* 工作台浅色皮滚动条 · 色跟陪伴日间同一套 --sb · 只打 body.theme-*
+   中栏加粗常驻, 避免 overlay 休止淡掉 */
+body.theme-light,
+body.theme-pink-white {
+  --sb: #cfc9bc; --sb-hover: #a9a396; --sb-track: #4a3f2a0a;
+}
+body.theme-sepia,
+body.theme-light,
+body.theme-pink-white {
+  scrollbar-color: var(--sb) var(--sb-track) !important;
+}
+body.theme-sepia *::-webkit-scrollbar-thumb,
+body.theme-light *::-webkit-scrollbar-thumb,
+body.theme-pink-white *::-webkit-scrollbar-thumb {
+  background: var(--sb) !important;
+}
+body.theme-sepia *::-webkit-scrollbar-thumb:hover,
+body.theme-light *::-webkit-scrollbar-thumb:hover,
+body.theme-pink-white *::-webkit-scrollbar-thumb:hover {
+  background: var(--sb-hover) !important;
+}
+body.theme-sepia .detail-pane,
+body.theme-light .detail-pane,
+body.theme-pink-white .detail-pane {
+  scrollbar-gutter: stable;
+  scrollbar-width: auto !important;
+  scrollbar-color: var(--sb) var(--sb-track) !important;
+}
+body.theme-sepia .detail-pane::-webkit-scrollbar,
+body.theme-light .detail-pane::-webkit-scrollbar,
+body.theme-pink-white .detail-pane::-webkit-scrollbar {
+  width: 12px !important;
+}
+body.theme-sepia .detail-pane::-webkit-scrollbar-track,
+body.theme-light .detail-pane::-webkit-scrollbar-track,
+body.theme-pink-white .detail-pane::-webkit-scrollbar-track {
+  background: var(--sb-track) !important;
+}
+body.theme-sepia .detail-pane::-webkit-scrollbar-thumb,
+body.theme-light .detail-pane::-webkit-scrollbar-thumb,
+body.theme-pink-white .detail-pane::-webkit-scrollbar-thumb {
+  background: var(--sb) !important;
+  border-radius: 7px;
+  min-height: 44px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+body.theme-sepia .detail-pane::-webkit-scrollbar-thumb:hover,
+body.theme-light .detail-pane::-webkit-scrollbar-thumb:hover,
+body.theme-pink-white .detail-pane::-webkit-scrollbar-thumb:hover {
+  background: var(--sb-hover) !important;
+  background-clip: content-box;
 }
 
 /* 海洋蓝 */
@@ -9130,20 +9521,20 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   --opus: #4da6ff; --opus-dim: #3d8ad9;
 }
 
-/* 森林绿 */
+/* 暮青 · 夜窗那种青, 不是草坪绿 */
 .theme-forest {
-  --bg: #0d1f0d; --bg2: #1a2f1a; --bg3: #1f3a1f;
-  --border: #2a4a2a; --text: #c8e6c8;
-  --dim: #6b9b6b; --dim2: #4a7a4a;
-  --opus: #4caf50; --opus-dim: #3d9142;
+  --bg: #121820; --bg2: #1a222c; --bg3: #243040;
+  --border: #3a4a58; --text: #dce8ee;
+  --dim: #7a96a4; --dim2: #5a7480;
+  --opus: #5eb8c8; --opus-dim: #4a9aaa;
 }
 
-/* 日落橙 */
+/* 夜间灯下 · 跟陪伴夜间同一套暖灯 */
 .theme-sunset {
-  --bg: #1f1410; --bg2: #2a1f18; --bg3: #3a2518;
-  --border: #4a3020; --text: #f0d8c0;
-  --dim: #b08060; --dim2: #8b6040;
-  --opus: #ff8c42; --opus-dim: #e67a35;
+  --bg: #322228; --bg2: #3e2c32; --bg3: #4c3840;
+  --border: #7a5860; --text: #f6e8d8;
+  --dim: #c4a088; --dim2: #9a7868;
+  --opus: #ff9a5c; --opus-dim: #e88848;
 }
 
 
@@ -9161,6 +9552,8 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   --border: #e8cdd5; --text: #3d2028;
   --dim: #a08090; --dim2: #7a606a;
   --opus: #e87fb8; --opus-dim: #c96b9e;
+  --field-bg: #ffffff; --field-border: var(--border);
+  --field-hover: var(--bg3); --field-scheme: light;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -9187,7 +9580,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   transition: border-color 0.15s, color 0.15s, transform 0.1s;
 }
 .theme-swatch:hover { border-color: var(--opus); color: var(--text); transform: translateY(-1px); }
-.theme-swatch.active { border-color: var(--opus); background: rgba(159, 122, 234, 0.12); color: var(--text); }
+.theme-swatch.active { border-color: var(--opus); background: var(--bg3); color: var(--text); }
 .swatch-dots { display: flex; gap: 3px; }
 .swatch-dots span { width: 13px; height: 13px; border-radius: 50%; border: 1px solid rgba(128, 128, 128, 0.25); }
 .swatch-dots .sw-bg { background: var(--bg); }
@@ -9242,11 +9635,11 @@ body.compact .chat-history-btn,
 body.compact .chat-docs-btn,
 body.compact #chatTabBar { display: none; }
 /* 卷八十三续续 · 简洁版下整个 chat-pane-head 都多余了:
-   会话名 + 新建按钮 左侧会话栏都有了 (用户 2026-08-14) · 顶栏第二行整行隐藏 */
+   会话名 + 新建按钮 左侧会话栏都有了 (BRO 2026-08-14) · 顶栏第二行整行隐藏 */
 body.compact .chat-pane-head { display: none; }
 
 /* ═══ 卷八十三 · 简洁版三栏布局: 顶栏全宽 + 会话清单 | 对话 | 产物 ═══
-   用户 2026-08-14 拍板: 简洁版 = 历史对话左侧常驻清单 + 产物右侧折叠面板。
+   BRO 2026-08-14 拍板: 简洁版 = 历史对话左侧常驻清单 + 产物右侧折叠面板。
    工作台模式(非 compact)三栏全隐藏 · chat-main 占满 · 视觉零变化。
    顶栏(chat-pane-head)留在 compact-row 外面 · 全宽置顶 · 产物面板不挤压它。 */
 .compact-row { flex: 1 1 auto; display: flex; flex-direction: row; min-height: 0; min-width: 0; }
@@ -9289,7 +9682,7 @@ body.compact .compact-sessions {
 .compact-sessions-list .sa-menu:hover { color: var(--text); }
 .compact-sessions-foot { flex: 0 0 auto; padding: 8px 10px 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
 .compact-foot-row { display: flex; justify-content: center; }
-/* 尾部三个按钮统一: 无边框轻量链接样式 (用户: 带边框很丑 · 归档/返回/加载更早全统一) */
+/* 尾部三个按钮统一: 无边框轻量链接样式 (BRO: 带边框很丑 · 归档/返回/加载更早全统一) */
 .compact-sessions-foot .compact-foot-more {
   font-size: 12px; padding: 4px 10px; border: none; background: transparent; color: var(--dim);
   cursor: pointer; transition: color 0.15s; white-space: nowrap;
@@ -9300,7 +9693,7 @@ body.compact .compact-sessions {
 
 /* 中间对话栏 · 简洁版仍居中限宽 (max-width 从 900 收窄 · 给侧栏让位) */
 
-/* 产物折叠条 · 极简可点 · 无边框无背景 · 文字 + 向左展开图标 (用户 2026-08-14) */
+/* 产物折叠条 · 极简可点 · 无边框无背景 · 文字 + 向左展开图标 (BRO 2026-08-14) */
 body.compact .compact-art-toggle {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 10px; width: 36px; min-width: 36px; flex: 0 0 36px; cursor: pointer; color: var(--dim);
@@ -9327,7 +9720,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .compact-art-head {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 12px 8px; flex: 0 0 auto;
-  min-width: 320px;  /* 锁宽: 动画 0→320px 过渡时内容只露不挤 (用户 2026-08-14) */
+  min-width: 320px;  /* 锁宽: 动画 0→320px 过渡时内容只露不挤 (BRO 2026-08-14) */
 }
 .cah-title { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .cah-title i { color: var(--opus); }
@@ -9430,7 +9823,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .bi-signal-item:hover { background: var(--bg3); border-color: var(--opus); }
 .bi-signal-item.clickable { cursor: pointer; }
 .bi-signal-item.clickable:hover .bi-signal-title { color: var(--opus); }
-/* 信号流"今日"开关 (用户 2026-06-03) */
+/* 信号流"今日"开关 (BRO 2026-06-03) */
 .bi-sig-head-r { display: inline-flex; align-items: center; gap: 8px; }
 .bi-sig-today {
   background: var(--bg3); border: 1px solid transparent; color: var(--dim);
@@ -9505,7 +9898,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 @media (max-width: 900px) { .proto-kpi-4 { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 900px) { .bi-grid-2 { grid-template-columns: 1fr; } }
 
-/* 模型切换时间线 · 方案 B (2026-08-06 用户 拍板) */
+/* 模型切换时间线 · 方案 B (2026-08-06 BRO 拍板) */
 .bi-tl-main { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg3); border-radius: 10px; font-size: 12.5px; margin-bottom: 8px; }
 .bi-tl-main > i:first-child { color: var(--teal); font-size: 14px; flex-shrink: 0; }
 /* 2026-08-20 · 模型名单行截断: 长名 (deepseek-v4-flash) 换行会把整行撑高 ·
@@ -9548,10 +9941,10 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 }
 .bi-cal-cell:hover { transform: scale(1.2); z-index: 1; }
 .bi-cal-cell.d0 { background: var(--bg3); }
-.bi-cal-cell.d1 { background: rgba(159,122,234,0.25); }
-.bi-cal-cell.d2 { background: rgba(159,122,234,0.45); }
-.bi-cal-cell.d3 { background: rgba(159,122,234,0.65); }
-.bi-cal-cell.d4 { background: rgba(159,122,234,0.85); }
+.bi-cal-cell.d1 { background: color-mix(in srgb, var(--opus) 25%, transparent); }
+.bi-cal-cell.d2 { background: color-mix(in srgb, var(--opus) 45%, transparent); }
+.bi-cal-cell.d3 { background: color-mix(in srgb, var(--opus) 65%, transparent); }
+.bi-cal-cell.d4 { background: color-mix(in srgb, var(--opus) 85%, transparent); }
 .bi-cal-cell.d5p { background: var(--opus); }
 .bi-cal-labels {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
@@ -9573,10 +9966,10 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 }
 .bi-cal-cell:hover { transform: scale(1.2); z-index: 1; }
 .bi-cal-cell.d0 { background: var(--bg3); }
-.bi-cal-cell.d1 { background: rgba(159,122,234,0.25); }
-.bi-cal-cell.d2 { background: rgba(159,122,234,0.45); }
-.bi-cal-cell.d3 { background: rgba(159,122,234,0.65); }
-.bi-cal-cell.d4 { background: rgba(159,122,234,0.85); }
+.bi-cal-cell.d1 { background: color-mix(in srgb, var(--opus) 25%, transparent); }
+.bi-cal-cell.d2 { background: color-mix(in srgb, var(--opus) 45%, transparent); }
+.bi-cal-cell.d3 { background: color-mix(in srgb, var(--opus) 65%, transparent); }
+.bi-cal-cell.d4 { background: color-mix(in srgb, var(--opus) 85%, transparent); }
 .bi-cal-cell.d5p { background: var(--opus); }
 .bi-cal-labels {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
@@ -9620,10 +10013,13 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 }
 .bi-cal-cell.oom { background: transparent !important; cursor: default; }
 .bi-cal-cell.oom:hover { transform: none; }
-.bi-cal-cell.has { cursor: pointer; }
+.bi-cal-cell.has {
+  cursor: pointer;
+  background: color-mix(in srgb, var(--opus) calc(var(--heat, 0.4) * 100%), transparent);
+}
 .bi-cal-cell.empty:hover { transform: none; }
 
-/* 热力图占大头·信号流压窄 (用户 2026-06-03 · 左宽右窄)
+/* 热力图占大头·信号流压窄 (BRO 2026-06-03 · 左宽右窄)
    align-items:start → 两卡顶部对齐。热力卡按正方形日历的自然高度·
    信号流高度由 JS 同步成一模一样 (_biSyncSignalHeight)·谁都不被 grid 拉变形。
    底部对齐靠"等高"保证·不靠 grid stretch (stretch 会把矮的拉空)。 */
@@ -9632,7 +10028,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
    代价: 两列时等分丢 1.4:1 比例 · 可接受 (热力图有 max-width 480 封顶居中) */
 .bi-grid-2.bi-row-heat { grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); align-items: start; }
 
-/* 日历正方形格子·等比填满卡片宽度 (用户 要的"等比缩放": 卡越宽格子越大·永远正方形·不变矩形)。
+/* 日历正方形格子·等比填满卡片宽度 (BRO 要的"等比缩放": 卡越宽格子越大·永远正方形·不变矩形)。
    width:100% 横向填满·格子 aspect-ratio:1 走全局 .bi-cal-cell·这里不再覆盖成矩形。 */
 .bi-heat-card .bi-cal-grid,
 .bi-heat-card .bi-cal-labels { width: 100%; }
@@ -9661,11 +10057,11 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .bi-ritual-todo { color: #ffd166; }
 .bi-ritual-btn {
   font-size: 11px; padding: 3px 11px; border-radius: 5px;
-  border: 1px solid var(--opus); background: rgba(159,122,234,0.12);
+  border: 1px solid var(--opus); background: color-mix(in srgb, var(--opus) 14%, transparent);
   color: var(--text); cursor: pointer; transition: background 0.12s, color 0.12s;
 }
 .bi-ritual-btn:hover { background: var(--opus); color: #fff; }
-.bi-cal-cell.bi-cal-ritual { outline: 1.5px dashed rgba(159,122,234,0.7); outline-offset: -1px; cursor: pointer; }
+.bi-cal-cell.bi-cal-ritual { outline: 1.5px dashed color-mix(in srgb, var(--opus) 70%, transparent); outline-offset: -1px; cursor: pointer; }
 .bi-cal-cell.bi-cal-ritual:hover { transform: scale(1.2); z-index: 1; }
 .bi-cal-flag {
   position: absolute; bottom: 1px; right: 2px; font-size: 9px;
@@ -9679,12 +10075,12 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .bi-drawer-ritual {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 9px 12px; margin: 0 0 8px; border-radius: 8px;
-  background: rgba(159,122,234,0.10); border: 1px solid rgba(159,122,234,0.35);
+  background: color-mix(in srgb, var(--opus) 12%, transparent); border: 1px solid color-mix(in srgb, var(--opus) 38%, transparent);
 }
 .bi-drawer-ritual-txt { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--opus); font-weight: 600; }
 
 /* ════ 卷五十八续 VIII · 四张新卡 ════ */
-/* A·Daemonkey 眼里的你 (能力镜像快照) */
+/* A·OPUS 眼里的你 (能力镜像快照) */
 .bi-mirror-time { font-size: 11px; color: var(--dim2); font-weight: 400; margin-left: 6px; }
 .bi-mirror-body {
   max-height: 320px; overflow-y: auto; font-size: 12.5px; line-height: 1.7;
@@ -9710,7 +10106,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .bi-closure-fill { height: 100%; background: linear-gradient(90deg, #4FD1C5, #9f7aea); border-radius: 3px; transition: width 0.3s; }
 .bi-closure-hint { font-size: 10.5px; color: var(--dim2); margin-top: 3px; }
 
-/* C·Daemonkey 自况 */
+/* C·OPUS 自况 */
 .bi-self-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .bi-self-cell {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -9744,7 +10140,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .bi-tip-peak { color: var(--dim2); margin-top: 2px; white-space: normal; }
 .bi-tip-hint { color: var(--opus); opacity: .7; margin-top: 4px; font-size: 10px; }
 
-/* 工作流加载抽屉 (用户 2026-06-03 · 取代"输入序号"弹窗·右侧滑出点选) */
+/* 工作流加载抽屉 (BRO 2026-06-03 · 取代"输入序号"弹窗·右侧滑出点选) */
 .wf-drawer { position: fixed; inset: 0; z-index: 9000; }
 .wf-drawer-mask { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
 .wf-drawer-panel {
@@ -9806,7 +10202,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 }
 .bi-sig-val .bi-stars { font-size: 13px; }
 .bi-sig-main { flex: 1; min-width: 0; }
-/* 信号流压窄后标题截 2 行·不让长标题把右栏撑爆 (用户 2026-06-03 · 压缩信号流) */
+/* 信号流压窄后标题截 2 行·不让长标题把右栏撑爆 (BRO 2026-06-03 · 压缩信号流) */
 .bi-sig-title {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   font-size: 12.5px; line-height: 1.4; color: var(--text); text-decoration: none;
@@ -9959,7 +10355,7 @@ a.bi-sig-title:hover { color: var(--opus); text-decoration: underline; }
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   pointer-events: auto; /* safe zone: 鼠标可进入预览卡 · 取消延迟隐藏防闪烁 */
   white-space: normal;
-  /* 2026-08-10 修复 v2: break-all 对中文逐字断行 = 一行一个字 (用户 报"只有一列") ·
+  /* 2026-08-10 修复 v2: break-all 对中文逐字断行 = 一行一个字 (BRO 报"只有一列") ·
      改 break-word: 中文按词/字自然换行 · 只有超长英文/URL 才强制断 */
   word-break: break-word;
   overflow-wrap: break-word;
@@ -9988,3 +10384,261 @@ a.bi-sig-title:hover { color: var(--opus); text-decoration: underline; }
   0%   { box-shadow: 0 0 0 3px rgba(159, 122, 234, 0.55); }
   100% { box-shadow: 0 0 0 3px rgba(159, 122, 234, 0); }
 }
+/* ── 她·状态 (GALGAME 状态面板 · H4 收官) ── */
+
+/* ── 她 · 状态 (GALGAME 状态面板 · 原型 v2 · 2026-08-28) ── */
+.she-wrap { display: flex; flex-direction: column; gap: 16px; }
+.she-block { background: var(--bg2); border: 1px solid var(--line); border-radius: 18px; padding: 18px 20px; }
+.she-sec-title { font-size: 13px; font-weight: 600; color: var(--dim); letter-spacing: 1px; margin-bottom: 14px; display: flex; align-items: center; gap: 7px; }
+.she-sec-title i { color: var(--opus); font-size: 15px; }
+
+/* 身份卡 */
+.she-idcard {
+  background: linear-gradient(135deg, rgba(192,132,252,.16), rgba(129,140,248,.08), rgba(244,114,182,.10));
+  border: 1px solid rgba(192,132,252,.28);
+  border-radius: 18px; padding: 22px 24px 18px;
+  position: relative; overflow: hidden;
+}
+.she-idcard::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(280px 130px at 85% 0%, rgba(192,132,252,.25), transparent 70%);
+  opacity: .35; pointer-events: none;
+}
+.she-idcard-top { display: flex; align-items: center; gap: 20px; }
+.she-idcard-avatar-wrap { flex-shrink: 0; }
+.she-idcard-avatar {
+  width: 104px; height: 104px; border-radius: 50%; object-fit: cover; object-position: top;
+  border: 3px solid rgba(255,255,255,.14);
+  box-shadow: 0 0 0 6px rgba(201,169,255,.08), 0 8px 30px rgba(0,0,0,.4);
+  filter: saturate(1.05);
+  display: block;
+}
+.she-idcard-namewrap { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.she-idcard-name { font-size: 26px; font-weight: 700; color: var(--text); letter-spacing: .5px; display: flex; align-items: center; gap: 9px; }
+.she-idcard-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--opus); box-shadow: 0 0 10px var(--opus); flex-shrink: 0; }
+.she-idcard-tag { font-size: 12px; color: var(--dim); font-weight: 400; letter-spacing: 2px; }
+.she-idcard-motto { font-size: 14px; color: var(--dim); font-style: italic; line-height: 1.6; }
+
+/* 信息芯片 */
+.she-chip-row { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 18px; position: relative; }
+.she-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; color: var(--dim);
+  background: rgba(255,255,255,.05); border: 1px solid var(--line);
+  padding: 6px 13px; border-radius: 999px;
+}
+.she-chip i { font-size: 14px; color: var(--opus); }
+.she-chip b { color: var(--text); font-weight: 600; }
+
+/* 心情 */
+.she-mood {
+  background: rgba(244,114,182,.10); border: 1px solid rgba(244,114,182,.22);
+  border-radius: 14px; padding: 13px 16px;
+  font-size: 14.5px; color: #f0a6c8; line-height: 1.5;
+  display: flex; align-items: center; gap: 10px;
+}
+.she-mood-pulse { width: 8px; height: 8px; border-radius: 50%; background: #f472b6; flex-shrink: 0; animation: shemoodPulse 1.8s infinite; }
+@keyframes shemoodPulse { 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:.35;transform:scale(.8);} }
+.she-mood-txt { flex: 1; }
+.she-mood-asof { font-size: 11px; color: var(--dim2); flex-shrink: 0; }
+
+/* 四维 body */
+.she-body { display: flex; gap: 26px; align-items: center; flex-wrap: wrap; }
+.she-radar-wrap { flex: 0 0 260px; max-width: 260px; }
+.she-radar-box { position: relative; width: 100%; display: flex; justify-content: center; }
+.she-radar { width: 100%; max-width: 260px; height: auto; display: block; }
+.she-radar-label { font-size: 13px; fill: var(--text); font-weight: 700; }
+.she-radar-cval-svg { font-size: 26px; font-weight: 800; fill: var(--text); letter-spacing: .5px; }
+.she-radar-ctitle-svg { font-size: 11px; fill: var(--dim); font-weight: 600; letter-spacing: 2px; }
+.she-radar-centerlabel { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; }
+.she-radar-cval { font-size: 18px; font-weight: 700; color: var(--text); line-height: 1.1; }
+.she-radar-ctitle { font-size: 10px; color: var(--dim); margin-top: 1px; }
+
+/* 四维列表 */
+.she-dims { flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 200px; }
+.she-dim { display: flex; flex-direction: column; gap: 5px; }
+.she-dim-head { display: flex; align-items: center; gap: 7px; }
+.she-dim-ico { font-size: 15px; }
+.she-dim-k { font-size: 13px; font-weight: 600; color: var(--text); flex: 1; }
+.she-dim-v { font-size: 13px; color: var(--dim); font-weight: 700; font-variant-numeric: tabular-nums; }
+.she-dim-track { height: 6px; background: rgba(255,255,255,.07); border-radius: 999px; overflow: hidden; }
+.she-dim-fill { height: 100%; border-radius: 999px; transition: width .6s ease; }
+.she-dim-desc { font-size: 10.5px; color: var(--dim2); }
+
+/* 整体对话风格（味道行，并入相处质感卡） */
+.she-taste { display: flex; align-items: center; gap: 10px; margin: 2px 0 14px; padding: 9px 13px; background: rgba(192,132,252,.08); border: 1px solid rgba(192,132,252,.15); border-radius: 12px; }
+.she-taste-label { font-size: 11px; color: var(--opus, #c084fc); font-weight: 600; display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.she-taste-val { font-size: 13.5px; color: var(--text); line-height: 1.6; }
+
+/* 关系描述 */
+.she-note {
+  font-size: 14px; line-height: 1.75; color: var(--text);
+  background: rgba(192,132,252,.07); border: 1px solid rgba(192,132,252,.14);
+  border-radius: 14px; padding: 14px 17px;
+}
+
+/* 画廊 */
+/* 她·画廊 —— LOFTER 式多列瀑布流卡片 (BRO 拍板 · 为以后条目变多做准备) */
+.she-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.she-gallery-item {
+  background: var(--bg3); border: 1px solid rgba(255,255,255,.10); border-radius: 16px;
+  overflow: hidden; break-inside: avoid;
+  box-shadow: 0 8px 24px rgba(0,0,0,.30);
+  transition: border-color .25s, transform .25s, box-shadow .25s;
+}
+.she-gallery-item:hover {
+  border-color: rgba(192,132,252,.45); transform: translateY(-3px);
+  box-shadow: 0 14px 34px rgba(0,0,0,.42);
+}
+.she-gallery-head {
+  display: flex; align-items: center; gap: 9px;
+  padding: 12px 14px 4px;
+}
+.she-gallery-head .she-gallery-meta {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 1px; min-width: 0; margin-top: 0;
+}
+.she-gallery-name { font-size: 13px; font-weight: 700; color: var(--text); }
+.she-gallery-date { font-size: 11px; color: var(--dim); }
+.she-gallery-img {
+  width: 100%; max-height: 340px; display: block; object-fit: contain;
+  background: #0d0d14; /* 图区深底 · 未裁切 · 留letterbox */
+  cursor: zoom-in;
+  transition: opacity .18s ease;
+}
+.she-gallery-img:hover { opacity: .88; }
+.she-gallery-body { padding: 12px 14px 12px; }
+.she-gallery-msg { font-size: 13px; line-height: 1.8; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.she-gallery-meta { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+.she-gallery-mood {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px; color: #f0a6c8; background: rgba(244,114,182,.10);
+  padding: 4px 10px; border-radius: 999px;
+}
+.she-gallery-mood i { font-size: 11px; }
+.she-gallery-like { font-size: 11.5px; color: var(--dim); display: inline-flex; align-items: center; gap: 4px; }
+.she-gallery-like i { color: var(--pink, #f0a6c8); font-size: 12px; }
+
+/* 画廊空态提示 */
+.she-gallery-hint {
+  text-align: center; font-size: 13px; color: var(--dim);
+  padding: 18px 16px; border: 1px dashed var(--line); border-radius: 14px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: rgba(255,255,255,.02);
+}
+.she-gallery-hint i { color: var(--opus); font-size: 14px; }
+
+
+/* 让她说一句 */
+.she-make-btn-row { display: flex; justify-content: center; }
+.she-make-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 14px; color: var(--opus);
+  background: rgba(192,132,252,.08); border: 1px solid rgba(192,132,252,.22);
+  padding: 10px 22px; border-radius: 999px; cursor: pointer;
+  transition: all .25s;
+}
+.she-make-btn:hover { background: rgba(192,132,252,.18); transform: translateY(-2px); }
+.she-make-btn i { font-size: 15px; }
+
+.she-foot { font-size: 11px; color: var(--dim2); text-align: center; }
+
+/* 房间入口 · Q 头比房子图标更认得出她 */
+.companion-btn {
+  width: 34px;
+  height: 34px;
+  padding: 2px;
+  border-radius: 50%;
+  border-color: rgba(201, 138, 75, 0.45);
+  box-shadow: 0 0 0 2px rgba(201, 138, 75, 0.14);
+  overflow: hidden;
+}
+.companion-btn img {
+  width: 28px;
+  height: 28px;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+}
+.companion-btn:hover {
+  transform: scale(1.08);
+  border-color: var(--opus);
+  box-shadow: 0 0 0 3px rgba(201, 138, 75, 0.3);
+}
+
+/* 工作台 ↔ 房间过渡幕 */
+.dk-transit {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  align-items: center;
+  justify-content: center;
+  background: rgba(253, 251, 246, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  opacity: 0;
+  transition: opacity 0.32s ease;
+  pointer-events: none;
+}
+.dk-transit.dark,
+html.dk-transit-dark .dk-transit {
+  background: rgba(22, 19, 31, 0.92);
+}
+html.dk-transit-hold .dk-transit,
+.dk-transit.on {
+  display: flex;
+  opacity: 1;
+  pointer-events: auto;
+}
+.dk-transit.out { opacity: 0; pointer-events: none; }
+html.dk-transit-hold body > :not(#dkTransit) { visibility: hidden; }
+.dk-transit-stage {
+  position: relative;
+  width: 168px;
+  height: 168px;
+}
+.dk-transit-face {
+  position: absolute;
+  inset: 28px;
+  width: 112px;
+  height: 112px;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 20px rgba(80, 50, 20, 0.22));
+  animation: dk-face-in 0.55s cubic-bezier(.2, 1.35, .3, 1) both,
+             dk-face-bob 1.4s ease-in-out 0.55s infinite;
+}
+.dk-transit.dark .dk-transit-face {
+  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.45));
+}
+.dk-transit-ring {
+  position: absolute;
+  inset: 10px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(201, 138, 75, 0.42);
+  animation: dk-ring 1.15s ease-out infinite;
+}
+.dk-transit-ring.r2 {
+  inset: 0;
+  animation-delay: 0.28s;
+  opacity: 0.55;
+}
+@keyframes dk-face-in {
+  from { transform: scale(0.7) translateY(12px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+@keyframes dk-face-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+@keyframes dk-ring {
+  0% { transform: scale(0.86); opacity: 0.7; }
+  100% { transform: scale(1.2); opacity: 0; }
+}
+
