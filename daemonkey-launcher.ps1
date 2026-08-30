@@ -1,4 +1,4 @@
-﻿﻿#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
 .SYNOPSIS
   Daemonkey · 启动器 (无边框圆角一体化 · 三栏: 图标导航 / 内容 / 内嵌终端)
@@ -33,6 +33,12 @@
 
 $ErrorActionPreference = 'Continue'
 
+# 早占位 · 真身稍后覆盖。托盘/Term-Write 在 Push-Main 定义前就会叫。
+$script:mainLastTermPush = [datetime]::MinValue
+$script:mainWv = $null
+function Push-Main { param($obj) }
+function Add-Log { param([string]$msg, [string]$kind = 'info') }
+
 # 工程根: 作为 .ps1 跑用 $PSScriptRoot · 被 ps2exe 编译成 .exe 后 $PSScriptRoot 为空 · 回退到 exe 所在目录
 $script:Root = if ($PSScriptRoot) { $PSScriptRoot }
 elseif ($PSCommandPath) { Split-Path -Parent $PSCommandPath }
@@ -41,6 +47,35 @@ else {
     catch { (Get-Location).Path }
 }
 Set-Location -Path $script:Root
+
+# 薄壳已画闪屏并持有单实例锁 · 肉这边接住，壳退出后锁还在
+if ($env:DK_UI_MUTEX) {
+    try { $script:uiMutex = [System.Threading.Mutex]::OpenExisting($env:DK_UI_MUTEX) } catch {
+        [bool]$__mx = $false
+        try { $script:uiMutex = New-Object System.Threading.Mutex($true, $env:DK_UI_MUTEX, [ref]$__mx) } catch {}
+    }
+}
+
+function Write-SplashCmd {
+    param([string]$cmd, [string]$text = '')
+    if ($env:DK_BOOT_SPLASH -ne '1') { return }
+    try {
+        $p = Join-Path $script:Root 'data\runtime\launcher-splash.cmd'
+        $d = Split-Path $p
+        if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+        Set-Content -Path $p -Value (@($cmd, $text) -join "`n") -Encoding UTF8
+    } catch {}
+}
+
+function Write-BootLog {
+    param([string]$msg)
+    try {
+        $p = Join-Path $script:Root 'data\runtime\launcher-boot.log'
+        $d = Split-Path $p
+        if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+        Add-Content -Path $p -Value ("{0} {1}" -f (Get-Date -Format 'HH:mm:ss.fff'), $msg) -Encoding UTF8
+    } catch {}
+}
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -68,6 +103,64 @@ try {
 } catch {}
 $script:StartText   = '启动'
 $script:DaemonRunning = $false   # 0.8.3 · daemon 是否在跑 (启动按钮 ↔ 关闭进程按钮切换)
+
+# ───── 启动器皮肤 (daimon 默认 · classic 经典月光 · 偏好落 data/runtime 升级不盖) ─────
+$script:SkinFile = Join-Path $script:Root 'data\runtime\launcher-skin.json'
+$script:SkinId = 'daimon'
+function Get-LauncherSkin {
+    $id = 'daimon'
+    try {
+        if (Test-Path $script:SkinFile) {
+            $j = Get-Content $script:SkinFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($j.skin -in @('daimon', 'classic')) { $id = [string]$j.skin }
+        }
+    } catch {}
+    return $id
+}
+function Save-LauncherSkin {
+    param([string]$id)
+    if ($id -notin @('daimon', 'classic')) { $id = 'daimon' }
+    $script:SkinId = $id
+    try {
+        $dir = Split-Path $script:SkinFile
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        (@{ skin = $id } | ConvertTo-Json) | Set-Content $script:SkinFile -Encoding UTF8
+    } catch {}
+}
+function Get-SkinAsset {
+    param([ValidateSet('splash', 'icon', 'bg', 'face')][string]$kind)
+    $id = $script:SkinId
+    $name = switch ($kind) {
+        'splash' { 'splash.png' }
+        'icon'   { 'icon.ico' }
+        'face'   { 'face.png' }
+        'bg'     { if ($id -eq 'classic') { 'bg.jpg' } else { 'splash.png' } }
+    }
+    $p = Join-Path $script:Root "assets\skins\$id\$name"
+    if (Test-Path $p) { return $p }
+    if ($kind -in @('splash', 'bg')) {
+        $c = Join-Path $script:Root 'assets\banner.png'
+        if (Test-Path $c) { return $c }
+    }
+    if ($kind -eq 'icon') {
+        $c = Join-Path $script:Root 'assets\daemonkey.ico'
+        if (Test-Path $c) { return $c }
+    }
+    return $p
+}
+function Get-SkinUrl {
+    param([ValidateSet('bg', 'face')][string]$kind)
+    $id = $script:SkinId
+    if ($kind -eq 'bg') {
+        $fn = if ($id -eq 'classic') { 'bg.jpg' } else { 'splash.png' }
+        return "https://dk.assets/skins/$id/$fn"
+    }
+    return "https://dk.assets/skins/$id/face.png"
+}
+function Get-SkinBrand {
+    return 'Daemonkey'
+}
+$script:SkinId = Get-LauncherSkin
 
 # 版本比较 (0.8.3 · 新版本提示用) · 支持 "0.8.3beta" 格式 (数字段 + 后缀) · remote > local → $true
 function Test-NewerVersion {
@@ -290,13 +383,37 @@ function Get-OpusToken {
 
 function Test-DaemonAlive {
     param([int]$Port)
-    $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-    return [bool]$conn
+    # Get-NetTCPConnection 走 CIM · 本机实测 ~1.7s · 2s 监控定时器会把 UI 卡死
+    $c = $null
+    try {
+        $c = New-Object System.Net.Sockets.TcpClient
+        $iar = $c.BeginConnect('127.0.0.1', $Port, $null, $null)
+        if (-not $iar.AsyncWaitHandle.WaitOne(60)) { return $false }
+        $c.EndConnect($iar)
+        return [bool]$c.Connected
+    } catch {
+        return $false
+    } finally {
+        if ($c) { try { $c.Close() } catch {} }
+    }
 }
 
 # 卷四十四 I · wish-12946ade · 已开进程检测 + 三选一对话框
 function Get-DaemonProcessInfo {
     param([int]$Port)
+    if (-not (Test-DaemonAlive -Port $Port)) { return $null }
+    $pidFile = Join-Path $script:Root 'data\runtime\daemon.pid'
+    if (Test-Path $pidFile) {
+        try {
+            $pidData = Get-Content $pidFile -Raw | ConvertFrom-Json
+            $pid_ = [int]$pidData.pid
+            $proc = Get-Process -Id $pid_ -ErrorAction SilentlyContinue
+            if ($proc) {
+                $age = if ($proc.StartTime) { [int]((Get-Date) - $proc.StartTime).TotalMinutes } else { -1 }
+                return @{ Pid = $pid_; StartTime = $proc.StartTime; AgeMin = $age; Process = $proc }
+            }
+        } catch {}
+    }
     $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
     if (-not $conn) { return $null }
     $pid_ = $conn[0].OwningProcess
@@ -304,6 +421,14 @@ function Get-DaemonProcessInfo {
     if (-not $proc) { return @{ Pid = $pid_; StartTime = $null; AgeMin = -1 } }
     $age = if ($proc.StartTime) { [int]((Get-Date) - $proc.StartTime).TotalMinutes } else { -1 }
     return @{ Pid = $pid_; StartTime = $proc.StartTime; AgeMin = $age; Process = $proc }
+}
+
+function Invoke-StartButton {
+    if (-not $btnStart) { return }
+    try {
+        $m = $btnStart.GetType().GetMethod('OnClick', [System.Reflection.BindingFlags]'Instance,NonPublic')
+        if ($m) { [void]$m.Invoke($btnStart, @([System.EventArgs]::Empty)) }
+    } catch {}
 }
 
 # ── wish-1b8e141b · 崩溃自动拉起 (三条件判定 + 熔断 + 状态持久化) ──
@@ -559,13 +684,35 @@ function Update-MonitorPanel {
 function Get-PetProcessInfo {
     try {
         $procs = Get-CimInstance Win32_Process -Filter "Name = 'pythonw.exe' OR Name = 'python.exe'" -ErrorAction SilentlyContinue |
-                 Where-Object { $_.CommandLine -and $_.CommandLine -match 'desktop_pet[\\/]pet\.py' }
+                 Where-Object { $_.CommandLine -and $_.CommandLine -match 'desktop_pet[\\/](run|pet)\.py' }
         if (-not $procs) { return $null }
         $first = $procs | Select-Object -First 1
         $proc = Get-Process -Id $first.ProcessId -ErrorAction SilentlyContinue
         $age = if ($proc -and $proc.StartTime) { [int]((Get-Date) - $proc.StartTime).TotalMinutes } else { -1 }
         return @{ Pid = $first.ProcessId; StartTime = $proc.StartTime; AgeMin = $age; Process = $proc }
     } catch { return $null }
+}
+
+function Write-GuardCue {
+    param([ValidateSet('open', 'close')][string]$state)
+    try {
+        [IO.File]::WriteAllText((Join-Path $script:Root 'desktop_pet\guard.cue'), $state)
+    } catch {}
+}
+
+function Start-DesktopPet {
+    param([switch]$Cat)
+    $petScript = Join-Path $script:Root 'desktop_pet\run.py'
+    if (-not (Test-Path $petScript)) { Add-Log "桌宠脚本不存在: $petScript" 'err'; return $null }
+    $petPython = if (Test-Path $script:VenvPythonW) { $script:VenvPythonW } else { $script:VenvPython }
+    $petErrPath = Join-Path $script:Root '_pet.err'
+    $al = @(('"{0}"' -f $petScript))
+    if ($Cat) { $al += '--cat' }
+    try {
+        return Start-Process -FilePath $petPython -ArgumentList $al -WorkingDirectory $script:Root -PassThru -RedirectStandardError $petErrPath
+    } catch {
+        return Start-Process -FilePath $petPython -ArgumentList $al -WorkingDirectory $script:Root -PassThru
+    }
 }
 
 # 三选一对话框 · 返回 'restart' / 'keep' / 'cancel'
@@ -611,64 +758,77 @@ function Ensure-RepoAndSource {
 # ═══════════════════════════════════════════════════
 #  启动画面 (Splash) · 覆盖启动空白期 (git init / 一键装依赖 / WebView2 初始化)
 #  主界面显示时关闭 (Shown + WebView2 NavigationCompleted / 4s 兜底)
+#  双击 exe 时薄壳已经画过 · 这里跳过，免得叠两张
 # ═══════════════════════════════════════════════════
-try {
+$script:bootSplashExternal = ($env:DK_BOOT_SPLASH -eq '1')
+if ($script:bootSplashExternal) { Write-BootLog 'splash-owned-by-boot' }
+if (-not $script:bootSplashExternal) { try {
     $script:splash = New-Object System.Windows.Forms.Form
     $script:splash.FormBorderStyle = 'None'
     $script:splash.StartPosition = 'CenterScreen'
     $script:splash.Size = Sz 480 320   # 3:2 匹配 banner 1536×1024 · 满幅无灰边
-    $script:splash.BackColor = [System.Drawing.Color]::FromArgb(15, 16, 24)
+    $script:splashBg = if ($script:SkinId -eq 'daimon') { [System.Drawing.Color]::FromArgb(253, 251, 246) } else { [System.Drawing.Color]::FromArgb(15, 16, 24) }
+    $script:splash.BackColor = $script:splashBg
     $script:splash.TopMost = $true
     $script:splash.ShowInTaskbar = $false
-    # 圆角 (无边框窗 Region)
-    try {
-        if (-not ('SplashRgn' -as [type])) {
-            Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class SplashRgn { [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int a,int b,int c,int d,int e,int f); }' -ErrorAction Stop
-        }
-        $script:splash.Region = [System.Drawing.Region]::FromHrgn([SplashRgn]::CreateRoundRectRgn(0, 0, 480, 320, 18, 18))
-    } catch {}
+    try { $script:splash.Region = New-Object System.Drawing.Region((Get-RoundPath 480 320 18)) } catch {}
 
-    $bannerPath = Join-Path $script:Root 'assets\banner.png'
+    $bannerPath = Get-SkinAsset 'splash'
     if (Test-Path $bannerPath) {
         $pb = New-Object System.Windows.Forms.PictureBox
         $pb.Image = [System.Drawing.Image]::FromFile($bannerPath)
         $pb.SizeMode = 'StretchImage'    # 满幅铺底 · 无灰边
         $pb.Size = Sz 480 320
         $pb.Location = P 0 0
-        $pb.BackColor = [System.Drawing.Color]::FromArgb(15, 16, 24)
+        $pb.BackColor = $script:splashBg
         $script:splash.Controls.Add($pb)
     }
 
-    # 底部半透明遮罩 + 白字
+    # 底栏必须实底 + 字放栏里。Label Transparent 透的是窗体色，日间纸色底 + 白字 = 看起来像文案没了
+    $isDaimon = ($script:SkinId -eq 'daimon')
+    $firstBoot = -not (Test-Path $script:VenvPython)
+    $footH = 72
     $mask = New-Object System.Windows.Forms.Panel
-    $mask.Size = Sz 480 58
-    $mask.Location = P 0 262
-    $mask.BackColor = [System.Drawing.Color]::FromArgb(140, 8, 9, 14)
+    $mask.Size = Sz 480 $footH
+    $mask.Location = P 0 (320 - $footH)
+    $mask.BackColor = if ($isDaimon) { [System.Drawing.Color]::FromArgb(247, 240, 228) } else { [System.Drawing.Color]::FromArgb(18, 19, 30) }
     $script:splash.Controls.Add($mask)
     $mask.BringToFront()
 
-    $stxt = New-Object System.Windows.Forms.Label
-    $stxt.Text = '正在启动 Daemonkey · 首次使用自动安装运行环境'
-    $stxt.Font = F 10
-    $stxt.ForeColor = [System.Drawing.Color]::White
-    $stxt.BackColor = [System.Drawing.Color]::Transparent
-    $stxt.TextAlign = 'MiddleCenter'
-    $stxt.Size = Sz 480 30
-    $stxt.Location = P 0 267
-    $script:splash.Controls.Add($stxt)
-    $stxt.BringToFront()
+    $ink = if ($isDaimon) { [System.Drawing.Color]::FromArgb(67, 52, 34) } else { [System.Drawing.Color]::White }
+    $muted = if ($isDaimon) { [System.Drawing.Color]::FromArgb(139, 115, 85) } else { [System.Drawing.Color]::FromArgb(168, 174, 196) }
 
-    # 底部细进度条 (Marquee 往返动画 · Timer 100ms)
+    $stitle = New-Object System.Windows.Forms.Label
+    $stitle.Text = "正在启动 $(Get-SkinBrand)"
+    $stitle.Font = F 11
+    $stitle.ForeColor = $ink
+    $stitle.BackColor = $mask.BackColor
+    $stitle.TextAlign = 'MiddleCenter'
+    $stitle.Size = Sz 480 24
+    $stitle.Location = P 0 8
+    $mask.Controls.Add($stitle)
+
+    $stxt = New-Object System.Windows.Forms.Label
+    $stxt.Text = if ($firstBoot) { '第一次会慢一点 · 在准备运行环境' } else { '马上就好' }
+    $stxt.Font = F 9
+    $stxt.ForeColor = $muted
+    $stxt.BackColor = $mask.BackColor
+    $stxt.TextAlign = 'MiddleCenter'
+    $stxt.Size = Sz 480 22
+    $stxt.Location = P 0 34
+    $mask.Controls.Add($stxt)
+    $script:splashText = $stxt
+
     $barTrack = New-Object System.Windows.Forms.Panel
-    $barTrack.Size = Sz 480 3
-    $barTrack.Location = P 0 317
-    $barTrack.BackColor = [System.Drawing.Color]::FromArgb(60, 70, 110)
-    $script:splash.Controls.Add($barTrack)
+    $barTrack.Size = Sz 480 4
+    $barTrack.Location = P 0 ($footH - 4)
+    $barTrack.BackColor = if ($isDaimon) { [System.Drawing.Color]::FromArgb(220, 200, 168) } else { [System.Drawing.Color]::FromArgb(60, 70, 110) }
+    $mask.Controls.Add($barTrack)
     $script:barFill = New-Object System.Windows.Forms.Panel
-    $script:barFill.Size = Sz 96 3
+    $script:barFill.Size = Sz 96 4
     $script:barFill.Location = P 0 0
-    $script:barFill.BackColor = [System.Drawing.Color]::FromArgb(124, 108, 240)
-    $script:barTrack.Controls.Add($script:barFill)
+    $script:barFill.BackColor = if ($isDaimon) { [System.Drawing.Color]::FromArgb(201, 138, 75) } else { [System.Drawing.Color]::FromArgb(124, 108, 240) }
+    $barTrack.Controls.Add($script:barFill)
     $script:barDir = 1
     $script:barPos = 0
     $script:splashBarTimer = New-Object System.Windows.Forms.Timer
@@ -683,9 +843,21 @@ try {
 
     $script:splash.Show()
     $script:splash.Refresh()
-} catch { $script:splash = $null }
+} catch { $script:splash = $null } } else { $script:splash = $null }
 
-Ensure-RepoAndSource
+# 闪屏一出来就预热 WebView2 环境 · 跟后面搭 GDI 兜底并行 · 少等冷启动
+function Start-WebView2Env {
+    try {
+        if (-not ('Microsoft.Web.WebView2.Core.CoreWebView2Environment' -as [type])) {
+            Add-Type -Path "$script:Root\assets\webview2\Microsoft.Web.WebView2.Core.dll" -ErrorAction Stop
+            Add-Type -Path "$script:Root\assets\webview2\Microsoft.Web.WebView2.WinForms.dll" -ErrorAction Stop
+        }
+        $udf = Join-Path $script:Root 'data\runtime\webview2_main'
+        if (-not (Test-Path $udf)) { New-Item -ItemType Directory -Path $udf -Force | Out-Null }
+        $script:wvEnvTask = [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::CreateAsync($null, $udf)
+    } catch { $script:wvEnvTask = $null }
+}
+Start-WebView2Env
 
 # ═══════════════════════════════════════════════════
 #  主窗口 · 无边框圆角 + 自绘标题栏 + 三栏
@@ -704,6 +876,15 @@ $form.ForeColor = $cText
 $form.Font = F 9
 $form.FormBorderStyle = 'None'
 $form.MaximizeBox = $false
+if ($script:SkinId -eq 'daimon') { $form.BackColor = [System.Drawing.Color]::FromArgb(253, 251, 246) }
+# Shown 可能在后面碰 Handle / Controls.Add 时提前响 · 先挂闩，函数齐了再开界面
+$script:shownEarly = $false
+$script:bootUiReady = $false
+$script:mainUiStarted = $false
+$form.Add_Shown({
+    Write-BootLog 'Shown'
+    if ($script:bootUiReady) { Start-MainUi } else { $script:shownEarly = $true; Write-BootLog 'Shown-early-latch' }
+})
 # ── 任务栏按钮图标 = 进程 exe 图标 (powershell=`>_`) · 设进程级 AppUserModelID 让按钮跟随窗口图标 ──
 try {
     if (-not ('DkAppId' -as [type])) {
@@ -723,13 +904,13 @@ public class DkAppId {
 # 2026-08-15 19:10 · 治本: 无边框窗口任务栏按钮图标走窗口类图标 · WinForms $form.Icon 对无边框窗口不生效
 #                → 手动 WM_SETICON (big+small) 强制设置 · 任务栏按钮一定跟随
 try {
-    $icoFile = Join-Path $script:Root 'assets\daemonkey.ico'
+    $icoFile = Get-SkinAsset 'icon'
     if (Test-Path $icoFile) {
-        try { $form.Icon = New-Object System.Drawing.Icon($icoFile); "Icon($icoFile) OK: $($form.Icon.Handle)" | Out-File $dbgLog -Append } catch { "Icon($icoFile) FAIL: $_" | Out-File $dbgLog -Append }
+        try { $form.Icon = New-Object System.Drawing.Icon($icoFile) } catch {}
     }
     if (-not $form.Icon) {
         $exePath = Join-Path $script:Root 'Daemonkey.exe'
-        if (Test-Path $exePath) { $form.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exePath); "ExtractAssociatedIcon OK: $($form.Icon.Handle)" | Out-File $dbgLog -Append }
+        if (Test-Path $exePath) { $form.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($exePath) }
     }
     $form.ShowIcon = $true
     if ($form.Icon) {
@@ -747,14 +928,7 @@ public class DkWin32Icon {
 }
 "@ -ErrorAction Stop
         }
-        try {
-            $hMain = $form.Handle   # 强制创建窗口 handle (此时才可设窗口图标)
-            [void][DkWin32Icon]::SendMessage($hMain, 0x0080, [IntPtr]1, $form.Icon.Handle)  # WM_SETICON ICON_BIG
-            [void][DkWin32Icon]::SendMessage($hMain, 0x0080, [IntPtr]0, $form.Icon.Handle)  # WM_SETICON ICON_SMALL
-            # 类图标 (GCLP_HICON/GCLP_HICONSM) · 任务栏按钮图标优先用类图标 · 不受窗口重建影响
-            [void][DkWin32Icon]::SetClassLongPtr($hMain, -14, $form.Icon.Handle)   # GCLP_HICON
-            [void][DkWin32Icon]::SetClassLongPtr($hMain, -34, $form.Icon.Handle)   # GCLP_HICONSM
-        } catch { Add-Log "WM_SETICON 失败: $_" 'warn' }
+        # 不在这里碰 $form.Handle · 一碰就创建窗口并可能提前触发 Shown，WebView2 那钩就永远不上
         # Shown 后再设一次: 后续属性修改(如 FormBorderStyle)会重建 Handle 冲掉图标 · 显示后 Handle 稳定
         $script:mainIcon = $form.Icon   # 持有引用防 GC 销毁 HICON
         $form.Add_Shown({
@@ -770,6 +944,182 @@ public class DkWin32Icon {
         })
     }
 } catch { Add-Log "窗口图标设置失败: $_" 'warn' }
+
+# ───── 退出三选一弹窗 (2026-08-15 · 启动页关闭进程复用 · 必须在托盘 try 外面) ─────
+function Get-QuitDlgPalette {
+    if ($script:SkinId -eq 'daimon') {
+        return @{
+            bg     = [System.Drawing.Color]::FromArgb(253, 251, 246)
+            card   = [System.Drawing.Color]::FromArgb(247, 240, 228)
+            ink    = [System.Drawing.Color]::FromArgb(67, 52, 34)
+            muted  = [System.Drawing.Color]::FromArgb(139, 115, 85)
+            accent = [System.Drawing.Color]::FromArgb(201, 138, 75)
+            danger = [System.Drawing.Color]::FromArgb(180, 86, 64)
+            onBtn  = [System.Drawing.Color]::FromArgb(253, 251, 246)
+        }
+    }
+    return @{
+        bg     = $cBg
+        card   = $cCard
+        ink    = $cText
+        muted  = [System.Drawing.Color]::FromArgb(150, 156, 180)
+        accent = $cBtn
+        danger = $cDanger
+        onBtn  = [System.Drawing.Color]::White
+    }
+}
+
+function Show-QuitDialog {
+    param(
+        [string]$Title = '退出 Daemonkey',
+        [string]$Sub = 'daemon 服务可以继续在后台运行',
+        [string]$PrimaryText = '全部退出 · 停止 daemon + 关闭启动器',
+        [string]$SecondaryText = '仅关闭启动器 · daemon 继续运行',
+        [scriptblock]$PrimaryAction,
+        [scriptblock]$SecondaryAction
+    )
+    # 动作挂 $script: · 点下去时函数参数已经没了，直接 & $PrimaryAction 等于没点
+    $script:_quitPrimary = $PrimaryAction
+    $script:_quitSecondary = $SecondaryAction
+    $pal = Get-QuitDlgPalette
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = $Title
+    $dlg.FormBorderStyle = 'None'
+    $dlg.StartPosition = 'CenterScreen'
+    $dlg.ClientSize = Sz 420 250
+    $dlg.BackColor = $pal.bg
+    $dlg.ForeColor = $pal.ink
+    $dlg.Font = F 9
+    $dlg.TopMost = $true
+    $dlg.ShowInTaskbar = $false
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+    try { $dlg.Region = New-Object System.Drawing.Region((Get-RoundPath 420 250 14)) } catch {}
+    $t1 = New-Object System.Windows.Forms.Label
+    $t1.Text = $Title
+    $t1.Font = F 12 ([System.Drawing.FontStyle]::Bold)
+    $t1.Location = P 24 22
+    $t1.Size = Sz 380 26
+    $t1.BackColor = $pal.bg
+    $t1.ForeColor = $pal.ink
+    $dlg.Controls.Add($t1)
+    $t2 = New-Object System.Windows.Forms.Label
+    $t2.Text = $Sub
+    $t2.Font = F 8.5
+    $t2.Location = P 24 50
+    $t2.Size = Sz 380 22
+    $t2.BackColor = $pal.bg
+    $t2.ForeColor = $pal.muted
+    $dlg.Controls.Add($t2)
+    $b1 = New-Object System.Windows.Forms.Button
+    $b1.Text = $PrimaryText
+    $b1.Location = P 24 84
+    $b1.Size = Sz 380 34
+    $b1.BackColor = $pal.danger
+    $b1.ForeColor = $pal.onBtn
+    $b1.FlatStyle = 'Flat'
+    $b1.FlatAppearance.BorderSize = 0
+    $b1.Font = F 9
+    $b1.Add_Click({
+        try { $this.FindForm().Close() } catch {}
+        $fn = $script:_quitPrimary; $script:_quitPrimary = $null; $script:_quitSecondary = $null
+        if ($fn) { try { & $fn } catch { Add-Log "退出动作失败: $_" 'err' } }
+    })
+    $dlg.Controls.Add($b1)
+    $b2 = New-Object System.Windows.Forms.Button
+    $b2.Text = $SecondaryText
+    $b2.Location = P 24 126
+    $b2.Size = Sz 380 34
+    $b2.BackColor = $pal.accent
+    $b2.ForeColor = $pal.onBtn
+    $b2.FlatStyle = 'Flat'
+    $b2.FlatAppearance.BorderSize = 0
+    $b2.Font = F 9
+    $b2.Add_Click({
+        try { $this.FindForm().Close() } catch {}
+        $fn = $script:_quitSecondary; $script:_quitPrimary = $null; $script:_quitSecondary = $null
+        if ($fn) { try { & $fn } catch { Add-Log "退出动作失败: $_" 'err' } }
+    })
+    $dlg.Controls.Add($b2)
+    $b3 = New-Object System.Windows.Forms.Button
+    $b3.Text = '取消'
+    $b3.Location = P 24 168
+    $b3.Size = Sz 380 34
+    $b3.BackColor = $pal.card
+    $b3.ForeColor = $pal.ink
+    $b3.FlatStyle = 'Flat'
+    $b3.FlatAppearance.BorderSize = 1
+    $b3.FlatAppearance.BorderColor = $pal.muted
+    $b3.Font = F 9
+    $b3.Add_Click({
+        $script:_quitPrimary = $null; $script:_quitSecondary = $null
+        try { $this.FindForm().Close() } catch {}
+    })
+    $dlg.Controls.Add($b3)
+    try { [void]$dlg.ShowDialog($form) } catch { try { [void]$dlg.ShowDialog() } catch {} }
+}
+
+function Close-LocalWebUi {
+    param([int]$port)
+    $needles = @("127.0.0.1:$port", "localhost:$port", "[::1]:$port")
+    $hit = @{}
+    try {
+        Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe' OR Name='brave.exe' OR Name='firefox.exe'" -ErrorAction SilentlyContinue |
+            Where-Object {
+                $cl = [string]$_.CommandLine
+                $cl -and ($needles | Where-Object { $cl.Contains($_) })
+            } |
+            ForEach-Object { $hit[$_.ProcessId] = $true }
+    } catch {}
+    # 关浏览器里的 WebUI 窗 · 不杀整个浏览器、不碰启动器自己
+    # 进了 chat 后标题是 OPUS · 相遇页才是 Daemonkey
+    Get-Process -Name msedge, chrome, brave, firefox -ErrorAction SilentlyContinue | Where-Object {
+        if ($_.Id -eq $PID) { return $false }
+        if ($hit.ContainsKey($_.Id)) { return $true }
+        $t = [string]$_.MainWindowTitle
+        if (-not $t) { return $false }
+        return ($t -eq 'Daemonkey' -or $t -like 'Daemonkey *' -or $t -eq 'OPUS' -or $t -like 'OPUS *')
+    } | ForEach-Object { try { $_.CloseMainWindow() | Out-Null } catch {} }
+}
+
+function Stop-Daemon {
+    param([int]$port)
+    Add-Log "停止 daemon (port=$port)…" 'info'
+    $token = $null
+    try { $token = Get-OpusToken } catch {}
+    try {
+        $headers = @{ 'Content-Type' = 'application/json' }
+        if ($token) { $headers['Authorization'] = "Bearer $token" }
+        Invoke-WebRequest -Uri "http://127.0.0.1:$port/shutdown-daemon" -Method POST -Headers $headers -UseBasicParsing -TimeoutSec 3 | Out-Null
+        Add-Log '已通知 daemon 关机' 'info'
+    } catch {}
+    for ($i = 0; $i -lt 16; $i++) {
+        if (-not (Test-DaemonAlive -Port $port)) { break }
+        Start-Sleep -Milliseconds 200
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    $existing = Get-DaemonProcessInfo -Port $port
+    if ($existing) {
+        try {
+            Stop-Process -Id $existing.Pid -Force -ErrorAction Stop
+            for ($i = 0; $i -lt 12; $i++) {
+                if (-not (Test-DaemonAlive -Port $port)) { break }
+                Start-Sleep -Milliseconds 200
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+            Add-Log "daemon 已停止 (pid=$($existing.Pid))" 'ok'
+        } catch { Add-Log "停止 daemon 失败: $_" 'err' }
+    } elseif (-not (Test-DaemonAlive -Port $port)) {
+        Add-Log 'daemon 已停止' 'ok'
+    } else { Add-Log '没找到 daemon 进程 (端口还在)' 'warn' }
+    Close-LocalWebUi -port $port
+    $script:DaemonRunning = $false
+    try {
+        $btnStart.Text = $script:StartText
+        Set-ButtonFill $btnStart $cBtn
+        Push-MainBtnState
+    } catch {}
+}
 
 # ── 托盘图标 (壳肉分离 · 守护进程常驻 · 2026-08-15 v2) ──
 # v2 修复 (BRO 实测: 托盘图标 hover 就消失 = PowerShell GC 回收 NotifyIcon/委托):
@@ -820,190 +1170,18 @@ if (Test-Path $icoFile) {
             if ($script:chkAutoRestart) { $script:chkAutoRestart.Checked = $mAuto.Checked }
             if ($script:autoRestartOn -ne $null) { $script:autoRestartOn = $mAuto.Checked }
         }
-        $script:trayEvtRestart = { try { $btnStart.PerformClick() } catch {} }
-# ───── 退出三选一弹窗 (2026-08-15 · 启动页"关闭进程"复用 · 参数化) ─────
-function Show-QuitDialog {
-    param(
-        [string]$Title = '退出 Daemonkey',
-        [string]$Sub = 'daemon 服务可以继续在后台运行',
-        [string]$PrimaryText = '全部退出 · 停止 daemon + 关闭启动器',
-        [string]$SecondaryText = '仅关闭启动器 · daemon 继续运行',
-        [scriptblock]$PrimaryAction,
-        [scriptblock]$SecondaryAction
-    )
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = $Title
-    $dlg.FormBorderStyle = 'None'          # 无边框
-    $dlg.StartPosition = 'CenterScreen'
-    $dlg.ClientSize = Sz 420 250
-    $dlg.BackColor = $cBg
-    $dlg.ForeColor = $cText
-    $dlg.Font = F 9
-    $dlg.TopMost = $true
-    $dlg.ShowInTaskbar = $false
-    $dlg.MaximizeBox = $false
-    $dlg.MinimizeBox = $false
-    try {
-        if (-not ('QuitDlgRgn' -as [type])) {
-            Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class QuitDlgRgn { [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int a,int b,int c,int d,int e,int f); }' -ErrorAction Stop
-        }
-        $dlg.Region = [System.Drawing.Region]::FromHrgn([QuitDlgRgn]::CreateRoundRectRgn(0, 0, 420, 250, 14, 14))
-    } catch {}
-    $t1 = New-Object System.Windows.Forms.Label
-    $t1.Text = $Title
-    $t1.Font = F 12
-    $t1.Location = P 24 22
-    $t1.Size = Sz 380 26
-    $t1.BackColor = $cBg
-    $t1.ForeColor = $cText
-    $dlg.Controls.Add($t1)
-    $t2 = New-Object System.Windows.Forms.Label
-    $t2.Text = $Sub
-    $t2.Font = F 8.5
-    $t2.Location = P 24 50
-    $t2.Size = Sz 380 18
-    $t2.BackColor = $cBg
-    $t2.ForeColor = [System.Drawing.Color]::FromArgb(150, 156, 180)
-    $dlg.Controls.Add($t2)
-    $b1 = New-Object System.Windows.Forms.Button
-    $b1.Text = $PrimaryText
-    $b1.Location = P 24 84
-    $b1.Size = Sz 380 34
-    $b1.BackColor = $cDanger
-    $b1.ForeColor = [System.Drawing.Color]::White
-    $b1.FlatStyle = 'Flat'
-    $b1.FlatAppearance.BorderSize = 0
-    $b1.Add_Click({ try { $dlg.Close() } catch {}; try { if ($PrimaryAction) { & $PrimaryAction } } catch {} })
-    $dlg.Controls.Add($b1)
-    $b2 = New-Object System.Windows.Forms.Button
-    $b2.Text = $SecondaryText
-    $b2.Location = P 24 126
-    $b2.Size = Sz 380 34
-    $b2.BackColor = $cBtn
-    $b2.ForeColor = [System.Drawing.Color]::White
-    $b2.FlatStyle = 'Flat'
-    $b2.FlatAppearance.BorderSize = 0
-    $b2.Add_Click({ try { $dlg.Close() } catch {}; try { if ($SecondaryAction) { & $SecondaryAction } } catch {} })
-    $dlg.Controls.Add($b2)
-    $b3 = New-Object System.Windows.Forms.Button
-    $b3.Text = '取消'
-    $b3.Location = P 24 168
-    $b3.Size = Sz 380 34
-    $b3.BackColor = $cCard
-    $b3.ForeColor = $cText
-    $b3.FlatStyle = 'Flat'
-    $b3.FlatAppearance.BorderSize = 1
-    $b3.FlatAppearance.BorderColor = $cCard
-    $b3.Add_Click({ try { $dlg.Close() } catch {} })
-    $dlg.Controls.Add($b3)
-    try { $dlg.ShowDialog() } catch {}
-}
-
-function Stop-Daemon {
-    param([int]$port)
-    Add-Log "停止 daemon (port=$port)…" 'info'
-    $existing = Get-DaemonProcessInfo -Port $port
-    if ($existing) {
-        try {
-            Stop-Process -Id $existing.Pid -Force -ErrorAction Stop
-            for ($i = 0; $i -lt 20; $i++) {
-                if (-not (Test-DaemonAlive -Port $port)) { break }
-                Start-Sleep -Milliseconds 300
-                [System.Windows.Forms.Application]::DoEvents()
-            }
-            Add-Log "daemon 已停止 (pid=$($existing.Pid))" 'ok'
-        } catch { Add-Log "停止 daemon 失败: $_" 'err' }
-    } else { Add-Log '没找到 daemon 进程 (可能已停)' 'warn' }
-}
-
+        $script:trayEvtRestart = { Invoke-StartButton }
         $script:trayEvtQuit = {
-            # 退出三选一: ①全退(停止daemon+关启动器) ②仅关启动器(daemon继续跑) ③取消
-            # 2026-08-15 · BRO 清单 #7 · 关闭联动: 退出前让用户选 daemon 命运
-            $script:quitDlg = New-Object System.Windows.Forms.Form
-            $script:quitDlg.Text = '退出 Daemonkey'
-            $script:quitDlg.FormBorderStyle = 'None'          # 无边框 (2026-08-15 BRO: 弹窗也要无边框)
-            $script:quitDlg.StartPosition = 'CenterScreen'
-            $script:quitDlg.ClientSize = Sz 420 250
-            $script:quitDlg.BackColor = $cBg
-            $script:quitDlg.ForeColor = $cText
-            $script:quitDlg.Font = F 9
-            $script:quitDlg.TopMost = $true
-            $script:quitDlg.ShowInTaskbar = $false
-            $script:quitDlg.MaximizeBox = $false
-            $script:quitDlg.MinimizeBox = $false
-            try {
-                if (-not ('QuitDlgRgn' -as [type])) {
-                    Add-Type -TypeDefinition 'using System.Runtime.InteropServices; public class QuitDlgRgn { [DllImport("gdi32.dll")] public static extern IntPtr CreateRoundRectRgn(int a,int b,int c,int d,int e,int f); }' -ErrorAction Stop
-                }
-                $script:quitDlg.Region = [System.Drawing.Region]::FromHrgn([QuitDlgRgn]::CreateRoundRectRgn(0, 0, 420, 250, 14, 14))
-            } catch {}
-
-            $t1 = New-Object System.Windows.Forms.Label
-            $t1.Text = '退出 Daemonkey'
-            $t1.Font = F 12
-            $t1.Location = P 24 22
-            $t1.Size = Sz 380 26
-            $t1.BackColor = $cBg
-            $t1.ForeColor = $cText
-            $script:quitDlg.Controls.Add($t1)
-
-            $t2 = New-Object System.Windows.Forms.Label
-            $t2.Text = 'daemon 服务可以继续在后台运行'
-            $t2.Font = F 8.5
-            $t2.Location = P 24 50
-            $t2.Size = Sz 380 18
-            $t2.BackColor = $cBg
-            $t2.ForeColor = [System.Drawing.Color]::FromArgb(150, 156, 180)
-            $script:quitDlg.Controls.Add($t2)
-
-            $b1 = New-Object System.Windows.Forms.Button
-            $b1.Text = '全部退出 · 停止 daemon + 关闭启动器'
-            $b1.Location = P 24 84
-            $b1.Size = Sz 380 34
-            $b1.BackColor = $cDanger
-            $b1.ForeColor = [System.Drawing.Color]::White
-            $b1.FlatStyle = 'Flat'
-            $b1.FlatAppearance.BorderSize = 0
-            $b1.Add_Click({
-                try { $script:quitDlg.Close() } catch {}
-                try {
-                    $port = 7860
-                    try { $port = [int]$txtPort.Text } catch {}
-                    $existing = Get-DaemonProcessInfo -Port $port
-                    if ($existing) { Stop-Process -Id $existing.Pid -Force -ErrorAction Stop; Add-Log "daemon 已停止 (pid=$($existing.Pid))" 'ok' }
-                } catch { Add-Log "停止 daemon 失败: $_" 'err' }
-                $form.Close()
-            })
-            $script:quitDlg.Controls.Add($b1)
-
-            $b2 = New-Object System.Windows.Forms.Button
-            $b2.Text = '仅关闭启动器 · daemon 继续运行'
-            $b2.Location = P 24 126
-            $b2.Size = Sz 380 34
-            $b2.BackColor = $cBtn
-            $b2.ForeColor = [System.Drawing.Color]::White
-            $b2.FlatStyle = 'Flat'
-            $b2.FlatAppearance.BorderSize = 0
-            $b2.Add_Click({
-                try { $script:quitDlg.Close() } catch {}
-                $form.Close()
-            })
-            $script:quitDlg.Controls.Add($b2)
-
-            $b3 = New-Object System.Windows.Forms.Button
-            $b3.Text = '取消'
-            $b3.Location = P 24 168
-            $b3.Size = Sz 380 34
-            $b3.BackColor = $cCard
-            $b3.ForeColor = $cText
-            $b3.FlatStyle = 'Flat'
-            $b3.FlatAppearance.BorderSize = 1
-            $b3.FlatAppearance.BorderColor = $cCard
-            $b3.Add_Click({ try { $script:quitDlg.Close() } catch {} })
-            $script:quitDlg.Controls.Add($b3)
-
-            try { $script:quitDlg.ShowDialog() } catch {}
-            $script:quitDlg = $null
+            Show-QuitDialog -Title '退出 Daemonkey' -Sub 'daemon 服务可以继续在后台运行' `
+                -PrimaryText '全部退出 · 停止 daemon + 关闭启动器' `
+                -PrimaryAction {
+                    $p = 7860
+                    try { $p = [int]$txtPort.Text } catch {}
+                    Stop-Daemon -port $p
+                    $form.Close()
+                } `
+                -SecondaryText '仅关闭启动器 · daemon 继续运行' `
+                -SecondaryAction { $form.Close() }
         }
         $mOpen = New-Object System.Windows.Forms.ToolStripMenuItem('打开面板')
         $mOpen.Add_Click({
@@ -1032,6 +1210,7 @@ function Stop-Daemon {
         # 窗体关闭 → 托盘也清理 (防残留幽灵图标)
         $script:trayEvtFormClosed = {
             try { $script:trayIcon.Visible = $false; $script:trayIcon.Dispose() } catch {}
+            try { if ($script:gdiHost) { $script:gdiHost.Dispose() } } catch {}
         }
         $form.Add_FormClosed($script:trayEvtFormClosed)
         # ★ 托盘图标挂到窗体 · $form.ShowDialog 期间窗体绝对存活 → 图标永不被 GC
@@ -1354,7 +1533,7 @@ function New-GuardPanelGdi {
                 $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
                 $form.BringToFront()
             } elseif ($x -ge 122 -and $x -lt 218) {
-                try { $btnStart.PerformClick() } catch {}
+                Invoke-StartButton
             } elseif ($x -ge 226 -and $x -lt 322) {
                 $port = 7860
                 try { $port = [int]$txtPort.Text } catch {}
@@ -1490,7 +1669,7 @@ function New-GuardPanel {
                         $form.WindowState = [System.Windows.Forms.FormWindowState]::Normal
                         $form.BringToFront()
                     }
-                    'restart' { try { $btnStart.PerformClick() } catch {} }
+                    'restart' { Invoke-StartButton }
                     'stop' {
                         $port = 7860
                         try { $port = [int]$txtPort.Text } catch {}
@@ -1547,6 +1726,7 @@ function Close-GuardPanel {
     $script:guardWv = $null
     try { if ($script:guardForm) { $script:guardForm.Dispose() } } catch {}
     $script:guardForm = $null
+    Write-GuardCue 'close'
     Add-Log '守护面板已关闭 · 内存已释放' 'info'
 }
 
@@ -1558,12 +1738,14 @@ $script:OnTrayDoubleClick = {
     if (-not $script:guardForm) { New-GuardPanel | Out-Null }
     $script:guardForm.Show()
     $script:guardForm.BringToFront()
+    Write-GuardCue 'open'
     Update-GuardPanel
 }
 $script:OnTrayOpen = {
     if (-not $script:guardForm) { New-GuardPanel | Out-Null }
     $script:guardForm.Show()
     $script:guardForm.BringToFront()
+    Write-GuardCue 'open'
     Update-GuardPanel
 }
 # 初始事件
@@ -1583,7 +1765,7 @@ $form.Add_Paint({
 })
 # 句柄就绪后再钉一次尺寸 + 圆角 (ps2exe 编译后 · 早期设的 ClientSize 会被宿主重置 · 这里补回)
 $form.Add_Shown({
-    $form.ClientSize = New-Object System.Drawing.Size(1000, 620)
+    $form.ClientSize = Sz 1080 700
     $form.Region = New-Object System.Drawing.Region((Get-RoundPath $form.Width $form.Height $script:WinRadius))
     $form.Invalidate()
     # 0.8.3 · 抢前台 (双击 exe 后窗口要弹到最前面 · 之前要点任务栏才显示)
@@ -1600,12 +1782,19 @@ $form.Add_Shown({
     }
 })
 
+# 旧三栏整段搬进隐藏宿主 · 主窗只留 WebView2。按钮/勾选还在，HTML 桥照旧 Invoke。
+# 用 Panel 不当第二扇窗 · 永不 Add 进 $form · 主窗闪一下也不会露出深紫三栏。
+$script:gdiHost = New-Object System.Windows.Forms.Panel
+$script:gdiHost.Size = Sz 1000 620
+$script:gdiHost.Visible = $false
+$form.Add_FormClosed({ try { if ($script:gdiHost) { $script:gdiHost.Dispose(); $script:gdiHost = $null } } catch {} })
+
 # ── 顶部: 自绘标题栏 (一体化 · 可拖动) ──
 $titleBar = New-Object System.Windows.Forms.Panel
 $titleBar.Location = P 0 0
 $titleBar.Size = Sz 1000 34
 $titleBar.BackColor = $cTitleBar
-$form.Controls.Add($titleBar)
+$script:gdiHost.Controls.Add($titleBar)
 
 $titleName = New-Object System.Windows.Forms.Label
 $titleName.Text = 'Daemonkey'
@@ -1695,21 +1884,21 @@ $sidebar = New-Object System.Windows.Forms.Panel
 $sidebar.Location = P 0 34
 $sidebar.Size = Sz 56 586
 $sidebar.BackColor = $cSidebar
-$form.Controls.Add($sidebar)
+$script:gdiHost.Controls.Add($sidebar)
 
 # ── 中栏: 内容宿主 ──
 $middleHost = New-Object System.Windows.Forms.Panel
 $middleHost.Location = P 56 34
 $middleHost.Size = Sz 580 586
 $middleHost.BackColor = $cBg
-$form.Controls.Add($middleHost)
+$script:gdiHost.Controls.Add($middleHost)
 
 # ── 右栏: 内嵌终端 ──
 $rightHost = New-Object System.Windows.Forms.Panel
 $rightHost.Location = P 636 34
 $rightHost.Size = Sz 364 586
 $rightHost.BackColor = $cTermBg
-$form.Controls.Add($rightHost)
+$script:gdiHost.Controls.Add($rightHost)
 
 $termIco = New-Object System.Windows.Forms.Label
 $termIco.Text = (Ico $ICO_TERM)
@@ -1816,7 +2005,7 @@ function Add-Log {
         default { $cDim }
     }
     Term-Write $msg $col
-    $script:lblStatus.Text = $msg
+    if ($script:lblStatus) { $script:lblStatus.Text = $msg }
     [System.Windows.Forms.Application]::DoEvents()
     Push-Main @{ type = 'log'; log = $msg; logKind = $kind }
 }
@@ -2142,7 +2331,7 @@ $pgLaunch = New-Page 'launch' ''
 
 # ── banner: 自绘圆角 · 四周留白 · 有 assets\banner.png 用图(cover 裁剪+左侧蒙版) · 没有就渐变兜底 ──
 # 文字始终用 Graphics.DrawString 画在最上层 · 比图里烧死的字更锐利可控
-$bannerImg = Join-Path $script:Root 'assets\banner.png'
+$bannerImg = Get-SkinAsset 'bg'
 $script:BannerImage = $null
 if (Test-Path $bannerImg) { try { $script:BannerImage = [System.Drawing.Image]::FromFile($bannerImg) } catch {} }
 $banner = New-BufferedPanel
@@ -2183,7 +2372,7 @@ $banner.Add_Paint({
     $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::ClearTypeGridFit
     $fTitle = New-Object System.Drawing.Font('Microsoft YaHei UI', 21, [System.Drawing.FontStyle]::Bold)
     $bTitle = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(236, 240, 255))
-    $g.DrawString('Daemonkey', $fTitle, $bTitle, 22, 22)
+    $g.DrawString((Get-SkinBrand), $fTitle, $bTitle, 22, 22)
     $fTag = New-Object System.Drawing.Font('Microsoft YaHei UI', 9)
     $bTag = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(206, 211, 236))
     $g.DrawString('一个记住你所想，与你一起成长，有七十二变的 AI 搭档', $fTag, $bTag, 24, 66)
@@ -2254,7 +2443,7 @@ $txtPort.BorderStyle = 'FixedSingle'
 $pgLaunch.Controls.Add($txtPort)
 
 $chkPet = New-Object System.Windows.Forms.CheckBox
-$chkPet.Text = '桌宠 sprite  (屏幕角落的小猫 OPUS)'
+$chkPet.Text = '桌宠  (屏幕角落的小房间)'
 $chkPet.Location = P 18 232
 $chkPet.Size = Sz 520 24
 $chkPet.Checked = $true
@@ -2670,13 +2859,17 @@ $btnStart.Add_Click({
     if ($script:DaemonRunning) {
         Show-QuitDialog -Title 'Daemonkey 运行中' -Sub '选择 daemon 与启动器的去向' `
             -PrimaryText '全部退出 · 停止 daemon + 关闭启动器' `
-            -PrimaryAction { Stop-Daemon -port $port; $form.Close() } `
+            -PrimaryAction {
+                $p = 7860
+                try { $p = [int]$txtPort.Text } catch {}
+                Stop-Daemon -port $p
+                $form.Close()
+            } `
             -SecondaryText '仅停止 daemon · 留在启动器' `
             -SecondaryAction {
-                Stop-Daemon -port $port
-                $script:DaemonRunning = $false
-                $btnStart.Text = $script:StartText
-                Set-ButtonFill $btnStart $cBtn
+                $p = 7860
+                try { $p = [int]$txtPort.Text } catch {}
+                Stop-Daemon -port $p
             }
         return
     }
@@ -2727,6 +2920,14 @@ $btnStart.Add_Click({
             }
         }
         if ($shouldStart) {
+            # B-① · 2026-08-27 · 起 daemon 前同步确保口令 (与 opus-launcher 同修 · Grok 全量审计)
+            if (-not (Get-OpusToken)) {
+                Add-Log '.env 没 WebUI 访问口令 · 同步生成…' 'warn'
+                $py = if (Test-Path $script:VenvPython) { $script:VenvPython } else { 'python' }
+                & $py tools\gen_api_token.py --force *> $null
+                if (Get-OpusToken) { Add-Log '已自动生成 WebUI 访问口令' 'ok' }
+                else { Add-Log '自动生成失败 · 可手动跑 tools\gen_api_token.py --force' 'err' }
+            }
             Add-Log "起 daemon (port=$port)…" 'info'
             try {
                 $logPath = Join-Path $script:Root "_daemon_$port.log"
@@ -2759,7 +2960,7 @@ $btnStart.Add_Click({
         $shouldStartPet = $true
         if ($existingPet) {
             Add-Log "桌宠已在跑 (pid=$($existingPet.Pid)) · 弹窗让你选" 'warn'
-            $choice = Show-RestartChoice -Name '桌宠 sprite' -Pid_ $existingPet.Pid -AgeMin $existingPet.AgeMin
+            $choice = Show-RestartChoice -Name '桌宠' -Pid_ $existingPet.Pid -AgeMin $existingPet.AgeMin
             switch ($choice) {
                 'restart' {
                     try { Stop-Process -Id $existingPet.Pid -Force -ErrorAction Stop; Start-Sleep -Milliseconds 800; Add-Log '旧桌宠已停 · 起新的' 'ok' }
@@ -2770,32 +2971,16 @@ $btnStart.Add_Click({
             }
         }
         if ($shouldStartPet) {
-            Add-Log '起桌宠 (desktop_pet/pet.py)…' 'info'
+            Add-Log '起桌宠 (小房间)…' 'info'
             try {
-                $petScript = Join-Path $script:Root 'desktop_pet\pet.py'
-                if (-not (Test-Path $petScript)) { Add-Log "桌宠脚本不存在: $petScript" 'err' }
-                else {
-                    $petPython = if (Test-Path $script:VenvPythonW) { $script:VenvPythonW } else { $script:VenvPython }
-                    # 0.8.3 · 桌宠 stderr 重定向到 _pet.err · 崩溃时有真错误可查 (之前 exit=1 只能瞎猜缺 PyQt6)
-                    $petErrPath = Join-Path $script:Root '_pet.err'
-                    try {
-                        # 2026-08-02 · 路径含空格(如 "Daemonkey - 测试副本"/Program Files)时·单字符串 -ArgumentList
-                        # 会被 PS 5.1 按空格拆开 → pythonw 收到截断路径报 "can't find __main__ module" ·
-                        # PS 5.1 数组也不引号化(实测·只做空格 join)·必须手动加引号包裹
-                        $petProc = Start-Process -FilePath $petPython -ArgumentList ('"' + $petScript + '"') -WorkingDirectory $script:Root -PassThru -WindowStyle Hidden -RedirectStandardError $petErrPath
-                    } catch {
-                        # 重定向失败 (文件被占用等) · 退回无重定向
-                        $petProc = Start-Process -FilePath $petPython -ArgumentList ('"' + $petScript + '"') -WorkingDirectory $script:Root -PassThru -WindowStyle Hidden
-                    }
-                    # 桌宠崩得快 (缺 PyQt6 等)·等 1.8s 看它还在不在·别一拿到 process 就报"起来了"
-                    Start-Sleep -Milliseconds 1800
-                    if ($petProc -and -not $petProc.HasExited) {
-                        Add-Log "桌宠起来了 (pid=$($petProc.Id)) · 在屏幕右下角" 'ok'
-                    } elseif ($petProc -and $petProc.HasExited) {
-                        Add-Log "桌宠起了又退了 (exit=$($petProc.ExitCode)) · 真实错误见 _pet.err · 多半缺依赖去『环境』页补装" 'err'
-                    } else {
-                        Add-Log '桌宠没返回 process · 可能没起' 'warn'
-                    }
+                $petProc = Start-DesktopPet
+                Start-Sleep -Milliseconds 1800
+                if ($petProc -and -not $petProc.HasExited) {
+                    Add-Log "桌宠起来了 (pid=$($petProc.Id)) · 小房间在屏幕右下角" 'ok'
+                } elseif ($petProc -and $petProc.HasExited) {
+                    Add-Log "桌宠起了又退了 (exit=$($petProc.ExitCode)) · 真实错误见 _pet.err · 多半缺依赖去『环境』页补装" 'err'
+                } else {
+                    Add-Log '桌宠没返回 process · 可能没起' 'warn'
                 }
             } catch { Add-Log "起桌宠失败: $_" 'err' }
         }
@@ -2839,11 +3024,19 @@ function Test-NeedSetup {
     if (-not (Test-Path $script:VenvPython)) { return $true }
     if (-not (Test-Path (Join-Path $script:Root '.venv\pyvenv.cfg'))) { return $true }
     # 2026-08-15 · 第三条件 (防"假就绪"): 依赖必须真能 import。
-    #   事故: 095test 的 .venv 复制损坏 (anthropic 缺 types/beta/sessions)·
-    #   python.exe + pyvenv.cfg 都在 → 旧逻辑判定"已装" → 不自动重装 →
-    #   点启动也起不来 → 看起来"自动一条龙失效"。实测 import 兜住。
+    # 2026-08-30 · 冷启动实测 import 四包 ~1.7s · 成功过就落 stamp · python.exe 换了再验
+    $stamp = Join-Path $script:Root 'data\runtime\venv-ok.stamp'
+    try {
+        $pyTime = (Get-Item $script:VenvPython).LastWriteTimeUtc
+        if ((Test-Path $stamp) -and ((Get-Item $stamp).LastWriteTimeUtc -ge $pyTime)) { return $false }
+    } catch {}
     & $script:VenvPython -c "import fastapi, uvicorn, openai, anthropic" 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) { return $true }
+    try {
+        $dir = Split-Path $stamp
+        if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+        Set-Content $stamp 'ok' -Encoding ASCII
+    } catch {}
     return $false
 }
 
@@ -2869,15 +3062,7 @@ if ($needSetup) {
         if ($ready) {
             Add-Log '环境就绪 · 自动启动 daemon + WebUI…' 'ok'
             Show-Page 'launch'
-            # $btnStart 是自绘 Panel (New-ActionButton) · 没有 PerformClick · 用反射触发 OnClick
-            # (2026-08-02 · BRO 实测: PerformClick 报 Panel 无此方法)
-            try {
-                $m = $btnStart.GetType().GetMethod('OnClick', [System.Reflection.BindingFlags]'Instance,NonPublic')
-                if ($m) { $m.Invoke($btnStart, @([System.EventArgs]::Empty)) }
-                else { Add-Log '找不到 OnClick 方法 · 请手动点【启动】' 'err' }
-            } catch {
-                Add-Log "自动触发启动失败: $_ · 请手动点【启动】" 'err'
-            }
+            Invoke-StartButton
         } else {
             Add-Log "环境安装未完成 (exit=$code) · 看右栏输出 · 可再点【开始安装】重试或去『急救』" 'err'
             Show-Page 'launch'   # 2026-08-15 · 不留环境页 · 回启动页让用户看日志
@@ -2938,6 +3123,13 @@ $monitorTimer = New-Object System.Windows.Forms.Timer
 $monitorTimer.Interval = 2000
 $monitorTimer.Add_Tick({ try { Update-MonitorPanel } catch {}; Push-MainBtnState })
 $monitorTimer.Start()
+$script:repoTimer = New-Object System.Windows.Forms.Timer
+$script:repoTimer.Interval = 2500
+$script:repoTimer.Add_Tick({
+    try { $script:repoTimer.Stop(); $script:repoTimer.Dispose() } catch {}
+    try { Ensure-RepoAndSource } catch {}
+})
+$script:repoTimer.Start()
 
 # ── wish-1b8e141b · 崩溃自动拉起看门狗 (10s 轮询 · 判定: stopped 持续 90s + 无 pending restart_request) ──
 $autoRestartTimer = New-Object System.Windows.Forms.Timer
@@ -2970,13 +3162,7 @@ if ($env:DK_PREVIEW_GUARD -eq '1') {
         if (-not $script:guardForm) { New-GuardPanel | Out-Null }
         $script:guardForm.Show()
         $script:guardForm.BringToFront()
-        Update-GuardPanel
-    } catch { try { Set-Content (Join-Path $script:Root '_guard_preview_err.txt') "面板预览失败: $_" -Encoding UTF8 } catch {} }
-}
-if ($env:DK_PREVIEW_GUARD -eq '1') {
-    try {
-        if (-not $script:guardForm) { New-GuardPanel | Out-Null }
-        $script:guardForm.Show()
+        Write-GuardCue 'open'
         Update-GuardPanel
     } catch { try { Set-Content (Join-Path $script:Root '_guard_preview_err.txt') "面板预览失败: $_" -Encoding UTF8 } catch {} }
 }
@@ -3005,6 +3191,35 @@ function Push-Main {
             $script:mainWv.CoreWebView2.PostWebMessageAsJson(($obj | ConvertTo-Json -Compress -Depth 6))
         }
     } catch {}
+}
+
+function Apply-LauncherSkinLive {
+    $ico = Get-SkinAsset 'icon'
+    if (Test-Path $ico) {
+        try {
+            $script:mainIcon = New-Object System.Drawing.Icon($ico)
+            $form.Icon = $script:mainIcon
+            if ('DkWin32Icon' -as [type]) {
+                [void][DkWin32Icon]::SendMessage($form.Handle, 0x0080, [IntPtr]1, $script:mainIcon.Handle)
+                [void][DkWin32Icon]::SendMessage($form.Handle, 0x0080, [IntPtr]0, $script:mainIcon.Handle)
+                [void][DkWin32Icon]::SetClassLongPtr($form.Handle, -14, $script:mainIcon.Handle)
+                [void][DkWin32Icon]::SetClassLongPtr($form.Handle, -34, $script:mainIcon.Handle)
+            }
+            if ($script:trayIcon) {
+                $script:trayIcoObj = New-Object System.Drawing.Icon($ico)
+                $script:trayIcon.Icon = $script:trayIcoObj
+            }
+        } catch { Add-Log "换肤图标失败: $_" 'warn' }
+    }
+    $bg = Get-SkinAsset 'bg'
+    if (Test-Path $bg) {
+        try {
+            $old = $script:BannerImage
+            $script:BannerImage = [System.Drawing.Image]::FromFile($bg)
+            if ($old) { try { $old.Dispose() } catch {} }
+            if ($banner) { $banner.Invalidate() }
+        } catch {}
+    }
 }
 
 function Push-MainState {
@@ -3043,6 +3258,9 @@ function Push-MainState {
         commId = $commIdTxt
         qrDataUri = $qrDataUri
         qrHint = if ($qrDataUri) { '微信扫码进社群' } else { '把社群二维码放到 assets\community-qr.png · 这里自动显示' }
+        skin = $script:SkinId
+        bgUrl = Get-SkinUrl 'bg'
+        faceUrl = Get-SkinUrl 'face'
     }
 }
 
@@ -3077,58 +3295,38 @@ $script:MainProviders = @(
     @{ id = 'api-7'; url = 'https://aistudio.google.com/' }
 )
 
-function New-MainWebView {
-    try {
-        if (-not ('Microsoft.Web.WebView2.WinForms.WebView2' -as [type])) {
-            Add-Type -Path "$script:Root\assets\webview2\Microsoft.Web.WebView2.Core.dll" -ErrorAction Stop
-            Add-Type -Path "$script:Root\assets\webview2\Microsoft.Web.WebView2.WinForms.dll" -ErrorAction Stop
-        }
-    } catch { Add-Log 'WebView2 dll 缺失 · 使用 GDI 界面' 'warn'; return $null }
+function Hide-GdiChrome { }
 
-    $wv = New-Object Microsoft.Web.WebView2.WinForms.WebView2
-    $wv.Dock = 'Fill'
-    $wv.DefaultBackgroundColor = [System.Drawing.Color]::FromArgb(10, 13, 24)
-    try { $wv.CornerRadius = 12 } catch {}
-    # 1080P/2K/4K 适配: 高 DPI 下 CSS px 自动放大 → 内容溢出 · ZoomFactor = 96/Dpi 按物理像素精确渲染
+function Reveal-MainWindow {
+    try { $form.Opacity = 1 } catch {}
     try {
-        $g = [System.Drawing.Graphics]::FromHwnd($form.Handle)
-        if ($g.DpiX -gt 96) { $wv.ZoomFactor = [double](96.0 / $g.DpiX) }
-        $g.Dispose()
+        if ($script:MainFadeTimer) {
+            $script:MainFadeTimer.Stop(); $script:MainFadeTimer.Dispose(); $script:MainFadeTimer = $null
+        }
     } catch {}
+    try { if ($script:splash) { $script:splash.Close(); $script:splash = $null } } catch {}
+    Write-SplashCmd 'ready'
+}
+
+function Show-GdiFallback {
+    # BRO: 旧三栏不再露脸。WebView2 失败就停在闪屏，不兑回 GDI。
+    Add-Log '主界面没加载出来 · 不走旧 GDI' 'err'
     try {
-        $udf = Join-Path $script:Root 'data\runtime\webview2_main'
-        try { New-Item -ItemType Directory -Path $udf -Force | Out-Null } catch {}
-        $wv.CreationProperties = New-Object Microsoft.Web.WebView2.WinForms.CoreWebView2CreationProperties
-        $wv.CreationProperties.UserDataFolder = $udf
-        $wv.CreationProperties.AdditionalBrowserArguments = '--disable-features=CalculateNativeWinOcclusion,msWebOOUI,msPdfOOUI'
+        if ($script:splashText) { $script:splashText.Text = '界面没加载出来 · 关掉再开一次 Daemonkey.exe' }
     } catch {}
-    $form.Controls.Add($wv)
+    Write-SplashCmd 'fail' '界面没加载出来 · 关掉再开一次 Daemonkey.exe'
+}
 
-    try {
-        $task = $wv.EnsureCoreWebView2Async($null)
-        $deadline = (Get-Date).AddSeconds(5)
-        while (-not $wv.CoreWebView2 -and (Get-Date) -lt $deadline) {
-            [System.Windows.Forms.Application]::DoEvents()
-            Start-Sleep -Milliseconds 100
-            if ($task.IsFaulted) { break }
-        }
-        if (-not $wv.CoreWebView2) {
-            $form.Controls.Remove($wv); $wv.Dispose()
-            Add-Log '主界面 WebView2 初始化超时 · 使用 GDI 界面' 'warn'
-            return $null
-        }
-    } catch {
-        $form.Controls.Remove($wv); try { $wv.Dispose() } catch {}
-        Add-Log "主界面 WebView2 初始化失败: $_ · 使用 GDI 界面" 'warn'
-        return $null
-    }
-
+function Complete-MainWebView {
+    $wv = $script:mainWv
+    if (-not $wv -or -not $wv.CoreWebView2) { return }
+    if ($script:mainWvReady) { return }
+    $script:mainWvReady = $true
     $wv.CoreWebView2.Settings.AreDefaultContextMenusEnabled = $false
     $wv.CoreWebView2.Settings.IsStatusBarEnabled = $false
     $wv.CoreWebView2.Settings.IsZoomControlEnabled = $false
     $wv.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = $false
 
-    # HTML → PS 桥接
     $wv.CoreWebView2.Add_WebMessageReceived({
         param($sender, $e)
         try {
@@ -3136,7 +3334,6 @@ function New-MainWebView {
             switch ($msg.type) {
                 'start' { Invoke-GdiButton $btnStart }
                 'nav' {
-                    # GDI 兜底只有六页 · 社群页 HTML 自渲染 · PS 侧映射到 about 防白屏
                     if ([string]$msg.page -eq 'community') { Show-Page 'about' } else { Show-Page ([string]$msg.page) }
                 }
                 'opt' {
@@ -3163,6 +3360,11 @@ function New-MainWebView {
                         'rescue-repair'    { Invoke-GdiButton $btnRepair }
                         'rescue-rollback'  { Invoke-GdiButton $btnRoll }
                         'ext-check-update' { Invoke-GdiButton $btnPatch }
+                        'pet-egg-cat' {
+                            $egg = Start-DesktopPet -Cat
+                            if ($egg -and -not $egg.HasExited) { Add-Log '彩蛋 · 小猫来了' 'ok' }
+                            else { Add-Log '彩蛋小猫没起来 · 看 _pet.err' 'warn' }
+                        }
                     }
                 }
                 'openurl' {
@@ -3187,20 +3389,41 @@ function New-MainWebView {
                     }
                 }
                 'term-clear' { $script:Terminal.Clear() }
+                'skin' {
+                    Save-LauncherSkin ([string]$msg.id)
+                    Apply-LauncherSkinLive
+                    Push-MainState
+                    Add-Log "启动器皮肤: $(Get-SkinBrand)" 'ok'
+                }
             }
         } catch {}
     })
 
-    # 导航 HTML (NavigateToString 绕 file:// 缓存)
     $htmlPath = Join-Path $script:Root 'assets\launcher.html'
+    $mapped = $false
     try {
-        $htmlContent = Get-Content $htmlPath -Raw -Encoding UTF8
-        if (-not $htmlContent) { throw 'HTML 为空' }
-        $wv.CoreWebView2.NavigateToString($htmlContent)
+        $kind = [Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind]::Allow
+        $wv.CoreWebView2.SetVirtualHostNameToFolderMapping('dk.assets', (Join-Path $script:Root 'assets'), $kind)
+        $mapped = $true
+    } catch { Add-Log "虚拟目录映射失败: $_" 'warn' }
+    try {
+        if ($mapped) {
+            $wv.CoreWebView2.Navigate("https://dk.assets/launcher.html?v=$($script:Version)&skin=$($script:SkinId)")
+        } else {
+            $htmlContent = Get-Content $htmlPath -Raw -Encoding UTF8
+            if (-not $htmlContent) { throw 'HTML 为空' }
+            $bgPath = Get-SkinAsset 'bg'
+            if (Test-Path $bgPath) {
+                $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($bgPath))
+                $mime = if ($bgPath -like '*.jpg') { 'image/jpeg' } else { 'image/png' }
+                $htmlContent += "<style>.moon-bg{background-image:url('data:$mime;base64,$b64') !important}</style>"
+            }
+            $wv.CoreWebView2.NavigateToString($htmlContent)
+        }
     } catch {
-        $form.Controls.Remove($wv); try { $wv.Dispose() } catch {}
-        Add-Log "launcher.html 读取失败: $_ · 使用 GDI 界面" 'warn'
-        return $null
+        Add-Log "launcher.html 读取失败: $_" 'warn'
+        Show-GdiFallback
+        return
     }
 
     $wv.CoreWebView2.Add_NavigationCompleted({
@@ -3208,16 +3431,71 @@ function New-MainWebView {
         if ($e.IsSuccess) {
             try { $script:mainWv.BringToFront() } catch {}
             Push-MainState
-            Add-Log '月光操作台界面已加载' 'ok'
+            Add-Log '启动器界面已加载' 'ok'
+            Reveal-MainWindow
+        } else {
+            Add-Log 'launcher.html 导航失败' 'warn'
+            Show-GdiFallback
         }
-        # 闪屏修复: WebView2 加载完成 → 显示窗口 (GDI 旧界面永远不会被用户看到)
-        try { $form.Opacity = 1 } catch {}
-        try { if ($script:MainFadeTimer) { $script:MainFadeTimer.Stop(); $script:MainFadeTimer.Dispose(); $script:MainFadeTimer = $null } } catch {}
-        # 启动画面: 主界面已显示 → 关 Splash
-        try { if ($script:splash) { $script:splash.Close() } } catch {}
     })
+}
 
+function New-MainWebView {
+    try {
+        if (-not ('Microsoft.Web.WebView2.WinForms.WebView2' -as [type])) {
+            Add-Type -Path "$script:Root\assets\webview2\Microsoft.Web.WebView2.Core.dll" -ErrorAction Stop
+            Add-Type -Path "$script:Root\assets\webview2\Microsoft.Web.WebView2.WinForms.dll" -ErrorAction Stop
+        }
+    } catch { Add-Log 'WebView2 dll 缺失' 'warn'; return $null }
+
+    $wv = New-Object Microsoft.Web.WebView2.WinForms.WebView2
+    $wv.Dock = 'Fill'
+    $wv.DefaultBackgroundColor = if ($script:SkinId -eq 'daimon') { [System.Drawing.Color]::FromArgb(253, 251, 246) } else { [System.Drawing.Color]::FromArgb(10, 13, 24) }
+    try { $wv.CornerRadius = 12 } catch {}
+    try {
+        $g = [System.Drawing.Graphics]::FromHwnd($form.Handle)
+        if ($g.DpiX -gt 96) { $wv.ZoomFactor = [double](96.0 / $g.DpiX) }
+        $g.Dispose()
+    } catch {}
+    try {
+        $udf = Join-Path $script:Root 'data\runtime\webview2_main'
+        try { New-Item -ItemType Directory -Path $udf -Force | Out-Null } catch {}
+        $wv.CreationProperties = New-Object Microsoft.Web.WebView2.WinForms.CoreWebView2CreationProperties
+        $wv.CreationProperties.UserDataFolder = $udf
+        $wv.CreationProperties.AdditionalBrowserArguments = '--disable-features=CalculateNativeWinOcclusion,msWebOOUI,msPdfOOUI'
+    } catch {}
+    $form.Controls.Add($wv)
     $script:mainWv = $wv
+    $script:mainWvReady = $false
+
+    try {
+        Write-BootLog 'EnsureCoreWebView2'
+        $task = $wv.EnsureCoreWebView2Async($null)
+        $deadline = (Get-Date).AddSeconds(8)
+        while (-not $wv.CoreWebView2 -and (Get-Date) -lt $deadline) {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 50
+            if ($task -and $task.IsFaulted) { Write-BootLog "Ensure faulted: $($task.Exception.Message)"; break }
+        }
+        if (-not $wv.CoreWebView2) {
+            $form.Controls.Remove($wv); $wv.Dispose()
+            $script:mainWv = $null
+            Write-BootLog 'WebView2 timeout'
+            Add-Log '主界面 WebView2 初始化超时' 'warn'
+            return $null
+        }
+        Write-BootLog 'WebView2 ready'
+    } catch {
+        try { $form.Controls.Remove($wv); $wv.Dispose() } catch {}
+        $script:mainWv = $null
+        Write-BootLog "WebView2 fail: $_"
+        Add-Log "主界面 WebView2 启动失败: $_" 'warn'
+        return $null
+    }
+    try { Complete-MainWebView } catch {
+        Add-Log "launcher 装配失败: $_" 'warn'
+        return $null
+    }
     return $wv
 }
 
@@ -3272,22 +3550,24 @@ $script:updTimer.Add_Tick({
 })
 $script:updTimer.Start()
 
-# ── Activation · 覆盖式 Overlay: 窗口先隐藏 (Opacity=0) · WebView2 盖层完成后显示 · 4s 兑底 ──
-# 2026-08-15 · 卡顿修复: 原 Application.Run 前同步初始化 WebView2 (8s 死等 → 窗口"不响应")
-# 2026-08-15 · 闪屏修复: Shown 后 Opacity=0 隐藏窗口 → WebView2 NavigationCompleted → Opacity=1
-#                (用户永远看不到 GDI 旧三栏 · 4s 兑底: WebView2 失败/超时也强制显示 GDI 兜底)
-$form.Add_Shown({
+function Start-MainUi {
+    if ($script:mainUiStarted) { return }
+    $script:mainUiStarted = $true
+    Write-BootLog 'Start-MainUi'
+    Hide-GdiChrome
+    # 窗已经 Show 过再透明 · WebView2 才能起；一建好就 Opacity=0 会卡死闪屏
     try { $form.Opacity = 0 } catch {}
     try {
-        $script:MainFadeTimer = New-Object System.Windows.Forms.Timer
-        $script:MainFadeTimer.Interval = 4000
-        $script:MainFadeTimer.Add_Tick({
-            try { $form.Opacity = 1 } catch {}
-            try { if ($script:splash) { $script:splash.Close() } } catch {}
-            try { $script:MainFadeTimer.Stop(); $script:MainFadeTimer.Dispose(); $script:MainFadeTimer = $null } catch {}
-        })
-        $script:MainFadeTimer.Start()
-    } catch {}
-    try { $script:mainWv = New-MainWebView } catch { Add-Log "主界面 WebView2 异常: $_" 'warn' }
-})
+        $script:mainWv = New-MainWebView
+        if (-not $script:mainWv) { Write-BootLog 'New-MainWebView null'; Show-GdiFallback }
+    } catch {
+        Write-BootLog "Start-MainUi err: $_"
+        Add-Log "主界面 WebView2 异常: $_" 'warn'
+        Show-GdiFallback
+    }
+}
+
+$script:bootUiReady = $true
+if ($script:shownEarly) { Write-BootLog 'drain early Shown'; Start-MainUi }
+Write-BootLog 'Application.Run'
 [System.Windows.Forms.Application]::Run($form)

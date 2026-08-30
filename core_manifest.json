@@ -309,9 +309,11 @@
       "wechat_bridge.py"
     ],
     "[启动器与守护(L1·Daemonkey.exe 壳肉分离[壳 launcher-boot.ps1 + 肉 daemonkey-launcher.ps1]·用户双击入口·升级走保护层[魔改检测→备份 user_overrides/→可合并]。UI 资产 launcher.html/guard-panel.html/daemonkey.ico + webview2 渲染底座随内核下发·升级带 diff 预览+checkpoint 可回退。community-qr.png/community.txt 是用户社群资产·随发布包首装带·不进白名单防升级覆盖用户自己的二维码)]": [
+      "start.bat",
       "daemonkey-launcher.ps1",
       "launcher-boot.ps1",
       "Daemonkey.exe",
+      "tools/DaemonkeyBoot.cs",
       "assets/launcher.html",
       "assets/guard-panel.html",
       "assets/daemonkey.ico",
