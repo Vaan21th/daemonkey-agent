@@ -76,6 +76,12 @@
   };
   window.addEventListener('error', function (e) {
     if (window.__OPUS_APP_READY) return;          // 初始化成功后的零星错误不弹兑底
+    var t = e.target;
+    // 脚本 404 的 ErrorEvent 常常没 message · 旧逻辑当 img/css 跳过 · 拆出去的三块丢了也不弹
+    if (t && t.tagName === 'SCRIPT' && t.src) {
+      lastErr = '脚本没加载到: ' + t.src;
+      return;
+    }
     if (!e.message && !e.error) return;           // 跳过纯资源加载失败 (img/css 404)
     lastErr = detail(e) || lastErr;
   }, true);
@@ -514,7 +520,7 @@
 <script src="/static/chat-md.js?v=20260831split"></script>
 <script src="/static/chat-timeline.js?v=20260831split"></script>
 <script src="/static/chat-rail.js?v=20260831split"></script>
-<script src="/static/chat.js?v=20260831split"></script>
+<script src="/static/chat.js?v=20260831ready"></script>
 
 <!-- 用户装修区 (0.9.6) · static/user/ 在 never_sync 里 —— 官方升级永远不会覆盖这两个文件。
      样式写 user.css / 行为写 user.js (用 window.Daemonkey API)·刷新页面即生效。

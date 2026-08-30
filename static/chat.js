@@ -15156,8 +15156,18 @@ function showSpawnBanner() { /* no-op · spawnTask 自动切标签无需 banner 
 window.switchSessionById = switchSessionById;
 
 /* 提问轨道 → chat-rail.js */
-// 卷五十五 · 2026-06-03 · P1 前端错误边界的就绪信标。
-// chat.js 顶层执行到这里 = 解析成功 + 没在顶层抛错 → 标记 app 已就绪。
-// chat.html 头部的 boot-guard 靠这个标志判断: 超时后仍为 false = chat.js parse/运行
-// 失败 (白屏) → 弹兑底层。 这一行必须在 chat.js 最末尾。
-window.__OPUS_APP_READY = true;
+// 卷五十五 · 就绪信标必须在 chat.js 最末尾。
+// 拆出去的三块若 404，旧逻辑仍置 true · boot-guard 当图片跳过 · 第一条 md/时间线才 ReferenceError。
+(function () {
+  var miss = [];
+  if (typeof mdRender !== 'function') miss.push('chat-md.js');
+  if (typeof renderToolTimeline !== 'function') miss.push('chat-timeline.js');
+  if (typeof _ensureMsgRail !== 'function') miss.push('chat-rail.js');
+  if (miss.length) {
+    if (typeof window.__opusShowFatal === 'function') {
+      window.__opusShowFatal('界面没能加载起来', '拆出去的脚本没到位: ' + miss.join(' · '));
+    }
+    return;
+  }
+  window.__OPUS_APP_READY = true;
+})();

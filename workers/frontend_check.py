@@ -51,6 +51,7 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("SpeechRecognition", "语音输入"),
         ("_DOC_MIMES", "文档附件"),
         ("renderSettingsVision", "视觉模型设置 UI"),
+        ("拆出去的脚本没到位", "READY 等三块都在才置 true"),
     ],
     "chat-md.js": [
         ("function mdRender", "对话 Markdown 渲染"),
@@ -69,6 +70,7 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("chat-md.js", "Markdown 抽出"),
         ("chat-timeline.js", "工具时间线抽出"),
         ("chat-rail.js", "提问轨道抽出"),
+        ("脚本没加载到", "拆出脚本 404 记进 boot-guard"),
         (".docx", "文档附件 accept 类型"),
     ],
     "chat.css": [
