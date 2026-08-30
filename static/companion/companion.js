@@ -261,6 +261,8 @@ let _shelfInbox = null;
   el.id = 'shelf-spot';
   el.innerHTML = `<img draggable="false" class="lamp-art lamp-day" src="${SHELF.art.day}" alt="">`
     + `<img draggable="false" class="lamp-art lamp-night" src="${SHELF.art.night}" alt="">`
+    + `<img draggable="false" class="lamp-art lamp-day shelf-glow" src="${SHELF.art.day}" alt="">`
+    + `<img draggable="false" class="lamp-art lamp-night shelf-glow" src="${SHELF.art.night}" alt="">`
     + `<div class="lamp-hit" style="left:${x0}%;top:${y0}%;width:${x1 - x0}%;height:${y1 - y0}%">`
     + `<div class="tip"><i class="ri-archive-2-line"></i> ${firstSeenName()}置物架</div>`
     + `<div class="shelf-dot" id="shelf-dot" hidden title="似乎有东西在这里"><i class="ri-mail-fill"></i></div>`

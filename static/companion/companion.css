@@ -182,25 +182,28 @@ body.night .lamp-layer.hot .lamp-night { opacity: 1; }
 }
 .lamp-layer.hot .lamp-hit .tip { opacity: 1; transform: translate(-50%, -100%) scale(1); }
 
-/* 置物架 · 整张对齐房间 · 日夜常驻 (不像台灯只在 hover 亮一层) */
-.lamp-layer.shelf-layer .lamp-day { opacity: 1; }
-.lamp-layer.shelf-layer .lamp-night { opacity: 0; }
-body.night .lamp-layer.shelf-layer .lamp-day,
-body.night .lamp-layer.shelf-layer.hot .lamp-day { opacity: 0; }
-body.night .lamp-layer.shelf-layer .lamp-night,
-body.night .lamp-layer.shelf-layer.hot .lamp-night { opacity: 1; }
-/* 常驻切图要跟背景同一套虚化 · 不然软木板虚了它还钉着 */
-.lamp-layer.shelf-layer .lamp-art {
+/* 置物架 · 底图常驻跟房间虚化；hover 另叠一层，跟 .spot:hover 同一套淡入+滤镜 */
+.lamp-layer.shelf-layer .lamp-day:not(.shelf-glow) { opacity: 1; }
+.lamp-layer.shelf-layer .lamp-night:not(.shelf-glow) { opacity: 0; }
+body.night .lamp-layer.shelf-layer .lamp-day:not(.shelf-glow) { opacity: 0; }
+body.night .lamp-layer.shelf-layer .lamp-night:not(.shelf-glow) { opacity: 1; }
+.lamp-layer.shelf-layer .lamp-art:not(.shelf-glow) {
   filter: blur(1.6px) brightness(.97) saturate(1.02);
-  transition: opacity 1.6s ease-in-out, filter .5s ease;
+  transition: opacity 1.6s ease-in-out, filter .3s ease;
 }
-body.focus-ip .lamp-layer.shelf-layer .lamp-art {
+body.focus-ip .lamp-layer.shelf-layer .lamp-art:not(.shelf-glow) {
   filter: blur(7px) brightness(.85) saturate(.92);
 }
-body.focus-room .lamp-layer.shelf-layer .lamp-art { filter: none; }
-body.focus-room .lamp-layer.shelf-layer.hot .lamp-art {
+body.focus-room .lamp-layer.shelf-layer .lamp-art:not(.shelf-glow) { filter: none; }
+.lamp-layer.shelf-layer .shelf-glow {
+  opacity: 0;
   filter: brightness(1.28) saturate(1.16) drop-shadow(0 0 22px rgba(255, 205, 90, .65));
+  transition: opacity .3s ease, filter .3s ease;
 }
+.lamp-layer.shelf-layer.hot .shelf-glow.lamp-day { opacity: 1; }
+.lamp-layer.shelf-layer.hot .shelf-glow.lamp-night { opacity: 0; }
+body.night .lamp-layer.shelf-layer.hot .shelf-glow.lamp-day { opacity: 0; }
+body.night .lamp-layer.shelf-layer.hot .shelf-glow.lamp-night { opacity: 1; }
 .shelf-dot {
   position: absolute; right: 10%; top: 14%;
   width: 22px; height: 22px; border-radius: 50%;
