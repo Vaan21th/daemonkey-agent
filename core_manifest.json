@@ -130,6 +130,7 @@
       "static/lib/three/three.min.js",
       "static/lib/three/OrbitControls.js",
       "static/session-runtime.js",
+      "static/ckpt-restore.js",
       "static/dashboard-panels.js",
       "static/voice-mic.js",
       "static/model-switch.js",

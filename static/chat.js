@@ -7274,6 +7274,7 @@ function _ckptIds(el) {
 }
 
 function _ckptSid(el) {
+  if (window.CkptRestore) return CkptRestore.resolveSid(el);
   const box = el && el.closest ? el.closest('.session-msgs') : null;
   const fromBox = box && box.dataset && box.dataset.sid;
   const s = (typeof activeSession === 'function') ? activeSession() : null;
@@ -7315,6 +7316,7 @@ async function _ckptAbortRunning(sid) {
 }
 
 async function _ckptPost(sid, body) {
+  if (window.CkptRestore) return CkptRestore.post(sid, body);
   const headers = {
     Authorization: 'Bearer ' + token,
     'Content-Type': 'application/json',

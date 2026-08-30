@@ -525,7 +525,22 @@ body.night {
   border-left: 3px solid var(--gold);
 }
 #pane-chat .msg { font-size: 13.5px; line-height: 1.65; }
-#pane-chat .msg.bro { color: var(--me-tx); }
+#pane-chat .msg.bro { color: var(--me-tx); position: relative; margin-left: 28px; }
+/* 房间只留一支回退 · 悬停才出 · 不要工作台那排工具 */
+#pane-chat .ckpt-btn {
+  left: auto;
+  right: 100%;
+  margin-right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  background: var(--bg2);
+  color: var(--tx2);
+  box-shadow: none;
+}
+#pane-chat .ckpt-btn:hover { color: var(--gold); }
+#pane-chat .ckpt-edit-cancel { color: var(--me-tx); opacity: .75; }
 #pane-chat .msg.opus { border: 1px solid var(--line-soft); border-left: 3px solid var(--gold);
   border-radius: 14px; border-bottom-left-radius: 5px; }
 /* 她主动开口 · 金色标识 */

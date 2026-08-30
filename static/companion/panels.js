@@ -42,8 +42,10 @@ var autoConfirm = (function () {
 function addSys(msg) { if (typeof setStatus === 'function') setStatus(String(msg || '')); }
 function updateCurrentLabel() {}
 
-function opusConfirm(opts) {      // 母体 _omQueue modal 系统太重 · 陪伴模式降级原生 confirm
-  return Promise.resolve(window.confirm((opts && opts.message) || '确认操作？'));
+function opusConfirm(opts) {      // 陪伴模式降级原生 confirm
+  var m = opts && opts.message;
+  if (m && typeof m === 'object') m = (m.html ? String(m.html).replace(/<[^>]+>/g, ' ') : '') || '确认操作？';
+  return Promise.resolve(window.confirm(m || '确认操作？'));
 }
 function opusAlert(opts) {
   alert(typeof opts === 'string' ? opts : ((opts && opts.message) || '提示'));

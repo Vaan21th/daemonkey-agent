@@ -35,6 +35,13 @@ router = APIRouter()
 _STATIC_WHITELIST = {
     "chat.css": "text/css; charset=utf-8",
     "chat.js": "application/javascript; charset=utf-8",
+    "session-runtime.js": "application/javascript; charset=utf-8",
+    "ckpt-restore.js": "application/javascript; charset=utf-8",
+    "chat-lightbox.js": "application/javascript; charset=utf-8",
+    "dashboard-panels.js": "application/javascript; charset=utf-8",
+    "voice-mic.js": "application/javascript; charset=utf-8",
+    "model-switch.js": "application/javascript; charset=utf-8",
+    "settings-pane.js": "application/javascript; charset=utf-8",
     # 2026-07-12 · 从 chat.js 拆出的成长档案 hub / 客户档案模块 · 漏加白名单 = 404 = 两块永久空白
     "depot.js": "application/javascript; charset=utf-8",
     "clients.js": "application/javascript; charset=utf-8",
@@ -55,6 +62,7 @@ _STATIC_WHITELIST = {
     "lib/remixicon/remixicon.ttf": "font/ttf",
     # 浏览器标签页图标 (启动器同款) · 替掉浏览器缓存的陌生默认 favicon
     "favicon.ico": "image/x-icon",
+    "favicon.png": "image/png",
     # 形态 Z · 相遇页 (index.html) 的样式与脚本 · index.html 本身走 /ui 分流返回
     "style.css": "text/css; charset=utf-8",
     "app.js": "application/javascript; charset=utf-8",

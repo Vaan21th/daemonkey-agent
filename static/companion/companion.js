@@ -1081,6 +1081,7 @@ function buildMsgEl(t) {
     const body = strip.stripped ? (strip.body || '') : (atts.length ? (strip.body || '') : (t.content || ''));
     d.innerHTML = esc(body) + `<div class="t">${fmtTime(t.ts)}</div>`;
     if (atts.length && typeof _renderBroAttachments === 'function') _renderBroAttachments(d, atts);
+    _attachCkpt(d, t.turn_id, t.line, body);
   } else {
     renderAiBubble(d, String(t.content || ''), t.ts);
   }
@@ -1786,7 +1787,181 @@ function addMsg(text, who, cls, ts, target) {
     box.appendChild(d);
     box.scrollTop = box.scrollHeight;
   }
+  if (role === 'bro') _attachCkpt(d, null, null, text || '');
   return d;
+}
+
+function _broPlainText(el) {
+  if (el && el.dataset && el.dataset.ckptText != null && el.dataset.ckptText !== '') {
+    return el.dataset.ckptText;
+  }
+  let t = '';
+  if (!el) return t;
+  for (let n = el.firstChild; n; n = n.nextSibling) {
+    if (n.nodeType === 3) t += n.textContent;
+  }
+  return t;
+}
+
+function _attachCkpt(el, turnId, line, text) {
+  if (!el || !el.classList || !el.classList.contains('bro')) return;
+  if (turnId) el.dataset.turnId = String(turnId);
+  if (line === 0 || (line != null && line !== '')) el.dataset.line = String(line);
+  if (text != null) el.dataset.ckptText = String(text);
+  if (!el.dataset.boundCkptDbl) {
+    el.dataset.boundCkptDbl = '1';
+    el.title = el.title || '双击改这句再发';
+    el.addEventListener('dblclick', function (ev) {
+      if (ev.target.closest && ev.target.closest('.ckpt-btn,.ckpt-edit')) return;
+      ev.preventDefault();
+      _beginBroEdit(el);
+    });
+  }
+  if (!el.dataset.turnId && el.dataset.line == null) return;
+  if (el.querySelector('.ckpt-btn')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ckpt-btn';
+  btn.title = '回到这句';
+  btn.innerHTML = '<i class="ri-arrow-go-back-line"></i>';
+  btn.addEventListener('click', function (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    _restoreToTurn(el);
+  });
+  el.appendChild(btn);
+}
+
+function _beginBroEdit(el) {
+  if (!el || el.querySelector('.ckpt-edit')) return;
+  const cur = _broPlainText(el);
+  const hold = document.createElement('div');
+  hold.className = 'ckpt-orig';
+  hold.hidden = true;
+  while (el.firstChild) hold.appendChild(el.firstChild);
+  const editor = document.createElement('div');
+  editor.className = 'ckpt-edit';
+  const ta = document.createElement('textarea');
+  ta.value = cur;
+  ta.rows = Math.min(12, Math.max(1, String(cur).split('\n').length));
+  const row = document.createElement('div');
+  row.className = 'ckpt-edit-row';
+  const ok = document.createElement('button');
+  ok.type = 'button';
+  ok.className = 'ckpt-edit-go';
+  ok.innerHTML = '<i class="ri-send-plane-line"></i> 重新发送';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.className = 'ckpt-edit-cancel';
+  cancel.textContent = '取消';
+  row.appendChild(cancel);
+  row.appendChild(ok);
+  editor.appendChild(ta);
+  editor.appendChild(row);
+  el.classList.add('ckpt-editing');
+  el.appendChild(hold);
+  el.appendChild(editor);
+  function _syncGo() { ok.disabled = !String(ta.value || '').trim(); }
+  _syncGo();
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
+  function _quit() {
+    editor.remove();
+    if (hold.parentNode) {
+      while (hold.firstChild) el.insertBefore(hold.firstChild, hold);
+      hold.remove();
+    }
+    el.classList.remove('ckpt-editing');
+  }
+  cancel.addEventListener('click', function (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    _quit();
+  });
+  ok.addEventListener('click', function (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const next = String(ta.value || '').trim();
+    if (!next) {
+      if (typeof opusAlert === 'function') opusAlert({ message: '改完要有字。' });
+      else alert('改完要有字。');
+      return;
+    }
+    _quit();
+    _editResendFrom(el, next);
+  });
+  ta.addEventListener('input', _syncGo);
+  ta.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      _quit();
+    }
+  });
+}
+
+function _ckptShortConfirm(plan) {
+  let msg = '后面的话会砍掉。这句留下。';
+  if (plan && plan.has_snaps) msg += ' 她这句之后写过的文件也会退回去。';
+  return msg;
+}
+
+function _ckptClearRun(sid) {
+  const st = sid && window.SessionRuntime ? SessionRuntime.get(sid) : null;
+  if (st) {
+    st.pending = false;
+    st.currentTurnId = null;
+    st.currentAbortController = null;
+  }
+  curTurnId = '';
+  curAbort = null;
+  setSendState('idle');
+  refreshSendChrome();
+  setStatus(null);
+}
+
+async function _ckptPreview(el) {
+  if (!window.CkptRestore) {
+    if (typeof opusAlert === 'function') await opusAlert({ message: '回退脚本没装上，硬刷这一页' });
+    return null;
+  }
+  try {
+    return await CkptRestore.preview(el);
+  } catch (e) {
+    if (typeof opusAlert === 'function') await opusAlert({ message: e.message || String(e) });
+    else alert(e.message || String(e));
+    return null;
+  }
+}
+
+async function _ckptApply(ctx, dropKeep) {
+  try {
+    await CkptRestore.apply(ctx, dropKeep);
+  } catch (e) {
+    if (typeof opusAlert === 'function') await opusAlert({ message: e.message || String(e) });
+    else alert(e.message || String(e));
+    return null;
+  }
+  _ckptClearRun(ctx.sid);
+  await restoreConversation();
+  return true;
+}
+
+async function _restoreToTurn(el) {
+  const ctx = await _ckptPreview(el);
+  if (!ctx) return;
+  const ok = typeof opusConfirm === 'function'
+    ? await opusConfirm({ message: _ckptShortConfirm(ctx.plan) })
+    : window.confirm(_ckptShortConfirm(ctx.plan));
+  if (!ok) return;
+  await _ckptApply(ctx, false);
+}
+
+async function _editResendFrom(el, text) {
+  const ctx = await _ckptPreview(el);
+  if (!ctx) return;
+  const applied = await _ckptApply(ctx, true);
+  if (!applied) return;
+  await send({ text: text, fromEdit: true });
 }
 /* ===== 长回复折卡片 =====
    陪伴模式要的是「有人在」不是信息密度 · 大段内容折成卡片 · 他点开才看。
@@ -2530,6 +2705,10 @@ async function send(opts) {
       if (deadSid) SessionRuntime.kick(deadSid);
       return;
     }
+  } else if (opts.fromEdit || opts.text != null) {
+    text = String(opts.text || '').trim();
+    sending = [];
+    if (!text) return;
   } else {
     text = input.value.trim();
     if (!text && !_attachments.length) return;
@@ -2545,7 +2724,7 @@ async function send(opts) {
     SessionRuntime.setActiveContainer(mySid);
   }
   const state = SessionRuntime.getOrCreate(mySid);
-  if (!queued && SessionRuntime.isBusy(state.sessionId || mySid)) {
+  if (!queued && !opts.fromEdit && SessionRuntime.isBusy(state.sessionId || mySid)) {
     const atts = _attachments.map(function (a) { return Object.assign({}, a); });
     const payload = { text: text, attachments: atts };
     const r = (SessionRuntime.editOf && SessionRuntime.editOf(state.sessionId))
@@ -2564,7 +2743,7 @@ async function send(opts) {
   }
   SessionRuntime.getOrCreateContainer(mySid);
   if (!queued || SessionRuntime.isVisible(mySid)) SessionRuntime.setActiveContainer(mySid);
-  if (!queued) {
+  if (!queued && !opts.fromEdit) {
     input.value = '';
     sending = _attachments.splice(0);
     renderAttachBar();
@@ -2631,6 +2810,14 @@ async function send(opts) {
       if (type === 'hello') {
         state.currentTurnId = d.turn_id || '';
         if (isVisible()) curTurnId = state.currentTurnId;
+        if (d.turn_id) {
+          const box = state.$container || chatBox();
+          if (box) {
+            const nodes = box.querySelectorAll('.msg.bro:not([data-turn-id]):not([data-line])');
+            const last = nodes[nodes.length - 1];
+            if (last) _attachCkpt(last, d.turn_id, null);
+          }
+        }
         if (d.session_id) {
           const old = state.sessionId;
           SessionRuntime.swapId(old, d.session_id);
