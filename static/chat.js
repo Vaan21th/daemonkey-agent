@@ -5671,6 +5671,7 @@ async function _loadSessionHistory(sid, opts) {
             const _attS = _broAttachStrip(_uc);
             if (_attS.legacy.length || (t.attachments && t.attachments.length)) _uc = _attS.body || _uc;
             const _broB = addMsg('bro', _uc, null, t.ts, s.$container);
+            _attachCkpt(_broB, t.turn_id, t.line);
             _renderBroAttachments(_broB,
               (t.attachments && t.attachments.length)
                 ? t.attachments
@@ -6508,6 +6509,7 @@ async function _pollSession(state) {
           const _pAttS = _broAttachStrip(_pc);
           if (_pAttS.legacy.length || (t.attachments && t.attachments.length)) _pc = _pAttS.body || _pc;
           const _pBroB = addMsg('bro', _pc, null, t.ts, state.$container);
+          _attachCkpt(_pBroB, t.turn_id, t.line);
           _renderBroAttachments(_pBroB,
             (t.attachments && t.attachments.length)
               ? t.attachments
@@ -7148,6 +7150,146 @@ function addMsg(role, text, className, ts, target, opts) {
   return div;
 }
 function addSys(text, target) { return addMsg('sys', text, null, null, target); }
+
+function _attachCkpt(el, turnId, line) {
+  if (!el || !el.classList || !el.classList.contains('bro')) return;
+  if (turnId) el.dataset.turnId = String(turnId);
+  if (line === 0 || (line != null && line !== '')) el.dataset.line = String(line);
+  if (!el.dataset.turnId && el.dataset.line == null) return;
+  if (el.querySelector('.ckpt-btn')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ckpt-btn';
+  btn.title = '回到这句';
+  btn.innerHTML = '<i class="ri-arrow-go-back-line"></i>';
+  btn.addEventListener('click', function(ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    _restoreToTurn(el);
+  });
+  el.appendChild(btn);
+}
+
+async function _restoreToTurn(el) {
+  const sid = sessionId;
+  if (!sid || !token) {
+    await opusAlert({ title: '回不去', message: '没有当前对话或还没填 token' });
+    return;
+  }
+  const turnId = (el && el.dataset.turnId) || '';
+  const line = el && el.dataset.line !== undefined && el.dataset.line !== ''
+    ? Number(el.dataset.line) : null;
+  if (!turnId && (line == null || Number.isNaN(line))) {
+    await opusAlert({ title: '回不去', message: '这句没有检查点' });
+    return;
+  }
+  const headers = {
+    Authorization: 'Bearer ' + token,
+    'Content-Type': 'application/json',
+  };
+  const body = { apply: false };
+  if (turnId) body.turn_id = turnId;
+  if (line != null && !Number.isNaN(line)) body.line = line;
+  let plan;
+  try {
+    const r = await fetch('/sessions/' + encodeURIComponent(sid) + '/restore', {
+      method: 'POST', headers: headers, body: JSON.stringify(body),
+    });
+    plan = await r.json();
+    if (!r.ok || plan.ok === false) {
+      await opusAlert({ title: '预览失败', message: (plan && plan.error) || ('HTTP ' + r.status) });
+      return;
+    }
+  } catch (e) {
+    await opusAlert({ title: '预览失败', message: e.message || String(e) });
+    return;
+  }
+  const rest = plan.restore || [];
+  const del = plan.delete || [];
+  const skip = plan.skip || [];
+  let html = '<div>回到这句。后面的对话会砍掉。</div>';
+  if (!plan.has_snaps) {
+    html += '<div style="margin-top:8px;color:var(--dim)">这句之后没有文件快照（升级前的旧对话只有字能退）。文件保持现在这样。</div>';
+  } else {
+    if (rest.length) {
+      html += '<div style="margin-top:8px">写回：' + rest.map(function(x) { return escHtml(x.path); }).join('、') + '</div>';
+    }
+    if (del.length) {
+      html += '<div style="margin-top:8px">删掉这句之后新建的：' + del.map(function(x) { return escHtml(x.path); }).join('、') + '</div>';
+    }
+    if (skip.length) {
+      html += '<div style="margin-top:8px;color:var(--dim)">跳过：' + skip.map(function(x) {
+        return escHtml(x.path) + '（' + escHtml(x.reason) + '）';
+      }).join('、') + '</div>';
+    }
+  }
+  const ok = await opusConfirm({
+    title: '回到这句？',
+    message: { html: html },
+    okText: '回到这儿',
+    cancelText: '取消',
+    danger: true,
+    icon: '<i class="ri-arrow-go-back-line"></i>',
+  });
+  if (!ok) return;
+  const s = (_sessions && _sessions[sid]) || (typeof activeSession === 'function' ? activeSession() : null);
+  if (s && s.currentTurnId) {
+    try {
+      await fetch('/turns/' + s.currentTurnId + '/abort', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token },
+      });
+    } catch (e) { /* 没在跑就当没有 */ }
+    if (s.currentAbortController) {
+      try { s.currentAbortController.abort(); } catch (e) {}
+    }
+  }
+  body.apply = true;
+  try {
+    const r2 = await fetch('/sessions/' + encodeURIComponent(sid) + '/restore', {
+      method: 'POST', headers: headers, body: JSON.stringify(body),
+    });
+    const out = await r2.json();
+    if (!r2.ok || out.ok === false) {
+      await opusAlert({ title: '回退失败', message: (out && out.error) || ('HTTP ' + r2.status) });
+      return;
+    }
+  } catch (e) {
+    await opusAlert({ title: '回退失败', message: e.message || String(e) });
+    return;
+  }
+  if (s && typeof _stopSessionPoll === 'function') {
+    try { _stopSessionPoll(s); } catch (e) {}
+  }
+  if (s) {
+    s.pending = false;
+    s.currentTurnId = null;
+    s.assistantBubbles = [];
+  }
+  pending = false;
+  currentTurnId = null;
+  try {
+    setSendButtonState('idle');
+    refreshSendChrome();
+    showToolProgress(false);
+  } catch (e) {}
+  await _loadSessionHistory(sid, { full: true });
+}
+
+function addStyleShiftNotice(text, target) {
+  const dst = target || $msgs;
+  if (!dst || !text) return;
+  const div = document.createElement('div');
+  div.className = 'msg style-shift-notice';
+  const icon = document.createElement('i');
+  icon.className = 'ri-chat-quote-line';
+  const span = document.createElement('span');
+  span.textContent = text;
+  div.appendChild(icon);
+  div.appendChild(span);
+  dst.appendChild(div);
+  scrollToBottom(dst, { force: false });
+}
 
 // 0.9.7-hf1 · 通报气泡「查看完整结果」· 拉 sub-inbox 里本会话的分身全文 · 展开/收起
 async function _bgReportFullToggle(bubble, sid, btn) {
@@ -7920,6 +8062,12 @@ async function send() {
         if (data && data.turn_id) {
           state.currentTurnId = data.turn_id;
           if (_isVisible()) currentTurnId = data.turn_id;
+          const box = state.$container;
+          if (box) {
+            const nodes = box.querySelectorAll('.msg.bro:not([data-turn-id]):not([data-line])');
+            const last = nodes[nodes.length - 1];
+            if (last) _attachCkpt(last, data.turn_id, null);
+          }
         }
         if (data && data.session_id) {
           commitSessionId(data.session_id);
@@ -8071,6 +8219,10 @@ async function send() {
       }
 
       case 'tool_call': {
+        if (data.name === 'note_mood') {
+          state.streamHadToolCall = true;
+          break;
+        }
         state.streamHadToolCall = true;
         state.toolCallCount += 1;
         // wish-5256d2a4 · 工具事件进时间线容器（整轮折叠块·默认展开）· 不再逐条平铺黑话气泡
@@ -8315,6 +8467,11 @@ async function send() {
       }
 
       case 'tool_result': {
+        if (data.name === 'note_mood') {
+          const notice = String(data.ok ? (data.preview || '') : '').trim();
+          if (notice && state.$container) addStyleShiftNotice(notice, state.$container);
+          break;
+        }
         // wish-5256d2a4 · 结果回填到时间线对应步骤卡（人话结果行 + 技术细节折叠）
         tlFillStep(state, data.name || '?', !!data.ok, data.ok ? (data.preview || 'ok') : (data.error || 'failed'));
         // wish-ea8922f7 · replan 完成 → 金卡变完成态 (摘要 + 展开顾问过程)
@@ -11048,7 +11205,7 @@ function biHeatRender(c) {
     const ratio = max > 0 ? (d.value / max) : 0;
     // sqrt 让低价值的天也看得见·不至于被峰值压成全黑
     const op = d.value > 0 ? (0.16 + 0.84 * Math.sqrt(ratio)) : 0;
-    const bg = d.value > 0 ? `background:rgba(159,122,234,${op.toFixed(3)})` : '';
+    const bg = d.value > 0 ? `--heat:${op.toFixed(3)}` : '';
     const dayNum = parseInt(d.date.slice(-2), 10);
     const ritualCls = d.ritual ? ' bi-cal-ritual' : '';
     const cls = 'bi-cal-cell' + (d.value > 0 ? ' has' : ' empty') + (d.date === todayStr ? ' today' : '') + ritualCls;
@@ -13446,7 +13603,7 @@ function renderCalendar(data) {
     const isPeak = d.date === peakDay;
     const intensity = maxTotal > 0 ? (d.total / maxTotal) : 0;
     const heatStyle = d.total > 0
-      ? `background: rgba(159, 122, 234, ${0.05 + intensity * 0.18});`
+      ? `--heat:${(0.16 + intensity * 0.84).toFixed(3)}; background: color-mix(in srgb, var(--opus) calc(var(--heat) * 100%), transparent);`
       : '';
     const dots = [];
     if (d.radar > 0)    dots.push(`<span class="cal-dot cal-dot-radar"    title="雷达 ${d.radar}">${d.radar}</span>`);

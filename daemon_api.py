@@ -118,6 +118,14 @@ _SESSION_LOCKS_LRU: list[str] = []  # 最旧 sid 在前·最新在后
 _SESSION_LOCKS_MAX = 100  # LRU 上限·超过就 evict 最旧的
 
 
+def drop_session_cache(sid: str) -> None:
+    """对话内回退后丢掉内存里的旧 messages · 下一轮从截断后的 jsonl 重读。"""
+    if not sid:
+        return
+    with _get_session_lock(sid):
+        _API_SESSIONS.pop(sid, None)
+
+
 def _get_session_lock(sid: str) -> threading.RLock:
     """取或建一个 session 级锁 · 带 LRU 防爆内存。
 
@@ -1241,8 +1249,9 @@ def _chat_impl(
         RUNTIME.session_id = sid
         # 编辑并发软锁 · 把当前对话身份写进 ContextVar · 让 edit_file/write_file 能区分"哪个对话在改"
         try:
-            from agent_tools import set_session_context
+            from agent_tools import set_session_context, set_current_turn_id
             set_session_context(sid)
+            set_current_turn_id(turn_id)
         except Exception:
             pass
 
@@ -1417,6 +1426,8 @@ def _chat_impl(
             _user_meta.update(user_meta)
         if _coop_advisor:  # BRO 2026-07-28 · 顾问卡持久化: 刷新/切回后历史渲染重建金卡
             _user_meta["advisor_blueprint"] = _coop_advisor
+        if turn_id:
+            _user_meta["turn_id"] = turn_id
         append_turn(sid, "user", message, meta=_user_meta)
 
         # 卷四十六 III 补丁 5 · Y2 · token budget 入口检查

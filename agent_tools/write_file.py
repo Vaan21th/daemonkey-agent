@@ -41,7 +41,7 @@ from . import (
 )
 from ._subprocess_helper import no_window_kwargs
 from ._git_lock import daemon_git_lock
-from ._edit_lock import guard as _edit_guard, note_write as _edit_note
+from ._edit_lock import guard as _edit_guard, note_write as _edit_note, remember_before as _ckpt_before
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -315,6 +315,7 @@ def _run(args: dict) -> ToolResult:
 
     try:
         # wish-21c3ec8b · 换行保真: 先定目标 eol (已存在文件跟随原风格) · 内容归一化 · newline="" 禁止 Python 转换
+        _ckpt_before(path)
         _eol = _detect_eol(path, content)
         _payload = _normalize_eol(content, _eol)
         if mode == "append":

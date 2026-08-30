@@ -24,7 +24,9 @@
       "workers/edit_selfcheck.py",
       "workers/schema_guard.py",
       "workers/secret_redactor.py",
-      "agent_tools/_desc_budget.py"
+      "agent_tools/_desc_budget.py",
+      "workers/turn_checkpoint.py",
+      "agent_tools/restore_checkpoint.py"
     ],
     "代码读搜执行": [
       "agent_tools/read_file.py",

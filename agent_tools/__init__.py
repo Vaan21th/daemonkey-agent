@@ -79,6 +79,19 @@ def current_session_id() -> str:
     return f"t{threading.get_ident()}"
 
 
+_TURN_CTX: contextvars.ContextVar[Optional[str]] = \
+    contextvars.ContextVar("_turn_ctx", default=None)
+
+
+def set_current_turn_id(turn_id: Optional[str]) -> None:
+    """每轮 /chat 入口写 · 让 write_file/edit_file 快照挂到这一句。"""
+    _TURN_CTX.set(turn_id or None)
+
+
+def current_turn_id() -> str:
+    return _TURN_CTX.get() or ""
+
+
 # ── 卷七十四续十五 · 本轮回复正文 ContextVar(两步法长文档生成兜底) ─────────────
 # 痛点: DeepSeek 等模型 tool call 的长 JSON 参数(generate_report.body / write_file.content)
 # 经常丢成空壳——它们写正文(普通文本流)是强项·丢的只是结构化长参数。

@@ -152,3 +152,12 @@ def snapshot() -> dict[str, dict]:
     """调试用 · 返当前锁表副本。"""
     with _LOCK:
         return {k: dict(v) for k, v in _REGISTRY.items()}
+
+
+def remember_before(path: str) -> None:
+    """写盘前记一句的文件原样 · 对话内回退靠它。失败静默。"""
+    try:
+        from workers.turn_checkpoint import snapshot_before
+        snapshot_before(str(path))
+    except Exception:
+        pass

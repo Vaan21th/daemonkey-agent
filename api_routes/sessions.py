@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Body, Header, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from api_routes._deps import check_auth
@@ -495,3 +495,31 @@ async def session_sub_results(sid: str, authorization: Optional[str] = Header(No
         except Exception:
             pass
     return {"session_id": sid, "results": rows[-20:]}
+
+
+@router.post("/sessions/{sid}/restore")
+async def restore_session_checkpoint(
+    sid: str,
+    payload: dict = Body(default=None),
+    authorization: Optional[str] = Header(None),
+):
+    """回到某一句：砍后面的对话，撤这句之后本会话改过的文件。"""
+    check_auth(authorization)
+    payload = payload or {}
+    turn_id = str(payload.get("turn_id") or "").strip()
+    raw_line = payload.get("line")
+    keep_line = None
+    if raw_line is not None and raw_line != "":
+        try:
+            keep_line = int(raw_line)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "line must be int")
+    if not turn_id and keep_line is None:
+        raise HTTPException(400, "turn_id or line required")
+    from workers.turn_checkpoint import run
+    return run(
+        sid,
+        turn_id,
+        keep_line=keep_line,
+        do_apply=bool(payload.get("apply")),
+    )

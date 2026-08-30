@@ -428,7 +428,7 @@ def load_session_for_ui(session_id: str) -> list[dict]:
         raise FileNotFoundError(f"session not found: {session_id}")
     turns: list[dict] = []
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
+        for i, line in enumerate(f):
             try:
                 rec = json.loads(line)
             except json.JSONDecodeError:
@@ -447,6 +447,7 @@ def load_session_for_ui(session_id: str) -> list[dict]:
                 "role": rec.get("role"),
                 "content": content,
                 "truncated": truncated,
+                "line": i,
             }
             meta = rec.get("meta") or {}
             # 卷三十六 · assistant 的工具调用结构化展开 · 不只是名字
@@ -496,6 +497,8 @@ def load_session_for_ui(session_id: str) -> list[dict]:
             # BRO 2026-07-28 方案 B · 协同自动验收结果 (append-only system 记录) · 历史渲染重建验收卡
             if meta.get("kind") == "advisor_review" and meta.get("advisor_review"):
                 turn["advisor_review"] = meta["advisor_review"]
+            if rec.get("role") == "user" and meta.get("turn_id"):
+                turn["turn_id"] = meta["turn_id"]
             turns.append(turn)
     return turns
 

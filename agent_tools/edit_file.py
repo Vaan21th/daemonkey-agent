@@ -41,7 +41,7 @@ from . import (
     current_session_id,
     register_tool,
 )
-from ._edit_lock import guard as _edit_guard, note_write as _edit_note
+from ._edit_lock import guard as _edit_guard, note_write as _edit_note, remember_before as _ckpt_before
 from .write_file import _resolve, _classify, _branch_guard_warning
 
 
@@ -131,6 +131,7 @@ def _run_batch(args: dict, raw: str, edits: list) -> ToolResult:
 
     # 写盘 + roundtrip 校验
     try:
+        _ckpt_before(path)
         with open(path, "w", encoding="utf-8", newline="") as f:
             f.write(updated)
     except Exception as e:
@@ -263,6 +264,7 @@ def _run(args: dict) -> ToolResult:
 
     try:
         # wish-21c3ec8b · 写回 newline="" 禁止 Python 换行转换 · 保持上面还原好的 EOL
+        _ckpt_before(path)
         with open(path, "w", encoding="utf-8", newline="") as f:
             f.write(updated)
     except Exception as e:

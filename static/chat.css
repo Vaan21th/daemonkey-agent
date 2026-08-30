@@ -337,6 +337,31 @@ header {
   background: linear-gradient(135deg, var(--user), var(--user-dim));
   color: #fff;
   border-bottom-right-radius: 4px;
+  position: relative;
+}
+.ckpt-btn {
+  position: absolute;
+  left: -32px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: var(--bg2);
+  color: var(--text);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+}
+.msg.bro:hover .ckpt-btn { display: flex; }
+.ckpt-btn:hover { color: var(--opus); }
+.ckpt-btn i { font-size: 14px; line-height: 1; }
+@media (hover: none) {
+  .ckpt-btn { display: flex; opacity: 0.5; }
 }
 .msg.opus {
   /* 卷三十 · OPUS 输出常常是长 markdown（表格/列表/代码块）· 卡片化铺满
