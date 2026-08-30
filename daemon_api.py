@@ -1263,10 +1263,11 @@ def _chat_impl(
         except Exception:
             pass
         _att_saved: list[dict] = []  # wish-7c579a20 · 附件结构化 meta · 随 user 消息落 jsonl
+        _att_prompt = ""
         if attachments:
             att_desc, _att_saved = _process_attachments(attachments, sid)
             if att_desc:
-                message = att_desc + message
+                _att_prompt = att_desc
 
         # wish-0e749752 · 顾问协同模式: BRO 开了输入区 toggle →
         # 工程层强制蓝图前置 (先由顾问出施工单 · 执行者按单施工)。
@@ -1418,17 +1419,22 @@ def _chat_impl(
                 if isinstance(_c, str) and not _c.strip():
                     _m["content"] = None
 
+        _store_text = message
+        if _att_prompt:
+            message = _att_prompt + message
         messages.append({"role": "user", "content": message})
         _user_meta = {"src": "api"}
         if _att_saved:  # wish-7c579a20 · 附件结构化落盘 · WebUI 刷新后重建图片/文档卡片
             _user_meta["attachments"] = _att_saved
         if user_meta:
             _user_meta.update(user_meta)
+        if _att_prompt:
+            _user_meta["attach_prompt"] = _att_prompt
         if _coop_advisor:  # BRO 2026-07-28 · 顾问卡持久化: 刷新/切回后历史渲染重建金卡
             _user_meta["advisor_blueprint"] = _coop_advisor
         if turn_id:
             _user_meta["turn_id"] = turn_id
-        append_turn(sid, "user", message, meta=_user_meta)
+        append_turn(sid, "user", _store_text, meta=_user_meta)
 
         # 卷四十六 III 补丁 5 · Y2 · token budget 入口检查
         # default 全部禁用 (env=0)·BRO 调高才生效·超阈值直接抛 RuntimeError·UI 看得到

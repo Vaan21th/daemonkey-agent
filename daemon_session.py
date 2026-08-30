@@ -239,6 +239,7 @@ def rewrite_session(session_id: str, messages: list[dict]) -> None:
         return
     old_ts: dict = {}
     old_user_tids: list[tuple[str, str]] = []
+    old_user_extra: list[tuple[str, dict]] = []
     if path.exists():
         try:
             with path.open("r", encoding="utf-8") as f:
@@ -247,12 +248,15 @@ def rewrite_session(session_id: str, messages: list[dict]) -> None:
                     key = (rec.get("role"), rec.get("content"))
                     old_ts.setdefault(key, rec.get("ts"))
                     if rec.get("role") == "user":
-                        tid = (rec.get("meta") or {}).get("turn_id") or ""
+                        um = rec.get("meta") or {}
+                        tid = um.get("turn_id") or ""
                         if tid:
                             old_user_tids.append((rec.get("content") or "", tid))
+                        old_user_extra.append((tid, um))
         except (OSError, json.JSONDecodeError):
             old_ts = {}
             old_user_tids = []
+            old_user_extra = []
 
     now = datetime.now().isoformat(timespec="seconds")
     records: list[dict] = []
@@ -284,6 +288,25 @@ def rewrite_session(session_id: str, messages: list[dict]) -> None:
                         break
             if tid:
                 meta["turn_id"] = tid
+            old_m = {}
+            if tid:
+                for i, (t, om) in enumerate(old_user_extra):
+                    if t == tid:
+                        old_m = om
+                        old_user_extra.pop(i)
+                        break
+            if old_m.get("attachments"):
+                meta["attachments"] = old_m["attachments"]
+            if old_m.get("attach_prompt"):
+                meta["attach_prompt"] = old_m["attach_prompt"]
+            from workers.attach_prompt import extract_prompt, for_ui
+            if (content or "").lstrip().startswith("[用户上传了"):
+                if not meta.get("attach_prompt"):
+                    p = extract_prompt(content)
+                    if p:
+                        meta["attach_prompt"] = p
+                content = for_ui(content)
+                rec["content"] = content
         elif role == "assistant":
             if m.get("tool_calls"):
                 meta["tool_calls"] = m["tool_calls"]
@@ -413,7 +436,8 @@ def load_session(session_id: str) -> list[dict]:
             content = rec.get("content", "")
             meta = rec.get("meta") or {}
             if role == "user":
-                msgs.append({"role": "user", "content": content})
+                from workers.attach_prompt import for_llm
+                msgs.append({"role": "user", "content": for_llm(content, meta)})
             elif role == "assistant":
                 tcs = meta.get("tool_calls") or []
                 if not (content or "").strip() and not tcs:
@@ -478,6 +502,9 @@ def load_session_for_ui(session_id: str) -> list[dict]:
             except json.JSONDecodeError:
                 continue
             raw_content = rec.get("content", "") or ""
+            if rec.get("role") == "user":
+                from workers.attach_prompt import for_ui
+                raw_content = for_ui(raw_content)
             content = raw_content
             truncated = False
             if len(content) > UI_CONTENT_TRUNCATE_THRESHOLD:

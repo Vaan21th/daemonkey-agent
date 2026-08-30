@@ -5669,7 +5669,7 @@ async function _loadSessionHistory(sid, opts) {
             }
             // wish-7c579a20 · 带附件消息: 剥掉系统注入的说明段 + 重建图片/文档(刷新不丢)
             const _attS = _broAttachStrip(_uc);
-            if (_attS.legacy.length || (t.attachments && t.attachments.length)) _uc = _attS.body || _uc;
+            if (_attS.stripped) _uc = _attS.body || '';
             const _broB = addMsg('bro', _uc, null, t.ts, s.$container);
             _attachCkpt(_broB, t.turn_id, t.line, _uc);
             _renderBroAttachments(_broB,
@@ -6507,7 +6507,7 @@ async function _pollSession(state) {
           // wish-7c579a20 · 带附件消息: 剥皮 + 重建图片/文档(同 _loadSessionHistory)
           let _pc = t.content || '';
           const _pAttS = _broAttachStrip(_pc);
-          if (_pAttS.legacy.length || (t.attachments && t.attachments.length)) _pc = _pAttS.body || _pc;
+          if (_pAttS.stripped) _pc = _pAttS.body || '';
           const _pBroB = addMsg('bro', _pc, null, t.ts, state.$container);
           _attachCkpt(_pBroB, t.turn_id, t.line, _pc);
           _renderBroAttachments(_pBroB,
@@ -7489,15 +7489,21 @@ async function _bgReportFullToggle(bubble, sid, btn) {
  *           ②老消息从 content 头部『已存: data/runtime/attachments/xxx』正则提取
  * 顺便剥皮: 系统注入的『[用户上传了 N 个附件…』说明段不进气泡·只留 用户 正文 */
 function _broAttachStrip(raw) {
-  if (!raw || raw.indexOf('[用户上传了') !== 0) return { body: raw || '', legacy: [] };
-  const sep = raw.indexOf('\n---\n');
-  const head = sep >= 0 ? raw.slice(0, sep) : raw;
-  const body = sep >= 0 ? raw.slice(sep + 5).trim() : '';
+  const s = String(raw || '');
+  const head = s.slice(0, 500);
+  const dirty = s.indexOf('[用户上传了') === 0
+    || head.indexOf('路径 B ·') >= 0
+    || head.indexOf('竞速池 winner') >= 0;
+  if (!dirty) return { body: s, legacy: [], stripped: false };
+  let body = s;
+  const sep = s.lastIndexOf('\n---\n');
+  if (sep >= 0) body = s.slice(sep + 5).trim();
+  else if (s.indexOf('[用户上传了') >= 0) body = '';
   const legacy = [];
-  const re = /已存[:：]\s*data[\\/]runtime[\\/]attachments[\\/]([^\s·\]]+)/g;
+  const re = /attachments[/\\]([^\s·\]\r\n]+)/g;
   let m;
-  while ((m = re.exec(head)) !== null) { if (m[1]) legacy.push(m[1]); }
-  return { body: body, legacy: legacy };
+  while ((m = re.exec(s)) !== null) { if (m[1]) legacy.push(m[1]); }
+  return { body: body, legacy: legacy, stripped: true };
 }
 
 function _renderBroAttachments(bubble, atts) {

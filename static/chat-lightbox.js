@@ -10,15 +10,21 @@
   }
 
   function broAttachStrip(raw) {
-    if (!raw || raw.indexOf('[用户上传了') !== 0) return { body: raw || '', legacy: [] };
-    const sep = raw.indexOf('\n---\n');
-    const head = sep >= 0 ? raw.slice(0, sep) : raw;
-    const body = sep >= 0 ? raw.slice(sep + 5).trim() : '';
+    const s = String(raw || '');
+    const head = s.slice(0, 500);
+    const dirty = s.indexOf('[用户上传了') === 0
+      || head.indexOf('路径 B ·') >= 0
+      || head.indexOf('竞速池 winner') >= 0;
+    if (!dirty) return { body: s, legacy: [], stripped: false };
+    let body = s;
+    const sep = s.lastIndexOf('\n---\n');
+    if (sep >= 0) body = s.slice(sep + 5).trim();
+    else if (s.indexOf('[用户上传了') >= 0) body = '';
     const legacy = [];
-    const re = /已存[:：]\s*data[\\/]runtime[\\/]attachments[\\/]([^\s·\]]+)/g;
+    const re = /attachments[/\\]([^\s·\]\r\n]+)/g;
     let m;
-    while ((m = re.exec(head)) !== null) { if (m[1]) legacy.push(m[1]); }
-    return { body: body, legacy: legacy };
+    while ((m = re.exec(s)) !== null) { if (m[1]) legacy.push(m[1]); }
+    return { body: body, legacy: legacy, stripped: true };
   }
 
   function attachUrl(a) {

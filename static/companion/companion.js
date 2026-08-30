@@ -1078,7 +1078,7 @@ function buildMsgEl(t) {
     const atts = (t.attachments && t.attachments.length)
       ? t.attachments
       : strip.legacy.map(function (b) { return { name: b, path: 'data/runtime/attachments/' + b }; });
-    const body = atts.length ? (strip.body || '') : (t.content || '');
+    const body = strip.stripped ? (strip.body || '') : (atts.length ? (strip.body || '') : (t.content || ''));
     d.innerHTML = esc(body) + `<div class="t">${fmtTime(t.ts)}</div>`;
     if (atts.length && typeof _renderBroAttachments === 'function') _renderBroAttachments(d, atts);
   } else {
