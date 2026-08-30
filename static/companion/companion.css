@@ -118,6 +118,10 @@ button { font-family: inherit; }
 }
 .plx { position: absolute; inset: 0; width: 100%; height: 100%; will-change: transform; }
 .plx img { width: 100%; height: 100%; object-fit: fill; display: block; }
+/* 置物架发光叠了整房 PNG 后, 这一层容易被抬成独立合成层。
+   #spots 铺满房间且默认吃点击 → 气泡上的对勾/对白点不着。空层放行, 热区自己开。 */
+#plx-spots, #spots { pointer-events: none; }
+.spot, .lamp-hit { pointer-events: auto; }
 
 /* 焦点虚化 · 平时背景微虚、人清楚 · 家具上房间清楚、她虚 (视焦点换到物件) */
 #plx-bg .layer-img { transition: filter .5s ease; }
@@ -1215,8 +1219,9 @@ body.night {
 #listen-dock .mic-menu-item.active i, #listen-dock .mic-menu-item.active b { color: var(--accent); }
 
 #say-bubble {
-  position: absolute; left: 49%; top: 30%; z-index: 14; pointer-events: none;
+  position: absolute; left: 49%; top: 30%; z-index: 28; pointer-events: none;
   width: min(32%, 268px); opacity: 0; transform-origin: 0% 80%;
+  isolation: isolate;
 }
 #say-bubble.show { opacity: 1; pointer-events: auto; }
 #say-bubble.in { animation: sayPopIn .32s cubic-bezier(.3, 1.6, .4, 1) both; }
@@ -1227,11 +1232,12 @@ body.night {
 }
 @keyframes sayPopOut { to { opacity: 0; transform: scale(.72) rotate(3deg); } }
 #say-bubble .shade, #say-bubble .face { border-radius: 16px 16px 16px 5px; }
+#say-bubble .shade, #say-bubble .shade-t { pointer-events: none; }
 #say-bubble .shade {
   position: absolute; inset: 0; background: #c4b49a; transform: translate(2px, 2px);
 }
 #say-bubble .face {
-  position: relative; background: #fffef8; color: #453b26;
+  position: relative; z-index: 1; background: #fffef8; color: #453b26;
   padding: 12px 14px 10px; font-size: 13.5px; font-weight: 600; line-height: 1.6;
   text-align: justify; text-justify: inter-ideograph; text-align-last: left;
 }

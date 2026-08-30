@@ -3221,10 +3221,10 @@ if (typeof bootTopicRail === 'function') bootTopicRail();
 (function bindSayActs() {
   const b = document.getElementById('say-bubble');
   if (b) b.addEventListener('click', e => {
-    if (e.target.closest('.say-prev')) { sayTurn(-1); return; }
-    if (e.target.closest('.say-next')) { sayTurn(1); return; }
-    if (e.target.closest('.say-ok')) { hideSay(); return; }
-    if (e.target.closest('.say-log, .say-more')) openSayLog();
+    if (e.target.closest('.say-prev')) { e.stopPropagation(); sayTurn(-1); return; }
+    if (e.target.closest('.say-next')) { e.stopPropagation(); sayTurn(1); return; }
+    if (e.target.closest('.say-ok')) { e.stopPropagation(); hideSay(); return; }
+    if (e.target.closest('.say-log, .say-more')) { e.stopPropagation(); openSayLog(); }
   });
   const close = document.getElementById('say-log-close');
   if (close) close.addEventListener('click', closeSayLog);
