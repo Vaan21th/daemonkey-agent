@@ -149,6 +149,7 @@ async def get_session_meta_endpoint(
             "pinned_at": meta.get("pinned_at"),
             "archived_at": meta.get("archived_at"),
             "last_model_cfg": meta.get("last_model_cfg"),
+            "working_docs": meta.get("working_docs") or [],
         },
     }
 
@@ -191,6 +192,42 @@ async def update_session_meta_endpoint(
     return {"session_id": sid, "meta": meta}
 
 
+@router.post("/sessions/{sid}/working-docs")
+async def bind_working_doc(
+    sid: str,
+    body: dict = Body(default={}),
+    authorization: Optional[str] = Header(None),
+):
+    """把一份办公稿挂进这场对话 · 批注改 / 中栏打开 / 续做都认它。"""
+    check_auth(authorization)
+    if not session_path(sid).exists():
+        raise HTTPException(404, f"session not found: {sid}")
+    from workers.session_docs import bind, home_of, list_bound
+    path = str((body or {}).get("path") or "")
+    rec = bind(sid, path)
+    if not rec:
+        raise HTTPException(400, "path 不是本机上的 pptx/docx/xlsx")
+    home = rec.get("home_sid") or home_of(path) or sid
+    return {"ok": True, "doc": rec, "home_sid": home, "working_docs": list_bound(sid)}
+
+
+@router.get("/sessions/working-docs/home")
+async def office_doc_home(
+    path: str = "",
+    sid: str = "",
+    authorization: Optional[str] = Header(None),
+):
+    """办公稿的家话题 · 工作台打开产物时先切到这场，不绑到当前对话。"""
+    check_auth(authorization)
+    from workers.session_docs import _canon_rel, home_of, list_bound
+    rel = _canon_rel(path or "")
+    home = home_of(rel) if rel else None
+    claimed = False
+    if sid and rel:
+        claimed = any(_canon_rel(d.get("path") or "") == rel for d in list_bound(sid))
+    return {"ok": True, "path": rel, "home_sid": home, "claimed": claimed}
+
+
 @router.delete("/sessions/{sid}")
 async def remove_session(
     sid: str,
@@ -206,6 +243,14 @@ async def remove_session(
     if not session_path(sid).exists():
         raise HTTPException(404, f"session not found: {sid}")
     delete_session(sid)
+
+    # B-① · 2026-08-27 · 磁盘删了内存缓存也要清 · 否则同 sid 会从 RAM 复活重新写出 (Grok 全量审计)
+    try:
+        from daemon_api import _API_SESSIONS, _get_session_lock
+        with _get_session_lock(sid):
+            _API_SESSIONS.pop(sid, None)
+    except Exception:
+        pass
 
     try:
         if RUNTIME and getattr(RUNTIME, "session_id", None) == sid:
@@ -255,7 +300,7 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
     (compact/prune 折叠原件), 从 content + tool_calls.arguments 里抽产物路径,
     过滤示例占位符 (X.md / xxx.docx / x.png 这类), 只返回磁盘上真实存在的文件。
 
-    前端「本会话产物」视图数据源 · 不依赖 DOM (懒加载/压缩都不影响)。
+    前端「本话题产物」视图数据源 · 不依赖 DOM (懒加载/压缩都不影响)。
 
     性能 (卷八十一续 · BRO 反馈打开产物每次卡): 会话上下文大时主 jsonl + 归档
     几万行 · 每次全量 json.loads + 磁盘 stat 很慢。加模块级缓存:
@@ -304,8 +349,8 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
     # 产物路径正则 (白名单类型)
     # 防路径穿越: 第二分支整段负向前瞻 (?!.*\.\.) 拒绝含 .. 的路径 · 字符类去掉 % (避免 %2e%2e 编码穿越)
     RE_DOCPATH = re.compile(
-        r"(?:data/(?:docs|content|design|dev|presentations)/[\w\u4e00-\u9fa5\-（）()·\.]+\.(?:docx?|md|pdf|xlsx?|pptx?|html?|png|jpe?g|gif|webp|mp3|wav|mp4|webm|zip))"
-        r"|(?:(?!.*\.\.)(?:/reports/|/workshop/(?:outputs|preview|file)/|/presentations/)[\w\u4e00-\u9fa5\-（）()·\./]+\.(?:docx?|md|pdf|xlsx?|pptx?|html?|png|jpe?g|gif|webp|mp3|wav|mp4|webm|zip))",
+        r"(?:data/(?:docs|content|design|dev|presentations|spreadsheets|reports|runtime/attachments)/[\w\u4e00-\u9fa5\-（）()·\.]+\.(?:docx?|md|pdf|xlsx?|pptx?|html?|png|jpe?g|gif|webp|mp3|wav|mp4|webm|zip))"
+        r"|(?:(?!.*\.\.)(?:/reports/|/workshop/(?:outputs|preview|file)/|/presentations/|/spreadsheets/)[\w\u4e00-\u9fa5\-（）()·\./]+\.(?:docx?|md|pdf|xlsx?|pptx?|html?|png|jpe?g|gif|webp|mp3|wav|mp4|webm|zip))",
         re.IGNORECASE,
     )
     # 占位符/示例过滤: X.md / xxx.docx / x.png / xxx.md 等
@@ -328,6 +373,10 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
             cands.append(ROOT / p)
         elif p.startswith("/reports/"):
             cands.append(ROOT / "data" / "reports" / p[len("/reports/"):])
+        elif p.startswith("/spreadsheets/"):
+            cands.append(ROOT / "data" / "spreadsheets" / p[len("/spreadsheets/"):])
+        elif p.startswith("/presentations/"):
+            cands.append(ROOT / "data" / "presentations" / p[len("/presentations/"):])
         elif p.startswith("/workshop/preview/"):
             rel = p[len("/workshop/preview/"):]
             if "/" in rel:
@@ -340,6 +389,10 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
                 cands.append(ROOT / "data" / d / f)
         elif p.startswith("/workshop/outputs/"):
             cands.append(ROOT / "data" / "workshop" / "outputs" / p[len("/workshop/outputs/"):])
+        elif p.startswith("data/runtime/attachments/"):
+            cands.append(ROOT / p)
+        elif p.startswith("/attachments/"):
+            cands.append(ROOT / "data" / "runtime" / "attachments" / p[len("/attachments/"):])
         for c in cands:
             try:
                 if c.resolve().is_file():
@@ -354,6 +407,7 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
         if p.startswith("data/design/"): return "/workshop/preview/design/" + p[len("data/design/"):]
         if p.startswith("data/dev/"): return "/workshop/preview/dev/" + p[len("data/dev/"):]
         if p.startswith("data/workshop/outputs/"): return "/workshop/outputs/" + p[len("data/workshop/outputs/"):]
+        if p.startswith("data/runtime/attachments/"): return "/attachments/" + p.split("/")[-1]
         return p
 
     seen: set[str] = set()
@@ -361,8 +415,10 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
     # 粗筛关键词 (卷八十一续二 · BRO 反馈产物首次 6s 慢 · 根因是 RE_DOCPATH 在超长 HTML/代码上
     # 灾难性回溯 · 每段 10K+ 字符的文本跑正则要 0.06-0.28s。先用零回溯的 in 判断跳过
     # 不含任何产物路径关键词的文本 · 命中才跑正则 · 6s → 秒级)
-    _DOC_HINTS = ("/workshop/", "/reports/", "/presentations/",
-                  "data/docs/", "data/content/", "data/design/", "data/dev/", "data/presentations/")
+    _DOC_HINTS = ("/workshop/", "/reports/", "/presentations/", "/spreadsheets/",
+                  "data/docs/", "data/content/", "data/design/", "data/dev/",
+                  "data/presentations/", "data/spreadsheets/", "data/reports/",
+                  "data/runtime/attachments/")
     for line in lines:
         try:
             msg = json.loads(line)
@@ -376,6 +432,10 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
             for it in c:
                 if isinstance(it, dict) and it.get("text"):
                     texts.append(it["text"])
+        meta = msg.get("meta") or {}
+        for att in (meta.get("attachments") or []):
+            if isinstance(att, dict) and att.get("path"):
+                texts.append(str(att["path"]))
         tc = msg.get("tool_calls")
         if tc:
             for x in tc:
@@ -410,6 +470,12 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
                 ext = PurePosixPath(url.split("?")[0]).suffix.lower().lstrip(".")
                 name = PurePosixPath(url.split("?")[0]).name
                 artifacts.append({"name": name, "url": url, "ext": ext})
+
+    try:
+        from workers.session_docs import merge_into_artifacts
+        artifacts = merge_into_artifacts(artifacts, sid)
+    except Exception:
+        pass
 
     # 更新缓存 (LRU 上限 64 会话 · 超了弹最老的)
     if len(_ARTIFACTS_CACHE) >= 64:

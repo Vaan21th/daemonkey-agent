@@ -999,7 +999,19 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
         data_url = att.get("data_url", "")
 
         if not data_url:
-            descriptions.append(f"图{i+1} ({name}): [空图片·跳过]")
+            rel_only = str(att.get("path") or "").replace("\\", "/")
+            try:
+                from workers.session_docs import bind as _bind_doc
+                from workers.session_docs import describe_office
+                rec = _bind_doc(session_id, rel_only) if rel_only else None
+            except Exception:
+                rec = None
+            if rec:
+                saved_meta.append({"name": rec.get("name") or name, "path": rec["path"],
+                                   "mime": "application/octet-stream", "kind": "file"})
+                descriptions.append(f"附件{i+1} ({name})\n" + describe_office(rec["path"]))
+            else:
+                descriptions.append(f"图{i+1} ({name}): [空图片·跳过]")
             continue
 
         # 解析 data_url: "data:image/png;base64,xxxx" (图片) 或 "data:application/pdf;base64,..." (文档)
@@ -1036,10 +1048,30 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
             continue
 
         rel_path = str(keep_path).replace("\\", "/")
+        try:
+            from workers.session_docs import describe_office, ingest_file, is_office_mime, is_office_name
+            _is_office = is_office_name(name) or is_office_mime(mime)
+        except Exception:
+            _is_office = False
+        if _is_office:
+            try:
+                rec = ingest_file(session_id, keep_path, name)
+                if not rec:
+                    raise RuntimeError("入库失败")
+                office_rel = rec["path"]
+                saved_meta.append({"name": name, "path": office_rel, "mime": mime, "kind": "file"})
+                descriptions.append(f"附件{i+1} ({name})\n" + describe_office(office_rel))
+            except Exception as e:
+                saved_meta.append({"name": name, "path": rel_path, "mime": mime, "kind": "file"})
+                descriptions.append(
+                    f"附件{i+1} ({name}) · 入库失败: {type(e).__name__}: {e}。"
+                    f"下一刀用 extend_office / revise_office path={rel_path}，工具会先入库。"
+                )
+            continue
         saved_meta.append({"name": name, "path": rel_path, "mime": mime,
                            "kind": "image" if is_image else "file"})
 
-        # 文档附件: 不进视觉链 · 留路径提示 (OPUS 需要内容时可 pdf_read / read_file)
+        # 文档附件: 不进视觉链 · 留路径提示 (需要内容时可 pdf_read / read_file)
         if not is_image:
             descriptions.append(
                 f"附件{i+1} ({name}) · 已存: {rel_path} · "
@@ -1078,6 +1110,12 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
             f"[用户上传了 {len(_native_images)} 张图片 · 原图已直接进你的视野 · 逐张仔细看]\n"
             "每张都给了『已存』路径 · 对话推进后想再看某张 / 换个角度问 → "
             "直接 look_at(path=对应『已存』路径, question=...) · 别自己编路径。\n"
+        )
+    elif any("办公稿已挂进本话题" in d for d in descriptions):
+        header = (
+            f"[用户上传了办公稿 · 已挂进这场对话]\n"
+            "改字 revise_office，加页 extend_office。path 用下面的 data/presentations|reports|spreadsheets 路径。"
+            "不要当 attachments 临时文件，不要 pdf_read。\n"
         )
     else:
         header = (
@@ -1268,6 +1306,11 @@ def _chat_impl(
             att_desc, _att_saved = _process_attachments(attachments, sid)
             if att_desc:
                 _att_prompt = att_desc
+        try:
+            from workers.session_docs import bind_from_text
+            bind_from_text(sid, message)
+        except Exception:
+            pass
 
         # wish-0e749752 · 顾问协同模式: BRO 开了输入区 toggle →
         # 工程层强制蓝图前置 (先由顾问出施工单 · 执行者按单施工)。
@@ -1531,6 +1574,13 @@ def _chat_impl(
             + _memwrite_hint + _client_hint + _casual_hint + _care_hint + _ledger_hint
             + _companion_weather_hint(mode)
         )
+        try:
+            from workers.session_docs import system_note as _wd_note
+            _docs_live = _wd_note(sid)
+            if _docs_live:
+                _sys_tail = _sys_tail + _docs_live
+        except Exception:
+            pass
         if mode != "taste":
             _sys_tail = (
                 _sys_tail
@@ -1569,8 +1619,18 @@ def _chat_impl(
                 _sys_for_llm = _sys_stable
         else:
             _sys_for_llm = _sys_stable
+        _gate_tools = None
+        try:
+            from workers.office_extend import apply_extend_gate
+            _gate_tools, thinking, _ext_hint = apply_extend_gate(message, thinking)
+            if _ext_hint:
+                _sys_tail = _sys_tail + _ext_hint
+        except Exception:
+            _gate_tools = None
         if mode == "taste":
             _allowed_tools = {"commit_taste"}
+        elif _gate_tools:
+            _allowed_tools = _gate_tools
         elif _user_meta.get("src") == "wechat":
             from agent_tools import REGISTRY as _REG
             _allowed_tools = {n for n in _REG if n != "write_clipboard"}

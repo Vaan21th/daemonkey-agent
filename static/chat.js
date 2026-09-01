@@ -5801,6 +5801,8 @@ async function switchToSession(sid) {
     refreshCtxRing();  // wish-bec4f3b9 · 切对话实例 → 圆圈跟着走
     _refreshCompactAfterSwitch();  // 卷八十三 · 简洁版侧栏跟会话走
     refreshPlan();                 // 计划条跟着会话换 (活跃账本是按会话记的)
+    if (typeof refreshWorkingDocs === "function") refreshWorkingDocs();
+    if (typeof window.syncOfficeStageHome === "function") window.syncOfficeStageHome();
     return;
   }
 
@@ -5827,6 +5829,8 @@ async function switchToSession(sid) {
   }
   _refreshCompactAfterSwitch();  // 卷八十三 · 简洁版侧栏跟会话走
   refreshPlan();                 // 计划条跟着会话换
+  if (typeof refreshWorkingDocs === "function") refreshWorkingDocs();
+  if (typeof window.syncOfficeStageHome === "function") window.syncOfficeStageHome();
 }
 
 // 卷八十三 · 切会话后: 简洁版左侧清单高亮 + 右侧产物面板跟着换会话
@@ -7402,7 +7406,7 @@ async function send(opts) {
         message: text,
         session_id: reqSid,
         auto_confirm: autoConfirm,
-        attachments: (!opts.fromEdit && _attachments.length > 0) ? _attachments.map(a => ({name: a.name, data_url: a.data_url})) : undefined,
+        attachments: (!opts.fromEdit && _attachments.length > 0) ? _attachments.map(a => ({name: a.name, data_url: a.data_url, path: a.path})) : undefined,
         advisor_coop: _advisorCoopOn() || undefined,   // wish-0e749752 · 顾问协同 toggle
         ...modelBehaviorPayload(),
       }),
@@ -8043,13 +8047,15 @@ async function send(opts) {
         state.finalSessionId = data.session_id || state.finalSessionId;
         state.finalModel = data.model || state.finalModel;
         if (data.usage) state.finalUsage = data.usage;
-        if (!state.sawAssistantText && data.reply) {
+        let reply = data.reply || '';
+        if (reply) reply = queueOpenMarks(state, reply);
+        if (!state.sawAssistantText && reply) {
           const ph = state.assistantBubbles[0];
           if (ph && ph.dataset.placeholder) {
             ph.remove();
             state.assistantBubbles.shift();
           }
-          addMsg('opus', data.reply, null, new Date(), state.$container);
+          addMsg('opus', reply, null, new Date(), state.$container);
         }
         flushImages(state);               // 生图产物图廊·先渲图·再渲打开按钮
         flushOpenActions(state);          // 产物「用对应软件打开」按钮·统一落在这一 turn 的最底部
@@ -11364,6 +11370,109 @@ function renderOppCard(o) {
 }
 
 // 让 BI 卡片可以一键回填到对话栏
+function officeRel(path) {
+  let rel = String(path || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  if (/^(presentations|reports|spreadsheets)\//i.test(rel)) rel = "data/" + rel;
+  return rel;
+}
+
+function lookupOfficeHome(path) {
+  const rel = officeRel(path);
+  if (!rel || !/\.(pptx?|docx?|xlsx?)$/i.test(rel)) return Promise.resolve({});
+  if (!token) return Promise.resolve({});
+  const q = "?path=" + encodeURIComponent(rel)
+    + (sessionId ? "&sid=" + encodeURIComponent(sessionId) : "");
+  return fetch("/sessions/working-docs/home" + q, {
+    headers: { Authorization: "Bearer " + token },
+  }).then(function (r) { return r.ok ? r.json() : {}; })
+    .then(function (d) { return d || {}; })
+    .catch(function () { return {}; });
+}
+
+async function goOfficeHome(path) {
+  const data = await lookupOfficeHome(path);
+  if (data && data.claimed) return data.home_sid || sessionId;
+  const home = data && data.home_sid;
+  if (home && home !== sessionId && typeof switchToSession === "function") {
+    await switchToSession(home);
+  }
+  return home;
+}
+
+function syncOfficeStageHome() {
+  if (document.body.classList.contains("compact")) return;
+  if (window._stageMode !== "office") return;
+  const path = window._stageNotePath;
+  if (!path) return;
+  lookupOfficeHome(path).then(function (data) {
+    if (data && data.claimed) return;
+    const home = data && data.home_sid;
+    if (home && home !== sessionId && typeof stageClose === "function") stageClose();
+  });
+}
+window.goOfficeHome = goOfficeHome;
+window.lookupOfficeHome = lookupOfficeHome;
+window.syncOfficeStageHome = syncOfficeStageHome;
+
+function bindWorkingDoc(path) {
+  const rel = officeRel(path);
+  if (!rel || !sessionId || String(sessionId).startsWith("tmp-")) return Promise.resolve({});
+  if (!/\.(pptx?|docx?|xlsx?)$/i.test(rel)) return Promise.resolve({});
+  return fetch("/sessions/" + encodeURIComponent(sessionId) + "/working-docs", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + token,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ path: rel }),
+  }).then(function (r) {
+    return r.ok ? r.json() : {};
+  }).then(function (data) {
+    if (typeof refreshWorkingDocs === "function") refreshWorkingDocs();
+    return data || {};
+  }).catch(function () { return {}; });
+}
+window.bindWorkingDoc = bindWorkingDoc;
+if (typeof switchToSession === "function") window.switchToSession = switchToSession;
+
+async function refreshWorkingDocs() {
+  const bar = document.getElementById("workingDocsBar");
+  if (!bar) return;
+  if (!sessionId || String(sessionId).startsWith("tmp-")) {
+    bar.hidden = true;
+    bar.innerHTML = "";
+    return;
+  }
+  try {
+    const r = await fetch("/sessions/" + encodeURIComponent(sessionId) + "/meta", {
+      headers: { Authorization: "Bearer " + token },
+    });
+    const data = r.ok ? await r.json() : {};
+    const docs = (data.meta && data.meta.working_docs) || [];
+    if (!docs.length) {
+      bar.hidden = true;
+      bar.innerHTML = "";
+      return;
+    }
+    bar.hidden = false;
+    bar.innerHTML = docs.map(function (d) {
+      const p = String((d && d.path) || "").replace(/\\/g, "/");
+      const n = (d && d.name) || p.split("/").pop() || p;
+      const icon = /\.pptx?$/i.test(p) ? "ri-file-ppt-2-fill" : (/\.xlsx?$/i.test(p) ? "ri-file-excel-2-fill" : "ri-file-word-2-fill");
+      return '<button type="button" class="wd-chip" data-wd="' + escHtml(p) + '"><i class="' + icon + '"></i><span>' + escHtml(n) + "</span></button>";
+    }).join("");
+    bar.querySelectorAll("[data-wd]").forEach(function (btn) {
+      btn.onclick = function () {
+        const p = btn.getAttribute("data-wd");
+        if (p && typeof openStage === "function") openStage({ path: p });
+      };
+    });
+  } catch (e) {
+    bar.hidden = true;
+  }
+}
+window.refreshWorkingDocs = refreshWorkingDocs;
+
 function injectAndSend(text) {
   if (typeof $input !== 'undefined' && $input) {
     $input.value = text;
@@ -11858,6 +11967,19 @@ async function revealWorkshopFile(domain, name) {
   } catch (e) {
     alert(`外部打开网络出错: ${e.message}`);
   }
+}
+
+function queueOpenMarks(state, text) {
+  const paths = [];
+  const cleaned = String(text || '').replace(/[ \t]*\[\[DK-OPEN\]\](\S+)/g, function (_, p) {
+    paths.push(String(p || '').replace(/\\/g, '/'));
+    return '';
+  });
+  if (paths.length) {
+    state._pendingOpens = state._pendingOpens || [];
+    paths.forEach(function (p) { if (p) state._pendingOpens.push({ path: p }); });
+  }
+  return cleaned.replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // 通用产物"用本机软件打开"(generate_presentation / generate_report 等的 open_path)

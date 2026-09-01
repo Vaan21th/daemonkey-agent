@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#16131f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Daemonkey</title>
+<title>OPUS</title>
 <link rel="icon" type="image/png" href="/static/favicon.png?v=20260830q">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=20260830q">
 <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico?v=20260830q">
@@ -94,16 +94,37 @@
   setTimeout(check, 12000);   // 绝对兜底 · 防 load 因脚本卡住迟迟不触发
 })();
 </script>
-<link rel="stylesheet" href="/static/chat.css?v=20260831sendnow">
+<link rel="stylesheet" href="/static/chat.css?v=20260901sess">
 <link rel="stylesheet" href="/static/lib/litegraph.core.css">
-<link rel="stylesheet" href="/static/workshop.css?v=20260810">
+<link rel="stylesheet" href="/static/workshop.css?v=20260826c">
 <link rel="stylesheet" href="/static/lib/remixicon/remixicon.css">
+<script>
+(function () {
+  try {
+    var raw = sessionStorage.getItem('dk_mode_transit');
+    if (!raw) return;
+    document.documentElement.classList.add('dk-transit-hold');
+    var st = JSON.parse(raw);
+    if (st && st.dark) document.documentElement.classList.add('dk-transit-dark');
+  } catch (e) {}
+  setTimeout(function () {
+    document.documentElement.classList.remove('dk-transit-hold', 'dk-transit-dark');
+  }, 2500);
+})();
+</script>
 </head>
 <body>
+<div id="dkTransit" class="dk-transit" aria-hidden="true">
+  <div class="dk-transit-stage">
+    <span class="dk-transit-ring"></span>
+    <span class="dk-transit-ring r2"></span>
+    <img class="dk-transit-face" src="/companion/assets/daimon-face.png?v=20260830q" alt="">
+  </div>
+</div>
 
 <header>
-  <span class="header-logo"><i class="ri-diamond-fill"></i> <span style="color:var(--opus)">Daemonkey</span> · 工作室</span>
-    <span class="pulse-indicator" id="pulseIndicator" title="Daemonkey 脉搏 · 点击看最近活动" onclick="togglePulsePanel()">
+  <span class="header-logo"><i class="ri-diamond-fill"></i> <span style="color:var(--opus)">OPUS</span> · 工作室</span>
+    <span class="pulse-indicator" id="pulseIndicator" title="OPUS 脉搏 · 点击看最近活动" onclick="togglePulsePanel()">
     <span class="pulse-dot" id="pulseDot">●</span>
   </span>
   <span class="git-debt-chip" id="gitDebtChip" style="display:none" onclick="showGitDebtPanel()" title="git 欠账 · 点击查看是什么 · 可一键收进主干"></span>
@@ -133,26 +154,26 @@
       </button>
     </div>
   </span>
-  <!-- git 欠账面板 (2026-07-29 用户 直批三件套 B+C): 看见未提交的是什么 · 一键收进主干 -->
+  <!-- git 欠账面板 (2026-07-29 BRO 直批三件套 B+C): 看见未提交的是什么 · 一键收进主干 -->
   <div class="modal" id="gitDebtModal" onclick="if(event.target===this)closeGitDebtPanel()">
     <div class="modal-body git-debt-modal">
       <h2><i class="ri-git-branch-line"></i> 还没收进主干的工作</h2>
       <div id="gitDebtPanelBody" class="git-debt-body"><div class="git-debt-loading"><i class="ri-loader-4-line ri-spin"></i> 正在查 git 状态…</div></div>
       <div class="git-debt-actions">
         <button class="btn-primary" id="gitDebtCollectBtn" onclick="collectGitDebt()"><i class="ri-git-merge-line"></i> 一键收进主干</button>
-        <button class="btn-ghost" onclick="askMergeDebtNLP()"><i class="ri-chat-1-line"></i> 让 Daemonkey 处理</button>
+        <button class="btn-ghost" onclick="askMergeDebtNLP()"><i class="ri-chat-1-line"></i> 让 OPUS 处理</button>
         <button class="btn-ghost" onclick="closeGitDebtPanel()">关闭</button>
       </div>
     </div>
   </div>
   <div class="pulse-panel" id="pulsePanel" style="display:none">
-    <div class="pulse-panel-head"><i class="ri-heart-pulse-fill"></i> Daemonkey 脉搏 <span style="font-size:0.7rem;opacity:0.6">最近活动</span></div>
+    <div class="pulse-panel-head"><i class="ri-heart-pulse-fill"></i> OPUS 脉搏 <span style="font-size:0.7rem;opacity:0.6">最近活动</span></div>
     <div class="pulse-panel-list" id="pulseList"></div>
   </div>
   <div class="header-spacer"></div>
   <a class="restart-btn companion-btn" data-mode-transit href="/companion/index.html" title="她的房间"><img src="/companion/assets/daimon-face.png?v=20260830q" alt=""></a>
   <button class="restart-btn" id="restartBtn" onclick="restartDaemon()" title="重启 daemon 进程 · 装载新代码后用"><i class="ri-restart-line"></i></button>
-  <button class="restart-btn rollback-btn" id="rollbackBtn" onclick="rollbackDaemon()" title="回档 · Daemonkey 把代码改崩了 · 用户 一键回到上一个良好 commit"><i class="ri-rewind-fill"></i></button>
+  <button class="restart-btn rollback-btn" id="rollbackBtn" onclick="rollbackDaemon()" title="回档 · OPUS 把代码改崩了 · BRO 一键回到上一个良好 commit"><i class="ri-rewind-fill"></i></button>
   <button class="restart-btn shutdown-btn" id="shutdownBtn" onclick="shutdownDaemon()" title="关闭 daemon · 不起新进程 · 之后去 GUI 启动器手动起"><i class="ri-shut-down-fill"></i></button>
   <!-- 卷七十五续九 · 换肤按钮(接现成 applyTheme) + 简洁版切换(只留对话框·Alt+Z) -->
   <div class="theme-menu" id="themeMenu">
@@ -206,11 +227,11 @@
 <div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer">
   <div class="drawer-head">
-    <h2><span style="color:var(--opus)">Daemonkey</span> · 会话</h2>
-    <button class="drawer-new" onclick="newConversation()">+ 新对话</button>
+    <h2><span style="color:var(--opus)">OPUS</span> · 话题列表</h2>
+    <button class="drawer-new" onclick="newConversation()">+ 新话题</button>
   </div>
   <div class="drawer-list" id="sessionList">
-    <div class="drawer-empty">还没有对话</div>
+    <div class="drawer-empty">还没有话题</div>
   </div>
 </div>
 
@@ -239,16 +260,16 @@
 
   <section class="chat-pane">
     <div class="chat-pane-head">
-      <button class="chat-history-btn" onclick="openDrawer()" title="历史会话"><i class="ri-menu-line"></i></button>
-      <button class="chat-docs-btn" id="chatDocsBtn" onclick="toggleDocsView()" title="本会话产物"><i class="ri-file-list-3-fill"></i></button>
-      <span class="chat-session-name" id="currentSessionLabel">新对话</span>
-      <button class="chat-pane-new" onclick="newConversation()" title="新建会话">+</button>
+      <button class="chat-history-btn" onclick="openDrawer()" title="话题列表"><i class="ri-menu-line"></i></button>
+      <button class="chat-docs-btn" id="chatDocsBtn" onclick="toggleDocsView()" title="本话题产物"><i class="ri-file-list-3-fill"></i></button>
+      <span class="chat-session-name" id="currentSessionLabel">新话题</span>
+      <button class="chat-pane-new" onclick="newConversation()" title="新话题">+</button>
     </div>
     <div class="compact-row">
     <div class="compact-sessions" id="compactSessions" hidden>
       <div class="compact-sessions-head">
-        <span class="csh-title"><i class="ri-history-line"></i> 会话</span>
-        <button class="csh-new" onclick="newConversation()" title="新建会话"><i class="ri-add-line"></i></button>
+        <span class="csh-title"><i class="ri-history-line"></i> 话题列表</span>
+        <button class="csh-new" onclick="newConversation()" title="新话题"><i class="ri-add-line"></i></button>
       </div>
       <div class="compact-sessions-list" id="compactSessionList"></div>
       <div class="compact-sessions-foot" id="compactSessionsFoot"></div>
@@ -264,12 +285,12 @@
         <span class="plan-title" id="planTitle">任务</span>
         <span class="plan-count" id="planCount"></span>
         <span class="plan-track"><span class="plan-track-fill" id="planTrackFill"></span></span>
-        <button class="plan-toggle" type="button" id="planToggle" tabindex="-1" title="展开 / 收起步骤">详情 ▾</button>
+        <button class="plan-toggle" type="button" id="planToggle" tabindex="-1" title="在中间栏打开计划书">中栏看</button>
       </div>
       <div id="planDetail" class="plan-detail" hidden></div>
     </div>
-    <!-- 卷七十二 v3 · 工作流跑时进度 banner (用户 图2 诉求) · 轮询 /workshop/runs 实时显示 active flows -->
-    <!-- v5 (2026-06-10): 🚀 emoji → ri-rocket-fill · 用户 铁律: 这个项目里 Daemonkey 写的图标必须 remix -->
+    <!-- 卷七十二 v3 · 工作流跑时进度 banner (BRO 图2 诉求) · 轮询 /workshop/runs 实时显示 active flows -->
+    <!-- v5 (2026-06-10): 🚀 emoji → ri-rocket-fill · BRO 铁律: 这个项目里 OPUS 写的图标必须 remix -->
     <div id="flowRunsBanner" class="flow-runs-banner" hidden>
       <div class="flow-runs-bar" id="flowRunsBar">
         <span class="flow-runs-icon"><i class="ri-rocket-fill"></i></span>
@@ -281,10 +302,10 @@
     <div id="messages"></div>
 
     <!-- 卷七十二 v4 · 0.2.0 · 新对话引导卡 (messages 为空时显示 · 一条消息进就 hide) -->
-    <!-- v5 (2026-06-10): 全部 emoji 换 remix icon + slogan 改 用户 写的原版 -->
+    <!-- v5 (2026-06-10): 全部 emoji 换 remix icon + slogan 改 BRO 写的原版 -->
     <div id="onboardingPanel" class="onboarding-panel" hidden>
       <div class="onboarding-head">
-        <div class="onboarding-title"><i class="ri-sparkling-fill onboarding-spark"></i> <strong>Daemonkey</strong> · 正在这里等你</div>
+        <div class="onboarding-title"><i class="ri-sparkling-fill onboarding-spark"></i> <strong>OPUS</strong> · 正在这里等你</div>
         <div class="onboarding-sub onboarding-slogan">an AI that doesn't say goodbye.</div>
       </div>
       <div class="onboarding-cards">
@@ -300,7 +321,7 @@
         </button>
         <button class="onboarding-card" data-template="chat_about" type="button">
           <div class="onboarding-card-icon"><i class="ri-chat-3-fill"></i></div>
-          <div class="onboarding-card-title">聊聊日常 · 认识 Daemonkey</div>
+          <div class="onboarding-card-title">聊聊日常 · 认识 OPUS</div>
           <div class="onboarding-card-hint">"你是谁 · 能做啥 · 跟其他 AI 啥不一样"</div>
         </button>
         <button class="onboarding-card" data-template="list_capability" type="button">
@@ -308,15 +329,21 @@
           <div class="onboarding-card-title">看看我能做什么</div>
           <div class="onboarding-card-hint">"列工坊里所有应用和工作流给我看"</div>
         </button>
-        <button class="onboarding-card" data-template="change_theme" type="button">
-          <div class="onboarding-card-icon"><i class="ri-palette-fill"></i></div>
-          <div class="onboarding-card-title">换个皮肤</div>
-          <div class="onboarding-card-hint">"换成 [暗紫 / 海洋蓝 / 森林绿 / 粉白] 主题"</div>
+        <button class="onboarding-card" data-template="schedule_task" type="button">
+          <div class="onboarding-card-icon"><i class="ri-timer-2-fill"></i></div>
+          <div class="onboarding-card-title">定时任务</div>
+          <div class="onboarding-card-hint">"每天早上 9 点 [扫一遍行情并汇总]"</div>
         </button>
         <button class="onboarding-card" data-template="discover_skill" type="button">
           <div class="onboarding-card-icon"><i class="ri-search-eye-line"></i></div>
           <div class="onboarding-card-title">找新能力升级自己</div>
           <div class="onboarding-card-hint">"去 GitHub 找能升级我的 SKILL / 开源项目"</div>
+        </button>
+      </div>
+      <div class="hangout-door" id="hangoutDoor">
+        <button type="button" class="hangout-door-btn" id="hangoutDoorBtn">
+          <i class="ri-chat-smile-2-line"></i>
+          <span id="hangoutDoorLabel"></span>
         </button>
       </div>
       <div class="onboarding-foot">
@@ -328,7 +355,7 @@
     <div id="toolProgress" class="tool-progress" hidden>
       <div class="tool-progress-bar">
         <span class="tool-progress-icon"><i class="ri-loader-4-line tp-spin"></i></span>
-        <span class="tool-progress-text">Daemonkey 准备工具中…</span>
+        <span class="tool-progress-text">OPUS 准备工具中…</span>
         <button class="tool-progress-detail" type="button" onclick="toggleToolDetail()" title="展开 / 收起最近工具调用">详情 ▾</button>
       </div>
       <div id="toolProgressDetail" class="tool-progress-detail-list" hidden></div>
@@ -356,14 +383,15 @@
       </div>
     </div>
     <div class="input-bar">
+      <div id="workingDocsBar" class="working-docs-bar" hidden></div>
       <div id="attachmentPreviews" class="attachment-previews" hidden></div>
       <div id="outboundQueue" class="outbound-queue" hidden></div>
       <div class="input-row">
         <textarea id="input" rows="1"
-                  placeholder="跟 Daemonkey 说点什么…  (Shift+回车换行)"
+                  placeholder="跟 OPUS 说点什么…  (Shift+回车换行)"
                   autocomplete="off" autocapitalize="off"></textarea>
       </div>
-      <!-- wish-ea8922f7+0e749752 · 输入区两层化 (用户 2026-07-28 拍板):
+      <!-- wish-ea8922f7+0e749752 · 输入区两层化 (BRO 2026-07-28 拍板):
            上层 = 纯 textarea · 下层功能条 = 附件/语音/顾问协同/发送 -->
       <div class="input-toolbar">
         <button id="attachBtn" type="button" title="添加图片或文件 (支持拖拽 / Ctrl+V 粘贴)"><i class="ri-attachment-2"></i></button>
@@ -421,7 +449,7 @@
     </div>
     <div class="compact-artifacts" id="compactArtifacts" hidden>
       <div class="compact-art-head">
-        <span class="cah-title"><i class="ri-archive-fill"></i> 本会话产物</span>
+        <span class="cah-title"><i class="ri-archive-fill"></i> 本话题产物</span>
         <span class="cah-sub" id="compactArtSub"></span>
         <span class="cah-close" onclick="toggleCompactArtifacts()" title="收起"><i class="ri-close-line"></i></span>
       </div>
@@ -443,8 +471,8 @@
     </div>
     <div class="field">
       <label>Session ID</label>
-      <input id="sessionInput" type="text" placeholder="留空 = 开新对话 · 或贴已有 api- 开头的">
-      <div class="field-hint">每条新会话自动写一个；想换会话就清空。</div>
+      <input id="sessionInput" type="text" placeholder="留空 = 开新话题 · 或贴已有 api- 开头的">
+      <div class="field-hint">每条新话题自动写一个；想换话题就清空。</div>
     </div>
     <div class="field">
       <label>Auto-confirm 策略</label>
@@ -484,11 +512,11 @@
 <!-- 卷五十四 · 统一 H5 modal (opusConfirm/opusPrompt/opusAlert 的载体)。
      病根: 旧版这里是简版 id="omModal"+omBody·但 chat.js 找的是 id="opusModal"+omIcon/omMessage/omInputWrap/omInput
      → _omEl/_omIcon 全 null → opusPrompt 一调就在 _omRender 抛错 → restart/rollback/shutdown 三键 + 所有
-     用统一对话框的地方全哑 (HEAD 卷五十一起就埋着·用户 今天点重启键才暴露)。 补齐结构对上 chat.js。 -->
+     用统一对话框的地方全哑 (HEAD 卷五十一起就埋着·BRO 今天点重启键才暴露)。 补齐结构对上 chat.js。 -->
 <div class="modal" id="opusModal" aria-hidden="true" style="z-index:1002">
   <div class="modal-body opus-modal-body">
     <div class="om-icon" id="omIcon"></div>
-    <h2 id="omTitle">Daemonkey 说…</h2>
+    <h2 id="omTitle">OPUS 说…</h2>
     <div class="om-message" id="omMessage"></div>
     <div class="om-input-wrap" id="omInputWrap" hidden>
       <input type="text" id="omInput" autocomplete="off">
@@ -504,7 +532,7 @@
 
 <!-- BI 看板图表 · Chart.js (卷五十六 · 2026-06-03 · 本地化 + defer)
      原来从 cdn.jsdelivr.net 同步加载 —— 国内常慢/超时·实测拉一次 17s+·这个阻塞 <script>
-     排在 chat.js 前面 → 主界面被它干等几十秒才出内容 (= 用户 报的"每次启动慢/白屏·硬刷新也慢")。
+     排在 chat.js 前面 → 主界面被它干等几十秒才出内容 (= BRO 报的"每次启动慢/白屏·硬刷新也慢")。
      Chart 只在 BI 看板用·主界面加载不需要 → 改本地 + defer·主界面 0 等待·BI 照常。 -->
 <script defer src="/static/lib/chart.umd.min.js"></script>
 <!-- 记忆星图 3D (0.9.6) · Three.js r128 UMD 本地化 · defer 不阻塞主界面 (跟 Chart.js 同款) -->
@@ -512,15 +540,23 @@
 <script defer src="/static/lib/three/OrbitControls.js"></script>
 <script src="/static/lib/litegraph.core.js"></script>
 <script src="/companion/mode-transit.js?v=20260830b"></script>
-<script src="/static/workshop.js?v=20260810"></script>
-<script src="/static/depot.js?v=20260810"></script>
+<script src="/static/dashboard-panels.js?v=20260901claim"></script>
+<script src="/static/stage.js?v=20260901claim"></script>
+<script src="/static/stage_notes.js?v=20260901claim"></script>
+<script src="/static/voice-mic.js?v=20260829a"></script>
+<script src="/static/model-switch.js?v=20260826b"></script>
+<script src="/static/settings-pane.js?v=20260828a"></script>
+<script src="/static/workshop.js?v=20260826a"></script>
+<script src="/static/depot.js?v=20260830t"></script>
 <script src="/static/clients.js?v=20260810"></script>
 <script src="/static/session-runtime.js?v=20260831sendnow"></script>
 <script src="/static/ckpt-restore.js?v=20260831roomckpt"></script>
+<script src="/static/chat-lightbox.js?v=20260831vis"></script>
 <script src="/static/chat-md.js?v=20260831split"></script>
-<script src="/static/chat-timeline.js?v=20260831split"></script>
+<script src="/static/chat-timeline.js?v=20260831sheet"></script>
 <script src="/static/chat-rail.js?v=20260831split"></script>
-<script src="/static/chat.js?v=20260831ready"></script>
+<script src="/static/chat.js?v=20260901claim"></script>
+<script src="/static/market.js?v=20260831mkt6"></script>
 
 <!-- 用户装修区 (0.9.6) · static/user/ 在 never_sync 里 —— 官方升级永远不会覆盖这两个文件。
      样式写 user.css / 行为写 user.js (用 window.Daemonkey API)·刷新页面即生效。
