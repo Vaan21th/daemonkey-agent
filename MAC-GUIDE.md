@@ -4,7 +4,7 @@
 > 本指南写给 Mac 用户。当前 Mac 版有两种启动方式：
 >
 > - **方式 A · 终端一键启动**（`start.sh` · 现在就能用）
-> - **方式 B · 图形启动器**（源码 `mac_launcher.py` 已随 1.0.0 出厂；本机 `python3 mac_launcher.py`。`.app` / `.dmg` 要推到 GitHub 才由 Actions 出包）
+> - **方式 B · 图形启动器**（把 `Daemonkey.app` 放进这份代码的根目录，和 `tools/` 同级，再双击。不要只把 `.app` 单独丢进「应用程序」）
 
 ---
 
@@ -50,26 +50,31 @@ chmod +x start.sh
 
 ---
 
-## 方式 B · 图形启动器 Daemonkey.app（发布后 · 最省事）
+## 方式 B · 图形启动器 Daemonkey.app
 
-> .app 正在打包（图标 + 首次引导已完成），发布后 Mac 用户直接双击，不用碰终端。
+皮和 Windows 是同一份 `assets/launcher.html`（月光操作台）。壳是 Mac 的 `Daemonkey.app`（WKWebView），不是 Windows 那个 exe。
 
-**1. 下载** `Daemonkey.dmg` → 双击挂载 → 把 `Daemonkey.app` 拖进「应用程序」
+**正确摆法（认根目录，不再写死家目录）：**
 
-**2. 首次双击**（如果系统提示"无法验证开发者"）：
+1. 把整份 Daemonkey 文件夹拷到 Mac（任意位置都行，例如 `~/Desktop/Daemonkey`）
+2. 把 `Daemonkey.app` 放进**这个文件夹的根**，和 `tools/run_api_only.py` 同级
+3. 右键 `.app` →「打开」（未签名，Gatekeeper 会拦一次）
+4. 点【启动 daemon】
 
-- 右键点 `Daemonkey.app` → 选「打开」→ 再点「打开」（只此一次）
-- 或：系统设置 → 隐私与安全性 → 找到 Daemonkey → 点「仍要打开」
+启动器按这个顺序找代码根：
 
-**3. 首次使用自动完成三件事**（对齐 Windows 一键链路·几分钟）：
+1. 环境变量 `DAEMONKEY_HOME` / `OPUS_DAEMON_DIR`
+2. **装着 `.app` 的那一层**（所以放进纯净版根就能用这份 1.0.0）
+3. 旁边再套一层 `Daemonkey/`
+4. `~/Daemonkey`
+5. 以上都没有，才 clone Gitee（远端还是旧 master，不是桌上这份 1.0.0）
 
-1. 自动拉取 Daemonkey 代码到 `~/Daemonkey`
-2. 自动创建运行环境 + 安装依赖
-3. 自动启动 WebUI 并打开浏览器
+旁边已经有根目录、也有 `.venv` 时，不再每次 `pip install`。
 
-之后：启动器窗口显示「运行环境就绪」→ 点【启动 daemon】→ 填 key → 相遇 → 开聊。
+**不要做的：**
 
-**4. 以后每次**：双击 `Daemonkey.app` → 启动器界面 → 点【启动】即可。
+- 只把 `.app` 拖进「应用程序」、旁边没有代码 → 找不到 1.0.0，会去家目录或拉 Gitee 旧仓
+- 只拷 dmg、不拷源码文件夹 → 同样不是桌上这份 1.0.0
 
 ---
 

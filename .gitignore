@@ -54,6 +54,7 @@ __pycache__/
 # 构建产物 (Mac/Windows 包·release 附件分发·不进 git)
 /dist/
 /*.dmg
+/Daemonkey.app/
 
 desktop_pet/confirm.txt
 
