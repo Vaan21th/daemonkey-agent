@@ -41,34 +41,60 @@ try:
 except Exception:
     _HAS_TRAY = False
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get("OPUS_API_PORT", "7860"))
 
-# ── 打包/源码 路径分叉 (2026-08-15 v1 · 首装引导) ──
-#   源码跑: daemon 代码就在本目录 · 资产 assets/ 同级
-#   打包跑 (PyInstaller .app): daemon 代码首装 clone 到 ~/Daemonkey ·
-#   资产在 .app 内部 sys._MEIPASS/assets (launcher.html 等随包带走)
+# ── 打包/源码 路径分叉 ──
+#   源码跑: daemon 就在本文件旁边 (跟 Windows $PSScriptRoot 一样)
+#   打包跑: 资产在 .app 里 · daemon 根目录按下面顺序认，不再写死 ~/Daemonkey
+#     1) DAEMONKEY_HOME  2) .app 所在文件夹 (把 app 丢进纯净版根就行)
+#     3) 旁边的 Daemonkey/  4) ~/Daemonkey  5) 都没有再 clone
 FROZEN = bool(getattr(sys, "frozen", False))
+
+
+def _looks_like_daemon(d):
+    return bool(d) and os.path.isfile(os.path.join(d, "tools", "run_api_only.py"))
+
+
+def _app_parent_dir():
+    """.../Daemonkey.app/Contents/MacOS/可执行文件 → 装着 .app 的那一层。"""
+    exe = os.path.abspath(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(exe))))
+
+
+def _pick_daemon_dir():
+    env = (os.environ.get("DAEMONKEY_HOME") or os.environ.get("OPUS_DAEMON_DIR") or "").strip()
+    cands = []
+    if env:
+        cands.append(os.path.abspath(env))
+    if FROZEN:
+        parent = _app_parent_dir()
+        cands += [parent, os.path.join(parent, "Daemonkey"), os.path.expanduser("~/Daemonkey")]
+    else:
+        cands.append(os.path.dirname(os.path.abspath(__file__)))
+    for d in cands:
+        if _looks_like_daemon(d):
+            return d
+    return os.path.expanduser("~/Daemonkey") if FROZEN else os.path.dirname(os.path.abspath(__file__))
+
+
+DAEMON_DIR = _pick_daemon_dir()
 if FROZEN:
-    DAEMON_DIR = os.path.expanduser("~/Daemonkey")      # 首装 git clone 到这
-    ASSET_DIR = os.path.join(sys._MEIPASS, "assets")     # 打包资产目录
+    ASSET_DIR = os.path.join(sys._MEIPASS, "assets")
 else:
-    DAEMON_DIR = os.path.dirname(os.path.abspath(__file__))
     ASSET_DIR = os.path.join(DAEMON_DIR, "assets")
-ROOT = DAEMON_DIR   # 后面全部 cwd/路径逻辑跟着走 (venv/run_api_only/core_manifest)
+ROOT = DAEMON_DIR
 
 
 def ensure_daemon_dir(api):
-    """首装引导 (仅打包模式): 确保 ~/Daemonkey 有 daemon 代码 + venv + 依赖。
-
-    对齐 Windows 一键链路 (Ensure-RepoAndSource):
-      无代码 → git clone gitee → 建 .venv → pip install -r requirements.txt
-    源码模式直接过 (代码就在旁边)。 进度经 api.log 推送到启动器 UI。
-    """
+    """打包模式首装：旁边已有根目录就用；没有才 clone 到 DAEMON_DIR。"""
     if not FROZEN:
         return True, "源码模式"
     d = DAEMON_DIR
-    code_ok = os.path.exists(os.path.join(d, "tools", "run_api_only.py"))
+    code_ok = _looks_like_daemon(d)
+    py_venv = os.path.join(d, ".venv", "bin", "python")
+    # 根目录和 venv 都在就别每次 pip —— 旧包「窗开了但永远在装依赖 / 没网直接失败」
+    if code_ok and os.path.exists(py_venv):
+        return True, "就绪"
     if not code_ok:
         api.log("首次使用 · 正在拉取 Daemonkey 代码...", "warn")
         try:
@@ -79,7 +105,6 @@ def ensure_daemon_dir(api):
                 return False, f"git clone 失败: {r.stderr[-200:]}"
         except Exception as e:
             return False, f"clone 异常: {e}"
-    py_venv = os.path.join(d, ".venv", "bin", "python")
     if not os.path.exists(py_venv):
         api.log("首次使用 · 创建运行环境 (venv)...", "warn")
         try:
