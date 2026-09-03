@@ -1,0 +1,51 @@
+# Daemonkey · 只打 Mac 启动器壳 · 不含 daemon 源码
+name: Build macOS Launcher
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'dmg version label'
+        default: '1.0.0'
+        type: string
+
+jobs:
+  build-mac:
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+          - runner: macos-13
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build deps
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install pyinstaller pywebview pyinstaller-hooks-contrib pystray Pillow
+
+      - name: Build .app + dmg
+        run: |
+          VER="${{ github.event.inputs.version }}"
+          [ -n "$VER" ] || VER="1.0.0"
+          echo "==> 打包版本: $VER · 架构: ${{ matrix.arch }}"
+          bash tools/build_mac_app.sh "$VER"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Daemonkey-mac-${{ matrix.arch }}
+          path: |
+            dist/Daemonkey.app
+            dist/Daemonkey-*.dmg
+          if-no-files-found: error
