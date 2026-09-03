@@ -67,10 +67,30 @@ def _consume_inbox() -> str:
     try:
         if not INBOX_FILE.exists():
             return ""
-        text = INBOX_FILE.read_text(encoding="utf-8").strip()
-        if text:
-            INBOX_FILE.write_text("", encoding="utf-8")
-        return text
+        # B-② · 2026-08-27 · 原子 rename 拿走再读 · 修 read-then-truncate 竞态:
+        # 原来读完再清空 · 期间 bridge/pet 追加的新消息会被一起清掉 (跨进程 · threading 锁没用) (Grok 全量审计)
+        tmp = INBOX_FILE.with_name("inbox.txt.draining")
+        leftover = ""
+        if tmp.exists():  # 上次崩溃残留先捞回来
+            try:
+                leftover = tmp.read_text(encoding="utf-8").strip()
+                tmp.unlink()
+            except OSError:
+                pass
+        try:
+            os.replace(INBOX_FILE, tmp)
+        except FileNotFoundError:
+            return leftover
+        try:
+            text = tmp.read_text(encoding="utf-8").strip()
+        finally:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+        if leftover and text:
+            return leftover + "\n" + text
+        return leftover or text
     except Exception:
         return ""
 
@@ -99,8 +119,8 @@ def banner(console: Console, soul: Soul, provider: str, model: str, base_url: st
 def _ping_pet_thinking() -> None:
     """桌宠心电图：用户消息进来时 → thinking 气泡。失败吞掉，daemon 不能因桌宠崩溃。"""
     try:
-        from desktop_pet.activities import write_activity
-        write_activity("read_file")
+        from desktop_pet.activities import write_turn_start
+        write_turn_start()
     except Exception:
         pass
 
@@ -191,6 +211,22 @@ def _maybe_start_capability_mirror(console: Console) -> None:
     if thread is not None and thread.is_alive():
         interval = (os.environ.get("OPUS_CAPABILITY_MIRROR_INTERVAL_DAYS") or "0").strip()
         console.print(f"  [dim]capability_mirror scheduler: every {interval} days · 跑完桌宠会切 surprised[/]\n")
+
+
+def _maybe_start_state_condenser(console: Console) -> None:
+    """H4 · 周度凝练 · 每 6h tick · 条件满足才跑。"""
+    try:
+        from workers.scheduler import start_state_condenser_scheduler_in_background
+    except Exception as e:
+        console.print(f"  [yellow]state_condenser scheduler import failed: {e}[/]")
+        return
+    try:
+        thread = start_state_condenser_scheduler_in_background()
+    except Exception as e:
+        console.print(f"  [yellow]state_condenser scheduler start failed: {e}[/]")
+        return
+    if thread is not None and thread.is_alive():
+        console.print("  [dim]state_condenser scheduler: every 6h tick · 条件满足才凝练[/]\n")
 
 
 def _maybe_start_proactive(console: Console) -> None:
@@ -290,6 +326,7 @@ def run() -> int:
     _maybe_start_api(console)
     _maybe_start_scheduler(console)
     _maybe_start_capability_mirror(console)
+    _maybe_start_state_condenser(console)
     _maybe_start_proactive(console)
     _maybe_start_scheduled_tasks(console)
     _maybe_start_wechat(console)
@@ -318,6 +355,16 @@ def run() -> int:
     def _on_session_replaced(new: str) -> None:
         nonlocal session_id
         session_id = new
+        # Grok-2 · 2026-08-27 · /new /load 切会话必须同步压缩层 + RUNTIME sid ·
+        # 否则压缩/续场写进旧会话
+        try:
+            set_session_id(new)
+        except Exception:
+            pass
+        try:
+            RUNTIME.session_id = new
+        except Exception:
+            pass
 
     def _on_total_reset(new: UsageStats) -> None:
         nonlocal total_usage

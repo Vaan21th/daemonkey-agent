@@ -21,7 +21,8 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Body, Header, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
 
 from api_routes._deps import check_auth
 from daemon_api import ROOT
@@ -37,42 +38,10 @@ logger = logging.getLogger("opus.daemon.dashboard")
 
 router = APIRouter()
 
-_REPORTS_DIR = ROOT / "data" / "reports"
-
-
 def _list_reports() -> dict:
-    """扫描 data/reports/ 下所有 docx · 返回 list 给 WebUI 渲染
-
-    卷三十三补丁 · 每项附加 preview_url + has_md_source
-      - 新报告生成时同步落 .md 源 · has_md_source=True
-      - 旧报告没 .md · 预览时用 python-docx 兜底抽取
-    """
-    _REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-    items = []
-    for p in sorted(_REPORTS_DIR.glob("*.docx"), key=lambda x: x.stat().st_mtime, reverse=True):
-        if p.name.startswith("~$"):
-            continue  # Word 临时文件
-        try:
-            stat = p.stat()
-            md_sibling = p.with_suffix(".md")
-            items.append({
-                "name": p.name,
-                "size_kb": round(stat.st_size / 1024, 1),
-                "created_at": time.strftime(
-                    "%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime)
-                ),
-                "download_url": f"/reports/{p.name}",
-                "preview_url": f"/reports/preview/{p.name}",  # 卷三十三补丁
-                "has_md_source": md_sibling.exists(),
-            })
-        except OSError:
-            continue
-    return {
-        "domain": "reports",
-        "count": len(items),
-        "items": items,
-        "directory": str(_REPORTS_DIR.relative_to(ROOT) if ROOT in _REPORTS_DIR.parents else _REPORTS_DIR),
-    }
+    """产物货架 · 兼容旧字段（count/items/directory=报告）+ kinds.reports/decks。"""
+    from workers.output_shelf import list_shelf
+    return list_shelf()
 
 
 def _build_calendar_day(day: str) -> dict:
@@ -322,13 +291,16 @@ def dashboard_cockpit(
             "error": str(e),
         })
 
-    # <i class='ri-article-fill'></i> 报告库
+    # <i class='ri-article-fill'></i> 产物库
     try:
         reports = _list_reports()
         r_items = reports.get("items", [])[:head]
+        kinds = reports.get("kinds") or {}
+        decks_n = (kinds.get("decks") or {}).get("count", 0)
+        sheets_n = (kinds.get("sheets") or {}).get("count", 0)
         out_domains.append({
             "id": "reports",
-            "label": "报告库",
+            "label": "产物库",
             "icon": "<i class='ri-article-fill'></i>",
             "items": [
                 {
@@ -339,15 +311,15 @@ def dashboard_cockpit(
                 }
                 for it in r_items
             ],
-            "total": reports.get("count", 0),
+            "total": reports.get("count", 0) + int(decks_n or 0) + int(sheets_n or 0),
             "today_new": _count_today(reports.get("items"), "created_at"),
             "last_updated": (r_items[0]["created_at"] if r_items else None),
             "stub": False,
-            "empty_hint": "还没生成过 · 在底栏跟 OPUS 说「做一份测试报告」",
+            "empty_hint": "还没产物 · 对话里说「做一份报告」「演示稿」或「出一张表」",
         })
     except Exception as e:
         out_domains.append({
-            "id": "reports", "label": "报告库", "icon": "<i class='ri-article-fill'></i>",
+            "id": "reports", "label": "产物库", "icon": "<i class='ri-article-fill'></i>",
             "items": [], "total": 0, "stub": False,
             "error": str(e),
         })
@@ -532,13 +504,7 @@ def dashboard_cockpit(
             "error": str(e),
         })
 
-    # <i class='ri-team-fill'></i> 用户运营 · 暂保持 stub（BRO 原话：等先有产品再做）· 卷二十九改名 服务→运营
-    out_domains.append({
-        "id": "service", "label": "用户运营", "icon": "<i class='ri-team-fill'></i>",
-        "items": [], "total": 0, "stub": True,
-        "last_updated": None,
-        "empty_hint": "等先有产品 · 这一维度等用户接入再开",
-    })
+    # 用户运营 stub 2026-09-03 撤出侧栏和 cockpit · GET /dashboard/service 仍回占位
 
     # <i class='ri-puzzle-fill'></i> 插件库（卷二十九加）· 能力扩展层
     try:
@@ -1184,6 +1150,192 @@ def dashboard_suggestions(authorization: Optional[str] = Header(None)):
     return {"items": out[:3]}  # 最多 3 条 · 多了就吵
 
 
+@router.get("/dashboard/care")
+def dashboard_care(authorization: Optional[str] = Header(None)):
+    """陪伴咖啡边桌 · 人情味层。不调 LLM。"""
+    check_auth(authorization)
+    from workers.care_desk import build_care_desk
+    return build_care_desk()
+
+
+@router.post("/dashboard/care/dismiss")
+async def dashboard_care_dismiss(request: Request, authorization: Optional[str] = Header(None)):
+    check_auth(authorization)
+    body = await request.json()
+    from workers.care_desk import dismiss_care
+    return dismiss_care(str(body.get("id") or ""))
+
+
+@router.post("/dashboard/care/speak")
+async def dashboard_care_speak(request: Request, authorization: Optional[str] = Header(None)):
+    """她亲口说一句 · 写入当前陪伴会话。"""
+    check_auth(authorization)
+    body = await request.json()
+    from workers.care_desk import speak_care
+    return speak_care(
+        str(body.get("session_id") or ""),
+        str(body.get("line") or ""),
+        str(body.get("signal") or ""),
+    )
+
+
+@router.post("/dashboard/understanding/delete")
+async def dashboard_understanding_delete(
+    request: Request, authorization: Optional[str] = Header(None)
+):
+    """删除了解层单条 · 按字段名匹配 BRO-NOTEBOOK 了解层 bullet。"""
+    check_auth(authorization)
+    body = await request.json()
+    field = str(body.get("field") or "").strip()
+    if not field:
+        raise HTTPException(status_code=400, detail="field required")
+    try:
+        from workers.cognition_loader import delete_understanding_field
+
+        return delete_understanding_field(field)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+# ──────────────────────────────────────────────────────────
+# 她 · 状态 (H4 收官 · 唯一事实源 soul/SHE-STATE.md)
+# 必须在 /dashboard/{domain} catch-all 之前注册 · 否则被吃掉
+# ──────────────────────────────────────────────────────────
+
+
+@router.get("/dashboard/she_state")
+async def get_she_state(authorization: Optional[str] = Header(None)):
+    """成长档案面板 / 陪伴惦记卡片 / 对话前缀 共用的她·状态快照。"""
+    check_auth(authorization)
+    from identity import she_state
+    snap = she_state()
+    try:
+        from workers.mood_shift import room_mood_view
+        overlay = room_mood_view()
+        if overlay.get("live"):
+            snap["mood"] = overlay.get("human") or overlay.get("mood") or ""
+            snap["mood_as_of"] = "today"
+    except Exception:
+        pass
+    gallery = []
+    try:
+        from workers.she_gallery import she_gallery
+        gallery = she_gallery()
+    except Exception:
+        gallery = []
+    settled = False
+    try:
+        from workers.taste_chat import taste_settled
+        settled = bool(taste_settled())
+    except Exception:
+        settled = False
+    dims = snap.get("dims")
+    note = snap.get("note") or ""
+    try:
+        from workers.style_shift import live_dims
+        from identity import style_dims_note
+        dims = live_dims()
+        note = style_dims_note(dims=dims)
+    except Exception:
+        pass
+    bond = {}
+    try:
+        from workers.bond_ledger import snapshot
+        bond = snapshot()
+    except Exception:
+        bond = {}
+    return {
+        "ok": True,
+        "dims": dims,
+        "mood": snap.get("mood") or "",
+        "mood_as_of": snap.get("mood_as_of") or "",
+        "note": note,
+        "as_of": snap.get("as_of") or "",
+        "dim_meta": snap.get("dim_meta") or {},
+        "profile": snap.get("profile") or {},
+        "voice": snap.get("voice") or "",
+        "gallery": gallery,
+        "taste_settled": settled,
+        **bond,
+    }
+
+
+@router.post("/dashboard/she_state/mood")
+async def set_she_mood_api(payload: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """写心情（易变·供 LLM/前端更新当下心情）。不改四维。"""
+    check_auth(authorization)
+    from identity import set_she_mood, she_state
+    mood = str((payload or {}).get("mood") or "").strip()
+    evidence = str((payload or {}).get("evidence") or "").strip()
+    if not mood:
+        raise HTTPException(status_code=400, detail="mood required")
+    set_she_mood(mood, evidence=evidence)
+    snap = she_state()
+    return {
+        "ok": True,
+        "dims": snap.get("dims"),
+        "mood": snap.get("mood") or "",
+        "mood_as_of": snap.get("mood_as_of") or "",
+        "note": snap.get("note") or "",
+        "as_of": snap.get("as_of") or "",
+    }
+
+
+@router.get("/dashboard/she_profile")
+def get_she_profile(authorization: Optional[str] = Header(None)):
+    """她·档案身份卡（名字/生日/相遇/关注/头像/引语）。"""
+    check_auth(authorization)
+    from identity import she_profile
+    return {"ok": True, "profile": she_profile()}
+
+
+@router.post("/dashboard/she_profile")
+async def post_she_profile(payload: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """补/改她·档案。只更新非空字段。接受英文 key 或中文 key。"""
+    check_auth(authorization)
+    from identity import set_she_profile, she_profile
+    p = payload or {}
+    set_she_profile(
+        name=str(p.get("name") or p.get("名字") or ""),
+        birthday=str(p.get("birthday") or p.get("生日") or ""),
+        meet_day=str(p.get("meet_day") or p.get("相遇日") or ""),
+        focus=str(p.get("focus") or p.get("关注点") or ""),
+        avatar=str(p.get("avatar") or p.get("头像") or ""),
+        motto=str(p.get("motto") or p.get("引语") or ""),
+        origin=str(p.get("origin") or p.get("出生地") or ""),
+        quirk=str(p.get("quirk") or p.get("口癖") or ""),
+    )
+    return {"ok": True, "profile": she_profile()}
+
+
+@router.get("/dashboard/she_gallery")
+def get_she_gallery(authorization: Optional[str] = Header(None)):
+    """她·画廊列表（倒序·朋友圈）。"""
+    check_auth(authorization)
+    try:
+        from workers.she_gallery import she_gallery
+        return {"ok": True, "items": she_gallery()}
+    except ImportError:
+        return {"ok": True, "items": []}
+
+
+@router.post("/dashboard/she_gallery/make")
+async def post_she_gallery_make(
+    payload: Optional[dict] = Body(None),
+    authorization: Optional[str] = Header(None),
+):
+    """手动触发生成一条（调试 / 想看就点）。force=true 跳过冷却和骰子，仍防复读。"""
+    check_auth(authorization)
+    try:
+        from workers.she_gallery import make_gallery_entry
+    except ImportError:
+        return {"ok": False, "error": "gallery unavailable"}
+    force = bool((payload or {}).get("force"))
+    return make_gallery_entry(force=force)
+
+
 # ──────────────────────────────────────────────────────────
 # 记忆星图 (0.9.6 · 成长档案「记忆星图」tab 数据源)
 # 必须在 /dashboard/{domain} catch-all 之前注册 · 否则被吃掉
@@ -1207,9 +1359,96 @@ def dashboard_memory_map(authorization: Optional[str] = Header(None), lite: int 
         return {"error": f"缺依赖 {e.name} · 到启动器「环境」页点【开始安装】补装后重启即恢复"}
 
 
-# ──────────────────────────────────────────────────────────
-# 卷四十四 K stage 2c · 出品工坊资产 endpoint · apps + flows
-# ──────────────────────────────────────────────────────────
+@router.post("/shelf/restore/{kind}/{filename}")
+def shelf_restore(
+    kind: str,
+    filename: str,
+    authorization: Optional[str] = Header(None),
+):
+    """把历史稿抄回当前名 · 现在的最新版进历史 · 中栏接着改。"""
+    check_auth(authorization)
+    from workers.output_shelf import restore_item
+    try:
+        return restore_item(kind, filename)
+    except FileNotFoundError:
+        raise HTTPException(404, "file not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/shelf/preview/{kind}/{filename}")
+def shelf_preview(
+    kind: str,
+    filename: str,
+    authorization: Optional[str] = Header(None),
+):
+    """演示稿 markdown 源预览 · 报告仍走 /reports/preview/。"""
+    check_auth(authorization)
+    from workers.output_shelf import preview_md
+    try:
+        return preview_md(kind, filename)
+    except FileNotFoundError:
+        raise HTTPException(404, "file not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/shelf/visual/{kind}/{filename}")
+async def shelf_visual(
+    kind: str,
+    filename: str,
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = None,
+):
+    """本机 Office/WPS 渲成品预览 · 失败返 ok=False，前端退回文稿。"""
+    if token and not authorization:
+        authorization = f"Bearer {token}"
+    check_auth(authorization)
+    from workers.office_preview import build_visual
+    try:
+        return await asyncio.to_thread(build_visual, kind, filename)
+    except FileNotFoundError:
+        raise HTTPException(404, "file not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/shelf/preview-asset/{kind}/{cache_id}/{name}")
+def shelf_preview_asset(
+    kind: str,
+    cache_id: str,
+    name: str,
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = None,
+):
+    """成品预览缓存（PDF/PNG）· 只出 runtime/shelf_preview 里的文件。"""
+    if token and not authorization:
+        authorization = f"Bearer {token}"
+    check_auth(authorization)
+    from workers.office_preview import resolve_asset, stamp_preview_scroll
+    try:
+        path = resolve_asset(kind, cache_id, name)
+    except FileNotFoundError:
+        raise HTTPException(404, "asset not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if name.lower().endswith(".html"):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        return HTMLResponse(
+            stamp_preview_scroll(text),
+            headers={"Content-Disposition": f'inline; filename="{name}"'},
+        )
+    if name.lower().endswith(".pdf"):
+        mime = "application/pdf"
+    else:
+        mime = "image/png"
+    # filename= 会变成 attachment · HTML/PDF 嵌进 iframe 必须 inline
+    disp = "inline" if name.lower().endswith(".pdf") else "attachment"
+    return FileResponse(
+        path,
+        media_type=mime,
+        headers={"Content-Disposition": f'{disp}; filename="{name}"'},
+    )
 
 
 @router.get("/dashboard/{domain}")
@@ -1228,7 +1467,7 @@ async def dashboard(
     domain:
       - radar         · 信息雷达 · 多源资讯（workers/info_radar.py）
       - trends        · 每日趋势 · LLM 总结（workers/trend_finder.py）
-      - reports       · 文档库 · generate_report 落 data/reports/（卷二十四）
+      - reports       · 产物库 · 报告 docx + 演示稿 pptx
       - opportunities · 掘金机会 · LLM 综合输出（卷二十八）
       - cognition     · OPUS 日记 + BRO 画像（卷二十六）
       - content / design / dev / docs · 工坊出品（卷二十六）
@@ -1372,7 +1611,13 @@ async def dashboard(
 
     if domain == "cognition":
         from workers.cognition_loader import load_cognition
-        return load_cognition()
+        out = load_cognition()
+        try:
+            from workers.bond_ledger import attach_bond
+            attach_bond(out)
+        except Exception:
+            pass
+        return out
 
     if domain == "opportunities":
         # 卷二十八 · 掘金机会维度

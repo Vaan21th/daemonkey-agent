@@ -281,6 +281,7 @@ def _run(args: dict) -> ToolResult:
         lines.append("")
         lines.append(f"── 前端 JS 语法 ── (校验跳过: {type(e).__name__})")
 
+    # 6.6 工具简介预算 (铁律 15)
     desc_ok = True
     try:
         from agent_tools._desc_budget import (
@@ -294,7 +295,7 @@ def _run(args: dict) -> ToolResult:
         over_field = audit_schema_registry(REGISTRY)
         desc_ok = not over and not over_field
         lines.append("")
-        lines.append("── 工具简介预算 ──")
+        lines.append("── 工具简介预算 (铁律 15) ──")
         if desc_ok:
             lines.append(
                 f"OK · {len(REGISTRY)} 个工具 description ≤ {MAX_DESC_TOKENS} tok · "
@@ -323,11 +324,11 @@ def _run(args: dict) -> ToolResult:
         f"总计 {total} 路由 · {_PASS} {passed} pass · {_FAIL} {failed} fail · {_SKIP} {skipped} skip",
         f"🔒 需鉴权: {auth_routes} · 🌐 无需鉴权: {noauth_routes}",
         f"前端 JS: {'✅ OK' if fe_ok else '❌ 语法坏 (见下方·先修再 commit)'}",
-        f"工具简介: {'OK' if desc_ok else '超线 (见下方·先收再 commit)'}",
+        f"简介预算: {'✅ OK' if desc_ok else '❌ description 超线 (铁律 15)'}",
     ]
     if failed == 0 and fe_ok and desc_ok:
         summary.append("")
-        summary.append("全路由 smoke + 前端 JS + 简介预算通过 · daemon 没有 import / 参数雷 · chat.js 没改断。")
+        summary.append("🎉 全路由 smoke + 前端 JS + 简介预算通过 · daemon 代码没有 import / 参数雷 · chat.js 没改断。")
     else:
         summary.append("")
         if failed:
@@ -335,7 +336,7 @@ def _run(args: dict) -> ToolResult:
         if not fe_ok:
             summary.append("⚠️  前端 JS 语法坏了 · 重启后 WebUI 会白屏 · 先修再 commit (见『前端 JS 语法』节)。")
         if not desc_ok:
-            summary.append("工具简介或 schema 字段超线 · 先收到一句再 commit（工艺进 read_scenario）。")
+            summary.append("⚠️  工具简介或 schema 字段超线 · register_tool 会拦 · 工艺进 read_scenario（铁律 15）。")
 
     lines = summary + lines
 
@@ -452,8 +453,7 @@ def _run_tool(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="verify_daemon_endpoints",
     description=(
-        "改完 daemon/.py/static 自称改好了之前必跑的 HTTP+JS smoke。mode=fast 日常秒级；deep 真 token 深测路由。跳过 restart/shutdown。"
-    ),
+        "改完 daemon/.py/static 自称改好了之前必跑的 HTTP+JS smoke。mode=fast 日常秒级；deep 真 token 深测路由。跳过 restart/shutdown。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

@@ -42,7 +42,7 @@ var autoConfirm = (function () {
 function addSys(msg) { if (typeof setStatus === 'function') setStatus(String(msg || '')); }
 function updateCurrentLabel() {}
 
-function opusConfirm(opts) {      // 陪伴模式降级原生 confirm
+function opusConfirm(opts) {      // 母体 _omQueue modal 系统太重 · 陪伴模式降级原生 confirm
   var m = opts && opts.message;
   if (m && typeof m === 'object') m = (m.html ? String(m.html).replace(/<[^>]+>/g, ' ') : '') || '确认操作？';
   return Promise.resolve(window.confirm(m || '确认操作？'));
@@ -71,6 +71,7 @@ async function _ensureLoopbackToken() {
 
 // ── loadDashboard 陪伴版 (移植自母体 chat.js:11780 · 去掉 workshop/depot 等特殊分支) ──
 async function loadDashboard(domain, opts = {}) {
+  if (opts.silent && typeof _shelfPreviewOpen !== 'undefined' && _shelfPreviewOpen) return;
   if (typeof loadDashboard._seq !== 'number') loadDashboard._seq = 0;
   const seq = ++loadDashboard._seq;
   const stale = () => seq !== loadDashboard._seq;
@@ -142,6 +143,7 @@ async function loadDashboard(domain, opts = {}) {
     else if (domain === 'execution') renderExecution(data);
     else if (domain === 'favorites') renderFavorites(data);
     else if (domain === 'scheduled_tasks') renderScheduledTasks(data);
+    else if (domain === 'plugins' && typeof window.renderPlugins === 'function') window.renderPlugins(data);
     else renderDashboardStub(domain, data);
     _depotTabs(domain);
   } catch (e) {
@@ -531,7 +533,7 @@ try { window.opusMdRender = mdRender; } catch (e) { /* 顶层环境异常 · 跳
 
 // wish-3fef4bc7 · helpers 接受可选 target container · 不传 = 操作 active session ($msgs)
 // 这样 78 处现存调用不动 · send 内的调用传 state.$container 即可路由到正确 session
-// 卷四十六续 3 · opts.forceScroll · 默认软滚 (BRO 拖滚动条看历史时 LLM 输出不强行刷回底)
+// 卷四十六续 3 · opts.forceScroll · 默认软滚 (用户 拖滚动条看历史时 LLM 输出不强行刷回底)
 //   用户发消息 / 错误 / 必须看到的卡片 → 调方显式传 { forceScroll: true }
 
 // ── 母体 chat.js:11760-11767 · _splitMissing ──
@@ -546,13 +548,9 @@ function _splitMissing(name) {
 
 // ── 母体 chat.js:11768-11777 · dashLoadingHTML ──
 function dashLoadingHTML(text) {
-  return `<style>
-@keyframes dkLdDot { 0%,60%,100%{transform:translateY(0);opacity:.35} 30%{transform:translateY(-6px);opacity:1} }
-.dkLdDot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent,#8a7dff); animation:dkLdDot 1.2s ease-in-out infinite; }
-</style>
-<div class="dash-empty" style="display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:80px">
-  <div><span class="dkLdDot"></span> <span class="dkLdDot" style="animation-delay:.15s"></span> <span class="dkLdDot" style="animation-delay:.3s"></span></div>
-  <div style="font-size:12px;color:var(--dim);letter-spacing:1px">${text || '加载中'}</div>
+  return `<div class="dash-empty dk-ld">
+  <div class="dk-ld-row"><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span></div>
+  <div class="dk-ld-txt">${text || '加载中'}</div>
 </div>`;
 }
 
@@ -568,7 +566,7 @@ function renderDashboardStub(domain, data) {
       <h3>这个维度还在开发中</h3>
       <div>${data && data.note ? data.note : '见 docs/STUDIO-LAYOUT.md 第五章 MVP 优先级'}</div>
       <div style="margin-top:14px; font-size:11px;">
-        想加快这一维度？回对话跟 OPUS 说：「优先做 ${m.label || domain} 维度」
+        想加快这一维度？回对话跟 Daemonkey 说：「优先做 ${m.label || domain} 维度」
       </div>
     </div>`;
 }
@@ -608,8 +606,8 @@ function formatRadarTime(iso) {
 function pipelineBreadcrumb(current) {
   const stages = [
     { id: 'radar',   icon: '<i class="ri-radar-fill"></i>', label: '雷达',   hint: '原料层 · 多源抓取' },
-    { id: 'trends',  icon: '<i class="ri-line-chart-fill"></i>', label: '趋势',   hint: '提炼层 · OPUS 军师视图' },
-    { id: 'reports', icon: '<i class="ri-article-fill"></i>', label: '报告',   hint: '成品层 · 正式 docx 出货' },
+    { id: 'trends',  icon: '<i class="ri-line-chart-fill"></i>', label: '趋势',   hint: '提炼层 · Daemonkey 军师视图' },
+    { id: 'reports', icon: '<i class="ri-archive-2-fill"></i>', label: '产物',   hint: '成品层 · 报告 docx + 演示稿 pptx' },
   ];
   const parts = stages.map((s, i) => {
     const active = (s.id === current) ? ' active' : '';
@@ -618,7 +616,7 @@ function pipelineBreadcrumb(current) {
       `<button class="pl-stage${active}" onclick="loadDashboard('${s.id}')" ` +
       `title="${escHtml(s.hint)}">${s.icon} ${s.label}</button>`;
   }).join('');
-  return `<div class="pipeline" title="OPUS 信息流水线 · 点击切换维度">${parts}</div>`;
+  return `<div class="pipeline" title="信息从收到、看到、做到哪一步了。点一下换角度看。">${parts}</div>`;
 }
 
 // 卷二十七 · 简易 inline SVG 直方图（信源贡献）
@@ -627,9 +625,9 @@ function pipelineBreadcrumb(current) {
 
 function renderSourceHistogram(meta, scopeLabel) {
   const scoped = scopeLabel ? ` · ${escHtml(scopeLabel)}` : '';
-  // 选了具体领域但该领域没源 → 引导加源 (BRO 2026-06-03 · 信源跟领域走·add_source 后端已支持 domain)
+  // 选了具体领域但该领域没源 → 引导加源 (用户 2026-06-03 · 信源跟领域走·add_source 后端已支持 domain)
   const emptyHint = scopeLabel
-    ? `<div class="radar-histogram"><div class="rh-title">信源贡献${scoped}</div><div class="sh-empty">这个领域还没有专属信源 · 跟 OPUS 说「给「${escHtml(scopeLabel)}」加个信息源」</div></div>`
+    ? `<div class="radar-histogram"><div class="rh-title">信源贡献${scoped}</div><div class="sh-empty">这个领域还没有专属信源 · 跟 Daemonkey 说「给「${escHtml(scopeLabel)}」加个信息源」</div></div>`
     : '';
   if (!meta || meta.length === 0) return emptyHint;
   const okMeta = meta.filter(m => m.ok || m.fetched > 0);
@@ -703,11 +701,11 @@ function renderFeasibility(data) {
       <span class="meta">${items.length} 份分析 · 共 ${data.total || items.length}</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('feasibility')">刷新</button>
-      <button onclick="switchView('opportunities')" title="去 💎 掘金机会">← <i class="ri-diamond-fill"></i> 机会</button>
+      <button onclick="switchView('opportunities')" title="去掘金机会">← <i class="ri-diamond-fill"></i> 机会</button>
     </div>
     <div class="feas-intro">
       把 <i class="ri-diamond-fill"></i> 掘金机会卡展开成完整可行性 · 风险/资源/能力/成本/替代方案。
-      在机会卡上点 <b>💰估算成本</b> · 或跟 OPUS 说「分析第 N 个机会的可行性」。
+      在机会卡上点 <b>💰估算成本</b> · 或跟 Daemonkey 说「分析第 N 个机会的可行性」。
     </div>`;
 
   if (items.length === 0) {
@@ -964,10 +962,10 @@ let _currentCalendarYM = null;  // {year, month}
 // 修两件事:
 //   1. BUG · starter 4 删了重启复活 (后端用 domains_removed.json 记账解决)
 //   2. token · 删按钮不应该烧 LLM token · 用户点 x 就是确定动作
-// 自然语言删除依然可以走 OPUS · 这个函数只服务"按钮点击"场景
+// 自然语言删除依然可以走 Daemonkey · 这个函数只服务"按钮点击"场景
 
 
-// 卷二十七 · 今日趋势 = OPUS 军师视图（不只是「今日」· 是前瞻+操作建议）
+// 卷二十七 · 今日趋势 = Daemonkey 军师视图（不只是「今日」· 是前瞻+操作建议）
 // 数据 schema: title / summary / intensity (1-5) / angles[] / refs[] / radar_index
 const _ANGLE_LABELS = {
   content: { icon: '<i class="ri-film-fill"></i>', label: '内容制作', action: '写选题', cls: 'angle-content' },
@@ -1009,7 +1007,7 @@ function renderTrends(data) {
   const trends = (data && data.trends) || [];
   const generatedAt = data && data.generated_at;
   const generatedTxt = generatedAt ? formatRadarTime(generatedAt) : '未知';
-  // 卷三十四 · 取整天日期（BRO 想看的是绝对日期·不是相对时间）
+  // 卷三十四 · 取整天日期（用户 想看的是绝对日期·不是相对时间）
   const generatedDay = generatedAt ? (generatedAt.slice(0, 10)) : '?';
   const itemsScanned = data && data.items_scanned ? data.items_scanned : '?';
   const isArchive = data && data._source === 'archive';
@@ -1018,14 +1016,14 @@ function renderTrends(data) {
   let html = `
     ${pipelineBreadcrumb('trends')}
     <div class="dash-head">
-      <h2><i class="ri-line-chart-fill"></i> 今日趋势 · OPUS 军师视图</h2>
+      <h2><i class="ri-line-chart-fill"></i> 今日趋势 · Daemonkey 军师视图</h2>
       <span class="meta"><i class="ri-calendar-fill"></i> <b>${escHtml(isArchive ? archiveDay : generatedDay)}</b> · ${trends.length} 个方向 · 扫了 ${itemsScanned} 条 · ${generatedTxt}${isArchive ? ' <span class="badge-archive">归档</span>' : ''}</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('radar')">← 看原料</button>
-      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 BRO · 为什么', '重新生成趋势')">让 OPUS 重新看一遍</button>
+      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 用户 · 为什么', '重新生成趋势')">让 Daemonkey 重新看一遍</button>
     </div>
     <div class="trends-intro">
-      不是「今日新闻总结」· 是 OPUS 看完雷达 ${itemsScanned} 条后给出的
+      不是「今日新闻总结」· 是 Daemonkey 看完雷达 ${itemsScanned} 条后给出的
       <strong>前瞻性思考 + 工作室视角</strong>——每个趋势都标了强度 + 可切入的角度 +
       可一键转化的动作。${isArchive ? `<br><span class="archive-hint">⏳ 当前查看的是 <b>${escHtml(archiveDay)}</b> 的归档趋势·不是最新版</span>` : ''}
     </div>
@@ -1035,7 +1033,7 @@ function renderTrends(data) {
     html += `
       <div class="dash-stub">
         <h3>还没生成趋势</h3>
-        <div>${escHtml((data && data.note) || '点"让 OPUS 重新看一遍"·OPUS 会读 radar.json·输出 3-5 个方向·约 30-60s')}</div>
+        <div>${escHtml((data && data.note) || '点"让 Daemonkey 重新看一遍"·Daemonkey 会读 radar.json·输出 3-5 个方向·约 30-60s')}</div>
       </div>`;
   } else {
     trends.forEach((t, idx) => {
@@ -1051,8 +1049,8 @@ function renderTrends(data) {
       ).join(' · ');
 
       // 操作按钮：永远有"写报告" + "深挖"·angles 各自有触发
-      const reportBtn = `<button class="trend-action ta-report" onclick="triggerTrendAction(${idx}, 'report')" title="OPUS 用 LLM 把这个趋势展开成 3000-4500 字 docx 报告"><i class="ri-article-fill"></i> 写报告</button>`;
-      const deepBtn = `<button class="trend-action ta-deep" onclick="deepDiveTrend(${idx})" title="让 OPUS 用 web_search + web_fetch 深挖这个趋势"><i class="ri-search-fill"></i> 深挖</button>`;
+      const reportBtn = `<button class="trend-action ta-report" onclick="triggerTrendAction(${idx}, 'report')" title="Daemonkey 用 LLM 把这个趋势展开成 3000-4500 字 docx 报告"><i class="ri-article-fill"></i> 写报告</button>`;
+      const deepBtn = `<button class="trend-action ta-deep" onclick="deepDiveTrend(${idx})" title="让 Daemonkey 用 web_search + web_fetch 深挖这个趋势"><i class="ri-search-fill"></i> 深挖</button>`;
       const angleBtns = angles.map(a => {
         const m = _ANGLE_LABELS[a];
         return `<button class="trend-action ${m.cls}" onclick="triggerTrendAction(${idx}, '${a}')" title="基于这个趋势 · 调 draft_studio domain=${a}">${m.icon} ${m.action}</button>`;
@@ -1090,7 +1088,7 @@ function renderTrends(data) {
 // 点知识库卡片标题 → 拉正文 → 弹窗预览 (markdown 渲染)
 
 // 卷八十一续 · 统一预览弹框渲染器 · 知识库/playbook/文件产物 共用一套骨架
-// (BRO 拍板: 别各处重写预览逻辑 · 弹框统一 · 以后改一处全生效)
+// (用户 拍板: 别各处重写预览逻辑 · 弹框统一 · 以后改一处全生效)
 // 2026-08-11 F1 (墨言审查): _showPreviewModal 的 keydown 防堆积 · 模块级单例
 let _previewModalKeyBound = false;
 
@@ -1122,12 +1120,17 @@ async function _kbAction(url, body) {
 // 卷三十三补丁 · 加载并渲染单份报告的预览
 
 function renderReportPreview(d) {
+  if (typeof renderShelfPreview === 'function') return renderShelfPreview(d);
   const name = d.name || '?';
   const meta = d.meta || {};
   const md = d.markdown || '';
   const hasMd = !!d.has_md_source;
   const note = d.note || '';
-  const dlUrl = `/reports/${encodeURIComponent(name)}?token=${encodeURIComponent(token || '')}`;
+  const isDeck = (d.kind === 'decks') || /\.pptx$/i.test(name);
+  const isSheet = (d.kind === 'sheets') || /\.xlsx$/i.test(name);
+  const rawDl = d.download_url || (isDeck ? `/presentations/${name}` : (isSheet ? `/spreadsheets/${name}` : `/reports/${name}`));
+  const dlUrl = `${rawDl}${rawDl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token || '')}`;
+  const dlLabel = isDeck ? '下载 pptx' : (isSheet ? '下载 xlsx' : '下载 docx');
 
   // 标题 / 副标题 / 受众 / 备注 / footer 渲染封面
   const coverBlock = (meta.title || meta.subtitle || meta.audience || meta.note) ? `
@@ -1145,14 +1148,16 @@ function renderReportPreview(d) {
 
   $dashView.innerHTML = `
     <div class="dash-head">
-      <h2>📖 ${escHtml(name)}</h2>
-      <button onclick="loadDashboard('reports')">← 返回报告库</button>
-      <a class="rp-dl-btn" href="${escHtml(dlUrl)}" download="${escHtml(name)}">下载 docx ↓</a>
+      <h2><i class="ri-eye-line"></i> ${escHtml(name)}</h2>
+      <button onclick="loadDashboard('reports')">← 返回产物库</button>
+      <a class="rp-dl-btn" href="${escHtml(dlUrl)}" download="${escHtml(name)}">${dlLabel}</a>
     </div>
     <div class="rp-meta-strip">
       ${hasMd
         ? '<span class="rp-src rp-src-md"><i class="ri-file-text-fill"></i> markdown 源</span>'
-        : '<span class="rp-src rp-src-extract"><i class="ri-error-warning-fill"></i> 旧报告 · 从 docx 反推的简陋版</span>'}
+        : (isDeck
+          ? '<span class="rp-src rp-src-extract"><i class="ri-error-warning-fill"></i> 没有 markdown 源</span>'
+          : '<span class="rp-src rp-src-extract"><i class="ri-error-warning-fill"></i> 旧报告 · 从 docx 反推的简陋版</span>')}
       ${note ? `<span class="rp-note">${escHtml(note)}</span>` : ''}
     </div>
     <article class="rp-body">
@@ -1169,7 +1174,7 @@ function renderReportPreview(d) {
 
 // 卷三十四 · 掘金机会卡片的"数字面板"——6 个评估字段可视化
 
-// 卷三十四 · "<i class="ri-search-fill"></i> 深挖" 按钮 · 让 OPUS 调 web_search + web_fetch 深挖某个点
+// 卷三十四 · "<i class="ri-search-fill"></i> 深挖" 按钮 · 让 Daemonkey 调 web_search + web_fetch 深挖某个点
 // 复用对话框 inject · 不引入新 endpoint · 让 LLM 自己规划 tool 调用
 
 // 掘金机会卡片"深挖"——从 idx 取 title 再调 deepDive
@@ -1178,24 +1183,24 @@ function renderReportPreview(d) {
 
 // 雷达条目"深挖"——直接传 title
 
-// 卷三十五 · self-evolve domain 的 radar 条目 → 让 OPUS 写心愿
+// 卷三十五 · self-evolve domain 的 radar 条目 → 让 Daemonkey 写心愿
 
-// 卷三十五 · self-evolve domain 的 opportunity → 让 OPUS 把它转成心愿
+// 卷三十五 · self-evolve domain 的 opportunity → 让 Daemonkey 把它转成心愿
 function wishFromOpp(oneBasedIdx) {
   const card = document.querySelector(`.opp-card[data-opp-idx="${oneBasedIdx}"]`);
   const title = card
     ? (card.getAttribute('data-opp-title') || `第 ${oneBasedIdx} 个机会`)
     : `第 ${oneBasedIdx} 个机会`;
   spawnTask(
-    `BRO 让你看一眼 self-evolve 域的掘金机会「${title}」——这其实是关于 OPUS 自己的成长。\n\n` +
+    `用户 让你看一眼 self-evolve 域的掘金机会「${title}」——这其实是关于 Daemonkey 自己的成长。\n\n` +
     `**这是邀请·你要自己判断**。请你：\n` +
     `1. 用 read_dashboard("opportunities") 把机会卡完整内容拉出来\n` +
     `2. 想清楚：\n` +
-    `   - OPUS 现状有没有这能力·缺哪一块\n` +
-    `   - 装上之后真正受益的是 BRO 哪个具体痛点 (而不是泛泛的"AI 升级")\n` +
+    `   - Daemonkey 现状有没有这能力·缺哪一块\n` +
+    `   - 装上之后真正受益的是 用户 哪个具体痛点 (而不是泛泛的"AI 升级")\n` +
     `   - 跟 Daemonkey 现有架构合拍吗\n` +
     `3. 明确表态:\n` +
-    `   - 值得装 → wish_add (title 改写成"OPUS 装 X" / why = 对 BRO 的具体价值 / source_kind=opportunity / source_ref=opp_id / design_sketch=2-3 步改造方案 / complexity / hours / cost / priority)\n` +
+    `   - 值得装 → wish_add (title 改写成"Daemonkey 装 X" / why = 对 用户 的具体价值 / source_kind=opportunity / source_ref=opp_id / design_sketch=2-3 步改造方案 / complexity / hours / cost / priority)\n` +
     `   - 不值得 → 说清为啥·不强 add\n` +
     `**你才是搭档**·拿出判断力。`,
     `勘察心愿: ${title}`
@@ -1298,7 +1303,7 @@ const RADAR_DOMAINS_META = {
   'super-individual':{ icon: '<i class="ri-rocket-fill"></i>', label: '超个体 / 创业', color: '#4fd1c5' },
   'game-money':      { icon: '🎮', label: '游戏掘金',     color: '#ed8936' },
   'wildcard':        { icon: '✨', label: '杂项观察',     color: '#fc8181' },
-  // 卷三十四 · self-evolve · OPUS 看 GitHub 同类工程的镜子
+  // 卷三十四 · self-evolve · Daemonkey 看 GitHub 同类工程的镜子
   'self-evolve':     { icon: '<i class="ri-tools-fill"></i>', label: '自我演化',     color: '#63b3ed' },
 };
 
@@ -1307,14 +1312,14 @@ let radarDomainFilter = localStorage.getItem('radar_domain_filter') || 'all';
 
 // ── 母体 chat.js:8646-8691 · DOMAIN_META 维度注册表 (renderDashboardStub 取 icon/label) ──
 const DOMAIN_META = {
-  // 工作室看板 · 起始屏 BI · 独立分组最上 (BRO 2026-08-06 拍板 · 它不是市场信息)
+  // 工作室看板 · 起始屏 BI · 独立分组最上 (用户 2026-08-06 拍板 · 它不是市场信息)
   bi:            { icon: '<i class="ri-dashboard-fill"></i>', label: '工作室看板', section: 'home', stub: false },
-  // 市场信息 · 外部信号 · Daemonkey 看世界的眼睛 · 不含 OPUS 自己的观察
+  // 市场信息 · 外部信号 · Daemonkey 看世界的眼睛 · 不含 Daemonkey 自己的观察
   radar:         { icon: '<i class="ri-radar-fill"></i>', label: '信息雷达', section: 'market', stub: false },
   trends:        { icon: '<i class="ri-line-chart-fill"></i>', label: '今日趋势', section: 'market', stub: false },
-  reports:       { icon: '<i class="ri-article-fill"></i>', label: '报告库',   section: 'market', stub: false },
+  reports:       { icon: '<i class="ri-archive-2-fill"></i>', label: '产物库',   section: 'market', stub: false },
   calendar:      { icon: '<i class="ri-calendar-fill"></i>', label: '信息日历', section: 'market', stub: false },
-  // 能力对照 · 内部决策 · 市场 × BRO 能力的交叉
+  // 能力对照 · 内部决策 · 市场 × 用户 能力的交叉
   opportunities: { icon: '<i class="ri-diamond-fill"></i>', label: '掘金机会', section: 'ability', stub: false },
   feasibility:   { icon: '<i class="ri-bar-chart-fill"></i>', label: '可行性分析', section: 'ability', stub: false },
   // 私有文档知识库 · 第二大脑 · 灌进来的资料喂掘金脑/可行性 · 与掘金同组让"资料→决策"这条线可见
@@ -1322,34 +1327,34 @@ const DOMAIN_META = {
   // 出品工坊 · 产品生产
   // 卷四十四 K stage 2a · 4 老维度 (content/design/dev/docs) 收进工坊主页"<i class="ri-archive-fill"></i> 应用"tab
   // 它们的 dashboard 端点 GET /dashboard/<id> 仍然有效 (workshop 内部 fetch 直拉)
-  // 但 NAV_GROUPS 没 'apps' 组 · 所以从左导航 hidden · 跟 BRO 当前需求一致
+  // 但 NAV_GROUPS 没 'apps' 组 · 所以从左导航 hidden · 跟 用户 当前需求一致
   workshop:  { icon: '<i class="ri-magic-fill"></i>', label: '出品工坊', section: 'studio', stub: false },
   content:   { icon: '<i class="ri-film-fill"></i>', label: '内容制作', section: 'apps', stub: false },
   design:    { icon: '<i class="ri-palette-fill"></i>', label: '产品设计', section: 'apps', stub: false },
   dev:       { icon: '<i class="ri-terminal-box-fill"></i>', label: '产品开发', section: 'apps', stub: false },
   docs:      { icon: '<i class="ri-file-text-fill"></i>', label: '文档撰写', section: 'apps', stub: false },
-  // 用户运营 · 客户档案(合伙人记得每个客户 · notes 进记忆 · 资料可挂到客户名下)
-  clients:   { icon: '<i class="ri-contacts-book-2-fill"></i>', label: '客户档案', section: 'ops', stub: false },
+  // 客户档案跟正在跑的事一块 · 用户运营占位 2026-09-03 撤出侧栏
+  clients:   { icon: '<i class="ri-contacts-book-2-fill"></i>', label: '客户档案', section: 'execution', stub: false },
   service:   { icon: '<i class="ri-team-fill"></i>', label: '用户运营', section: 'ops', stub: true,
-               note: '等先有产品再做用户运营' },
-  // 执行落地 · 卷三十三 · 闭环反馈独立维度 · 卷三十三补丁 · OPUS 日记搬这里
-  //   因为"OPUS 对 BRO 的观察"跟"BRO 真正在跑的项目"是同一码事——
+               navHidden: true, note: '侧栏已撤 · 等先有产品再开' },
+  // 执行落地 · 卷三十三 · 闭环反馈独立维度 · 卷三十三补丁 · Daemonkey 日记搬这里
+  //   因为"Daemonkey 对 用户 的观察"跟"用户 真正在跑的项目"是同一码事——
   //   都是「自我视角」·跟外部信号（radar/trends/reports）分开
   execution:     { icon: '<i class="ri-refresh-fill"></i>', label: '执行反馈', section: 'execution', stub: false },
   scheduled_tasks: { icon: '<i class="ri-timer-2-fill"></i>', label: '定时任务', section: 'execution', stub: false },
   favorites:     { icon: '<i class="ri-star-fill"></i>', label: '收藏夹',   section: 'execution', stub: false },
   // ── 成长档案 (depot hub) · 把 日记/心愿/沉淀位/技能库 并成一个入口 · 内部标签切换 ──
-  // 这 4 个本就是「OPUS 自己积累/沉淀的东西」· 并成一栏减少侧边栏拥挤 (BRO 2026-07-11)
-  // 2026-08-06 · BRO 拍板: 成长档案挪「总览」分组 (执行落地=BRO 正在跑的事·成长档案=OPUS 自我成长·两者不同层)
+  // 这 4 个本就是「Daemonkey 自己积累/沉淀的东西」· 并成一栏减少侧边栏拥挤 (用户 2026-07-11)
+  // 2026-08-06 · 用户 拍板: 成长档案挪「总览」分组 (执行落地=用户 正在跑的事·成长档案=Daemonkey 自我成长·两者不同层)
   // 子维度 navHidden · 不单独占导航位 · 但 DOMAIN_META 条目保留 · loadDepot 仍复用它们的 render fn
   depot:         { icon: '<i class="ri-seedling-fill"></i>', label: '成长档案', section: 'home', stub: false },
-  cognition:     { icon: '<i class="ri-brain-fill"></i>', label: 'OPUS 日记', section: 'home', stub: false, navHidden: true },
-  // 卷三十五 · OPUS 自我演化心愿单 · "我想装这个能力"
-  wishlist:      { icon: '<i class="ri-lightbulb-fill"></i>', label: 'OPUS 心愿', section: 'home', stub: false, navHidden: true },
+  cognition:     { icon: '<i class="ri-brain-fill"></i>', label: 'Daemonkey 日记', section: 'home', stub: false, navHidden: true },
+  // 卷三十五 · Daemonkey 自我演化心愿单 · "我想装这个能力"
+  wishlist:      { icon: '<i class="ri-lightbulb-fill"></i>', label: 'Daemonkey 心愿', section: 'home', stub: false, navHidden: true },
   sinks:         { icon: '<i class="ri-archive-drawer-fill"></i>', label: '沉淀位',   section: 'home', stub: false, navHidden: true },
   // 技能库 · playbook 沉淀查看器 · 灌/召回仍走 NLP·这里只读+可删
   playbooks:     { icon: '<i class="ri-tools-fill"></i>', label: '技能库', section: 'home', stub: false, navHidden: true },
-  // 插件库 · 能力扩展 · OPUS 自己用产品开发能写新插件回填这里
+  // 插件库 · 能力扩展 · Daemonkey 自己用产品开发能写新插件回填这里
   plugins:   { icon: '<i class="ri-puzzle-fill"></i>', label: '插件库', section: 'plugins', stub: false },
 };
 
@@ -1377,13 +1382,13 @@ function injectAndSend(text) {                          // BI 卡片一键回填
 // ═══════════════════════════════════════════
 //  卷五十八续 VIII · A/B/C 卡加载器 (D 节律时间线在 biHeatRender 里填)
 // ═══════════════════════════════════════════
-// A·OPUS 眼里的你 · 市场能力镜像快照 (填"照完即孤岛"的洞)
+// A·Daemonkey 眼里的你 · 市场能力镜像快照 (填"照完即孤岛"的洞)
 
-// B·闭环温度计 · 哪些 OPUS 输出还在等 BRO 反应
+// B·闭环温度计 · 哪些 Daemonkey 输出还在等 用户 反应
 
-// C·OPUS 自况 · token / 会话 / 在线 (拉现有端点·不加后端)
+// C·Daemonkey 自况 · token / 会话 / 在线 (拉现有端点·不加后端)
 // wish-bec4f3b9 · 模型计费卡 (原型 dashboard-billing-proto 完整形态 · 价格表 × 用量 → 钱)
-// 默认今日 · BRO 刷新看到的是当天数据 · 要更多自己切 7天/30天
+// 默认今日 · 用户 刷新看到的是当天数据 · 要更多自己切 7天/30天
 let _biBillingRange = 'today';
 // 模型切换「展开更多」(2026-08-20 · 默认 5 条 · 跟缓存经济性卡对齐)
 
@@ -1427,7 +1432,7 @@ async function biHeatLoad() {
   biBriefLoad();  // 研判卡片跟着同月同领域 (读缓存·不烧 token)
 }
 
-// 0-100 价值分 → 1-5 星等级 (BRO 2026-06-03 · 几百几千没法读·星级一眼懂热度等级)
+// 0-100 价值分 → 1-5 星等级 (用户 2026-06-03 · 几百几千没法读·星级一眼懂热度等级)
 // 阈值按 info_value 真实分布标定: BASE10 + 源6~22 + 新鲜0~20 + 反馈±·没反馈的新鲜好文 ~50。
 // 若按 85/65 切·几乎全挤在 2-3★、5★ 永不出现 → 星级失效。 这里压低让内容铺满 1-5★:
 //   5★(≥70)=⭐/👍 加持的真精品  4★(≥48)=顶级源新鲜文  3★(≥34)=新鲜常规
@@ -1448,7 +1453,7 @@ let _biTipEl = null;
 
 
 // ── 信号流 ──
-// 信号流状态 · 存原始数据 + 领域筛选 + 今日开关 (BRO 2026-06-03 · 纯前端过滤·不重新 fetch)
+// 信号流状态 · 存原始数据 + 领域筛选 + 今日开关 (用户 2026-06-03 · 纯前端过滤·不重新 fetch)
 const _biSig = { trends: [], radar: [], domain: 'all', todayOnly: false };
 
 
@@ -1459,9 +1464,9 @@ const _biSig = { trends: [], radar: [], domain: 'all', todayOnly: false };
 // 信号流领域 tab · 跟热力图同款 .bi-heat-dom · 按当前池里实际出现的领域动态生成
 
 
-// 点信号流条目 → 新标签打开原文 (radar 条目带 url·trend 无原文不可点) ·BRO 2026-06-03
+// 点信号流条目 → 新标签打开原文 (radar 条目带 url·trend 无原文不可点) ·用户 2026-06-03
 
-// ── 信号流高度跟随热力卡 (BRO 2026-06-03 · 正方形格子 + 完美对齐的关键) ──
+// ── 信号流高度跟随热力卡 (用户 2026-06-03 · 正方形格子 + 完美对齐的关键) ──
 //   热力图格子保持正方形·高度随卡片宽度等比变 (分辨率/对话栏宽度都会变)。
 //   纯 CSS 没法让"另一张卡跟随这张卡的高度"·所以用 ResizeObserver 盯热力卡·
 //   把信号流卡的 height 实时设成跟它一样·信号流内部滚动 → 两卡严格等高·底部对齐·谁都不留空。
@@ -1469,7 +1474,7 @@ let _biSigRO = null;
 
 // ── chart.js (defer 本地加载) 就绪等待器 ──
 // 卷五十六 · 2026-06-03 修: chart.umd.min.js 改 defer 后 · BI 首次渲染可能早于 Chart 就绪。
-//   旧逻辑"没就绪就静默 return" → 之后无人重渲 → 雷达/环形图永久空白 (BRO 实测撞到)。
+//   旧逻辑"没就绪就静默 return" → 之后无人重渲 → 雷达/环形图永久空白 (用户 实测撞到)。
 //   改成: 没就绪就挂起 · 轮询等 Chart 到位 (最多 ~6s) · 一到位补渲一次。空白根治。
 
 // ── 雷达密度柱状图 ──
@@ -1480,10 +1485,10 @@ let biChartDonutInst = null;
 
 // ── 最近动态 ──
 
-// 卷四十六续 10 · BI 看板"今日动态" digest 卡 (BRO 候选 E)
+// 卷四十六续 10 · BI 看板"今日动态" digest 卡 (用户 候选 E)
 
 
-// 卷三十四 · OPUS 自主巡航 banner · 一键跑 radar→trends→opps
+// 卷三十四 · Daemonkey 自主巡航 banner · 一键跑 radar→trends→opps
 
 function renderOppCard(o) {
   const fitIcon = { yes: '<i class="ri-checkbox-circle-fill"></i>', maybe: '<i class="ri-error-warning-fill"></i>', no: '<i class="ri-close-circle-fill"></i>' }[o.fit] || '?';
@@ -1499,7 +1504,7 @@ function renderOppCard(o) {
         <span class="bi-opp-rec">${stars}</span>
       </div>
       <div class="bi-opp-meta">
-        <span title="BRO 适配度">${fitIcon} ${o.fit || '?'}</span>
+        <span title="用户 适配度">${fitIcon} ${o.fit || '?'}</span>
         <span title="投入预估">⏱️ ${effortLabel}</span>
         <span title="收益级别">📈 ${upsideLabel}</span>
       </div>

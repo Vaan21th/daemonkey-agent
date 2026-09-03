@@ -29,7 +29,7 @@ import logging
 import re
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -289,7 +289,7 @@ _INJECT_LOG_PATH = None
 def _inject_log_path() -> Path:
     global _INJECT_LOG_PATH
     if _INJECT_LOG_PATH is None:
-        _INJECT_LOG_PATH = Path("data/runtime/inject_log.jsonl")
+        _INJECT_LOG_PATH = ROOT / "data" / "runtime" / "inject_log.jsonl"  # B-① · 相对 cwd → ROOT 绝对 (Grok 全量审计)
         try:
             _INJECT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         except Exception:
@@ -1054,6 +1054,8 @@ _CARE_SIGNALS = (
     "心累", "压抑", "压力好大", "压力大", "崩溃", "想哭", "扛不住", "撑不住",
     # 大生活节点
     "生日", "过生日", "搬家", "结婚", "领证", "出差", "老家", "回老家",
+    # 人事 / 当场在意的事 (咖啡边桌要的不只是「累」)
+    "吵架", "吵了一架", "和同事", "跟同事", "被骂", "委屈", "闹别扭",
 )
 _CARE_CONTEXT = (
     "在吗", "在么", "在不在", "早", "早安", "早上好", "中午好", "下午好", "晚上好", "晚安",
@@ -1205,7 +1207,8 @@ def care_followup_hint(message: str) -> str:
     items = d.get("items") or []
     if not items:
         return ""
-    now = datetime.now(timezone.utc)
+    # B-② · 2026-08-27 · 固定 UTC+8 日历日 (跟 BRO 时区一致) · 原来 UTC 凌晨会晚一天 (Grok 全量审计)
+    now = datetime.now(timezone(timedelta(hours=8)))
     today = now.strftime("%Y-%m-%d")
     if d.get("last_nudge_date") == today:
         return ""       # 一天全局最多关心一次(被动+主动共享)

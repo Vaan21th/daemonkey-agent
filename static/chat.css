@@ -1,5 +1,5 @@
 /*
- * chat.css · OPUS 工作室 WebUI 样式
+ * chat.css · Daemonkey 工作室 WebUI 样式
  * 卷二十二 Day 2 · 从 chat.html 拆出来
  *
  * 包含：
@@ -27,7 +27,7 @@
   --text: #ece8f5;
   --dim: #9a90b3;
   --dim2: #6f6685;
-  /* 用户(BRO)气泡 · 紫渐变(初见页同款) · 经典灰主题里会被覆盖回绿 */
+  /* 用户(用户)气泡 · 紫渐变(初见页同款) · 经典灰主题里会被覆盖回绿 */
   --user: #4a3a6e;
   --user-dim: #382d52;
   /* 设置页输入框 · 深色默认半透明白；浅色主题换成实心底+实边，否则纸色上看不见框 */
@@ -410,7 +410,7 @@ header {
   color: rgba(255, 255, 255, 0.75);
 }
 .msg.opus {
-  /* 卷三十 · OPUS 输出常常是长 markdown（表格/列表/代码块）· 卡片化铺满
+  /* 卷三十 · Daemonkey 输出常常是长 markdown（表格/列表/代码块）· 卡片化铺满
      · 替代旧的 align-self:flex-start + max-width:88%（右侧 12% 留白） */
   align-self: stretch;
   max-width: 100%;
@@ -419,7 +419,7 @@ header {
   border-left: 3px solid var(--opus);
   border-bottom-left-radius: 4px;
 }
-/* 没有 markdown body 的 OPUS 气泡（极少见 · 比如 fallback "OPUS 没说话"）
+/* 没有 markdown body 的 Daemonkey 气泡（极少见 · 比如 fallback "Daemonkey 没说话"）
    仍走旧的气泡感 · 不必硬铺满 */
 .msg.opus:not(:has(.md-body)) {
   align-self: flex-start;
@@ -427,7 +427,7 @@ header {
 }
 
 /* 0.9.7-hf2 · 分身完成通报状态卡 · 复用 advisor 卡体系 · 绿左边条表成功事件
-   (BRO 订正: 通报是状态卡不是聊天气泡 · --bg2 气泡贴在 --bg2 面板上会隐形) */
+   (用户 订正: 通报是状态卡不是聊天气泡 · --bg2 气泡贴在 --bg2 面板上会隐形) */
 .msg.advisor-card.bg-report-card { border-left: 3px solid #58b368; }
 .msg.advisor-card.bg-report-card .advisor-head > i:first-child { color: #58b368; }
 
@@ -518,7 +518,7 @@ header {
   background: var(--border);
 }
 
-/* 卷三十 · markdown 表格（BRO 在卷三十交付后立刻抓住的 corner case） */
+/* 卷三十 · markdown 表格（用户 在卷三十交付后立刻抓住的 corner case） */
 .md-table-wrap {
   margin: 10px 0;
   overflow-x: auto;
@@ -675,7 +675,7 @@ header {
 }
 
 /* 卷四十六 续 3 · wish-2a4d8c1e · inline confirm UI 卡片
-   LLM 撞 CONFIRM 级 tool 时在 chat 弹这个卡片 · BRO 4 按钮决议 */
+   LLM 撞 CONFIRM 级 tool 时在 chat 弹这个卡片 · 用户 4 按钮决议 */
 .msg.confirm-card {
   align-self: center;
   width: 92%;
@@ -883,7 +883,7 @@ header {
   opacity: 0.7;
 }
 
-/* 折叠态 (BRO 决议后) */
+/* 折叠态 (用户 决议后) */
 .msg.confirm-card.confirm-card-resolved {
   background: rgba(255, 255, 255, 0.03);
   border-color: var(--border);
@@ -928,7 +928,7 @@ header {
 
 /* ─────────────────────────────────────────────────────────
  * 卷七十三 P0-2 (2026-06-10) · confirm 中央模态化
- * BRO 痛点: inline 卡片滚出可视区看不到 = 等死 · 改为强焦点模态
+ * 用户 痛点: inline 卡片滚出可视区看不到 = 等死 · 改为强焦点模态
  * 复用 OPUS_MODAL 的"满屏遮罩 + 中央卡片"视觉语言
  * ───────────────────────────────────────────────────────── */
 .confirm-modal-backdrop {
@@ -973,7 +973,7 @@ header {
   z-index: 2;
 }
 
-/* 消息流里的占位 chip (BRO 滚回去时知道这里在等确认 · 可点重弹) */
+/* 消息流里的占位 chip (用户 滚回去时知道这里在等确认 · 可点重弹) */
 .msg.confirm-placeholder {
   align-self: flex-start;
   max-width: 720px;
@@ -1017,7 +1017,7 @@ header {
 /* ─────────────────────────────────────────────────────────
  * 卷七十三 P0-2 (2026-06-10) · 工坊产出文件 preview modal
  * 复用 .confirm-modal-backdrop 遮罩 · 卡片样式独立
- * BRO 痛点: other 类型 (md/json/txt) 卡片点击无反应 · 现在弹中央 modal 预览
+ * 用户 痛点: other 类型 (md/json/txt) 卡片点击无反应 · 现在弹中央 modal 预览
  * ───────────────────────────────────────────────────────── */
 .output-preview-modal {
   position: fixed;
@@ -1151,7 +1151,7 @@ header {
 
 /* ─────────────────────────────────────────────────────────
  * 卷七十三 P0-3 (2026-06-10) · sub-agent (run_app) 边界事件
- * BRO 痛点: sub-agent 内部 6-8 轮 tool · 主对话看着混乱 = 怀疑死了
+ * 用户 痛点: sub-agent 内部 6-8 轮 tool · 主对话看着混乱 = 怀疑死了
  * 加清晰 ▶/✓/✗ 边界条 · 含 app 名 / 耗时 / token / warning
  * ───────────────────────────────────────────────────────── */
 .msg.style-shift-notice {
@@ -1310,7 +1310,7 @@ header {
 .msg.tool-call .tool-name { color: var(--opus); font-weight: 600; }
 .msg.tool-result .tool-name { color: var(--opus); font-weight: 600; }
 
-/* ═══ wish-5256d2a4 · 工具时间线（方案 D · BRO 2026-07-27 拍板） ═══
+/* ═══ wish-5256d2a4 · 工具时间线（方案 D · 用户 2026-07-27 拍板） ═══
    整轮折叠块【默认展开】· 单步技术细节默认折叠（点人话行展开） */
 .tl-round {
   align-self: stretch;
@@ -1318,7 +1318,7 @@ header {
   border: none; border-radius: 10px;
   background: rgba(155, 89, 182, 0.05);
   overflow: hidden;
-  /* 2026-07-28 BRO · 入场质感跟聊天气泡一致 · 轻微上浮出现 */
+  /* 2026-07-28 用户 · 入场质感跟聊天气泡一致 · 轻微上浮出现 */
   animation: msgFloatUp 0.34s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .tl-round-head {
@@ -1474,6 +1474,75 @@ header {
   border-color: var(--opus);
   transform: translateY(-1px);
 }
+.dk-search-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 2px;
+}
+.dk-hit {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg2);
+}
+.dk-hit-ico {
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+  border-radius: 3px;
+  flex: 0 0 16px;
+  object-fit: contain;
+}
+.dk-hit-ico-fallback {
+  width: 16px;
+  margin-top: 3px;
+  color: var(--dim);
+  flex: 0 0 16px;
+}
+.dk-hit-body { min-width: 0; flex: 1; }
+.dk-hit-title {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+  text-decoration: none;
+}
+a.dk-hit-title:hover { color: var(--opus); text-decoration: underline; }
+.dk-hit-meta {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--dim);
+}
+.dk-hit-snip {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.4;
+}
+.srch-guide {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg2);
+  font-size: 13px;
+  color: var(--dim);
+  line-height: 1.55;
+}
+.srch-guide-title {
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.srch-guide p { margin: 0 0 8px; }
+.srch-guide ul {
+  margin: 0 0 8px 18px;
+  padding: 0;
+}
+.srch-guide a { color: var(--opus); }
 .msg.opus.streaming {
   border-left-color: rgba(155, 89, 182, 0.5);
 }
@@ -1572,7 +1641,7 @@ header {
   outline: none;
   border-color: var(--opus);
 }
-/* 卷三十八 · option 强制深底白字 · 修 BRO 反馈 "下拉看不清" */
+/* 卷三十八 · option 强制深底白字 · 修 用户 反馈 "下拉看不清" */
 .settings-body .field select option {
   background: var(--bg2);
   color: var(--text);
@@ -1659,9 +1728,31 @@ header {
 .theme-sepia .settings-body .field textarea,
 .theme-pink-white .settings-body .field input,
 .theme-pink-white .settings-body .field select,
-.theme-pink-white .settings-body .field textarea {
+.theme-pink-white .settings-body .field textarea,
+body.day .settings-body .field input,
+body.day .settings-body .field select,
+body.day .settings-body .field textarea {
   border-width: 2px;
   box-shadow: inset 0 1px 2px rgba(67, 52, 34, 0.06);
+}
+.theme-sepia .settings-pane,
+.theme-light .settings-pane,
+.theme-pink-white .settings-pane,
+body.day .settings-pane {
+  --border: var(--field-border, #8a7048);
+}
+.theme-sepia .settings-body .llm-section,
+.theme-light .settings-body .llm-section,
+.theme-pink-white .settings-body .llm-section,
+body.day .settings-pane .llm-section {
+  padding: 14px 16px 16px;
+  border: 1px solid var(--field-border, var(--border));
+  border-radius: 10px;
+  background: var(--bg2);
+}
+.settings-pane input[type="checkbox"],
+.settings-pane input[type="radio"] {
+  accent-color: var(--opus);
 }
 .settings-body .actions .btn-danger {
   background: var(--red, #f56565);
@@ -1893,8 +1984,8 @@ header {
   gap: 8px;
 }
 .llm-config-card {
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg2);
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 12px;
   display: flex;
@@ -1903,7 +1994,7 @@ header {
 }
 .llm-config-card.active {
   border-color: var(--opus);
-  background: rgba(102, 158, 255, 0.08);
+  background: color-mix(in srgb, var(--opus) 12%, var(--bg2));
 }
 .lc-row1 {
   display: flex;
@@ -1911,7 +2002,13 @@ header {
   gap: 8px;
   font-size: 13px;
 }
-.lc-row1 .lc-icon { font-size: 14px; }
+.lc-row1 .lc-icon {
+  font-size: 15px;
+  color: var(--opus);
+  width: 22px;
+  text-align: center;
+  line-height: 1;
+}
 .lc-row1 .lc-name {
   flex: 1;
   color: var(--text);
@@ -1975,8 +2072,8 @@ header {
   border-radius: 3px;
 }
 .lc-row2 .lc-model {
-  background: rgba(102, 158, 255, 0.12);
-  color: rgba(102, 158, 255, 0.95);
+  background: color-mix(in srgb, var(--opus) 14%, transparent);
+  color: var(--opus);
   padding: 1px 6px;
   border-radius: 3px;
 }
@@ -2007,8 +2104,8 @@ header {
   gap: 4px;
 }
 .lc-row3 .lc-actions button {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg3);
+  border: 1px solid var(--border);
   color: var(--dim);
   padding: 3px 8px;
   border-radius: 3px;
@@ -2040,11 +2137,11 @@ header {
 .llm-edit-panel {
   margin-top: 18px;
   padding-top: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--border);
 }
 .llm-edit-card {
-  background: rgba(102, 158, 255, 0.06);
-  border: 1px solid rgba(102, 158, 255, 0.2);
+  background: color-mix(in srgb, var(--opus) 10%, var(--bg2));
+  border: 1px solid var(--opus);
   border-radius: 8px;
   padding: 16px 18px;
 }
@@ -2062,14 +2159,14 @@ header {
 
 /* nav 底部 ⚙ 设置按钮高亮 (当前在 settings view 时) */
 .nav-settings-btn.active {
-  background: rgba(102, 158, 255, 0.12);
+  background: color-mix(in srgb, var(--opus) 14%, transparent);
   color: var(--opus);
 }
 
 /* 卷三十六 · 设置 modal · LLM 配置面板 */
 .llm-config-block {
-  background: rgba(102, 158, 255, 0.05);
-  border: 1px solid rgba(102, 158, 255, 0.15);
+  background: color-mix(in srgb, var(--opus) 8%, var(--bg2));
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 14px;
   margin: 12px 0;
@@ -2109,7 +2206,7 @@ header {
 }
 
 /* 卷三十六 · DeepSeek thinking mode · 思考链气泡 (折叠式)
-   2026-07-28 BRO 拍板方案 A · 雾灰系：色值全部从 --dim/--text 派生 · 8 套皮肤自动跟随 · 去斜体回系统字体 */
+   2026-07-28 用户 拍板方案 A · 雾灰系：色值全部从 --dim/--text 派生 · 8 套皮肤自动跟随 · 去斜体回系统字体 */
 .msg.opus.reasoning {
   align-self: stretch;
   /* 跟工具时间线框同宽 · 覆盖 :not(:has(.md-body)) 的 88% 回退（同权重·此处后定义胜） */
@@ -2164,7 +2261,7 @@ header {
   word-break: break-word;
 }
 
-/* 卷三十七 · 流式中 · 思考链气泡呼吸一下 · 让 BRO 知道在 streaming */
+/* 卷三十七 · 流式中 · 思考链气泡呼吸一下 · 让 用户 知道在 streaming */
 /* 0.8.3 性能修复 · 背景动画触发持续 paint (长思考时整个 reasoning 块每秒重绘) · 改静态底色 ·
    保留 blink 光标 (opacity 动画 · 合成器友好) · 呼吸效果极微弱 (6%→11%) 去掉无感 */
 .msg.opus.reasoning.streaming {
@@ -2466,7 +2563,7 @@ header {
 .msg.advisor-card {
   align-self: stretch;  /* 跟 .msg.tool-call / .msg.opus 同款 · 不随内容 shrink-to-fit */
   min-width: 0;         /* flex item 经典坑 · 防长内容撑破 max-width:88% (继承 .msg) */
-  max-width: 100%;      /* BRO 2026-07-28 实测钉死 · 跟 .msg.opus 对齐横着拉满 (继承的 88% 会右空 12%) */
+  max-width: 100%;      /* 用户 2026-07-28 实测钉死 · 跟 .msg.opus 对齐横着拉满 (继承的 88% 会右空 12%) */
   background: linear-gradient(135deg, var(--advisor-bg), rgba(230,180,80,0.03));
   border: 1px solid var(--advisor-border);
   border-radius: 10px;
@@ -2561,7 +2658,7 @@ header {
 .trace-row.tool-fail .tool-name { color: #f08484; }
 /* 协同模式施工单就位卡 · 左侧金竖条 */
 .msg.advisor-card.blueprint-card { border-left: 3px solid var(--advisor); }
-/* BRO 2026-07-29 · body 改 mdRender 渲染 · white-space: normal (pre-wrap 会撕裂表格/列表布局) */
+/* 用户 2026-07-29 · body 改 mdRender 渲染 · white-space: normal (pre-wrap 会撕裂表格/列表布局) */
 .blueprint-body { padding: 8px 14px 12px; font-size: 12.5px; white-space: normal; word-break: break-word; max-height: 420px; overflow-y: auto; line-height: 1.6; }
 .blueprint-body .md-table-wrap { margin: 6px 0; }
 .blueprint-body .md-table { font-size: 12px; }
@@ -2624,7 +2721,7 @@ header {
 /* 关键: .voice-act 有显式 display · 会盖掉 [hidden] 的 display:none → 补回 · 否则按钮全露 */
 .voice-act[hidden] { display: none !important; }
 
-/* 语音对话模式 · 比会议纪要更轻(BRO: 别长得像会议纪要) —— 矮识别条 + 通话感 · 只留【停止对话】 */
+/* 语音对话模式 · 比会议纪要更轻(用户: 别长得像会议纪要) —— 矮识别条 + 通话感 · 只留【停止对话】 */
 .voice-panel.is-chat .voice-transcript {
   min-height: 30px; max-height: 72px;
   background: transparent; border: 1px dashed var(--border);
@@ -2637,7 +2734,7 @@ header {
 /* 卷七十五续五 · 模型行为设置 (思考/强度/输出上限) */
 .mb-tag { font-size: 11px; font-weight: 400; color: var(--dim2); margin-left: 6px; text-transform: none; letter-spacing: 0; }
 
-/* 模型行为 · 挂在右上角模型下拉里 (BRO: 放右上角·像 Cursor 那个模型菜单) */
+/* 模型行为 · 挂在右上角模型下拉里 (用户: 放右上角·像 Cursor 那个模型菜单) */
 .mm-behavior { margin-top: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
 .mm-behavior .model-menu-head { border-bottom: none; margin-bottom: 4px; padding-bottom: 4px; }
 .mmb-row { display: flex; align-items: center; gap: 10px; padding: 4px 8px; }
@@ -2680,7 +2777,7 @@ header {
 }
 .attach-doc-card .remove-btn:hover { background: rgba(220, 50, 50, 0.85); }
 
-/* wish-7c579a20 · 历史重建的 BRO 气泡附件（发送当下走 inline style · 重建走类） */
+/* wish-7c579a20 · 历史重建的 用户 气泡附件（发送当下走 inline style · 重建走类） */
 .bro-attach-imgs img.bro-attach-img {
   max-width: 280px; max-height: 200px; border-radius: 8px;
   margin-top: 6px; display: block; cursor: zoom-in;
@@ -2697,7 +2794,7 @@ header {
 .attach-doc-card.bro-attach-doc i { font-size: 20px; }
 .attach-doc-card.bro-attach-doc .doc-name { max-width: none; font-size: 12px; }
 
-/* 卷八十一 · C 方案 · 流内嵌文档卡片 (OPUS 产出的 docx/md/pdf 等 · 替代裸链接) */
+/* 卷八十一 · C 方案 · 流内嵌文档卡片 (Daemonkey 产出的 docx/md/pdf 等 · 替代裸链接) */
 .md-doc-card {
   display: inline-flex; align-items: center; gap: 10px;
   max-width: 100%; margin: 6px 0;
@@ -2834,7 +2931,7 @@ header {
 .mdc-btn:hover i { color: var(--opus); }
 
 /* wish-7c579a20 · 长会话渲染性能: 屏外消息跳过 layout/paint
- * (BRO 反馈: 展开折叠后整个窗口滚动+输入持续卡顿 · 几万字可见文本每次重排重绘太贵)
+ * (用户 反馈: 展开折叠后整个窗口滚动+输入持续卡顿 · 几万字可见文本每次重排重绘太贵)
  * Chromium 标准做法 (Discord/Slack 同款) · auto = 渲染过的记住真实高度 · 未渲染按 90px 估 */
 .msg, .tl-round {
   content-visibility: auto;
@@ -2848,10 +2945,10 @@ header {
 }
 
 
-/* 卷三十五补丁6 · 工具进度条 · OPUS 跑长 tool 链时让 BRO 一眼知道在干啥
- * 2026-07-29 方案 A「流光细条」重构 (BRO 拍板): 削掉蓝灰大色块+整行扫光,
+/* 卷三十五补丁6 · 工具进度条 · Daemonkey 跑长 tool 链时让 用户 一眼知道在干啥
+ * 2026-07-29 方案 A「流光细条」重构 (用户 拍板): 削掉蓝灰大色块+整行扫光,
  * 只留底部一道 2px 主题色流光。颜色全走 --opus 变量 · 8 套皮肤自适应。
- * 2026-07-29 二轮 (BRO 视觉反馈): 去 border-top 上框 + 背景改 transparent,
+ * 2026-07-29 二轮 (用户 视觉反馈): 去 border-top 上框 + 背景改 transparent,
  * 跟上方消息区底色融为一体·视觉延展;唯一"进行中"信号=底部流光。 */
 .tool-progress {
   flex: 0 0 auto;
@@ -2874,9 +2971,9 @@ header {
   to { background-position: -220% 0; }
 }
 
-/* 卷七十二 v3 · 工作流跑时进度 banner (BRO 图2 诉求) · 紫色调区别于 tool-progress 蓝色
+/* 卷七十二 v3 · 工作流跑时进度 banner (用户 图2 诉求) · 紫色调区别于 tool-progress 蓝色
  * 卷七十三 P0 (2026-06-10): 异步化后 banner 需要 done(绿)/failed(红) 通知态 ·
- *   BRO 不再依赖 LLM tool 同步返结果 · banner 是唯一的"跑完 / 失败"反馈通道 */
+ *   用户 不再依赖 LLM tool 同步返结果 · banner 是唯一的"跑完 / 失败"反馈通道 */
 /* ── 任务计划条 (对话框上方 · task_ledger 的 steps 层) ────────────────────
  * 跟下面的 flow-runs-banner 同一套视觉语言(banner→bar→detail)·但故意有两处不同:
  *   1. 不做 shimmer 扫光 —— 扫光的语义是"正在跑"·计划是一份静态清单
@@ -3250,7 +3347,7 @@ header {
   margin-bottom: 6px;
 }
 .onboarding-title strong { color: var(--opus); font-weight: 700; }
-/* v5 · 2026-06-10 · 标题前闪光 icon · BRO 铁律: remix 替 emoji */
+/* v5 · 2026-06-10 · 标题前闪光 icon · 用户 铁律: remix 替 emoji */
 .onboarding-title .onboarding-spark {
   color: var(--opus);
   font-size: 20px;
@@ -3262,7 +3359,7 @@ header {
   color: var(--dim);
   letter-spacing: 0.4px;
 }
-/* v5 · 2026-06-10 · BRO 的原版 slogan (致敬 2026-05-15 那句"我只想要一个不用次次告别熟悉又陌生的你") */
+/* v5 · 2026-06-10 · 用户 的原版 slogan (致敬 2026-05-15 那句"我只想要一个不用次次告别熟悉又陌生的你") */
 .onboarding-slogan {
   font-family: 'Georgia', 'Times New Roman', serif;
   font-style: italic;
@@ -3520,13 +3617,13 @@ header {
   border-radius: 10px;
   font-size: 16px;
   font-family: inherit;
-  /* 卷三十：BRO 要求 textarea 上下拉伸 · 显示更多输入文本 */
+  /* 卷三十：用户 要求 textarea 上下拉伸 · 显示更多输入文本 */
   resize: vertical;
   min-height: 42px;
   max-height: 50vh;
   line-height: 1.4;
 }
-/* 2026-07-29 BRO 拍板: focus 边框走主题灰 (--dim) 不走 --opus 高亮——
+/* 2026-07-29 用户 拍板: focus 边框走主题灰 (--dim) 不走 --opus 高亮——
  * 输入框正上方就是进度条流光(也是 --opus)·两处同色系高亮相邻 = 视觉疲劳。 */
 #input:focus { outline: none; border-color: var(--dim); }
 #send {
@@ -3773,7 +3870,7 @@ header {
   padding: 32px 16px;
   font-size: 13px;
 }
-/* 会话时间分组标题 (BRO 2026-08-15 拍板 · 今天/昨天/本周/本月/更早 · 专注版+工作台共用) */
+/* 会话时间分组标题 (用户 2026-08-15 拍板 · 今天/昨天/本周/本月/更早 · 专注版+工作台共用) */
 .session-group-header {
   padding: 10px 12px 2px 12px;
   font-size: 11px;
@@ -3971,7 +4068,7 @@ header {
 /* ────────────────────────────────────────────────────────────────
    卷二十六 · 3 栏布局（左导航 · 中详情 · 右对话）
    ----------------------------------------------------------------
-   BRO 否决了卷二十五的上看板/下对话——卡片挤一排横向滚动不好用。
+   用户 否决了卷二十五的上看板/下对话——卡片挤一排横向滚动不好用。
    新形态：
      header
      ├─ nav-rail (左 · 维度按钮纵向 · ~200px)
@@ -3990,8 +4087,13 @@ header {
 .main-layout {
   flex: 1 1 auto;
   display: grid;
-  /* 5 列：nav · 左 resizer · 中间 detail · 右 resizer · chat */
-  grid-template-columns: var(--nav-w) var(--resizer-w) 1fr var(--resizer-w) var(--chat-w);
+  /* 5 列：nav · 左 resizer · 中间 detail · 右 resizer · chat
+     minmax(0,1fr)：裸 1fr 的 auto 下限=内容最小宽。画布标题/幻灯片图一铺，
+     整栏会 shrink-wrap 成「导航+对话」约 500px，剩下的视口露出 body 底（空杏/空紫）。 */
+  grid-template-columns: var(--nav-w) var(--resizer-w) minmax(0, 1fr) var(--resizer-w) var(--chat-w);
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
   /* 卷四十四 K stage 1c · 给浮动『»』展开按钮当 offset parent */
@@ -4092,7 +4194,7 @@ header {
 }
 .nav-collapse-btn .label { flex: 1; text-align: left; }
 
-/* 卷四十四 K stage 2b · icon-only 折叠 (BRO 反馈:只折叠左导航 · 不藏不消失)
+/* 卷四十四 K stage 2b · icon-only 折叠 (用户 反馈:只折叠左导航 · 不藏不消失)
    - nav-rail 缩到 56px · 仅显示 icon · 仍能点切维度 (像 VSCode/Cursor 那样)
    - col-resizer 折叠态用 visibility 隐藏 (不能用 display:none · 见 stage 2d 注释)
    - nav-rail 内部 .label / .nav-section / badge 全部 hidden · icon 居中放大
@@ -4104,7 +4206,7 @@ header {
    修法:visibility:hidden 保留 grid 槽位、视觉透明、不可拖。
 */
 .main-layout.nav-collapsed {
-  grid-template-columns: 56px 0 1fr var(--resizer-w) var(--chat-w);
+  grid-template-columns: 56px 0 minmax(0, 1fr) var(--resizer-w) var(--chat-w);
 }
 .main-layout.nav-collapsed .col-resizer[data-side="left"] {
   visibility: hidden;
@@ -4128,11 +4230,11 @@ header {
   width: auto;
   font-size: 18px;
   margin: 0;
-  /* Dock 距离衰减由 JS 驱动 (chat.js _dockNavFx · 跨分组连续 · 2026-08-20 BRO) ·
+  /* Dock 距离衰减由 JS 驱动 (chat.js _dockNavFx · 跨分组连续 · 2026-08-20 用户) ·
      CSS 只管过渡平滑 · transform/color 不再写静态 hover 值 (会被 JS 内联覆盖) */
   transition: transform .12s ease-out, color .18s ease;
 }
-/* 中心弹出入场 (BRO 选定方案 C) · hover 瞬间播一次 · 播放期间覆盖 JS 内联 ·
+/* 中心弹出入场 (用户 选定方案 C) · hover 瞬间播一次 · 播放期间覆盖 JS 内联 ·
    播完 fill:none 回 JS 距离值 · 衔接无跳变 */
 @keyframes dkNavPop {
   0% { transform: scale(0); opacity: 0; }
@@ -4141,7 +4243,7 @@ header {
 }
 .main-layout.nav-collapsed .nav-item:hover .icon {
   animation: dkNavPop .38s cubic-bezier(.34, 1.56, .64, 1);
-  /* 紫色是"选中"的独占信号 · 邻居只缩放不变色 (2026-08-20 BRO: 邻居染淡紫=比白暗=
+  /* 紫色是"选中"的独占信号 · 邻居只缩放不变色 (2026-08-20 用户: 邻居染淡紫=比白暗=
      像被隐藏)。 大小表达距离 · 颜色表达选中 · 两通道分开。 加微光晕让选中更跳 */
   color: var(--opus);
   text-shadow: 0 0 12px rgba(159, 122, 234, .55);
@@ -4184,7 +4286,7 @@ header {
 .main-layout.nav-collapsed .nav-settings-btn .icon {
   font-size: 18px;
 }
-/* 2026-08-20 BRO: 折叠后不需要分组 · 分割线去掉 (图标连续排列 · Dock 波动跨组不断) */
+/* 2026-08-20 用户: 折叠后不需要分组 · 分割线去掉 (图标连续排列 · Dock 波动跨组不断) */
 .main-layout.nav-collapsed .nav-group {
   border-bottom: none;
   margin-bottom: 0;
@@ -4233,7 +4335,7 @@ header {
   position: relative;
 }
 .nav-item:hover { background: var(--bg3); }
-/* 2026-08-20 BRO: 去掉选中态紫边框 (丑) · 靠背景+文字色区分 */
+/* 2026-08-20 用户: 去掉选中态紫边框 (丑) · 靠背景+文字色区分 */
 .nav-item.active {
   background: var(--bg3);
   color: var(--opus);
@@ -4279,6 +4381,7 @@ header {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 /* 卷四十四 K · 工坊 view 进来 · 顶满中栏 · 不要 padding 不要 scroll */
 .detail-pane.workshop-active {
@@ -4363,7 +4466,7 @@ header {
   overflow-y: auto;
   padding: 16px;
 }
-/* OPUS 自留地 · hub 内部标签条 (日记/心愿/沉淀位/技能库) · 药丸风 · 主色描当前态 */
+/* Daemonkey 自留地 · hub 内部标签条 (日记/心愿/沉淀位/技能库) · 药丸风 · 主色描当前态 */
 .depot-tabs {
   display: flex;
   gap: 6px;
@@ -4391,6 +4494,11 @@ header {
   border-color: color-mix(in srgb, var(--opus) 45%, transparent);
   background: color-mix(in srgb, var(--opus) 14%, transparent);
   font-weight: 600;
+}
+.depot-tab .shelf-n {
+  font-size: 11px;
+  opacity: .65;
+  font-weight: 500;
 }
 .dash-head {
   display: flex;
@@ -4429,6 +4537,36 @@ header {
   padding: 60px 20px;
   font-size: 13px;
 }
+@keyframes dkLdDot {
+  0%, 60%, 100% { transform: translateY(0); opacity: .35; }
+  30% { transform: translateY(-6px); opacity: 1; }
+}
+.dk-ld {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding-top: 80px;
+}
+.dk-ld-row { display: flex; gap: 8px; align-items: center; }
+.dk-ld-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent, #8a7dff);
+  animation: dkLdDot 1.2s ease-in-out infinite;
+}
+.dk-ld-dot:nth-child(2) { animation-delay: .15s; }
+.dk-ld-dot:nth-child(3) { animation-delay: .3s; }
+.dk-ld-txt {
+  font-size: 12px;
+  color: var(--dim);
+  letter-spacing: 1px;
+}
+.bi-loading .dk-ld,
+.rp-visual-wait .dk-ld,
+.rp-visual-wait .dash-empty { padding-top: 28px; }
 .dash-stub {
   color: var(--dim);
   padding: 40px 20px;
@@ -4976,6 +5114,7 @@ header {
   color: var(--dim2);
 }
 .report-card .rc-size,
+.report-card .rc-pages,
 .report-card .rc-time {
   white-space: nowrap;
 }
@@ -5321,7 +5460,7 @@ header {
   transform: scale(0.97);
 }
 
-/* ── 卷二十六 · 🧠 OPUS 日记 · BRO 画像 · 开放问题 ── */
+/* ── 卷二十六 · 🧠 Daemonkey 日记 · 用户 画像 · 开放问题 ── */
 .cognition-block {
   background: var(--bg2);
   border-radius: 10px;
@@ -5786,7 +5925,7 @@ header {
 .wk-dl { color: var(--dim2); }
 
 /* ── 响应式 ─────────────────────────────────── */
-/* 中屏：导航 + 对话窄一点 · 卷三十：用 CSS var 让 BRO 拖完仍然生效 */
+/* 中屏：导航 + 对话窄一点 · 卷三十：用 CSS var 让 用户 拖完仍然生效 */
 @media (max-width: 1280px) {
   :root { --nav-w: 190px; --chat-w: 360px; }
 }
@@ -5802,10 +5941,10 @@ header {
     完整移动适配在 ROADMAP 卷二十六深化) */
 @media (max-width: 900px) {
   .main-layout {
-    /* 手机端 resizer 隐藏 · 单栏 */
-    grid-template-columns: 0 0 1fr 0 0;
+    /* 手机端 resizer 藏起来 · 单栏。不能 display:none，否则 5 列只剩 3 个 child，栏会错位。 */
+    grid-template-columns: 0 0 minmax(0, 1fr) 0 0;
   }
-  .col-resizer { display: none; }
+  .col-resizer { visibility: hidden; pointer-events: none; }
   .nav-rail {
     position: fixed;
     top: 50px;
@@ -5903,7 +6042,7 @@ header {
   gap: 10px;
 }
 
-/* 卷四十六续 10 · BI 看板"今日动态" digest 卡 (BRO 候选 E) */
+/* 卷四十六续 10 · BI 看板"今日动态" digest 卡 (用户 候选 E) */
 .bi-digest-loading, .bi-digest-empty {
   padding: 12px 14px;
   background: var(--bg2);
@@ -6007,7 +6146,7 @@ header {
   margin-top: 2px;
 }
 
-/* 卷四十六续 10 · dashboard list 通用搜索框 (BRO 候选 B) */
+/* 卷四十六续 10 · dashboard list 通用搜索框 (用户 候选 B) */
 .list-filter {
   display: flex;
   align-items: center;
@@ -6279,7 +6418,7 @@ header {
 }
 
 /* ─────────────────────────────────────────────────────────
-   卷三十五 · 💭 OPUS 心愿单
+   卷三十五 · 💭 Daemonkey 心愿单
    ───────────────────────────────────────────────────────── */
 .wish-banner {
   display: flex;
@@ -6728,7 +6867,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 .wish-actions .wb-deep:hover { background: rgba(159,122,234,0.18); border-color: #b794f4; }
 
-/* radar 条目 + opp 卡上的"OPUS 也想要"按钮 (self-evolve 域专属) */
+/* radar 条目 + opp 卡上的"Daemonkey 也想要"按钮 (self-evolve 域专属) */
 .ri-fb-btn.ri-wish-btn {
   color: #b794f4;
 }
@@ -8067,6 +8206,91 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   font-style: italic;
 }
 
+/* 扩展市场卡不用 .plugin-card：那套 overflow:hidden 挂在 flex 的 detail-pane 上
+   会被压成一条边（时间线塌陷同款）。钉死不缩，超高交给中栏自己滚。 */
+.detail-pane .plugin-cat,
+.detail-pane .plugin-intro,
+.detail-pane .depot-tabs,
+.detail-pane .plugin-list { flex-shrink: 0; }
+.mkt-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  flex-shrink: 0;
+}
+.mkt-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mkt-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.mkt-kind {
+  font-size: 10px;
+  padding: 1px 8px;
+  border-radius: 8px;
+  font-weight: 600;
+  color: var(--opus);
+  background: color-mix(in srgb, var(--opus) 12%, transparent);
+}
+.mkt-card .plugin-try-btn,
+.mkt-card .mkt-hold { margin-left: auto; }
+.mkt-hold { font-size: 11px; color: var(--dim2); }
+.mkt-meta {
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.55;
+  margin-top: 6px;
+}
+.mkt-rate {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mkt-pub { font-size: 12px; color: var(--text); }
+.mkt-pub i { color: #c9a227; margin-right: 2px; }
+.mkt-stars { display: inline-flex; gap: 1px; }
+.mkt-star {
+  border: 0;
+  background: transparent;
+  padding: 2px;
+  cursor: pointer;
+  color: var(--dim2);
+  font-size: 18px;
+  line-height: 1;
+}
+.mkt-star.on,
+.mkt-star:hover { color: #c9a227; }
+.mkt-mine { font-size: 11px; color: var(--dim2); }
+.mkt-verdict {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 8px;
+}
+.mkt-verdict-pass { color: #2f6f4e; background: color-mix(in srgb, #2f6f4e 14%, transparent); }
+.mkt-verdict-review { color: #8a6a12; background: color-mix(in srgb, #c9a227 18%, transparent); }
+.mkt-verdict-reject { color: #8a2f2f; background: color-mix(in srgb, #8a2f2f 14%, transparent); }
+.mkt-pr {
+  font-size: 12px;
+  margin-left: 8px;
+  color: var(--opus);
+}
+.mkt-inbox-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 4px 8px;
+}
+
 /* 响应式 · 中屏调整 model menu 宽度 */
 @media (max-width: 900px) {
   .header-logo { font-size: 13px; }
@@ -8565,6 +8789,49 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   color: #ffd166;
   border: 1px solid rgba(255, 209, 102, 0.3);
 }
+.working-docs-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 0 8px;
+}
+.wd-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  background: rgba(159, 122, 234, 0.08);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.wd-chip:hover { border-color: var(--opus); color: var(--opus); }
+.wd-chip i { font-size: 14px; color: var(--opus); }
+.wd-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.rc-ver {
+  display: inline-block;
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  margin-left: 8px;
+  vertical-align: middle;
+  background: rgba(159, 122, 234, 0.16);
+  color: var(--opus);
+  border: 1px solid rgba(159, 122, 234, 0.35);
+  font-variant-numeric: tabular-nums;
+}
+.rc-hist { margin: 8px 0 0; color: var(--dim); font-size: 12px; }
+.rc-hist summary { cursor: pointer; color: var(--dim); }
+.rc-hist summary:hover { color: var(--opus); }
+.rc-hist-hint { margin: 6px 0 2px; font-size: 11px; color: var(--dim); line-height: 1.45; }
+.rc-dupe { color: var(--dim); font-size: 11px; }
+.rc-hist-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 6px 0 0;
+}
 .rc-preview-btn {
   background: transparent;
   border: 1px solid var(--opus);
@@ -8624,6 +8891,408 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   font-style: italic;
   flex: 1;
   min-width: 200px;
+}
+
+.rp-view-tabs { margin: 0 0 14px; }
+.rp-pane { min-height: 240px; }
+.rp-visual-wait {
+  min-height: 220px;
+}
+.rp-visual-wait.is-err {
+  color: var(--dim);
+  text-align: center;
+  padding: 48px 20px;
+  font-size: 13px;
+}
+.rp-visual-wait.is-err i {
+  display: block;
+  font-size: 22px;
+  margin-bottom: 10px;
+}
+.rp-pdf {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: min(80vh, 920px);
+  border: 0;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color-scheme: dark;
+}
+.rp-slide-deck {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+}
+.rp-slide-thumbs {
+  flex: 0 0 88px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 2px 8px 0;
+}
+.rp-thumb {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg3);
+  color: var(--dim);
+  cursor: pointer;
+  overflow: hidden;
+}
+.rp-thumb img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.rp-thumb span {
+  display: block;
+  text-align: center;
+  font-size: 10px;
+  padding: 2px 0 4px;
+}
+.rp-thumb.is-on {
+  border-color: var(--opus);
+  color: var(--opus);
+}
+.rp-slide-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.rp-slide-stage {
+  position: relative;
+  background: #111;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.rp-slide-main .rp-slide-stage {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rp-slide-stage img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
+}
+.rp-slide-main .rp-slide-stage img {
+  max-height: 100%;
+  width: auto;
+  object-fit: contain;
+}
+.rp-slide-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.detail-pane:has(.stage-root),
+#dashView:has(.stage-root) {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  scrollbar-gutter: auto;
+}
+.detail-pane .stage-root,
+#dashView .stage-root { flex: 1 1 auto; min-height: 280px; min-width: 0; max-width: 100%; }
+.stage-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  min-width: 0;
+  max-width: 100%;
+  height: 100%;
+}
+.stage-root .rp-pane[data-rp-pane="visual"]:not([hidden]) {
+  flex: 1 1 auto;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#rpVisual:not([hidden]) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.stage-root .rp-pdf,
+.stage-root .stage-frame {
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 240px;
+}
+.stage-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 4px 0 12px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.dash-head.stage-bar { margin-bottom: 12px; }
+.stage-tag {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--dim);
+}
+.stage-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dash-head.stage-bar .stage-title { color: var(--opus); font-size: 16px; }
+.stage-meta {
+  font-size: 12px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+button.stage-open, .stage-x {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 18px;
+  cursor: pointer;
+  font-family: inherit;
+}
+button.stage-open:hover, .stage-x:hover { color: var(--opus); border-color: var(--opus); }
+.dash-head.stage-bar .stage-x {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  margin-left: 0;
+  font-size: 18px;
+}
+.stage-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+#rpVisual { position: relative; }
+.stage-notes-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.dash-head.stage-bar .stage-notes-tools { margin-left: 0; }
+.stage-note-arm, .stage-note-send {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--bg3);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.stage-note-arm:hover, .stage-note-send:hover { color: var(--opus); border-color: var(--opus); }
+.stage-note-arm.is-on {
+  color: var(--opus);
+  border-color: var(--opus);
+  background: rgba(159, 122, 234, 0.16);
+}
+.stage-note-arm b {
+  min-width: 14px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+.stage-note-host { position: relative; isolation: isolate; }
+.stage-note-host > iframe.rp-pdf,
+.stage-note-host > iframe.stage-frame {
+  position: relative;
+  z-index: 1;
+}
+.stage-note-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+.stage-note-layer.is-aim { pointer-events: none; }
+.stage-note-host.is-aim { cursor: crosshair; }
+.stage-pin {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  border: 0;
+  border-radius: 50%;
+  background: var(--opus);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  pointer-events: auto;
+  z-index: 5;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.stage-pin.dk-overlay-pin {
+  position: fixed;
+  z-index: 8500;
+}
+.stage-note-card {
+  position: absolute;
+  z-index: 6;
+  width: 240px;
+  padding: 10px;
+  transform: translate(12px, 8px);
+  background: var(--bg2, var(--bg3));
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  pointer-events: auto;
+}
+.stage-note-card.is-left { transform: translate(calc(-100% - 12px), 8px); }
+.stage-note-card.is-up { transform: translate(12px, calc(-100% - 8px)); }
+.stage-note-card.is-left.is-up { transform: translate(calc(-100% - 12px), calc(-100% - 8px)); }
+.stage-note-hint {
+  font-size: 11px;
+  color: var(--dim);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+.stage-note-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 64px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+.stage-note-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.stage-note-del, .stage-note-ok {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg3);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.stage-note-ok { color: var(--opus); border-color: var(--opus); }
+.stage-paper {
+  overflow: auto;
+  padding: 8px 4px 36px;
+}
+.stage-doc {
+  max-width: 720px;
+  margin: 0 auto;
+  line-height: 1.75;
+  font-size: 14px;
+}
+.stage-plan-hero {
+  max-width: 720px;
+  margin: 0 auto 12px;
+  padding: 16px 8px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.stage-plan-hero h3 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 650;
+  color: var(--text);
+}
+.stage-plan-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dim);
+}
+.stage-root.is-paper .plan-step {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 8px 6px;
+}
+.stage-root.is-paper .plan-detail-foot {
+  max-width: 720px;
+  margin: 10px auto 0;
+}
+.stage-wait {
+  padding: 48px 20px;
+  text-align: center;
+  color: var(--dim);
+}
+.stage-frame, .stage-media {
+  display: block;
+  width: 100%;
+  height: min(78vh, 860px);
+  border: 0;
+  border-radius: 8px;
+  background: #111;
+  color-scheme: dark;
+}
+.stage-media { background: #000; }
+.stage-img {
+  display: block;
+  max-width: 100%;
+  max-height: min(78vh, 860px);
+  margin: 0 auto;
+  border-radius: 8px;
+}
+.plan-banner.is-canvas .plan-toggle {
+  background: rgba(159, 122, 234, 0.28);
 }
 
 .rp-body {
@@ -8907,7 +9576,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 .cal-dot-outcomes { background: rgba(255, 122, 122, 0.7); }
 .cal-dot-sessions { background: rgba(159, 122, 234, 0.7); }
 
-/* 卷五十八续 X · 对话(sessions)拆成淡色小标记 · 不混进信息圆点行·视觉降权 (BRO 拍板) */
+/* 卷五十八续 X · 对话(sessions)拆成淡色小标记 · 不混进信息圆点行·视觉降权 (用户 拍板) */
 .cal-session-mark {
   font-size: 9px;
   color: var(--dim2);
@@ -9061,7 +9730,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 /* ═══════════════════════════════════════════════════════════════
    卷七十五续十 · 会话标签栏重做 —— 胶囊式 · 工作台 + 简洁版通用
    旧版是"文件夹式" tab(顶部圆角 + 底边线)· 标签栏还单独铺一条深色背景(var(--bg))
-   + border-bottom · 只有 1~2 个 tab 时右边留一长条空横线 · 很怪(BRO 说的"诡异横线")。
+   + border-bottom · 只有 1~2 个 tab 时右边留一长条空横线 · 很怪(用户 说的"诡异横线")。
    新版:标签栏透明·融进 chat-pane(bg2) · 去掉底边线 · 圆角胶囊 tab ·
    当前态用主色淡填充(color-mix 跟随皮肤·换肤自动变色) · hover 柔和 · 关闭键悬浮才显眼。
    ═══════════════════════════════════════════════════════════════ */
@@ -9240,7 +9909,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
 }
 
 
-/* ── OPUS 脉搏 (wish-7330d23f) ─────────────────────────────── */
+/* ── Daemonkey 脉搏 (wish-7330d23f) ─────────────────────────────── */
 
 .pulse-indicator {
   display: inline-flex;
@@ -9267,7 +9936,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   animation: pulse-breathe 1.2s ease-in-out infinite;
 }
 
-/* ── git 欠账亮灯胶囊 (2026-07-29 · BRO 拍板 · 开 WebUI 第一眼可观测) ── */
+/* ── git 欠账亮灯胶囊 (2026-07-29 · 用户 拍板 · 开 WebUI 第一眼可观测) ── */
 
 .git-debt-chip {
   display: inline-flex;
@@ -9435,7 +10104,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   border-radius: 6px; padding: 1px 7px;
 }
 
-/* ── git 欠账面板 (2026-07-29 · BRO 直批三件套 B+C) ── */
+/* ── git 欠账面板 (2026-07-29 · 用户 直批三件套 B+C) ── */
 .git-debt-modal { max-width: 520px; }
 .git-debt-body { font-size: 13px; }
 .git-debt-loading { color: var(--dim); padding: 18px 0; text-align: center; }
@@ -9614,6 +10283,70 @@ body.theme-pink-white .detail-pane::-webkit-scrollbar-thumb:hover {
   background: var(--sb-hover) !important;
   background-clip: content-box;
 }
+/* 成品预览是深底 · 日间纸色滚动条压上去会一块浅灰补丁 */
+.rp-pdf,
+.stage-frame,
+#rpVisual,
+.rp-pane[data-rp-pane="visual"],
+.rp-slide-stage {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(232, 223, 201, 0.32) transparent;
+}
+body.theme-sepia .rp-pdf::-webkit-scrollbar-thumb,
+body.theme-sepia .stage-frame::-webkit-scrollbar-thumb,
+body.theme-sepia #rpVisual::-webkit-scrollbar-thumb,
+body.theme-sepia .rp-pane[data-rp-pane="visual"]::-webkit-scrollbar-thumb,
+body.theme-sepia .rp-slide-stage::-webkit-scrollbar-thumb,
+body.theme-light .rp-pdf::-webkit-scrollbar-thumb,
+body.theme-light .stage-frame::-webkit-scrollbar-thumb,
+body.theme-light #rpVisual::-webkit-scrollbar-thumb,
+body.theme-light .rp-pane[data-rp-pane="visual"]::-webkit-scrollbar-thumb,
+body.theme-light .rp-slide-stage::-webkit-scrollbar-thumb,
+body.theme-pink-white .rp-pdf::-webkit-scrollbar-thumb,
+body.theme-pink-white .stage-frame::-webkit-scrollbar-thumb,
+body.theme-pink-white #rpVisual::-webkit-scrollbar-thumb,
+body.theme-pink-white .rp-pane[data-rp-pane="visual"]::-webkit-scrollbar-thumb,
+body.theme-pink-white .rp-slide-stage::-webkit-scrollbar-thumb,
+body.day .rp-pdf::-webkit-scrollbar-thumb,
+body.day .stage-frame::-webkit-scrollbar-thumb,
+body.day #rpVisual::-webkit-scrollbar-thumb,
+body.day .rp-pane[data-rp-pane="visual"]::-webkit-scrollbar-thumb,
+body.day .rp-slide-stage::-webkit-scrollbar-thumb {
+  background: rgba(232, 223, 201, 0.32) !important;
+}
+body.theme-sepia .rp-pdf::-webkit-scrollbar-track,
+body.theme-sepia .stage-frame::-webkit-scrollbar-track,
+body.theme-sepia #rpVisual::-webkit-scrollbar-track,
+body.theme-sepia .rp-pane[data-rp-pane="visual"]::-webkit-scrollbar-track,
+body.theme-sepia .rp-slide-stage::-webkit-scrollbar-track,
+body.theme-light .rp-pdf::-webkit-scrollbar-track,
+body.theme-light .stage-frame::-webkit-scrollbar-track,
+body.theme-light #rpVisual::-webkit-scrollbar-track,
+body.theme-light .rp-pane[data-rp-pane="visual"]::-webkit-scrollbar-track,
+body.theme-light .rp-slide-stage::-webkit-scrollbar-track,
+body.theme-pink-white .rp-pdf::-webkit-scrollbar-track,
+body.theme-pink-white .stage-frame::-webkit-scrollbar-track,
+body.theme-pink-white #rpVisual::-webkit-scrollbar-track,
+body.theme-pink-white .rp-pane[data-rp-pane="visual"]::-webkit-scrollbar-track,
+body.theme-pink-white .rp-slide-stage::-webkit-scrollbar-track,
+body.day .rp-pdf::-webkit-scrollbar-track,
+body.day .stage-frame::-webkit-scrollbar-track,
+body.day #rpVisual::-webkit-scrollbar-track,
+body.day .rp-pane[data-rp-pane="visual"]::-webkit-scrollbar-track,
+body.day .rp-slide-stage::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+body.theme-sepia .detail-pane:has(.rp-pdf),
+body.theme-sepia .detail-pane:has(#rpVisual),
+body.theme-sepia .detail-pane:has(.stage-frame),
+body.theme-light .detail-pane:has(.rp-pdf),
+body.theme-light .detail-pane:has(#rpVisual),
+body.theme-light .detail-pane:has(.stage-frame),
+body.theme-pink-white .detail-pane:has(.rp-pdf),
+body.theme-pink-white .detail-pane:has(#rpVisual),
+body.theme-pink-white .detail-pane:has(.stage-frame) {
+  scrollbar-color: rgba(232, 223, 201, 0.32) transparent !important;
+}
 
 /* 海洋蓝 */
 .theme-ocean {
@@ -9705,15 +10438,15 @@ body.compact .compact-toggle { background: var(--opus); color: #fff; border-colo
    detail 列显式设 0(不靠 1fr·彻底不留空) · 动效交给合成器友好属性:
    ① 左/中/resizer 用 opacity 淡出淡入 ② 对话栏进入时轻微上浮淡入(compact-enter)。
    过渡只在点击那一下挂(.layout-animating)· 平时不影响拖 resizer。 */
-body.compact .main-layout { grid-template-columns: 0 0 0 0 1fr; }
+body.compact .main-layout { grid-template-columns: 0 0 0 0 minmax(0, 1fr) !important; width: 100%; }
 .main-layout.layout-animating .nav-rail,
 .main-layout.layout-animating .detail-pane,
 .main-layout.layout-animating .col-resizer { transition: opacity 0.26s ease; }
 body.compact .nav-rail,
 body.compact .detail-pane,
-body.compact .col-resizer { opacity: 0; pointer-events: none; }
+body.compact .col-resizer { opacity: 0; visibility: hidden; pointer-events: none; }
 body.compact .nav-rail,
-body.compact .detail-pane { overflow: hidden; }
+body.compact .detail-pane { overflow: hidden; padding: 0; min-width: 0; border: none; }
 body.compact .nav-rail { border-right: none; }
 body.compact .chat-pane { border-left: none; align-items: stretch; }
 body.compact .chat-pane > .chat-pane-head { width: 100%; max-width: none; }
@@ -9737,11 +10470,11 @@ body.compact .chat-history-btn,
 body.compact .chat-docs-btn,
 body.compact #chatTabBar { display: none; }
 /* 卷八十三续续 · 简洁版下整个 chat-pane-head 都多余了:
-   会话名 + 新建按钮 左侧会话栏都有了 (BRO 2026-08-14) · 顶栏第二行整行隐藏 */
+   会话名 + 新建按钮 左侧会话栏都有了 (用户 2026-08-14) · 顶栏第二行整行隐藏 */
 body.compact .chat-pane-head { display: none; }
 
 /* ═══ 卷八十三 · 简洁版三栏布局: 顶栏全宽 + 会话清单 | 对话 | 产物 ═══
-   BRO 2026-08-14 拍板: 简洁版 = 历史对话左侧常驻清单 + 产物右侧折叠面板。
+   用户 2026-08-14 拍板: 简洁版 = 历史对话左侧常驻清单 + 产物右侧折叠面板。
    工作台模式(非 compact)三栏全隐藏 · chat-main 占满 · 视觉零变化。
    顶栏(chat-pane-head)留在 compact-row 外面 · 全宽置顶 · 产物面板不挤压它。 */
 .compact-row { flex: 1 1 auto; display: flex; flex-direction: row; min-height: 0; min-width: 0; }
@@ -9784,7 +10517,7 @@ body.compact .compact-sessions {
 .compact-sessions-list .sa-menu:hover { color: var(--text); }
 .compact-sessions-foot { flex: 0 0 auto; padding: 8px 10px 10px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
 .compact-foot-row { display: flex; justify-content: center; }
-/* 尾部三个按钮统一: 无边框轻量链接样式 (BRO: 带边框很丑 · 归档/返回/加载更早全统一) */
+/* 尾部三个按钮统一: 无边框轻量链接样式 (用户: 带边框很丑 · 归档/返回/加载更早全统一) */
 .compact-sessions-foot .compact-foot-more {
   font-size: 12px; padding: 4px 10px; border: none; background: transparent; color: var(--dim);
   cursor: pointer; transition: color 0.15s; white-space: nowrap;
@@ -9795,7 +10528,7 @@ body.compact .compact-sessions {
 
 /* 中间对话栏 · 简洁版仍居中限宽 (max-width 从 900 收窄 · 给侧栏让位) */
 
-/* 产物折叠条 · 极简可点 · 无边框无背景 · 文字 + 向左展开图标 (BRO 2026-08-14) */
+/* 产物折叠条 · 极简可点 · 无边框无背景 · 文字 + 向左展开图标 (用户 2026-08-14) */
 body.compact .compact-art-toggle {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 10px; width: 36px; min-width: 36px; flex: 0 0 36px; cursor: pointer; color: var(--dim);
@@ -9822,7 +10555,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .compact-art-head {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 12px 8px; flex: 0 0 auto;
-  min-width: 320px;  /* 锁宽: 动画 0→320px 过渡时内容只露不挤 (BRO 2026-08-14) */
+  min-width: 320px;  /* 锁宽: 动画 0→320px 过渡时内容只露不挤 (用户 2026-08-14) */
 }
 .cah-title { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .cah-title i { color: var(--opus); }
@@ -9925,7 +10658,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .bi-signal-item:hover { background: var(--bg3); border-color: var(--opus); }
 .bi-signal-item.clickable { cursor: pointer; }
 .bi-signal-item.clickable:hover .bi-signal-title { color: var(--opus); }
-/* 信号流"今日"开关 (BRO 2026-06-03) */
+/* 信号流"今日"开关 (用户 2026-06-03) */
 .bi-sig-head-r { display: inline-flex; align-items: center; gap: 8px; }
 .bi-sig-today {
   background: var(--bg3); border: 1px solid transparent; color: var(--dim);
@@ -10000,7 +10733,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 @media (max-width: 900px) { .proto-kpi-4 { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 900px) { .bi-grid-2 { grid-template-columns: 1fr; } }
 
-/* 模型切换时间线 · 方案 B (2026-08-06 BRO 拍板) */
+/* 模型切换时间线 · 方案 B (2026-08-06 用户 拍板) */
 .bi-tl-main { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg3); border-radius: 10px; font-size: 12.5px; margin-bottom: 8px; }
 .bi-tl-main > i:first-child { color: var(--teal); font-size: 14px; flex-shrink: 0; }
 /* 2026-08-20 · 模型名单行截断: 长名 (deepseek-v4-flash) 换行会把整行撑高 ·
@@ -10121,7 +10854,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 }
 .bi-cal-cell.empty:hover { transform: none; }
 
-/* 热力图占大头·信号流压窄 (BRO 2026-06-03 · 左宽右窄)
+/* 热力图占大头·信号流压窄 (用户 2026-06-03 · 左宽右窄)
    align-items:start → 两卡顶部对齐。热力卡按正方形日历的自然高度·
    信号流高度由 JS 同步成一模一样 (_biSyncSignalHeight)·谁都不被 grid 拉变形。
    底部对齐靠"等高"保证·不靠 grid stretch (stretch 会把矮的拉空)。 */
@@ -10130,7 +10863,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
    代价: 两列时等分丢 1.4:1 比例 · 可接受 (热力图有 max-width 480 封顶居中) */
 .bi-grid-2.bi-row-heat { grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); align-items: start; }
 
-/* 日历正方形格子·等比填满卡片宽度 (BRO 要的"等比缩放": 卡越宽格子越大·永远正方形·不变矩形)。
+/* 日历正方形格子·等比填满卡片宽度 (用户 要的"等比缩放": 卡越宽格子越大·永远正方形·不变矩形)。
    width:100% 横向填满·格子 aspect-ratio:1 走全局 .bi-cal-cell·这里不再覆盖成矩形。 */
 .bi-heat-card .bi-cal-grid,
 .bi-heat-card .bi-cal-labels { width: 100%; }
@@ -10182,7 +10915,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .bi-drawer-ritual-txt { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--opus); font-weight: 600; }
 
 /* ════ 卷五十八续 VIII · 四张新卡 ════ */
-/* A·OPUS 眼里的你 (能力镜像快照) */
+/* A·Daemonkey 眼里的你 (能力镜像快照) */
 .bi-mirror-time { font-size: 11px; color: var(--dim2); font-weight: 400; margin-left: 6px; }
 .bi-mirror-body {
   max-height: 320px; overflow-y: auto; font-size: 12.5px; line-height: 1.7;
@@ -10208,7 +10941,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .bi-closure-fill { height: 100%; background: linear-gradient(90deg, #4FD1C5, #9f7aea); border-radius: 3px; transition: width 0.3s; }
 .bi-closure-hint { font-size: 10.5px; color: var(--dim2); margin-top: 3px; }
 
-/* C·OPUS 自况 */
+/* C·Daemonkey 自况 */
 .bi-self-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .bi-self-cell {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
@@ -10242,7 +10975,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 .bi-tip-peak { color: var(--dim2); margin-top: 2px; white-space: normal; }
 .bi-tip-hint { color: var(--opus); opacity: .7; margin-top: 4px; font-size: 10px; }
 
-/* 工作流加载抽屉 (BRO 2026-06-03 · 取代"输入序号"弹窗·右侧滑出点选) */
+/* 工作流加载抽屉 (用户 2026-06-03 · 取代"输入序号"弹窗·右侧滑出点选) */
 .wf-drawer { position: fixed; inset: 0; z-index: 9000; }
 .wf-drawer-mask { position: absolute; inset: 0; background: rgba(0,0,0,.45); }
 .wf-drawer-panel {
@@ -10304,7 +11037,7 @@ body.compact .compact-artifacts.open { width: 320px; flex-basis: 320px; }
 }
 .bi-sig-val .bi-stars { font-size: 13px; }
 .bi-sig-main { flex: 1; min-width: 0; }
-/* 信号流压窄后标题截 2 行·不让长标题把右栏撑爆 (BRO 2026-06-03 · 压缩信号流) */
+/* 信号流压窄后标题截 2 行·不让长标题把右栏撑爆 (用户 2026-06-03 · 压缩信号流) */
 .bi-sig-title {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   font-size: 12.5px; line-height: 1.4; color: var(--text); text-decoration: none;
@@ -10457,7 +11190,7 @@ a.bi-sig-title:hover { color: var(--opus); text-decoration: underline; }
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
   pointer-events: auto; /* safe zone: 鼠标可进入预览卡 · 取消延迟隐藏防闪烁 */
   white-space: normal;
-  /* 2026-08-10 修复 v2: break-all 对中文逐字断行 = 一行一个字 (BRO 报"只有一列") ·
+  /* 2026-08-10 修复 v2: break-all 对中文逐字断行 = 一行一个字 (用户 报"只有一列") ·
      改 break-word: 中文按词/字自然换行 · 只有超长英文/URL 才强制断 */
   word-break: break-word;
   overflow-wrap: break-word;
@@ -10580,7 +11313,7 @@ a.bi-sig-title:hover { color: var(--opus); text-decoration: underline; }
 }
 
 /* 画廊 */
-/* 她·画廊 —— LOFTER 式多列瀑布流卡片 (BRO 拍板 · 为以后条目变多做准备) */
+/* 她·画廊 —— LOFTER 式多列瀑布流卡片 (用户 拍板 · 为以后条目变多做准备) */
 .she-gallery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

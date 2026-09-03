@@ -305,8 +305,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="request_restart",
     description=(
-        "改完 daemon .py 后申请优雅重启。99% 场景必须带 follow_up_message（给重启后的自己做验证）。只改 static 不用重启。禁止 shell_exec taskkill/Stop-Process。细则：read_scenario('self_evolution') 铁律 5。"
-    ),
+        "改完 daemon .py 后申请优雅重启。99% 场景必须带 follow_up_message（给重启后的自己做验证）。只改 static 不用重启。禁止 shell_exec taskkill/Stop-Process。细则：read_scenario('self_evolution') 铁律 5。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

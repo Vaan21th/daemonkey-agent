@@ -190,6 +190,7 @@ async def create_provider_config(
             vision=payload.get("vision"),  # wish-4a6331b2
             director=bool(payload.get("director")),  # wish-8ffb9d65
             pricing=payload.get("pricing"),  # wish-bec4f3b9 · 可选价格表
+            context_window=payload.get("context_window"),
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

@@ -119,8 +119,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="kernel_takeover",
     description=(
-        "声明某内核文件由用户自己管，update_core 不再覆盖。改配色/加面板优先写 static/user/。list/add/remove。升级机制自身不能接管。"
-    ),
+        "声明某内核文件由用户自己管，update_core 不再覆盖。改配色/加面板优先写 static/user/。list/add/remove。升级机制自身不能接管。"    ),
     tier=TIER_CONFIRM,
     classify=_classify,
     input_schema={

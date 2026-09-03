@@ -3,12 +3,19 @@ report_engine · 文档生产引擎
 
 工作室"内容编辑 OPUS / 信息官 OPUS"工位的核心生产工具。
 
-把一套成熟的 docx 渲染器抽象成通用 markdown → docx 引擎 · 让 OPUS 也能调。
+源流（卷二十四 BRO 关键决策）：
+  upstream/docs\\cooperation\\volcano-cmcc-haishan\\build-doc.py
+  upstream/docs\\competitive-analysis\\build-comparison-doc.py
+  upstream/docs\\competitive-analysis\\build-movieflow-doc.py
+  upstream/docs\\recruiting\\build-doc.py
+
+  BRO 已经在社区那边沉淀了 4 个同源 build-*-doc.py。本 engine 把那套渲染器
+  抽象成通用 markdown → docx 引擎 · 让 OPUS 也能调。
 
 设计原则：
-  - 不引入额外依赖：python-docx 已是本工程依赖
-  - 自包含：copy + adapt · 不依赖外部代码
-  - 主题可换：深蓝（midnight 主题）+ 工作室紫（OPUS 主题）+ 未来可扩
+  - 不引入额外依赖：python-docx 是社区那边一直在用的 · OPUS 这边也已经在用
+  - 不破坏社区原版：copy + adapt · 不 import G 盘代码 · Daemonkey自包含
+  - 主题可换：社区深蓝（保留作 manju 主题）+ 工作室紫（OPUS 主题）+ 未来可扩
   - 失败可观察：docx 被 Word 占用时自动换名 · 错误信息清晰
 
 公共 API:
@@ -27,6 +34,8 @@ report_engine · 文档生产引擎
 
 from .markdown_to_docx import render_report, render_markdown_to_doc  # noqa: F401
 from .themes import THEMES, get_theme, list_themes, Theme  # noqa: F401
+from .brand import default_cover_footer  # noqa: F401
+from .cite import append_sources  # noqa: F401
 
 __all__ = [
     "render_report",
@@ -35,4 +44,6 @@ __all__ = [
     "get_theme",
     "list_themes",
     "Theme",
+    "default_cover_footer",
+    "append_sources",
 ]

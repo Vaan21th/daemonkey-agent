@@ -145,7 +145,11 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="create_app",
     description=(
-        "在出品工坊造一个新 app（独立子能力 · 一个 json 资产）。他说「建一个 X 应用 / 做一个 X 工具」时第一刀就调这个：先落档，再施工。六段标准、KEY 走 secret、ui_form、产物落点、反面教材 → 先 read_scenario(name='app_creation')。缺能力先 create_app，不要 python_exec 从零手搓。一次只造一个。真 KEY 不准写进任何字段。"
+        "在出品工坊造一个新 app（独立子能力 · 一个 json 资产）。"
+        "他说「建一个 X 应用 / 做一个 X 工具」时第一刀就调这个：先落档，再施工。"
+        "六段标准、KEY 走 secret、ui_form、产物落点、反面教材 → 先 "
+        "read_scenario(name='app_creation')。缺能力先 create_app，不要 python_exec 从零手搓。"
+        "一次只造一个。真 KEY 不准写进任何字段。"
     ),
     tier=TIER_AUTO,
     input_schema={
@@ -169,7 +173,10 @@ SPEC = ToolSpec(
             },
             "system_prompt": {
                 "type": "string",
-                "description": "agentic 的角色指令。六段标题见 read_scenario('app_creation')。缺段内核拒。",
+                "description": (
+                    "agentic 必含六段标题（角色/输入/动作/输出规范/坑清单/+资产引用）。"
+                    "缺段内核拒绝。模板 → read_scenario(name='app_creation')。"
+                ),
             },
             "asset_slots": {
                 "type": "array",

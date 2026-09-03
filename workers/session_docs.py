@@ -110,7 +110,7 @@ def extract_paths(text: str) -> list[str]:
 
 
 def home_of(rel: str) -> str | None:
-    """稿的家话题 = 最早挂上这份路径的 session。中栏打开不改家。"""
+    """最早挂上这份路径的 session。这场已经认领过就别用它拽走。"""
     rel = _canon_rel(rel)
     if not rel:
         return None
@@ -135,21 +135,19 @@ def bind(sid: str, rel: str, *, root: Path | None = None, claim: bool = False) -
     if not path or not sid:
         return None
     rel = rel_of(path, root=root) or rel.replace("\\", "/")
-    owner = home_of(rel)
-    if owner and owner != sid and not claim:
-        return {"path": rel, "name": path.name, "home_sid": owner}
     from daemon_session import get_session_meta, set_session_meta
-    prev = next(
-        (d for d in (get_session_meta(sid).get("working_docs") or []) if d.get("path") == rel),
-        None,
-    )
+    cur = [d for d in (get_session_meta(sid).get("working_docs") or []) if isinstance(d, dict)]
+    prev = next((d for d in cur if _canon_rel(d.get("path") or "") == rel), None)
+    owner = home_of(rel)
+    if owner and owner != sid and not claim and not prev:
+        return {"path": rel, "name": path.name, "home_sid": owner}
     rec = {
         "path": rel,
         "name": path.name,
-        "home_sid": owner or sid,
+        "home_sid": sid,
         "bound_at": (prev or {}).get("bound_at") or datetime.now().isoformat(timespec="seconds"),
     }
-    docs = [d for d in (get_session_meta(sid).get("working_docs") or []) if d.get("path") != rel]
+    docs = [d for d in cur if _canon_rel(d.get("path") or "") != rel]
     docs.insert(0, rec)
     set_session_meta(sid, working_docs=docs[:_KEEP])
     return rec
@@ -193,7 +191,7 @@ def system_note(sid: str, *, root: Path | None = None) -> str:
         return ""
     lines = [
         "\n\n=== 本话题正在做的稿 ===",
-        "这些文件挂在这场对话里。改字用 revise_office，加页用 extend_office，不要 generate_* 整份重出。",
+        "这些文件挂在这场对话里。改字 revise_office，加图 illustrate_office，加页 extend_office，不要 generate_* 整份重出。",
     ]
     for i, d in enumerate(docs):
         rel = d["path"]
@@ -269,7 +267,7 @@ def describe_office(rel: str, *, root: Path | None = None) -> str:
     body = digest(rel, root=root, limit=1800)
     bits = [
         f"办公稿已挂进本话题 · 路径: {rel}",
-        f"改字用 revise_office path={rel}。加页/拓展用 extend_office path={rel}，body 只写新增页。不要 generate_presentation，原页板式必须留下。",
+        f"改字 revise_office path={rel}。加图 illustrate_office。加页 extend_office path={rel}（after=页码插在该页后）。不要 generate_presentation，原页板式必须留下。",
     ]
     if body:
         bits.append("摘要：")

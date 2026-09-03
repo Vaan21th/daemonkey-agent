@@ -30,6 +30,7 @@ _MSG_EXECUTOR = ThreadPoolExecutor(max_workers=3, thread_name_prefix="feishu-msg
 # 生命周期跟 _begin_turn / _unregister_turn 对注册表的登记/注销对齐。
 _FEISHU_USER_TURNS: dict[str, str] = {}
 _FEISHU_TURNS_LOCK = threading.Lock()
+_STATE_LOCK = threading.Lock()  # B-① · 2026-08-27 · _STATE 去重表并发保护 (Grok 全量审计)
 
 _STATE = {
     "started_at": None,
@@ -953,6 +954,31 @@ _RECALL_TTL = 600  # 撤回登记保留 10 分钟 (对标 cc recalledMessageTTL)
 _RECALLED_MSG_IDS: dict = {}  # message_id -> 撤回时间戳
 
 
+def _recalled_id_from_event(data) -> str:
+    # 2026-08-05 同款信封：ws 传的是 P2* 外壳，业务在 .event；
+    # .event 缺席/为 None 时回退 data 自身。撤回字段在 Data 顶或 .message 里。
+    if isinstance(data, dict):
+        inner = data.get("event") or data
+    else:
+        inner = getattr(data, "event", None) or data
+    if inner is None:
+        return ""
+    if isinstance(inner, dict):
+        mid = inner.get("message_id") or ""
+        if not mid:
+            nest = inner.get("message") or {}
+            mid = nest.get("message_id") if isinstance(nest, dict) else ""
+        return str(mid or "").strip()
+    mid = getattr(inner, "message_id", None) or ""
+    if not mid:
+        msg = getattr(inner, "message", None)
+        if isinstance(msg, dict):
+            mid = msg.get("message_id") or ""
+        elif msg is not None:
+            mid = getattr(msg, "message_id", None) or ""
+    return str(mid or "").strip()
+
+
 def _mark_message_recalled(message_id: str) -> None:
     """登记一条被撤回的消息 (撤回事件回调 · 环形清理超 TTL 的旧记录)。"""
     message_id = (message_id or "").strip()
@@ -1405,21 +1431,22 @@ def _handle_message(data) -> None:
         message_id = getattr(msg, "message_id", "") or ""
         if message_id:
             now = time.time()
-            _STATE.setdefault("seen_msg_ids", {})
-            if message_id in _STATE["seen_msg_ids"]:
-                logger.info("feishu 重复消息跳过: %s", message_id)
-                return
-            _STATE["seen_msg_ids"][message_id] = now
-            # 环形清理: 只留最近 5 分钟的去重窗口 (防内存涨)
-            cutoff = now - 300
-            stale = [k for k, v in _STATE["seen_msg_ids"].items() if v < cutoff]
-            for k in stale:
-                del _STATE["seen_msg_ids"][k]
-            if len(_STATE["seen_msg_ids"]) > 2000:
-                # 兜底: 超 2000 条清一半 (最老的)
-                ordered = sorted(_STATE["seen_msg_ids"].items(), key=lambda kv: kv[1])
-                for k, _ in ordered[: len(ordered) // 2]:
+            with _STATE_LOCK:  # B-① · 2026-08-27 · 去重表 RMW 原子 · 防并发重放双进业务 (Grok 全量审计)
+                _STATE.setdefault("seen_msg_ids", {})
+                if message_id in _STATE["seen_msg_ids"]:
+                    logger.info("feishu 重复消息跳过: %s", message_id)
+                    return
+                _STATE["seen_msg_ids"][message_id] = now
+                # 环形清理: 只留最近 5 分钟的去重窗口 (防内存涨)
+                cutoff = now - 300
+                stale = [k for k, v in _STATE["seen_msg_ids"].items() if v < cutoff]
+                for k in stale:
                     del _STATE["seen_msg_ids"][k]
+                if len(_STATE["seen_msg_ids"]) > 2000:
+                    # 兜底: 超 2000 条清一半 (最老的)
+                    ordered = sorted(_STATE["seen_msg_ids"].items(), key=lambda kv: kv[1])
+                    for k, _ in ordered[: len(ordered) // 2]:
+                        del _STATE["seen_msg_ids"][k]
         chat_type = getattr(msg, "chat_type", "") or ""
         content = getattr(msg, "content", "") or ""
         chat_id = getattr(msg, "chat_id", "") or ""
@@ -1619,7 +1646,7 @@ def _event_handler_builder():
 
         def do_p2_im_message_recalled_v1(data: P2ImMessageRecalledV1Data) -> None:
             _STATE["last_event_ts"] = time.time()
-            _mark_message_recalled(getattr(data, "message_id", "") or "")
+            _mark_message_recalled(_recalled_id_from_event(data))
             return None  # 撤回只登记 · 等引用检测用
 
         def do_p2_card_action_trigger(data: P2CardActionTrigger) -> P2CardActionTriggerResponse:

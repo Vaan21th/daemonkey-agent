@@ -28,9 +28,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import threading
 import uuid
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -42,6 +44,7 @@ SESSIONS_DIR.mkdir(exist_ok=True)
 
 # 卷三十四补丁 · session 元数据集中存
 _META_PATH = SESSIONS_DIR / "_index.json"
+_META_LOCK = threading.Lock()  # B-② · 2026-08-27 · index RMW 原子 · 并发改不同 session 不丢更新 (Grok 全量审计)
 _RESTORE_FENCE: set[str] = set()
 _RESTORE_FENCE_LOCK = threading.Lock()
 
@@ -106,45 +109,50 @@ def set_session_meta(
     pinned: Optional[bool] = None,
     archived: Optional[bool] = None,
     last_model_cfg: Optional[str] = None,
+    working_docs: Optional[list] = None,
 ) -> dict:
     """更新一个 session 的 metadata · None 表示不改
 
     返回更新后的完整 meta dict。
     """
-    idx = _load_meta_index()
-    cur = idx.get(session_id, {}) or {}
-    now = datetime.now().isoformat(timespec="seconds")
+    with _META_LOCK:  # B-② · 读-改-写整段持锁 · 挂稿和改名不能互踩
+        idx = _load_meta_index()
+        cur = idx.get(session_id, {}) or {}
+        now = datetime.now().isoformat(timespec="seconds")
 
-    if label is not None:
-        s = (label or "").strip()
-        if s:
-            cur["label"] = s
-        else:
-            cur.pop("label", None)
+        if label is not None:
+            s = (label or "").strip()
+            if s:
+                cur["label"] = s
+            else:
+                cur.pop("label", None)
 
-    if pinned is not None:
-        if pinned:
-            cur["pinned_at"] = now
-        else:
-            cur.pop("pinned_at", None)
+        if pinned is not None:
+            if pinned:
+                cur["pinned_at"] = now
+            else:
+                cur.pop("pinned_at", None)
 
-    if archived is not None:
-        if archived:
-            cur["archived_at"] = now
-        else:
-            cur.pop("archived_at", None)
+        if archived is not None:
+            if archived:
+                cur["archived_at"] = now
+            else:
+                cur.pop("archived_at", None)
 
-    if last_model_cfg is not None:
-        s = (last_model_cfg or "").strip()
-        if s:
-            cur["last_model_cfg"] = s
-        else:
-            cur.pop("last_model_cfg", None)
+        if last_model_cfg is not None:
+            s = (last_model_cfg or "").strip()
+            if s:
+                cur["last_model_cfg"] = s
+            else:
+                cur.pop("last_model_cfg", None)
 
-    cur["updated_at"] = now
-    idx[session_id] = cur
-    _save_meta_index(idx)
-    return cur.copy()
+        if working_docs is not None:
+            cur["working_docs"] = list(working_docs)
+
+        cur["updated_at"] = now
+        idx[session_id] = cur
+        _save_meta_index(idx)
+        return cur.copy()
 
 
 def delete_session(session_id: str) -> bool:
@@ -191,8 +199,16 @@ def new_session_id() -> str:
     return datetime.now().strftime("%Y-%m-%d_%H%M%S") + "_" + uuid.uuid4().hex[:6]
 
 
+_SAFE_SID_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
 def session_path(session_id: str) -> Path:
-    return SESSIONS_DIR / f"{session_id}.jsonl"
+    sid = str(session_id or "")
+    if not _SAFE_SID_RE.match(sid):
+        # 防路径穿越 (B5 · 2026-08-27): 非法 sid (含 / \ 或空白等) 映射到必然不存在的
+        # _rejected_ 路径 · 读写都落在 sessions/ 内 · 调用方看到的是 404/空 · 不会穿出目录
+        sid = "_rejected_" + hashlib.sha1(sid.encode("utf-8", "replace")).hexdigest()[:16]
+    return SESSIONS_DIR / f"{sid}.jsonl"
 
 
 def append_turn(session_id: str, role: str, content, meta: dict | None = None) -> None:

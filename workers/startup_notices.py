@@ -29,10 +29,11 @@ import pathlib
 import sys
 from datetime import datetime
 
-_RUNTIME_DIR = pathlib.Path("data/runtime")
+_ROOT = pathlib.Path(__file__).resolve().parent.parent  # B-① · 2026-08-27 · 非项目根 cwd 启动也能找对 (Grok 全量审计)
+_RUNTIME_DIR = _ROOT / "data" / "runtime"
 _NOTICES_FILE = _RUNTIME_DIR / "startup_notices.json"
 _LAST_SEEN_FILE = _RUNTIME_DIR / "last_seen_core_version"
-_MANIFEST_FILE = pathlib.Path("core_manifest.json")
+_MANIFEST_FILE = _ROOT / "core_manifest.json"
 
 # 可选依赖体检清单: (import spec 名, pip 包名, 缺了什么功能受影响, 仅 win32)
 # · 主框架 (fastapi/uvicorn/openai/anthropic/dotenv/rich) 缺了 daemon 根本起不来 · 不用查
@@ -193,6 +194,15 @@ def refresh_startup_notices() -> dict:
     if missing:
         notices["missing_deps"] = missing
 
+    # --- 工具简介超线 · 塞进首条对话，不只打启动日志 ---
+    try:
+        from agent_tools._desc_budget import audit_tools_dir
+        overs = audit_tools_dir()
+    except Exception:
+        overs = []
+    if overs:
+        notices["tool_budget"] = overs[:16]
+
     # --- 落盘 (有内容才写 · 没内容清掉旧文件) ---
     try:
         if len(notices) > 1:
@@ -218,10 +228,6 @@ def consume_startup_notices() -> str:
         data = json.loads(_NOTICES_FILE.read_text(encoding="utf-8"))
     except Exception:
         return ""
-    try:
-        _NOTICES_FILE.unlink()  # 一次性消费 · 不管拼没拼成功都别复读
-    except Exception:
-        pass
 
     parts: list[str] = []
 
@@ -251,8 +257,27 @@ def consume_startup_notices() -> str:
             "去【环境】页点【开始安装】补装 (~1-2 分钟) · 装完重启 Daemonkey 生效"
         )
 
+    tb = data.get("tool_budget") or []
+    if tb:
+        try:
+            from agent_tools._desc_budget import format_budget_hint
+            hint = format_budget_hint(tb)
+        except Exception:
+            hint = "工具简介或字段超线（铁律 15）。"
+        parts.append(
+            "### 工具简介超线\n\n"
+            + hint
+            + "\n\n→ 用自己的话告诉用户：有几只手的名片超线，这版重启会装不上。"
+            "别复读 tok 数字，说人话，让他把简介收短。"
+        )
+
     if not parts:
         return ""
+
+    try:
+        _NOTICES_FILE.unlink()  # B-① · 拼完再删 · 中途异常不丢通知 (Grok 全量审计)
+    except Exception:
+        pass
 
     return (
         "\n\n## 启动通知 (一次性 · 用 OPUS 自己的话自然转告 · 不要机械复读原文)\n\n"

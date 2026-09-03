@@ -11,8 +11,8 @@ report_engine/themes.py
   - 引用块 / 代码块底色
   - 主要色板（封面强调色 / 列表 bullet 色等）
 
-默认版（opus_studio）色板基于 chat.css 的 #9F7AEA 紫色生态
-另有一套深蓝版（midnight）备选
+社区原版（manju）颜色取自 upstream/docs\\cooperation\\volcano-cmcc-haishan\\build-doc.py
+OPUS 工作室版（opus_studio）色板基于 chat.css 的 #9F7AEA 紫色生态
 """
 from __future__ import annotations
 
@@ -57,10 +57,11 @@ class Theme:
     quote_border: str
 
 
-# ─── 深蓝主题 ────────────────────────────────────────────────────
-THEME_MIDNIGHT = Theme(
-    name="midnight",
-    description="深蓝主题 · 深蓝标题 + 蓝头白字表 + 隔行灰底",
+# ─── 社区原版主题（深蓝） ────────────────────────────────────────
+# 取自 upstream\docs\cooperation\volcano-cmcc-haishan\build-doc.py
+THEME_MANJU = Theme(
+    name="manju",
+    description="社区原版主题 · 深蓝标题 + 蓝头白字表 + 隔行灰底",
     font_cjk="微软雅黑",
     font_en="Consolas",
     color_title=(0x1A, 0x36, 0x5D),
@@ -79,11 +80,11 @@ THEME_MIDNIGHT = Theme(
 )
 
 
-# ─── 默认主题（紫色） ────────────────────────────────────────────
-# 基于 chat.css --opus #9F7AEA 紫色色调 · 同源整体视觉
+# ─── OPUS 工作室主题（紫色） ─────────────────────────────────────
+# 基于 chat.css --opus #9F7AEA 紫色色调 · 同源 OPUS 整体视觉
 THEME_OPUS_STUDIO = Theme(
     name="opus_studio",
-    description="默认紫色主题 · 紫色标题 + 浅紫底表头 + 同源 chat.css 视觉",
+    description="OPUS 工作室主题 · 紫色标题 + 浅紫底表头 + 同源 chat.css 视觉",
     font_cjk="微软雅黑",
     font_en="Consolas",
     color_title=(0x4C, 0x1D, 0x95),    # 深紫 · 比 #9F7AEA 暗一档作为标题
@@ -91,11 +92,11 @@ THEME_OPUS_STUDIO = Theme(
     color_h3=(0x6B, 0x46, 0xC1),       # 中紫
     color_quote=(0x4A, 0x55, 0x68),    # 中性灰
     color_hint=(0x71, 0x80, 0x96),     # 浅灰
-    color_code_inline=(0xC0, 0x39, 0x2B),  # 代码红
+    color_code_inline=(0xC0, 0x39, 0x2B),  # 同社区 · 代码红
     table_header_fill="6B46C1",        # 中紫底
     table_alt_fill="F5F3FF",           # 极浅紫
     quote_fill="EDE9FE",               # 浅紫
-    code_fill="F1F5F9",                # 中性灰
+    code_fill="F1F5F9",                # 同社区 · 中性灰
     placeholder_fill="FEF3C7",         # 暖色提醒
     placeholder_border="D97706",       # 橙色边
     quote_border="9F7AEA",             # opus 紫
@@ -126,7 +127,7 @@ THEME_DARK_PURPLE = Theme(
 
 
 THEMES: Dict[str, Theme] = {
-    "midnight": THEME_MIDNIGHT,
+    "manju": THEME_MANJU,
     "opus_studio": THEME_OPUS_STUDIO,
     # dark_purple 暂不暴露 · 等远期实测
 }
@@ -140,4 +141,5 @@ def get_theme(name: str | None) -> Theme:
 
 
 def list_themes() -> list[str]:
-    return list(THEMES.keys())
+    # manju 留给旧文件重渲 · 公众/工具 enum 不露出社区名
+    return [n for n in THEMES if n != "manju"]

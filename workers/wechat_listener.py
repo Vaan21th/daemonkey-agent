@@ -36,6 +36,7 @@ _CASUAL_CONFIRM_WINDOW_SEC = 120
 # 设计: _BUSY_LOCK 排他 (同一时刻只有一个 turn 在跑) · B 到达进 _PENDING_QUEUE (FIFO)
 # A 完成 → 取队头自动跑下一轮 · 每条都落地按序不丢。加 _QUEUE_MAX 上限防无限堆积。
 _BUSY_LOCK = threading.Lock()
+_QUEUE_LOCK = threading.Lock()  # B-① · 2026-08-27 · 队列 append/pop 竞态保护 (Grok 全量审计)
 _PENDING_QUEUE: list[dict] = []  # [{msg, frm, ctx, attachments, notes, brain_msg}]
 _QUEUE_MAX = 20
 _STATE_EXTRA = {"queued": 0, "busy": False, "last_queue_overflow": None}
@@ -135,7 +136,8 @@ def _collect_media(items: list) -> tuple[list, list]:
                     notes.append("[BRO 发来一段语音·我暂时还不能听]")
                     continue
                 rel = _im.save_inbound("voice", got["data"], got.get("name") or "voice.silk")
-                if stt_transcribe.stt_status().get("ready"):
+                st = stt_transcribe.stt_status()
+                if st.get("ready") and st.get("enabled", True):
                     text = stt_transcribe.transcribe_silk(str(rel))
                     if text:
                         notes.append(f"[BRO 发来一段语音·转写: {text}]")
@@ -288,15 +290,16 @@ class _HumanTurnNarrator:
 def _queue_pending(msg: dict, frm: str, ctx: str, attachments: list, notes: list, brain_msg: str) -> bool:
     """A 处理中 B 到达 → 进 FIFO 队列 (P0 · Hermes queue 语义)。超上限丢弃+告警。"""
     global _STATE_EXTRA
-    if len(_PENDING_QUEUE) >= _QUEUE_MAX:
-        _STATE_EXTRA["last_queue_overflow"] = datetime.now(timezone.utc).isoformat()
-        logger.warning("wechat pending queue full (%d) · dropping follow-up", _QUEUE_MAX)
-        return False
-    _PENDING_QUEUE.append({
-        "msg": msg, "frm": frm, "ctx": ctx,
-        "attachments": attachments, "notes": notes, "brain_msg": brain_msg,
-    })
-    _STATE_EXTRA["queued"] = len(_PENDING_QUEUE)
+    with _QUEUE_LOCK:  # B-① · 2026-08-27 · append 与 drain 的 pop 竞态保护
+        if len(_PENDING_QUEUE) >= _QUEUE_MAX:
+            _STATE_EXTRA["last_queue_overflow"] = datetime.now(timezone.utc).isoformat()
+            logger.warning("wechat pending queue full (%d) · dropping follow-up", _QUEUE_MAX)
+            return False
+        _PENDING_QUEUE.append({
+            "msg": msg, "frm": frm, "ctx": ctx,
+            "attachments": attachments, "notes": notes, "brain_msg": brain_msg,
+        })
+        _STATE_EXTRA["queued"] = len(_PENDING_QUEUE)
     return True
 
 
@@ -304,16 +307,19 @@ def _drain_queue() -> None:
     """A 完成 → 取队头自动跑下一轮 (P0 · Hermes _promote_queued_event)。"""
     while True:
         with _BUSY_LOCK:
-            if not _PENDING_QUEUE:
-                _STATE_EXTRA["busy"] = False
-                _STATE_EXTRA["queued"] = 0
-                return
-            item = _PENDING_QUEUE.pop(0)
-            _STATE_EXTRA["queued"] = len(_PENDING_QUEUE)
-        try:
-            _process_one(item)
-        except Exception as e:
-            logger.exception("wechat queued turn failed: %s", e)
+            with _QUEUE_LOCK:  # B-① · 2026-08-27 · pop 与 append 竞态保护
+                if not _PENDING_QUEUE:
+                    _STATE_EXTRA["busy"] = False
+                    _STATE_EXTRA["queued"] = 0
+                    return
+                item = _PENDING_QUEUE.pop(0)
+                _STATE_EXTRA["queued"] = len(_PENDING_QUEUE)
+            # B-① · 2026-08-27 · _process_one 移进 _BUSY_LOCK 内 · 修"弹出放锁再处理"的排他打穿
+            # (原来处理在锁外 · 期间另一条 inbound 能 acquire 成功 → 两个 turn 并行)
+            try:
+                _process_one(item)
+            except Exception as e:
+                logger.exception("wechat queued turn failed: %s", e)
             # 单条失败不阻塞队列 · 继续下一条
 
 
@@ -463,6 +469,14 @@ def _process_one(item: dict) -> None:
     finally:
         ticker.stop()
     if not reply:
+        try:
+            from identity import localize_narration as _ln
+            ilink_client.send_text(
+                _ln("（这边没生成出回复，你再说一次？）"),
+                to_user_id=frm, context_token=ctx,
+            )
+        except Exception as e2:
+            logger.warning("wechat 空回复兜底失败: %s", e2)
         return
     # P2 · 长回复分块带 (N/M) 标记 (send_text 已分块 · 这里加标记)
     r = ilink_client.send_text(reply, to_user_id=frm, context_token=ctx)

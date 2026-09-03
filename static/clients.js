@@ -1,5 +1,5 @@
 /*
- * clients.js · 客户档案(CRM) + 用户运营(占位) 前端 (2026-07-12 从 chat.js 拆出)
+ * clients.js · 客户档案(CRM) 前端 (2026-07-12 从 chat.js 拆出 · 用户运营占位 2026-09-03 撤侧栏)
  *
  * 装载顺序 / 零构建全局约定同 depot.js(必须在 chat.js 之前)。
  * 引用的 escHtml / $dashView / mdRender / loadDashboard / renderListFilter /

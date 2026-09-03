@@ -3,7 +3,7 @@
 母体(OPUS) 和开源版(Daemonkey) 共用同一份代码——区别只在"叫什么名字"。
 名字属于【数据层】(soul/IDENTITY.json)·不属于代码:
 
-    {"name": "小石头", "owner_name": "阿哲", "persona_style": "随意像老朋友"}
+    {"name": "<AI名>", "owner_name": "<用户名>", "persona_style": "随意像老朋友"}
 
   - name        · 这只 daemon 自己的名字   (缺省 OPUS)
   - owner_name  · 它服务的那个人的名字     (缺省 BRO)

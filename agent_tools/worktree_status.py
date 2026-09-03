@@ -41,8 +41,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="worktree_status",
     description=(
-        "查 git 工作区真相（分支、领先落后、未提交、多 worktree、stash）。merge/切分支/重启前先调，避免抢同一棵树。"
-    ),
+        "查 git 工作区真相（分支、领先落后、未提交、多 worktree、stash）。merge/切分支/重启前先调，避免抢同一棵树。"    ),
     tier=TIER_AUTO,
     input_schema={"type": "object", "properties": {}},
     run=_run,

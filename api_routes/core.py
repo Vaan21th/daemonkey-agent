@@ -35,19 +35,34 @@ router = APIRouter()
 _STATIC_WHITELIST = {
     "chat.css": "text/css; charset=utf-8",
     "chat.js": "application/javascript; charset=utf-8",
+    # 2026-07-12 · 从 chat.js 拆出的成长档案 hub / 客户档案模块 · 漏加白名单 = 404 = 两块永久空白
+    "depot.js": "application/javascript; charset=utf-8",
+    "clients.js": "application/javascript; charset=utf-8",
+    # 2026-08-26 · chat.js/panels.js 一字不差的 96 个函数收口到这里 · 漏加 = 404 = 工作台和陪伴面板全空
+    "dashboard-panels.js": "application/javascript; charset=utf-8",
+    # 2026-08-31 · 中栏舞台 · 漏加 = 404 = 产出铺不上中间栏
+    "stage.js": "application/javascript; charset=utf-8",
+    # 2026-09-01 · 画布批注 · 漏加 = 404 = 钉子和按批注改死
+    "stage_notes.js": "application/javascript; charset=utf-8",
+    # 2026-08-26 · 三模式语音从 chat.js 抽出 · 工作台/陪伴共用 · 漏加 = 404 = 麦克风死
+    "voice-mic.js": "application/javascript; charset=utf-8",
+    # 2026-08-26 · 顶栏切模型从 chat.js 抽出 · 工作台/陪伴共用 · 漏加 = 404 = 顶栏模型死
+    "model-switch.js": "application/javascript; charset=utf-8",
+    # 2026-08-28 · 多会话并行内核从 chat.js 抽出 · 工作台/陪伴共用 · 漏加 = 404 = chat.js 中途 throw = 顶栏模型/整页一起死
     "session-runtime.js": "application/javascript; charset=utf-8",
+    # 2026-08-31 · 对话内检查点网络层 · 工作台/陪伴共用 · 漏加 = 404 = 房间回到这句/改字重发死
     "ckpt-restore.js": "application/javascript; charset=utf-8",
+    # 2026-08-29 · 灯箱+历史附件 · 工作台/陪伴共用 · 漏加 = 404 = 旧图点不开
     "chat-lightbox.js": "application/javascript; charset=utf-8",
     "chat-md.js": "application/javascript; charset=utf-8",
     "chat-timeline.js": "application/javascript; charset=utf-8",
     "chat-rail.js": "application/javascript; charset=utf-8",
-    "dashboard-panels.js": "application/javascript; charset=utf-8",
-    "voice-mic.js": "application/javascript; charset=utf-8",
-    "model-switch.js": "application/javascript; charset=utf-8",
+    "market.js": "application/javascript; charset=utf-8",
+    # 2026-08-27 · 设置页从 chat.js 抽出 · 工作台中栏 + 陪伴家具弹窗共用 · 漏加 = 404 = 房间设置空
     "settings-pane.js": "application/javascript; charset=utf-8",
-    # 2026-07-12 · 从 chat.js 拆出的成长档案 hub / 客户档案模块 · 漏加白名单 = 404 = 两块永久空白
-    "depot.js": "application/javascript; charset=utf-8",
-    "clients.js": "application/javascript; charset=utf-8",
+    # 0.9.6 · 用户装修区 · 文件本身 never_sync · 但 /static 必须放行, 否则 user.js 永远 404
+    "user/user.js": "application/javascript; charset=utf-8",
+    "user/user.css": "text/css; charset=utf-8",
     "workshop.css": "text/css; charset=utf-8",
     "workshop.js": "application/javascript; charset=utf-8",
     # 卷四十四 K · LiteGraph 单文件 (~1MB) · ComfyUI 同款 node editor
@@ -72,6 +87,7 @@ _STATIC_WHITELIST = {
     # 2026-07-30 · 无序直播形象 rig (BRO 直批·单文件网页 puppet·OBS 浏览器源用)
     # 部件 PNG 走 /workshop/outputs/vtuber/wuxu/assets/ · 不在此白名单内
     "vtuber/wuxu.html": "text/html; charset=utf-8",
+    "taste-chat-proto.html": "text/html; charset=utf-8",
 }
 
 # 二进制 mime (字体 / 图片) · serve_static 看到这些走 FileResponse · 不 read_text
@@ -154,6 +170,10 @@ _OUTPUT_MIME = {
     ".flac": "audio/flac", ".m4a": "audio/mp4", ".aac": "audio/aac",
     ".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
     ".pdf": "application/pdf",
+    ".html": "text/html; charset=utf-8",
+    ".htm": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
     ".txt": "text/plain; charset=utf-8",
     ".md": "text/markdown; charset=utf-8",
     ".json": "application/json; charset=utf-8",
@@ -203,6 +223,19 @@ async def core_version_endpoint():
         }
     except Exception:
         return {"core_version": ""}
+
+
+@router.get("/taste-chat", response_class=HTMLResponse)
+async def taste_chat_proto():
+    """相处质感闲聊原型 · 真对话 · 谈成写入口吻。"""
+    path = ROOT / "static" / "taste-chat-proto.html"
+    if not path.exists():
+        return HTMLResponse("<h1>taste-chat-proto.html missing</h1>", status_code=500)
+    html = path.read_text(encoding="utf-8")
+    return HTMLResponse(
+        _inject_ai_name(_bust_static_cache(html)),
+        headers={"Cache-Control": "no-cache, must-revalidate"},
+    )
 
 
 @router.get("/ui", response_class=HTMLResponse)
@@ -360,6 +393,38 @@ async def serve_presentation_asset(filename: str):
     )
 
 
+@router.get("/spreadsheets/{filename}")
+async def download_spreadsheet(
+    filename: str,
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = None,
+):
+    """data/spreadsheets 下的 xlsx / md · 鉴权同报告下载。"""
+    if token and not authorization:
+        authorization = f"Bearer {token}"
+    check_auth(authorization)
+    if not filename or "/" in filename or "\\" in filename or ".." in filename or "\x00" in filename:
+        raise HTTPException(400, "invalid filename")
+    from pathlib import PurePosixPath
+    suffix = PurePosixPath(filename).suffix.lower()
+    if suffix not in _OUTPUT_MIME:
+        raise HTTPException(415, f"unsupported file type: {suffix}")
+    full = (ROOT / "data" / "spreadsheets" / filename).resolve()
+    base = (ROOT / "data" / "spreadsheets").resolve()
+    try:
+        full.relative_to(base)
+    except ValueError:
+        raise HTTPException(400, "path escape blocked")
+    if not full.exists() or not full.is_file():
+        raise HTTPException(404, f"spreadsheet not found: {filename}")
+    return FileResponse(
+        path=str(full),
+        media_type=_OUTPUT_MIME[suffix],
+        filename=filename,
+        headers={"Cache-Control": "private, max-age=60"},
+    )
+
+
 @router.get("/api/logs/tail")
 async def logs_tail(
     lines: int = 200,
@@ -381,6 +446,8 @@ async def logs_tail(
     无 auth · 内网可见即可 · 跟 /api/lifecycle_status 同安全模型
     (远程暴露走 cloudflared · 那一层有自己的 access control)
     """
+    # B-① · 2026-08-27 · 日志可能含密钥/提示词 · 补鉴权 (前端本就带 Authorization · 本机 loopback 中间件兜底)
+    check_auth(authorization)
     try:
         from workers.opus_logging import tail_log
         return tail_log(
@@ -474,6 +541,7 @@ async def screen_record(
 _REVEAL_DIRS = [
     ROOT / "data" / "presentations",
     ROOT / "data" / "reports",
+    ROOT / "data" / "spreadsheets",
     ROOT / "data" / "workshop",
     ROOT / "data" / "knowledge",
     ROOT / "data" / "reviews",

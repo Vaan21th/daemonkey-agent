@@ -16,13 +16,18 @@ def _run(args: dict) -> ToolResult:
     out = set_persona_style(style)
     if not out.get("ok"):
         return ToolResult(ok=False, output="", error=str(out.get("error") or "写入失败"))
+    try:
+        from daemon_runtime import reload_soul_into_runtime
+        reload_soul_into_runtime()
+    except Exception:
+        pass
     old = out.get("old") or "（空）"
     return ToolResult(
         ok=True,
         output=(
             f"口吻已改：{old} → {out['style']}\n"
             f"档位包：{'已重蒸' if out.get('has_band') else '沿用兜底'}\n"
-            "下一轮开始按新口吻说。这一轮尾巴可能还是旧的。"
+            "下一句按新口吻说，不用重启。"
         ),
     )
 

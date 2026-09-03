@@ -79,11 +79,15 @@ def _run_media(media_path: str, caption: str) -> ToolResult:
         )
     err = r.get("error", "")
     if err == "window_closed":
+        if caption:
+            ilink_client.queue_pending(caption)
         return ToolResult(
             ok=True,
             output=(
-                "wechat_send · iLink 24h 窗口已关 (BRO 超过 24h 没在微信开口)·"
-                "这个媒体发不出去。等 BRO 下次在微信说话开窗后再发·或走 WebUI 发给他。"
+                "wechat_send · iLink 24h 窗口已关 (BRO 超过 24h 没在微信开口)。"
+                + ("正文已攒进补发队列，他下次在微信回一句会自动发出。" if caption else "")
+                + "媒体窗口关着发不了，开窗后再调一次 wechat_send 带 media_path。"
+                + "现在也把内容说给他听（房间/工作台），别假装已经发到手机上。"
             ),
         )
     if err == "silent_mode":
@@ -116,11 +120,15 @@ def _run(args: dict) -> ToolResult:
                         output=f"wechat_send · 已通过官方 iLink 发给 BRO ({len(text)} chars)",
                     )
             else:
+                ilink_client.queue_pending(text)
+                n = ilink_client.pending_count()
                 return ToolResult(
                     ok=True,
                     output=(
-                        "wechat_send · iLink 24h 窗口已关 (BRO 超过 24h 没在微信开口)·"
-                        "这条发不出去。等 BRO 下次在微信说话开窗后再发·或走 WebUI 告诉他。"
+                        "wechat_send · iLink 24h 窗口已关 (BRO 超过 24h 没在微信开口)。"
+                        f"这条已经攒进补发队列 (现在 {n} 条)。"
+                        "BRO 下次在微信里随便回一句就会自动补发，不用再调一次 wechat_send。"
+                        "现在也把正文说给他听（房间/工作台），别假装已经发到手机上。"
                     ),
                 )
     except Exception:

@@ -2,7 +2,7 @@
  * 从 chat.js 抽出。depot / 工作台 / opusMdRender 共用。不进 LLM 系统提示词。
  */
 // ──────────────────────────────────────────────────────────────
-// 卷三十 · 简易 markdown 渲染器（chat 右栏用 · Daemonkey 输出 ### / **/ - / 1. / ``` 等都正确渲染）
+// 卷三十 · 简易 markdown 渲染器（chat 右栏用 · OPUS 输出 ### / **/ - / 1. / ``` 等都正确渲染）
 // 不引外部 lib · 100 行自给自足 · 永远工作（trycloudflare 偶尔抽风也无所谓）
 //
 // 支持：
@@ -149,7 +149,7 @@ function mdRender(text, opts) {
       const domain = dm ? dm[1] : '';
       const filename = dm ? dm[2] : '';
       const isPreviewable = ['md','txt','png','jpg','jpeg','gif','webp','mp3','wav','mp4','webm','pdf'].includes(ext);
-      const btn = (ic, label, fn) => `<button class="mdc-btn" onclick="event.stopPropagation();${fn}('${domain}','${filename}','${ext}')" title="${label}"><i class="${ic}"></i>${label}</button>`;
+      const btn = (ic, label, fn) => `<button class="mdc-btn" onclick="event.stopPropagation();${fn}('${jsStr(domain)}','${jsStr(filename)}','${jsStr(ext)}')" title="${escHtml(label)}"><i class="${ic}"></i>${label}</button>`;
       return `<div class="md-doc-card" data-ext="${ext}" data-url="${safeUrl}" data-domain="${domain}" data-filename="${filename}">
         <span class="mdc-ic">${_docIcon(ext)}</span>
         <span class="mdc-body">

@@ -86,6 +86,18 @@ def _render_sheet(body: str, out: Path) -> int:
     return len(sheets)
 
 
+def _splice_deck_page(src: Path, page: int, body: str, out: Path, here: Path) -> None:
+    from workers.office_extend import render_new_pages
+    from workers.office_slides import replace_slide
+
+    extra = out.with_name(out.stem + ".__page__.pptx")
+    try:
+        render_new_pages(body, extra, inherit=src, here=here)
+        replace_slide(src, extra, out, page)
+    finally:
+        extra.unlink(missing_ok=True)
+
+
 def _run(args: dict) -> ToolResult:
     got = _resolve(str(args.get("path") or ""))
     if isinstance(got, ToolResult):
@@ -106,9 +118,32 @@ def _run(args: dict) -> ToolResult:
 
     excerpt = str(args.get("excerpt") or "")
     body_in = str(args.get("body") or "")
+    from workers.office_patch import looks_like_page_md
+
     try:
         src = load_source(got)
     except FileNotFoundError as e:
+        if got.suffix.lower() in {".pptx", ".ppt"} and page and looks_like_page_md(body_in):
+            from workers.output_versions import publish, safe_family, staged_path
+
+            family = safe_family(got.stem)
+            folder = _ROOT / "data" / "presentations"
+            staged = staged_path(folder, family, got.suffix.lower() or ".pptx")
+            try:
+                _splice_deck_page(got, page, body_in, staged, _here_dir("decks", got))
+                out, ver = publish(staged, folder, family, got.suffix.lower() or ".pptx", keep=got)
+            except Exception as ex:
+                return ToolResult(ok=False, output="", error=f"换页失败: {type(ex).__name__}: {ex}")
+            rel = out.relative_to(_ROOT).as_posix()
+            return ToolResult(
+                ok=True,
+                output="\n".join([
+                    f"换了第{page}页版式 · {out.name} · V{ver}",
+                    f"  路径: {rel}",
+                    f"  没有同源文稿，只动这一页，其余页留下",
+                    f"[[DK-OPEN]]{rel}",
+                ]),
+            )
         return ToolResult(ok=False, output="", error=str(e))
     except ValueError as e:
         return ToolResult(ok=False, output="", error=str(e))
@@ -149,12 +184,21 @@ def _run(args: dict) -> ToolResult:
     folder = dirs[src.kind]
     out = staged_path(folder, family, ext)
     try:
+        splice = (
+            src.kind == "decks"
+            and page
+            and looks_like_page_md(body_in)
+            and "封面" not in note
+        )
         if in_place:
             info = patch_office(src.src, out, excerpt=excerpt, new=body_in, page=page)
             note = (
                 f"{note} · 原位改字，{info['pages']} 页 / "
                 f"{info['pics']} 张图还在"
             )
+        elif splice:
+            _splice_deck_page(src.src, page, body_in, out, _here_dir("decks", src.src))
+            note = f"{note} · 只重渲第{page}页，其余页留下"
         elif src.kind == "decks":
             _render_deck(title, body, fm, cover, out, _here_dir("decks", src.src))
         elif src.kind == "reports":
@@ -184,8 +228,9 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="revise_office",
     description=(
-        "局部改已有 pptx/docx/xlsx。圈字换句：excerpt=成品原文，body=改完的那一句（不要整页 markdown），"
-        "原位改字，页数/图片/背景必须留下。整页 markdown 才重渲。不要 generate_*。没有同源 md 的外来稿不能用。"
+        "局部改已有 pptx/docx/xlsx。圈字：excerpt=原文，body=改完的那一句，原位换字。"
+        "换一页版式：page + 整页 markdown（<!-- layout -->），只重渲这一页。"
+        "不要 generate_* 整份重出。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

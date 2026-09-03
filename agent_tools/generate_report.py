@@ -1,44 +1,4 @@
-"""
-agent_tools/generate_report.py
-================================
-
-OPUS 通过自然语言生成 DOCX 报告。
-
-档位：CONFIRM
-  生成的是"产物"——用户 应该看见"OPUS 打算给我做一份《XXX》报告"这一步。
-  即使误生成也只是落盘 data/reports/ 多个文件 · 不破坏任何东西。
-  以后真的高频用了再考虑放成 AUTO。
-
-NLP 触发场景（OPUS 自己决定调这个工具的时机）：
-  - "把本周雷达整理成一份报告" → 调 generate_report
-  - "把刚才那段对话整理成 docx" → 调 generate_report
-  - "给我做一份《2026 Q2 AI 趋势观察》" → 调 generate_report
-  - "把这几个客户的情况汇总成文档发给我" → 调 generate_report
-
-入参约定：
-  title (必填)   - 报告标题 · 用在封面 + 文件名
-  body  (必填)   - 报告主体 markdown · OPUS 自己组装好的完整正文
-                   * 不必加 # 一级标题（封面会用 title · 重复会让 docx 头部空一行）
-                   * 可以用 ## ### + 段落 + 列表 + 表格 + 引用 + 代码块
-                   * 行内图片 ![alt](xxx.png) 路径会去 embed_image_dir 找
-
-  subtitle      - 副标题（封面用）· 例 '2026-05-23 → 2026-05-30'
-  audience      - 面向 · 例 '用户 自看' / '面向：投资人'
-  note          - 封面备注 · 一行短句说明文档背景
-  footer        - 封面页脚 · 默认 'Daemonkey · 工作室出品'
-  theme         - 'opus_studio' (默认 · 紫色) / 'midnight' (深蓝)
-  include_cover - bool (默认 True) · 不要封面就传 false · 纯正文 docx
-  embed_image_dir - 字符串 · 解析 body 中相对图片路径的基准目录
-                    默认 data/reports/_assets/<safe_title>/
-
-落盘：
-  data/reports/<safe_title>__<YYYYMMDD-HHMM>.docx
-  · safe_title 去掉/替换特殊字符 · 保留中文
-  · 文件被 Word 占用时自动加 -v2 / -v3 (引擎层已处理)
-
-输出（给 LLM）：
-  生成的 docx 路径 + 大小 + 主题 + 字符数
-"""
+"""CONFIRM · markdown → data/reports/*.docx。封面/主题/sources 见 input_schema。"""
 from __future__ import annotations
 
 import re
@@ -64,7 +24,7 @@ def _safe_filename(title: str) -> str:
 
 
 def _summarize(args: dict) -> str:
-    """给 用户 在 CONFIRM 提示里看的一行摘要"""
+    """给 BRO 在 CONFIRM 提示里看的一行摘要"""
     title = (args.get("title") or "未命名报告").strip()
     body = args.get("body") or ""
     body_len = len(body)
@@ -115,6 +75,9 @@ def _run(args: dict) -> ToolResult:
             ),
         )
 
+    from report_engine.cite import append_sources
+    body = append_sources(body, args.get("sources"))
+
     theme = (args.get("theme") or "opus_studio").lower().strip()
     include_cover = bool(args.get("include_cover", True))
 
@@ -125,16 +88,24 @@ def _run(args: dict) -> ToolResult:
             v = args.get(key)
             if v:
                 cover[key] = str(v).strip()
-        cover.setdefault("footer", "Daemonkey · 工作室出品")
+        from report_engine.brand import default_cover_footer
+        cover.setdefault("footer", default_cover_footer())
 
     safe_title = _safe_filename(title)
-    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
-    out_name = f"{safe_title}__{timestamp}.docx"
-    out_path = _REPORTS_DIR / out_name
+    from workers.output_versions import publish, safe_family, staged_path
+    family = safe_family(safe_title)
+    out_path = staged_path(_REPORTS_DIR, family, ".docx")
 
     embed_dir_arg = args.get("embed_image_dir")
     if embed_dir_arg:
-        embed_dir = Path(str(embed_dir_arg)).resolve()
+        embed_dir = Path(str(embed_dir_arg))
+        if not embed_dir.is_absolute():
+            embed_dir = _ROOT / embed_dir
+        embed_dir = embed_dir.resolve()
+        try:
+            embed_dir.relative_to(_ROOT.resolve())
+        except ValueError:
+            return ToolResult(ok=False, output="", error=f"embed_image_dir 越界: {embed_dir_arg}")
     else:
         embed_dir = _REPORTS_DIR / "_assets" / safe_title
 
@@ -147,13 +118,14 @@ def _run(args: dict) -> ToolResult:
         )
 
     try:
-        final_path = render_report(
+        wip = render_report(
             md_text=body,
             output_path=out_path,
             cover=cover,
             theme=theme,
             here_dir=embed_dir,
         )
+        final_path, ver = publish(wip, _REPORTS_DIR, family, ".docx")
     except ValueError as e:
         return ToolResult(ok=False, output="", error=f"渲染失败: {e}")
     except Exception as e:
@@ -168,7 +140,7 @@ def _run(args: dict) -> ToolResult:
             error=f"渲染器声称写入了 {final_path} · 但磁盘上找不到这个文件",
         )
 
-    # 补丁 · 同步落 markdown 源 · 供 WebUI 预览 + 未来重渲染
+    # 卷三十三补丁 · 同步落 markdown 源 · 供 WebUI 预览 + 未来重渲染
     # 文件名跟 docx 同名（差扩展名）· front-matter 记封面元数据 + body
     md_path = final_path.with_suffix(".md")
     try:
@@ -198,7 +170,7 @@ def _run(args: dict) -> ToolResult:
     rel_path = final_path.relative_to(_ROOT) if _ROOT in final_path.parents else final_path
 
     lines = [
-        f"已生成报告 · {final_path.name}",
+        f"已生成报告 · {final_path.name} · V{ver}",
         f"  路径: {rel_path}",
         f"  大小: {size_kb:.1f} KB",
         f"  主题: {theme}",
@@ -211,7 +183,7 @@ def _run(args: dict) -> ToolResult:
     else:
         lines.append("  封面: 无（纯正文 docx）")
     lines.append("")
-    lines.append("用户 在 WebUI '📑 报告' 维度可见 · 或点结果里的「用对应软件打开」直接进 Word/WPS。")
+    lines.append("产物库可见 · 或点结果里的「用对应软件打开」直接进 Word/WPS。")
     # 可打开产物 marker → 前端渲"用本机软件打开"按钮 (tool_loop 抽走·不进 LLM 内容)
     try:
         lines.append(f"[[DK-OPEN]]{final_path.relative_to(_ROOT).as_posix()}")
@@ -225,6 +197,7 @@ SPEC = ToolSpec(
     name="generate_report",
     description=(
         "把 markdown 渲染成精排 DOCX 落到 data/reports/。短文直接传 body；长文先写在回复里再只传 title。"
+        "已有稿圈字/批注改走 revise_office，不要整份重出。"
     ),
     tier=TIER_CONFIRM,
     input_schema={
@@ -244,7 +217,7 @@ SPEC = ToolSpec(
             },
             "audience": {
                 "type": "string",
-                "description": "面向对象 · 显示在封面页脚 · 例 '面向：用户 自看' · 可选",
+                "description": "面向对象 · 显示在封面页脚 · 例 '面向：BRO 自看' · 可选",
             },
             "note": {
                 "type": "string",
@@ -252,12 +225,23 @@ SPEC = ToolSpec(
             },
             "footer": {
                 "type": "string",
-                "description": "封面页脚 · 默认 'Daemonkey · 工作室出品' · 可选",
+                "description": "封面页脚 · 不传则用实例落款",
             },
             "theme": {
                 "type": "string",
-                "enum": ["opus_studio", "midnight"],
-                "description": "视觉主题 · 默认 opus_studio (紫色) · midnight 是深蓝",
+                "enum": ["opus_studio"],
+                "description": "视觉主题 · 默认 opus_studio",
+            },
+            "sources": {
+                "type": "array",
+                "description": "参考资料。每项 {title,url} 或 URL 字符串。只接受 http(s)。",
+                "items": {
+                    "type": ["string", "object"],
+                    "properties": {
+                        "title": {"type": "string"},
+                        "url": {"type": "string"},
+                    },
+                },
             },
             "include_cover": {
                 "type": "boolean",
@@ -268,7 +252,7 @@ SPEC = ToolSpec(
                 "description": (
                     "解析 body 中相对图片路径 ![](xx.png) 的基准目录。"
                     "默认 data/reports/_assets/<safe_title>/。"
-                    "提前把图放进这个目录 · OPUS 引用相对路径即可。"
+                    "提前把图放进这个目录 · Daemonkey 引用相对路径即可。"
                 ),
             },
         },

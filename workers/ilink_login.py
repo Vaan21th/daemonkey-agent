@@ -51,9 +51,13 @@ def _save_token(d: dict) -> None:
         "obtained_at": datetime.now(timezone.utc).isoformat(),
     }
     _TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _TOKEN_FILE.write_text(
+    # B-② · 2026-08-27 · token 原子写 · 半写不致登录态失效 (Grok 全量审计)
+    import os as _os
+    _tmp = _TOKEN_FILE.with_name(_TOKEN_FILE.name + ".tmp")
+    _tmp.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    _os.replace(_tmp, _TOKEN_FILE)
 
 
 def poll_status(qrcode_id: str) -> dict:

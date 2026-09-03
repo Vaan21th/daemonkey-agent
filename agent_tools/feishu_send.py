@@ -24,15 +24,28 @@ from . import TIER_CONFIRM, ToolResult, ToolSpec, register_tool
 
 def _resolve_open_id(session_id: str) -> str:
     """从 session_id 解析飞书 open_id: api-feishu-user_ou_xxx-sN → ou_xxx"""
+    rid, rtype = _resolve_target(session_id)
+    return rid if rtype == "open_id" else ""
+
+
+def _resolve_target(session_id: str) -> tuple[str, str]:
+    """sid → (receive_id, receive_id_type)。群是 chat_id，单聊是 open_id。"""
     if not session_id:
-        return ""
+        return "", "open_id"
+    rest = session_id
+    if rest.startswith("api-feishu-"):
+        rest = rest[len("api-feishu-"):]
+    if rest.startswith("group_"):
+        mid = rest[len("group_"):]
+        chat_id = mid.rsplit("-s", 1)[0] if "-s" in mid else mid
+        return (chat_id, "chat_id") if chat_id else ("", "open_id")
     seg = [p for p in session_id.split("-") if p.startswith("user_ou_")]
     if seg:
-        return seg[0].replace("user_", "", 1)
+        return seg[0].replace("user_", "", 1), "open_id"
     seg = [p for p in session_id.split("-") if p.startswith("ou_")]
     if seg:
-        return seg[0]
-    return ""
+        return seg[0], "open_id"
+    return "", "open_id"
 
 
 def _current_session_id() -> str:
@@ -68,7 +81,13 @@ def _run(args: dict) -> ToolResult:
     text = (args.get("text") or "").strip()
     media_path = (args.get("media_path") or "").strip()
     receive_id = (args.get("receive_id") or "").strip()
-    rid_type = (args.get("receive_id_type") or "").strip() or "open_id"
+    rid_type = (args.get("receive_id_type") or "").strip()
+    if not receive_id:
+        receive_id, auto_type = _resolve_target(_current_session_id())
+        if not rid_type:
+            rid_type = auto_type
+    if not rid_type:
+        rid_type = "open_id"
 
     # Important 1 · 8000 上限全程生效 (纯文本 + 前导文字统一)
     if len(text) > 8000:
@@ -77,8 +96,6 @@ def _run(args: dict) -> ToolResult:
             error=f"message too long: {len(text)} chars (limit 8000)",
         )
 
-    if not receive_id:
-        receive_id = _resolve_open_id(_current_session_id())
     if not receive_id:
         return ToolResult(
             ok=False, output="",
@@ -135,7 +152,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="feishu_send",
     description=(
-        "主动往飞书发文字或本地文件（≤20MB）。长任务做完、要递报告/代码包时用。日常飞书来信会自动回，别每句都调这个。"
+        "主动往飞书发文字或本地文件（≤20MB）。长任务做完、要递报告/代码包时用。"
+        "日常飞书来信会自动回，别每句都调这个。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

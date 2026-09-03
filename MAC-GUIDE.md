@@ -3,8 +3,8 @@
 > Daemonkey 是一款运行在本地、开源免费的 AI 搭档：持续记忆、工具调用、可视化对话（WebUI）、自我升级。
 > 本指南写给 Mac 用户。当前 Mac 版有两种启动方式：
 >
-> - **方式 A · 终端一键启动**（现在就能用）
-> - **方式 B · 图形启动器 Daemonkey.app**（打包中·近期发布·最省事）
+> - **方式 A · 终端一键启动**（`start.sh` · 现在就能用）
+> - **方式 B · 图形启动器**（源码 `mac_launcher.py` 已随 1.0.0 出厂；本机 `python3 mac_launcher.py`。`.app` / `.dmg` 要推到 GitHub 才由 Actions 出包）
 
 ---
 

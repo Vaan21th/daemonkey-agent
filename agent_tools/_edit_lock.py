@@ -30,13 +30,21 @@ from __future__ import annotations
 import hashlib
 import threading
 import time
+from pathlib import Path
 
 # 锁有效期(秒)。 超过这个时长没刷新的锁视为过期——上一个对话大概率早收尾了。
 TTL_SECONDS = 180.0
 
 _LOCK = threading.Lock()
-# path(绝对路径 str) -> {"owner": str, "ts": float, "hash": str, "tool": str}
+# path(resolve 后的绝对路径 str) -> {"owner": str, "ts": float, "hash": str, "tool": str}
 _REGISTRY: dict[str, dict] = {}
+
+
+def _norm_key(path: str) -> str:
+    try:
+        return str(Path(path).resolve())
+    except Exception:
+        return str(path)
 
 
 def _sha(text: str) -> str:
@@ -88,9 +96,10 @@ def guard(
     """
     now = time.time()
     cur_hash = _sha(current_text)
+    key = _norm_key(path)
     with _LOCK:
         _prune(now)
-        existing = _REGISTRY.get(path)
+        existing = _REGISTRY.get(key)
 
         if existing and not force:
             # 道 1: 另一个对话 TTL 内持锁 → 排队软提示
@@ -122,7 +131,7 @@ def guard(
                 f"(已强行接管编辑锁 · 该文件 {_fmt_ago(now - existing['ts'])}前"
                 f"由另一个对话 session {_short(existing['owner'])} 持有)"
             )
-        _REGISTRY[path] = {"owner": owner, "ts": now, "hash": cur_hash, "tool": tool}
+        _REGISTRY[key] = {"owner": owner, "ts": now, "hash": cur_hash, "tool": tool}
         return True, takeover
 
 
@@ -130,7 +139,7 @@ def note_write(path: str, owner: str, new_text: str, tool: str = "edit") -> None
     """写盘成功后调 · 把锁刷新到新内容的指纹(让同一对话连续编辑不误报)。"""
     now = time.time()
     with _LOCK:
-        _REGISTRY[path] = {"owner": owner, "ts": now, "hash": _sha(new_text), "tool": tool}
+        _REGISTRY[_norm_key(path)] = {"owner": owner, "ts": now, "hash": _sha(new_text), "tool": tool}
     # wish-e19edb92 · 顺手记归属表(落盘·重启后仍在) —— checkpoint 精准 add 靠它知道
     # "哪个文件是哪个会话改的"。 锁是内存的会随重启丢 · 归属表不会。 失败静默。
     try:
@@ -143,9 +152,9 @@ def note_write(path: str, owner: str, new_text: str, tool: str = "edit") -> None
 def release(path: str, owner: str) -> None:
     """主动释放锁(可选 · 任务收尾时用)。 只能释放自己持的。"""
     with _LOCK:
-        e = _REGISTRY.get(path)
+        e = _REGISTRY.get(_norm_key(path))
         if e and e.get("owner") == owner:
-            _REGISTRY.pop(path, None)
+            _REGISTRY.pop(_norm_key(path), None)
 
 
 def snapshot() -> dict[str, dict]:

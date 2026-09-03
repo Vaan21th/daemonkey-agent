@@ -196,8 +196,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="discover_skill",
     description=(
-        "按 BRO 画像去外部发现别人的 AI 能力，组装作战简报。落地 extract_playbook/create_app/wish 等 BRO 拍。可带 lead 或 focus。"
-    ),
+        "按 BRO 画像去外部发现别人的 AI 能力，组装作战简报。落地 extract_playbook/create_app/wish 等 BRO 拍。可带 lead 或 focus。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

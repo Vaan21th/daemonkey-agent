@@ -2,12 +2,13 @@
 agent_tools/web_search.py
 =========================
 
-Web 搜索工具（免 API key，多引擎自动降级）。
+Web 搜索工具（可选博查 KEY，没有就刮网页降级）。
 
 设计：
-  - **360 搜索（so.com）为主引擎**——大陆直连，中文长尾覆盖好，真实 URL 直接在 data-mdurl
-  - **Bing（cn.bing.com）次选**——英文/技术词好，中文长尾差（会退化成字典/不相关），作降级
-  - **DuckDuckGo HTML 兜底**——给能访问它的境外环境多一层冗余（大陆通常连不上）
+  - 配了博查 KEY 先走博查；失败或没配再刮 360 / Bing / DDG
+  - 中文长尾走 360；英文 / site: / GitHub / API 走 Bing。谁先有**能用的**结果用谁
+  - Bing 中文常收成单字词典——垃圾闸丢掉再换引擎，不把百科当答案
+  - DuckDuckGo HTML 兜底（大陆常连不上）
   - 用 stdlib html.parser 解析（不引 BeautifulSoup——成本桅杆）
   - 默认返回 8 条结果（标题 / URL / 摘要）
   - AUTO 档——只读外网，无副作用
@@ -32,6 +33,8 @@ from html.parser import HTMLParser
 import httpx
 
 from . import TIER_AUTO, ToolResult, ToolSpec, register_tool
+from ._web_search_fmt import format_search_output
+from ._web_search_pick import engine_names, keep_results, query_lane
 
 
 SEARCH_URL_360 = "https://www.so.com/s"
@@ -309,6 +312,8 @@ def _search_360(query: str, limit: int) -> list[dict[str, str]]:
     )
     if resp.status_code != 200:
         raise RuntimeError(f"HTTP {resp.status_code}")
+    if "qcaptcha" in str(resp.url).lower() or "qcaptcha" in resp.text[:4000].lower():
+        raise RuntimeError("captcha")
     parser = _So360Parser()
     parser.feed(resp.text)
     parser.close()
@@ -352,7 +357,7 @@ def _search_ddg(query: str, limit: int) -> list[dict[str, str]]:
     return [r for r in parser.results if r.get("url") and r.get("title")][:limit]
 
 
-_ENGINES = (("360", _search_360), ("Bing", _search_bing), ("DuckDuckGo", _search_ddg))
+_ENGINE_FN = {"360": _search_360, "Bing": _search_bing, "DuckDuckGo": _search_ddg}
 
 
 def _summarize(args: dict) -> str:
@@ -368,28 +373,43 @@ def _run(args: dict) -> ToolResult:
 
     limit = int(args.get("limit") or DEFAULT_LIMIT)
     limit = max(1, min(limit, MAX_LIMIT))
+    fetch_n = min(MAX_LIMIT, max(limit, 8))
+    lane = query_lane(query)
 
     attempts: list[str] = []
-    for engine_name, fn in _ENGINES:
+    try:
+        from workers.search_config import get_active_search
+        _prov, _key, _src = get_active_search()
+    except Exception:
+        _prov, _key, _src = "", "", ""
+    if _key and (_prov or "bocha") == "bocha":
         try:
-            results = fn(query, limit)
+            from ._web_search_bocha import search_bocha
+            raw = search_bocha(query, fetch_n, _key)
+            kept, junk_n = keep_results(raw, query, limit)
+            if kept:
+                return ToolResult(ok=True, output=format_search_output(query, kept, "Bocha"))
+            attempts.append(f"Bocha: {junk_n} junk dropped" if junk_n else "Bocha: 0 usable")
+        except Exception as e:
+            attempts.append(f"Bocha: {type(e).__name__}: {e}")
+
+    for engine_name in engine_names(lane):
+        fn = _ENGINE_FN[engine_name]
+        try:
+            raw = fn(query, fetch_n)
         except httpx.HTTPError as e:
             attempts.append(f"{engine_name}: network error {e!r}")
             continue
         except Exception as e:
             attempts.append(f"{engine_name}: {type(e).__name__}: {e}")
             continue
-        if results:
-            lines = [f"web_search · {query!r} · {len(results)} results (via {engine_name})", ""]
-            for i, r in enumerate(results, start=1):
-                lines.append(f"[{i}] {r['title']}")
-                lines.append(f"    {r['url']}")
-                snippet = r.get("snippet", "")
-                if snippet:
-                    lines.append(f"    {snippet[:280]}")
-                lines.append("")
-            return ToolResult(ok=True, output="\n".join(lines))
-        attempts.append(f"{engine_name}: 0 results")
+        kept, junk_n = keep_results(raw, query, limit)
+        if kept:
+            return ToolResult(ok=True, output=format_search_output(query, kept, engine_name))
+        if raw and junk_n:
+            attempts.append(f"{engine_name}: {junk_n} junk dropped")
+        else:
+            attempts.append(f"{engine_name}: 0 results")
 
     return ToolResult(
         ok=False,
@@ -402,10 +422,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="web_search",
     description=(
-        "Search the web via 360 Search (so.com, mainland-China friendly, good Chinese "
-        "coverage) with Bing and DuckDuckGo fallbacks. No API key required. Returns a list "
-        "of {title, url, snippet} for the query. Use this to find sources before deciding "
-        "what URLs to fetch with web_fetch. If you get 0 results, try rephrasing the query."
+        "Search the web. Uses Bocha when a search key is configured; otherwise "
+        "scrapes 360 / Bing / DuckDuckGo. Dictionary junk is dropped. Then web_fetch the URLs you need."
     ),
     tier=TIER_AUTO,
     input_schema={

@@ -291,33 +291,38 @@ def _update_task_fields(task_id: str, updates: dict) -> None:
     若之后用执行前的旧快照整体 _save 会把它们全部覆盖 (新加的任务静默消失、
     已删的任务复活)。这里重读最新数据、只更新本任务的字段; 任务已被删除则不复活。
     """
-    d = _load()
-    for t in d.get("tasks", []):
-        if t.get("id") == task_id:
-            t.update(updates)
-            break
-    else:
-        return  # 任务已被用户删除 → 保持删除
-    _save(d)
+    with _IO_LOCK:  # Grok-2 · 2026-08-27 · 整段 RMW 持锁原子 · 防并发增删互相覆盖丢任务
+        d = _load()
+        for t in d.get("tasks", []):
+            if t.get("id") == task_id:
+                t.update(updates)
+                break
+        else:
+            return  # 任务已被用户删除 → 保持删除
+        _save(d)
 
 
 def _tick() -> None:
     now = _now_utc()
     _TASK_STATE["last_tick_at"] = now.isoformat()
     d = _load()
-    changed = False
     pending_updates: list[tuple[str, dict]] = []  # (task_id, 字段更新) · 执行完局部落盘
     for t in d.get("tasks", []):
         if not t.get("enabled"):
             continue
         nra = t.get("next_run_at")
         if not nra:
+            # Grok-2 · 2026-08-27 · 空值任务也走局部落盘 (不能改快照 + 整本 _save) ·
+            # 否则会把同 tick 刚 claim 的 next_run_at 用旧快照覆盖回去 → 定时任务重复执行
             try:
-                t["next_run_at"] = _compute_next_run(t["schedule"], after=now)
+                nxt = _compute_next_run(t["schedule"], after=now)
             except Exception as e:
                 logger.warning("compute next_run_at failed for %s: %s", t.get("id"), e)
-                t["next_run_at"] = None
-            changed = True
+                nxt = None
+            try:
+                _update_task_fields(t.get("id") or "", {"next_run_at": nxt})
+            except Exception:
+                logger.exception("init next_run_at failed for %s", t.get("id"))
             continue
         try:
             due = datetime.fromisoformat(nra) <= now
@@ -359,8 +364,8 @@ def _tick() -> None:
         if not res.get("ok"):
             _TASK_STATE["last_error"] = res.get("summary")
         pending_updates.append((t.get("id") or "", upd))
-    if changed:
-        _save(d)
+    # Grok-2 · 2026-08-27 · 不再整本 _save 旧快照 (会覆盖同 tick 刚 claim 的 next_run_at) ·
+    # 所有字段更新都走 _update_task_fields 局部落盘
     # H-05 · 执行期间用户的增删改已先落盘 → 重读最新数据按 task_id 局部更新 · 不整本覆盖
     for tid, upd in pending_updates:
         if not tid:

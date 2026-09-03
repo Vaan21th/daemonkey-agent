@@ -447,6 +447,7 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None, 
         return msgs
 
     push_tool_progress("🧩 分身启动", f"#{idx} · {goal[:30]}")
+    r = None
     try:
         r = run_subagent(
             system=system,
@@ -469,8 +470,19 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None, 
         )
     finally:
         # 生命状态机收尾 · 不管成功失败都更新注册表
-        status = "cancelled" if _rec_cancel["requested"] else ("success" if r.ok else "failed")
+        status = "cancelled" if _rec_cancel["requested"] else (
+            "success" if (r is not None and r.ok) else "failed"
+        )
         _update_subagent(subagent_id, status=status)
+
+    if r is None:
+        return {
+            "idx": idx, "goal": goal, "ok": False, "text": "",
+            "iterations": 0, "usage": {}, "warning": None,
+            "error": "run_subagent 未返回（抛错已由外层记录）",
+            "sub_session_id": None, "subagent_id": subagent_id, "status": status,
+            "whitelist": sorted(wl), "result_file": None,
+        }
 
     push_tool_progress("✓ 分身完成", f"#{idx} · {r.iterations} 轮 · {status}")
     # wish-48566053 · 血缘落库 (谁派的 → 哪个分身 → 状态 · 不读 sub-*.jsonl 就能查全局)
@@ -867,8 +879,53 @@ def _format_results(results: list, resume: bool = False) -> ToolResult:
 
     resume=True 时标题用「续跑」· 其余展示逻辑与新派发一致。
     """
-    # wish-48566053 · 统一走 _format_results 汇总 (含 result_file 落盘展示 · 全挂→失败)
-    return _format_results(results, resume=False)
+    ok_n = sum(1 for r in results if r and r.get("ok"))
+    tot_in = sum((r.get("usage") or {}).get("input_tokens", 0) for r in results if r)
+    tot_out = sum((r.get("usage") or {}).get("output_tokens", 0) for r in results if r)
+    tot_cache_r = sum((r.get("usage") or {}).get("cache_read_tokens", 0) for r in results if r)
+    n = sum(1 for r in results if r)
+    verb = "续跑" if resume else "派出"
+    lines = [
+        f"# 🧩 {verb} {n} 个分身 · 完成 {ok_n}/{n} · "
+        f"tokens in/out/cache_read {tot_in}/{tot_out}/{tot_cache_r}",
+        "",
+    ]
+    for r in results:
+        if not r:
+            continue
+        lines.append(f"## 分身 {r.get('idx', '?')} · {r.get('goal') or ''}")
+        if not r.get("ok"):
+            lines.append(f"❌ 失败: {r.get('error') or '(未知)'}")
+            lines.append("")
+            continue
+        text = r.get("text") or "(无输出)"
+        rf = r.get("result_file")
+        if rf:
+            lines.append(f"全文已落盘: `{rf}`")
+            lines.append(f"摘要: {text[:200].replace(chr(10), ' ')}")
+        else:
+            if len(text) > _TEXT_CLIP:
+                text = text[:_TEXT_CLIP] + (
+                    f"\n\n… [截断 · 全文见 sessions/sub-{r.get('sub_session_id')}.jsonl]"
+                )
+            lines.append(text)
+        us = r.get("usage") or {}
+        meta = (
+            f"_(分身 {r.get('subagent_id')} · {r.get('status', '?')} · 迭代 {r.get('iterations')} 轮 · "
+            f"tokens in/out/cache {us.get('input_tokens', 0)}/{us.get('output_tokens', 0)}/"
+            f"{us.get('cache_read_tokens', 0)}"
+        )
+        if r.get("warning"):
+            meta += f" · ⚠ {r['warning']}"
+        meta += ")_"
+        lines.append("")
+        lines.append(meta)
+        lines.append("")
+    return ToolResult(
+        ok=ok_n > 0,
+        output="\n".join(lines).rstrip(),
+        error=None if ok_n > 0 else "所有分身都失败了",
+    )
 
 
 def _run(args: dict) -> ToolResult:
@@ -930,47 +987,7 @@ def _run(args: dict) -> ToolResult:
             _cancel_check = None
 
     results = _run_pool(tasks, RUNTIME, parent_sid, _cancel_check)
-
-    ok_n = sum(1 for r in results if r and r.get("ok"))
-    tot_in = sum((r.get("usage") or {}).get("input_tokens", 0) for r in results if r)
-    tot_out = sum((r.get("usage") or {}).get("output_tokens", 0) for r in results if r)
-    tot_cache_r = sum((r.get("usage") or {}).get("cache_read_tokens", 0) for r in results if r)
-
-    lines = [
-        f"# 🧩 派出 {len(tasks)} 个分身 · 完成 {ok_n}/{len(tasks)} · "
-        f"并发 {min(_MAX_CONCURRENCY, len(tasks))} · tokens in/out/cache_read {tot_in}/{tot_out}/{tot_cache_r}",
-        "",
-    ]
-    for r in results:
-        if not r:
-            continue
-        head = f"## 分身 {r['idx']} · {r['goal']}"
-        lines.append(head)
-        if not r.get("ok"):
-            lines.append(f"❌ 失败: {r.get('error') or '(未知)'}")
-            lines.append("")
-            continue
-        text = r.get("text") or "(无输出)"
-        clipped = len(text) > _TEXT_CLIP
-        if clipped:
-            text = text[:_TEXT_CLIP] + f"\n\n… [截断 · 全文见 sessions/sub-{r.get('sub_session_id')}.jsonl]"
-        lines.append(text)
-        us = r.get("usage") or {}
-        meta = (
-            f"_(分身 {r.get('subagent_id')} · {r.get('status', '?')} · 迭代 {r.get('iterations')} 轮 · "
-            f"tokens in/out/cache {us.get('input_tokens', 0)}/{us.get('output_tokens', 0)}/"
-            f"{us.get('cache_read_tokens', 0)}"
-        )
-        if r.get("warning"):
-            meta += f" · ⚠ {r['warning']}"
-        meta += ")_"
-        lines.append("")
-        lines.append(meta)
-        lines.append("")
-
-    # 全挂 → 工具级失败 (让主 LLM 知道要换法) · 部分成功 → ok=True 带失败标注
-    return ToolResult(ok=ok_n > 0, output="\n".join(lines).rstrip(),
-                      error=None if ok_n > 0 else "所有分身都失败了")
+    return _format_results(results, resume=False)
 
 
 SPEC = ToolSpec(
@@ -1009,7 +1026,7 @@ SPEC = ToolSpec(
             },
             "background": {
                 "type": "boolean",
-                "description": "可选 · 0.9.7 · true=异步后台跑: 立即返回不阻塞对话 · 全部完成后自动通报到本会话",
+                "description": "可选 · true=立即返回、后台最多 2 路并行 · 全部完成后通报本会话",
             },
         },
         "required": ["tasks"],

@@ -112,7 +112,7 @@ STYLE_LIGHT_STUDIO = DeckStyle(
     bullet_char="—",
     cover_accent_bar=True,
     uppercase_kicker=True,
-    footer="Daemonkey · 工作室出品",
+    footer="",
 )
 
 
@@ -149,7 +149,7 @@ STYLE_DARK_KEYNOTE = DeckStyle(
     bullet_char="—",
     cover_accent_bar=True,
     uppercase_kicker=True,
-    footer="Daemonkey",
+    footer=""
 )
 
 
@@ -187,7 +187,7 @@ STYLE_EDITORIAL = DeckStyle(
     bullet_char="—",
     cover_accent_bar=False,
     uppercase_kicker=True,
-    footer="Daemonkey · 编辑室出品",
+    footer="",
     decor="none",                    # 编辑风靠字阶/留白 · 不用装饰圆(与商务/深色区分开)
 )
 
@@ -207,7 +207,7 @@ STYLE_GLASS = DeckStyle(
     pt_cover_title=48, pt_title=32, pt_section=42, pt_heading=22, pt_body=18,
     pt_kicker=13, pt_footnote=10, pt_kpi=56, pt_statement=36,
     is_dark=True, bullet_char="—", cover_accent_bar=True, uppercase_kicker=True,
-    footer="Daemonkey",
+    footer="",
     surface_alpha=16, corner_radius=0.16, shadow_style="soft", stroke_style="hairline",
     texture="beams", accent_shape="bar", font_role="sans",
 )
@@ -228,7 +228,7 @@ STYLE_NEON_GLITCH = DeckStyle(
     pt_cover_title=52, pt_title=34, pt_section=46, pt_heading=22, pt_body=18,
     pt_kicker=13, pt_footnote=10, pt_kpi=60, pt_statement=40,
     is_dark=True, bullet_char="›", cover_accent_bar=True, uppercase_kicker=True,
-    footer="Daemonkey",
+    footer="",
     surface_alpha=100, corner_radius=0.0, shadow_style="glow", stroke_style="hard",
     texture="scanline", accent_shape="slash", font_role="mono", decor="corner",
 )
@@ -249,7 +249,7 @@ STYLE_SKETCH = DeckStyle(
     pt_cover_title=50, pt_title=34, pt_section=46, pt_heading=23, pt_body=19,
     pt_kicker=13, pt_footnote=11, pt_kpi=56, pt_statement=38,
     is_dark=False, bullet_char="•", cover_accent_bar=False, uppercase_kicker=False,
-    footer="Daemonkey · 手记",
+    footer="",
     surface_alpha=100, corner_radius=0.22, shadow_style="none", stroke_style="sketch",
     texture="grid", accent_shape="underline", font_role="hand", decor="none",
 )

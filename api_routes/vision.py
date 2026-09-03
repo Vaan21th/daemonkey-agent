@@ -17,6 +17,20 @@ from api_routes._deps import check_auth
 router = APIRouter()
 
 
+def resolve_vision_key(api_key: str) -> str:
+    """空或掩码 → 用已存的真 key。第一次仍必须贴完整 key。"""
+    api_key = (api_key or "").strip()
+    if api_key and "****" not in api_key:
+        return api_key
+    from workers.vision_config import load_vision_config
+    prev = (load_vision_config().get("api_key") or "").strip()
+    if prev and "****" not in prev:
+        return prev
+    if not api_key:
+        raise HTTPException(400, "api_key is required")
+    raise HTTPException(400, "api_key 是掩码显示值 (含 ****)·请粘贴完整 API key 再保存")
+
+
 def _mask(s: str) -> str:
     if len(s) <= 8:
         return "*" * len(s)
@@ -56,11 +70,7 @@ async def set_vision_config(
         raise HTTPException(400, "model is required")
     if not base_url:
         raise HTTPException(400, "base_url is required")
-    if not api_key:
-        raise HTTPException(400, "api_key is required")
-    if "****" in api_key:
-        # 社区 7/31 反馈: GET 回显的是掩码·前端原样回传保存会覆盖真 key → 永久 401
-        raise HTTPException(400, "api_key 是掩码显示值 (含 ****)·请粘贴完整 API key 再保存")
+    api_key = resolve_vision_key(api_key)
     if not base_url.startswith("https://"):
         raise HTTPException(400, "base_url must start with https://")
 

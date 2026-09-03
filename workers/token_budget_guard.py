@@ -23,7 +23,9 @@ from __future__ import annotations
 import json
 import os
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+_CST = timezone(timedelta(hours=8))  # B-② · 2026-08-27 · 固定 UTC+8 预算日 · 不随系统时区漂 (Grok 全量审计)
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +65,7 @@ def get_limits() -> dict[str, int]:
 
 def _today_key() -> str:
     """UTC+8 日历日 · 跟 BRO 时区一致"""
-    now = datetime.now(timezone.utc).astimezone()
+    now = datetime.now(_CST)
     return now.strftime("%Y-%m-%d")
 
 

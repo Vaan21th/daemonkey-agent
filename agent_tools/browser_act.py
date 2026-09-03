@@ -72,8 +72,7 @@ def _summarize(args: dict) -> str:
 SPEC = ToolSpec(
     name="browser_act",
     description=(
-        "在 daemon 专属 Edge 上真操作网页：goto/inspect/click/fill/upload/press/wait/read/download/harvest/screenshot。只读抓文字用 browser_fetch。找不到元素会截图报失败，不装成功。"
-    ),
+        "在 daemon 专属 Edge 上真操作网页：goto/inspect/click/fill/upload/press/wait/read/download/harvest/screenshot。只读抓文字用 browser_fetch。找不到元素会截图报失败，不装成功。"    ),
     tier=TIER_CONFIRM,
     classify=_classify,
     input_schema={

@@ -26,7 +26,7 @@ let _railHideTimer = null;        // safe zone 隐藏定时器
 let _railSelfHealTimer = null;    // 兜底自愈轮询句柄 (2026-08-10 v3 · 防误隐藏后无事件恢复)
 let _railPreviewIdx = -1;         // 磁性驱动预览跟随的当前刻度 (切换时才重建 DOM · v5)
 let _railTopCache = null;         // rail 视口 top 缓存 (v5 · 磁性拉伸免每帧 getBoundingClientRect)
-// 2026-08-15 磁性命中带 (用户 反馈): rail 元素本身只有 ~20px 宽 · 鼠标从消息区滑过来
+// 2026-08-15 磁性命中带 (BRO 反馈): rail 元素本身只有 ~20px 宽 · 鼠标从消息区滑过来
 // 要精准够到细条才有反应 (中间镂空/左侧带"点不到")。扩成透明命中带: 左缘向左扩展
 // _RAIL_HIT_ZONE px · document 级 pointermove 判断 · 靠近轨道即触发磁性+预览。
 const _RAIL_HIT_ZONE = 48;        // 命中带向左扩展宽度 (px)
@@ -55,7 +55,7 @@ function _ensureMsgRail() {
   panel.addEventListener('scroll', _updateRailActive, { passive: true });
   window.addEventListener('resize', _repositionRail);
   // 磁性拉伸: document 级 pointermove · 命中带判断 (rail 左缘向左扩展 48px) ·
-  // 鼠标靠近轨道就触发 · 不用精准够到 20px 细条 (用户: 中间镂空点不到)
+  // 鼠标靠近轨道就触发 · 不用精准够到 20px 细条 (BRO: 中间镂空点不到)
   // RAF 消费（免每帧写 DOM）· 命中带外回弹 + 隐藏预览
   document.addEventListener('pointermove', function(e) {
     const hr = _railHitRect;
@@ -94,7 +94,7 @@ function _ensureMsgRail() {
   // 任何事件漏监/瞬间状态导致 rail 误隐藏 → 有用户消息就强制恢复 (治"展开折叠后消失")
   // 2026-08-10 修复 v5: 自愈检查条件从 `.session-msgs .msg.bro` (限容器内) 放宽为
   // `#messages` 全量 `.msg.bro` · 展开折叠/加载全部重建后容器 class 若变化 ·
-  // 旧条件查不到 → 永不恢复 · 只能等对话触发 observer (用户: "要再对话一次才出现")
+  // 旧条件查不到 → 永不恢复 · 只能等对话触发 observer (BRO: "要再对话一次才出现")
   if (!_railSelfHealTimer) {
     _railSelfHealTimer = setInterval(function() {
       if (!_railEl) return;
@@ -124,8 +124,8 @@ function _refreshMsgRail() {
   const src = container || document.getElementById('messages');
   if (!src) { _railEl.hidden = true; _railHitRect = null; return; }
   const userMsgs = src.querySelectorAll('.msg.bro'); // 用户消息 = msg bro (角色类)
-  // 2026-08-10 修复 v9 (用户 拍板): rail 只显示最近 N 条 · 不随折叠/展开爆炸 ·
-  // 展开折叠加载全部后 DOM 224+ 条 → 刻度挤爆看不见 (用户: "200多轮根本显示不全")
+  // 2026-08-10 修复 v9 (BRO 拍板): rail 只显示最近 N 条 · 不随折叠/展开爆炸 ·
+  // 展开折叠加载全部后 DOM 224+ 条 → 刻度挤爆看不见 (BRO: "200多轮根本显示不全")
   // 上限: 最近 28 条 · 不折叠/展开折叠都完整显示 · 无需内部滚动 · 1080P/2K 都装得下
   const RAIL_MAX_MARKS = 28;
   const startIdx = Math.max(0, userMsgs.length - RAIL_MAX_MARKS);
@@ -135,7 +135,7 @@ function _refreshMsgRail() {
   // 间距固定 6px（CSS 控制）· 不动态压缩
   _railEl.innerHTML = '';
   _railMarks = [];
-  // 2026-08-10 修复 v9 (用户 拍板): 顺序恢复老的在上·新的在下 (跟聊天记录一致) ·
+  // 2026-08-10 修复 v9 (BRO 拍板): 顺序恢复老的在上·新的在下 (跟聊天记录一致) ·
   // v6 曾因 224 刻度爆炸倒序(最新在上) · 现在有数量上限不再需要 · 恢复直觉顺序
   for (let i = 0; i < total; i++) {
     const msgEl = railMsgs[i];
@@ -251,12 +251,12 @@ function _repositionRail() {
   const panel = document.getElementById('messages');
   if (!panel) return;
   // 2026-08-10 修复 v4: rail 改用 position:fixed (挂 body · 视口定位) ·
-  // 原 absolute 挂 .chat-pane 下 → .chat-pane overflow:hidden 在窗口变小时把 rail 裁掉 (用户: 吃分辨率)
+  // 原 absolute 挂 .chat-pane 下 → .chat-pane overflow:hidden 在窗口变小时把 rail 裁掉 (BRO: 吃分辨率)
   // fixed 定位直接用视口坐标 · 不随父容器裁切 · 窗口怎么变都在聊天区右侧
   const prect = panel.getBoundingClientRect();
   _railEl.style.top = (prect.top + _RAIL_TOP_OFFSET) + 'px';
   _railTopCache = prect.top + _RAIL_TOP_OFFSET; // v5: 缓存 rail 视口 top · 磁性拉伸免每帧读布局
-  // 磁性命中带: rail 真实矩形 + 左缘向左扩展 (用户: 靠近轨道就触发 · 不用够到细条)
+  // 磁性命中带: rail 真实矩形 + 左缘向左扩展 (BRO: 靠近轨道就触发 · 不用够到细条)
   const rr = _railEl.getBoundingClientRect();
   _railHitRect = {
     left: rr.left - _RAIL_HIT_ZONE,
@@ -329,4 +329,3 @@ function _updateRailActive() {
 // 初始化: DOM 就绪后建 rail · 之后靠 MutationObserver 自动刷新
 if (document.body) _ensureMsgRail();
 else document.addEventListener('DOMContentLoaded', function() { _ensureMsgRail(); }, { once: true });
-

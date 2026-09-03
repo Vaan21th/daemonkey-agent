@@ -4,16 +4,17 @@ report_engine/markdown_to_docx.py
 
 通用 markdown → docx 渲染器
 
-源流：抽象自一套成熟的 build-doc.py 渲染器。
+源流：抽象自 upstream/docs\\cooperation\\volcano-cmcc-haishan\\build-doc.py
+     （以及同源的 competitive-analysis / recruiting 三个 build-*-doc.py）
 
-设计差异：
+跟社区原版的差异：
   - 视觉规范不再 hardcoded · 改为接受 Theme 对象（见 themes.py）
   - 不再 hardcoded 多份 DOCS_CONFIG · 改为接受单文档参数
   - 公共 API `render_report` · 上层只需 (markdown_text, output_path, cover, theme)
 
 支持的 markdown 元素：
   - 标题（1-6 级 · 字号 / 颜色随级别变化）
-  - 段落 + 行内格式（**bold** / `code` / *italic*）
+  - 段落 + 行内格式（**bold** / `code` / *italic* / `[text](http…)`）
   - 无序列表 / 有序列表（多级缩进）
   - 表格（自带表头底色 + 隔行灰底）
   - 引用块（> · 浅底色 + 左侧竖线）
@@ -22,7 +23,6 @@ report_engine/markdown_to_docx.py
   - 图片 `![alt](path.png)` · 路径相对源 markdown 文件
 
 不支持（暂未实现 · 实际生产中很少用）：
-  - 链接 `[text](url)` · 行内文字会保留 markdown 原文
   - 行内 HTML
   - 嵌套表格 / 嵌套引用
 
@@ -55,7 +55,7 @@ from .themes import Theme, get_theme, THEME_OPUS_STUDIO
 def resolve_writable_path(target: Path) -> Path:
     """如果默认 docx 被 Word 等占用·自动换名为 -v2 / -v3 ...
 
-    _resolve_out_docx · 保留这个稳定性容错。
+    源自社区 build-doc.py 的 _resolve_out_docx · 保留这个稳定性容错。
     """
     if not target.exists():
         return target
@@ -132,15 +132,7 @@ def set_paragraph_border(
     pPr.append(pBdr)
 
 
-# ──────────────────────────────────────────────────────────
-# 行内格式解析（**bold** / `code` / *italic*）
-# ──────────────────────────────────────────────────────────
-
-INLINE_RE = re.compile(
-    r"(\*\*[^*]+?\*\*)"      # bold
-    r"|(`[^`]+?`)"           # inline code
-    r"|(\*[^*]+?\*)"         # italic
-)
+from .inline_runs import INLINE_RE, add_inline_runs as _add_inline_runs  # noqa: F401
 
 
 def add_inline_runs(
@@ -152,30 +144,10 @@ def add_inline_runs(
     base_color: Optional[RGBColor] = None,
     base_bold: bool = False,
 ):
-    """处理一段含 inline 格式的文本 · 切分成多个 run 加入 paragraph"""
-    pos = 0
-    for m in INLINE_RE.finditer(text):
-        if m.start() > pos:
-            r = paragraph.add_run(text[pos: m.start()])
-            set_font(r, theme, size=base_size, color=base_color, bold=base_bold)
-        if m.group(1):
-            r = paragraph.add_run(m.group(1)[2:-2])
-            set_font(r, theme, size=base_size, color=base_color, bold=True)
-        elif m.group(2):
-            r = paragraph.add_run(m.group(2)[1:-1])
-            set_font(r, theme,
-                     name=theme.font_en,
-                     size=base_size - 0.5,
-                     color=_rgb(theme.color_code_inline),
-                     bold=base_bold)
-        elif m.group(3):
-            r = paragraph.add_run(m.group(3)[1:-1])
-            set_font(r, theme, size=base_size, color=base_color,
-                     bold=base_bold, italic=True)
-        pos = m.end()
-    if pos < len(text):
-        r = paragraph.add_run(text[pos:])
-        set_font(r, theme, size=base_size, color=base_color, bold=base_bold)
+    _add_inline_runs(
+        paragraph, text, theme, set_font,
+        base_size=base_size, base_color=base_color, base_bold=base_bold,
+    )
 
 
 # ──────────────────────────────────────────────────────────
@@ -552,7 +524,7 @@ def render_report(
         cover           封面信息 dict · 字段： title / subtitle / note /
                                               audience / footer / date
                                               · None → 不渲染封面页（直接正文）
-        theme           主题名（'opus_studio' / 'midnight'）或 Theme 对象
+        theme           主题名（'opus_studio' / 'manju'）或 Theme 对象
         here_dir        解析 markdown 中相对图片路径的基准目录
                         · 默认 output_path.parent
         strip_h1_prefix 如果 markdown 顶部一级标题已在 cover 体现 · 用此字符串去掉
@@ -606,6 +578,9 @@ def render_report(
 
     render_markdown_to_doc(doc, text, theme, here_dir=here_dir)
 
+    from .page_chrome import add_page_numbers
+    add_page_numbers(doc, skip_first=bool(cover))
+
     final_path = resolve_writable_path(output_path)
     doc.save(final_path)
     return final_path
@@ -618,7 +593,7 @@ def render_report(
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print("用法: python -m report_engine.markdown_to_docx <src.md> <out.docx> [theme]")
-        print("可选 theme: opus_studio (默认) / midnight")
+        print("可选 theme: opus_studio (默认) / manju")
         sys.exit(1)
     src = Path(sys.argv[1])
     out = Path(sys.argv[2])

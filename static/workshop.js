@@ -174,7 +174,17 @@
   let _trash = { apps: [], flows: [] };
   let _trashLoaded = false;
 
-  function _getToken() { return localStorage.getItem('opus_ui_token') || ''; }
+  function _getToken() {
+    if (typeof _loopbackAuthToken === 'function') return _loopbackAuthToken();
+    try {
+      const t = localStorage.getItem('opus_ui_token') || '';
+      if (t) return t;
+    } catch (e) {}
+    if (typeof token === 'string' && token) return token;
+    const h = (location.hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
+    if (h === '127.0.0.1' || h === 'localhost' || h === '::1') return '__loopback__';
+    return '';
+  }
 
   function tr(s) {
     if (_menuLang === 'en' || !s) return s;
@@ -402,11 +412,11 @@
               <div class="ws-tb-body">
                 <div class="ws-flows-list" id="wsFlowsList">
                   <div class="ws-flows-empty">
-                    <div class="ws-flows-empty-hint">还没有工作流 · 跟右边对话框跟 Daemonkey 说「帮我做一条 X 工作流」</div>
+                    <div class="ws-flows-empty-hint">还没有工作流 · 跟右边对话框说「帮我做一条某某工作流」</div>
                   </div>
                 </div>
                 <div class="ws-tb-add">
-                  <button data-act="ask-opus-flow" title="跟右边对话框跟 Daemonkey 说想要的工作流">＋ 让 Daemonkey 排一条新工作流</button>
+                  <button data-act="ask-opus-flow" title="跟右边对话框说想要的工作流">＋ 让 Daemonkey 排一条新工作流</button>
                 </div>
               </div>
             </aside>
@@ -430,14 +440,14 @@
               <div class="ws-canvas-empty" id="wsCanvasEmpty">
                 <div class="ws-empty-icon">⚛</div>
                 <div class="ws-empty-title">画布为空</div>
-                <div class="ws-empty-hint">从左侧点一条工作流加载 · 或跟右边对话框跟 Daemonkey 说「做一份 X 工作流」</div>
+                <div class="ws-empty-hint">从左侧点一条工作流加载 · 或跟右边对话框说「做一份某某工作流」</div>
               </div>
               <!-- 卷七十二 · steps 列表面板 · steps 是主 · 画布是投影 -->
               <div class="ws-steps-panel" id="wsStepsPanel" hidden>
                 <div class="ws-steps-header">
                   <i class="ri-list-ordered"></i> 步骤列表 <span class="ws-steps-count" id="wsStepsCount"></span>
                   <span class="ws-spacer"></span>
-                  <span class="ws-steps-hint">编辑请跟右边对话框跟 Daemonkey 说 · 不要直接改下面的卡</span>
+                  <span class="ws-steps-hint">要改步骤，跟右边对话框说，别直接改下面的卡片</span>
                 </div>
                 <div class="ws-steps-list" id="wsStepsList"></div>
               </div>
@@ -462,7 +472,7 @@
       const isShipped = app.kind === 'opus' && app.shipped;  // 沉淀闭环 v2 刀⑤修正: 自带 agentic app · 随 DK 出厂 · 不可删
       const kindLabel = isBuiltin ? '内置' : (isShipped ? '自带' : 'Daemonkey 造');
       let meta;
-      if (isBuiltin) meta = '<span class="wac-stage">stage 2b 可配置</span>';
+      if (isBuiltin) meta = '<span class="wac-stage">可以改设置</span>';
       else if (isShipped) meta = `<span class="wac-stage"><i class="ri-box-3-fill"></i> 随 DK 出厂 · v${Number(app.version || 1)}</span>`;
       else meta = `<span class="wac-stage">${_esc((app.created_at || '').slice(0, 10))} · Daemonkey 造</span>`;
       // 删除按钮: 内置 / shipped 都不能删 · 只有纯 Daemonkey 临时造的 app 可删
@@ -591,7 +601,7 @@
         <div class="ws-apps-welcome-tips">
           <div class="wawt-row"><i class="ri-lightbulb-fill"></i> 想要新应用 · 点左下「＋ 长一个新应用」 · 跟主对话区 Daemonkey 说想要什么</div>
           <div class="wawt-row"><i class="ri-flash-fill"></i> 应用多了 · 左上搜索框可以快速过滤</div>
-          <div class="wawt-row">« 折叠左侧 · 沉浸看详情 · 鼠标移到 icon 可以看名字</div>
+          <div class="wawt-row">« 收起左侧，专心看详情。鼠标移到图标能看到名字。</div>
         </div>
       </div>
     `;
@@ -625,7 +635,7 @@
         ${_renderAppTestForm(app)}
       </div>
       <div class="ws-ad-pane" data-ad-pane="output" hidden>
-        <div class="ws-ad-loading"><i class="ri-radar-fill"></i> 拉产出中…</div>
+        <div class="ws-ad-loading"><i class="ri-radar-fill"></i> 正在读取产物…</div>
       </div>
       <div class="ws-ad-pane" data-ad-pane="detail" hidden>
         <div class="ws-ad-loading"><i class="ri-radar-fill"></i> 加载中…</div>
@@ -675,7 +685,7 @@
         <div class="ws-form-actions">
           <label class="ws-form-autosend">
             <input type="checkbox" data-form-autosend>
-            <span>填完直接发送 (走主对话路径时生效)</span>
+            <span>填完直接发给对话</span>
           </label>
           <button type="button" class="ws-btn" data-act="ad-form-clear" data-app-id="${_esc(app.id)}">清空</button>
           <button type="submit" class="ws-btn ws-btn-primary" data-form-target="run" title="后端 daemon 直接运行这个 app · SSE 流式输出 · 不污染主对话">
@@ -686,7 +696,7 @@
           </button>
         </div>
         <div class="ws-form-preview" data-form-preview hidden>
-          <div class="ws-form-preview-head">prompt 预览</div>
+          <div class="ws-form-preview-head">将要发送的内容</div>
           <pre class="ws-form-preview-body" data-form-preview-body></pre>
         </div>
         <div class="ws-form-run" data-form-run hidden>
@@ -698,7 +708,7 @@
           </div>
           <div class="ws-form-run-events" data-run-events></div>
           <div class="ws-form-run-outputs" data-run-outputs hidden>
-            <div class="ws-form-preview-head">outputs (给工作流下游用)</div>
+            <div class="ws-form-preview-head">这一步会交给下一步的结果</div>
             <pre class="ws-form-preview-body" data-run-outputs-body></pre>
           </div>
         </div>
@@ -770,6 +780,16 @@
         lines.push('  ```');
       } else if (f.type === 'boolean') {
         lines.push(`- **${labelTxt}** (${f.name}): ${v ? '是' : '否'}`);
+      } else if (f.type === 'file' && v && typeof v === 'object' && v.name) {
+        lines.push(`- **${labelTxt}** (${f.name}): 已上传文件 \`${v.name}\` (${v.mime || ''} · ${v.size || 0} bytes)`);
+        if (v.data_url && String(v.data_url).length < 1500000) {
+          lines.push('  文件内容 (data URL):');
+          lines.push('  ```');
+          lines.push('  ' + v.data_url);
+          lines.push('  ```');
+        } else {
+          lines.push('  （文件较大，内容已随 inputs 提交 · 聊天注入不含字节，请用「真跑」）');
+        }
       } else {
         lines.push(`- **${labelTxt}** (${f.name}): ${v}`);
       }
@@ -798,7 +818,7 @@
     }
     if (flows.length === 0) {
       list.innerHTML = `<div class="ws-flows-empty">
-        <div class="ws-flows-empty-hint">${search ? '没有匹配 「' + _escapeHtml(search) + '」 的工作流' : '还没有工作流 · 跟右边对话框跟 Daemonkey 说「帮我做一条 X 工作流」'}</div>
+        <div class="ws-flows-empty-hint">${search ? '没有匹配 「' + _escapeHtml(search) + '」 的工作流' : '还没有工作流 · 跟右边对话框说「帮我做一条某某工作流」'}</div>
       </div>`;
       return;
     }
@@ -890,7 +910,7 @@
       _renderFlowsSidebar();
       const lvl = data.flow.trust_level;
       const msg = lvl >= 2
-        ? `已信任「${data.flow.name}」 · 下次跑工作流不再问 CONFIRM (GUARD 仍要 y)`
+        ? `已记住这个工作流。下次普通步骤不再确认。危险步骤还是会进行确认。`
         : `已收回信任 · 下次跑这条 flow 恢复每步审`;
       _toast(msg);
     } catch (e) {
@@ -898,9 +918,8 @@
     }
   }
 
-  // 卷五十四 · 孪法第4条 · 画布引擎 (workflow_engine.run_workflow) 目前只实装 opus/app/<aid> 节点。
-  // composite/* (生产线模板) 和 atomic/* (单步动作) 还没接执行器·拖进画布跑会被引擎跳过报错 =
-  // "UI 有按钮但 NLP 跑不通"。 在真接执行器之前·明标"未实装"+禁拖·不误导 用户。
+  // 2026-09-03 · 复合/原子节点不做了。画布是 steps 的只读投影，排节点走 create_workflow。
+  // 左侧工具集已改成工作流列表；下面这摊只防老缓存还点到未实装条目。
   const _UNIMPL_GROUPS = new Set(['composite', 'atomic']);
 
   function _renderToolGroup(group, label) {
@@ -948,7 +967,7 @@
   }
 
   function _esc(s) {
-    return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
   // ─── 事件绑定 (用 event delegation · 一根 listener 全包) ───
@@ -981,6 +1000,19 @@
 
   function _bindEvents() {
     _delegated = (e) => {
+      const pathBtn = e.target.closest('.ws-gallery-pathbtn');
+      if (pathBtn && _container.contains(pathBtn)) {
+        e.stopPropagation();
+        window._copyOutputPath(pathBtn.dataset.path || '');
+        return;
+      }
+      const card = e.target.closest('.ws-gallery-card');
+      if (card && _container.contains(card) && !e.target.closest('audio, video, a, button')) {
+        const kind = card.dataset.kind;
+        if (kind === 'image') window._openLightbox(card.dataset.url || '', card.dataset.name || '');
+        else if (kind === 'other') window._openOutputPreview(card.dataset.url || '', card.dataset.name || '', card.dataset.type || 'text');
+        return;
+      }
       const tgt = e.target.closest('[data-act]');
       if (!tgt || !_container.contains(tgt)) return;
       const act = tgt.dataset.act;
@@ -1060,7 +1092,9 @@
       if (form && _container.contains(form)) {
         e.preventDefault();
         const target = (e.submitter && e.submitter.dataset && e.submitter.dataset.formTarget) || 'chat';
-        _onAppFormSubmit(form, target);
+        Promise.resolve(_onAppFormSubmit(form, target)).catch(err => {
+          _toast('表单提交失败: ' + (err && err.message ? err.message : err));
+        });
       }
     });
 
@@ -1268,7 +1302,7 @@
 
   function _renderAppConfigPane(app, myAssets, sharedAssets) {
     if (app.kind === 'builtin') {
-      return `<div class="ws-ad-stub"><div class="ws-stub-icon"><i class="ri-settings-3-fill"></i></div><h3>${_esc(app.name)} · 内置 app</h3><p>内置 app 没有可配置的资产槽 · 配置 = 真 Daemonkey-app 才用 (那些有 system_prompt / asset_slots / 表单 schema 的)。</p></div>`;
+      return `<div class="ws-ad-stub"><div class="ws-stub-icon"><i class="ri-settings-3-fill"></i></div><h3>${_esc(app.name)} · 自带应用</h3><p>这个是自带应用，没有可改的材料槽。要改提示词或材料，用自己建的应用。</p></div>`;
     }
     const slots = Array.isArray(app.asset_slots) ? app.asset_slots : [];
     const tools = Array.isArray(app.tools) ? app.tools : [];
@@ -1278,7 +1312,7 @@
 
     const slotsHtml = slots.length
       ? slots.map(s => _renderAssetSlotCard(app.id, s, myAssets, sharedAssets)).join('')
-      : `<div class="ws-app-empty">这个 app 没声明 asset_slots · 它不需要用户个性资产。 想加 → 主对话: <code>update_app(aid=${_esc(app.id)}, asset_slots=[{name:"voice",type:"text",label:"声音"}])</code></div>`;
+      : `<div class="ws-app-empty">这个应用不需要额外材料。要加材料或改字段，跟右边对话框说就行。</div>`;
 
     const toolsHtml = tools.length
       ? tools.map(t => `<code>${_esc(t)}</code>`).join(' ')
@@ -1305,31 +1339,31 @@
 
         <div class="ws-app-section">
           <div class="ws-app-section-head"><i class="ri-archive-fill"></i> 资产槽位 (asset_slots) · ${slots.length} 个声明</div>
-          <div class="ws-app-section-hint">沉淀闭环 v2 · 用户个性资产存这里 · 改值 → 主对话: <code>manage_app_asset(action=set, app_id=${_esc(app.id)}, name=..., value=...)</code></div>
+          <div class="ws-app-section-hint">个性材料存在这里。要改，跟右边对话框说就行。</div>
           <div class="ws-app-slot-grid">${slotsHtml}</div>
         </div>
 
         <div class="ws-app-section">
           <div class="ws-app-section-head">🧰 工具白名单 · ${tools.length || '∞'}</div>
           <div class="ws-app-tools">${toolsHtml}</div>
-          <div class="ws-app-section-hint">改 → <code>update_app(aid=${_esc(app.id)}, tools=[...])</code></div>
+          <div class="ws-app-section-hint">要改工具，跟右边对话框说就行。</div>
         </div>
 
         <div class="ws-app-section">
           <div class="ws-app-section-head"><i class="ri-list-check-3"></i> 表单字段 (ui_form_schema) · ${schema.length} 个字段</div>
           ${schemaHtml}
-          <div class="ws-app-section-hint">测试/运行 tab 的表单按这个渲染 · 改 → 主对话说 <code>update_app</code> 改字段</div>
+          <div class="ws-app-section-hint">测试/运行页的表单按这个来。要改字段，跟右边对话框说。</div>
         </div>
 
         <div class="ws-app-section">
           <div class="ws-app-section-head">📜 版本历史 (最近 5 条)</div>
           ${changelogHtml}
-          <div class="ws-app-section-hint">全部历史 / 回滚 → 主对话: <code>app_versions(action=list, app_id=${_esc(app.id)})</code></div>
+          <div class="ws-app-section-hint">要看全部历史或回退版本，跟右边对话框说就行。</div>
         </div>
 
         <div class="ws-app-section">
           <div class="ws-app-section-head"><i class="ri-draft-fill"></i> 系统提示词 (详情 tab 看全文)</div>
-          <div class="ws-app-section-hint">prompt 长 ${(app.system_prompt || '').length} 字 · 改 → 主对话: <code>update_app(aid=${_esc(app.id)}, system_prompt='...', change_note='...')</code></div>
+          <div class="ws-app-section-hint">提示词 ${(app.system_prompt || '').length} 字。要改，跟右边对话框说就行。</div>
         </div>
       </div>
     `;
@@ -1559,7 +1593,7 @@
         pane.innerHTML = '<div class="ws-ad-error">需要 token · 右上角 ⚙ 设置里填一下</div>';
         return;
       }
-      pane.innerHTML = '<div class="ws-ad-loading"><i class="ri-radar-fill"></i> 拉产出中…</div>';
+      pane.innerHTML = '<div class="ws-ad-loading"><i class="ri-radar-fill"></i> 正在读取产物…</div>';
       try {
         const r2 = await fetch(`/workshop/outputs-list/${encodeURIComponent(appId)}`, {
           headers: { 'Authorization': 'Bearer ' + token2 },
@@ -1576,7 +1610,7 @@
       return;
     }
     if (!app.dashboard_domain) {
-      pane.innerHTML = '<div class="ws-ad-error">这个 app 没接 dashboard_domain</div>';
+      pane.innerHTML = '<div class="ws-ad-error">这个应用还没有自己的面板</div>';
       return;
     }
     pane.innerHTML = '<div class="ws-ad-loading"><i class="ri-radar-fill"></i> 拉历史产物中…</div>';
@@ -1633,7 +1667,7 @@
           <div class="ws-app-section-head">🧰 工具白名单</div>
           <div class="ws-app-tools">${tools}</div>
         </div>
-        <div class="ws-app-hint">stage 2d 上线后这里会有产物历史 · 现在跟主 Daemonkey 说「用 ${_esc(app.name)} 风格做 X」 · Daemonkey 调对应工具落产物</div>
+        <div class="ws-app-hint">跑过一次之后，产物会出现在这里。现在跟右边说「用 ${_esc(app.name)} 风格做某某」就行。</div>
       </div>
     `;
   }
@@ -1706,11 +1740,11 @@
     const localPath = _esc(f.path || '');  // 后端给了就用 · 没给前端没法准确组路径
     // 复制路径按钮 (无路径就不显示) · stopPropagation 防卡片 onclick 一起触发
     const copyBtn = localPath
-      ? `<button class="ws-gallery-pathbtn" onclick="event.stopPropagation(); window._copyOutputPath('${localPath}')" title="复制本地路径到剪贴板 · 然后去文件管理器粘贴"><i class="ri-clipboard-line"></i> 路径</button>`
+      ? `<button class="ws-gallery-pathbtn" type="button" data-path="${localPath}" title="复制本地路径到剪贴板 · 然后去文件管理器粘贴"><i class="ri-clipboard-line"></i> 路径</button>`
       : '';
     if (f.type === 'image') {
       html += `
-        <div class="ws-gallery-card" onclick="window._openLightbox('${furl}', '${fname}')">
+        <div class="ws-gallery-card" data-kind="image" data-url="${furl}" data-name="${fname}">
           <img src="${furl}" alt="${fname}" loading="lazy" class="ws-gallery-img">
           <div class="ws-gallery-info">
             <span class="ws-gallery-name" title="${fname}">${niceTitle}</span>
@@ -1741,9 +1775,8 @@
           </div>
         </div>`;
     } else {
-      // md / json / txt / 其他文本 · 新加 onclick 弹 modal preview
       html += `
-        <div class="ws-gallery-card ws-gallery-other" onclick="window._openOutputPreview('${furl}', '${fname}', '${_esc(f.type || 'text')}')" title="点击预览">
+        <div class="ws-gallery-card ws-gallery-other" data-kind="other" data-url="${furl}" data-name="${fname}" data-type="${_esc(f.type || 'text')}" title="点击预览">
           <div class="ws-gallery-icon">📄</div>
           <div class="ws-gallery-info">
             <span class="ws-gallery-name" title="${fname}">${niceTitle}</span>
@@ -1814,7 +1847,7 @@ window._openOutputPreview = async function(url, name, type) {
     </div>
     <div class="opm-body"><div class="opm-loading">加载中…</div></div>
     <div class="opm-foot">
-      <a class="opm-link" href="${_esc(url)}" target="_blank" rel="noopener"><i class="ri-external-link-line"></i> 新 tab 打开 raw</a>
+      <a class="opm-link" href="${_esc(url)}" target="_blank" rel="noopener"><i class="ri-external-link-line"></i> 用新标签打开原文</a>
     </div>
   `;
   const closeIt = () => {
@@ -1846,7 +1879,7 @@ window._openOutputPreview = async function(url, name, type) {
       headers: token ? { 'Authorization': 'Bearer ' + token } : {},
     });
     if (!r.ok) {
-      body.innerHTML = `<div class="opm-error">加载失败 [${r.status}] · 试试 "新 tab 打开 raw"</div>`;
+      body.innerHTML = `<div class="opm-error">加载失败 [${r.status}] · 试试「用新标签打开原文」</div>`;
       return;
     }
     const text = await r.text();
@@ -1966,7 +1999,7 @@ function _askOpusInChat(kind) {
   // ─── 卷四十六续 12 · wish-165ea1f6 phase A/B · app 测试 form 提交逻辑 ───
   // target='chat' → NLP First 路径 (拼 prompt 塞主对话框 · phase A)
   // target='run'  → 后端 SSE 真跑 (phase B · /workshop/apps/{aid}/run)
-  function _onAppFormSubmit(form, target) {
+  async function _onAppFormSubmit(form, target) {
     target = target || 'chat';
     if (!form) return;
     const appId = form.dataset.appId;
@@ -1975,7 +2008,7 @@ function _askOpusInChat(kind) {
       _toast('找不到 app · 刷新一下应用列表试试');
       return;
     }
-    const collected = _collectFormValues(form, app);
+    const collected = await _collectFormValues(form, app);
     if (collected.missing.length) {
       _toast('❌ 必填项缺失:\n  - ' + collected.missing.join('\n  - '));
       return;
@@ -2008,10 +2041,20 @@ function _askOpusInChat(kind) {
     }
   }
 
-  function _collectFormValues(form, app) {
+  function _fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('读文件失败'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function _collectFormValues(form, app) {
     const schema = Array.isArray(app.ui_form_schema) ? app.ui_form_schema : [];
     const values = {};
     const missing = [];
+    const _FILE_MAX = 8 * 1024 * 1024;
     for (const f of schema) {
       const el = form.querySelector(`[name="${CSS.escape(f.name)}"]`);
       if (!el) continue;
@@ -2026,12 +2069,31 @@ function _askOpusInChat(kind) {
         }
       } else if (f.type === 'file') {
         const file = el.files && el.files[0];
-        v = file ? file.name : '';
+        if (!file) {
+          v = '';
+        } else if (file.size > _FILE_MAX) {
+          missing.push(`「${f.label || f.name}」超过 8MB`);
+          continue;
+        } else {
+          try {
+            const data_url = await _fileToDataUrl(file);
+            v = {
+              name: file.name,
+              mime: file.type || 'application/octet-stream',
+              size: file.size,
+              data_url,
+            };
+          } catch (e) {
+            missing.push(`「${f.label || f.name}」读文件失败`);
+            continue;
+          }
+        }
       } else {
         v = (el.value || '').trim();
       }
       if (f.required) {
-        const blank = (v === '' || v == null || (f.type === 'boolean' && v === false));
+        const blank = (v === '' || v == null || (f.type === 'boolean' && v === false)
+          || (f.type === 'file' && !(v && v.data_url)));
         if (blank) missing.push(`「${f.label || f.name}」必填`);
       }
       values[f.name] = v;
@@ -2207,7 +2269,7 @@ function _askOpusInChat(kind) {
         for (const ln of lines) {
           if (ln.startsWith(':')) continue;
           if (ln.startsWith('event:')) evt = ln.slice(6).trim();
-          else if (ln.startsWith('data:')) data += ln.slice(5).trim();
+          else if (ln.startsWith('data:')) data += (data ? '\n' : '') + ln.slice(5).trim();
         }
         if (data) out.push({ evt, data });
       }
@@ -2445,7 +2507,7 @@ function _askOpusInChat(kind) {
           for (const ln of lines) {
             if (ln.startsWith(':')) continue;
             if (ln.startsWith('event:')) evt = ln.slice(6).trim();
-            else if (ln.startsWith('data:')) data += ln.slice(5).trim();
+            else if (ln.startsWith('data:')) data += (data ? '\n' : '') + ln.slice(5).trim();
           }
           if (data) out.push({ evt, data });
         }
@@ -3202,6 +3264,7 @@ function _askOpusInChat(kind) {
   function mount(container) {
     if (_container && _container !== container) unmount();
     if (_container === container && _graph) {
+      syncPaper();
       requestAnimationFrame(_renderCanvas);
       return;
     }
@@ -3232,7 +3295,7 @@ function _askOpusInChat(kind) {
     _canvas.render_curved_connections = true;
     _canvas.clear_background_color = 'transparent';
     _canvas.default_link_color = '#7B5DC4';
-    _canvas.node_title_color = '#e8e8e8';
+    _canvas.node_title_color = '#f4efe6';
 
     // 卷七十二 · steps-as-core · canvas-as-view (兑现卷六六承诺)
     // 画布只读: drag/搜框/重连/添加/删除/右键菜单全关; pan + zoom 保留 (要能看大图)
@@ -3261,6 +3324,32 @@ function _askOpusInChat(kind) {
 
     // 卷七十三 P0 · workshop tab 一打开就启动实时进度高亮轮询
     _startRunPoll();
+    syncPaper();
+  }
+
+  function _bgIsLight(c) {
+    const s = String(c || '').trim();
+    let r, g, b;
+    const hm = s.match(/^#([0-9a-f]{3,8})$/i);
+    if (hm) {
+      let h = hm[1];
+      if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      const n = parseInt(h.slice(0, 6), 16);
+      r = (n >> 16) & 255; g = (n >> 8) & 255; b = n & 255;
+    } else {
+      const m = s.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+      if (!m) return false;
+      r = +m[1]; g = +m[2]; b = +m[3];
+    }
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 160;
+  }
+
+  function syncPaper() {
+    const view = _container && (_container.classList.contains('workshop-view')
+      ? _container
+      : _container.querySelector('.workshop-view'));
+    if (!view) return;
+    view.classList.toggle('ws-paper', _bgIsLight(getComputedStyle(view).getPropertyValue('--bg')));
   }
 
   function unmount() {
@@ -3289,5 +3378,6 @@ function _askOpusInChat(kind) {
       if (_activeTab === 'trash') _loadTrashFromDaemon(true);
     },
     TOOL_SPECS,
+    syncPaper,
   };
 })();

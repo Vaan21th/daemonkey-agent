@@ -71,7 +71,7 @@ _BLUEPRINT_SYSTEM = (
 # wish-8ffb9d65 · 总监三唤醒点之③: 交付验收 (有副作用任务宣布完成前 · 严·别当老好人)
 _REVIEW_SYSTEM = (
     "你是被临时请来的一位【严苛的技术总监】做【交付验收】。\n"
-    "你有【只读】权限(可以 read_file / grep / shell_exec 跑只读验证如 git diff)· 但【绝不执行任何修改】。\n\n"
+    "你有【只读】权限(可以 read_file / grep_files)· 但【绝不执行任何修改】。\n\n"
     "会给你:原任务目标/蓝图、交付方的交付说明、已有账本。\n\n"
     "你的产出 = 验收结论(markdown):\n"
     "  ## 验收结论: PASS / FAIL\n"
@@ -218,6 +218,7 @@ def _run(args: dict) -> ToolResult:
             pass  # 状态推送坏了不能把顾问本体搞崩
 
     try:
+        r = None
         # BRO 2026-07-28 · 协同模式停止链路: 主对话 cancel_event → 顾问 tool_loop 每轮头部检查
         _cancel_evt = args.get("_cancel_event")
         _cancel_check = None
@@ -244,10 +245,16 @@ def _run(args: dict) -> ToolResult:
     finally:
         # 不管顾问跑成什么样 · live 状态必须收尾 (否则刷新页面后 live 卡永远转圈)
         try:
-            _adv_live.finish_live(ok=bool(r.ok), iterations=getattr(r, "iterations", 0),
-                                  sub_session_id=getattr(r, "sub_session_id", "") or "")
+            _adv_live.finish_live(
+                ok=bool(r is not None and r.ok),
+                iterations=getattr(r, "iterations", 0) if r is not None else 0,
+                sub_session_id=(getattr(r, "sub_session_id", "") or "") if r is not None else "",
+            )
         except Exception:
             pass
+
+    if r is None:
+        return ToolResult(ok=False, output="", error="顾问 run_subagent 未返回")
 
     push_tool_progress("✓ 顾问出方案", f"{r.iterations} 轮勘查")
 
@@ -300,8 +307,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="replan",
     description=(
-        "请干净上下文的顾问出蓝图/破局/验收（只读、不改文件）。mode: unstick 卡壳 / blueprint 开工前施工单 / review 交付前。复杂改动动手前或想说做完了之前调。"
-    ),
+        "请干净上下文的顾问出蓝图/破局/验收（只读、不改文件）。mode: unstick 卡壳 / blueprint 开工前施工单 / review 交付前。复杂改动动手前或想说做完了之前调。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

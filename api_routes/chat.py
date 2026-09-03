@@ -52,7 +52,7 @@ async def chat(
     _thinking = payload.get("thinking") or None            # 卷七十五续五 · 模型行为
     _reasoning_effort = payload.get("reasoning_effort") or None
     _advisor_coop = bool(payload.get("advisor_coop"))      # wish-0e749752 · 顾问协同模式
-    _mode = str(payload.get("mode") or "standard")
+    _mode = str(payload.get("mode") or "standard")         # 2026-08-26 · companion=陪伴房间
 
     # 卷四十六 III 补丁 5 · Y7 · audit log
     _audit_start = time.monotonic()
@@ -126,7 +126,7 @@ async def chat_stream(
     _thinking = payload.get("thinking") or None            # 卷七十五续五 · 模型行为
     _reasoning_effort = payload.get("reasoning_effort") or None
     _advisor_coop = bool(payload.get("advisor_coop"))      # wish-0e749752 · 顾问协同模式
-    _mode = str(payload.get("mode") or "standard")
+    _mode = str(payload.get("mode") or "standard")         # 2026-08-26 · companion=陪伴房间
 
     if not message or not message.strip():
         raise HTTPException(400, "message is required and cannot be empty")
@@ -388,11 +388,25 @@ async def list_pending_confirms(
         _PENDING_CONFIRMS_LOCK,
         _supports_trust,
         _short_json_preview,
+        _TURN_TO_SID,
+        _TURNS_LOCK,
     )
     out = []
     with _PENDING_CONFIRMS_LOCK:
+        # 卷·修重启续场 confirm 卡片漏显示:
+        # 后台续场 turn 的 pending 挂在 resume-xxx turn_id 上 · 而 BRO 在主对话前端
+        # 轮询时传的是主对话的 turn_id · 两者不同 → 精确等值匹配永远捞不到 · 前端不渲染。
+        # 改用 _TURN_TO_SID 把前端 turn_id 反查回 session_id · 按 session_id 匹配 pending
+        # (同一会话不管哪个 turn · 后台/主对话都能捞到) · 其次 fallback 到 turn_id 精确。
+        front_sid = None
+        if turn_id:
+            with _TURNS_LOCK:
+                front_sid = _TURN_TO_SID.get(turn_id)
         for tcid, p in _PENDING_CONFIRMS.items():
-            if p.get("turn_id") != turn_id:
+            pend_sid = p.get("session_id")
+            if front_sid and pend_sid and front_sid == pend_sid:
+                pass  # session 命中 · 放行
+            elif p.get("turn_id") != turn_id:
                 continue
             if p["event"].is_set():
                 continue
@@ -405,6 +419,10 @@ async def list_pending_confirms(
                 "command": p.get("command", ""),
                 "supports_trust": _supports_trust(p.get("tool_name") or ""),
                 "created_at": p.get("created_at"),
+                # 卷四十六续 · 后台 turn 轮询补捞卡片需要这些字段渲染 (而非降级占位)
+                "risk_explanation": p.get("risk_explanation", ""),
+                "mitigation": p.get("mitigation", ""),
+                "args_summary": p.get("args_summary", ""),
             })
     return {"ok": True, "pending": out}
 
@@ -527,7 +545,8 @@ async def get_context_usage(
             from workers.memory_compression import _estimate_tokens
             history_tokens = _estimate_tokens(RUNTIME.messages)
             # 会话匹配: 只在没显式指定 session 或指定的是当前会话时用内存
-            if sid and RUNTIME.session_id and sid != RUNTIME.session_id:
+            # B-① · 2026-08-27 · RUNTIME.session_id 为空时也会误用内存估别的会话 · 条件放宽 (Grok 全量审计)
+            if sid and sid != (RUNTIME.session_id or ""):
                 history_tokens = 0  # 指定了别的会话 → 走磁盘
     except Exception:
         pass

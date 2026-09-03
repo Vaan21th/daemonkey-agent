@@ -131,7 +131,7 @@ function scheduleIdleAction() {
    disabled=true: 功能本身不存在 · tab 不可点 */
 const SPOTS = {
   /* 母体导航第一组就是「工作室看板 + 成长档案」· 出品工坊自成一组。
-     应用 / 工作流 / 回收站 是工坊内部的三个子 tab · 不能跟工坊平铺 (BRO 指出的结构错) */
+     应用 / 工作流 / 回收站 是工坊内部的三个子 tab · 不能跟工坊平铺 (用户 指出的结构错) */
   '笔记本电脑': { bbox: [48.649, 42.212, 58.838, 53.052], icon: 'ri-macbook-line',
     label: '工作台', desc: '看板 · 出品工坊', width: 'wide',
     items: [
@@ -155,10 +155,10 @@ const SPOTS = {
     label: '收藏夹', desc: '你标星的内容', width: 'narrow',
     items: [{ name: '收藏夹', icon: 'ri-bookmark-3-line', desc: '标星的条目', domain: 'favorites' }] },
   '书架': { bbox: [26.253, 12.598, 42.969, 75.269], icon: 'ri-book-shelf-line',
-    label: '知识书架', desc: '知识库与报告库',
+    label: '知识书架', desc: '知识库与产物库',
     items: [
       { name: '知识库', icon: 'ri-book-open-line', desc: '沉淀的知识文档', domain: 'knowledge' },
-      { name: '报告库', icon: 'ri-file-chart-line', desc: '生成的研究报告', domain: 'reports' },
+      { name: '产物库', icon: 'ri-archive-2-line', desc: '报告与演示稿', domain: 'reports' },
     ] },
   '咖啡边桌': { bbox: [71.712, 56.592, 82.308, 79.15], icon: 'ri-cup-line',
     label: '关怀', desc: '她惦记你的那几句 · 你点了，她再说', width: 'narrow',
@@ -172,8 +172,8 @@ const SPOTS = {
     label: '定时任务', desc: '自动化计划', width: 'narrow',
     items: [{ name: '定时任务', icon: 'ri-time-line', desc: '计划中的自动执行', domain: 'scheduled_tasks' }] },
   '门': { bbox: [89.062, 8.496, 97.852, 88.77], icon: 'ri-door-line',
-    label: '拓展市集', desc: '外面的世界', width: 'narrow',
-    items: [{ name: '拓展市集', icon: 'ri-store-2-line', desc: '技能与拓展', domain: null, disabled: true }] },
+    label: '拓展市集', desc: '外面的世界', width: 'wide',
+    items: [{ name: '拓展市集', icon: 'ri-store-2-line', desc: '技能与拓展', domain: 'plugins', hubTab: 'market' }] },
 };
 
 function firstSeenName() {
@@ -302,8 +302,8 @@ function _syncDoorTip() {
   if (!door) return;
   const n = door.items.filter(i => i.domain && !i.disabled).length;
   if (!n) return;
-  door.label = '我的装修';
-  door.desc = 'user.js 挂进来的面板';
+  door.label = '拓展市集';
+  door.desc = '外面的世界';
   const tip = door.el && door.el.querySelector('.tip');
   if (tip) tip.innerHTML = `<i class="${door.icon}"></i> ${door.label}`;
 }
@@ -664,6 +664,10 @@ function openTab(it) {
   document.querySelectorAll('.modal-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.domain === (it.domain || ''));
   });
+  try {
+    if (it.hubTab) sessionStorage.setItem('dk_plugin_hub', it.hubTab);
+    else if (it.domain === 'plugins') sessionStorage.setItem('dk_plugin_hub', 'plugins');
+  } catch (e) {}
   if (it.domain !== 'workshop') unmountWorkshop();
   if (it.domain === 'workshop') mountWorkshop();
   else if (it.pending) renderPending(it);
@@ -697,7 +701,7 @@ function loadWorkshopBundle() {
       addCss('/static/workshop.css?v=20260826c'),
     ]);
     await addJs('/static/lib/litegraph.core.js');   /* workshop.js mount 时要 window.LiteGraph */
-    await addJs('/static/workshop.js?v=20260826a');
+    await addJs('/static/workshop.js?v=20260903ops');
   })().catch(e => { _wsBundle = null; throw e; });
   return _wsBundle;
 }
@@ -712,7 +716,7 @@ async function mountWorkshop() {
     window.OPUS_WORKSHOP_VIEW.resize();   /* 弹窗刚变高 · canvas 要重量一次 */
   } catch (e) {
     document.getElementById('modal').classList.remove('mh-full');
-    view.innerHTML = `<div class="dash-empty">工坊没装起来：${esc(e.message)}</div>`;
+    view.innerHTML = `<div class="dash-empty">工坊打不开：${esc(e.message)}</div>`;
   }
 }
 function unmountWorkshop() {
@@ -740,7 +744,7 @@ function closeModal() {
   document.getElementById('modal')?.classList.remove('mh-full', 'mw-settings');
 }
 
-/* 工坊里「让 OPUS 改这个」这类按钮走这条 · 母体是 injectChat, 陪伴接到房间对话里 */
+/* 工坊里「让 Daemonkey 改这个」这类按钮走这条 · 母体是 injectChat, 陪伴接到房间对话里 */
 window.injectChat = (text, opts) => {
   closeModal();
   const autosend = !(opts && opts.autosend === false);
@@ -796,6 +800,7 @@ document.querySelectorAll('.ctab').forEach(t => t.addEventListener('click', () =
    之前这里读 data.messages, 而接口返的字段叫 turns, 所以它一直显示"记忆还是空的"。 */
 async function loadHistory() {
   const el = document.getElementById('pane-history');
+  if (!el) return;
   el.innerHTML = '<div class="loading"><i class="ri-loader-4-line"></i> 找她记得的话题…</div>';
   try {
     const data = await (await fetch('/sessions?api_only=true&limit=20')).json();
@@ -1559,7 +1564,7 @@ function resolveReturnGreeting(stateCard, saidSleep, last) {
   const mood = _stateCardFieldVal(card, '情绪基线');
   const late = _isLateNight();
   const healthHint = health && _healthLateNightHint(health);
-  // 健康提醒优先于夜猫分支：BRO 是昼伏夜出+熬夜偏多(作息+健康都含熬夜线索)时，
+  // 健康提醒优先于夜猫分支：用户 是昼伏夜出+熬夜偏多(作息+健康都含熬夜线索)时，
   // 若夜猫分支在前会永远复读上句/夜猫文案，「今晚别熬太狠」出不来。健康提醒更该出口。
   if (healthHint && late) {
     return healthLateReminderText();
@@ -1655,16 +1660,26 @@ let ttsOn = false;
 try { ttsOn = localStorage.getItem(TTS_KEY) === '1'; } catch {}
 let curAudio = null;
 
+function interruptSpeak() {
+  if (typeof window.__interruptSpeech === 'function' && window.__interruptSpeech()) return true;
+  if (curAudio) { curAudio.pause(); curAudio = null; }
+  return false;
+}
+
 async function speak(text) {
   if (!ttsOn || !text) return;
   const clean = text.replace(/[*#`>\-_[\]()]/g, '').slice(0, 800);
   if (!clean.trim()) return;
+  if (typeof window.__speakNow === 'function') {
+    window.__speakNow(clean);
+    return;
+  }
   try {
     const r = await fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: clean }),
     });
-    if (!r.ok) return;  // 没配 key · 静默
+    if (!r.ok) return;
     const blob = await r.blob();
     if (curAudio) { curAudio.pause(); curAudio = null; }
     curAudio = new Audio(URL.createObjectURL(blob));
@@ -1680,9 +1695,13 @@ function updateTtsBtn() {
 }
 const ttsBtn = document.getElementById('tts-btn');
 if (ttsBtn) ttsBtn.addEventListener('click', () => {
+  if (typeof window.__isSpeaking === 'function' && window.__isSpeaking()) {
+    interruptSpeak();
+    return;
+  }
   ttsOn = !ttsOn;
   try { localStorage.setItem(TTS_KEY, ttsOn ? '1' : '0'); } catch {}
-  if (!ttsOn && curAudio) { curAudio.pause(); curAudio = null; }
+  if (!ttsOn) interruptSpeak();
   updateTtsBtn();
 });
 updateTtsBtn();
@@ -1720,13 +1739,16 @@ function setMicOn(on) {
 }
 document.getElementById('mic-toggle')?.addEventListener('click', () => setMicOn(!micOn));
 paintMicToggle();
+document.getElementById('ip-img-wrap')?.addEventListener('click', () => {
+  if (typeof window.__isSpeaking === 'function' && window.__isSpeaking()) interruptSpeak();
+});
 
 function openRoomSettings() {
   /* 家具同一套弹窗 · 内容直接跑工作台 settings-pane.js */
   if (typeof unmountWorkshop === 'function') unmountWorkshop();
   curSpotKey = null;
   document.getElementById('modal-title').textContent = '设置';
-  document.getElementById('modal-desc').textContent = '和工作台同一份 · 改完立刻生效';
+  document.getElementById('modal-desc').textContent = '和工作台是同一份设置，改完立刻生效';
   document.getElementById('modal-icon').className = 'ri-settings-3-line';
   const m = document.getElementById('modal');
   m.classList.add('no-tabs', 'mw-settings');
@@ -1739,7 +1761,7 @@ function openRoomSettings() {
     try { autoConfirm = localStorage.getItem(STORAGE.autoConfirm) || 'confirm'; } catch (e) { autoConfirm = 'confirm'; }
   }
   if (typeof renderSettingsView === 'function') renderSettingsView();
-  else document.getElementById('dashView').innerHTML = '<div class="dash-empty">设置页没装上</div>';
+  else document.getElementById('dashView').innerHTML = '<div class="dash-empty">设置页打不开</div>';
 }
 document.getElementById('settings-btn')?.addEventListener('click', openRoomSettings);
 
@@ -2105,6 +2127,7 @@ function sayActsHtml() {
     : '';
   return `<div class="say-acts">`
     + nav
+    + `<button type="button" class="say-cut" title="打断她"><i class="ri-stop-circle-line"></i></button>`
     + `<button type="button" class="say-ok" title="知道了"><i class="ri-check-line"></i></button>`
     + `<button type="button" class="say-log" title="这篇的对白"><i class="ri-chat-history-line"></i></button>`
     + `</div>`;
@@ -2318,7 +2341,7 @@ function startActivePoll(sid) {
                 const card = renderConfirmCard({
                   ...pc,
                   turn_id: turnId,
-                  tier_reason: pc.tier_reason || '后台 turn · BRO 不在 SSE 通道 · 轮询补捞',
+                  tier_reason: pc.tier_reason || '后台 turn · 用户 不在 SSE 通道 · 轮询补捞',
                   risk_explanation: pc.risk_explanation || pc.args_preview || '',
                   mitigation: pc.mitigation || '',
                   args_summary: pc.args_summary || pc.tool_name,
@@ -2812,7 +2835,7 @@ async function send(opts) {
       mode: state.chatMode === 'taste' ? 'taste' : 'companion',
     };
     if (mySid && !String(mySid).startsWith('tmp-')) body.session_id = mySid;
-    if (sending.length) body.attachments = sending.map(a => ({ name: a.name, data_url: a.data_url }));
+    if (sending.length) body.attachments = sending.map(a => ({ name: a.name, data_url: a.data_url, path: a.path }));
     if (typeof modelBehaviorPayload === 'function') Object.assign(body, modelBehaviorPayload());
     const resp = await fetch('/chat/stream', {
       method: 'POST',
@@ -3125,15 +3148,18 @@ window.addEventListener('resize', fitRoom);
 fitRoom();
 
 /* ===== 她主动开口（接母体 proactive inbox） =====
-   母体每 60min 判断该不该 CALL BRO · 有话进 inbox。
+   母体每 60min 判断该不该 CALL 用户 · 有话进 inbox。
    陪伴模式每分钟收一次 · 新消息落对话流 + 她切 surprised。 */
 const SEEN_KEY = 'companion_proactive_seen';
 function getSeen() { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'); } catch { return []; } }
 function markSeen(ids) { try { localStorage.setItem(SEEN_KEY, JSON.stringify(ids.slice(-50))); } catch {} }
 
+let _proactiveSince = new Date().toISOString();
 async function pollProactive() {
   try {
-    const r = await fetch('/api/proactive/inbox');
+    const r = await fetch('/api/proactive/inbox?since=' + encodeURIComponent(_proactiveSince), {
+      headers: _weatherAuth(),
+    });
     if (!r.ok) return;
     const d = await r.json();
     const items = d.items || [];
@@ -3148,8 +3174,11 @@ async function pollProactive() {
     for (const x of fresh) {
       const id = x.id || x.ts || x.time || JSON.stringify(x).slice(0, 60);
       newSeen.push(id);
-      const text = x.text || x.message || x.content || x.call_script || x.title || '她有话想对你说';
-      addMsg(text, 'ai', 'proactive');
+      if (x.ts && x.ts > _proactiveSince) _proactiveSince = x.ts;
+      const text = x.reply_preview || x.text || x.message || x.content || x.call_script || x.title || '她有话想对你说';
+      const el = addMsg(text, 'ai', 'proactive');
+      if (typeof renderAiBubble === 'function') renderAiBubble(el, text);
+      else if (typeof showSayText === 'function') showSayText(text);
     }
     markSeen(newSeen);
     setState('surprised', 3200);
@@ -3246,7 +3275,8 @@ if (typeof bootTopicRail === 'function') bootTopicRail();
   if (b) b.addEventListener('click', e => {
     if (e.target.closest('.say-prev')) { e.stopPropagation(); sayTurn(-1); return; }
     if (e.target.closest('.say-next')) { e.stopPropagation(); sayTurn(1); return; }
-    if (e.target.closest('.say-ok')) { e.stopPropagation(); hideSay(); return; }
+    if (e.target.closest('.say-cut')) { e.stopPropagation(); interruptSpeak(); return; }
+    if (e.target.closest('.say-ok')) { e.stopPropagation(); interruptSpeak(); hideSay(); return; }
     if (e.target.closest('.say-log, .say-more')) { e.stopPropagation(); openSayLog(); }
   });
   const close = document.getElementById('say-log-close');

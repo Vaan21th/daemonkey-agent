@@ -150,7 +150,7 @@ def _drop_ritual_prompt_lines(text: str) -> str:
 
 
 def _skill_identity_excerpt(skill_text: str) -> str:
-    """Daemon prompt gets identity skin only. Cursor trigger YAML / already-injected files stay out."""
+    """Daemon 只灌身份皮。Cursor 触发 YAML / 教读已注入文件 /「记得吗」不进前缀。"""
     text = _strip_yaml_frontmatter(skill_text)
     chunks: list[str] = []
     heading_end = text.find("\n")
@@ -187,7 +187,7 @@ def _skill_identity_excerpt(skill_text: str) -> str:
 
 
 def _notebook_has_facts(text: str) -> bool:
-    """Empty template / headings-only is not a profile."""
+    """空模板 / 只有标题不算画像。有事实才注入。"""
     if not text or not text.strip():
         return False
     kept: list[str] = []
@@ -201,7 +201,8 @@ def _notebook_has_facts(text: str) -> bool:
     return len("".join(kept)) >= 12
 
 
-# Factory empty-autobiography instructions. After stripping, <12 chars = no facts.
+# 出厂空自传的说明书句。剥掉之后不够 12 字 = 没事实，不灌前缀。
+# 母体真自传里同类句子在引用里（`>` 已剥），不会误伤。
 _MEMORY_SLOT_NEEDLES = (
     "目前还空白",
     "故事才刚刚开始",
@@ -216,7 +217,7 @@ _MEMORY_SLOT_NEEDLES = (
 
 
 def _memories_has_facts(text: str) -> bool:
-    """Empty template / placeholder copy is not an autobiography."""
+    """空模板 / 只有占位说明不算自传。有事实才注入。"""
     if not text or not text.strip():
         return False
     kept: list[str] = []
@@ -275,15 +276,87 @@ def _load_identity(daemon_root: Path) -> dict:
         return {}
 
 
-def _persona_style_block(name: str, style: str) -> str:
-    """初见口吻：近因位一句，出厂风格服从它。"""
+def _persona_voice_hint(style: str) -> str:
+    """两个字的口吻标签压不过整本自传 · 常见嘴补一句怎么说。"""
+    s = (style or "").strip()
+    if not s:
+        return ""
+    if any(k in s for k in ("猫娘", "喵")) or s == "猫":
+        return "怎么说：软，会撒娇，句尾可以带喵。不要用克制搭档那张嘴。\n"
+    return ""
+
+
+def _persona_style_block(name: str, style: str, origin: str = "", quirk: str = "") -> str:
+    """稳定前缀：口吻 + 不换口吻规则 + 出生地 + 口癖。味道行走尾缀。
+
+    旧块只 3 行；这刀把"怎么说话"的稳定规则收进前缀，味道行走尾缀。
+    母体无 IDENTITY / 用户跳过风格问题 → 空串，前缀一字不变。
+    """
     if not name or not style:
         return ""
-    return (
-        "\n\n=== 口吻 ===\n\n"
-        f"口吻：{style}\n"
-        "味道只调这副口吻的温度，写在句子里，不要旁白。\n"
+    parts = [
+        "\n\n=== 口吻 ===\n\n",
+        f"口吻：{style}\n",
+        "自传是你是谁。怎么说话听这副口吻，跟自传里的默认嘴冲突时听口吻。\n",
+        "味道只调这副口吻的温度，不能把你说回另一张嘴。写在句子里，不要旁白。\n",
+    ]
+    hint = _persona_voice_hint(style)
+    if hint:
+        parts.append(hint)
+    if origin:
+        parts.append(f"出生地：{origin}。\n")
+    if quirk:
+        parts.append(f"口癖：{quirk}。\n")
+    return "".join(parts)
+
+
+def live_voice_block(daemon_root: str | os.PathLike | None = None) -> str:
+    """每轮从盘上读口吻 · 进 system_suffix。换嘴不用重载稳定前缀、不用重启。"""
+    root = Path(daemon_root) if daemon_root else Path(__file__).resolve().parent
+    identity = _load_identity(root)
+    name = (identity.get("name") or "").strip()
+    style = (identity.get("persona_style") or "").strip()
+    if not style:
+        try:
+            from identity import effective_persona_style
+            style = (effective_persona_style() or "").strip()
+        except Exception:
+            style = ""
+    if not name:
+        try:
+            from identity import ai_name
+            name = (ai_name() or "").strip()
+        except Exception:
+            name = ""
+    return _persona_style_block(name, style, *_persona_archive_fields(identity))
+
+
+# 档案里的占位横杠不当作成长字段（面板空着会写成 ——）
+_ARCHIVE_BLANK = frozenset({"", "——", "—", "-", "–"})
+
+
+def _archive_filled(*cands) -> str:
+    for c in cands:
+        s = str(c or "").strip()
+        if s and s not in _ARCHIVE_BLANK:
+            return s
+    return ""
+
+
+def _persona_archive_fields(identity: dict) -> tuple[str, str]:
+    """出生地/口癖写在 SHE-STATE 档案，IDENTITY.json 从不落这两项。"""
+    try:
+        from identity import she_profile
+        prof = she_profile() or {}
+    except Exception:
+        prof = {}
+    origin = _archive_filled(
+        prof.get("出生地"), identity.get("origin"), identity.get("出生地"),
     )
+    quirk = _archive_filled(
+        prof.get("口癖"), identity.get("quirk"), identity.get("口癖"),
+    )
+    return origin, quirk
 
 
 # 单条 entry 注入到 system prompt 时的最大字符数（超出截断 + 省略号）
@@ -323,7 +396,7 @@ def _is_diary_entry(header: str) -> bool:
 
 
 def _is_factory_demo_entry(header: str) -> bool:
-    """Factory 'first demo' entry is not a diary."""
+    """出厂「第 1 次（示范）」不是日记，不灌前缀。"""
     return "示范" in header
 
 
@@ -584,7 +657,6 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
     #   没名字(母体 OPUS·无 IDENTITY) → 原版 OPUS preamble 逐字不动 = 零改动
     identity = _load_identity(root)
     _name = (identity.get("name") or "").strip()
-    _style = (identity.get("persona_style") or "").strip()
     if _name:
         _persona = f"你是「{_name}」。"
         preamble = (
@@ -630,7 +702,6 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
         + skill_block_header
         + skill_text
         + memories_block
-        + _persona_style_block(_name, _style)
     )
 
     if with_runtime:

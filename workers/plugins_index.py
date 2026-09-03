@@ -212,7 +212,9 @@ def _translate_descriptions(tasks: list[tuple[str, str]]) -> dict[str, str]:
         prompt = _TRANSLATE_PROMPT.format(n=len(batch), items_block=items_block)
         try:
             from daemon_runtime import bg_max_tokens
-            resp = client.chat.completions.create(
+            from daemon_provider import chat_create_safe  # K3 等模型 temperature 硬限制 · 自动降级
+            resp = chat_create_safe(
+                client,
                 model=model,
                 max_tokens=bg_max_tokens(),
                 temperature=0.2,
@@ -367,7 +369,7 @@ def load_plugins() -> dict:
             "description": (
                 "信息雷达 → 出品工坊·产品开发 → OPUS 用 write_file + shell_exec "
                 "自己写一个新的 agent_tools/*.py · 自动 register + 重启 daemon · "
-                "新工具就出现在这里 · 这是本工程闭环的最后一环"
+                "新工具就出现在这里 · 这是 Daemonkey 闭环的最后一环"
             ),
             "params": [],
             "category": "future",
@@ -398,7 +400,8 @@ _CATEGORY_RULES = [
     ("file", lambda n, s: n in {"read_file", "write_file", "grep_files", "pdf_read"}),
     ("web", lambda n, s: n in {"web_search", "web_fetch", "browser_fetch", "ssh_remote"}),
     ("studio", lambda n, s: n in {
-        "manage_info_source", "generate_report", "draft_studio",
+        "manage_info_source", "generate_report", "generate_presentation",
+        "generate_spreadsheet", "inspect_office", "draft_studio",
         "expand_trend_to_report", "mine_opportunities", "analyze_feasibility",
         "read_dashboard", "propose_next_move",
     }),
@@ -407,7 +410,7 @@ _CATEGORY_RULES = [
         "summarize_session", "set_model",
     }),
     ("external", lambda n, s: n in {
-        "wechat_send", "summon_cursor", "mcp_call",
+        "wechat_send", "client_handoff", "summon_cursor", "mcp_call",
     }),
 ]
 

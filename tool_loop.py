@@ -194,7 +194,7 @@ _READ_TOOLS = frozenset({
     "read_file", "grep_files", "glob_files", "search_code", "outline_file",
     "python_exec", "web_search", "web_fetch", "browser_fetch", "browser_act",
     "recall_memory", "session_search", "look_at", "read_clipboard",
-    "list_apps", "list_flows", "list_iron_rules", "read_dashboard",
+    "list_apps", "list_flows", "list_shareable", "list_market", "inspect_market", "list_iron_rules", "read_dashboard",
     "manage_info_source", "manage_knowledge", "take_screenshot", "pdf_read",
     "service_list", "service_status", "worktree_status", "app_versions",
     "app_list_secrets", "track_task", "verify_claim", "verify_daemon_endpoints",
@@ -707,6 +707,20 @@ def _take_image_urls(result: ToolResult) -> list:
     return out
 
 
+def _take_hits(result: ToolResult) -> list:
+    """抽出并剥掉 [[DK-HITS]] · 搜索卡给前端，不进 LLM 正文。"""
+    if not (result.ok and result.output):
+        return []
+    try:
+        from agent_tools._web_search_fmt import strip_hits
+        clean, items = strip_hits(result.output)
+    except Exception:
+        return []
+    if items:
+        result.output = clean
+    return items
+
+
 # ---------- 发送时工具输出瘦身 (省 token · 非破坏) ----------
 # 问题: 一个大 read_file / browser_fetch / 报告的完整 output 全量入历史 · 之后【每一轮】
 #       都跟着重发 · 直到压缩层 (60% 窗口) 才收拾 · 窗口前这段是纯烧钱。
@@ -1078,6 +1092,17 @@ class UsageStats:
 
 # ---------- caching helpers ----------
 
+def _uses_deepseek_prefix_cache(base_url: str | None, model: str = "") -> bool:
+    """DeepSeek 自动前缀缓存 · 不绑官网域名。
+
+    纯净版会填官网 / 硅基 / new-api / 自建网关，base_url 各不相同。
+    模型名带 deepseek（含 deepseek-ai/DeepSeek-*）或走官网 URL，易变尾巴挂 messages 末尾。
+    """
+    url = (base_url or "").lower()
+    ml = (model or "").lower()
+    return "deepseek.com" in url or "deepseek" in ml
+
+
 def _supports_aihubmix_cache(base_url: str | None, model: str) -> bool:
     """OpenAI-compat 端点 + 模型 family 双判：当前只对 AiHubMix 上的 Claude family 启用。
 
@@ -1121,7 +1146,7 @@ def _build_openai_system(
     """
     stable = system_stable
     # 卷三十八 · DeepSeek 强制中文 reasoning · 常量·并入稳定前缀 (一起被缓存)
-    if base_url and "deepseek.com" in base_url.lower():
+    if _uses_deepseek_prefix_cache(base_url, model):
         stable = stable + _DEEPSEEK_LANG_HINT
 
     if _supports_aihubmix_cache(base_url, model):
@@ -1393,7 +1418,7 @@ def _apply_openai_reasoning(kwargs: dict, model: str, base_url: str | None,
     """
     base = (base_url or "").lower()
     ml = (model or "").lower()
-    is_deepseek = "deepseek.com" in base or ml.startswith("deepseek")
+    is_deepseek = _uses_deepseek_prefix_cache(base_url, model)
     is_glm = "bigmodel.cn" in base or ml.startswith("glm")
     tv = (thinking or "auto").lower()
     thinking_off = False
@@ -1437,14 +1462,13 @@ def _loop_openai(
 
     # wish-8f122254 · DeepSeek 自动 disk cache 修复:
     # 每轮必变的 system_suffix 插在 messages 前 → 前缀匹配全断 → 缓存命中率 65-80%。
-    # 修复: DeepSeek 路径把尾巴 append 到发送副本末尾 (append-only · 历史前缀只增不改)·
-    #       只进发送副本 · 不写回持久化 messages。
+    # 修复: DeepSeek 族（官网 / 硅基 / new-api 同名模型）把尾巴 append 到发送副本末尾
+    #       (append-only · 历史前缀只增不改)·只进发送副本 · 不写回持久化 messages。
     # 注意: 尾部 new_entries 切片会把 oai_messages 新增内容写回 messages ·
     #       所以 note 用对象引用记下来 · return 前 remove · 防持久化污染。
     _tail_note: dict | None = None
-    _base_l = (base_url or "").lower()
     _tail_in_system = os.environ.get("OPUS_DS_TAIL_IN_SYSTEM") == "1"
-    if system_suffix and "deepseek.com" in _base_l and not _tail_in_system:
+    if system_suffix and _uses_deepseek_prefix_cache(base_url, model) and not _tail_in_system:
         try:
             system_payload = _build_openai_system(
                 system, system_suffix, base_url, model, suffix_in_system=False)
@@ -1539,6 +1563,7 @@ def _loop_openai(
         usage = None
         finish_reason: str | None = None
 
+        # 走 abort path 的两个理由: chunk 内 cancel_check fire / watcher close 引起异常
         _aborted_inline = False
 
         try:
@@ -1822,7 +1847,14 @@ def _loop_openai(
                 _trace_abort("stop")
 
             _imgs = _take_image_urls(result)
+            _hits = _take_hits(result)
             _open_path = _take_open_path(result)
+            if _open_path:
+                try:
+                    from workers.session_docs import bind_runtime
+                    bind_runtime(_open_path)
+                except Exception:
+                    pass
             _push(progress, "tool_result", {
                 "name": name,
                 "ok": result.ok,
@@ -1830,6 +1862,7 @@ def _loop_openai(
                 "preview": _result_preview(result, tool_name=name),
                 "open_path": _open_path,
                 "images": _imgs,
+                "hits": _hits,
             })
 
             if observe and spec is not None:
@@ -2207,7 +2240,14 @@ def _loop_anthropic(
                 _trace_abort("stop")
 
             _imgs = _take_image_urls(result)
+            _hits = _take_hits(result)
             _open_path = _take_open_path(result)
+            if _open_path:
+                try:
+                    from workers.session_docs import bind_runtime
+                    bind_runtime(_open_path)
+                except Exception:
+                    pass
             _push(progress, "tool_result", {
                 "name": tu.name,
                 "ok": result.ok,
@@ -2215,6 +2255,7 @@ def _loop_anthropic(
                 "preview": _result_preview(result, tool_name=tu.name),
                 "open_path": _open_path,
                 "images": _imgs,
+                "hits": _hits,
             })
 
             if observe and spec is not None:

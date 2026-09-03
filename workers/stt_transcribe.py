@@ -136,6 +136,20 @@ def model_downloaded() -> bool:
     return (stt_models_dir() / _MODEL_NAME / "model.bin").is_file()
 
 
+def stt_enabled() -> bool:
+    """没写过开关当开着 · 关了也不删模型。"""
+    try:
+        p = _env_path()
+        if p.exists():
+            for line in p.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line.startswith("OPUS_STT_ENABLED="):
+                    return line.split("=", 1)[1].strip().lower() in ("1", "true", "yes")
+    except Exception:
+        pass
+    return True
+
+
 def stt_status() -> dict:
     """设置页状态聚合: {deps, model, ready} · 前端开关/进度条用。"""
     deps = deps_installed()
@@ -145,6 +159,7 @@ def stt_status() -> dict:
         "model_name": _MODEL_NAME,
         "model_downloaded": model,
         "ready": deps and model,
+        "enabled": stt_enabled(),
         "model_dir": str(stt_models_dir() / _MODEL_NAME),
         "expected_size_mb": {"tiny": 75, "base": 150, "small": 460}.get(_MODEL_NAME, 150),
     }

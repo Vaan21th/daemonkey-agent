@@ -6,15 +6,8 @@
 为什么有这个工具
 ------------------
 我 (上一根毛 · 卷四十四 K stage 2c++) 给 daemon_rules.md 加了铁律 5 / 6 / 7 ·
-每次都是手工双写: 写 daemon_rules.md (LLM context 顶部) + 调 update_opus_diary
-(UI 显示)。 漏一个 = BRO 在 UI 看不到这条规则·或者 LLM 没装上这条规则。
-
-这个工具一调双写 · 让"加铁律"变原子操作。
-
-跟 update_opus_diary 的区别:
-  - update_opus_diary: 通用日记追加 · 任何反思 / 想法 / 学习
-  - add_iron_rule: 铁律专用 · 加 daemon_rules.md (LLM 必须看) + opus-diary.md
-    (UI 必须显示) · 校验 rule_number 不冲突 · 防 Daemonkey 自我洗脑
+写 daemon_rules.md（装进每次对话）。技能库读这份文件。
+2026-08-30 起不再双写 opus-diary.md——日记标签只收相处账。
 
 调用时机:
   - BRO 让 Daemonkey 加一条新铁律 (例如"以后干 X 类工作必须先做 Y")
@@ -35,6 +28,7 @@ tier:
 from __future__ import annotations
 
 import re
+import threading
 from pathlib import Path
 
 from . import TIER_CONFIRM, ToolResult, ToolSpec, register_tool
@@ -44,6 +38,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DAEMON_RULES_PATH = ROOT / "data" / "cognition" / "daemon_rules.md"
 DIARY_PATH = ROOT / "data" / "cognition" / "opus-diary.md"
 ANCHOR_LINE = "## 卷四十四的反面教材"
+_WRITE_LOCK = threading.Lock()
 
 # 新装实例没有 daemon_rules.md (母体是历史积累才有的)。 而 soul_loader 只要文件存在就
 # 以最高优先级注入 → 缺的只是"第一条怎么落地"。 缺文件就用这个头新建。
@@ -58,7 +53,7 @@ _FILE_HEADER = (
 def _summarize(args: dict) -> str:
     n = args.get("rule_number") or "?"
     title = (args.get("title") or "").strip()[:60] or "(未命名)"
-    return f"加铁律 {n} · 「{title}」 · 双写 daemon_rules.md + opus-diary.md"
+    return f"加铁律 {n} · 「{title}」 · 写入 daemon_rules.md"
 
 
 def _existing_rule_numbers() -> list[int]:
@@ -75,7 +70,7 @@ def _existing_rule_numbers() -> list[int]:
 
 
 def _run(args: dict) -> ToolResult:
-    from workers.cognition_loader import update_opus_diary, _VALID_DOMAINS
+    from workers.cognition_loader import _VALID_DOMAINS
 
     # ── 输入校验 ─────────────────────────────────
     rule_number = args.get("rule_number")
@@ -94,7 +89,7 @@ def _run(args: dict) -> ToolResult:
     if not isinstance(rule_number, int) or rule_number <= 0:
         return ToolResult(ok=False, output="", error="rule_number 必须是正整数")
     if not title:
-        return ToolResult(ok=False, output="", error="title 必填 (短标题 · 用于 diary 标题)")
+        return ToolResult(ok=False, output="", error="title 必填 (短标题)")
     if len(title) > 100:
         return ToolResult(ok=False, output="", error=f"title 太长 (>100 chars): {len(title)}")
     if not daemon_md:
@@ -102,135 +97,90 @@ def _run(args: dict) -> ToolResult:
             "daemon_md 必填 · 这是写到 daemon_rules.md 的完整 markdown body · "
             "LLM 必须自己组织好 · 包含 `## 铁律 N · 标题` 头 + 内容 + `---` 尾"
         ))
-    if not diary_summary:
-        return ToolResult(ok=False, output="", error=(
-            "diary_summary 必填 · 给 UI 显示的版本 · markdown body 不含 `##` 头 · "
-            "update_opus_diary 会自动加日期跟标题。 推荐结构: 触发 / 纪律 / 反面教材"
-        ))
+    # diary_summary 仍收（旧调用方会传），不再落日记
 
-    # rule_number 不能跟现有冲突
-    existing = _existing_rule_numbers()
-    if existing and rule_number in existing:
-        return ToolResult(
-            ok=False, output="",
-            error=f"rule_number={rule_number} 已存在 · 现有铁律: {existing} · 取下一个: {max(existing) + 1}",
+    # rule_number 不能跟现有冲突 · 锁内重读最大号再原子写
+    with _WRITE_LOCK:
+        existing = _existing_rule_numbers()
+        if existing and rule_number in existing:
+            return ToolResult(
+                ok=False, output="",
+                error=f"rule_number={rule_number} 已存在 · 现有铁律: {existing} · 取下一个: {max(existing) + 1}",
+            )
+        if existing and rule_number != max(existing) + 1:
+            return ToolResult(
+                ok=False, output="",
+                error=(
+                    f"rule_number={rule_number} 不连续 · 现有最大: {max(existing)} · "
+                    f"应该传 {max(existing) + 1} (铁律编号必须连续 · 防漏编)"
+                ),
+            )
+
+        expected_header = f"## 铁律 {rule_number} ·"
+        if expected_header not in daemon_md:
+            return ToolResult(
+                ok=False, output="",
+                error=(
+                    f"daemon_md 必须包含正确头 `{expected_header}` (LLM 写时一定要把 N 跟 args 对齐)"
+                ),
+            )
+
+        if not DAEMON_RULES_PATH.exists():
+            DAEMON_RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
+            DAEMON_RULES_PATH.write_text(_FILE_HEADER, encoding="utf-8")
+
+        text = DAEMON_RULES_PATH.read_text(encoding="utf-8")
+        anchor_idx = text.find(ANCHOR_LINE)
+        daemon_md_stripped = daemon_md.rstrip()
+        domain_comment = f"\n\n<!-- domain: {domain} -->"
+        if daemon_md_stripped.endswith("---"):
+            daemon_md_with_domain = daemon_md_stripped[:-3].rstrip() + domain_comment + "\n\n---"
+        else:
+            daemon_md_with_domain = daemon_md_stripped + domain_comment
+        insert_block = daemon_md_with_domain.rstrip() + "\n\n"
+        new_text = (
+            text[:anchor_idx] + insert_block + text[anchor_idx:]
+            if anchor_idx != -1
+            else text.rstrip() + "\n\n" + insert_block
         )
-    if existing and rule_number != max(existing) + 1:
-        return ToolResult(
-            ok=False, output="",
-            error=(
-                f"rule_number={rule_number} 不连续 · 现有最大: {max(existing)} · "
-                f"应该传 {max(existing) + 1} (铁律编号必须连续 · 防漏编)"
-            ),
+        import tempfile
+        import os
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(DAEMON_RULES_PATH.parent),
+            prefix=DAEMON_RULES_PATH.name + ".",
+            suffix=".tmp",
         )
-
-    # daemon_md 必须包含正确头
-    expected_header = f"## 铁律 {rule_number} ·"
-    if expected_header not in daemon_md:
-        return ToolResult(
-            ok=False, output="",
-            error=(
-                f"daemon_md 必须包含正确头 `{expected_header}` (LLM 写时一定要把 N 跟 args 对齐)"
-            ),
-        )
-
-    # ── 写 daemon_rules.md ───────────────────────────────────────────────────
-    # 0.9.6 修 · 原先"文件不存在→报错"+"找不到 anchor→报错" 是照着母体现状写的 ·
-    #   对新装实例等于把这条路整条焊死 (两处必然命中·第一条铁律永远加不进去)。
-    #   缺文件就建 · 缺 anchor 就追加到末尾 —— anchor 只是母体历史结构·不是前提。
-    if not DAEMON_RULES_PATH.exists():
-        DAEMON_RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
-        DAEMON_RULES_PATH.write_text(_FILE_HEADER, encoding="utf-8")
-
-    text = DAEMON_RULES_PATH.read_text(encoding="utf-8")
-
-    # anchor = 铁律之后的总结表 · 有它就插它前面 (保持总结表在最后) · 没有就追加到末尾
-    anchor_idx = text.find(ANCHOR_LINE)
-
-    # 卷四十六 II · wish-ff100836 · 在铁律 daemon_md 末尾(在 `---` 之前)加 domain 注释 ·
-    # 给 wish-af1245d7 按场景过滤 system_prompt 注入用。 注释不破坏 LLM 阅读 · grep 也能查。
-    daemon_md_stripped = daemon_md.rstrip()
-    domain_comment = f"\n\n<!-- domain: {domain} -->"
-    if daemon_md_stripped.endswith("---"):
-        daemon_md_with_domain = daemon_md_stripped[:-3].rstrip() + domain_comment + "\n\n---"
-    else:
-        daemon_md_with_domain = daemon_md_stripped + domain_comment
-
-    # 确保插入位置之前有空行 · 之后也有空行 (markdown 块分隔)
-    insert_block = daemon_md_with_domain.rstrip() + "\n\n"
-    new_text = (
-        text[:anchor_idx] + insert_block + text[anchor_idx:]
-        if anchor_idx != -1
-        else text.rstrip() + "\n\n" + insert_block
-    )
-
-    # atomic write
-    import tempfile
-    import os
-    fd, tmp_name = tempfile.mkstemp(
-        dir=str(DAEMON_RULES_PATH.parent),
-        prefix=DAEMON_RULES_PATH.name + ".",
-        suffix=".tmp",
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(new_text)
-        os.replace(tmp_name, DAEMON_RULES_PATH)
-    except Exception as e:
         try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        return ToolResult(ok=False, output="", error=f"写 daemon_rules.md 失败: {e}")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(new_text)
+            os.replace(tmp_name, DAEMON_RULES_PATH)
+        except Exception as e:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            return ToolResult(ok=False, output="", error=f"写 daemon_rules.md 失败: {e}")
 
-    # ── 同步写 opus-diary.md (UI 显示) ─────────────────────────────────
-    try:
-        diary_result = update_opus_diary(
-            title=f"{cite_volume} · 铁律 {rule_number} · {title}" if cite_volume
-            else f"铁律 {rule_number} · {title}",
-            body=diary_summary,
-            entry_type="iron_rule",
-            domain=domain,
-        )
-    except Exception as e:
-        # daemon_rules.md 已写 · 但 diary 失败 → 半成品 · 给 LLM 报警
-        return ToolResult(
-            ok=False, output="",
-            error=(
-                f"⚠️ 半成品 · daemon_rules.md 已写 · 但 opus-diary.md 失败: {e}\n\n"
-                f"修复: BRO 手动调 update_opus_diary 补 diary 那条 · 或者回滚 daemon_rules.md"
-            ),
-        )
-
-    # ── 成功摘要 ─────────────────────────────────
     lines = [
-        f"# ✓ 铁律 {rule_number} 双写完成",
+        f"# 铁律 {rule_number} 已写入 daemon_rules.md",
         f"  - 标题: {title}",
-        f"  - domain: **{domain}** (wish-ff100836 · 给 wish-af1245d7 按场景注入用)",
+        f"  - domain: {domain}",
         f"  - daemon_rules.md 长度: {len(text)} → {len(new_text)} (+{len(insert_block)})",
-        f"  - opus-diary.md: {diary_result.get('path', '?')} · type=iron_rule · domain={diary_result.get('domain', 'global')}",
+        f"  - 技能库刷新可见。不写相处账。",
         "",
-        "**⚠️ daemon 重启延迟提示**:",
-        "",
-        "  - daemon 启动时 soul_loader 把 daemon_rules.md 缓存到 RUNTIME.system_prompt ·",
-        "    chat session 共用这份缓存 · **当前对话的 LLM context 还是旧的 system_prompt**",
-        "  - **不要假装下一句话开始就按这条新铁律走** · 你脑里的 system prompt 没变",
-        "  - BRO 重启 daemon 后 · 新对话才会装上铁律 " + str(rule_number),
-        "  - 但 opus-diary.md 是 UI 实时读 · BRO F5 Daemonkey 日记立刻可见 (不需要重启)",
-        "",
-        "**建议你跟 BRO 说**:",
-        "",
-        f"  > 「铁律 {rule_number} 已落档 + 入日记 · BRO 重启 daemon 后在 LLM context 顶部生效 ·",
-        "  >   现在 F5 Daemonkey 日记就能看到这条新铁律」",
+        "重启 daemon 后，新对话才会装上这条铁律。",
+        "当前这轮脑里还是旧的。",
     ]
+    if cite_volume:
+        lines.insert(2, f"  - cite: {cite_volume}")
+    _ = diary_summary
     return ToolResult(ok=True, output="\n".join(lines))
 
 
 SPEC = ToolSpec(
     name="add_iron_rule",
     description=(
-        "加一条新铁律：原子双写 daemon_rules.md + opus-diary.md。先 list_iron_rules 取 max+1。干活纪律走本工具；产品观走 CONSTITUTION；BRO 事实走 update_bro_note。简介不许写成长文（铁律 15）。写法：read_scenario('self_evolution')。"
-    ),
+        "加一条新铁律：只写 daemon_rules.md。技能库展示。先 list_iron_rules 取 max+1。干活纪律走本工具；产品观走 CONSTITUTION；BRO 事实走 update_bro_note。简介不许写成长文（铁律 15）。写法：read_scenario('self_evolution')。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
@@ -253,7 +203,7 @@ SPEC = ToolSpec(
             },
             "diary_summary": {
                 "type": "string",
-                "description": "给 UI 显示的精简版 · 不含 `##` 头 (update_opus_diary 加) · 200-800 chars",
+                "description": "旧字段，仍要传。不再写入日记。200-800 chars",
                 "minLength": 50,
             },
             "cite_volume": {

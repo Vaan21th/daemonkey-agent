@@ -85,7 +85,7 @@ def _get_vision_fallback() -> tuple[str | None, str | None, str | None]:
 
 # ── 磁盘缓存（wish-18f08ccc · 同图同问零调用） ──────────────
 
-_CACHE_DIR = Path("data/cache/vision")
+_CACHE_DIR = PROJECT_ROOT / "data" / "cache" / "vision"
 _CACHE_TTL_SEC = 30 * 24 * 3600  # 30 天
 
 
@@ -407,8 +407,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="look_at",
     description=(
-        "看一张本地图片并返回文字描述。截屏/上传/提取图中文字时用。path 必填，question 可选。"
-    ),
+        "看一张本地图片并返回文字描述。截屏/上传/提取图中文字时用。path 必填，question 可选。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

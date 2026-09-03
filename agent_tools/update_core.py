@@ -216,8 +216,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="update_core",
     description=(
-        "从中央仓库选择性升级内核白名单文件，不碰用户 apps/soul。actions: list/remotes/check/preview/apply。apply 先 checkpoint commit。"
-    ),
+        "从中央仓库选择性升级内核白名单文件，不碰用户 apps/soul。actions: list/remotes/check/preview/apply。apply 先 checkpoint commit。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

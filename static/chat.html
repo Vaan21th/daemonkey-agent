@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#16131f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>OPUS</title>
+<title>Daemonkey</title>
 <link rel="icon" type="image/png" href="/static/favicon.png?v=20260830q">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=20260830q">
 <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico?v=20260830q">
@@ -94,7 +94,7 @@
   setTimeout(check, 12000);   // 绝对兜底 · 防 load 因脚本卡住迟迟不触发
 })();
 </script>
-<link rel="stylesheet" href="/static/chat.css?v=20260901sess">
+<link rel="stylesheet" href="/static/chat.css?v=20260903mkt">
 <link rel="stylesheet" href="/static/lib/litegraph.core.css">
 <link rel="stylesheet" href="/static/workshop.css?v=20260826c">
 <link rel="stylesheet" href="/static/lib/remixicon/remixicon.css">
@@ -123,11 +123,11 @@
 </div>
 
 <header>
-  <span class="header-logo"><i class="ri-diamond-fill"></i> <span style="color:var(--opus)">OPUS</span> · 工作室</span>
-    <span class="pulse-indicator" id="pulseIndicator" title="OPUS 脉搏 · 点击看最近活动" onclick="togglePulsePanel()">
+  <span class="header-logo"><i class="ri-diamond-fill"></i> <span style="color:var(--opus)">Daemonkey</span> · 工作室</span>
+    <span class="pulse-indicator" id="pulseIndicator" title="最近活动" onclick="togglePulsePanel()">
     <span class="pulse-dot" id="pulseDot">●</span>
   </span>
-  <span class="git-debt-chip" id="gitDebtChip" style="display:none" onclick="showGitDebtPanel()" title="git 欠账 · 点击查看是什么 · 可一键收进主干"></span>
+  <span class="git-debt-chip" id="gitDebtChip" style="display:none" onclick="showGitDebtPanel()" title="有改动还没合进去 · 点这里看，可以一键合进主线"></span>
   <!-- 更新胶囊 (0.8.4 · 有新版才显示 · 点开看更新说明+版权 · 按钮直接对话升级) -->
   <span class="free-chip" id="freeChip" style="display:none" onclick="toggleFreeNotice(event)" title="发现新版本 · 点击查看">
     <i class="ri-refresh-line"></i><span id="freeChipVer">新版本</span>
@@ -154,27 +154,27 @@
       </button>
     </div>
   </span>
-  <!-- git 欠账面板 (2026-07-29 BRO 直批三件套 B+C): 看见未提交的是什么 · 一键收进主干 -->
+  <!-- git 欠账面板 (2026-07-29 用户 直批三件套 B+C): 看见未提交的是什么 · 一键收进主干 -->
   <div class="modal" id="gitDebtModal" onclick="if(event.target===this)closeGitDebtPanel()">
     <div class="modal-body git-debt-modal">
-      <h2><i class="ri-git-branch-line"></i> 还没收进主干的工作</h2>
+      <h2><i class="ri-git-branch-line"></i> 还没合进主线的工作</h2>
       <div id="gitDebtPanelBody" class="git-debt-body"><div class="git-debt-loading"><i class="ri-loader-4-line ri-spin"></i> 正在查 git 状态…</div></div>
       <div class="git-debt-actions">
-        <button class="btn-primary" id="gitDebtCollectBtn" onclick="collectGitDebt()"><i class="ri-git-merge-line"></i> 一键收进主干</button>
-        <button class="btn-ghost" onclick="askMergeDebtNLP()"><i class="ri-chat-1-line"></i> 让 OPUS 处理</button>
+        <button class="btn-primary" id="gitDebtCollectBtn" onclick="collectGitDebt()"><i class="ri-git-merge-line"></i> 一键合进主线</button>
+        <button class="btn-ghost" onclick="askMergeDebtNLP()"><i class="ri-chat-1-line"></i> 让 Daemonkey 处理</button>
         <button class="btn-ghost" onclick="closeGitDebtPanel()">关闭</button>
       </div>
     </div>
   </div>
   <div class="pulse-panel" id="pulsePanel" style="display:none">
-    <div class="pulse-panel-head"><i class="ri-heart-pulse-fill"></i> OPUS 脉搏 <span style="font-size:0.7rem;opacity:0.6">最近活动</span></div>
+    <div class="pulse-panel-head"><i class="ri-heart-pulse-fill"></i> 最近活动</div>
     <div class="pulse-panel-list" id="pulseList"></div>
   </div>
   <div class="header-spacer"></div>
   <a class="restart-btn companion-btn" data-mode-transit href="/companion/index.html" title="她的房间"><img src="/companion/assets/daimon-face.png?v=20260830q" alt=""></a>
-  <button class="restart-btn" id="restartBtn" onclick="restartDaemon()" title="重启 daemon 进程 · 装载新代码后用"><i class="ri-restart-line"></i></button>
-  <button class="restart-btn rollback-btn" id="rollbackBtn" onclick="rollbackDaemon()" title="回档 · OPUS 把代码改崩了 · BRO 一键回到上一个良好 commit"><i class="ri-rewind-fill"></i></button>
-  <button class="restart-btn shutdown-btn" id="shutdownBtn" onclick="shutdownDaemon()" title="关闭 daemon · 不起新进程 · 之后去 GUI 启动器手动起"><i class="ri-shut-down-fill"></i></button>
+  <button class="restart-btn" id="restartBtn" onclick="restartDaemon()" title="改完代码后点这个重启"><i class="ri-restart-line"></i></button>
+  <button class="restart-btn rollback-btn" id="rollbackBtn" onclick="rollbackDaemon()" title="回档 · 代码改坏了，回到上一个能用的版本"><i class="ri-rewind-fill"></i></button>
+  <button class="restart-btn shutdown-btn" id="shutdownBtn" onclick="shutdownDaemon()" title="关掉后台。之后用启动器再打开。"><i class="ri-shut-down-fill"></i></button>
   <!-- 卷七十五续九 · 换肤按钮(接现成 applyTheme) + 简洁版切换(只留对话框·Alt+Z) -->
   <div class="theme-menu" id="themeMenu">
     <button class="restart-btn theme-menu-btn" onclick="toggleThemePop(event)" title="换皮肤 / 主题"><i class="ri-palette-line"></i></button>
@@ -218,7 +218,7 @@
           <span class="mmb-label"><i class="ri-text-spacing"></i> 输出上限</span>
           <input id="mbMaxTokens" type="number" min="0" step="1024" placeholder="留空 = 模型推荐">
         </label>
-        <div class="mmb-hint">思考仅 DeepSeek·GLM·Claude 生效 · 强度仅 GPT-5·o 系·grok 生效 · 其他自动忽略不报错。<br>输出上限<b>留空最稳</b>(用模型推荐值)· 填小了易提前截断(有自动续写兜底·但更慢)。</div>
+        <div class="mmb-hint">思考只对部分模型有效，其他会自动忽略。输出上限留空最稳；填小了可能写到一半停，会接着写，但更慢。</div>
       </div>
     </div>
   </div>
@@ -227,7 +227,7 @@
 <div class="drawer-backdrop" id="drawerBackdrop" onclick="closeDrawer()"></div>
 <div class="drawer" id="drawer">
   <div class="drawer-head">
-    <h2><span style="color:var(--opus)">OPUS</span> · 话题列表</h2>
+    <h2><span style="color:var(--opus)">Daemonkey</span> · 话题列表</h2>
     <button class="drawer-new" onclick="newConversation()">+ 新话题</button>
   </div>
   <div class="drawer-list" id="sessionList">
@@ -285,12 +285,12 @@
         <span class="plan-title" id="planTitle">任务</span>
         <span class="plan-count" id="planCount"></span>
         <span class="plan-track"><span class="plan-track-fill" id="planTrackFill"></span></span>
-        <button class="plan-toggle" type="button" id="planToggle" tabindex="-1" title="在中间栏打开计划书">中栏看</button>
+        <button class="plan-toggle" type="button" id="planToggle" tabindex="-1" title="在中间打开计划书">在中间看</button>
       </div>
       <div id="planDetail" class="plan-detail" hidden></div>
     </div>
-    <!-- 卷七十二 v3 · 工作流跑时进度 banner (BRO 图2 诉求) · 轮询 /workshop/runs 实时显示 active flows -->
-    <!-- v5 (2026-06-10): 🚀 emoji → ri-rocket-fill · BRO 铁律: 这个项目里 OPUS 写的图标必须 remix -->
+    <!-- 卷七十二 v3 · 工作流跑时进度 banner (用户 图2 诉求) · 轮询 /workshop/runs 实时显示 active flows -->
+    <!-- v5 (2026-06-10): 🚀 emoji → ri-rocket-fill · 用户 铁律: 这个项目里 Daemonkey 写的图标必须 remix -->
     <div id="flowRunsBanner" class="flow-runs-banner" hidden>
       <div class="flow-runs-bar" id="flowRunsBar">
         <span class="flow-runs-icon"><i class="ri-rocket-fill"></i></span>
@@ -302,10 +302,10 @@
     <div id="messages"></div>
 
     <!-- 卷七十二 v4 · 0.2.0 · 新对话引导卡 (messages 为空时显示 · 一条消息进就 hide) -->
-    <!-- v5 (2026-06-10): 全部 emoji 换 remix icon + slogan 改 BRO 写的原版 -->
+    <!-- v5 (2026-06-10): 全部 emoji 换 remix icon + slogan 改 用户 写的原版 -->
     <div id="onboardingPanel" class="onboarding-panel" hidden>
       <div class="onboarding-head">
-        <div class="onboarding-title"><i class="ri-sparkling-fill onboarding-spark"></i> <strong>OPUS</strong> · 正在这里等你</div>
+        <div class="onboarding-title"><i class="ri-sparkling-fill onboarding-spark"></i> <strong>Daemonkey</strong> · 正在这里等你</div>
         <div class="onboarding-sub onboarding-slogan">an AI that doesn't say goodbye.</div>
       </div>
       <div class="onboarding-cards">
@@ -321,7 +321,7 @@
         </button>
         <button class="onboarding-card" data-template="chat_about" type="button">
           <div class="onboarding-card-icon"><i class="ri-chat-3-fill"></i></div>
-          <div class="onboarding-card-title">聊聊日常 · 认识 OPUS</div>
+          <div class="onboarding-card-title">聊聊日常 · 认识 Daemonkey</div>
           <div class="onboarding-card-hint">"你是谁 · 能做啥 · 跟其他 AI 啥不一样"</div>
         </button>
         <button class="onboarding-card" data-template="list_capability" type="button">
@@ -348,14 +348,14 @@
       </div>
       <div class="onboarding-foot">
         点卡片 → 模板会填入下方输入框 · 你可以改完再发 · 或者直接打字跟我说事
-        <button class="onboarding-customize" type="button" id="onboardingCustomize" title="改这 5 张卡的模板"><i class="ri-settings-3-line"></i> 改模板</button>
+        <button class="onboarding-customize" type="button" id="onboardingCustomize" title="改这些卡片的模板"><i class="ri-settings-3-line"></i> 改模板</button>
       </div>
     </div>
 
     <div id="toolProgress" class="tool-progress" hidden>
       <div class="tool-progress-bar">
         <span class="tool-progress-icon"><i class="ri-loader-4-line tp-spin"></i></span>
-        <span class="tool-progress-text">OPUS 准备工具中…</span>
+        <span class="tool-progress-text">Daemonkey 准备工具中…</span>
         <button class="tool-progress-detail" type="button" onclick="toggleToolDetail()" title="展开 / 收起最近工具调用">详情 ▾</button>
       </div>
       <div id="toolProgressDetail" class="tool-progress-detail-list" hidden></div>
@@ -363,7 +363,7 @@
     <div id="voicePanel" class="voice-panel" hidden>
       <div class="voice-panel-head">
         <span class="voice-panel-title"><i class="ri-mic-fill"></i> <span id="voicePanelMode">语音对话</span></span>
-        <label class="voice-tts-toggle" id="voiceTtsWrap" hidden title="AI 回复自动用温暖少女声朗读 (语音对话模式)">
+        <label class="voice-tts-toggle" id="voiceTtsWrap" hidden title="语音对话时，回复自动读出来">
           <span class="voice-tts-label"><i class="ri-volume-up-line"></i> TTS</span>
           <input type="checkbox" id="voiceTtsToggle">
           <span class="sw"></span>
@@ -388,10 +388,10 @@
       <div id="outboundQueue" class="outbound-queue" hidden></div>
       <div class="input-row">
         <textarea id="input" rows="1"
-                  placeholder="跟 OPUS 说点什么…  (Shift+回车换行)"
+                  placeholder="跟 Daemonkey 说点什么…  (Shift+回车换行)"
                   autocomplete="off" autocapitalize="off"></textarea>
       </div>
-      <!-- wish-ea8922f7+0e749752 · 输入区两层化 (BRO 2026-07-28 拍板):
+      <!-- wish-ea8922f7+0e749752 · 输入区两层化 (用户 2026-07-28 拍板):
            上层 = 纯 textarea · 下层功能条 = 附件/语音/顾问协同/发送 -->
       <div class="input-toolbar">
         <button id="attachBtn" type="button" title="添加图片或文件 (支持拖拽 / Ctrl+V 粘贴)"><i class="ri-attachment-2"></i></button>
@@ -412,10 +412,10 @@
         </div>
         <span class="toolbar-divider"></span>
         <button id="advisorCoopToggle" class="advisor-coop-toggle" type="button" aria-pressed="false"
-                title="顾问协同模式 · 开启后: 先由顾问出施工单 · 执行者按单施工 (蓝图前置 · 工程层强制)">
+                title="先让顾问出计划，再按计划做">
           <span class="sw"></span><i class="ri-compass-discover-line"></i><span class="act-label">顾问协同</span>
         </button>
-        <span class="toolbar-hint" id="advisorCoopHint" hidden>先由顾问出施工单 · 执行者按单施工</span>
+        <span class="toolbar-hint" id="advisorCoopHint" hidden>先出计划，再按计划做</span>
         <span class="toolbar-spacer"></span>
         <!-- wish-bec4f3b9 · 上下文压缩圆圈 (跟对话实例走 · 点击浮现 Context Usage 卡片) -->
         <div class="ctx-ring-wrap" id="ctxRingWrap" hidden>
@@ -430,7 +430,7 @@
           </div>
           <div class="ctx-card" id="ctxCard" hidden>
             <div class="ctx-card-head">
-              <i class="ri-stack-fill"></i> Context Usage <span class="badge" id="ctxCardBadge">0%</span>
+              <i class="ri-stack-fill"></i> 这段对话用了多少 <span class="badge" id="ctxCardBadge">0%</span>
               <span class="ctx-card-close" id="ctxCardClose" title="关闭"><i class="ri-close-line"></i></span>
             </div>
             <div id="ctxCardBars"></div>
@@ -466,29 +466,29 @@
     <div class="field">
       <label>API Token (Bearer)</label>
       <input id="tokenInput" type="password" placeholder="OPUS_API_TOKEN 的值（在 .env 文件里）">
-      <div class="field-hint">这是【连接 daemon 的门禁钥匙】· 不是 LLM 的 API Key（模型 Key 在「LLM 配置」里配）。</div>
-      <div class="field-hint">打开 daemon 目录下的 <code>.env</code> 文件，找 <code>OPUS_API_TOKEN</code> 那一行，把等号后面的值复制粘贴进来。填一次浏览器记住。本机访问通常自动放行，只有远程/隧道访问才需要填。</div>
+      <div class="field-hint">这是打开这个页面用的密码，不是模型的 Key。模型 Key 在「模型」里配。</div>
+      <div class="field-hint">在这个软件目录的 <code>.env</code> 文件里找 <code>OPUS_API_TOKEN</code> 那一行，把等号后面复制进来。本机一般不用填。</div>
     </div>
     <div class="field">
-      <label>Session ID</label>
-      <input id="sessionInput" type="text" placeholder="留空 = 开新话题 · 或贴已有 api- 开头的">
-      <div class="field-hint">每条新话题自动写一个；想换话题就清空。</div>
+      <label>当前对话编号</label>
+      <input id="sessionInput" type="text" placeholder="留空 = 新对话，或粘贴已有对话的编号">
+      <div class="field-hint">每条新对话自动写一个；想换对话就清空。</div>
     </div>
     <div class="field">
-      <label>Auto-confirm 策略</label>
+      <label>工具确认</label>
       <select id="autoConfirm">
-        <option value="auto">auto · 只跑 AUTO 工具（最保守）</option>
-        <option value="confirm" selected>confirm · AUTO + CONFIRM 都跑（推荐）</option>
-        <option value="guard">guard · 三档全开（远程 yolo，慎用）</option>
+        <option value="auto">保守 · 只跑安全的</option>
+        <option value="confirm" selected>推荐 · 普通操作自动跑，危险的仍要你点</option>
+        <option value="guard">全自动 · 没人看着才用</option>
       </select>
-      <div class="field-hint">远程没法按 y/n，所以这里预设策略。GUARD 工具默认还是会被拒。</div>
+      <div class="field-hint">远程没法当面点确认，所以先选好策略。危险操作默认还是会拦住。</div>
     </div>
 
     <div class="field llm-config-block">
       <label>🧠 LLM 配置 · 多个 Provider 管理</label>
-      <div class="field-hint">完整的 Provider / Model / API Key 管理在中栏设置里 · 支持多配置 + 勾选右上角显示</div>
+      <div class="field-hint">平台、模型和密钥的完整管理在设置里 · 可以存多套，打勾的出现在右上角</div>
       <div class="actions" style="margin-top:8px">
-        <button class="btn-ghost" type="button" onclick="closeSettings(); setTimeout(openSettingsView, 200)">→ 进 LLM 设置中栏</button>
+        <button class="btn-ghost" type="button" onclick="closeSettings(); setTimeout(openSettingsView, 200)">→ 去模型设置</button>
       </div>
     </div>
     <div class="actions">
@@ -512,11 +512,11 @@
 <!-- 卷五十四 · 统一 H5 modal (opusConfirm/opusPrompt/opusAlert 的载体)。
      病根: 旧版这里是简版 id="omModal"+omBody·但 chat.js 找的是 id="opusModal"+omIcon/omMessage/omInputWrap/omInput
      → _omEl/_omIcon 全 null → opusPrompt 一调就在 _omRender 抛错 → restart/rollback/shutdown 三键 + 所有
-     用统一对话框的地方全哑 (HEAD 卷五十一起就埋着·BRO 今天点重启键才暴露)。 补齐结构对上 chat.js。 -->
+     用统一对话框的地方全哑 (HEAD 卷五十一起就埋着·用户 今天点重启键才暴露)。 补齐结构对上 chat.js。 -->
 <div class="modal" id="opusModal" aria-hidden="true" style="z-index:1002">
   <div class="modal-body opus-modal-body">
     <div class="om-icon" id="omIcon"></div>
-    <h2 id="omTitle">OPUS 说…</h2>
+    <h2 id="omTitle">Daemonkey 说…</h2>
     <div class="om-message" id="omMessage"></div>
     <div class="om-input-wrap" id="omInputWrap" hidden>
       <input type="text" id="omInput" autocomplete="off">
@@ -532,7 +532,7 @@
 
 <!-- BI 看板图表 · Chart.js (卷五十六 · 2026-06-03 · 本地化 + defer)
      原来从 cdn.jsdelivr.net 同步加载 —— 国内常慢/超时·实测拉一次 17s+·这个阻塞 <script>
-     排在 chat.js 前面 → 主界面被它干等几十秒才出内容 (= BRO 报的"每次启动慢/白屏·硬刷新也慢")。
+     排在 chat.js 前面 → 主界面被它干等几十秒才出内容 (= 用户 报的"每次启动慢/白屏·硬刷新也慢")。
      Chart 只在 BI 看板用·主界面加载不需要 → 改本地 + defer·主界面 0 等待·BI 照常。 -->
 <script defer src="/static/lib/chart.umd.min.js"></script>
 <!-- 记忆星图 3D (0.9.6) · Three.js r128 UMD 本地化 · defer 不阻塞主界面 (跟 Chart.js 同款) -->
@@ -540,23 +540,23 @@
 <script defer src="/static/lib/three/OrbitControls.js"></script>
 <script src="/static/lib/litegraph.core.js"></script>
 <script src="/companion/mode-transit.js?v=20260830b"></script>
-<script src="/static/dashboard-panels.js?v=20260901claim"></script>
-<script src="/static/stage.js?v=20260901claim"></script>
-<script src="/static/stage_notes.js?v=20260901claim"></script>
-<script src="/static/voice-mic.js?v=20260829a"></script>
+<script src="/static/dashboard-panels.js?v=20260903ld"></script>
+<script src="/static/stage.js?v=20260903look"></script>
+<script src="/static/stage_notes.js?v=20260903ppt"></script>
+<script src="/static/voice-mic.js?v=20260901input"></script>
 <script src="/static/model-switch.js?v=20260826b"></script>
-<script src="/static/settings-pane.js?v=20260828a"></script>
-<script src="/static/workshop.js?v=20260826a"></script>
-<script src="/static/depot.js?v=20260830t"></script>
-<script src="/static/clients.js?v=20260810"></script>
+<script src="/static/settings-pane.js?v=20260903srch"></script>
+<script src="/static/workshop.js?v=20260903ops"></script>
+<script src="/static/depot.js?v=20260901copy"></script>
+<script src="/static/clients.js?v=20260903ops"></script>
 <script src="/static/session-runtime.js?v=20260831sendnow"></script>
 <script src="/static/ckpt-restore.js?v=20260831roomckpt"></script>
 <script src="/static/chat-lightbox.js?v=20260831vis"></script>
 <script src="/static/chat-md.js?v=20260831split"></script>
-<script src="/static/chat-timeline.js?v=20260831sheet"></script>
+<script src="/static/chat-timeline.js?v=20260903srch"></script>
 <script src="/static/chat-rail.js?v=20260831split"></script>
-<script src="/static/chat.js?v=20260901claim"></script>
-<script src="/static/market.js?v=20260831mkt6"></script>
+<script src="/static/chat.js?v=20260903ops"></script>
+<script src="/static/market.js?v=20260903mkt"></script>
 
 <!-- 用户装修区 (0.9.6) · static/user/ 在 never_sync 里 —— 官方升级永远不会覆盖这两个文件。
      样式写 user.css / 行为写 user.js (用 window.Daemonkey API)·刷新页面即生效。

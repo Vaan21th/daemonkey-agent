@@ -29,9 +29,10 @@ api_routes/workshop.py · 工坊路由 (wish-413999da · phase 1)
     DELETE /workshop/trash/{trash_id}           · 真删一条
     DELETE /workshop/trash                      · 清空 (kind=app|flow|all)
 
-  Files (3):
+  Files (4):
     GET    /workshop/preview/{domain}/{filename}  · 在线 markdown 预览 + frontmatter
     GET    /workshop/file/{domain}/{filename}     · 原始 .md 下载
+    GET    /stage/file/{rel:path}                 · HTML 原型及同目录样式/配图（中栏 iframe）
     POST   /workshop/reveal/{domain}/{filename}   · 本机外部应用打开
 
 注: app/flow run 走 daemon_api 的 register_turn / unregister_turn 收口点共享
@@ -911,6 +912,26 @@ async def download_workshop_file(
         path,
         media_type=media_type,
         filename=filename,
+    )
+
+
+@router.get("/stage/file/{rel:path}")
+async def serve_stage_file(rel: str):
+    """HTML 原型及同目录样式/配图 · 中栏 iframe 同源相对路径要能跟上。"""
+    from workers.stage_open import mime_for, resolve_served
+    full = resolve_served(rel)
+    if full is None:
+        raise HTTPException(404, "stage file not found")
+    media = mime_for(full)
+    if not media:
+        raise HTTPException(415, "unsupported stage file type")
+    return FileResponse(
+        path=str(full),
+        media_type=media,
+        headers={
+            "Cache-Control": "no-cache, must-revalidate",
+            "Content-Disposition": "inline",
+        },
     )
 
 

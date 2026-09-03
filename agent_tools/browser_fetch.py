@@ -265,7 +265,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="browser_fetch",
     description=(
-        "真浏览器抓网页（Playwright + Edge）。登录态 / JS 重的 SPA / web_fetch 撞墙时用。比 web_fetch 慢，静态页优先 web_fetch。mode: auto / cdp / standalone。"
+        "真浏览器抓网页（Playwright + Edge）。登录态 / JS 重的 SPA / web_fetch 撞墙时用。"
+        "比 web_fetch 慢，静态页优先 web_fetch。mode: auto / cdp / standalone。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

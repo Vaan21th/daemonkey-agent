@@ -423,21 +423,26 @@ def _run(args: dict) -> ToolResult:
     except Exception:
         pass
 
+    try:
+        from workers.stage_open import append_open_mark
+        base_output = append_open_mark(base_output, path)
+    except Exception:
+        pass
+
     return ToolResult(ok=True, output=base_output)
 
 
 SPEC = ToolSpec(
     name="write_file",
     description=(
-        "创建/覆盖/追加文本文件。大文件改动用 edit_file。精排 docx 用 generate_report。长内容可只传 path，抓本轮回复正文。.env/soul/.git 是 GUARD。"
-    ),
+        "创建/覆盖/追加文本文件。大文件改动用 edit_file。精排 docx 用 generate_report。HTML 原型写 data/design/ 或 data/workshop/outputs/，写完中栏能看。长内容可只传 path。.env/soul/.git 是 GUARD。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
         "properties": {
             "path": {
                 "type": "string",
-                "description": "Target file path. Relative resolves from Daemonkey root.",
+                "description": "相对工程根。HTML 原型写 data/design/ 或 data/workshop/outputs/。",
             },
             "content": {
                 "type": "string",

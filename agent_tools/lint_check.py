@@ -178,7 +178,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="lint_check",
     description=(
-        "查 Python/JS 的逻辑错（未定义名、未用导入、重定义），不是只查语法。改完自己的 .py 在 request_restart 前跑。只读。"
+        "查 Python/JS 的逻辑错（未定义名、未用导入、重定义），不是只查语法。"
+        "改完自己的 .py 在 request_restart 前跑。只读。"
     ),
     tier=TIER_AUTO,
     input_schema={

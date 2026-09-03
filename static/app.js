@@ -69,7 +69,7 @@ function addMsg(role, content) {
   if (role === "ai") {
     const av = document.createElement("img");
     av.className = "avatar";
-    av.src = "/static/favicon.ico";
+    av.src = "/static/favicon.png";
     av.alt = "";
     m.appendChild(av);
   }
@@ -123,7 +123,7 @@ function showIntro(then) {
   const ov = document.createElement("div");
   ov.id = "intro";
   ov.innerHTML =
-    '<div class="op-glow"></div>' +
+    '<img class="meet-face" src="/static/favicon.png" alt="">' +
     '<div class="intro-title">接下来，让它先认识认识你</div>' +
     '<div class="intro-sub">下面是一段对话——<b>它想了解你</b>，好成为更懂你的搭档。<br>这还不是你的工作台；聊完，它会亲自带你进去。</div>' +
     '<div class="intro-count">即将开始 · <span id="introCountNum">5</span> 秒后可点击</div>' +
@@ -165,7 +165,7 @@ async function playOpeningTransition() {
   const ov = document.createElement("div");
   ov.id = "opening";
   ov.innerHTML =
-    '<div class="op-glow"></div>' +
+    '<img class="meet-face" src="/static/favicon.png" alt="">' +
     '<div class="op-name">「' + escHtml(name) + '」</div>' +
     '<div class="op-line">我们的故事，从这里开始</div>' +
     '<div class="op-count">即将进入正式页面 · <span id="opCountNum">5</span> 秒</div>';
@@ -184,7 +184,7 @@ let typingEl = null;
 function showTyping() {
   typingEl = document.createElement("div");
   typingEl.className = "msg ai typing";
-  typingEl.innerHTML = '<img class="avatar" src="/static/favicon.ico" alt=""><div class="col"><div class="bubble"><span class="dot">●</span><span class="dot">●</span><span class="dot">●</span></div></div>';
+  typingEl.innerHTML = '<img class="avatar" src="/static/favicon.png" alt=""><div class="col"><div class="bubble"><span class="dot">●</span><span class="dot">●</span><span class="dot">●</span></div></div>';
   chat.appendChild(typingEl);
   scroll();
 }

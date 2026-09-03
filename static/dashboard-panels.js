@@ -209,7 +209,7 @@ async function _importReportToKb(name, btn) {
       setTimeout(() => { btn.disabled = false; btn.innerHTML = old; }, 2200);
     }
     if (typeof showChatToast === 'function') {
-      showChatToast(data.existed ? '这份报告已经在知识库里了' : '已存入知识库 · 「报告」文件夹 · 之后能被召回并 cite');
+      showChatToast(data.existed ? '这份报告已经在知识库里了' : '已存入知识库 · 「报告」文件夹 · 之后回答能引用原文');
     }
   } catch (e) {
     alert('网络出错: ' + e.message);
@@ -585,7 +585,7 @@ async function biBriefGenerate() {
     title: '研判这段时间的趋势',
     message: {
       html: `让 OPUS 看一遍 <b>${mm}${vd && vd !== 'all' ? ' · ' + escHtml(vd) : ''}</b> 的高价值信号·
-        给出趋势研判 + 执行方案。<span class="om-hint">会调一次 LLM (约 $0.05 · 10-30 秒)·结果会缓存·重看不重烧。</span>`
+        给出趋势研判 + 执行方案。<span class="om-hint">会问一次模型（大约几毛钱、半分钟）。看过的会记住，再看不重复花。</span>`
     },
     okText: '研判', cancelText: '再想想',
   });
@@ -598,7 +598,7 @@ async function biBriefGenerate() {
       headers: { 'Authorization': 'Bearer ' + token },
     });
     if (r.ok) biBriefRender(await r.json());
-    else if (body) body.innerHTML = '<div class="bi-v3-empty">研判失败 (' + r.status + ') · 看 data/daemon.err</div>';
+    else if (body) body.innerHTML = '<div class="bi-v3-empty">研判失败。出错记录在本机日志里。</div>';
   } catch (e) {
     if (body) body.innerHTML = '<div class="bi-v3-empty">研判出错 · 网络或 daemon 问题</div>';
   } finally {
@@ -858,7 +858,7 @@ function biHeatRender(c) {
         if (r.id === 'capability_mirror') {
           const en = r.enabled ? `每 ${r.interval_days} 天自动` : '未启用自动 (.env 开关)';
           const last = r.last_done ? `上次 ${escHtml(r.last_done)}` : '从未照过';
-          return `<div class="bi-rhythm-row"><i class="ri-aspect-ratio-fill"></i><div class="bi-rhythm-main"><b>能力镜像</b> · ${en}</div><div class="bi-rhythm-sub">${last}</div></div>`;
+          return `<div class="bi-rhythm-row"><i class="ri-aspect-ratio-fill"></i><div class="bi-rhythm-main"><b>能力对照</b> · ${en}</div><div class="bi-rhythm-sub">${last}</div></div>`;
         }
         return '';
       }).join('');
@@ -1295,7 +1295,7 @@ async function loadBIBilling() {
       const cacheTag = cr > 0 ? ` <span class="bi-brief-scope" title="含缓存价">含缓存价${m.price && m.price.cache_read != null ? '' : '(估)'}</span>` : '';
       const src = m.price
         ? '<span class="bi-brief-scope">价格表</span>'
-        : `<a class="bi-link-btn" href="#" onclick="openSettings();return false;"><i class="ri-price-tag-3-line"></i> 去配价 →</a>`;
+        : `<a class="bi-link-btn" href="#" onclick="openSettings();return false;"><i class="ri-price-tag-3-line"></i> 去填价格 →</a>`;
       return `<tr>
         <td style="padding:5px 8px;color:var(--text)">${escHtml(m.name || m.config_id || m.model_id || '?')}</td>
         <td class="bi-num" style="padding:5px 8px">${m.calls}</td>
@@ -1511,14 +1511,14 @@ async function loadBIMirror() {
   const body = document.getElementById('biMirrorBody');
   const timeEl = document.getElementById('biMirrorTime');
   const btn = document.getElementById('biMirrorBtn');
-  if (btn) btn.onclick = () => spawnQuickly('帮我照一次市场能力镜像 (mirror_capability action=generate)', '市场能力镜像');
+  if (btn) btn.onclick = () => spawnQuickly('帮我照一次市场能力镜像 (mirror_capability action=generate)', '能力对照');
   if (!body) return;
   try {
     const r = await fetch('/dashboard/capability_snapshot', { headers: { 'Authorization': 'Bearer ' + token } });
     if (!r.ok) { body.innerHTML = '<div class="bi-v3-empty">加载失败</div>'; return; }
     const d = await r.json();
     if (!d.snapshot) {
-      body.innerHTML = `<div class="bi-v3-empty">${escHtml(d.note || '还没照过镜子 · 点右上「立即照镜」')}</div>`;
+      body.innerHTML = `<div class="bi-v3-empty">${escHtml(d.note || '还没有能力对照 · 点右上「现在对照」')}</div>`;
       if (timeEl) timeEl.textContent = '';
       return;
     }
@@ -1646,23 +1646,381 @@ async function loadFeasibilityDetail(opp_id) {
   }
 }
 
-async function loadReportPreview(filename) {
+let _shelfPreviewOpen = false;
+
+async function loadReportPreview(filename, previewUrl) {
   if (!token || !filename) return;
-  $dashView.innerHTML = `<div class="dash-empty">加载预览中...</div>`;
+  let kind = _shelfKind || "reports";
+  if (/\.pptx?$/i.test(filename)) kind = "decks";
+  else if (/\.xlsx?$/i.test(filename)) kind = "sheets";
+  else if (/\.docx?$/i.test(filename)) kind = "reports";
+  const rel = kind === "decks"
+    ? ("data/presentations/" + filename)
+    : (kind === "sheets" ? ("data/spreadsheets/" + filename) : ("data/reports/" + filename));
+  if (typeof window.goOfficeHome === "function" && !/^_hist_/i.test(filename)) {
+    await window.goOfficeHome(rel);
+  }
+  window._dashLoadSeq = (window._dashLoadSeq || 0) + 1;
+  if (typeof loadDashboard === 'function') {
+    if (typeof loadDashboard._seq !== 'number') loadDashboard._seq = 0;
+    loadDashboard._seq++;
+  }
+  _shelfPreviewOpen = true;
+  $dashView.innerHTML = _shelfLoadHTML('正在打开成品');
   try {
-    const r = await fetch(`/reports/preview/${encodeURIComponent(filename)}`, {
+    const url = shelfPreviewUrl(kind, filename);
+    const r = await fetch(url, {
       headers: { 'Authorization': 'Bearer ' + token },
     });
     if (!r.ok) {
+      _shelfPreviewOpen = false;
       const errTxt = await r.text();
       $dashView.innerHTML = `<div class="dash-empty">预览失败 [${r.status}]<br>${escHtml(errTxt.slice(0,300))}</div>`;
       return;
     }
     const data = await r.json();
+    data.requested = filename;
+    if (filename) data.name = filename;
     renderReportPreview(data);
   } catch (e) {
+    _shelfPreviewOpen = false;
     $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`;
   }
+}
+
+function shelfKindOf(d) {
+  if (d && d.kind === 'decks') return 'decks';
+  if (d && d.kind === 'sheets') return 'sheets';
+  if (d && /\.pptx$/i.test(d.name || '')) return 'decks';
+  if (d && /\.xlsx$/i.test(d.name || '')) return 'sheets';
+  return 'reports';
+}
+
+function shelfOpenPath(d) {
+  if (d && d.open_path) return d.open_path;
+  const name = (d && d.name) || '';
+  const kind = shelfKindOf(d);
+  if (kind === 'decks') return 'data/presentations/' + name;
+  if (kind === 'sheets') return 'data/spreadsheets/' + name;
+  return 'data/reports/' + name;
+}
+
+function fmtShelfSize(kb) {
+  const n = Number(kb) || 0;
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' MB';
+  return (Math.round(n * 10) / 10) + ' KB';
+}
+
+function shelfPreviewUrl(kind, filename) {
+  const name = encodeURIComponent(filename || '');
+  if (kind === 'decks') return '/shelf/preview/decks/' + name;
+  if (kind === 'sheets') return '/shelf/preview/sheets/' + name;
+  return '/reports/preview/' + name;
+}
+
+function shelfStageBits(name, sizeKb) {
+  const n = String(name || '');
+  const hist = /^_hist_(.+)_v(\d+)_/i.exec(n);
+  return {
+    title: hist ? hist[1] : n,
+    mark: hist ? ('历史 V' + hist[2]) : '当前',
+    size: (sizeKb || sizeKb === 0) ? fmtShelfSize(sizeKb) : '',
+    hist: !!hist,
+  };
+}
+
+function paintStagePages(pages) {
+  const el = document.getElementById('rpStageMeta');
+  if (!el || !pages) return;
+  const t = el.textContent || '';
+  const m = t.match(/ · (\d+) 页$/);
+  if (m && Number(m[1]) >= pages) return;
+  el.textContent = t.replace(/ · \d+ 页$/, '') + ' · ' + pages + ' 页';
+}
+
+function withAuthToken(url) {
+  if (!url) return url;
+  const t = encodeURIComponent(token || '');
+  return url + (url.includes('?') ? '&' : '?') + 'token=' + t;
+}
+
+async function restoreShelfVersion(kind, name, btn) {
+  if (!token || !kind || !name) return;
+  const old = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line"></i> 抄回…'; }
+  try {
+    const r = await fetch('/shelf/restore/' + encodeURIComponent(kind) + '/' + encodeURIComponent(name), {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      const msg = (j && (j.error || j.detail || j.hint)) || ('HTTP ' + r.status);
+      if (btn) { btn.innerHTML = '<i class="ri-error-warning-line"></i> 抄不回'; btn.title = msg; btn.disabled = false; }
+      return;
+    }
+    await loadReportPreview(j.name, j.preview_url);
+  } catch (e) {
+    if (btn) { btn.innerHTML = '<i class="ri-error-warning-line"></i> 抄不回'; btn.title = String(e); btn.disabled = false; }
+    else if (old && btn) btn.innerHTML = old;
+  }
+}
+
+async function revealFile(path, btn) {
+  if (!path) return;
+  const old = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line"></i> 打开中…'; }
+  try {
+    const r = await fetch('/reveal-file', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      const msg = (j && (j.error || j.detail || j.hint)) || ('HTTP ' + r.status);
+      if (btn) { btn.innerHTML = '<i class="ri-error-warning-line"></i> 打不开'; btn.title = msg; btn.disabled = false; }
+      else if (typeof alert === 'function') alert('打开失败: ' + msg);
+      return;
+    }
+    if (btn) {
+      btn.innerHTML = '<i class="ri-check-line"></i> 已打开';
+      setTimeout(() => { btn.disabled = false; btn.innerHTML = old; }, 1800);
+    }
+  } catch (e) {
+    if (btn) { btn.innerHTML = '<i class="ri-error-warning-line"></i> 打不开'; btn.title = String(e); btn.disabled = false; }
+  }
+}
+
+function renderShelfPreview(d) {
+  window._dashLoadSeq = (window._dashLoadSeq || 0) + 1;
+  _shelfPreviewOpen = true;
+  const name = d.requested || d.name || '?';
+  const meta = d.meta || {};
+  const md = d.markdown || '';
+  const hasMd = !!d.has_md_source;
+  const note = d.note || '';
+  const kind = shelfKindOf(d);
+  const isDeck = kind === 'decks';
+  const isSheet = kind === 'sheets';
+  const rawDl = d.download_url || (isDeck ? `/presentations/${name}` : (isSheet ? `/spreadsheets/${name}` : `/reports/${name}`));
+  const dlUrl = withAuthToken(rawDl);
+  const dlLabel = isDeck ? '下载 pptx' : (isSheet ? '下载 xlsx' : '下载 docx');
+  const openPath = shelfOpenPath(d);
+  const coverBlock = (meta.title || meta.subtitle || meta.audience || meta.note) ? `
+    <div class="rp-cover">
+      ${meta.title ? `<div class="rp-cover-title">${escHtml(meta.title)}</div>` : ''}
+      ${meta.subtitle ? `<div class="rp-cover-sub">${escHtml(meta.subtitle)}</div>` : ''}
+      <div class="rp-cover-meta">
+        ${meta.audience ? `<span>面向：${escHtml(meta.audience)}</span>` : ''}
+        ${meta.generated_at ? `<span>生成于 ${escHtml(meta.generated_at)}</span>` : ''}
+        ${meta.theme ? `<span>主题 · ${escHtml(meta.theme)}</span>` : ''}
+      </div>
+      ${meta.note ? `<div class="rp-cover-note">${escHtml(meta.note)}</div>` : ''}
+    </div>
+  ` : '';
+
+  const canvasTag = isDeck ? 'PPT' : (isSheet ? '表' : '稿');
+  const bits = shelfStageBits(name, d.size_kb);
+  const pages = d.pages || 0;
+  const metaBits = [bits.mark, bits.size, pages ? (pages + ' 页') : ''].filter(Boolean).join(' · ');
+  $dashView.innerHTML = `
+    <div class="stage-root">
+    <div class="dash-head stage-bar">
+      <span class="stage-tag">${canvasTag}</span>
+      <h2 class="stage-title" title="${escHtml(name)}">${escHtml(bits.title)}</h2>
+      <span class="stage-meta" id="rpStageMeta">${escHtml(metaBits)}</span>
+      <button type="button" class="rp-dl-btn" data-open-path="${escHtml(openPath)}"><i class="ri-external-link-line"></i> 用软件打开</button>
+      <a class="rp-dl-btn" href="${escHtml(dlUrl)}" download="${escHtml(name)}">${dlLabel}</a>
+      <button type="button" class="stage-x" onclick="typeof stageClose==='function'?stageClose():loadDashboard('reports')" title="关掉画布"><i class="ri-close-line"></i></button>
+    </div>
+    <div class="depot-tabs rp-view-tabs" role="tablist">
+      <button type="button" class="depot-tab active" data-rp-tab="visual"><i class="ri-landscape-line"></i><span>成品</span></button>
+      <button type="button" class="depot-tab" data-rp-tab="source"><i class="ri-file-text-line"></i><span>文稿</span></button>
+    </div>
+    <div class="rp-pane" data-rp-pane="visual">
+      <div class="rp-visual-wait" id="rpVisualWait">${_shelfLoadHTML('正在渲成品预览')}</div>
+      <div id="rpVisual" hidden></div>
+    </div>
+    <div class="rp-pane" data-rp-pane="source" hidden>
+      <div class="rp-meta-strip">
+        ${hasMd
+          ? '<span class="rp-src rp-src-md"><i class="ri-file-text-fill"></i> markdown 源</span>'
+          : (isSheet
+            ? '<span class="rp-src rp-src-extract"><i class="ri-table-line"></i> 没有 markdown 源 · 成品仍可看表</span>'
+            : (isDeck
+            ? '<span class="rp-src rp-src-extract"><i class="ri-error-warning-fill"></i> 没有 markdown 源</span>'
+            : '<span class="rp-src rp-src-extract"><i class="ri-error-warning-fill"></i> 旧报告 · 从 docx 反推的简陋版</span>'))}
+        ${note ? `<span class="rp-note">${escHtml(note)}</span>` : ''}
+      </div>
+      <article class="rp-body">
+        ${coverBlock}
+        <div class="rp-md">${typeof mdRender === 'function' ? mdRender(md) : escHtml(md)}</div>
+      </article>
+    </div>
+    </div>
+  `;
+
+  $dashView.querySelectorAll('[data-rp-tab]').forEach(btn => {
+    btn.onclick = () => {
+      const tab = btn.getAttribute('data-rp-tab');
+      $dashView.querySelectorAll('[data-rp-tab]').forEach(b => b.classList.toggle('active', b === btn));
+      $dashView.querySelectorAll('[data-rp-pane]').forEach(p => {
+        p.hidden = p.getAttribute('data-rp-pane') !== tab;
+      });
+      if (typeof window.stageNotesBind === 'function') {
+        window.stageNotesBind({ mode: 'office', path: openPath, kind: kind, name: name });
+      }
+    };
+  });
+  const openBtn = $dashView.querySelector('[data-open-path]');
+  if (openBtn) openBtn.onclick = () => revealFile(openBtn.getAttribute('data-open-path'), openBtn);
+  if (typeof window.stageNotesBind === 'function') {
+    window.stageNotesBind({ mode: 'office', path: openPath, kind: kind, name: name });
+  }
+  fetchShelfVisual(kind, name);
+}
+
+function _shelfLoadHTML(text) {
+  if (typeof dashLoadingHTML === 'function') return dashLoadingHTML(text);
+  return `<div class="dash-empty dk-ld">
+    <div class="dk-ld-row"><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span></div>
+    <div class="dk-ld-txt">${escHtml(text || '加载中')}</div>
+  </div>`;
+}
+
+function _shelfWaitErr(wait, msg) {
+  if (!wait) return;
+  wait.hidden = false;
+  wait.classList.add('is-err');
+  wait.innerHTML = `<i class="ri-error-warning-line"></i> ${escHtml(msg)}`;
+}
+
+function fetchShelfVisual(kind, name) {
+  const wait = document.getElementById('rpVisualWait');
+  const box = document.getElementById('rpVisual');
+  if (!box) return;
+  fetch(`/shelf/visual/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`, {
+    headers: { 'Authorization': 'Bearer ' + token },
+  })
+    .then(r => r.json().then(j => ({ okHttp: r.ok, j })).catch(() => ({ okHttp: false, j: {} })))
+    .then(({ okHttp, j }) => {
+      if (!box.isConnected) return;
+      if (!okHttp || !j.ok) {
+        _shelfWaitErr(wait, (j.error || '成品预览渲不出来') + ' · 可切到文稿，或用软件打开');
+        return;
+      }
+      if (wait) wait.hidden = true;
+      box.hidden = false;
+      paintStagePages(j.pages || (j.assets && j.assets.length) || 0);
+      paintShelfVisual(box, j);
+    })
+    .catch(e => {
+      if (wait && wait.isConnected) _shelfWaitErr(wait, e.message || '网络出错');
+    });
+}
+
+function styleOfficePreviewFrame(fr) {
+  if (!fr) return;
+  const paint = () => {
+    try {
+      const doc = fr.contentDocument;
+      if (!doc) return;
+      const raw = (doc.body && getComputedStyle(doc.body).backgroundColor) || "";
+      const m = raw.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      const lum = m ? (0.2126 * +m[1] + 0.7152 * +m[2] + 0.0722 * +m[3]) / 255 : 0.12;
+      const dark = lum < 0.45;
+      const thumb = dark ? "rgba(232,223,201,0.32)" : "#b8a888";
+      const hover = dark ? "rgba(232,223,201,0.5)" : "#8a7048";
+      let s = doc.getElementById("dk-sb");
+      if (!s) {
+        s = doc.createElement("style");
+        s.id = "dk-sb";
+        (doc.head || doc.documentElement).appendChild(s);
+      }
+      s.textContent =
+        "html{color-scheme:" + (dark ? "dark" : "light") + "}" +
+        "*{scrollbar-width:thin!important;scrollbar-color:" + thumb + " transparent!important}" +
+        "*::-webkit-scrollbar{width:8px!important;height:8px!important}" +
+        "*::-webkit-scrollbar-track{background:transparent!important}" +
+        "*::-webkit-scrollbar-thumb{background:" + thumb + "!important;border-radius:4px}" +
+        "*::-webkit-scrollbar-thumb:hover{background:" + hover + "!important}";
+    } catch (e) { /* PDF 查看器 / 跨域画不进去 */ }
+  };
+  paint();
+  fr.addEventListener("load", paint);
+}
+window.styleOfficePreviewFrame = styleOfficePreviewFrame;
+
+function paintShelfVisual(box, j) {
+  const rebind = () => {
+    if (typeof window.stageNotesBind === 'function') window.stageNotesBind();
+  };
+  const hook = (fr) => {
+    if (!fr) return;
+    styleOfficePreviewFrame(fr);
+    const recount = () => {
+      rebind();
+      try {
+        const doc = fr.contentDocument;
+        const n = doc && doc.querySelectorAll('.slide, [class*="slide"]').length;
+        if (n > 1) paintStagePages(n);
+      } catch (e) { /* 跨域数不了 */ }
+    };
+    fr.addEventListener("load", recount);
+    recount();
+  };
+  if (j.mode === 'pdf' && j.pdf_url) {
+    box.innerHTML = `<iframe class="rp-pdf" title="成品预览" src="${escHtml(withAuthToken(j.pdf_url))}"></iframe>`;
+    hook(box.querySelector("iframe"));
+    return;
+  }
+  if (j.mode === 'html' && j.html_url) {
+    box.innerHTML = `<iframe class="rp-pdf" title="成品预览" src="${escHtml(withAuthToken(j.html_url))}"></iframe>`;
+    hook(box.querySelector("iframe"));
+    return;
+  }
+  const assets = j.assets || [];
+  if (!assets.length) {
+    box.innerHTML = `<div class="rp-visual-wait">没有渲出页面</div>`;
+    return;
+  }
+  let i = 0;
+  const urls = assets.map(a => withAuthToken(a.url));
+  const thumbs = urls.map((u, n) =>
+    `<button type="button" class="rp-thumb${n ? '' : ' is-on'}" data-i="${n}" title="第 ${n + 1} 页">`
+    + `<img alt="" src="${escHtml(u)}"><span class="rp-thumb-n">${n + 1}</span></button>`
+  ).join('');
+  box.innerHTML = `
+    <div class="rp-slide-deck">
+      <aside class="rp-slide-thumbs" id="rpSlideThumbs">${thumbs}</aside>
+      <div class="rp-slide-main">
+        <div class="rp-slide-stage"><img id="rpSlideImg" alt="幻灯片" src="${escHtml(urls[0])}"></div>
+        <div class="rp-slide-nav">
+          <button type="button" id="rpSlidePrev" class="rp-dl-btn"><i class="ri-arrow-left-s-line"></i></button>
+          <span id="rpSlidePos">1 / ${urls.length}</span>
+          <button type="button" id="rpSlideNext" class="rp-dl-btn"><i class="ri-arrow-right-s-line"></i></button>
+        </div>
+      </div>
+    </div>
+  `;
+  const img = box.querySelector('#rpSlideImg');
+  const pos = box.querySelector('#rpSlidePos');
+  const show = (n) => {
+    i = (n + urls.length) % urls.length;
+    img.src = urls[i];
+    pos.textContent = (i + 1) + ' / ' + urls.length;
+    box.querySelectorAll('.rp-thumb').forEach((b, k) => b.classList.toggle('is-on', k === i));
+    const on = box.querySelector('.rp-thumb.is-on');
+    if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
+    rebind();
+  };
+  box.querySelector('#rpSlidePrev').onclick = () => show(i - 1);
+  box.querySelector('#rpSlideNext').onclick = () => show(i + 1);
+  box.querySelectorAll('.rp-thumb').forEach((b) => {
+    b.onclick = () => show(parseInt(b.getAttribute('data-i'), 10) || 0);
+  });
+  rebind();
 }
 
 function renderAutopilotBanner() {
@@ -1757,7 +2115,7 @@ function renderBIDashboard(data) {
         <div class="bi-card bi-mirror-card">
           <div class="bi-card-head">
             <h3><i class="ri-aspect-ratio-fill" style="color:#9f7aea"></i> OPUS 眼里的你 <span class="bi-mirror-time" id="biMirrorTime"></span></h3>
-            <button class="bi-brief-gen" id="biMirrorBtn" type="button"><i class="ri-camera-lens-fill"></i> 立即照镜</button>
+            <button class="bi-brief-gen" id="biMirrorBtn" type="button"><i class="ri-camera-lens-fill"></i> 现在对照</button>
           </div>
           <div class="bi-mirror-body" id="biMirrorBody"><div class="bi-v3-empty">加载中…</div></div>
         </div>
@@ -1933,7 +2291,7 @@ function renderExecution(data) {
   if (total === 0) {
     $dashView.innerHTML = `
       <div class="dash-head"><h2><i class="ri-refresh-fill"></i> 执行反馈</h2>
-        <span class="dash-meta">闭环还没起步</span></div>
+        <span class="dash-meta">还没有开始做的项目</span></div>
       ${breadcrumbHtml}
       <div class="dash-empty">
         <p>还没有项目在执行</p>
@@ -1993,7 +2351,7 @@ function renderExecution(data) {
     ${breadcrumbHtml}
     <div class="exec-summary">
       <span class="muted">这里记录每个落地项目的状态 / 决策 / 实际收支 / 经验教训</span><br>
-      <span class="muted">→ 下次 LLM 做可行性分析·会自动抓"同类"反馈做合并分析（卷三十三闭环深化）</span>
+      <span class="muted">以后做可行性分析时，会自动参考这里做过的同类项目</span>
     </div>
     ${buckets}
   `;
@@ -2604,7 +2962,7 @@ function renderKnowledge(data) {
       <div class="dash-stub">
         <h3>知识库还是空的</h3>
         <div>在底部输入框跟 OPUS 说：「把 <code>D:\\资料\\合同.pdf</code> 加进知识库」<br>
-             支持 md / txt / docx / pptx / pdf(文本型)。灌进来后能被召回并 cite 回原文。</div>
+             支持 md / txt / docx / pptx / pdf。存进去之后，回答能引用原文。</div>
       </div>`;
   } else {
     if (items.length > 3) {
@@ -2738,7 +3096,7 @@ function renderOppFullCard(o, idx) {
         </button>
         <button class="opp-act-btn opp-act-feas"
                 onclick="runFeasibilityFromOpp('${jsStr(o.id || '')}', ${idx + 1})"
-                title="跳到 📊 可行性分析维度 · OPUS 跑一次深度评估">
+                title="去可行性分析 · 让 OPUS 跑一次深度评估">
           <i class="ri-bar-chart-fill"></i> 跑可行性
         </button>
         <button class="opp-act-btn" onclick="spawnQuickly('针对第 ${idx + 1} 个机会·写一份调研报告', '机会调研报告')">
@@ -3093,73 +3451,161 @@ function renderRadar(data) {
   $dashView.innerHTML = html;
 }
 
+let _shelfKind = 'reports';
+try { _shelfKind = localStorage.getItem('opus_shelf_kind') || 'reports'; } catch (e) {}
+let _shelfLastData = null;
+
+function switchShelfKind(kind) {
+  _shelfKind = (kind === 'decks' || kind === 'sheets') ? kind : 'reports';
+  try { localStorage.setItem('opus_shelf_kind', _shelfKind); } catch (e) {}
+  if (_shelfLastData) renderReports(_shelfLastData);
+}
+
 function renderReports(data) {
+  _shelfPreviewOpen = false;
+  _shelfLastData = data;
   if (data && data.error) {
     $dashView.innerHTML = `
       ${pipelineBreadcrumb('reports')}
-      <div class="dash-head"><h2><i class="ri-article-fill"></i> 报告库</h2></div>
+      <div class="dash-head"><h2><i class="ri-archive-2-fill"></i> 产物库</h2></div>
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
   }
-  const items = (data && data.items) || [];
-  const dir = (data && data.directory) || 'data/reports';
+  const kinds = (data && data.kinds) || {};
+  const reports = kinds.reports || {
+    items: (data && data.items) || [],
+    count: ((data && data.items) || []).length,
+    directory: (data && data.directory) || 'data/reports',
+  };
+  const decks = kinds.decks || { items: [], count: 0, directory: 'data/presentations' };
+  const sheets = kinds.sheets || { items: [], count: 0, directory: 'data/spreadsheets' };
+  const kind = (_shelfKind === 'decks' || _shelfKind === 'sheets') ? _shelfKind : 'reports';
+  const pack = kind === 'decks' ? decks : (kind === 'sheets' ? sheets : reports);
+  const items = pack.items || [];
+  const dir = pack.directory || (kind === 'decks' ? 'data/presentations' : (kind === 'sheets' ? 'data/spreadsheets' : 'data/reports'));
+  const nR = reports.count != null ? reports.count : (reports.items || []).length;
+  const nD = decks.count != null ? decks.count : (decks.items || []).length;
+  const nS = sheets.count != null ? sheets.count : (sheets.items || []).length;
 
   let html = `
     ${pipelineBreadcrumb('reports')}
     <div class="dash-head">
-      <h2><i class="ri-article-fill"></i> 报告库</h2>
+      <h2><i class="ri-archive-2-fill"></i> 产物库</h2>
       <span class="meta">成品层 · ${items.length} 份 · ${escHtml(dir)}</span>
-      <button onclick="backToChat()">✕ 收起</button>
+      <button onclick="backToChat()">收起</button>
       <button onclick="loadDashboard('trends')">← 回到趋势</button>
       <button onclick="loadDashboard('reports')">刷新列表</button>
+    </div>
+    <div class="depot-tabs" role="tablist">
+      <button type="button" class="depot-tab${kind === 'reports' ? ' active' : ''}" onclick="switchShelfKind('reports')">
+        <i class="ri-article-fill"></i><span>报告</span><span class="shelf-n">${nR}</span>
+      </button>
+      <button type="button" class="depot-tab${kind === 'decks' ? ' active' : ''}" onclick="switchShelfKind('decks')">
+        <i class="ri-slideshow-fill"></i><span>演示稿</span><span class="shelf-n">${nD}</span>
+      </button>
+      <button type="button" class="depot-tab${kind === 'sheets' ? ' active' : ''}" onclick="switchShelfKind('sheets')">
+        <i class="ri-table-fill"></i><span>表格</span><span class="shelf-n">${nS}</span>
+      </button>
     </div>`;
 
   if (items.length === 0) {
-    html += `
+    html += kind === 'decks' ? `
+      <div class="dash-stub">
+        <h3>还没生成过演示稿</h3>
+        <div>跟我说做PPT，文件会出现在这里。</div>
+      </div>` : kind === 'sheets' ? `
+      <div class="dash-stub">
+        <h3>还没生成过表格</h3>
+        <div>跟我说做表格，文件会出现在这里。</div>
+      </div>` : `
       <div class="dash-stub">
         <h3>还没生成过报告</h3>
-        <div>在底部输入框跟 OPUS 说：「整理一下本周雷达写成报告」<br>
-             OPUS 会调 <code>generate_report</code> · docx 自动落在这里。</div>
+        <div>跟我说写报告，文件会出现在这里。</div>
       </div>`;
   } else {
     if (items.length > 3) {
-      html += renderListFilter({targetSelector: '.report-card', placeholder: '搜报告文件名 / 时间...'});
+      html += renderListFilter({targetSelector: '.report-card', placeholder: kind === 'decks' ? '搜演示稿文件名 / 时间...' : (kind === 'sheets' ? '搜表格文件名 / 时间...' : '搜报告文件名 / 时间...')});
     }
     html += `<div class="reports-list">`;
     for (const it of items) {
-      const dlUrl = `${it.download_url}?token=${encodeURIComponent(token || '')}`;
-      const previewable = !!it.preview_url;
+      const rawDl = it.download_url || (kind === 'decks' ? `/presentations/${it.name}` : (kind === 'sheets' ? `/spreadsheets/${it.name}` : `/reports/${it.name}`));
+      const dlUrl = `${rawDl}${rawDl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token || '')}`;
+      const previewUrl = it.preview_url || '';
       const srcBadge = it.has_md_source
-        ? `<span class="rc-src-badge rc-src-md" title="新报告 · 有 markdown 源">md 源</span>`
-        : `<span class="rc-src-badge rc-src-extract" title="旧报告 · 预览是从 docx 反推的">兜底抽取</span>`;
+        ? `<span class="rc-src-badge rc-src-md" title="有源文件">有源文件</span>`
+        : `<span class="rc-src-badge rc-src-extract" title="${kind === 'decks' ? '没有源文件 · 下载用本机软件打开' : (kind === 'sheets' ? '没有源文件 · 成品仍可看表' : '旧报告 · 预览是从成品反推的')}">${kind === 'decks' || kind === 'sheets' ? '没有源文件' : '旧版预览'}</span>`;
+      const kbBtn = kind === 'reports'
+        ? `<button class="rc-preview-btn rp-kb" data-name="${escHtml(it.name)}" title="存进知识库，之后回答能引用原文"><i class="ri-book-2-line"></i> 存入知识库</button>`
+        : '';
+      const openRel = it.open_path || (kind === 'decks' ? ('data/presentations/' + it.name) : (kind === 'sheets' ? ('data/spreadsheets/' + it.name) : ('data/reports/' + it.name)));
+      const showName = it.title || it.name;
+      const ver = it.version ? `<span class="rc-ver">V${it.version}</span>` : '';
+      const hist = Array.isArray(it.history) ? it.history : [];
+      let histHtml = '';
+      if (hist.length) {
+        const rows = hist.map((h, i) => {
+          const hv = h.version || ((it.version || (hist.length + 1)) - 1 - i);
+          const lo = h.version_lo || hv;
+          const verLabel = (h.dupes > 1 && lo && lo !== hv) ? (`V${lo}–V${hv}`) : (`V${hv}`);
+          const hop = h.open_path || openRel;
+          const hpv = shelfPreviewUrl(kind, h.name || '');
+          const hdl = `${h.download_url || rawDl}${((h.download_url || rawDl).includes('?') ? '&' : '?')}token=${encodeURIComponent(token || '')}`;
+          const dupe = h.dupes > 1 ? `<span class="rc-dupe">同一份 · 记了 ${h.dupes} 次</span>` : '';
+          const pg = h.pages ? `<span class="rc-pages">${h.pages} 页</span>` : '';
+          return `<div class="rc-hist-row"><span class="rc-ver">${verLabel}</span><span class="rc-size">${escHtml(fmtShelfSize(h.size_kb))}</span>${pg}<span class="rc-time">${escHtml(h.created_at || '')}</span>${dupe}`
+            + `<button type="button" class="rc-preview-btn" data-name="${escHtml(h.name || '')}" data-preview-url="${escHtml(hpv)}"><i class="ri-eye-line"></i> 中栏看</button>`
+            + `<button type="button" class="rc-preview-btn rc-restore" data-restore="${escHtml(h.name || '')}" data-kind="${escHtml(kind)}" title="不会删任何旧文件。把这版抄成当前，现在的当前会另存进历史。"><i class="ri-arrow-go-back-line"></i> 用这版继续</button>`
+            + `<button type="button" class="rc-preview-btn" data-open="${escHtml(hop)}" title="用本机软件打开"><i class="ri-external-link-line"></i></button>`
+            + `<a class="rc-dl" href="${escHtml(hdl)}" download="${escHtml(h.name || '')}">下载</a></div>`;
+        }).join('');
+        histHtml = `<details class="rc-hist"><summary>历史 ${hist.length} 份</summary><p class="rc-hist-hint">卡片「预览」是当前这份。要看旧样子，点下面体积大、页数多的那行「中栏看」。顶栏必须出现「历史 Vx」，才是旧稿。</p>${rows}</details>`;
+      }
       html += `
         <div class="report-card">
           <div class="rc-head">
-            <a class="rc-name" href="javascript:void(0)" data-name="${escHtml(it.name)}" data-preview="1">
-              ${escHtml(it.name)}
+            <a class="rc-name" href="javascript:void(0)" data-name="${escHtml(it.name)}" data-preview-url="${escHtml(previewUrl)}" data-preview="1">
+              ${escHtml(showName)}
             </a>
+            ${ver}
             ${srcBadge}
           </div>
           <div class="rc-meta">
-            <span class="rc-size">${it.size_kb} KB</span>
+            <span class="rc-size">${escHtml(fmtShelfSize(it.size_kb))}</span>
+            ${it.pages ? `<span class="rc-pages">${it.pages} 页</span>` : ''}
             <span class="rc-time">${escHtml(it.created_at)}</span>
-            ${previewable ? `<button class="rc-preview-btn" data-name="${escHtml(it.name)}">📖 预览</button>` : ''}
-            <button class="rc-preview-btn rp-kb" data-name="${escHtml(it.name)}" title="把这份报告灌进知识库 · 之后能被召回并 cite"><i class="ri-book-2-line"></i> 存入知识库</button>
-            <a class="rc-dl" href="${escHtml(dlUrl)}" download="${escHtml(it.name)}">下载 ↓</a>
+            ${previewUrl ? `<button class="rc-preview-btn" data-name="${escHtml(it.name)}" data-preview-url="${escHtml(previewUrl)}"><i class="ri-eye-line"></i> 预览</button>` : ''}
+            <button class="rc-preview-btn" data-open="${escHtml(openRel)}"><i class="ri-external-link-line"></i> 打开</button>
+            ${kbBtn}
+            <a class="rc-dl" href="${escHtml(dlUrl)}" download="${escHtml(it.name)}">下载</a>
           </div>
+          ${histHtml}
         </div>`;
     }
     html += `</div>`;
   }
   $dashView.innerHTML = html;
 
-  // 卷三十三补丁 · 预览按钮绑定
-  $dashView.querySelectorAll('.rc-preview-btn:not(.rp-kb), .rc-name[data-preview]').forEach(el => {
+  $dashView.querySelectorAll('.rc-preview-btn:not(.rp-kb):not([data-open]):not([data-restore]), .rc-name[data-preview]').forEach(el => {
     el.onclick = (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
       const name = el.getAttribute('data-name');
-      if (name) loadReportPreview(name);
+      const previewUrl = el.getAttribute('data-preview-url');
+      if (name) loadReportPreview(name, previewUrl || undefined);
+    };
+  });
+  $dashView.querySelectorAll('[data-open]').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      revealFile(btn.getAttribute('data-open'), btn);
+    };
+  });
+  $dashView.querySelectorAll('[data-restore]').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      restoreShelfVersion(btn.getAttribute('data-kind'), btn.getAttribute('data-restore'), btn);
     };
   });
   $dashView.querySelectorAll('.rp-kb').forEach(btn => {
@@ -3292,9 +3738,9 @@ function wishFromRadar(title, url) {
     `**这是邀请·不是命令** —— 你要自己判断·不是 BRO 让你装你就装。\n\n` +
     `请你：\n` +
     `1. 用 web_search / web_fetch 弄清这个工程做啥 · 看 README / 主要特性\n` +
-    `2. 对照 Daemonkey 现状·想清楚：\n` +
+    `2. 对照本工作台现状·想清楚：\n` +
     `   - 你有没有这个能力·还是缺\n` +
-    `   - 它的设计哲学跟 Daemonkey 是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
+    `   - 它的设计哲学跟本工作台是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
     `   - 如果合拍·这能力对 BRO 这个具体的人有啥用 (而不是"通用上有用")\n` +
     `3. 然后明确告诉 BRO：\n` +
     `   - 值得装 → 调 wish_add 写一份心愿 (title / why / source_kind=radar / source_ref + url / design_sketch / complexity / hours / priority / opus_take = 你自己的态度)\n` +

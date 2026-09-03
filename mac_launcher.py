@@ -95,7 +95,9 @@ def ensure_daemon_dir(api):
                             os.path.join(d, "requirements.txt"), "-q"],
                            timeout=900)
         if r.returncode != 0:
-            return False, f"依赖安装失败: {r.stderr[-200:]}"
+            # B-① · 2026-08-27 · stderr 可能为 None (未 capture) · 不再切片炸 (Grok 全量审计)
+            err = (r.stderr or b"").decode("utf-8", "replace")[-200:] if r.stderr else "无 stderr 输出"
+            return False, f"依赖安装失败: {err}"
     except Exception as e:
         return False, f"依赖异常: {e}"
     return True, "就绪"
@@ -118,6 +120,15 @@ class LauncherApi:
         self._tray_th = None
         self._started_at = time.time()   # 守护面板「已运行」时长
         self.events = deque(maxlen=8)    # 事件环形缓冲 (守护面板最近事件)
+        self.skin = "daimon"
+        try:
+            sp = os.path.join(ROOT, "data", "runtime", "launcher-skin.json")
+            if os.path.isfile(sp):
+                sid = json.load(open(sp, encoding="utf-8")).get("skin")
+                if sid in ("daimon", "classic"):
+                    self.skin = sid
+        except Exception:
+            pass
 
     # ─────────────────────── HTML → Python ───────────────────────
 
@@ -162,6 +173,19 @@ class LauncherApi:
             pass  # 页面切换无需后端动作
         elif t == "drag":
             pass  # v0: 窗口拖动走系统标题栏 (无边框在 Mac 上可后续加)
+        elif t == "skin":
+            sid = msg.get("id") or "daimon"
+            if sid not in ("daimon", "classic"):
+                sid = "daimon"
+            self.skin = sid
+            try:
+                runtime = os.path.join(ROOT, "data", "runtime")
+                os.makedirs(runtime, exist_ok=True)
+                with open(os.path.join(runtime, "launcher-skin.json"), "w", encoding="utf-8") as f:
+                    json.dump({"skin": sid}, f)
+            except Exception:
+                pass
+            self.push_state()
 
     def on_action(self, action_id):
         if action_id == "restart":
@@ -266,6 +290,9 @@ class LauncherApi:
             "port": str(self.port),
             "status": "running" if running else "stopped",
             "btn": {"text": "停止 daemon" if running else "启动 daemon", "enabled": True},
+            "skin": self.skin,
+            "bgUrl": f"skins/{self.skin}/{'bg.jpg' if self.skin == 'classic' else 'splash.png'}",
+            "faceUrl": f"skins/{self.skin}/face.png",
         })
 
     def log(self, text, kind="line"):

@@ -83,8 +83,11 @@ def _write(files: list[str], notes: dict) -> None:
         "notes": {k: v for k, v in notes.items() if k in files},
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
-    TAKEOVER_PATH.write_text(
+    import os as _os  # B-② · 2026-08-27 · 接管清单原子写 (Grok 全量审计)
+    _tmp = TAKEOVER_PATH.with_name(TAKEOVER_PATH.name + ".tmp")
+    _tmp.write_text(
         json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+    _os.replace(_tmp, TAKEOVER_PATH)
 
 
 def add(paths: list[str], note: str = "") -> dict:

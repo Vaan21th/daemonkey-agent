@@ -83,6 +83,17 @@
   window.AI_NAME = NAME;                        // 给后续代码直接用 (拼新串时优先用它)
 })();
 
+(function nameCompanionRoomBtn() {
+  function paint() {
+    var a = document.querySelector('a.companion-btn');
+    if (!a) return;
+    var n = (window.__AI_NAME__ || window.AI_NAME || '').trim() || '她';
+    a.title = n + '的房间';
+  }
+  if (document.body) paint();
+  else document.addEventListener('DOMContentLoaded', paint);
+})();
+
 const STORAGE = {
   token: 'opus_ui_token',
   session: 'opus_ui_session',
@@ -95,65 +106,17 @@ const STORAGE = {
 const THEME_KEY = 'opus_ui_theme';
 const THEME_CUSTOM_KEY = 'opus_ui_theme_custom';
 
-// 卷七十二 v5 · 2026-06-10 · 用户 bug 报告: 「用户 让 Daemonkey 写代码时只要提到「默认」俩字 ·
-//   就会直接换主题 · 而不是执行全句的需求」
-// 病根: 「默认」是「暗紫」的 alias · matchThemePreset 看到「用默认值」就误命中
-//      (`用` 满足 intent 模糊 regex · `默认` 命中 alias · 整句被 send 吞掉不发给 Daemonkey)
-// 修法: ① 把「默认」「原来的」「恢复默认」「回到原来」这类语义太模糊的词从 alias 删掉
-//       (用户 想恢复要说「换回暗紫主题」/「切回深色主题」)
-//       ② intent regex 收紧 · 必须 (换/切/改/变/设/应用) + (主题/皮肤/外观/配色/界面) 两段配对
-//       ③ 加 exact-match 兜底: 整句就是 alias 时直接命中 (短指令体验保留)
 const THEME_PRESETS = [
-  { cls: '',              label: '暗紫',   aliases: ['暗紫','暗紫主题','深色主题','深紫','夜间主题','暗黑主题'] },
-  { cls: 'theme-classic', label: '经典灰', aliases: ['经典灰','经典主题','旧版主题','灰色主题'] },
-  { cls: 'theme-light',   label: '白天',   aliases: ['白天主题','浅色主题','日间主题','明亮主题','亮色主题','白色主题'] },
-  { cls: 'theme-sepia',   label: '护眼暖黄', aliases: ['护眼主题','暖黄主题','sepia','米黄主题','暖色主题'] },
-  { cls: 'theme-ocean',   label: '海洋蓝',   aliases: ['海洋蓝','海蓝主题','蓝色主题','ocean','海洋主题'] },
-  { cls: 'theme-forest',  label: '森林绿',   aliases: ['森林绿','绿色主题','森林主题','forest'] },
-  { cls: 'theme-sunset',  label: '日落橙',   aliases: ['日落橙','橙色主题','日落主题','sunset','橘色主题'] },
-  { cls: 'theme-pink',        label: '粉色',   aliases: ['粉色主题','粉红主题','pink 主题','樱花主题'] },
-  { cls: 'theme-pink-white',  label: '粉白',   aliases: ['粉白','粉白主题','樱花白'] },
+  { cls: '',              label: '暗紫' },
+  { cls: 'theme-classic', label: '经典灰' },
+  { cls: 'theme-light',   label: '白天' },
+  { cls: 'theme-sepia',   label: '日间纸色' },
+  { cls: 'theme-ocean',   label: '海洋蓝' },
+  { cls: 'theme-forest',  label: '暮青' },
+  { cls: 'theme-sunset',  label: '夜间灯下' },
+  { cls: 'theme-pink',        label: '粉色' },
+  { cls: 'theme-pink-white',  label: '粉白' },
 ];
-
-// "XX 模式" 短语 → 主题 label 映射 (用户 习惯说法 · 不进 alias 防误判)
-const THEME_MODE_PHRASES = {
-  '暗色': '暗紫', '深色': '暗紫', '夜间': '暗紫', '暗黑': '暗紫',
-  '亮色': '白天', '浅色': '白天', '日间': '白天', '明亮': '白天', '白天': '白天',
-  '护眼': '护眼暖黄',
-};
-
-function matchThemePreset(text) {
-  const t = String(text || '').trim().toLowerCase();
-  if (!t) return null;
-  // ① 整句 exact match · trim 后 === alias 才命中 (而非 includes) · "暗紫" 这种纯短指令直接生效
-  for (const p of THEME_PRESETS) {
-    for (const a of p.aliases) { if (t === a.toLowerCase()) return p; }
-  }
-  // ② "XX 模式" 短语 → 主题 (用户 习惯 "用深色模式" / "白天模式" / "亮色模式")
-  const modeMatch = t.match(/(暗色|深色|夜间|暗黑|亮色|浅色|日间|明亮|白天|护眼)\s*模式/);
-  if (modeMatch) {
-    const targetLabel = THEME_MODE_PHRASES[modeMatch[1]];
-    const found = THEME_PRESETS.find(p => p.label === targetLabel);
-    if (found) return found;
-  }
-  // ③ 短句兜底: ≤8 字 + 包含 alias · 给 "切海洋蓝" / "换暗紫主题" 这种短命令留口子
-  //   这里安全是因为 alias 全是 ≥2 字的有色彩义词 ("暗紫" / "海洋蓝" / "粉白") · 不含 "默认" 这种模糊词
-  if (t.length <= 8) {
-    for (const p of THEME_PRESETS) {
-      for (const a of p.aliases) { if (t.includes(a.toLowerCase())) return p; }
-    }
-  }
-  // ④ 长句 · 必须有"切主题"强意图 (动词+名词配对) · 才允许 includes 匹配
-  //   动词列表用 "用上" 而非 "用" 单字 · 否则 "用 X" 全部命中 (= 用户 bug)
-  const hasStrongIntent =
-    /(换|切|改|改成|变|变成|设|设为|应用|启用|用上)\s*(成|个|到|为|了)?\s*[^。.,，]{0,8}\s*(主题|皮肤|外观|配色|界面|ui)/i.test(t)
-    || /(theme|skin)\s*(=|:|to|为)/i.test(t);
-  if (!hasStrongIntent) return null;
-  for (const p of THEME_PRESETS) {
-    for (const a of p.aliases) { if (t.includes(a.toLowerCase())) return p; }
-  }
-  return null;
-}
 
 function applyTheme(cls, label) {
   document.body.classList.remove(...THEME_PRESETS.map(p=>p.cls).filter(Boolean));
@@ -162,6 +125,9 @@ function applyTheme(cls, label) {
   localStorage.setItem(THEME_KEY, cls||'dark');
   localStorage.setItem('opus_ui_theme_label', label||'深色');
   updateThemeDot();
+  if (window.OPUS_WORKSHOP_VIEW && typeof OPUS_WORKSHOP_VIEW.syncPaper === 'function') {
+    OPUS_WORKSHOP_VIEW.syncPaper();
+  }
 }
 
 function applyCustomTheme(vars, label) {
@@ -173,6 +139,9 @@ function applyCustomTheme(vars, label) {
   localStorage.setItem(THEME_CUSTOM_KEY, JSON.stringify(vars));
   localStorage.setItem('opus_ui_theme_label', label);
   updateThemeDot();
+  if (window.OPUS_WORKSHOP_VIEW && typeof OPUS_WORKSHOP_VIEW.syncPaper === 'function') {
+    OPUS_WORKSHOP_VIEW.syncPaper();
+  }
 }
 
 function initTheme() {
@@ -200,25 +169,6 @@ function updateThemeDot() {
     if (logo) logo.appendChild(dot);
   }
   try { dot.style.background = getComputedStyle(document.body).getPropertyValue('--opus').trim(); } catch(e) {}
-}
-
-// 在 send() 中拦截预设主题切换 · 返回 true=已拦截
-function interceptThemeCommand(text) {
-  const preset = matchThemePreset(text);
-  if (preset) {
-    applyTheme(preset.cls, preset.label);
-    // 用 addSys 在当前 visible container 显示确认
-    var c = $msgs;
-    if (c) {
-      var div = document.createElement('div');
-      div.className = 'msg sys';
-      div.textContent = '✓ 已切到「' + preset.label + '」' + (preset.cls ? '' : ' (默认深色)');
-      c.appendChild(div);
-      scrollToBottom(c, {force: true});
-    }
-    return true;
-  }
-  return false;
 }
 
 // 扫描 Daemonkey 消息中的自定义主题代码块 (```theme ... ```)
@@ -287,6 +237,15 @@ function toggleCompact(force, animate) {
     }
   }
   document.body.classList.toggle('compact', on);
+  if (!on) {
+    ['navRail', 'detailPane'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) { el.style.opacity = ''; el.style.visibility = ''; }
+    });
+    document.querySelectorAll('.col-resizer').forEach(function (el) {
+      el.style.opacity = ''; el.style.visibility = '';
+    });
+  }
   // rail 跟随布局: 切换模式会改变 #messages 面板位置 (专注版/工作台两套布局) ·
   // 必须重定位 rail 才不漂移 (用户 反馈: 切回工作台后轨道位置变了)
   // 立即重定一次 + 动画结束 (420ms) 后再定一次 · 覆盖瞬切和过渡态
@@ -457,9 +416,9 @@ function _renderCompactFoot(list, sessions) {
   if (!foot) return;
   const hasMore = sessions && sessions.length >= _COMPACT_PAGE;
   const archBtn = _compactShowArchived
-    ? '<button class="compact-foot-more" onclick="toggleCompactArchived()"><i class="ri-arrow-left-line"></i> 返回会话列表</button>'
+    ? '<button class="compact-foot-more" onclick="toggleCompactArchived()"><i class="ri-arrow-left-line"></i> 返回话题列表</button>'
     : '<button class="compact-foot-more" onclick="toggleCompactArchived()"><i class="ri-archive-line"></i> 查看已归档</button>';
-  const moreBtn = hasMore ? '<button class="compact-foot-more" onclick="loadMoreCompactSessions()">加载更早的会话</button>' : '';
+  const moreBtn = hasMore ? '<button class="compact-foot-more" onclick="loadMoreCompactSessions()">加载更早的话题</button>' : '';
   foot.innerHTML = `<div class="compact-foot-row">${archBtn}</div>` + (moreBtn ? `<div class="compact-foot-row">${moreBtn}</div>` : '');
 }
 
@@ -476,7 +435,7 @@ async function renderCompactArtifacts() {
     if (!docs.length) {
       body.innerHTML = `<div class="docs-view-empty">
         <i class="ri-file-list-3-line"></i>
-        <div>本会话还没有产出</div>
+        <div>本话题还没有产出</div>
       </div>`;
       return;
     }
@@ -517,7 +476,20 @@ document.addEventListener('keydown', function (e) {
 // 页面加载时初始化主题
 // token 必须先于简洁版恢复初始化 —— 否则简洁版刷新时 _go()→renderCompactSessions
 // 访问到 TDZ 里的 token 抛 ReferenceError · 列表静默空白 (用户 2026-08-14 会话列表空白根因)
-let token = localStorage.getItem(STORAGE.token) || '';
+function _bootToken() {
+  try {
+    const t = localStorage.getItem(STORAGE.token) || '';
+    if (t) return t;
+  } catch (e) {}
+  if (typeof _loopbackAuthToken === 'function') return _loopbackAuthToken();
+  const h = (location.hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
+  if (h === '127.0.0.1' || h === 'localhost' || h === '::1') return '__loopback__';
+  return '';
+}
+function _tokenForForm() {
+  return (!token || token === '__loopback__') ? '' : token;
+}
+let token = _bootToken();
 initTheme();
 // 换肤色板预建 + 恢复上次的简洁版状态
 (function initCompactAndThemeUI() {
@@ -536,91 +508,64 @@ let _proactiveLastSeen = new Date().toISOString();
 // (是 _sessions[sessionId].pending 的 visible mirror)
 let pending = false;
 
-// === wish-3fef4bc7 · 真并行多对话 UI ===
-//
-// 核心设计: 每个 active session 持有独立 state (含自己的 fetch / abort / streaming bubbles / DOM container)
-// 切对话只切 visibility · 不杀 stream · 后台 SSE 继续跑 · 完成时 tab 红点提示
-//
-// _sessions: { [sid]: SessionState } · 全部 active sessions 的 state
-// activeSession() = _sessions[sessionId] · 当前 visible 的
-// _newSessionState(sid) · 工厂 · 创建一个空 state
-// _getOrCreateSession(sid) · 取或建 state · 自动管 DOM container
-//
-// 跟旧代码兼容: 旧的全局变量 (pending / currentTurnId / currentAbortController) 仍然存在 ·
-// 但变成 active session 的 mirror · 切换时 from/to state 同步。 这样老代码不破·新代码用 state。
-const _sessions = {};
+// 顶栏切模型必须在 SessionRuntime 检测之前挂上 · 否则新 js 404 / throw 会让
+// onclick="toggleModelMenu()" 变成 ReferenceError, 工作台整条顶栏看起来像死了
+if (typeof initModelSwitch === 'function' && !window.ModelSwitch) {
+  initModelSwitch({
+    token: function () { return token || ''; },
+    sessionId: function () { return sessionId || ''; },
+  });
+}
 
-function _newSessionState(sid) {
-  return {
-    sessionId: sid,                  // 真 sid 或临时 cid (tmp-xxx)
-    pending: false,
-    currentTurnId: null,
-    currentAbortController: null,
-    currentStreamingReasoning: null,
-    currentStreamingAssistant: null,
-    assistantBubbles: [],
-    sawAssistantText: false,
-    finalUsage: null,
-    finalSessionId: null,
-    finalModel: null,
-    errorShown: false,
-    lastFinishReason: null,
-    autoResumeCount: 0,
-    streamHadToolCall: false,
-    toolCallCount: 0,
-    lastDashboardRefreshAt: 0,
-    toolStartedAt: 0,
-    // DOM · 每个 session 独立 messages container · 切换只 hide/show
-    $container: null,
-    // tab 状态
-    hasUnreadCompletion: false,      // 后台跑完了没看 → tab 红点
-    inputDraft: '',                  // 切对话时保存输入框草稿
-    title: null,                     // tab 显示的别名缓存
-    progressText: '',                // 切对话时保存底部 progress bar 文字
+// === wish-3fef4bc7 · 真并行多对话 UI ===
+// 内核在 static/session-runtime.js · 工作台 / 陪伴同一份。
+// 切对话只切 visibility · 不杀 stream · 后台 SSE 继续跑 · 完成时 tab 红点提示
+// 下面这些名字留给本文件其余 80+ 处调用 · 别改成 SessionRuntime.xxx 满地飞
+if (!window.SessionRuntime) {
+  console.error('session-runtime.js 没装上 · /static 白名单漏了? 多会话并行会坏, 顶栏切模型应仍可用');
+  window.SessionRuntime = {
+    sessions: {},
+    newState: function (sid) { return { sessionId: sid, pending: false, $container: null }; },
+    get: function () { return null; },
+    getOrCreate: function (sid) {
+      if (!sid) return null;
+      if (!this.sessions[sid]) this.sessions[sid] = this.newState(sid);
+      return this.sessions[sid];
+    },
+    allocCid: function () { return 'tmp-fallback'; },
+    swapId: function () { return false; },
+    attachPanel: function () {},
+    getOrCreateContainer: function () { return null; },
+    setActiveContainer: function () { return null; },
+    activeContainer: function () { return null; },
+    activeSid: function () { return ''; },
+    isVisible: function () { return true; },
+    isPending: function () { return false; },
+    isBusy: function () { return false; },
+    abortSession: function () {},
+    holdOutbound: function () {},
+    releaseOutbound: function () {},
+    enqueue: function () { return { ok: false, error: 'no-runtime' }; },
+    cancelQueued: function () { return false; },
+    moveQueued: function () { return false; },
+    queueOf: function () { return []; },
+    kick: function () { return false; },
+    sendNow: function () { return false; },
+    bindQueue: function () {},
+    paintQueueBar: function () {},
   };
 }
-
-// 取或建 session state · 不创建 DOM container (那个由 _getOrCreateContainer 单独管)
-function _getOrCreateSession(sid) {
-  if (!sid) return null;
-  if (!_sessions[sid]) {
-    _sessions[sid] = _newSessionState(sid);
-  }
-  return _sessions[sid];
-}
-
-// 当前 visible session 的 state (sessionId 全局是 source of truth)
+const _sessions = SessionRuntime.sessions;
+function _newSessionState(sid) { return SessionRuntime.newState(sid); }
+function _getOrCreateSession(sid) { return SessionRuntime.getOrCreate(sid); }
 function activeSession() {
   if (!sessionId) return null;
   return _sessions[sessionId] || null;
 }
-
-// 客户端临时 cid 分配 · 给"新对话还没收到 hello" 的状态用
-// hello 事件来后 swap 真 sid (移 _sessions[tmp-xxx] → _sessions[api-xxx])
-let _cidCounter = 0;
-function _allocCid() {
-  _cidCounter += 1;
-  return 'tmp-' + Date.now().toString(36) + '-' + _cidCounter.toString(36);
-}
-
-// hello 事件来时 · 把 _sessions[oldSid] swap 到 _sessions[newSid]
-// 同时如果 oldSid 是 sessionId · 把 sessionId 也更新成 newSid
+function _allocCid() { return SessionRuntime.allocCid(); }
 function _swapSessionId(oldSid, newSid) {
-  if (!oldSid || !newSid || oldSid === newSid) return;
-  if (!_sessions[oldSid]) return;
-  // 移 state · 更新里面的 sessionId 字段
-  const s = _sessions[oldSid];
-  s.sessionId = newSid;
-  _sessions[newSid] = s;
-  delete _sessions[oldSid];
-  // 如果当前 active 是被 swap 的那个 · 同步 sessionId 全局
-  if (sessionId === oldSid) {
-    sessionId = newSid;
-  }
-  // DOM container 改 data-sid + 通知 tab UI
-  if (s.$container) {
-    s.$container.dataset.sid = newSid;
-  }
+  if (!SessionRuntime.swapId(oldSid, newSid)) return;
+  if (sessionId === oldSid) sessionId = newSid;
   if (typeof _renderTabBar === 'function') {
     try { _renderTabBar(); } catch {}
   }
@@ -644,7 +589,7 @@ let archivedCount = 0;
 const _metaTried = new Set();
 
 function aliasFor(sid) {
-  if (!sid) return '新对话';
+  if (!sid) return '新话题';
   // 优先级：服务端 label → localStorage 别名 → api-…xxxxxx
   const serverMeta = sessionMetaCache[sid];
   if (serverMeta && serverMeta.label) return serverMeta.label;
@@ -657,41 +602,14 @@ function aliasFor(sid) {
 // $msgs = 当前 visible session 的 .session-msgs container · 切换 session 时重新指
 // 旧代码 $msgs.appendChild / innerHTML / scrollTop 全部继续工作 (操作的是 visible session 的内容)
 const $messagesPanel = document.getElementById('messages');
+SessionRuntime.attachPanel($messagesPanel);
 let $msgs = null;  // 切换 session 时由 _setActiveContainer 重新赋值
 
-// 创建/取一个 session 专属的 messages container · 放进 panel
-// 不切换 visibility · 只创建 (visibility 由 _setActiveContainer 控)
 function _getOrCreateContainer(sid) {
-  if (!sid) return null;
-  let c = $messagesPanel.querySelector(`.session-msgs[data-sid="${CSS.escape(sid)}"]`);
-  if (!c) {
-    c = document.createElement('div');
-    c.className = 'session-msgs';
-    c.dataset.sid = sid;
-    c.hidden = true;
-    $messagesPanel.appendChild(c);
-    // 同步进 state · 让 state.$container 指向这个 div
-    const s = _getOrCreateSession(sid);
-    if (s) s.$container = c;
-  }
-  return c;
+  return SessionRuntime.getOrCreateContainer(sid);
 }
-
-// 切 visible · 把 $msgs 指向新 active session 的 container · 其他 hide
-// 注意: 后台跑的 session 的 container 仍然存在 · 只是 hidden · 它们的 stream 仍在写 DOM
 function _setActiveContainer(sid) {
-  // hide 全部 session-msgs
-  for (const child of Array.from($messagesPanel.children)) {
-    if (child.classList && child.classList.contains('session-msgs')) {
-      child.hidden = true;
-    }
-  }
-  if (!sid) {
-    $msgs = null;  // 没 active session · 老代码会 noop (用 if ($msgs) 包一下保护)
-    return null;
-  }
-  const c = _getOrCreateContainer(sid);
-  c.hidden = false;
+  const c = SessionRuntime.setActiveContainer(sid);
   $msgs = c;
   try { window.$msgs = c; } catch (e) {}
   return c;
@@ -779,6 +697,7 @@ function clearAttachments() {
   _attachments.length = 0;
   $attachmentPreviews.innerHTML = '';
   $attachmentPreviews.hidden = true;
+  if (typeof refreshSendChrome === 'function') refreshSendChrome();
 }
 
 // 移除单个附件
@@ -794,6 +713,7 @@ function renderAttachments() {
   $attachmentPreviews.innerHTML = '';
   if (_attachments.length === 0) {
     $attachmentPreviews.hidden = true;
+    if (typeof refreshSendChrome === 'function') refreshSendChrome();
     return;
   }
   $attachmentPreviews.hidden = false;
@@ -830,6 +750,7 @@ function renderAttachments() {
       $attachmentPreviews.appendChild(div);
     }
   }
+  if (typeof refreshSendChrome === 'function') refreshSendChrome();
 }
 
 // 待处理的附件 promises · send() 等它们全 resolve 再发
@@ -919,456 +840,21 @@ if ($attachBtn && $attachFile) {
   }
 }
 
-// wish-41ed72ef · 语音输入 → 卷七十五续六 · 三模式语音 (用户 2026-07-11 校准语义)
-//   · 语音输入 (dictation): 说完填输入框·手动发 (最初功能·不变);
-//   · 语音对话 (transcribe): 持续听麦克风·你说完停约 1 秒自动发给 AI·
-//       AI 回完继续听 —— hands-free 语音对话·给未来桌面版对话模式留的扣·UI 比会议纪要轻;
-//   · 会议纪要 (meeting) = 【录制文本】: 持续把麦克风转成文字累积·点【停止录制】后
-//       把整段交给 AI 拆分整理 (议题/结论/待办/风险)。
-// 边界: 浏览器 SpeechRecognition 只认默认麦克风·线上会议对方声音要转文字得等后端 ASR·
-//   本轮不纠结系统音频 (getDisplayMedia 那套已移除)。
-(function initVoice() {
-  const $micBtn = document.getElementById('micBtn');
-  if (!$micBtn) return;
-  const $micMode = document.getElementById('micMode');
-  const $micMenu = document.getElementById('micMenu');
-  const $panel = document.getElementById('voicePanel');
-  const $script = document.getElementById('voiceTranscript');
-  const $timer = document.getElementById('voiceTimer');
-  const $panelMode = document.getElementById('voicePanelMode');
-  const $recNote = document.getElementById('voiceRecNote');
-  const $close = document.getElementById('voiceClose');
-
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const SILENCE_MS = 1000;      // 语音对话: 停顿约 1 秒自动发给 AI (用户 定 · 给桌面版对话模式留扣)
-  const MODES = {
-    dictation:  { label: '语音输入', panel: false, icon: 'ri-mic-line' },
-    transcribe: { label: '语音对话', panel: true,  icon: 'ri-chat-voice-line' },   // 持续听 · 停约 1 秒自动发
-    meeting:    { label: '会议纪要', panel: true,  icon: 'ri-group-line' },         // = 持续录成文本 · 停止后整理
-  };
-  let mode = localStorage.getItem('opus_voice_mode') || 'dictation';
-  if (!MODES[mode]) mode = 'dictation';
-  if (!SR) { $micBtn.classList.add('unsupported'); $micBtn.title = '语音功能需 Chrome / Edge 浏览器'; }
-
-  // ── 2026-08-08 · TTS 开关 (语音对话模式: AI 回复自动朗读) ──
-  // 能力探测: /api/tts 端点存在才显示开关 (纯净版无 voice.py → 探测 404 → 开关隐藏 · 优雅降级)
-  // 挂到 window 上让 finalizeStreamingAssistant 能触发 (它在 initVoice 闭包外)
-  window.__voiceTtsEnabled = false;
-  const $ttsToggle = document.getElementById('voiceTtsToggle');
-  const $ttsWrap = document.getElementById('voiceTtsWrap');
-  if ($ttsToggle && $ttsWrap) {
-    fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: '' }) })
-      .then(r => {
-        if (r.status === 404 || r.status === 405) return; // 端点不存在/未注册 → 保持隐藏
-        $ttsWrap.hidden = false;
-        window.__voiceTtsEnabled = localStorage.getItem('opus_voice_tts') === '1';
-        $ttsToggle.checked = !!window.__voiceTtsEnabled;
-        $ttsToggle.addEventListener('change', () => {
-          window.__voiceTtsEnabled = $ttsToggle.checked;
-          localStorage.setItem('opus_voice_tts', $ttsToggle.checked ? '1' : '0');
-          if (typeof _setRecNote === 'function' && _listening && mode === 'transcribe') {
-            _setRecNote($ttsToggle.checked
-              ? '<i class="ri-volume-up-line"></i> TTS 已开 · Daemonkey 回复会朗读'
-              : '<i class="ri-volume-mute-line"></i> TTS 已关', 'wait');
-          }
-        });
-      })
-      .catch(() => { /* 网络异常 → 保持隐藏 */ });
-  }
-  // 播放一条语音回复: 调 /api/tts 合成 → <audio> 播放 → 播完回调 (恢复收音)
-  window.__speakReply = function (text, onDone) {
-    if (!window.__voiceTtsEnabled || !(text || '').trim()) { if (onDone) onDone(); return; }
-    const body = JSON.stringify({ text: (text || '').slice(0, 1500) });
-    fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    }).then(r => {
-      if (!r.ok) throw new Error('TTS HTTP ' + r.status);
-      return r.blob();
-    }).then(blob => {
-      const url = URL.createObjectURL(blob);
-      const au = new Audio(url);
-      au.onended = () => { URL.revokeObjectURL(url); if (onDone) onDone(); };
-      au.onerror = () => { URL.revokeObjectURL(url); if (onDone) onDone(); };
-      au.play().catch(() => { if (onDone) onDone(); });
-    }).catch(e => {
-      console.warn('TTS 播放失败:', e);
-      if (onDone) onDone();
-    });
-  };
-
-  let _rec = null;              // SpeechRecognition 实例
-  let _listening = false;
-  let _manualStop = false;      // true = 用户主动停 · 阻止 onend 自动重启
-  let _finalText = '';          // 会议纪要累积的确认文字
-  let _dictBase = '';           // 语音输入: 开录前输入框已有内容
-  let _pendingBuf = '';         // 语音对话: 已确认待发的一段
-  let _silenceTimer = null;     // 语音对话: 停顿检测 timer
-  let _voicePaused = false;     // 语音对话: AI 回复中 → 暂停收音 (轮流说话·别录进杂音/AI 的话)
-  let _replyWatcher = null;     // 语音对话: 盯 pending·AI 回完自动恢复收音
-  let _sawPending = false;      // 语音对话: 确认这轮 turn 真起来了·防提前恢复
-  let _pauseTicks = 0;          // 语音对话: 兜底·久等没起 turn 也恢复
-  let _srGen = 0;               // SR 代号·暂停/停止/重启时 +1·让旧实例延迟触发的 onend 作废 (防并发双识别)
-  let _timerId = null;
-  let _startTs = 0;
-
-  function _autosize() {
-    $input.style.height = 'auto';
-    $input.style.height = Math.min($input.scrollHeight, 160) + 'px';
-  }
-  function _setListening(on) {
-    _listening = on;
-    $micBtn.classList.toggle('listening', on);
-    _updateActions();
-  }
-  // 面板按钮按 模式 + 是否在听 显隐:
-  //   听着时 → 只显示【停止】(语音对话:停止对话 · 会议纪要:停止录制);
-  //   会议纪要停下后 → 显示【整理成纪要/插入/清空】让 用户 处理文本。
-  function _updateActions() {
-    if (!$panel) return;
-    const meetingStopped = (mode === 'meeting' && !_listening);
-    $panel.querySelectorAll('.voice-act').forEach((b) => {
-      const a = b.dataset.act;
-      if (a === 'stop') b.hidden = !_listening;
-      else b.hidden = !meetingStopped;
-    });
-    const $stop = $panel.querySelector('[data-act="stop"]');
-    if ($stop) {
-      $stop.innerHTML = (mode === 'meeting')
-        ? '<i class="ri-stop-circle-line"></i> 停止录制'
-        : '<i class="ri-stop-circle-line"></i> 停止对话';
-    }
-  }
-  function _applyModeMeta() {
-    const m = MODES[mode];
-    $micBtn.title = m.panel ? `${m.label} · 点一下开始` : '语音输入 · 点一下开始说';
-    const $ic = $micBtn.querySelector('i');   // 左侧麦克风图标跟着当前模式变 · 一眼看出在哪个模式
-    if ($ic) $ic.className = m.icon;
-    $micMenu && $micMenu.querySelectorAll('.mic-menu-item').forEach(b => {
-      b.classList.toggle('active', b.dataset.mode === mode);
-    });
-  }
-  _applyModeMeta();
-
-  // ── 模式菜单 ──
-  function _closeMenu() { if ($micMenu) $micMenu.hidden = true; }
-  function _openMenu() { if ($micMenu) $micMenu.hidden = false; }
-  if ($micMode) {
-    $micMode.addEventListener('click', (e) => {
-      e.stopPropagation();
-      $micMenu.hidden ? _openMenu() : _closeMenu();
-    });
-  }
-  document.addEventListener('click', (e) => {
-    if ($micMenu && !$micMenu.hidden && !e.target.closest('.mic-group')) _closeMenu();
-  });
-  $micMenu && $micMenu.querySelectorAll('.mic-menu-item').forEach(btn => {
-    btn.addEventListener('click', () => {
-      if (!SR) { alert('语音功能需要 Chrome / Edge 浏览器'); return; }
-      mode = btn.dataset.mode;
-      localStorage.setItem('opus_voice_mode', mode);
-      _applyModeMeta();
-      _closeMenu();
-    });
-  });
-
-  // ── 计时器 ──
-  function _startTimer() {
-    _startTs = Date.now();
-    const tick = () => {
-      const s = Math.floor((Date.now() - _startTs) / 1000);
-      if ($timer) $timer.textContent = String((s / 60) | 0).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
-    };
-    tick();
-    _timerId = setInterval(tick, 1000);
-  }
-  function _stopTimer() { if (_timerId) { clearInterval(_timerId); _timerId = null; } }
-
-  // ── 转写面板 ──
-  function _openPanel() {
-    if (!$panel) return;
-    const isChat = (mode === 'transcribe');
-    $panel.classList.toggle('is-chat', isChat);
-    $panel.classList.toggle('is-meeting', !isChat);
-    if ($panelMode) $panelMode.textContent = isChat ? '语音对话 · 通话中' : '会议纪要 · 录制中';
-    $panel.hidden = false;
-    if ($recNote) { $recNote.hidden = true; $recNote.className = 'voice-rec-note'; }
-  }
-  function _renderTranscript(interim) {
-    if (!$script) return;
-    $script.innerHTML = escHtml(_finalText) + (interim ? '<span class="voice-interim">' + escHtml(interim) + '</span>' : '');
-    $script.scrollTop = $script.scrollHeight;
-  }
-  function _setRecNote(html, cls) {
-    if (!$recNote) return;
-    $recNote.hidden = false;
-    $recNote.className = 'voice-rec-note ' + (cls || '');
-    $recNote.innerHTML = html;
-  }
-
-  // ── SpeechRecognition ──
-  function _makeSR() {
-    const r = new SR();
-    r.lang = 'zh-CN'; r.interimResults = true; r.continuous = true; r.maxAlternatives = 1;
-    return r;
-  }
-  function _startDictation() {
-    _rec = _makeSR();
-    _dictBase = $input.value ? $input.value.replace(/\s+$/, '') + ' ' : '';
-    let finalText = '';
-    _rec.onresult = (e) => {
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) finalText += r[0].transcript; else interim += r[0].transcript;
-      }
-      $input.value = _dictBase + finalText + interim;
-      _autosize();
-    };
-    _rec.onend = () => {
-      _rec = null; _setListening(false);
-      if (finalText) { $input.value = _dictBase + finalText; _autosize(); }
-      $input.focus();
-    };
-    _rec.onerror = _srError;
-    _rec.start();
-    _setListening(true);
-  }
-  // 绑一个 SR 实例并启动。 onend 里【建新实例】重启 (不是复用旧实例 .start()):
-  //   Chromium 复用旧实例重启会把上一段 final 再 replay 一次 onresult → 没说话也被当新话发出去
-  //   (用户 撞到的"第一句后自动又发个'查'")。 新实例 e.results 从零·根治重复。
-  function _bindSR(onResult) {
-    const r = _makeSR();
-    const gen = _srGen;   // 绑死本代号·换代后这个实例的 onend 一律作废
-    r.onresult = onResult;
-    r.onerror = _srError;
-    r.onend = () => {
-      if (gen !== _srGen) { return; }   // 已被暂停/停止/换代 → 旧实例的收尾不再重启·防并发双识别
-      if (!_manualStop && _listening && !_voicePaused) {
-        try { _rec = _bindSR(onResult); }
-        catch (_) { setTimeout(() => { if (gen === _srGen && !_manualStop && _listening && !_voicePaused) { try { _rec = _bindSR(onResult); } catch (__) {} } }, 300); }
-      } else {
-        _rec = null;
-      }
-    };
-    r.start();
-    return r;
-  }
-  function _renderChat(interim) {
-    if (!$script) return;
-    $script.innerHTML = escHtml(_pendingBuf) + (interim ? '<span class="voice-interim">' + escHtml(interim) + '</span>' : '');
-    $script.scrollTop = $script.scrollHeight;
-  }
-  // ── 语音对话 · 停顿约 1 秒把这段自动发给 AI ──
-  function _startVoiceChat() {
-    _pendingBuf = '';
-    _rec = _bindSR((e) => {
-      let interim = '', gotFinal = false;
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) { _pendingBuf += r[0].transcript; gotFinal = true; } else interim += r[0].transcript;
-      }
-      _renderChat(interim);
-      if (gotFinal) _scheduleFlush();
-    });
-  }
-  function _scheduleFlush() {
-    if (_silenceTimer) clearTimeout(_silenceTimer);
-    _silenceTimer = setTimeout(_tryFlush, SILENCE_MS);
-  }
-  function _tryFlush() {
-    _silenceTimer = null;
-    if (_voicePaused) return;                    // AI 回复中 · 收音已停 · 不该有可发内容
-    const txt = (_pendingBuf || '').trim();
-    if (!txt) return;
-    if (pending) { _silenceTimer = setTimeout(_tryFlush, 600); return; }  // AI 还在回 → 稍后再发
-    _pendingBuf = '';
-    _renderChat('');
-    $input.value = txt;
-    _autosize();
-    if (typeof send === 'function') send();
-    _pauseForReply();                            // 发完就停收音 · 轮到 Daemonkey 说 · 回完自动接着听
-  }
-  // AI 回复期间暂停麦克风 (用户: 语音对话该轮流说·回消息时别录音) · 盯 pending·回完自动恢复
-  function _pauseForReply() {
-    if (mode !== 'transcribe') return;
-    _voicePaused = true; _sawPending = false; _pauseTicks = 0;
-    _srGen++;                                    // 作废当前实例·停了别自动重启
-    if (_rec) { try { _rec.stop(); } catch (_) {} }
-    $micBtn.classList.remove('listening');
-    _renderChat('');
-    _setRecNote('<i class="ri-pause-circle-line"></i> Daemonkey 回复中 · 已暂停收音 · 回完自动继续听', 'wait');
-    if (_replyWatcher) clearInterval(_replyWatcher);
-    _replyWatcher = setInterval(() => {
-      _pauseTicks++;
-      if (pending) { _sawPending = true; return; }
-      if (_sawPending || _pauseTicks > 12) _resumeAfterReply();   // 见过 turn 又结束·或 ~5s 没起 turn 兜底
-    }, 400);
-  }
-  function _resumeAfterReply() {
-    if (_replyWatcher) { clearInterval(_replyWatcher); _replyWatcher = null; }
-    if (!_voicePaused) return;
-    _voicePaused = false;
-    if (_manualStop || !_listening || mode !== 'transcribe') return;  // 期间用户点了停 → 不恢复
-    $micBtn.classList.add('listening');
-    _setRecNote('<i class="ri-mic-fill"></i> 在听 · 你说完停约 1 秒会自动发给 Daemonkey', 'rec');
-    _startVoiceChat();                           // 建新 SR 实例·继续听下一句
-  }
-  // ── 会议纪要 = 持续把麦克风转成文本累积 · 停止后交给 AI 拆分 ──
-  function _startMeetingTranscribe() {
-    _rec = _bindSR((e) => {
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) _finalText += r[0].transcript; else interim += r[0].transcript;
-      }
-      _renderTranscript(interim);
-      _setRecNote('<i class="ri-record-circle-fill"></i> 录制中 · 已记录 ' + _finalText.trim().length + ' 字', 'rec');
-    });
-  }
-  function _srError(e) {
-    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-      _manualStop = true;
-      alert('麦克风权限被拒 · 请在浏览器设置中允许访问麦克风');
-      _stopVoice(true);
-    } else if (e.error !== 'aborted' && e.error !== 'no-speech') {
-      console.warn('语音识别出错:', e.error);
-    }
-  }
-
-  // (卷七十五续六 · 系统音频 getDisplayMedia/MediaRecorder 那套已移除:用户 定会议纪要=纯麦克风
-  //  录成文本·停止后交给 AI 拆分;线上会议对方声音等后端 ASR 落地再补·不在此纠结。)
-
-  // ── 启停总入口 ──
-  function _startVoice() {
-    if (!SR) { alert('语音功能需要 Chrome / Edge 浏览器'); return; }
-    _manualStop = false;
-    _voicePaused = false;
-    _srGen++;                                    // 新一轮·作废上一轮任何残留实例
-    if (_replyWatcher) { clearInterval(_replyWatcher); _replyWatcher = null; }
-    if (mode === 'dictation') { _startDictation(); return; }
-    _finalText = '';
-    _pendingBuf = '';
-    if ($script) $script.innerHTML = '';
-    _openPanel();
-    _startTimer();
-    _setListening(true);
-    if (mode === 'transcribe') {
-      _setRecNote('<i class="ri-mic-fill"></i> 在听 · 你说完停约 1 秒会自动发给 Daemonkey', 'rec');
-      _startVoiceChat();
-    } else {
-      _setRecNote('<i class="ri-record-circle-fill"></i> 录制中 · 边说边记 · 完了点【停止录制】', 'rec');
-      _startMeetingTranscribe();
-    }
-  }
-  function _stopVoice(manual) {
-    _manualStop = !!manual;
-    _voicePaused = false;
-    _srGen++;                                    // 换代·让在途 onend 全部失效
-    if (_replyWatcher) { clearInterval(_replyWatcher); _replyWatcher = null; }
-    if (_silenceTimer) { clearTimeout(_silenceTimer); _silenceTimer = null; }
-    if (_rec) { try { _rec.stop(); } catch (_) {} }
-    _stopTimer();
-    _setListening(false);
-    _afterStop();
-  }
-  // 停下后收尾:语音对话 → 关面板(没后续动作);会议纪要 → 留文本·亮出整理/插入/清空。
-  function _afterStop() {
-    if (mode === 'transcribe') {
-      if ($panel) $panel.hidden = true;
-    } else if (mode === 'meeting') {
-      if ($panelMode) $panelMode.textContent = '会议纪要 · 已停止';
-      const n = (_finalText || '').trim().length;
-      if (n > 0) _setRecNote('<i class="ri-stop-circle-fill"></i> 已停止 · 记录 ' + n + ' 字 · 点【整理成纪要】交给 Daemonkey 拆分', 'done');
-      else _setRecNote('<i class="ri-information-line"></i> 没记到文字 · 检查麦克风权限后重录', 'warn');
-    }
-  }
-
-  $micBtn.addEventListener('click', () => {
-    if (_listening) { _stopVoice(true); return; }
-    _startVoice();
-  });
-
-  // ── 面板动作 ──
-  $panel && $panel.querySelectorAll('.voice-act').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const act = btn.dataset.act;
-      if (act === 'stop') { _stopVoice(true); return; }
-      if (act === 'clear') {
-        _finalText = ''; _renderTranscript('');
-        _setRecNote('<i class="ri-eraser-line"></i> 已清空 · 点麦克风可重新录制', 'done');
-        return;
-      }
-      const txt = (_finalText || '').trim();
-      if (!txt) { return; }
-      if (act === 'insert') {
-        $input.value = ($input.value ? $input.value.trimEnd() + '\n' : '') + txt;
-        _autosize();
-        $panel.hidden = true;
-        $input.focus();
-      } else if (act === 'toclient') {
-        // 会议纪要 ↔ 客户时间线打通 · 转写文字一键存成某客户 kind=meeting 条
-        if (typeof pickClient !== 'function') { alert('客户档案模块未加载'); return; }
-        pickClient((cid, name) => {
-          fetch('/dashboard/clients/note', {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ client_id: cid, text: txt, kind: 'meeting' }),
-          }).then(r => {
-            if (r.ok) _setRecNote('<i class="ri-check-line"></i> 已存进「' + name + '」的会议记录 · 想要结构化纪要可再点【整理成纪要】', 'done');
-            else alert('存失败 [' + r.status + ']');
-          }).catch(e => alert('网络出错: ' + e.message));
-        });
-      } else if (act === 'minutes') {
-        $input.value = '【整理会议纪要】下面是会议的语音转写文字，帮我拆分整理成结构化会议纪要：\n'
-          + '1) 议题概述  2) 关键结论/决议  3) 待办事项(含负责人与时间)  4) 风险/待确认。\n'
-          + '保留关键人名、数字、日期，语言精炼;转写可能有同音错别字，按语境修正。\n'
-          + '整理完若这场会议对应某个已知客户，主动问我要不要用 manage_client 把纪要存成他的会议记录(kind=meeting)。\n\n---\n' + txt;
-        $panel.hidden = true;
-        if (typeof send === 'function') send();
-      }
-    });
-  });
-  $close && $close.addEventListener('click', () => {
-    _stopVoice(true);
-    $panel.hidden = true;
-  });
-})();
-
-// 卷七十五续五 · 模型行为 (思考/推理强度/输出上限) · 本地记住 · 每次 chat 请求带上
-// 缺省全空 = 后端老行为(零回归)。 后端只对支持的模型下发·别的静默忽略·不报错。
-function modelBehaviorPayload() {
-  const out = {};
+// 三模式语音 · 逻辑在 voice-mic.js (工作台 / 陪伴共用 · 2026-08-26 抽出)
+if (typeof initVoice === 'function') {
   try {
-    const think = localStorage.getItem('opus_mb_thinking') || 'auto';
-    const effort = localStorage.getItem('opus_mb_effort') || '';
-    const mt = localStorage.getItem('opus_mb_max_tokens') || '';
-    if (think && think !== 'auto') out.thinking = think;
-    if (effort) out.reasoning_effort = effort;
-    const n = parseInt(mt, 10);
-    if (n > 0) out.max_tokens = n;
-  } catch (_) {}
-  return out;
+    initVoice({
+      input: $input,
+      send: function () { if (typeof send === 'function') send(); },
+      isPending: function () {
+        const sid = (window.SessionRuntime && SessionRuntime.activeSid()) || '';
+        return !!(sid && window.SessionRuntime && SessionRuntime.isBusy(sid));
+      },
+      token: function () { return token; },
+      pickClient: function (cb) { if (typeof pickClient === 'function') pickClient(cb); },
+    });
+  } catch (e) { console.warn('initVoice 挂了 · 工作台其它功能继续', e); }
 }
-(function initModelBehavior() {
-  const $think = document.getElementById('mbThinking');
-  const $effort = document.getElementById('mbEffort');
-  const $mt = document.getElementById('mbMaxTokens');
-  if (!$think && !$effort && !$mt) return;
-  try {
-    if ($think) $think.value = localStorage.getItem('opus_mb_thinking') || 'auto';
-    if ($effort) $effort.value = localStorage.getItem('opus_mb_effort') || '';
-    if ($mt) $mt.value = localStorage.getItem('opus_mb_max_tokens') || '';
-  } catch (_) {}
-  $think && $think.addEventListener('change', () => localStorage.setItem('opus_mb_thinking', $think.value));
-  $effort && $effort.addEventListener('change', () => localStorage.setItem('opus_mb_effort', $effort.value));
-  $mt && $mt.addEventListener('change', () => {
-    const n = parseInt($mt.value, 10);
-    if (n > 0) localStorage.setItem('opus_mb_max_tokens', String(n));
-    else { localStorage.removeItem('opus_mb_max_tokens'); $mt.value = ''; }
-  });
-})();
 
 const $modal = document.getElementById('settings');
 // 卷三十六 · 当前 turn 的 id · 用来发 abort 请求
@@ -1400,46 +886,8 @@ const MUTATING_TOOLS = new Set([
 // 用法 (在 render*View 函数内 · 在 list 容器上面插入):
 //   renderListFilter({targetSelector: '.wish-card', placeholder: '搜心愿标题或动机...'})
 // 数据驱动: input.value 变化 → 隐藏 textContent 不含 query 的 item · 更新 stats
-function renderListFilter(opts) {
-  const sel = (opts && opts.targetSelector) || '';
-  const ph = (opts && opts.placeholder) || '搜索…';
-  return `
-    <div class="list-filter">
-      <span class="list-filter-icon"><i class="ri-search-line"></i></span>
-      <input type="search" class="list-filter-input" data-filter-target="${escHtml(sel)}" placeholder="${escHtml(ph)}" autocomplete="off">
-      <span class="list-filter-stats" data-filter-stats></span>
-      <button class="list-filter-clear" type="button" data-filter-clear hidden>✕</button>
-    </div>`;
-}
 
 let _listFilterInited = false;
-function _initListFilter() {
-  if (_listFilterInited) return;
-  _listFilterInited = true;
-  document.addEventListener('input', e => {
-    if (!e.target.classList || !e.target.classList.contains('list-filter-input')) return;
-    _applyListFilter(e.target);
-  });
-  document.addEventListener('click', e => {
-    if (!e.target.matches || !e.target.matches('[data-filter-clear]')) return;
-    const wrap = e.target.closest('.list-filter');
-    if (!wrap) return;
-    const input = wrap.querySelector('.list-filter-input');
-    if (!input) return;
-    input.value = '';
-    _applyListFilter(input);
-    input.focus();
-  });
-  // ESC 清空当前 focused 的搜索框 · 不关 dashboard (区分于全局 ESC)
-  document.addEventListener('keydown', e => {
-    if (e.key !== 'Escape') return;
-    if (!e.target.classList || !e.target.classList.contains('list-filter-input')) return;
-    if (!e.target.value) return;
-    e.stopPropagation();
-    e.target.value = '';
-    _applyListFilter(e.target);
-  });
-}
 function _applyListFilter(input) {
   const q = (input.value || '').trim().toLowerCase();
   const sel = input.dataset.filterTarget;
@@ -1709,7 +1157,12 @@ function _renderPlan(d) {
   _planData = d;
   const banner = document.getElementById('planBanner');
   if (!banner) return;
-  if (!d || !d.active) { banner.hidden = true; return; }
+  if (!d || !d.active) {
+    banner.hidden = true;
+    banner.classList.remove('is-canvas');
+    if (window._stageMode === 'plan' && typeof stageClose === 'function') stageClose();
+    return;
+  }
   banner.hidden = false;
   const p = d.progress || {};
   const total = p.total || 0;
@@ -1722,14 +1175,40 @@ function _renderPlan(d) {
   if (c) c.textContent = settled + '/' + total;
   if (fill) fill.style.width = (total ? Math.round(settled * 100 / total) : 0) + '%';
   const detail = document.getElementById('planDetail');
+  const mid = typeof stageIsVisible === 'function' && stageIsVisible();
+  if (mid) {
+    if (detail) detail.hidden = true;
+    if (window._stageMode === 'plan' && typeof openStage === 'function') {
+      openStage({ mode: 'plan', refresh: true });
+    }
+  } else {
+    const open = _planOpen();
+    if (detail) {
+      detail.hidden = !open;
+      if (open) _renderPlanDetail();
+    }
+  }
+  _syncPlanToggle();
+}
+
+function _syncPlanToggle() {
   const toggle = document.getElementById('planToggle');
-  const open = _planOpen();
-  if (toggle) toggle.textContent = open ? '收起 ▴' : '详情 ▾';
-  if (detail) {
-    detail.hidden = !open;
-    if (open) _renderPlanDetail();
+  const banner = document.getElementById('planBanner');
+  if (banner) banner.classList.toggle('is-canvas', window._stageMode === 'plan');
+  if (!toggle) return;
+  if (window._stageMode === 'plan') {
+    toggle.textContent = '关掉';
+    toggle.title = '关掉中栏画布';
+  } else if (typeof stageIsVisible === 'function' && stageIsVisible()) {
+    toggle.textContent = '在中间看';
+    toggle.title = '在中间栏打开计划书';
+  } else {
+    toggle.textContent = _planOpen() ? '收起 ▴' : '详情 ▾';
+    toggle.title = '展开 / 收起步骤';
   }
 }
+window._syncPlanToggle = _syncPlanToggle;
+window.getActivePlan = () => _planData;
 
 const _PLAN_MARK = {
   todo: 'ri-checkbox-blank-circle-line',
@@ -1742,13 +1221,37 @@ const _PLAN_MARK_TITLE = {
   done: '已完成 · 点一下退回待做', skip: '已跳过 · 点一下退回待做',
 };
 
+function _planHost() {
+  if (window._stageMode === 'plan') {
+    const body = document.getElementById('stageBody');
+    if (body) return body;
+  }
+  return document.getElementById('planDetail');
+}
+
 // 用 DOM API 建节点(不拼 innerHTML): 步骤文案是 AI/用户写的自由文本·
 // 里面可能有 < > & 甚至像标签的东西·拼字符串就得自己做转义·textContent 天然免疫。
 function _renderPlanDetail() {
-  const detail = document.getElementById('planDetail');
+  _renderPlanSteps(document.getElementById('planDetail'));
+}
+
+function _renderPlanSteps(detail) {
   if (!detail || !_planData) return;
   if (_planEditing) return;            // 编辑中不重绘 · 否则打字打一半被冲掉
   detail.textContent = '';
+  if (detail.id === 'stageBody' || detail.classList.contains('stage-paper')) {
+    const hero = document.createElement('div');
+    hero.className = 'stage-plan-hero';
+    const h = document.createElement('h3');
+    h.textContent = _planData.title || '任务';
+    hero.appendChild(h);
+    const prog = _planData.progress || {};
+    const sub = document.createElement('p');
+    sub.className = 'stage-plan-sub';
+    sub.textContent = (prog.all_done ? '做完了 · ' : '') + (prog.settled || 0) + ' / ' + (prog.total || 0);
+    hero.appendChild(sub);
+    detail.appendChild(hero);
+  }
   const steps = _planData.steps || [];
   steps.forEach((s) => {
     const st = s.status || 'todo';
@@ -1829,6 +1332,18 @@ function _renderPlanDetail() {
 }
 
 function togglePlanDetail() {
+  if (typeof stageEnsureWorkbench === 'function') stageEnsureWorkbench();
+  if (typeof openStage === 'function' && typeof stageIsVisible === 'function' && stageIsVisible()) {
+    if (window._stageMode === 'plan') {
+      if (typeof stageClose === 'function') stageClose();
+      return;
+    }
+    openStage({ mode: 'plan' });
+    const detail = document.getElementById('planDetail');
+    if (detail) detail.hidden = true;
+    try { localStorage.setItem(PLAN_OPEN_KEY, '0'); } catch (e) { /* 隐私模式 */ }
+    return;
+  }
   const detail = document.getElementById('planDetail');
   const toggle = document.getElementById('planToggle');
   if (!detail) return;
@@ -1839,6 +1354,36 @@ function togglePlanDetail() {
   if (willOpen) _renderPlanDetail();
 }
 window.togglePlanDetail = togglePlanDetail;
+
+function openPlanOnStage(refresh) {
+  if (!_planData || !_planData.active) return false;
+  if (typeof stagePaint !== 'function' || typeof stagePane !== 'function') return false;
+  const pane = stagePane();
+  if (!pane) return false;
+  if (!refresh && typeof stageEnsureWorkbench === 'function') stageEnsureWorkbench();
+  if (!refresh && typeof stageIsVisible === 'function' && !stageIsVisible()) return false;
+  if (refresh && _planEditing) return true;
+  if (refresh && typeof window.stageNotesBusy === "function" && window.stageNotesBusy()) return true;
+  const p = _planData.progress || {};
+  const meta = (p.settled || 0) + '/' + (p.total || 0);
+  if (refresh && window._stageMode === 'plan') {
+    const body = pane.querySelector('#stageBody');
+    const title = pane.querySelector('.stage-title');
+    const m = pane.querySelector('.stage-meta');
+    if (title) title.textContent = _planData.title || '任务';
+    if (m) m.textContent = meta;
+    if (body) _renderPlanSteps(body);
+    _syncPlanToggle();
+    if (typeof window.stageNotesBind === 'function') window.stageNotesBind({ mode: 'plan' });
+    return true;
+  }
+  stagePaint(pane, { mode: 'plan', name: _planData.title || '任务', meta: meta, tag: 'PLAN' }, '', true);
+  const body = pane.querySelector('#stageBody');
+  if (body) _renderPlanSteps(body);
+  if (typeof window.stageNotesBind === 'function') window.stageNotesBind({ mode: 'plan' });
+  return true;
+}
+window.openPlanOnStage = openPlanOnStage;
 
 // 打钩语义: 做完的点一下退回待做·其余一点就是"做完了"(最符合勾选框直觉)
 async function _planToggleStep(i, cur) {
@@ -1865,7 +1410,8 @@ function _planEditStep(row, s) {
         { session_id: sessionId, i: s.i, text: v });
       if (d) { _renderPlan(d); return; }
     }
-    _renderPlanDetail();
+    const host = _planHost();
+    if (host) _renderPlanSteps(host);
   };
   input.onkeydown = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); done(true); }
@@ -1885,7 +1431,7 @@ async function _planDelStep(i) {
 // 就地长出一个输入框·不用 window.prompt: prompt 阻塞主线程、样式不受控、
 // 跟工程 UI 语言不搭·而且自动化测不到(会被自动 dismiss)。
 function _planAddStep() {
-  const detail = document.getElementById('planDetail');
+  const detail = _planHost();
   if (!detail || _planEditing) return;
   _planEditing = -1;                   // -1 = 正在新增(不是改某一步) · 挡住轮询重绘
   const row = document.createElement('div');
@@ -1903,7 +1449,8 @@ function _planAddStep() {
         { session_id: sessionId, text: v });
       if (d) { _renderPlan(d); return; }
     }
-    _renderPlanDetail();
+    const host = _planHost();
+    if (host) _renderPlanSteps(host);
   };
   input.onkeydown = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); done(true); }
@@ -1929,6 +1476,8 @@ function _startPlanPoll() {
 function _flowRunsToken() {
   // H-12 修复: 全站 token 实际写在 opus_ui_token (旧版 Daemonkey_ui_token) ——
   // 原先读的 opus_token 无人写入 · pollFlowRuns 永远空转 · 运行横幅整套死区
+  if (typeof token === 'string' && token) return token;
+  if (typeof _loopbackAuthToken === 'function') return _loopbackAuthToken();
   try { return localStorage.getItem('opus_ui_token') || localStorage.getItem('Daemonkey_ui_token') || ''; } catch (e) { return ''; }
 }
 
@@ -2319,7 +1868,7 @@ async function pollGitDebt() {
       if (d.ahead) parts.push(d.ahead + ' commits 未合');
       if (d.dirty) parts.push(d.dirty + ' 文件未提交');
       chip.innerHTML = '<i class="ri-git-branch-line"></i>' + escHtml(parts.join(' · ') || '有改动未合');
-      chip.title = (d.message || '有改动没合进主干') + '\n点击 → 看是什么 · 可一键收进主干';
+      chip.title = (d.message || '有改动还没合进去') + '\n点击 → 看是什么 · 可以一键合进主线';
       chip.style.display = 'inline-flex';
     } else {
       chip.style.display = 'none';
@@ -2428,15 +1977,15 @@ function renderGitDebtPanel(d) {
   const btn = document.getElementById('gitDebtCollectBtn');
   if (!body) return;
   if (!d || !d.debt) {
-    body.innerHTML = '<div style="color:#3fb27f;font-size:13px;padding:12px 0"><i class="ri-checkbox-circle-line"></i> 工作区干净 · 没有欠账 · 所有工作都已收进主干</div>';
+    body.innerHTML = '<div style="color:#3fb27f;font-size:13px;padding:12px 0"><i class="ri-checkbox-circle-line"></i> 工作区干净 · 没有未合进去的改动 · 都已经在主线上</div>';
     if (btn) btn.style.display = 'none';
     return;
   }
-  if (btn) { btn.style.display = ''; btn.disabled = false; btn.innerHTML = '<i class="ri-git-merge-line"></i> 一键收进主干'; }
+  if (btn) { btn.style.display = ''; btn.disabled = false; btn.innerHTML = '<i class="ri-git-merge-line"></i> 一键合进主线'; }
   let h = '<div class="git-debt-branch"><i class="ri-git-branch-line"></i> 当前分支 <b>' + escHtml(d.branch) + '</b>'
         + '<span class="git-debt-hint">' + escHtml(d.collect_hint || '') + '</span></div>';
   if (d.ahead && d.ahead_commits && d.ahead_commits.length) {
-    h += '<div class="git-debt-sec">领先主干 ' + d.ahead + ' 个 commit 未合:</div>';
+    h += '<div class="git-debt-sec">领先主线 ' + d.ahead + ' 个提交还没合进去:</div>';
     h += '<div class="git-debt-list">';
     for (const c of d.ahead_commits) {
       h += '<div class="git-debt-file-row"><code style="color:var(--opus)">' + escHtml(c.sha) + '</code>'
@@ -2472,18 +2021,18 @@ async function collectGitDebt() {
     });
     const d = await r.json();
     if (d && d.ok) {
-      if (res) res.innerHTML = '<div class="git-debt-ok"><i class="ri-checkbox-circle-fill"></i> ' + escHtml(d.note || '已收进主干') + '</div>';
+      if (res) res.innerHTML = '<div class="git-debt-ok"><i class="ri-checkbox-circle-fill"></i> ' + escHtml(d.note || '已合进主线') + '</div>';
       pollGitDebt();
       setTimeout(closeGitDebtPanel, 2500);
     } else {
       if (res) res.innerHTML = '<div class="git-debt-err"><i class="ri-error-warning-fill"></i> ' + escHtml((d && (d.error || d.note)) || '收进失败') + '<br>可以点「让 Daemonkey 处理」交给我排查</div>';
       btn.disabled = false;
-      btn.innerHTML = '<i class="ri-git-merge-line"></i> 一键收进主干';
+      btn.innerHTML = '<i class="ri-git-merge-line"></i> 一键合进主线';
     }
   } catch (e) {
     if (res) res.innerHTML = '<div class="git-debt-err"><i class="ri-error-warning-fill"></i> 请求失败: ' + escHtml(String(e)) + '</div>';
     btn.disabled = false;
-    btn.innerHTML = '<i class="ri-git-merge-line"></i> 一键收进主干';
+    btn.innerHTML = '<i class="ri-git-merge-line"></i> 一键合进主线';
   }
 }
 window.collectGitDebt = collectGitDebt;
@@ -2522,10 +2071,7 @@ const _ONBOARD_DEFAULT_TEMPLATES = {
   create_flow: '我想搭一条工作流 · 名字叫 [起一个]\n流程是:\n  1. [第一步用什么 app · 干啥]\n  2. [第二步用什么 app · 干啥]\n  3. ...\n你帮我用 create_workflow 落档 · 我看了再说跑不跑。',
   chat_about: '聊聊吧 · 你是谁 · 你能做什么 · 你跟其他 AI 有什么不一样\n你为什么叫 Daemonkey · <名字> 的家是什么 · 沉淀闭环是什么\n说人话 · 不要列表式答 · 像跟朋友吹水',
   list_capability: '把工坊里所有应用 (list_apps detailed=true) 和工作流 (list_flows detailed=true) 都列给我看看\n按用途分类 · 我想知道哪些能直接跑 · 哪些是给工作流当零件用的',
-  // 卷七十二 v5 · 2026-06-10 · 第 5 张卡 · 换皮肤 (用户 想让用户知道有这个功能)
-  // 模板里"换成 X 主题"会触发前端 matchThemePreset 强意图判断 · 直接切主题不发给 LLM
-  // 想要 LLM 帮造自定义配色就明确说 "你帮我设计一套 ... 输出 ```theme JSON```"
-  change_theme: '把界面主题换成 [暗紫 / 经典灰 / 白天 / 护眼暖黄 / 海洋蓝 / 森林绿 / 日落橙 / 粉色 / 粉白] 主题\n或者 · 你帮我设计一套 [描述风格 · 例如「赛博蓝紫·像 dune 沙漠」] 的配色 · 输出 ```theme JSON``` 代码块',
+  schedule_task: '帮我建个定时任务\n时间：[每天早上 9 点]\n做什么：[扫一遍 AI 行情并汇总给我]',
   // 卷七十四续二十五 · 第 6 张卡 · 能力发现 (入口 A · 主动去外面找 SKILL/开源项目升级自己)
   discover_skill: '帮我找点能升级你自己的新能力 (调 discover_skill 工具) · 去 GitHub / 开源社区找 SKILL / 工具 / 开源项目\n方向: [可留空让你按我画像定 · 或填: 比如 视频口播 / figma 插件 / 调试工作流]\n按我的画像评估 · 靠谱的出一份发现报告 + 落地建议 (playbook / app / 心愿)',
 };
@@ -2609,6 +2155,58 @@ function _initOnboardingPanel() {
     });
   }
   refreshOnboardingPanel();
+  const hangBtn = document.getElementById('hangoutDoorBtn');
+  if (hangBtn) hangBtn.addEventListener('click', startHangout);
+  refreshHangoutDoor();
+}
+
+function _hangoutName() {
+  return (window.__AI_NAME__ || window.AI_NAME || '她').trim() || '她';
+}
+
+async function refreshHangoutDoor() {
+  const label = document.getElementById('hangoutDoorLabel');
+  if (!label) return;
+  const name = _hangoutName();
+  const first = name + '想知道你喜欢她怎么说话。';
+  if (!label.textContent) label.textContent = first;
+  let settled = false;
+  try {
+    const r = await fetch('/dashboard/she_state', {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    });
+    if (r.ok) {
+      const d = await r.json();
+      settled = !!d.taste_settled;
+    }
+  } catch (e) {}
+  label.textContent = settled ? '想让我改改说话方式吗？' : first;
+}
+window.refreshHangoutDoor = refreshHangoutDoor;
+
+function startHangout() {
+  clearAttachments();
+  if (_docsViewActive) closeDocsView();
+  _saveActiveStateToCurrentSession();
+  const cid = _allocCid();
+  const s = _getOrCreateSession(cid);
+  s.title = '说话方式';
+  s.chatMode = 'taste';
+  _setActiveContainer(cid);
+  sessionId = cid;
+  localStorage.removeItem(STORAGE.session);
+  updateCurrentLabel();
+  _loadActiveStateFromCurrentSession();
+  setSendButtonState('idle');
+  setInputLocked(false);
+  showToolProgress(false);
+  closeDrawer();
+  if (typeof _renderTabBar === 'function') {
+    try { _renderTabBar(); } catch {}
+  }
+  if (typeof _refreshCompactAfterSwitch === 'function') _refreshCompactAfterSwitch();
+  if (typeof refreshPlan === 'function') refreshPlan();
+  send({ text: '开始问说话方式。', silentUser: true });
 }
 
 function _openOnboardingCustomizer() {
@@ -2619,7 +2217,7 @@ function _openOnboardingCustomizer() {
     create_flow: '<i class="ri-flow-chart"></i> 搭建一个工作流',
     chat_about: '<i class="ri-chat-3-fill"></i> 聊聊日常 · 认识 Daemonkey',
     list_capability: '<i class="ri-book-shelf-fill"></i> 看看我能做什么',
-    change_theme: '<i class="ri-palette-fill"></i> 换个皮肤',
+    schedule_task: '<i class="ri-timer-2-fill"></i> 定时任务',
     discover_skill: '<i class="ri-search-eye-line"></i> 找新能力升级自己',
   };
   // 简单的 modal 弹窗 · 不引第三方库
@@ -2637,7 +2235,7 @@ function _openOnboardingCustomizer() {
   modal.innerHTML = `
     <div class="onboarding-modal">
       <div class="onboarding-modal-head">
-        <span><i class="ri-settings-3-line"></i> 改新对话引导卡模板</span>
+        <span><i class="ri-settings-3-line"></i> 改新话题引导卡模板</span>
         <button type="button" class="onboarding-modal-x">×</button>
       </div>
       <div class="onboarding-modal-body">
@@ -2684,12 +2282,33 @@ if (typeof escHtml === 'undefined') {
 
 // debounce dashboard refresh · 避免连续工具调用刷爆 UI
 let _dashRefreshTimer = null;
+function _dashSilentRefreshBlocked() {
+  if (typeof _shelfPreviewOpen !== 'undefined' && _shelfPreviewOpen) return true;
+  const roots = [];
+  if (typeof $dashView !== 'undefined' && $dashView) roots.push($dashView);
+  if (typeof $detailPane !== 'undefined' && $detailPane) roots.push($detailPane);
+  for (const root of roots) {
+    if (root.querySelector('.feas-detail, .feas-feedback, .exec-current, .exec-snap')) return true;
+    const typed = root.querySelectorAll('textarea, input:not([type=hidden]):not([type=button]):not([type=submit]):not([type=checkbox]):not([type=radio]):not([type=file]), select');
+    for (const el of typed) {
+      if ((el.value || '') !== (el.defaultValue || '')) return true;
+    }
+    for (const el of root.querySelectorAll('input[type=checkbox], input[type=radio]')) {
+      if (el.checked !== el.defaultChecked) return true;
+    }
+    for (const el of root.querySelectorAll('input[type=file]')) {
+      if (el.files && el.files.length) return true;
+    }
+  }
+  return false;
+}
 function scheduleDashboardRefresh(delayMs = 600) {
   if (_dashRefreshTimer) clearTimeout(_dashRefreshTimer);
   _dashRefreshTimer = setTimeout(() => {
     _dashRefreshTimer = null;
     try {
       if (typeof refreshNavBadges === 'function') refreshNavBadges();
+      if (_dashSilentRefreshBlocked()) return;
       // 卷五十四 · 工坊是挂载式 view · loadDashboard('workshop') 已挂载时短路不重拉 ·
       // 必须走 OPUS_WORKSHOP_VIEW.refresh() 才能把 Daemonkey 新造的 app/flow 拉进来
       if (typeof currentView !== 'undefined' && currentView === 'workshop'
@@ -2721,1973 +2340,9 @@ function openSettingsModal() {
 }
 function closeSettings() { $modal.classList.remove('open'); }
 
-// 卷三十七 · 中栏 settings view (用户 截图反馈 · 弹窗装不下 · 改 tabs)
-let _settingsTab = 'llm';  // 'llm' | 'access' | 'data'
-function openSettingsView() {
-  currentView = 'settings';
-  // 清左 nav 高亮 · settings 不属于任何 dashboard 维度
-  document.querySelectorAll('.nav-item.active').forEach(b => b.classList.remove('active'));
-  // 给底部 ⚙ 按钮加个高亮 · 让 用户 知道当前在设置里
-  document.querySelectorAll('.nav-settings-btn').forEach(b => b.classList.add('active'));
-  renderSettingsView();
-}
+// 设置页在 settings-pane.js (工作台中栏 + 陪伴弹窗共用)
+// openSettings / openSettingsModal / closeSettings 仍在本文件 (绑的是工作台 #settings 老弹窗)
 
-function renderSettingsView() {
-  const tabs = [
-    { id: 'llm', label: '<i class="ri-brain-fill"></i> LLM 模型', hint: 'Provider + Model + API Key 多配置管理' },
-    { id: 'vision', label: '<i class="ri-cpu-fill"></i> 多模态', hint: '看图 + 微信语音识别 · 主模型不支持时自动走这里的 fallback' },
-    { id: 'embedding', label: '<i class="ri-brain-line"></i> Embedding', hint: '记忆语义检索 · 词面召回之外的语义通道' },
-    { id: 'access', label: '<i class="ri-key-fill"></i> 访问 & 会话', hint: 'API Token / Session / Auto-confirm' },
-    { id: 'wechat', label: '<i class="ri-wechat-fill"></i> 微信 & 飞书', hint: '扫码连微信 · 配飞书机器人 · 主动找你的频率 (猫系↔犬系)' },
-    { id: 'notify', label: '<i class="ri-notification-3-fill"></i> 通知', hint: '干完/等你拍板时怎么提醒你 · 音效 / Windows 通知 / 标签闪烁' },
-    { id: 'data', label: '<i class="ri-save-fill"></i> 本地数据', hint: '别名 / 缓存 / 重置' },
-  ];
-  $detailPane.innerHTML = `
-    <div class="settings-pane">
-      <div class="settings-head">
-        <h2>⚙ 设置</h2>
-        <span class="meta">可热切换 · 不重启 daemon</span>
-        <button onclick="backToChat()" title="返回对话">✕ 关闭</button>
-      </div>
-      <div class="settings-tabs">
-        ${tabs.map(t => `
-          <button class="settings-tab ${_settingsTab === t.id ? 'active' : ''}"
-                  onclick="switchSettingsTab('${t.id}')"
-                  title="${escHtml(t.hint)}">${t.label}</button>
-        `).join('')}
-      </div>
-      <div class="settings-body" id="settingsBody"></div>
-    </div>
-  `;
-  renderSettingsBody();
-}
-
-function switchSettingsTab(tabId) {
-  _settingsTab = tabId;
-  document.querySelectorAll('.settings-tab').forEach(b => {
-    b.classList.toggle('active', b.textContent.includes(
-      { llm: 'LLM 模型', vision: '多模态', embedding: 'Embedding', access: '访问', wechat: '微信 & 飞书', notify: '通知', data: '本地数据' }[tabId]
-    ));
-  });
-  renderSettingsBody();
-}
-
-function renderSettingsBody() {
-  if (_settingsTab === 'llm') renderSettingsLLM();
-  else if (_settingsTab === 'vision') renderSettingsVision();
-  else if (_settingsTab === 'embedding') renderSettingsEmbedding();
-  else if (_settingsTab === 'access') renderSettingsAccess();
-  else if (_settingsTab === 'wechat') renderSettingsWechat();
-  else if (_settingsTab === 'notify') renderSettingsNotify();
-  else if (_settingsTab === 'data') renderSettingsData();
-}
-
-// ─── 卷三十六 · LLM 配置面板 ───
-let _llmPresets = [];
-let _llmActive = null;
-
-async function loadLlmConfig() {
-  if (!token) {
-    document.getElementById('llmStatus').textContent = '⚠ 请先填 API Token';
-    return;
-  }
-  try {
-    const resp = await fetch('/providers', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    _llmPresets = data.presets || [];
-    _llmActive = data.active || null;
-    renderLlmPresetSelect();
-    renderLlmActiveLabel();
-  } catch (e) {
-    document.getElementById('llmStatus').textContent = '加载失败: ' + e.message;
-    document.getElementById('llmStatus').className = 'field-hint fail';
-  }
-}
-
-function renderLlmActiveLabel() {
-  const $cur = document.getElementById('llmCurrentLabel');
-  const $det = document.getElementById('llmCurrentDetail');
-  if (!_llmActive) { $cur.textContent = '?'; $det.textContent = '—'; return; }
-  const preset = _llmPresets.find(p => p.id === _llmActive.preset_id);
-  $cur.textContent = preset ? preset.name : _llmActive.preset_id;
-  $det.textContent = `模型 ${_llmActive.model} · base ${_llmActive.base_url || '(SDK 默认)'} · key ${_llmActive.api_key_masked || '(未设)'}`;
-}
-
-function renderLlmPresetSelect() {
-  const $sel = document.getElementById('llmPreset');
-  $sel.innerHTML = '';
-  _llmPresets.forEach(p => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = p.name;
-    $sel.appendChild(opt);
-  });
-  if (_llmActive && _llmActive.preset_id) {
-    $sel.value = _llmActive.preset_id;
-  }
-  onLlmPresetChange();
-}
-
-function onLlmPresetChange() {
-  const $sel = document.getElementById('llmPreset');
-  const preset = _llmPresets.find(p => p.id === $sel.value);
-  if (!preset) return;
-  document.getElementById('llmPresetNote').textContent = preset.note || '—';
-  document.getElementById('llmBaseUrl').value = preset.base_url || '';
-  document.getElementById('llmApiKey').placeholder = preset.key_hint
-    ? `${preset.key_hint} (留空 = 沿用当前 key)`
-    : '(留空 = 沿用当前 key)';
-  const link = document.getElementById('llmSignupLink');
-  if (preset.signup_url) {
-    link.href = preset.signup_url;
-    link.textContent = preset.signup_url;
-    link.style.display = '';
-  } else {
-    link.style.display = 'none';
-  }
-  // 模型下拉
-  const $mSel = document.getElementById('llmModel');
-  $mSel.innerHTML = '';
-  (preset.recommended_models || []).forEach(m => {
-    const opt = document.createElement('option');
-    opt.value = m.id;
-    opt.textContent = m.label;
-    opt.title = m.note || '';
-    $mSel.appendChild(opt);
-  });
-  // 自定义模型选项
-  const customOpt = document.createElement('option');
-  customOpt.value = '__custom__';
-  customOpt.textContent = '(自定义 model id)';
-  $mSel.appendChild(customOpt);
-  // 如果是当前活动 preset · 选回当前 model
-  if (_llmActive && _llmActive.preset_id === preset.id) {
-    const has = (preset.recommended_models || []).some(m => m.id === _llmActive.model);
-    $mSel.value = has ? _llmActive.model : '__custom__';
-  }
-  onLlmModelChange();
-}
-
-function onLlmModelChange() {
-  const $sel = document.getElementById('llmPreset');
-  const $mSel = document.getElementById('llmModel');
-  const preset = _llmPresets.find(p => p.id === $sel.value);
-  if (!preset) return;
-  const m = (preset.recommended_models || []).find(x => x.id === $mSel.value);
-  document.getElementById('llmModelNote').textContent = m ? (m.note || '—') : '自定义 model id · 自己填';
-  if ($mSel.value === '__custom__') {
-    $mSel.insertAdjacentHTML('afterend', '');
-    const input = document.getElementById('llmCustomModelInput');
-    if (!input) {
-      const div = document.createElement('input');
-      div.type = 'text';
-      div.id = 'llmCustomModelInput';
-      div.placeholder = '自定义 model id · 比如 gpt-4o';
-      div.style.marginTop = '6px';
-      $mSel.parentNode.insertBefore(div, $mSel.nextSibling);
-    }
-  } else {
-    const input = document.getElementById('llmCustomModelInput');
-    if (input) input.remove();
-  }
-}
-
-function _readLlmFormConfig() {
-  const $sel = document.getElementById('llmPreset');
-  const preset = _llmPresets.find(p => p.id === $sel.value);
-  if (!preset) return null;
-  let model = document.getElementById('llmModel').value;
-  if (model === '__custom__') {
-    model = (document.getElementById('llmCustomModelInput')?.value || '').trim();
-  }
-  let apiKey = document.getElementById('llmApiKey').value.trim();
-  if (!apiKey && _llmActive && _llmActive.preset_id === preset.id) {
-    // 没填 = 沿用当前 (后端从 .env 读)
-    apiKey = '__keep_current__';
-  }
-  return {
-    provider_kind: preset.provider_kind,
-    base_url: document.getElementById('llmBaseUrl').value.trim(),
-    model,
-    api_key: apiKey,
-  };
-}
-
-async function testLlmConfig() {
-  const cfg = _readLlmFormConfig();
-  if (!cfg) return;
-  const $status = document.getElementById('llmStatus');
-  if (!cfg.model) { $status.textContent = '⚠ 没填 model'; $status.className = 'field-hint fail'; return; }
-  if (cfg.api_key === '__keep_current__') {
-    $status.textContent = '⚠ 测试必须填 API Key (不能沿用 .env 里的 · 那是后端的事)';
-    $status.className = 'field-hint fail';
-    return;
-  }
-  $status.textContent = '测试中…';
-  $status.className = 'field-hint';
-  try {
-    const resp = await fetch('/providers/test', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(cfg),
-    });
-    const data = await resp.json();
-    if (data.ok) {
-      $status.innerHTML = `<i class="ri-check-fill"></i> 通了 · ${data.model} 回复: ${data.reply_preview || '(空 · 但调用成功)'}`;
-      $status.className = 'field-hint ok';
-    } else {
-      $status.innerHTML = `<i class="ri-close-fill"></i> ${data.error || '?'} · ${data.hint || ''}`;
-      $status.className = 'field-hint fail';
-    }
-  } catch (e) {
-    $status.innerHTML = '<i class="ri-close-fill"></i> 测试请求失败: ' + e.message;
-    $status.className = 'field-hint fail';
-  }
-}
-
-async function switchLlmConfig() {
-  const cfg = _readLlmFormConfig();
-  if (!cfg) return;
-  const $status = document.getElementById('llmStatus');
-  if (!cfg.model) { $status.textContent = '⚠ 没填 model'; $status.className = 'field-hint fail'; return; }
-  // 没填 key · 用户想沿用 · 让用户确认
-  if (cfg.api_key === '__keep_current__') {
-    const ok = await opusConfirm({
-      title: '不填 API Key · 沿用当前',
-      message: '你没填新的 API Key · 我会沿用当前 .env 里的 key 走 ' + cfg.provider_kind + ' / ' + cfg.model + '\n继续?',
-      okText: '继续切',
-      cancelText: '回去填 key',
-    });
-    if (!ok) return;
-    // 后端要求 api_key 必填 · 这里如果当前 provider 还跟新 cfg 一致 · 后端会重读 env
-    // 简化: 让用户填一次新 key (即便复用旧的)
-    const k = await opusPrompt({
-      title: '粘一下当前 API Key',
-      message: '后端写 .env 需要明文 · 不会发到 LLM',
-      placeholder: 'sk-xxx',
-    });
-    if (!k) return;
-    cfg.api_key = k.trim();
-  }
-  $status.textContent = '切换中…';
-  $status.className = 'field-hint';
-  try {
-    const resp = await fetch('/providers/switch', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(cfg),
-    });
-    const data = await resp.json();
-    if (resp.ok && data.ok) {
-      $status.innerHTML = `<i class="ri-check-fill"></i> 已切到 ${data.provider_kind} / ${data.model}`;
-      $status.className = 'field-hint ok';
-      // 刷新当前显示
-      loadLlmConfig();
-      addSys(`LLM 已热切换 · ${data.provider_kind} / ${data.model} · session 不丢`);
-    } else {
-      $status.innerHTML = '<i class="ri-close-fill"></i> ' + (data.detail || data.error || 'failed');
-      $status.className = 'field-hint fail';
-    }
-  } catch (e) {
-    $status.innerHTML = '<i class="ri-close-fill"></i> 切换失败: ' + e.message;
-    $status.className = 'field-hint fail';
-  }
-}
-function saveSettings() {
-  token = $tokenIn.value.trim();
-  sessionId = $sessionIn.value.trim();
-  autoConfirm = $autoIn.value;
-  localStorage.setItem(STORAGE.token, token);
-  localStorage.setItem(STORAGE.session, sessionId);
-  localStorage.setItem(STORAGE.autoConfirm, autoConfirm);
-  closeSettings();
-  addSys('已保存。' + (token ? '可以聊了。' : '⚠ token 还是空的'));
-}
-// ─── 卷三十七 · settings tabs body 渲染 ───
-
-let _providerConfigs = [];     // 当前 configs (掩码后)
-let _providerConfigsActiveId = null;
-let _providerPresets = [];      // 预设 (来自 GET /providers)
-
-async function renderSettingsLLM() {
-  const body = document.getElementById('settingsBody');
-  body.innerHTML = `<div class="dash-empty">加载中…</div>`;
-  // 同时拉 configs + presets
-  try {
-    const [confResp, presetResp] = await Promise.all([
-      fetch('/provider-configs', { headers: { 'Authorization': 'Bearer ' + token } }),
-      fetch('/providers', { headers: { 'Authorization': 'Bearer ' + token } }),
-    ]);
-    if (!confResp.ok) throw new Error('configs ' + confResp.status);
-    if (!presetResp.ok) throw new Error('presets ' + presetResp.status);
-    const confData = await confResp.json();
-    const presetData = await presetResp.json();
-    _providerConfigs = confData.configs || [];
-    _providerConfigsActiveId = confData.active_id;
-    _providerPresets = presetData.presets || [];
-  } catch (e) {
-    body.innerHTML = `<div class="dash-empty">加载失败: ${escHtml(e.message)}</div>`;
-    return;
-  }
-
-  const activeCount = _providerConfigs.length;
-  const pinnedCount = _providerConfigs.filter(c => c.pinned).length;
-
-  body.innerHTML = `
-    <div class="llm-section">
-      <div class="llm-section-head">
-        <h3>已保存的 LLM 配置 · ${activeCount} 条 · ${pinnedCount} 条已勾选显示</h3>
-        <span class="llm-hint">勾选的会出现在右上角切换器 · 不勾选只在这里保留 · 想要常用模型直接对 Daemonkey 说「加几个 aihub 常用模型」即可</span>
-        <button class="btn-primary" onclick="openLlmConfigAddForm()">+ 新增配置</button>
-      </div>
-      <div class="llm-config-list" id="llmConfigList">
-        ${_providerConfigs.length === 0
-          ? '<div class="dash-empty">还没有配置 · 点 "+ 新增配置" 加一个</div>'
-          : _providerConfigs.map(renderLlmConfigCard).join('')}
-      </div>
-    </div>
-
-    <div id="llmEditPanel" class="llm-edit-panel" hidden></div>
-  `;
-}
-
-function renderLlmConfigCard(c) {
-  const isActive = c.id === _providerConfigsActiveId;
-  const presetIcon = ({
-    'deepseek-official': '🟦',
-    'aihubmix': '🟪',
-    'anthropic': '🟧',
-    'openrouter': '🟩',
-    'dashscope': '🟥',
-    'custom': '<i class="ri-circle-line"></i>',
-  })[c.preset_id] || '<i class="ri-circle-line"></i>';
-  return `
-    <div class="llm-config-card${isActive ? ' active' : ''}${c.director ? ' director-on' : ''}" data-cfg-id="${escHtml(c.id)}">
-      <div class="lc-row1">
-        <span class="lc-icon">${presetIcon}</span>
-        <span class="lc-name">${escHtml(c.name || c.model || c.id)}</span>
-        ${isActive ? '<span class="lc-active-badge">当前</span>' : ''}
-        ${c.director ? '<span class="lc-director-badge" title="顾问模型 · 能力最强 · 蓝图/破局/验收三唤醒点被 replan 召唤"><i class="ri-vip-crown-fill"></i> 顾问</span>' : ''}
-        <label class="lc-pin" title="勾选 = 右上角切换器显示">
-          <input type="checkbox" ${c.pinned ? 'checked' : ''}
-                 onchange="togglePinConfig('${escHtml(c.id)}', this.checked)">
-          <span>${c.pinned ? '已显示' : '隐藏'}</span>
-        </label>
-      </div>
-      <div class="lc-row2">
-        <span class="lc-kind">${escHtml(c.provider_kind || 'openai')}</span>
-        <span class="lc-model">${escHtml(c.model || '?')}</span>
-        <span class="lc-base">${escHtml(c.base_url || '(SDK 默认)')}</span>
-        ${c.max_tokens ? `<span class="lc-mt" title="单次输出上限">↗ ${formatTokenK(c.max_tokens)} max</span>` : ''}
-      </div>
-      <div class="lc-row3">
-        <span class="lc-key">${escHtml(c.api_key || '(未设)')}</span>
-        <div class="lc-actions">
-          ${isActive ? '' : `<button onclick="activateConfig('${jsStr(c.id)}')" title="切换 Daemonkey 用这个跑">激活</button>`}
-          <button onclick="testConfig('${jsStr(c.id)}')" title="ping 一下试通不通">测试</button>
-          <button class="lc-director-btn${c.director ? ' on' : ''}" onclick="toggleDirectorConfig('${jsStr(c.id)}', ${c.director ? 'false' : 'true'})" title="${c.director ? '取消这个配置的顾问身份' : '把它设为顾问 · 蓝图/破局/验收时被召唤（全局只能有一个顾问）'}"><i class="ri-vip-crown-${c.director ? 'fill' : 'line'}"></i> ${c.director ? '取消顾问' : '设为顾问'}</button><i class="ri-question-line lc-director-help" onclick="showDirectorHelp()" title="顾问模型是干啥的？点我"></i>
-          <button onclick="openLlmConfigEditForm('${jsStr(c.id)}')" title="改名 / 改 key / 改 model">编辑</button>
-          <button class="btn-danger-mini" onclick="deleteConfig('${jsStr(c.id)}')" title="删除">删除</button>
-        </div>
-      </div>
-      <div class="lc-test-result" id="lcTestResult_${escHtml(c.id)}"></div>
-    </div>
-  `;
-}
-
-// 卷三十八 · 一键导入过去用过的 AiHubMix 模型 · 用户 反馈"以后还会用·默认放进来"
-// 弹一个对话框让 用户 填一次 AiHub key · 然后批量加 4-5 条 config (pinned=false 默认)
-async function quickImportAihubMix() {
-  // 让 用户 输入 AiHub key (一次 · 公用)
-  const key = await opusPrompt({
-    title: '一键导入 AiHubMix 常用模型',
-    message: '会自动加入: Sonnet 4.6 / Opus 4.7 / Kimi K2.6 / GLM 5.1 / GPT-5.5\n这些都是 用户 过去用过的 · 加进来默认不勾右上角 · 编辑里可以单独激活。\n\n填一次 AiHub key · 这些 configs 共用 (你也可以加完单独改 key):',
-    placeholder: 'sk-xxx · AiHubMix 平台 key · 留空 = 只加占位不设 key',
-    okText: '一键加',
-    cancelText: '取消',
-  });
-  if (key === null) return;  // 取消
-  const apiKey = (key || '').trim();
-  const presets = [
-    { name: 'Sonnet 4.6 · AiHubMix', model: 'claude-sonnet-4-6', note: '性价比·支持 cache' },
-    { name: 'Opus 4.7 · AiHubMix', model: 'claude-opus-4-7', note: '深聊最强·5x 贵·支持 cache' },
-    { name: 'Kimi K2.6 · AiHubMix', model: 'kimi-k2.6', note: '262K·Agent/工具能力强' },
-    { name: 'GLM 5.1 · AiHubMix', model: 'glm-5.1', note: '200K·智谱旗舰·写代码强' },
-    { name: 'GPT-5.5 · AiHubMix', model: 'gpt-5.5', note: 'GPT 系最新' },
-  ];
-  let okCount = 0, failMsg = '';
-  for (const p of presets) {
-    try {
-      const r = await fetch('/provider-configs', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: p.name,
-          provider_kind: 'openai',
-          base_url: 'https://aihubmix.com/v1',
-          model: p.model,
-          api_key: apiKey || '___placeholder___',  // 后端要求 key 非空 · 占位让 用户 之后改
-          preset_id: 'aihubmix',
-          pinned: false,
-          set_active: false,
-        }),
-      });
-      if (r.ok) okCount++;
-      else { failMsg = await r.text(); break; }
-    } catch (e) { failMsg = e.message; break; }
-  }
-  if (failMsg) {
-    await opusAlert({ title: '部分失败', message: `加成功 ${okCount}/${presets.length}\n失败原因: ${failMsg.slice(0, 200)}`, icon: '<i class="ri-error-warning-fill"></i>' });
-  } else if (apiKey) {
-    addSys(`<i class="ri-check-fill"></i> 已加 ${okCount} 条 AiHubMix · 想用就去右上角 ● 勾选`);
-  } else {
-    addSys(`<i class="ri-check-fill"></i> 已加 ${okCount} 条 AiHubMix 占位 (key 还没填) · 编辑里填 key 才能用`);
-  }
-  await renderSettingsLLM();
-  if (typeof loadCurrentModel === 'function') loadCurrentModel();
-}
-
-function openLlmConfigAddForm() {
-  _showLlmEditForm({
-    title: '+ 新增 LLM 配置',
-    submit: '保存',
-    config: {
-      id: '',
-      name: '',
-      provider_kind: 'openai',
-      base_url: '',
-      model: '',
-      api_key: '',
-      preset_id: 'deepseek-official',
-      pinned: true,
-    },
-    onSubmit: async (form) => {
-      const body = {
-        name: form.name,
-        provider_kind: form.provider_kind,
-        base_url: form.base_url,
-        model: form.model,
-        api_key: form.api_key,
-        preset_id: form.preset_id,
-        pinned: form.pinned,
-        set_active: form.set_active,
-        max_tokens: form.max_tokens,
-        vision: form.vision,
-        director: form.director,
-        pricing: form.pricing,  // wish-bec4f3b9
-      };
-      const r = await fetch('/provider-configs', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!r.ok) {
-        const t = await r.text();
-        await opusAlert({ title: '保存失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
-        return;
-      }
-      hideLlmEditForm();
-      await renderSettingsLLM();
-      if (typeof loadCurrentModel === 'function') loadCurrentModel();
-    },
-  });
-}
-
-function openLlmConfigEditForm(cfgId) {
-  const cfg = _providerConfigs.find(c => c.id === cfgId);
-  if (!cfg) return;
-  _showLlmEditForm({
-    title: '编辑配置 · ' + (cfg.name || cfg.id),
-    submit: '保存修改',
-    config: { ...cfg },
-    isEdit: true,
-    onSubmit: async (form) => {
-      const patch = {
-        name: form.name,
-        base_url: form.base_url,
-        model: form.model,
-        preset_id: form.preset_id,
-        pinned: form.pinned,
-        max_tokens: form.max_tokens,
-        vision: form.vision,
-        director: form.director,
-        pricing: form.pricing,  // wish-bec4f3b9
-      };
-      if (form.api_key && form.api_key.trim()) patch.api_key = form.api_key;
-      const r = await fetch('/provider-configs/' + encodeURIComponent(cfgId), {
-        method: 'PATCH',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-      });
-      if (!r.ok) {
-        const t = await r.text();
-        await opusAlert({ title: '保存失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
-        return;
-      }
-      hideLlmEditForm();
-      await renderSettingsLLM();
-      if (typeof loadCurrentModel === 'function') loadCurrentModel();
-    },
-  });
-}
-
-function _showLlmEditForm({ title, submit, config, onSubmit, isEdit }) {
-  const panel = document.getElementById('llmEditPanel');
-  panel.hidden = false;
-  panel.innerHTML = `
-    <div class="llm-edit-card">
-      <h3>${escHtml(title)}</h3>
-      <div class="field">
-        <label>名字 (给自己看 · 任意起)</label>
-        <input id="llmEditName" type="text" value="${escHtml(config.name || '')}" placeholder="比如 'DeepSeek V4 Pro · 官方'">
-      </div>
-      <div class="field">
-        <label>Provider 预设</label>
-        <select id="llmEditPreset" onchange="onLlmEditPresetChange()">
-          ${_providerPresets.map(p => `
-            <option value="${escHtml(p.id)}" ${p.id === config.preset_id ? 'selected' : ''}>${escHtml(p.name)}</option>
-          `).join('')}
-        </select>
-        <div class="field-hint" id="llmEditPresetNote"></div>
-      </div>
-      <div class="field">
-        <label>Provider Kind</label>
-        <select id="llmEditKind">
-          <option value="openai" ${config.provider_kind === 'openai' ? 'selected' : ''}>openai (OpenAI 兼容协议)</option>
-          <option value="anthropic" ${config.provider_kind === 'anthropic' ? 'selected' : ''}>anthropic (Anthropic 原生)</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>Base URL (anthropic 走 SDK 默认可以空)</label>
-        <input id="llmEditBaseUrl" type="text" value="${escHtml(config.base_url || '')}" placeholder="https://api.deepseek.com/v1">
-      </div>
-      <div class="field">
-        <label>Model · 选预设里推荐的 / 也可自定义</label>
-        <select id="llmEditModelSelect" onchange="onLlmEditModelSelectChange()"></select>
-        <input id="llmEditModel" type="text" value="${escHtml(config.model || '')}" placeholder="model id" style="margin-top:6px">
-      </div>
-      <div class="field">
-        <label>API Key ${isEdit ? '(留空 = 不改)' : ''}</label>
-        <input id="llmEditApiKey" type="password" value="" placeholder="${isEdit ? '不填就用原 key' : 'sk-xxx'}">
-        <div class="field-hint">key 存在 data/provider_configs.json · 已在 .gitignore</div>
-      </div>
-      <div class="field">
-        <label>输出长度上限 (max_tokens · 单次 LLM 调用的最长输出)</label>
-        <input id="llmEditMaxTokens" type="number" min="512" max="384000" step="512"
-               value="${escHtml(String(config.max_tokens || 8192))}"
-               placeholder="按模型推荐">
-        <div class="field-hint" id="llmEditMaxTokensHint">
-          单位: token · 约 token×0.7 个汉字 · 太小会"做一半就停"·太大可能某些模型拒
-        </div>
-      </div>
-      <div class="field">
-        <label><i class="ri-price-tag-3-fill"></i> 价格表 (每 1M tokens · 用于成本估算)</label>
-        <div class="pricing-row">
-          <select id="llmEditCurrency">
-            <option value="USD">USD $</option>
-            <option value="CNY">CNY ¥</option>
-          </select>
-          <input type="number" step="0.0001" min="0" placeholder="输入价" id="llmEditPriceIn" value="${escHtml(String((config.pricing && config.pricing.input) ?? ''))}">
-          <input type="number" step="0.0001" min="0" placeholder="输出价" id="llmEditPriceOut" value="${escHtml(String((config.pricing && config.pricing.output) ?? ''))}">
-          <input type="number" step="0.0001" min="0" placeholder="缓存命中价(可空)" id="llmEditPriceCache" value="${escHtml(String((config.pricing && config.pricing.cache_read) ?? ''))}">
-          <button type="button" class="btn-ghost" id="llmEditLookup"><i class="ri-search-eye-line"></i> 自动查官方价</button>
-        </div>
-        <div class="field-hint" id="llmEditPricingHint">未配置 · 点「自动查官方价」由 Daemonkey 搜官网填入 · 你确认后才保存</div>
-      </div>
-      <div class="field">
-        <label>
-          <input id="llmEditPinned" type="checkbox" ${config.pinned ? 'checked' : ''}>
-          勾选 = 显示在右上角切换器
-        </label>
-      </div>
-      <div class="field">
-        <label><i class="ri-eye-fill"></i> 多模态视觉</label>
-        <div class="vision-radio-group">
-          <label class="vision-radio">
-            <input type="radio" name="llmEditVision" id="llmEditVisionAuto" value="auto" ${config.vision == null ? 'checked' : ''}>
-            <i class="ri-settings-3-fill"></i> 自动检测
-          </label>
-          <label class="vision-radio">
-            <input type="radio" name="llmEditVision" id="llmEditVisionYes" value="yes" ${config.vision === true ? 'checked' : ''}>
-            <i class="ri-checkbox-circle-fill"></i> 多模态
-          </label>
-          <label class="vision-radio">
-            <input type="radio" name="llmEditVision" id="llmEditVisionNo" value="no" ${config.vision === false ? 'checked' : ''}>
-            <i class="ri-close-circle-fill"></i> 纯文本
-          </label>
-        </div>
-        <div class="field-hint">自动检测按模型家族判断 · 不确定时可以手动覆盖</div>
-      </div>
-      <div class="field">
-        <label>
-          <input type="checkbox" id="llmEditDirector" ${config.director ? 'checked' : ''}>
-          <i class="ri-vip-crown-fill"></i> 设为顾问模型
-          <i class="ri-question-line director-help-icon" id="directorHelpIcon" title="顾问模型是干啥的？点我"></i>
-        </label>
-        <div class="field-hint" id="directorHelpText" hidden>
-          顾问 = 能力最强的贵模型。主对话日常用便宜模型干活时 · 它只在「蓝图 / 破局 / 验收」三个唤醒点被 replan 召唤进来把关
-          (跨 provider 现场连接 · 干净上下文不装灵魂 · 全局只能设一个 · 设新的旧的自动取消)。不配则不启用顾问功能 · replan 照旧用当前主模型当顾问。
-          省钱场景: DeepSeek 干活 + K3 当顾问 · 同强度任务估省 50-70%。
-        </div>
-      </div>
-      ${isEdit ? '' : `
-      <div class="field">
-        <label>
-          <input id="llmEditSetActive" type="checkbox">
-          保存后立即激活 (Daemonkey 切到这条跑)
-        </label>
-      </div>`}
-      <div class="actions">
-        <button class="btn-ghost" onclick="hideLlmEditForm()">取消</button>
-        <button class="btn-primary" id="llmEditSubmit">${escHtml(submit)}</button>
-      </div>
-      <div id="llmEditStatus" class="field-hint" style="margin-top:6px"></div>
-    </div>
-  `;
-  // 编辑模式：base_url 已有值 → 标记 touched · 防止 onLlmEditPresetChange 覆盖
-  if (isEdit && config.base_url) {
-    document.getElementById('llmEditBaseUrl').dataset.touched = '1';
-  }
-  // wish-bec4f3b9 · 已有 pricing 回填币种
-  if (config.pricing && config.pricing.currency) {
-    const _cur = document.getElementById('llmEditCurrency');
-    if (_cur) _cur.value = config.pricing.currency;
-  }
-  onLlmEditPresetChange();  // 触发一次 · 填模型下拉
-  const _dhIcon = document.getElementById('directorHelpIcon');
-  if (_dhIcon) _dhIcon.addEventListener('click', () => {
-    const h = document.getElementById('directorHelpText');
-    if (h) h.hidden = !h.hidden;
-  });
-  document.getElementById('llmEditSubmit').addEventListener('click', async () => {
-    const form = _readLlmEditForm();
-    if (!form.name || !form.model) {
-      document.getElementById('llmEditStatus').textContent = '⚠ name 和 model 必填';
-      return;
-    }
-    if (!isEdit && !form.api_key) {
-      document.getElementById('llmEditStatus').textContent = '⚠ 新增时 api_key 必填';
-      return;
-    }
-    document.getElementById('llmEditStatus').textContent = '保存中…';
-    try {
-      await onSubmit(form);
-    } catch (e) {
-      document.getElementById('llmEditStatus').innerHTML = '<i class="ri-close-fill"></i> ' + e.message;
-    }
-  });
-  // wish-bec4f3b9 · 自动查官方价 (回填≠保存 · 仍走保存按钮)
-  const _lookupBtn = document.getElementById('llmEditLookup');
-  if (_lookupBtn) _lookupBtn.addEventListener('click', async () => {
-    const _hint = document.getElementById('llmEditPricingHint');
-    _lookupBtn.disabled = true;
-    _lookupBtn.innerHTML = '<i class="ri-loader-4-line spin"></i> 查价中…';
-    try {
-      const _resp = await fetch('/llm-pricing/lookup', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          preset_id: document.getElementById('llmEditPreset')?.value || '',
-          model: document.getElementById('llmEditModel')?.value || '',
-          base_url: document.getElementById('llmEditBaseUrl')?.value || '',
-        }),
-      });
-      if (!_resp.ok) {
-        let hint = '查价失败 · 请手动填';
-        try {
-          const _j = await _resp.json();
-          if (_j && (_j.hint || _j.error)) hint = (_j.hint || _j.error) + ' · 请手动填';
-          if (_j && _j.source_url) window._llmPricingSource = _j.source_url;
-        } catch (_e) { /* ignore */ }
-        _hint.innerHTML = `<span style="color:#FC8181">${escHtml(hint)}</span>`;
-        return;
-      }
-      const _j = await _resp.json();
-      if (_j && _j.pricing) {
-        document.getElementById('llmEditCurrency').value = _j.pricing.currency || 'USD';
-        document.getElementById('llmEditPriceIn').value = _j.pricing.input ?? '';
-        document.getElementById('llmEditPriceOut').value = _j.pricing.output ?? '';
-        document.getElementById('llmEditPriceCache').value = _j.pricing.cache_read ?? '';
-        window._llmPricingSource = _j.source_url || '';
-        window._llmPricingCheckedAt = _j.checked_at || '';
-        _hint.innerHTML = `来源: <a href="${escAttr(_j.source_url || '#')}" target="_blank">官方定价页</a> · 查于 ${escHtml(_j.checked_at || '')} · <b>请核对后保存</b>`;
-      } else {
-        _hint.innerHTML = '<span style="color:#FC8181">查价失败 · 请手动填</span>';
-      }
-    } catch (e) {
-      _hint.innerHTML = `<span style="color:#FC8181">自动查价失败: ${escHtml(e.message || '')} · 请手动填写价格</span>`;
-    } finally {
-      _lookupBtn.disabled = false;
-      _lookupBtn.innerHTML = '<i class="ri-search-eye-line"></i> 自动查官方价';
-    }
-  });
-  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function hideLlmEditForm() {
-  const panel = document.getElementById('llmEditPanel');
-  if (panel) { panel.hidden = true; panel.innerHTML = ''; }
-}
-
-function _readLlmEditForm() {
-  return {
-    name: document.getElementById('llmEditName').value.trim(),
-    provider_kind: document.getElementById('llmEditKind').value,
-    base_url: document.getElementById('llmEditBaseUrl').value.trim(),
-    model: document.getElementById('llmEditModel').value.trim(),
-    api_key: document.getElementById('llmEditApiKey').value.trim(),
-    preset_id: document.getElementById('llmEditPreset').value,
-    pinned: document.getElementById('llmEditPinned').checked,
-    set_active: document.getElementById('llmEditSetActive')?.checked || false,
-    max_tokens: parseInt(document.getElementById('llmEditMaxTokens').value || '8192', 10),
-    vision: (() => {
-      const a = document.getElementById('llmEditVisionAuto');
-      const y = document.getElementById('llmEditVisionYes');
-      const n = document.getElementById('llmEditVisionNo');
-      if (a && a.checked) return null;
-      if (y && y.checked) return true;
-      if (n && n.checked) return false;
-      return null;
-    })(),
-    director: !!document.getElementById('llmEditDirector')?.checked,
-    pricing: (() => {
-      const inp = parseFloat(document.getElementById('llmEditPriceIn')?.value);
-      const outp = parseFloat(document.getElementById('llmEditPriceOut')?.value);
-      if (isNaN(inp) && isNaN(outp)) return null;   // 未配置
-      return {
-        currency: document.getElementById('llmEditCurrency')?.value || 'USD',
-        input: isNaN(inp) ? null : inp,
-        output: isNaN(outp) ? null : outp,
-        cache_read: (() => {
-          const c = parseFloat(document.getElementById('llmEditPriceCache')?.value);
-          return isNaN(c) ? null : c;
-        })(),
-        source_url: window._llmPricingSource || '',
-        checked_at: window._llmPricingCheckedAt || '',
-        note: '',
-      };
-    })(),
-  };
-}
-
-function onLlmEditPresetChange() {
-  const pid = document.getElementById('llmEditPreset').value;
-  const preset = _providerPresets.find(p => p.id === pid);
-  if (!preset) return;
-  document.getElementById('llmEditPresetNote').textContent = preset.note || '';
-  // 自动填 base_url / provider_kind 如果是新增时
-  const baseInput = document.getElementById('llmEditBaseUrl');
-  const kindSelect = document.getElementById('llmEditKind');
-  if (!baseInput.value || baseInput.dataset.touched !== '1') {
-    baseInput.value = preset.base_url || '';
-  }
-  if (preset.provider_kind) kindSelect.value = preset.provider_kind;
-  // 填模型下拉
-  const sel = document.getElementById('llmEditModelSelect');
-  sel.innerHTML = '<option value="">— 选推荐模型 / 或在下方手填 —</option>';
-  (preset.recommended_models || []).forEach(m => {
-    const opt = document.createElement('option');
-    opt.value = m.id;
-    opt.textContent = m.label;
-    opt.title = m.note || '';
-    sel.appendChild(opt);
-  });
-}
-
-function onLlmEditModelSelectChange() {
-  const sel = document.getElementById('llmEditModelSelect');
-  if (!sel.value) return;
-  document.getElementById('llmEditModel').value = sel.value;
-  // 卷三十八 · 选了推荐模型 · 自动填 max_tokens 推荐值 + 更新 hint 显示模型 spec
-  const pid = document.getElementById('llmEditPreset').value;
-  const preset = _providerPresets.find(p => p.id === pid);
-  if (!preset) return;
-  const m = (preset.recommended_models || []).find(x => x.id === sel.value);
-  if (!m) return;
-  const mtInput = document.getElementById('llmEditMaxTokens');
-  if (m.max_tokens_default) {
-    mtInput.value = m.max_tokens_default;
-    mtInput.max = m.max_output || 384000;
-  }
-  const hint = document.getElementById('llmEditMaxTokensHint');
-  if (hint) {
-    const ctx = m.context_window ? ` · 上下文上限 ${formatTokenK(m.context_window)}` : '';
-    const out = m.max_output ? ` · 输出上限 ${formatTokenK(m.max_output)}` : '';
-    hint.innerHTML = `单位: token · 约 token×0.7 个汉字${ctx}${out}<br>推荐 ${m.max_tokens_default || 8192} (按模型 spec 算的安全值)`;
-  }
-}
-
-// 1234 → "1.2K" · 12345 → "12K" · 1234567 → "1.2M"
-function formatTokenK(n) {
-  if (!n) return '0';
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace('.0', '') + 'M';
-  if (n >= 1000) return Math.round(n / 1000) + 'K';
-  return String(n);
-}
-
-async function activateConfig(cfgId) {
-  const r = await fetch('/provider-configs/' + encodeURIComponent(cfgId) + '/activate', {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + token },
-  });
-  if (!r.ok) {
-    const t = await r.text();
-    await opusAlert({ title: '激活失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
-    return;
-  }
-  const data = await r.json();
-  addSys('已激活 · ' + (data.model || '?') + ' · session 不丢');
-  await renderSettingsLLM();
-  if (typeof loadCurrentModel === 'function') loadCurrentModel();
-}
-
-async function testConfig(cfgId) {
-  const tag = document.getElementById('lcTestResult_' + cfgId);
-  if (tag) { tag.textContent = '测试中…'; tag.className = 'lc-test-result loading'; }
-  try {
-    const r = await fetch('/provider-configs/' + encodeURIComponent(cfgId) + '/test', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    const data = await r.json();
-    if (data.ok) {
-      tag.innerHTML = `<i class="ri-check-fill"></i> 通了 · 回复: ${data.reply_preview || '(空 · 但通)'}`;
-      tag.className = 'lc-test-result ok';
-    } else {
-      tag.innerHTML = `<i class="ri-close-fill"></i> ${data.error || '?'} · ${data.hint || ''}`;
-      tag.className = 'lc-test-result fail';
-    }
-  } catch (e) {
-    tag.innerHTML = '<i class="ri-close-fill"></i> 网络出错: ' + e.message;
-    tag.className = 'lc-test-result fail';
-  }
-}
-
-async function togglePinConfig(cfgId, pinned) {
-  const r = await fetch('/provider-configs/' + encodeURIComponent(cfgId), {
-    method: 'PATCH',
-    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pinned }),
-  });
-  if (!r.ok) {
-    const t = await r.text();
-    await opusAlert({ title: '改 pinned 失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
-    return;
-  }
-  await renderSettingsLLM();
-  if (typeof loadCurrentModel === 'function') loadCurrentModel();
-}
-
-async function deleteConfig(cfgId) {
-  const cfg = _providerConfigs.find(c => c.id === cfgId);
-  const ok = await opusConfirm({
-    title: '删除 LLM 配置',
-    message: `确定删除 "${cfg?.name || cfgId}"?\nAPI key 也会从本地删除·不可恢复。`,
-    okText: '删',
-    cancelText: '不删',
-    danger: true,
-  });
-  if (!ok) return;
-  const r = await fetch('/provider-configs/' + encodeURIComponent(cfgId), {
-    method: 'DELETE',
-    headers: { 'Authorization': 'Bearer ' + token },
-  });
-  if (!r.ok) {
-    const t = await r.text();
-    await opusAlert({ title: '删除失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
-    return;
-  }
-  await renderSettingsLLM();
-  if (typeof loadCurrentModel === 'function') loadCurrentModel();
-}
-
-// wish-6ee0cd18 · 总监模型入口前置 · 卡片上一键设/取消总监（复用 8ffb9d65 的 PATCH director 链路）
-async function toggleDirectorConfig(cfgId, val) {
-  const cfg = _providerConfigs.find(c => c.id === cfgId);
-  if (!cfg) return;
-  const label = cfg.name || cfg.model || cfgId;
-  const ok = await opusConfirm(val ? {
-    title: '设为顾问模型',
-    message: `把 "${label}" 设为顾问？\n\n顾问 = 能力最强的贵模型。主对话日常用便宜模型干活时 · 它只在「蓝图 / 破局 / 验收」三个唤醒点被 replan 召唤进来把关（跨 provider 现场连接 · 干净上下文不装灵魂）。\n\n全局只能有一个顾问 · 设它为顾问后 · 之前的顾问会自动取消。\n\n省钱场景：DeepSeek 干活 + K3 当顾问 · 同强度任务估省 50-70%。`,
-    okText: '设为顾问',
-    cancelText: '再想想',
-  } : {
-    title: '取消顾问模型',
-    message: `取消 "${label}" 的顾问身份？\n取消后 replan 顾问回到当前主模型（不再跨 provider 召唤贵模型）。`,
-    okText: '取消顾问',
-    cancelText: '保留',
-  });
-  if (!ok) return;
-  const r = await fetch('/provider-configs/' + encodeURIComponent(cfgId), {
-    method: 'PATCH',
-    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ director: !!val }),
-  });
-  if (!r.ok) {
-    const t = await r.text();
-    await opusAlert({ title: '改顾问失败', message: t.slice(0, 400), icon: '<i class="ri-error-warning-fill"></i>' });
-    return;
-  }
-  await renderSettingsLLM();
-  if (typeof loadCurrentModel === 'function') loadCurrentModel();
-}
-
-function showDirectorHelp() {
-  opusAlert({
-    title: '<i class="ri-vip-crown-fill"></i> 顾问模型是干啥的？',
-    message: '顾问 = 能力最强的贵模型。\n\n主对话日常用便宜模型干活时 · 它只在「蓝图 / 破局 / 验收」三个唤醒点被 replan 召唤进来把关（跨 provider 现场连接 · 干净上下文不装灵魂）。\n\n全局只能有一个顾问 · 设新的顾问后旧的自动取消。不配则不启用顾问功能 · replan 照旧用当前主模型当顾问。\n\n省钱场景：DeepSeek 干活 + K3 当顾问 · 同强度任务估省 50-70%。',
-  });
-}
-
-// ─── wish-4a6331b2 · 视觉模型配置 tab ───
-async function renderSettingsVision() {
-  const body = document.getElementById('settingsBody');
-  body.innerHTML = '<div class="dash-empty">加载中…</div>';
-
-  let cfg = { model: '', base_url: '', api_key: '', configured: false };
-  try {
-    const resp = await fetch('/vision-config', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (resp.ok) cfg = await resp.json();
-  } catch (_) {}
-
-  const hasCfg = cfg.configured;
-  body.innerHTML = `
-    <div class="llm-section">
-      <div class="llm-section-head">
-        <h3><i class="ri-eye-fill"></i> 视觉模型 · ${hasCfg ? '<span style="color:#6ed27a">已配置 ✓</span>' : '<span style="color:var(--sys)">未配置</span>'}</h3>
-        <span class="llm-hint">主模型不支持看图时自动调用 · 多模态模型（Claude/GPT/Gemini）不经过这里 · 配一个 OpenAI 兼容的视觉模型即可</span>
-      </div>
-      <div class="field">
-        <label>模型名</label>
-        <input id="visModel" type="text" value="${escHtml(cfg.model || '')}" placeholder="gemini-2.0-flash-lite">
-        <div class="field-hint">任意 OpenAI 兼容的视觉模型名</div>
-      </div>
-      <div class="field">
-        <label>API 地址</label>
-        <input id="visBaseUrl" type="text" value="${escHtml(cfg.base_url || '')}" placeholder="https://api.openai.com/v1">
-      </div>
-      <div class="field">
-        <label>API Key</label>
-        <input id="visApiKey" type="password" value="${escHtml(cfg.api_key || '')}" placeholder="${hasCfg ? '不改就留空' : 'sk-xxx'}">
-        ${hasCfg ? '<div class="field-hint">已存 key · 不改就留空</div>' : ''}
-      </div>
-      <div class="actions" style="margin-top:12px">
-        <button class="btn-primary" id="visSave"><i class="ri-save-fill"></i> 保存</button>
-        <button class="btn-ghost" id="visTest"><i class="ri-flashlight-fill"></i> 测试连接</button>
-      </div>
-      <div id="visResult" style="margin-top:8px;font-size:13px"></div>
-    </div>
-
-    <!-- wish-241e0014 · 语音识别增强 whisper (可选更新 · 设置页开关驱动安装) -->
-    <div class="llm-section" style="margin-top:18px">
-      <div class="llm-section-head">
-        <h3><i class="ri-mic-fill"></i> 语音识别增强 (whisper) · <span id="sttStatusLabel" style="color:var(--dim)">加载中…</span></h3>
-        <span class="llm-hint">微信语音转文字 · 可选功能 · 打开开关才下载依赖+模型 (~500MB) · 不需要就不装 · 装好前语音自动降级存证</span>
-      </div>
-      <div id="sttBody" style="min-height:60px"><span class="field-hint">加载中…</span></div>
-    </div>
-  `;
-
-  async function doSave(testOnly) {
-    const m = document.getElementById('visModel').value.trim();
-    const u = document.getElementById('visBaseUrl').value.trim();
-    const k = document.getElementById('visApiKey').value.trim();
-    let storedKey = k;
-    if (!m || !u || !storedKey) {
-      const resEl = document.getElementById('visResult');
-      if (resEl) resEl.innerHTML = '<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> 三个字段都要填</span>';
-      return;
-    }
-    const resEl = document.getElementById('visResult');
-    if (resEl) resEl.innerHTML = '<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 保存中…</span>';
-    try {
-      const resp = await fetch('/vision-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ model: m, base_url: u, api_key: storedKey, test: testOnly }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.detail || '保存失败')}</span>`;
-        return;
-      }
-      if (testOnly && data.test) {
-        if (data.test.ok) {
-          if (resEl) resEl.innerHTML = `<span style="color:#6ed27a"><i class="ri-check-fill"></i> 测试通过 · ${escHtml(data.test.reply)}</span>`;
-        } else {
-          if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> 连接失败: ${escHtml(data.test.error)}</span>`;
-        }
-      } else {
-        if (resEl) resEl.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 已保存</span>';
-        setTimeout(() => renderSettingsVision(), 600);
-      }
-    } catch (e) {
-      if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
-    }
-  }
-
-  document.getElementById('visSave').onclick = () => doSave(false);
-  document.getElementById('visTest').onclick = () => doSave(true);
-
-  loadSttConfig();
-}
-
-// ─── wish-241e0014 · 语音识别增强 whisper (可选更新 · 开关驱动安装) ───
-async function loadSttConfig() {
-  const $status = document.getElementById('sttStatusLabel');
-  const $body = document.getElementById('sttBody');
-  if (!$status || !$body) return;
-  let st = { deps_installed: false, model_name: 'small', model_downloaded: false, ready: false, model_dir: '', expected_size_mb: 460 };
-  try {
-    const resp = await fetch('/stt/status', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (resp.ok) st = await resp.json();
-  } catch (_) {}
-  const stateLabel = st.ready
-    ? '<span style="color:#6ed27a">已就绪 ✓</span>'
-    : (st.deps_installed && !st.model_downloaded)
-      ? '<span style="color:var(--sys)">依赖已装 · 模型未下载</span>'
-      : '<span style="color:var(--red)">未安装</span>';
-  $status.innerHTML = stateLabel;
-  $body.innerHTML = `
-    <div class="field">
-      <label style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="sttEnable" ${st.ready ? 'checked' : ''} style="width:auto">
-        启用语音识别增强 (whisper)
-      </label>
-      <div class="field-hint">开启后：①安装转写依赖 (pilk + faster-whisper) ②下载模型 (~${st.expected_size_mb}MB · 国内镜像) · 装好微信语音自动转文字</div>
-    </div>
-    <div class="field">
-      <label>模型大小</label>
-      <select id="sttModelSize" style="max-width:220px">
-        <option value="tiny" ${st.model_name === 'tiny' ? 'selected' : ''}>tiny · ~75MB · 最快最省</option>
-        <option value="base" ${st.model_name === 'base' ? 'selected' : ''}>base · ~150MB · 均衡</option>
-        <option value="small" ${st.model_name === 'small' ? 'selected' : ''}>small · ~460MB · 最准 (默认)</option>
-      </select>
-      <div class="field-hint">切换大小后需重新下载对应模型</div>
-    </div>
-    <div class="field">
-      <label>随 daemon 启动加载模型</label>
-      <div class="field-hint">开启后启动即加载 (~1-2s) · 微信语音首条秒回 · 关掉则首次语音时懒加载 (多等几秒)</div>
-      <label style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="sttBootLoad" ${st.boot_load ? 'checked' : ''} style="width:auto">
-        启动时预加载
-      </label>
-    </div>
-    <div class="actions" style="margin-top:12px">
-      <button class="btn-primary" id="sttSetup"><i class="ri-download-fill"></i> ${st.ready ? '重新安装' : '下载并启用'}</button>
-      ${st.model_downloaded ? '<button class="btn-ghost" id="sttRemove"><i class="ri-delete-bin-line"></i> 删除模型</button>' : ''}
-    </div>
-    <div id="sttResult" style="margin-top:10px;font-size:13px"></div>
-  `;
-  document.getElementById('sttSetup').onclick = () => setupStt();
-  const rmBtn = document.getElementById('sttRemove');
-  if (rmBtn) rmBtn.onclick = () => removeSttModel();
-  document.getElementById('sttModelSize').onchange = async (e) => {
-    try {
-      await fetch('/stt/model', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ model_name: e.target.value }),
-      });
-    } catch (_) {}
-  };
-  document.getElementById('sttBootLoad').onchange = async (e) => {
-    try {
-      await fetch('/stt/boot-load', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({ enabled: e.target.checked }),
-      });
-    } catch (_) {}
-  };
-}
-
-// 安装依赖 + 下载模型 (后台 · 轮询进度)
-async function setupStt() {
-  const $res = document.getElementById('sttResult');
-  if (!$res) return;
-  $res.innerHTML = '<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 开始安装依赖 (pilk + faster-whisper ~100MB) · 需 1-3 分钟…</span>';
-  try {
-    const resp = await fetch('/stt/setup', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    const data = await resp.json();
-    if (!resp.ok) {
-      $res.innerHTML = `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.detail || '安装失败')}</span>`;
-      return;
-    }
-    // 依赖装完 → 开始下载模型 → 轮询进度
-    $res.innerHTML = '<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 依赖已装 · 开始下载模型…</span>';
-    pollSttProgress();
-  } catch (e) {
-    $res.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
-  }
-}
-
-// 轮询安装进度
-function pollSttProgress() {
-  const $res = document.getElementById('sttResult');
-  if (!$res) return;
-  let n = 0;
-  const timer = setInterval(async () => {
-    n++;
-    try {
-      const resp = await fetch('/stt/status', { headers: { 'Authorization': 'Bearer ' + token } });
-      const st = await resp.json();
-      if (st.ready) {
-        clearInterval(timer);
-        $res.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 语音识别增强已就绪 · 微信语音现在能转文字了</span>';
-        loadSttConfig();
-      } else if (n > 600) {  // 10 分钟超时 (small 模型 ~460MB · hf-mirror 下载可能要几分钟)
-        clearInterval(timer);
-        $res.innerHTML = '<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> 安装超时 · 查看 daemon 日志 · 可重试</span>';
-      } else {
-        $res.innerHTML = `<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 安装中 (${Math.min(n, 600)}s) · 依赖/模型下载中…</span>`;
-      }
-    } catch (_) {
-      if (n > 600) { clearInterval(timer); }
-    }
-  }, 1000);
-}
-
-async function removeSttModel() {
-  const $res = document.getElementById('sttResult');
-  if (!$res) return;
-  if (!confirm('删除 whisper 模型文件 (~几百 MB)？依赖保留，可重新下载。')) return;
-  try {
-    const resp = await fetch('/stt/remove-model', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    const data = await resp.json();
-    $res.innerHTML = data.ok
-      ? '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 模型已删除</span>'
-      : `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.error || '删除失败')}</span>`;
-    loadSttConfig();
-  } catch (e) {
-    $res.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
-  }
-}
-
-// ─── wish-b313583b · Embedding 语义检索配置卡 (独立 tab · wish-241e0014 拆分) ───
-async function renderSettingsEmbedding() {
-  const body = document.getElementById('settingsBody');
-  body.innerHTML = `
-    <div class="llm-section">
-      <div class="llm-section-head">
-        <h3><i class="ri-brain-line"></i> 记忆语义检索 (Embedding) · <span id="embStatusLabel" style="color:var(--dim)">加载中…</span></h3>
-        <span class="llm-hint">给记忆检索加语义理解：用近义词、换种说法也能搜到相关记忆（纯字面匹配做不到）· 未配置时自动复用已配的智谱 key · 也可自定义任意兼容 API</span>
-      </div>
-      <div id="embBody" style="min-height:60px"><span class="field-hint">加载中…</span></div>
-    </div>
-  `;
-  loadEmbedConfig();
-}
-
-// ─── wish-b313583b · Embedding 语义检索配置卡 ───
-async function loadEmbedConfig() {
-  const $status = document.getElementById('embStatusLabel');
-  const $body = document.getElementById('embBody');
-  if (!$status || !$body) return;
-
-  let cfg = { enabled: true, configured: false, source: '', model: 'embedding-3', base_url: '', api_key: '', covered: 0, total: 0 };
-  try {
-    const resp = await fetch('/embed-config', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (resp.ok) cfg = await resp.json();
-  } catch (_) {}
-
-  const pct = cfg.total > 0 ? Math.round(cfg.covered / cfg.total * 100) : 0;
-  const srcLabel = cfg.source === 'user' ? '自定义配置' : (cfg.source === 'zhipu-provider' ? '自动复用智谱' : (cfg.source === 'env' ? '.env' : '未配置'));
-  $status.innerHTML = cfg.enabled
-    ? '<span style="color:#6ed27a">已开启 ✓</span>'
-    : '<span style="color:var(--red)">已关闭</span>';
-
-  $body.innerHTML = `
-    <div class="field">
-      <label>模型名</label>
-      <input id="embModel" type="text" value="${escHtml(cfg.model || '')}" placeholder="embedding-3">
-      <div class="field-hint">任意兼容 Embedding API 的模型名 · 如智谱 embedding-3 / OpenAI text-embedding-3-small</div>
-    </div>
-    <div class="field">
-      <label>API 地址</label>
-      <input id="embBaseUrl" type="text" value="${escHtml(cfg.base_url || '')}" placeholder="https://open.bigmodel.cn/api/paas/v4">
-      <div class="field-hint">OpenAI 兼容的 API 根地址 (不带 /embeddings)</div>
-    </div>
-    <div class="field">
-      <label>API Key</label>
-      <input id="embApiKey" type="password" value="${escHtml(cfg.api_key || '')}" placeholder="${cfg.configured ? '已存 key · 不改就留空' : 'sk-xxx'}">
-      <div class="field-hint">${cfg.configured ? `当前来源: ${srcLabel} · 改配置请粘贴新 key` : '未配置 · 填 key 保存后即可用'}</div>
-    </div>
-    <div class="field">
-      <label>语义增强开关</label>
-      <label class="switch" style="margin-left:0">
-        <input type="checkbox" id="embToggle" ${cfg.enabled ? 'checked' : ''} onchange="toggleEmbed()">
-        <span class="slider"></span>
-      </label>
-      <div class="field-hint">关 = 记忆检索退化为纯字面匹配 · 开 = 补语义命中 (推荐)</div>
-    </div>
-    <div class="field">
-      <label>覆盖状态</label>
-      <div class="field-hint" style="font-size:13px">
-        ${cfg.total > 0
-          ? `高信号记忆向量覆盖 <b>${cfg.covered}</b>/${cfg.total} (<b>${pct}%</b>)`
-          : '尚无记忆向量'}
-      </div>
-      <div class="field-hint" style="font-size:12px;color:#888;margin-top:2px">
-        语义索引只覆盖摘要 / 操作手册 / 知识库等高质量源 · 历史对话原文走字面检索 (FTS5) 不计入向量
-      </div>
-    </div>
-    <div class="actions" style="margin-top:8px;gap:8px">
-      <button class="btn-primary" id="embSave"><i class="ri-save-fill"></i> 保存配置</button>
-      <button class="btn-ghost" id="embTest"><i class="ri-flashlight-fill"></i> 测试连接</button>
-      <button class="btn-ghost" id="embBackfill" ${cfg.covered >= cfg.total ? 'disabled' : ''}>
-        <i class="ri-refresh-fill"></i> 回填缺失向量 (${Math.max(cfg.total - cfg.covered, 0)} 条)
-      </button>
-    </div>
-    <div id="embResult" style="margin-top:8px;font-size:13px"></div>
-  `;
-  document.getElementById('embSave').onclick = () => doEmbedSave(false);
-  document.getElementById('embTest').onclick = () => doEmbedSave(true);
-  const $bf = document.getElementById('embBackfill');
-  if ($bf) $bf.onclick = () => doEmbedBackfill();
-}
-
-async function doEmbedSave(testOnly) {
-  const m = document.getElementById('embModel').value.trim();
-  const u = document.getElementById('embBaseUrl').value.trim();
-  const k = document.getElementById('embApiKey').value.trim();
-  const resEl = document.getElementById('embResult');
-  if (!m || !u) {
-    if (resEl) resEl.innerHTML = '<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> 模型名和 API 地址必填</span>';
-    return;
-  }
-  const body = { model: m, base_url: u, action: testOnly ? 'test' : undefined };
-  // 掩码回传检测: 输入框还是掩码 (sk-****xxxx) 说明用户没改 → 不传 key · 后端用已存
-  if (k && !k.includes('****')) body.api_key = k;
-  if (resEl) resEl.innerHTML = `<span style="color:var(--sys)"><i class="ri-loader-fill"></i> ${testOnly ? '测试中…' : '保存中…'}</span>`;
-  try {
-    const resp = await fetch('/embed-config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify(body),
-    });
-    const data = await resp.json();
-    if (!resp.ok) {
-      if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.detail || '失败')}</span>`;
-      return;
-    }
-    if (testOnly && data.test) {
-      if (data.test.ok) {
-        if (resEl) resEl.innerHTML = `<span style="color:#6ed27a"><i class="ri-check-fill"></i> 连接成功 · 维度 ${data.test.dim} · ${Math.round(data.test.ms)}ms</span>`;
-      } else {
-        if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> 连接失败: ${escHtml(data.test.error)}</span>`;
-      }
-    } else {
-      if (resEl) resEl.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 已保存</span>';
-      setTimeout(() => loadEmbedConfig(), 600);
-    }
-  } catch (e) {
-    if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
-  }
-}
-
-async function toggleEmbed() {
-  const $on = document.getElementById('embToggle');
-  const enabled = $on.checked;
-  const resEl = document.getElementById('embResult');
-  try {
-    const resp = await fetch('/embed-config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ enabled }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) {
-      if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.detail || '保存失败')}</span>`;
-      return;
-    }
-    if (resEl) resEl.innerHTML = `<span style="color:#6ed27a"><i class="ri-check-fill"></i> 语义增强已${enabled ? '开启' : '关闭'} · 下次记忆查询生效</span>`;
-    loadEmbedConfig();
-  } catch (e) {
-    if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
-  }
-}
-
-async function doEmbedBackfill() {
-  const resEl = document.getElementById('embResult');
-  if (resEl) resEl.innerHTML = '<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 回填启动… 后台跑 · 刷新此页看进度</span>';
-  try {
-    const resp = await fetch('/embed-config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-      body: JSON.stringify({ action: 'backfill' }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) {
-      if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.detail || '启动失败')}</span>`;
-      return;
-    }
-    if (resEl) resEl.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 后台回填已启动 · 稍后刷新看覆盖增长</span>';
-  } catch (e) {
-    if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
-  }
-}
-
-function renderSettingsAccess() {
-  const body = document.getElementById('settingsBody');
-  body.innerHTML = `
-    <div class="llm-section">
-      <div class="llm-section-head"><h3>🔑 API Token · 决定 WebUI 能否连 daemon</h3></div>
-      <div class="field">
-        <label>API Token (Bearer)</label>
-        <input id="accTokenIn" type="password" value="${escHtml(token || '')}" placeholder="OPUS_API_TOKEN 的值">
-        <div class="field-hint">⚠ 这是【连接 daemon 的门禁钥匙】· 不是 LLM 的 API Key（模型 Key 在「模型/Provider」里配）</div>
-        <div class="field-hint">在 daemon 目录的 <code>.env</code> 文件里找 <code>OPUS_API_TOKEN</code> 那一行 · 复制粘贴进来 · 填一次浏览器记住 · 本机访问通常自动放行不用填</div>
-      </div>
-
-      <div class="llm-section-head" style="margin-top:18px"><h3>📂 当前 Session</h3></div>
-      <div class="field">
-        <label>Session ID</label>
-        <input id="accSessionIn" type="text" value="${escHtml(sessionId || '')}" placeholder="留空 = 新对话">
-      </div>
-
-      <div class="llm-section-head" style="margin-top:18px"><h3>✋ 工具确认策略</h3></div>
-      <div class="field">
-        <label>Auto-confirm 策略</label>
-        <select id="accAutoIn">
-          <option value="auto" ${autoConfirm === 'auto' ? 'selected' : ''}>auto · 只跑 AUTO 工具 (最保守)</option>
-          <option value="confirm" ${autoConfirm === 'confirm' ? 'selected' : ''}>confirm · AUTO + CONFIRM 自动跑 (推荐)</option>
-          <option value="guard" ${autoConfirm === 'guard' ? 'selected' : ''}>guard · 三档全开·全自动 (无人值守 yolo · 慎用)</option>
-        </select>
-        <div class="field-hint">默认 confirm 档下·GUARD 工具会在 WebUI 弹卡片等你点；这个 guard 预设连 GUARD 也自动放行·只在没人能点(无人值守)时才用</div>
-      </div>
-
-      <!-- wish-f563a56d · trusted commands · 用户 临时给 Daemonkey 30min/24h/永久 信任窗口 -->
-      <div class="llm-section-head" style="margin-top:18px"><h3>🔓 Trusted Commands · 信任清单</h3></div>
-      <div class="field-hint" style="margin-bottom:8px">
-        当 auto_confirm=auto 时·CONFIRM 档命令 (例如 <code>pip install</code>) 会被 skip。
-        把命令头加到信任清单后·窗口期内 Daemonkey 调这类命令自动通过。
-        <br><strong>红线</strong>: GUARD 黑名单 (rm -rf / format / git push --force) 永远不会被 trusted。
-      </div>
-      <div class="field" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-        <div style="flex:1;min-width:180px">
-          <label style="font-size:11px">命令头 pattern</label>
-          <input id="accTrustPattern" type="text" placeholder="例如: pip install" style="width:100%">
-        </div>
-        <div>
-          <label style="font-size:11px">时长</label>
-          <select id="accTrustDuration">
-            <option value="30">30 分钟</option>
-            <option value="240">4 小时</option>
-            <option value="1440">24 小时</option>
-            <option value="0">永久 (谨慎)</option>
-          </select>
-        </div>
-        <div style="flex:2;min-width:180px">
-          <label style="font-size:11px">理由 (审计用 · 可选)</label>
-          <input id="accTrustReason" type="text" placeholder="例如: 用户 让 Daemonkey 装 duckduckgo_search">
-        </div>
-        <button class="btn-primary" onclick="addTrustedCommand()">➕ 加入</button>
-      </div>
-      <div id="accTrustList" class="field-hint" style="margin-top:8px;font-size:12px">加载中…</div>
-
-      <div class="actions" style="margin-top:18px">
-        <button class="btn-primary" onclick="saveAccessSettings()">保存</button>
-      </div>
-      <div id="accSaveStatus" class="field-hint" style="margin-top:6px"></div>
-    </div>
-  `;
-  // 异步刷一次 trusted 列表
-  setTimeout(() => { try { refreshTrustedCommands(); } catch {} }, 50);
-}
-
-// wish-f563a56d · trusted commands UI helpers
-async function refreshTrustedCommands() {
-  const target = document.getElementById('accTrustList');
-  if (!target) return;
-  if (!token) { target.textContent = '⚠ 先填 token'; return; }
-  try {
-    const r = await fetch('/trusted_commands', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) {
-      target.innerHTML = '<i class="ri-close-fill"></i> 加载失败 HTTP ' + r.status;
-      return;
-    }
-    const j = await r.json();
-    const items = (j && j.items) || [];
-    if (!items.length) {
-      target.innerHTML = '<i>暂无 trusted commands · Daemonkey 调 CONFIRM 档命令时会被 auto_confirm 策略卡住</i>';
-      return;
-    }
-    const rows = items.map(it => {
-      const remain = it._remaining_seconds;
-      let remainStr;
-      if (remain === null) {
-        remainStr = '<span style="color:#f59e0b">永久</span>';
-      } else if (remain <= 0) {
-        remainStr = '<span style="color:#999">已过期</span>';
-      } else if (remain < 60) {
-        remainStr = remain + 's';
-      } else if (remain < 3600) {
-        remainStr = Math.floor(remain / 60) + 'min';
-      } else {
-        remainStr = Math.floor(remain / 3600) + 'h ' + Math.floor((remain % 3600) / 60) + 'min';
-      }
-      const reasonStr = it.reason ? ' · ' + escHtml(it.reason) : '';
-      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-bottom:1px solid #2a2f3a">
-        <span><code>${escHtml(it.pattern)}</code> · ${remainStr}${reasonStr}</span>
-        <button onclick="removeTrustedCommand('${jsStr(it.id)}')" style="background:transparent;border:1px solid #475569;color:#94a3b8;padding:2px 8px;border-radius:4px;cursor:pointer">删除</button>
-      </div>`;
-    }).join('');
-    target.innerHTML = rows;
-  } catch (e) {
-    target.innerHTML = '<i class="ri-close-fill"></i> ' + e.message;
-  }
-}
-
-async function addTrustedCommand() {
-  const pat = document.getElementById('accTrustPattern').value.trim();
-  const dur = parseInt(document.getElementById('accTrustDuration').value, 10);
-  const reason = document.getElementById('accTrustReason').value.trim();
-  if (!pat) {
-    opusAlert({ title: '空 pattern', message: '请填命令头 (例如 "pip install")' });
-    return;
-  }
-  if (!token) {
-    opusAlert({ title: '缺 token', message: '请先填 API token' });
-    return;
-  }
-  try {
-    const r = await fetch('/trusted_commands', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        pattern: pat,
-        duration_minutes: dur || null,
-        reason,
-      }),
-    });
-    if (!r.ok) {
-      const txt = await r.text();
-      opusAlert({ title: '加入失败', message: 'HTTP ' + r.status + '\n' + txt });
-      return;
-    }
-    document.getElementById('accTrustPattern').value = '';
-    document.getElementById('accTrustReason').value = '';
-    await refreshTrustedCommands();
-  } catch (e) {
-    opusAlert({ title: '加入失败', message: e.message });
-  }
-}
-
-async function removeTrustedCommand(itemId) {
-  if (!token) return;
-  try {
-    const r = await fetch('/trusted_commands/' + encodeURIComponent(itemId), {
-      method: 'DELETE',
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) {
-      const txt = await r.text();
-      opusAlert({ title: '删除失败', message: 'HTTP ' + r.status + '\n' + txt });
-      return;
-    }
-    await refreshTrustedCommands();
-  } catch (e) {
-    opusAlert({ title: '删除失败', message: e.message });
-  }
-}
-
-function saveAccessSettings() {
-  const newToken = document.getElementById('accTokenIn').value.trim();
-  const newSession = document.getElementById('accSessionIn').value.trim();
-  const newAuto = document.getElementById('accAutoIn').value;
-  token = newToken;
-  sessionId = newSession;
-  autoConfirm = newAuto;
-  localStorage.setItem(STORAGE.token, token);
-  localStorage.setItem(STORAGE.session, sessionId);
-  localStorage.setItem(STORAGE.autoConfirm, autoConfirm);
-  updateCurrentLabel();
-  document.getElementById('accSaveStatus').innerHTML = '<i class="ri-check-fill"></i> 已保存 · ' + (token ? '可以聊了' : '⚠ token 为空');
-  document.getElementById('accSaveStatus').className = 'field-hint ok';
-  // 同步刷新右上角模型切换器
-  if (typeof loadCurrentModel === 'function') loadCurrentModel();
-}
-
-// ─── 卷六十一 · 微信 & 主动 CALL 设置面板 ───
-let _wechatQrPoll = null;
-
-function renderSettingsWechat() {
-  const body = document.getElementById('settingsBody');
-  body.innerHTML = `
-    <div class="llm-section">
-      <div class="chan-grid">
-        <!-- 微信卡 -->
-        <div class="chan-card">
-          <div class="chan-card-head">
-            <div class="chan-icon wx"><i class="ri-wechat-fill"></i></div>
-            <div><div class="chan-title">微信 · 官方 ClawBot (iLink)</div>
-                 <div class="chan-sub">纯 HTTP 官方接口 · 不碰客户端 · 无封号风险</div></div>
-            <span class="chan-badge off" id="wechatBadge">未连接</span>
-          </div>
-          <div class="chan-live" id="wechatStatus"><span class="live-dot idle"></span> 加载中…</div>
-          <div class="chan-actions">
-            <button class="btn-primary" onclick="wechatGenQr()"><i class="ri-qr-code-line"></i> 生成扫码登录二维码</button>
-            <span class="field-hint" style="margin:0">手机微信扫一扫 → 授权『微信 ClawBot』· 重新扫可换绑</span>
-          </div>
-          <div id="wechatQrBox" style="display:none;text-align:center;margin-top:12px"></div>
-          <div class="chan-info-bar warn"><i class="ri-time-line"></i> <b>24 小时窗口</b>：你在微信先发一句 → 开窗 · 窗口内 Daemonkey 能主动找你 · 跨天零互动发不出（腾讯反骚扰）</div>
-        </div>
-        <!-- 飞书卡 (0.9.1 · 两层: L1 webhook 推送 + L2 机器人对话) -->
-        <div class="chan-card">
-          <div class="chan-card-head">
-            <div class="chan-icon fs"><i class="ri-flight-takeoff-line"></i></div>
-            <div><div class="chan-title">飞书 · 对话 & 工作区</div>
-                 <div class="chan-sub">群聊 @即回 · 读文档/表格 · 总结群消息</div></div>
-            <span class="chan-badge off" id="feishuBadge">未配置</span>
-          </div>
-          <div class="chan-live" id="feishuStatus"><span class="live-dot idle"></span> 加载中…</div>
-          <div class="chan-form">
-            <div><label class="field-label">App ID</label>
-                 <input id="feishuAppId" class="field-input" placeholder="cli_xxxxxxxxxxxxxxxx"
-                        onkeydown="if(event.key==='Enter')feishuSaveConfig()"/></div>
-            <div><label class="field-label">App Secret</label>
-                 <input id="feishuAppSecret" type="password" class="field-input" placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                        onkeydown="if(event.key==='Enter')feishuSaveConfig()"/></div>
-          </div>
-          <div class="chan-actions">
-            <button class="btn-primary" onclick="feishuSaveConfig()"><i class="ri-save-fill"></i> 保存并连接</button>
-            <button class="btn-ghost" onclick="feishuToggle()"><i class="ri-power-line"></i> 启用/停用</button>
-            <span id="feishuSaveMsg" class="field-hint" style="margin:0"></span>
-          </div>
-          <details class="chan-wizard">
-            <summary><i class="ri-magic-line"></i> 还没有机器人？6 步接入向导</summary>
-            <ol class="wizard-steps">
-              <li><a href="https://open.feishu.cn/app?lang=zh-CN" target="_blank">创建企业自建应用</a>（开放平台 → 开发者后台 → 创建企业自建应用）</li>
-              <li>添加 <b>机器人</b> 能力（应用能力 → 添加应用能力 → 机器人 → 创建）</li>
-              <li>添加权限：飞书「权限管理」→ <b>批量导入</b> → 粘贴下面的 JSON → 一次配齐（也可逐条搜索添加）</li>
-              <li>事件订阅：选 <b>使用长连接接收事件</b> + 订阅 <code>im.message.receive_v1</code>（事件与回调）</li>
-              <li><b>创建版本并发布</b>（版本管理与发布 · 可用范围含自己）← 搜不到机器人 99% 是漏这步</li>
-              <li>回来填上方 App ID / Secret → 保存并连接</li>
-            </ol>
-            <div class="perms-import">
-              <div class="perms-import-head"><i class="ri-shield-keyhole-line"></i> 权限 JSON · 一键配齐
-                <button class="btn-ghost perms-copy" onclick="copyFeishuScopes(this)"><i class="ri-file-copy-line"></i> 复制</button></div>
-              <pre class="perms-json">{
-  "scopes": {
-    "tenant": [
-      "im:message.p2p_msg:readonly",
-      "im:message:send_as_bot",
-      "im:message.group_at_msg:readonly",
-      "im:message.group_msg",
-      "im:message:readonly",
-      "im:chat:readonly",
-      "im:resource",
-      "docx:document:readonly",
-      "sheets:spreadsheet:readonly",
-      "bitable:app:readonly"
-    ],
-    "user": [
-      "docx:document:readonly"
-    ]
-  }
-}</pre>
-              <div class="perms-hint">用法：飞书开放平台 → 你的应用 → <b>权限管理</b> → 右上角 <b>批量导入</b> → 粘贴 → 确认 → <b>创建版本并发布</b>（不发布不生效！）。读文档/表格/群消息（im:message.group_msg=拉群历史 · 不带 :readonly）+ 群聊@（group_at_msg:readonly）+ 读文件（im:resource）都在里面了。</div>
-            </div>
-          </details>
-          <div class="chan-info-bar ok" style="margin-top:10px"><i class="ri-check-line"></i> 官方 API + 长连接 · <b>无窗口限制</b> · 发布后去飞书搜你的机器人就能聊</div>
-        </div>
-        <!-- 频率卡 -->
-        <div class="chan-card">
-          <div class="chan-card-head">
-            <div class="chan-icon cat"><i class="ri-paw-line"></i></div>
-            <div><div class="chan-title">主动找你的频率</div>
-                 <div class="chan-sub">高冷猫 ↔ 黏人犬 · 夜里永远不打扰</div></div>
-          </div>
-          <div id="wechatFreq" class="freq-seg">加载中…</div>
-          <div class="chan-info-bar ok" style="margin-top:12px"><i class="ri-sun-line"></i> <span id="wechatFreqDesc">命中后随机时刻开口 · 23:00–9:00 静默</span></div>
-        </div>
-      </div>
-    </div>
-  `;
-  setTimeout(() => { wechatLoadStatus(); wechatLoadFrequency(); feishuLoadStatus(); }, 30);
-}
-
-// ─── 0.9.0 (wish-aac348a1) · 飞书配置 UI ───
-
-async function feishuLoadStatus() {
-  const el = document.getElementById('feishuStatus');
-  if (!el) return;
-  if (!token) { el.innerHTML = '⚠ 先在『访问 & 会话』填 API Token'; return; }
-  try {
-    const r = await fetch('/api/feishu/status', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const s = await r.json();
-    const listener = s.listener || {};
-    const badge = document.getElementById('feishuBadge');
-    if (badge) {
-      if (s.configured && s.token_ok && listener.alive) { badge.textContent = '在线'; badge.className = 'chan-badge on'; }
-      else if (s.configured && !s.token_ok) { badge.textContent = 'Token 异常'; badge.className = 'chan-badge warn'; }
-      else { badge.textContent = '未配置'; badge.className = 'chan-badge off'; }
-    }
-    let liveInner;
-    if (!s.configured) {
-      liveInner = '<span class="live-dot idle"></span> 未配置 · 填 App ID + Secret 保存即连 · 群里 @ 它就能用';
-    } else {
-      const chips = [
-        listener.ws_connected ? '<span class="chan-chip">ws <b>已连</b></span>' : '',
-        listener.messages_in != null ? `<span class="chan-chip">收 <b>${listener.messages_in}</b></span><span class="chan-chip">回 <b>${listener.replies_out}</b></span>` : '',
-        !s.token_ok ? '<span style="color:#fbbf24">· token 获取失败</span>' : '',
-      ].filter(Boolean).join(' ');
-      liveInner = `<span class="live-dot ${listener.alive ? 'on' : 'off'}"></span> 长连接 ${listener.alive ? '在线' : '离线'} ${chips}`;
-    }
-    el.innerHTML = liveInner;
-    if (listener.last_error) {
-      const info = el.parentElement.querySelector('.chan-info-bar.ok');
-      if (info) {
-        info.className = 'chan-info-bar warn';
-        info.innerHTML = `<i class="ri-alert-line"></i> ${escHtml(listener.last_error)} · 去飞书开放平台检查权限/事件订阅`;
-      }
-    }
-    // 回填已存配置 (只回填 app_id · secret 不回显)
-    if (s.configured && document.getElementById('feishuAppId')) {
-      document.getElementById('feishuAppId').placeholder = '已保存: ' + s.app_id;
-      document.getElementById('feishuAppSecret').placeholder = '已保存 · 留空=不修改';
-    }
-  } catch (e) {
-    el.innerHTML = '<i class="ri-close-fill"></i> 飞书状态加载失败: ' + escHtml(e.message);
-  }
-}
-
-async function feishuSaveConfig() {
-  const msg = document.getElementById('feishuSaveMsg');
-  const appId = (document.getElementById('feishuAppId').value || '').trim();
-  const appSecret = (document.getElementById('feishuAppSecret').value || '').trim();
-  if (!appId && !appSecret) { msg.innerHTML = '<span style="color:#f59e0b">填一下 App ID 或 Secret</span>'; return; }
-  if (!token) { msg.innerHTML = '<span style="color:#f59e0b">⚠ 先在『访问 & 会话』填 API Token</span>'; return; }
-  msg.innerHTML = '⏳ 保存中…';
-  try {
-    const r = await fetch('/api/feishu/config', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ app_id: appId, app_secret: appSecret, enabled: true }),
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || ('HTTP ' + r.status));
-    msg.innerHTML = d.token_ok
-      ? '<span style="color:#34d399"><i class="ri-check-fill"></i> 已保存并连接成功！在飞书里找机器人发句话试试</span>'
-      : '<span style="color:#f59e0b">⚠ 已保存但 token 失败: ' + escHtml(d.warning || '') + '</span>';
-    document.getElementById('feishuAppId').value = '';
-    document.getElementById('feishuAppSecret').value = '';
-    feishuLoadStatus();
-  } catch (e) {
-    msg.innerHTML = '<span style="color:#f87171"><i class="ri-close-fill"></i> 保存失败: ' + escHtml(e.message) + '</span>';
-  }
-}
-
-async function feishuToggle() {
-  if (!token) return;
-  try {
-    const r = await fetch('/api/feishu/toggle', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: true }),
-    });
-    const d = await r.json();
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    feishuLoadStatus();
-  } catch (e) {
-    const el = document.getElementById('feishuSaveMsg');
-    if (el) el.innerHTML = '<span style="color:#f87171">切换失败: ' + escHtml(e.message) + '</span>';
-  }
-}
-
-// ─── 0.9.1 · L1 群机器人 webhook (推送模式) ───
-
-async function copyFeishuScopes(btn) {
-  const json = `{
-  "scopes": {
-    "tenant": [
-      "im:message.p2p_msg:readonly",
-      "im:message:send_as_bot",
-      "im:message.group_at_msg:readonly",
-      "im:message.group_msg",
-      "im:message:readonly",
-      "im:chat:readonly",
-      "im:resource",
-      "docx:document:readonly",
-      "sheets:spreadsheet:readonly",
-      "bitable:app:readonly"
-    ],
-    "user": [
-      "docx:document:readonly"
-    ]
-  }
-}`;
-  try {
-    await navigator.clipboard.writeText(json);
-    if (btn) { const old = btn.innerHTML; btn.innerHTML = '<i class="ri-check-fill"></i> 已复制'; setTimeout(() => { btn.innerHTML = old; }, 1500); }
-  } catch (e) {
-    if (btn) btn.innerHTML = '<i class="ri-close-fill"></i> 复制失败'; 
-  }
-}
-
-async function wechatLoadStatus() {
-  const el = document.getElementById('wechatStatus');
-  if (!el) return;
-  if (!token) { el.innerHTML = '⚠ 先在『访问 & 会话』填 API Token'; return; }
-  try {
-    const r = await fetch('/api/wechat/status', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const s = await r.json();
-    const listener = s.listener || {};
-    const badge = document.getElementById('wechatBadge');
-    if (badge) {
-      if (!s.configured) { badge.textContent = '未连接'; badge.className = 'chan-badge off'; }
-      else if (s.silent) { badge.textContent = '已静默'; badge.className = 'chan-badge warn'; }
-      else if (!s.window_open) { badge.textContent = '窗口已关'; badge.className = 'chan-badge warn'; }
-      else { badge.textContent = '已连接'; badge.className = 'chan-badge on'; }
-    }
-    let liveInner;
-    if (!s.configured) {
-      liveInner = '<span class="live-dot idle"></span> 未连接 · 生成二维码扫码登录后开启';
-    } else {
-      const winTxt = s.window_open
-        ? `<span style="color:var(--dim2)">· 窗口开着 (${s.context_age_hours ?? '?'}h 前说过话)</span>`
-        : s.silent
-          ? '<span style="color:var(--dim2)">· 已静默 (微信发 opus start 唤醒)</span>'
-          : '<span style="color:#fbbf24">· 24h 窗口已关 · 你先发一句即开</span>';
-      liveInner = `<span class="live-dot ${listener.alive ? 'on' : 'off'}"></span> 监听 ${listener.alive ? '在线' : '离线'}
-        ${listener.messages_in != null ? `<span class="chan-chip">收 <b>${listener.messages_in}</b></span><span class="chan-chip">回 <b>${listener.replies_out}</b></span>` : ''}
-        ${winTxt}`;
-    }
-    el.innerHTML = liveInner;
-  } catch (e) {
-    el.innerHTML = '<i class="ri-close-fill"></i> 状态加载失败: ' + escHtml(e.message);
-  }
-}
-
-async function wechatGenQr() {
-  const box = document.getElementById('wechatQrBox');
-  if (!token) { opusAlert({ title: '缺 token', message: '先在『访问 & 会话』填 API Token' }); return; }
-  if (_wechatQrPoll) { clearInterval(_wechatQrPoll); _wechatQrPoll = null; }
-  box.style.display = 'block';
-  box.innerHTML = '<div class="field-hint">取二维码中…</div>';
-  try {
-    const r = await fetch('/api/wechat/login/qr', {
-      method: 'POST', headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const d = await r.json();
-    box.innerHTML = `
-      <img src="${d.qr_data_uri}" alt="微信扫码" style="width:220px;height:220px;border-radius:10px;background:#fff;padding:8px"/>
-      <div class="field-hint" style="margin-top:6px">用<b>手机微信</b>扫这个码 → 授权。约 3-4 分钟有效。</div>
-      <div id="wechatQrPollMsg" class="field-hint" style="margin-top:4px">⏳ 等待扫码…</div>
-    `;
-    let tries = 0;
-    _wechatQrPoll = setInterval(() => wechatPollQr(d.qrcode_id, ++tries), 2500);
-  } catch (e) {
-    box.innerHTML = '<div class="field-hint fail"><i class="ri-close-fill"></i> ' + escHtml(e.message) + '</div>';
-  }
-}
-
-async function wechatPollQr(qrcodeId, tries) {
-  const msg = document.getElementById('wechatQrPollMsg');
-  if (tries > 96) { // ~4 分钟
-    if (_wechatQrPoll) { clearInterval(_wechatQrPoll); _wechatQrPoll = null; }
-    if (msg) msg.innerHTML = '⌛ 二维码过期了·点上面按钮重新生成';
-    return;
-  }
-  try {
-    const r = await fetch('/api/wechat/login/poll?qrcode=' + encodeURIComponent(qrcodeId), {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    const d = await r.json();
-    if (d.logged_in) {
-      if (_wechatQrPoll) { clearInterval(_wechatQrPoll); _wechatQrPoll = null; }
-      if (msg) msg.innerHTML = '<span style="color:#34d399"><i class="ri-check-fill"></i> 已连接!监听已自动拉起·你在微信发句话试试</span>';
-      wechatLoadStatus();
-    } else if (d.status === 'expired') {
-      if (_wechatQrPoll) { clearInterval(_wechatQrPoll); _wechatQrPoll = null; }
-      if (msg) msg.innerHTML = '⌛ 二维码过期·点上面按钮重新生成';
-    } else if (msg) {
-      msg.innerHTML = '⏳ 等待扫码…';
-    }
-  } catch (e) { /* 网络抖动·下一拍再试 */ }
-}
-
-let _wechatFreqPresets = [];
-async function wechatLoadFrequency() {
-  const el = document.getElementById('wechatFreq');
-  if (!el) return;
-  if (!token) { el.innerHTML = '⚠ 先填 token'; return; }
-  try {
-    const r = await fetch('/api/wechat/frequency', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const d = await r.json();
-    _wechatFreqPresets = d.presets || [];
-    wechatRenderFreq(d.current);
-  } catch (e) {
-    el.innerHTML = '<i class="ri-close-fill"></i> 加载失败: ' + escHtml(e.message);
-  }
-}
-
-// 0.9.0 · 频率档 emoji → Remix 表情图标 (统一线条风格 · 替代 🐱🐶 emoji)
-const _FREQ_EMOJI_ICON = {
-  '\u{1F6AB}': 'ri-close-circle-line',   // 🚫 关闭
-  '\u{1F63C}': 'ri-emotion-2-line',      // 😼 高冷猫 → 面瘫脸
-  '\u{1F431}': 'ri-emotion-2-line',      // 🐱 猫系
-  '\u2696\uFE0F': 'ri-emotion-normal-line', // ⚖️ 均衡 → 正常脸
-  '\u{1F436}': 'ri-emotion-happy-line',  // 🐶 犬系 → 笑脸
-  '\u{1F415}': 'ri-emotion-happy-line',  // 🐕 黏人犬
-};
-function freqIcon(emoji) { return _FREQ_EMOJI_ICON[emoji] || null; }
-
-function wechatRenderFreq(currentId) {
-  const el = document.getElementById('wechatFreq');
-  const desc = document.getElementById('wechatFreqDesc');
-  el.innerHTML = _wechatFreqPresets.map(p => {
-    const ic = freqIcon(p.emoji);
-    const iconHtml = ic ? `<span class="freq-emoji"><i class="${ic}"></i></span>` : `<span class="freq-emoji">${p.emoji}</span>`;
-    return `<button class="freq-pill ${p.id === currentId ? 'active' : ''}" onclick="wechatSetFrequency('${p.id}')" title="${escHtml(p.desc)}">
-      ${iconHtml}<span class="freq-label">${escHtml(p.label)}</span>
-    </button>`;
-  }).join('');
-  const cur = _wechatFreqPresets.find(p => p.id === currentId);
-  if (desc) {
-    const ic = cur ? freqIcon(cur.emoji) : null;
-    const curIcon = ic ? `<i class="${ic}"></i>` : (cur ? cur.emoji : '');
-    desc.innerHTML = currentId === 'custom'
-      ? '当前是<b>自定义</b>档 (你手改过 .env 的 OPUS_PROACTIVE_* )·点任意档位归一'
-      : (cur ? `当前:${curIcon} <b>${escHtml(cur.label)}</b> · ${escHtml(cur.desc)}` : '');
-  }
-}
-
-async function wechatSetFrequency(presetId) {
-  if (!token) return;
-  const el = document.getElementById('wechatFreq');
-  try {
-    const r = await fetch('/api/wechat/frequency', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ preset: presetId }),
-    });
-    if (!r.ok) { const t = await r.text(); throw new Error('HTTP ' + r.status + ' ' + t); }
-    const d = await r.json();
-    wechatRenderFreq(d.current);
-  } catch (e) {
-    opusAlert({ title: '设置失败', message: e.message });
-  }
-}
-
-// ─── wish-fb6b7427 · 通知设置面板 ───
-// 三条通道各自开关 · 音效(事项A已上线) / Windows toast(事项B) / 标签闪烁(事项C)
-async function renderSettingsNotify() {
-  const body = document.getElementById('settingsBody');
-  body.innerHTML = '<div class="dash-empty">加载中…</div>';
-
-  let cfg = { pet_sound: true, windows_toast: false, tab_flash: false };
-  try {
-    const resp = await fetch('/notification-config', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (resp.ok) cfg = await resp.json();
-  } catch (_) {}
-
-  body.innerHTML = `
-    <div class="llm-section">
-      <div class="llm-section-head">
-        <h3><i class="ri-notification-3-fill"></i> 通知 · 干完 / 等你拍板时怎么提醒你</h3>
-        <span class="llm-hint">三条通道各自开关 · 保存即生效 · 不用重启 daemon</span>
-      </div>
-      <div class="field">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="ntfPetSound" ${cfg.pet_sound ? 'checked' : ''}>
-          <span><i class="ri-volume-up-fill"></i> 桌宠提示音</span>
-        </label>
-        <div class="field-hint">干完一个 turn 时 · 桌宠「喵」动作 + 播 ding/manbo.wav · 需桌宠在跑</div>
-      </div>
-      <div class="field">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="ntfToast" ${cfg.windows_toast ? 'checked' : ''}>
-          <span><i class="ri-windows-fill"></i> Windows 系统通知</span>
-        </label>
-        <div class="field-hint">浏览器不开 WebUI 也能在通知中心收到 · 需 daemon 机装 winotify</div>
-      </div>
-      <div class="field">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="ntfTabFlash" ${cfg.tab_flash ? 'checked' : ''}>
-          <span><i class="ri-flashlight-fill"></i> 浏览器标签闪烁</span>
-        </label>
-        <div class="field-hint">WebUI 标签在后台时标题闪烁 · 切回标签自动停</div>
-      </div>
-      <div class="actions" style="margin-top:12px">
-        <button class="btn-primary" id="ntfSave"><i class="ri-save-fill"></i> 保存</button>
-      </div>
-      <div id="ntfResult" style="margin-top:8px;font-size:13px"></div>
-    </div>
-  `;
-
-  document.getElementById('ntfSave').onclick = async () => {
-    const resEl = document.getElementById('ntfResult');
-    resEl.innerHTML = '<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 保存中…</span>';
-    try {
-      const resp = await fetch('/notification-config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
-        body: JSON.stringify({
-          pet_sound: document.getElementById('ntfPetSound').checked,
-          windows_toast: document.getElementById('ntfToast').checked,
-          tab_flash: document.getElementById('ntfTabFlash').checked,
-        }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.detail || '保存失败')}</span>`;
-        return;
-      }
-      if (data.config) _ntfCfg = data.config;  // 保存即生效 · 不用刷新
-      resEl.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 已保存 · 下次完成通知起生效</span>';
-    } catch (e) {
-      resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
-    }
-  };
-}
-
-function renderSettingsData() {
-  const body = document.getElementById('settingsBody');
-  body.innerHTML = `
-    <div class="llm-section">
-      <div class="llm-section-head"><h3><i class="ri-save-fill"></i> 本地数据</h3></div>
-      <div class="field-hint">
-        浏览器本地存了:
-        <ul style="margin:6px 0 0 18px;padding:0;color:var(--dim)">
-          <li>token (Bearer · 跟 daemon 握手用)</li>
-          <li>sessionId (当前对话 id)</li>
-          <li>autoConfirm (工具确认策略)</li>
-          <li>别名 (session 重命名 / 置顶 / 归档)</li>
-        </ul>
-        服务端的数据 (对话历史 / 心愿单 / 雷达 / 工坊) 不受影响 · 都在本机磁盘.
-      </div>
-      <div class="actions" style="margin-top:18px">
-        <button class="btn-danger" onclick="resetAll()">清空本地数据 + 刷新</button>
-      </div>
-    </div>
-  `;
-}
-
-async function resetAll() {
-  const ok = await opusConfirm({
-    title: '清空所有本地数据',
-    message: '会清掉 token / sessionId / 别名等浏览器本地数据·然后刷新。\n服务端的对话不会动·随时能找回来。',
-    okText: '清空并退出',
-    cancelText: '再想想',
-    danger: true,
-  });
-  if (!ok) return;
-  localStorage.clear();
-  location.reload();
-}
 $modal.addEventListener('click', e => { if (e.target === $modal) closeSettings(); });
 
 // ──────────────────────────────────────────────────────────────
@@ -5024,7 +2679,7 @@ async function renderDocsView() {
   if (!dv) return;
   dv.innerHTML = `
     <div class="docs-view-head">
-      <span class="docs-view-title"><i class="ri-file-list-3-fill"></i> 本会话产物</span>
+      <span class="docs-view-title"><i class="ri-file-list-3-fill"></i> 本话题产物</span>
       <span class="docs-view-sub" id="docsViewSub">收集…</span>
       <button class="docs-view-close" onclick="closeDocsView()" title="返回对话"><i class="ri-arrow-left-line"></i> 返回对话</button>
     </div>
@@ -5037,7 +2692,7 @@ async function renderDocsView() {
   if (!docs.length) {
     body.innerHTML = `<div class="docs-view-empty">
       <i class="ri-file-list-3-line" style="font-size:34px;opacity:.3"></i>
-      <div>本会话还没有产出</div>
+      <div>本话题还没有产出</div>
       <div class="docs-view-hint">让 Daemonkey 生成报告 / 口播稿 / 周报后 · 文档会出现在这里</div>
     </div>`;
     return;
@@ -5077,8 +2732,8 @@ function _docCardHtml(d) {
     domain = m ? m[1] : '';
     filename = m ? m[2] : '';
   }
-  const isPreviewable = ['md','txt','png','jpg','jpeg','gif','webp','mp3','wav','mp4','webm','pdf'].includes(d.ext);
-  const btn = (ic, label, fn, cls) => `<button class="dvi-btn ${cls}" onclick="event.stopPropagation();${fn}('${domain}','${filename}','${d.ext}')" title="${label}"><i class="${ic}"></i><span>${label}</span></button>`;
+  const isPreviewable = ['md','txt','png','jpg','jpeg','gif','webp','mp3','wav','mp4','webm','pdf','html','htm','pptx','ppt','xlsx','xls','docx','doc'].includes(d.ext);
+  const btn = (ic, label, fn, cls) => `<button class="dvi-btn ${cls}" onclick="event.stopPropagation();${fn}('${jsStr(domain)}','${jsStr(filename)}','${jsStr(d.ext)}')" title="${escHtml(label)}"><i class="${ic}"></i><span>${label}</span></button>`;
   return `<div class="docs-view-item" data-ext="${d.ext}" data-url="${safeUrl}" data-domain="${domain}" data-filename="${filename}">
     <span class="dvi-ic">${_docIcon(d.ext)}</span>
     <span class="dvi-body">
@@ -5097,6 +2752,16 @@ function _docCardHtml(d) {
 // md/txt → fetch preview 渲染 markdown; 图片/音频/视频/pdf → 弹框内嵌; docx/xlsx/pptx → 下载
 async function _docOpenInBrowser(domain, filename, ext) {
   try {
+    const rel = domain === 'outputs'
+      ? ('data/workshop/outputs/' + filename)
+      : (domain === 'reports'
+        ? ('data/reports/' + filename)
+        : (domain === 'presentations'
+          ? ('data/presentations/' + filename)
+          : (domain === 'spreadsheets'
+            ? ('data/spreadsheets/' + filename)
+            : '')));
+    if (rel && typeof openStage === 'function' && openStage({ path: rel })) return;
     const t = token ? `?token=${encodeURIComponent(token)}` : '';
     const dispName = _safeDecode(filename.split('/').pop() || filename);
     if (domain === 'outputs') {
@@ -5107,7 +2772,7 @@ async function _docOpenInBrowser(domain, filename, ext) {
         if (!r.ok) throw new Error('预览拉取失败 ' + r.status);
         const text = await r.text();
         const bodyHtml = (typeof mdRender === 'function') ? mdRender(text) : ('<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>');
-        _showPreviewModal({ title: dispName, metaLine: ext.toUpperCase() + ' · outputs 产物', bodyHtml });
+        _showPreviewModal({ title: dispName, metaLine: ext.toUpperCase() + ' · 工坊产物', bodyHtml });
       } else if (['png','jpg','jpeg','gif','webp'].includes(ext)) {
         _showPreviewModal({ title: dispName, metaLine: '图片', raw: true, bodyHtml: `<img src="${url}" alt="${escHtml(dispName)}" class="pv-img">` });
       } else if (['mp3','wav'].includes(ext)) {
@@ -5118,7 +2783,7 @@ async function _docOpenInBrowser(domain, filename, ext) {
         _showPreviewModal({ title: dispName, metaLine: 'PDF', raw: true, bodyHtml: `<iframe src="${url}" class="pv-pdf"></iframe>` });
       } else if (ext === 'html') {
         // html 预览用 sandbox iframe · 禁脚本/弹窗 · 防恶意 html (卷八十一 产物 html 支持)
-        _showPreviewModal({ title: dispName, metaLine: 'HTML · outputs 产物', raw: true, bodyHtml: `<iframe src="${url}" class="pv-html" sandbox="allow-same-origin" loading="lazy"></iframe>` });
+        _showPreviewModal({ title: dispName, metaLine: 'HTML · 工坊产物', raw: true, bodyHtml: `<iframe src="${url}" class="pv-html" sandbox="allow-same-origin" loading="lazy"></iframe>` });
       } else {
         // docx/xlsx/pptx 浏览器不能内嵌 → 下载
         await _docSaveAs(domain, filename);
@@ -5236,7 +2901,7 @@ async function _docOpenLocal(domain, filename, ext) {
 }
 
 function updateCurrentLabel() {
-  $currentLabel.textContent = sessionId ? aliasFor(sessionId) : '新对话';
+  $currentLabel.textContent = sessionId ? aliasFor(sessionId) : '新话题';
 }
 
 let _sessionListOffset = 0;
@@ -5275,8 +2940,8 @@ async function refreshSessionList(reset = true) {
     }
     if (reset && (!data.sessions || data.sessions.length === 0)) {
       const empty = showArchivedSessions
-        ? '归档区是空的 · 已归档的对话会跑这儿'
-        : '还没有对话 · 点 + 新对话开始';
+        ? '归档区是空的 · 已归档的话题会跑这儿'
+        : '还没有话题 · 点 + 新话题开始';
       $sessionList.innerHTML = `<div class="drawer-empty">${empty}</div>`;
       renderArchivedToggle();
       return;
@@ -5294,7 +2959,7 @@ async function refreshSessionList(reset = true) {
       const btn = document.createElement('div');
       btn.id = 'sessionLoadMore';
       btn.className = 'drawer-loadmore';
-      btn.textContent = '加载更早的会话';
+      btn.textContent = '加载更早的话题';
       btn.onclick = () => { _sessionListOffset += SESSION_PAGE; refreshSessionList(false); };
       $sessionList.appendChild(btn);
     }
@@ -5392,7 +3057,7 @@ function renderArchivedToggle() {
     $sessionList.parentElement.appendChild(el);
   }
   if (showArchivedSessions) {
-    el.innerHTML = `<button onclick="toggleArchivedView()">← 返回会话列表</button>`;
+    el.innerHTML = `<button onclick="toggleArchivedView()">← 返回话题列表</button>`;
   } else if (archivedCount > 0) {
     el.innerHTML = `<button onclick="toggleArchivedView()">查看已归档 (${archivedCount})</button>`;
   } else {
@@ -5788,8 +3453,7 @@ async function switchToSession(sid) {
     // 切回有"未读完成"标记的 · 清掉
     existing.hasUnreadCompletion = false;
     _loadActiveStateFromCurrentSession();
-    setSendButtonState(pending ? 'pending' : 'idle');
-    setInputLocked(pending);
+    refreshSendChrome();
     showToolProgress(pending);  // 这个 session 还在跑 · 进度条恢复
     updateCurrentLabel();
     _ensureSessionMeta(sid);
@@ -5817,8 +3481,7 @@ async function switchToSession(sid) {
   closeDrawer();
   // 历史 session 是 idle (没有跑的 fetch)
   _loadActiveStateFromCurrentSession();
-  setSendButtonState('idle');
-  setInputLocked(false);
+  refreshSendChrome();
   showToolProgress(false);
   await _loadSessionHistory(sid);
   refreshCtxRing();  // wish-bec4f3b9 · 切对话实例 → 圆圈跟着走 (历史加载完再刷 · 2026-08-06 修顺序)
@@ -5847,6 +3510,7 @@ function _refreshCompactAfterSwitch() {
 }
 
 /* 工具时间线 → chat-timeline.js */
+
 // 卷三十六 · 历史回放专用 · 渲染一次 tool_call 气泡 (跟实时 SSE 'tool_call' 事件视觉一致)
 function renderHistoryToolCall(name, argumentsStr, target) {
   const div = document.createElement('div');
@@ -5903,6 +3567,7 @@ function _saveActiveStateToCurrentSession() {
   s.currentTurnId = currentTurnId;
   s.currentAbortController = currentAbortController;
   if ($input) s.inputDraft = $input.value;
+  s.attachments = _attachments.map(a => ({ ...a }));
   if ($messagesPanel) s.scrollTop = $messagesPanel.scrollTop;
 }
 
@@ -5923,6 +3588,11 @@ function _loadActiveStateFromCurrentSession() {
   pending = s.pending;
   currentTurnId = s.currentTurnId;
   currentAbortController = s.currentAbortController;
+  _attachments.length = 0;
+  if (Array.isArray(s.attachments)) {
+    s.attachments.forEach(a => _attachments.push(a));
+  }
+  if (typeof renderAttachments === 'function') renderAttachments();
   if ($input) {
     $input.value = s.inputDraft || '';
     // 调高度
@@ -5966,7 +3636,7 @@ function _renderTabBar() {
     tab.dataset.sid = sid;
     const titleSpan = document.createElement('span');
     titleSpan.className = 'tab-title';
-    titleSpan.textContent = sid.startsWith('tmp-') ? '新对话' : aliasFor(sid);
+    titleSpan.textContent = sid.startsWith('tmp-') ? '新话题' : aliasFor(sid);
     tab.appendChild(titleSpan);
     // 没名字的真会话 (F5 后恢复 / 后台跑的 spawn / 微信来的) · 拉一次服务端 label
     // 把裸 api-xxxx 换成对话名 · _metaTried 保证只拉一次 (断"拉不到→反复拉"死循环)
@@ -6091,7 +3761,7 @@ function _startSessionPoll(state, turnId) {
     currentTurnId = turnId || null;
     currentAbortController = null;
     setSendButtonState('pending');
-    setInputLocked(true);
+    refreshSendChrome();
     showToolProgress(true);
     setToolProgressText('Daemonkey 后台仍在跑这个对话 · 自动刷新中…');
   }
@@ -6100,33 +3770,43 @@ function _startSessionPoll(state, turnId) {
     ? state.$container.querySelectorAll('.msg').length
     : 0;
   state.pollIntervalId = setInterval(() => _pollSession(state), 3000);
+  _pollSession(state);
   if (typeof _renderTabBar === 'function') {
     try { _renderTabBar(); } catch {}
   }
 }
 
-function _stopSessionPoll(state) {
+function _stopSessionPoll(state, opts) {
   if (!state) return;
+  opts = opts || {};
   const wasPending = state.pending;
   const isVisible = sessionId === state.sessionId;
   if (state.pollIntervalId) {
     clearInterval(state.pollIntervalId);
     state.pollIntervalId = null;
   }
+  // handoff = SSE 接管 · 只停轮询 · pending 留给 send()
+  if (opts.handoff) return;
   // wish-3fef4bc7 follow-up · 还原 state + visible UI 到 idle
   state.pending = false;
   state.currentTurnId = null;
   state.currentAbortController = null;
+  const draining = wasPending && SessionRuntime.kick(state.sessionId);
   if (isVisible) {
-    pending = false;
-    currentTurnId = null;
-    currentAbortController = null;
-    setSendButtonState('idle');
-    setInputLocked(false);
-    showToolProgress(false);
+    if (draining) {
+      pending = true;
+      refreshSendChrome();
+    } else {
+      pending = false;
+      currentTurnId = null;
+      currentAbortController = null;
+      setSendButtonState('idle');
+      if (!$input.readOnly) refreshSendChrome();
+      showToolProgress(false);
+    }
     refreshPlan();   // 后台 polling 跑完同样刷一次
-    if (wasPending) { try { _maybeTabFlash('✅ Daemonkey 干完了'); } catch {} }
-  } else if (wasPending) {
+    if (wasPending && !draining) { try { _maybeTabFlash('✅ Daemonkey 干完了'); } catch {} }
+  } else if (wasPending && !draining) {
     // 后台 polling 完成 + 用户 不在看 · 弹 toast + tab 红点 (跟 send finally 后台完成对齐)
     state.hasUnreadCompletion = true;
     if (typeof _showCompletionToast === 'function') {
@@ -6143,6 +3823,15 @@ async function _pollSession(state) {
     _stopSessionPoll(state);
     return;
   }
+  if (state._pollBusy) return;
+  state._pollBusy = true;
+  try {
+    await _pollSessionBody(state);
+  } finally {
+    state._pollBusy = false;
+  }
+}
+async function _pollSessionBody(state) {
   // 1) 查 daemon 还有这个 session 的 active turn 没
   let hasActive = false;
   let activeTurnId = null;
@@ -6173,12 +3862,13 @@ async function _pollSession(state) {
     const r = await fetch(`/sessions/${encodeURIComponent(state.sessionId)}/messages`, {
       headers: { 'Authorization': 'Bearer ' + token },
     });
-    if (!r.ok) return;
+    if (!r.ok) throw new Error('messages ' + r.status);
     const data = await r.json();
     const newCount = data.count || 0;
     if (newCount > (state.lastTurnCount || 0) || (!hasActive && state.pollIntervalId)) {
       // 有新 turn · 或 active turn 刚结束 · 重画 container
       state.$container.innerHTML = '';
+      state.activeConfirmCards = new Map();
       // wish · 同 _loadSessionHistory · 长会话只回放最近 N 个 turn · 更早折叠成"加载全部"入口
       let _pturns = data.turns || [];
       let _phidden = 0;
@@ -6225,6 +3915,38 @@ async function _pollSession(state) {
       addSys(tail, state.$container);
     }
   } catch {}
+  // 确认卡放在重画之后 · 避免 innerHTML 把刚补的卡擦掉、Map 还以为卡在
+  if (activeTurnId) {
+    try {
+      const pr = await fetch('/turns/' + encodeURIComponent(activeTurnId) + '/pending_confirms', {
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+      if (pr.ok) {
+        const pj = await pr.json();
+        if (pj && pj.pending && pj.pending.length) {
+          state.activeConfirmCards = state.activeConfirmCards || new Map();
+          for (const pc of pj.pending) {
+            if (state.activeConfirmCards.has(pc.tool_call_id)) continue;
+            const card = renderConfirmCard({
+              ...pc,
+              turn_id: activeTurnId,
+              tier_reason: pc.tier_reason || '后台 turn · 用户 不在 SSE 通道 · 轮询补捞',
+              risk_explanation: pc.risk_explanation || pc.args_preview || '',
+              mitigation: pc.mitigation || '',
+              args_summary: pc.args_summary || pc.tool_name,
+              supports_trust: pc.supports_trust,
+            }, state);
+            if (card) {
+              state.activeConfirmCards.set(pc.tool_call_id, card);
+              state.$container.appendChild(card);
+              card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              if (typeof _maybeUpdateActiveTab === 'function') { try { _maybeUpdateActiveTab(); } catch {} }
+            }
+          }
+        }
+      }
+    } catch {}
+  }
   // 3) 没 active turn 了 · 停 polling (这是收尾 · _pollSession 不再触发)
   // 2026-08-11 修 (wish-bec4f3b9 续): 后台 turn 完成瞬间 · /messages 可能还没包含
   // 刚落盘的最终结果 (落盘延迟) → 上面那次重画可能"画了个寂寞" → 立即停轮询后
@@ -6257,7 +3979,7 @@ async function _pollSession(state) {
 function _showCompletionToast(state) {
   if (!state) return;
   const sid = state.sessionId;
-  const title = (sid && !sid.startsWith('tmp-')) ? aliasFor(sid) : '新对话';
+  const title = (sid && !sid.startsWith('tmp-')) ? aliasFor(sid) : '新话题';
   const $host = document.getElementById('chatToastHost');
   if (!$host) return;
   const t = document.createElement('div');
@@ -6402,7 +4124,7 @@ function newConversation() {
   // 给新对话临时 cid · 立刻切 active container 到它 (空 container)
   const cid = _allocCid();
   const s = _getOrCreateSession(cid);
-  s.title = '新对话';
+  s.title = '新话题';
   _setActiveContainer(cid);
   sessionId = cid;
   // 临时 cid 不存 localStorage · hello 来 swap 真 sid 后 commitSessionId 会存
@@ -6413,7 +4135,7 @@ function newConversation() {
   setSendButtonState('idle');
   setInputLocked(false);
   showToolProgress(false);
-  addSys('新对话开始 · 发第一条消息会自动建 session');
+  addSys('新话题开始 · 发第一条消息会自动建 session');
   closeDrawer();
   if (typeof _renderTabBar === 'function') {
     try { _renderTabBar(); } catch {}
@@ -6633,7 +4355,7 @@ async function _ckptAbortRunning(sid) {
   if (s && s.currentAbortController) {
     try { s.currentAbortController.abort(); } catch (e) {}
   }
-  if (sid && window.SessionRuntime && SessionRuntime.holdOutbound) SessionRuntime.holdOutbound(sid);
+  if (sid && SessionRuntime.holdOutbound) SessionRuntime.holdOutbound(sid);
 }
 
 async function _ckptPost(sid, body) {
@@ -6812,58 +4534,7 @@ async function _bgReportFullToggle(bubble, sid, btn) {
   }
 }
 
-/* wish-7c579a20 · 历史重建 用户 气泡附件（刷新后图不丢）
- * 数据双源: ①新格式 t.attachments（后端 meta 结构化落盘）
- *           ②老消息从 content 头部『已存: data/runtime/attachments/xxx』正则提取
- * 顺便剥皮: 系统注入的『[用户上传了 N 个附件…』说明段不进气泡·只留 用户 正文 */
-function _broAttachStrip(raw) {
-  const s = String(raw || '');
-  const head = s.slice(0, 500);
-  const dirty = s.indexOf('[用户上传了') === 0
-    || head.indexOf('路径 B ·') >= 0
-    || head.indexOf('竞速池 winner') >= 0;
-  if (!dirty) return { body: s, legacy: [], stripped: false };
-  let body = s;
-  const sep = s.lastIndexOf('\n---\n');
-  if (sep >= 0) body = s.slice(sep + 5).trim();
-  else if (s.indexOf('[用户上传了') >= 0) body = '';
-  const legacy = [];
-  const re = /attachments[/\\]([^\s·\]\r\n]+)/g;
-  let m;
-  while ((m = re.exec(s)) !== null) { if (m[1]) legacy.push(m[1]); }
-  return { body: body, legacy: legacy, stripped: true };
-}
-
-function _renderBroAttachments(bubble, atts) {
-  if (!bubble || !atts || !atts.length) return;
-  const wrap = document.createElement('div');
-  wrap.className = 'bro-attach-imgs';
-  atts.forEach(function(a) {
-    const base = String(a.path || '').split('/').pop().split('\\').pop();
-    if (!base) return;
-    const url = '/attachments/' + encodeURIComponent(base);
-    const isImg = a.kind === 'image' || String(a.mime || '').indexOf('image/') === 0
-      || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(base);
-    if (isImg) {
-      const img = document.createElement('img');
-      img.className = 'bro-attach-img';
-      img.src = url;
-      img.alt = a.name || base;
-      img.title = a.name || base;
-      img.loading = 'lazy';
-      img.onclick = function() { window.open(url, '_blank'); };
-      wrap.appendChild(img);
-    } else {
-      const card = document.createElement('a');
-      card.className = 'attach-doc-card bro-attach-doc';
-      card.href = url;
-      card.target = '_blank';
-      card.innerHTML = '<i class="ri-file-3-line"></i><span class="doc-name">' + escHtml(a.name || base) + '</span>';
-      wrap.appendChild(card);
-    }
-  });
-  if (wrap.children.length) bubble.appendChild(wrap);
-}
+/* 附件剥皮 / 渲染 / 灯箱 · 逻辑在 chat-lightbox.js（工作台/陪伴共用） */
 
 // 卷四十六 续 3 · "粘性底部"滚动 · 用户 拖滚动条看历史时不强行刷回底部
 //
@@ -7249,20 +4920,43 @@ function parseSseStream(buffer) {
 // 新: 全部进 _sessions[mySid] · send 闭包绑定 state · 用户 切对话不影响 send 跑·send 后台继续写自己的 state
 async function send(opts) {
   opts = opts || {};
-  const text = opts.fromEdit ? String(opts.text || '').trim() : $input.value.trim();
-  if (opts.fromEdit) {
+  const queued = opts.fromQueue || null;
+  let text;
+  let sendAtts = null;
+  if (queued) {
+    text = (queued.text || '').trim();
+    sendAtts = (queued.attachments || []).slice();
+    if (!text && sendAtts.length === 0) {
+      const deadSid = opts.sid || sessionId;
+      const dead = deadSid ? _getOrCreateSession(deadSid) : null;
+      if (dead) dead.pending = false;
+      if (deadSid) SessionRuntime.kick(deadSid);
+      return;
+    }
+  } else if (opts.fromEdit) {
+    text = String(opts.text || '').trim();
+    sendAtts = [];
     if (!text) return;
-  } else if (!text && _attachments.length === 0) return;
+  } else if (opts.text != null) {
+    text = String(opts.text).trim();
+    if (!text && _attachments.length === 0) return;
+  } else {
+    text = $input.value.trim();
+    if (!text && _attachments.length === 0) return;  // wish-4a6331b2 · 有附件时允许空文字
+  }
 
-  // 主题切换拦截 (wish-7b89146f)
-  if (!opts.fromEdit && interceptThemeCommand(text)) { $input.value = ''; $input.style.height = 'auto'; return; }
   if (!token) {
     addSys('⚠ 还没填 token —— 点右上角 ⚙ 设置');
     openSettings();
+    if (queued) {
+      const tokSid = opts.sid || sessionId;
+      const tokSt = tokSid ? _sessions[tokSid] : null;
+      if (tokSt) tokSt.pending = false;
+    }
     return;
   }
   // 拿当前 active sid · 没有就分配临时 cid (新对话第一条消息)
-  let mySid = sessionId;
+  let mySid = (queued && opts.sid) ? opts.sid : sessionId;
   if (!mySid) {
     mySid = _allocCid();
     _getOrCreateSession(mySid);
@@ -7273,9 +4967,32 @@ async function send(opts) {
     _getOrCreateContainer(mySid);
   }
   const state = _getOrCreateSession(mySid);
-  if (state.pending) return;  // 这个 session 已经在跑 · 不能再发
+  if (!queued && SessionRuntime.isBusy(state.sessionId || mySid)) {
+    if (_attachmentPromises.length > 0) await Promise.all(_attachmentPromises);
+    const atts = _attachments.map(function (a) { return Object.assign({}, a); });
+    const payload = { text: text, attachments: atts };
+    const r = (SessionRuntime.editOf && SessionRuntime.editOf(state.sessionId))
+      ? SessionRuntime.putBack(state.sessionId, payload)
+      : SessionRuntime.enqueue(state.sessionId, payload);
+    $input.value = '';
+    $input.style.height = 'auto';
+    state.inputDraft = '';
+    clearAttachments();
+    refreshSendChrome();
+    if (!r.ok) {
+      addSys(r.error === 'full'
+        ? '排队满了 · 最多 8 条 · 等这轮完或点掉一条'
+        : '没排上', state.$container);
+    }
+    return;
+  }
+  // 先占坑 · 避免回车连打 / 点发送在 pending 置位前再开一路把当前流顶掉
+  if (!queued) {
+    if (SessionRuntime.releaseOutbound) SessionRuntime.releaseOutbound(state.sessionId || mySid);
+    state.pending = true;
+  }
   // wish-3fef4bc7 follow-up · 用户 自己开始发新消息 · 停 polling 让 SSE 接管 (polling 落后 SSE)
-  if (typeof _stopSessionPoll === 'function') _stopSessionPoll(state);
+  if (typeof _stopSessionPoll === 'function') _stopSessionPoll(state, { handoff: true });
 
   // visible 检查·会因为 用户 切对话而变。 注意 hello 后 state.sessionId 会从 cid 变真 sid · 同步会改 sessionId · 这俩仍同步
   const _isVisible = () => sessionId === state.sessionId;
@@ -7284,61 +5001,36 @@ async function send(opts) {
   // 卷四十六续 3 · 用户 主动发消息 = 强制贴底 (期望看到自己刚发的话 · 且 reset"粘性底部")
   // wish-4a6331b2 · 图片附件显示在 用户 气泡里（直接插 img 不用 markdown——base64 太长会撑爆 md parser）
   // wish-4a6331b2 · 等所有附件异步读完再发
-  if (!opts.fromEdit) {
+  if (!queued && sendAtts == null) {
     if (_attachmentPromises.length > 0) await Promise.all(_attachmentPromises);
     _attachmentPromises.length = 0;
+    sendAtts = _attachments.slice();
   }
-  const _hasImgs = !opts.fromEdit && _attachments.length > 0;
-  const _sentBro = addMsg('bro', text || '（图片）', null, new Date(), state.$container, { forceScroll: true });
-  if (_sentBro) _attachCkpt(_sentBro, null, null, text || '');
+  const _hasImgs = !!(sendAtts && sendAtts.length);
+  const silentUser = !!opts.silentUser;
+  if (!silentUser) {
+    const _sentBro = addMsg('bro', text || '（图片）', null, new Date(), state.$container, { forceScroll: true });
+    if (_sentBro) _attachCkpt(_sentBro, null, null, text || '');
+  }
   if (_hasImgs) {
-    // wish-41ed72ef · 用户 气泡附件渲染：图片缩略图 + 文档卡片
     const _broBubble = state.$container ? state.$container.lastElementChild : null;
-    if (_broBubble && _broBubble.classList.contains('bro')) {
-      const _attWrap = document.createElement('div');
-      _attWrap.className = 'bro-attach-imgs';
-      _attachments.forEach(a => {
-        if (a.type === 'file') {
-          // 文档卡片
-          const card = document.createElement('div');
-          card.className = 'attach-doc-card';
-          card.style.width = 'auto'; card.style.height = 'auto';
-          card.style.flexDirection = 'row'; card.style.gap = '8px';
-          card.style.padding = '8px 12px'; card.style.marginTop = '6px';
-          card.style.justifyContent = 'flex-start';
-          const iconName = _DOC_ICONS[a.mime] || 'ri-file-3-line';
-          card.innerHTML = '<i class="' + iconName + '" style="font-size:20px"></i><span class="doc-name" style="max-width:none;font-size:12px">' + (a.name || 'file') + '</span><span class="doc-size" style="font-size:10px">' + _estSize(a.data_url) + '</span>';
-          _attWrap.appendChild(card);
-        } else {
-          // 图片缩略图
-          const _img = document.createElement('img');
-          _img.src = a.data_url;
-          _img.alt = a.name;
-          _img.title = a.name;
-          _img.style.maxWidth = '280px';
-          _img.style.maxHeight = '200px';
-          _img.style.borderRadius = '8px';
-          _img.style.marginTop = '6px';
-          _img.style.display = 'block';
-          _attWrap.appendChild(_img);
-        }
-      });
-      _broBubble.appendChild(_attWrap);
+    if (_broBubble && _broBubble.classList.contains('bro') && typeof _renderBroAttachments === 'function') {
+      _renderBroAttachments(_broBubble, sendAtts);
     }
   }
-  if (!opts.fromEdit) {
+  if (!queued && !opts.fromEdit) {
     $input.value = '';
     $input.style.height = 'auto';
     state.inputDraft = '';
   }
-  // clearAttachments() 移到 fetch 后面——payload 需要读 _attachments
+  // clearAttachments() 移到 fetch 后面——payload 需要读 sendAtts
 
   // 标 pending · 同步 visible UI
   state.pending = true;
   if (_isVisible()) {
     pending = true;
     setSendButtonState('pending');
-    setInputLocked(true);
+    refreshSendChrome();
     showToolProgress(true);
     setToolProgressText('Daemonkey 准备工具中…');
   }
@@ -7405,14 +5097,15 @@ async function send(opts) {
       body: JSON.stringify({
         message: text,
         session_id: reqSid,
+        mode: state.chatMode || undefined,
         auto_confirm: autoConfirm,
-        attachments: (!opts.fromEdit && _attachments.length > 0) ? _attachments.map(a => ({name: a.name, data_url: a.data_url, path: a.path})) : undefined,
+        attachments: sendAtts && sendAtts.length ? sendAtts.map(a => ({name: a.name, data_url: a.data_url, path: a.path})) : undefined,
         advisor_coop: _advisorCoopOn() || undefined,   // wish-0e749752 · 顾问协同 toggle
         ...modelBehaviorPayload(),
       }),
     });
-    // wish-4a6331b2 · payload 已读 _attachments · 现在可以清了
-    clearAttachments();
+    // wish-4a6331b2 · payload 已读 sendAtts · 现在可以清输入栏附件
+    if (!queued) clearAttachments();
 
     if (!resp.ok) {
       const raw = await resp.text();
@@ -7485,18 +5178,24 @@ async function send(opts) {
     if (state.currentStreamingReasoning) finalizeStreamingReasoning(state);
     if (state.currentStreamingAssistant) finalizeStreamingAssistant(state, null);
 
+    const draining = SessionRuntime.kick(state.sessionId);
     // 同步 visible UI (是 visible 才动全局)
     if (_isVisible()) {
-      pending = false;
-      currentTurnId = null;
-      currentAbortController = null;
-      setSendButtonState('idle');
-      setInputLocked(false);
-      $input.focus();
-      showToolProgress(false);
-      refreshPlan();   // 这一轮 Daemonkey 可能列了计划/勾掉一步 · 立刻刷·别等 6s 轮询
-      try { _maybeTabFlash('✅ Daemonkey 干完了'); } catch {}
-    } else {
+      if (draining) {
+        pending = true;
+        refreshSendChrome();
+      } else {
+        pending = false;
+        currentTurnId = null;
+        currentAbortController = null;
+        setSendButtonState('idle');
+        if (!$input.readOnly) refreshSendChrome();
+        $input.focus();
+        showToolProgress(false);
+        refreshPlan();   // 这一轮 Daemonkey 可能列了计划/勾掉一步 · 立刻刷·别等 6s 轮询
+        try { _maybeTabFlash('✅ Daemonkey 干完了'); } catch {}
+      }
+    } else if (!draining) {
       // 后台跑完 + 用户 不在看 = 标记 unread + toast 提示
       state.hasUnreadCompletion = true;
       if (typeof _showCompletionToast === 'function') {
@@ -7509,7 +5208,7 @@ async function send(opts) {
       if (typeof refreshNavBadges === 'function') {
         try { refreshNavBadges(); } catch {}
       }
-      if (currentView) {
+      if (currentView && !_dashSilentRefreshBlocked()) {
         try { loadDashboard(currentView, { silent: true }); } catch {}
       }
     }
@@ -7582,6 +5281,7 @@ async function send(opts) {
         break;
 
       case 'reasoning_delta': {
+        if (state.chatMode === 'taste') break;
         const ph = state.assistantBubbles[0];
         if (ph && ph.dataset.placeholder) {
           ph.remove();
@@ -7592,6 +5292,7 @@ async function send(opts) {
       }
 
       case 'assistant_reasoning_done': {
+        if (state.chatMode === 'taste') break;
         // 0.9.1 · 用兜底版: reasoning_delta 丢了也能补建气泡 · 不静默丢思考链
         ensureReasoningBubble(state, data.text || '');
         const newPh = addMsg('opus', '继续...', 'msg opus thinking', null, state.$container);
@@ -7626,6 +5327,7 @@ async function send(opts) {
       }
 
       case 'assistant_reasoning': {
+        if (state.chatMode === 'taste') break;
         const ph = state.assistantBubbles[0];
         if (ph && ph.dataset.placeholder) {
           ph.remove();
@@ -7721,7 +5423,7 @@ async function send(opts) {
       }
 
       case 'tool_call': {
-        if (data.name === 'note_mood') {
+        if (data.name === 'note_style_shift' || data.name === 'note_mood' || data.name === 'note_gallery') {
           state.streamHadToolCall = true;
           break;
         }
@@ -7969,13 +5671,17 @@ async function send(opts) {
       }
 
       case 'tool_result': {
-        if (data.name === 'note_mood') {
+        if (data.name === 'note_style_shift' || data.name === 'note_mood' || data.name === 'note_gallery') {
           const notice = String(data.ok ? (data.preview || '') : '').trim();
           if (notice && state.$container) addStyleShiftNotice(notice, state.$container);
           break;
         }
         // wish-5256d2a4 · 结果回填到时间线对应步骤卡（人话结果行 + 技术细节折叠）
-        tlFillStep(state, data.name || '?', !!data.ok, data.ok ? (data.preview || 'ok') : (data.error || 'failed'));
+        tlFillStep(state, data.name || '?', !!data.ok, data.ok ? (data.preview || 'ok') : (data.error || 'failed'), data.hits);
+        if (data.ok && data.name === 'commit_taste') {
+          state.chatMode = '';
+          if (typeof window.refreshHangoutDoor === 'function') window.refreshHangoutDoor();
+        }
         // wish-ea8922f7 · replan 完成 → 金卡变完成态 (摘要 + 展开顾问过程)
         if (data.name === 'replan' && state._advisorCard) {
           advisorCardFinish(state._advisorCard, {
@@ -8085,36 +5791,68 @@ async function send(opts) {
 }
 
 // 卷三十八 · send / stop 合并 · 一个按钮两种状态
-// 状态: idle (空闲) / pending (流式中 · 显示 ⏹ 停止) / stopping (停止信号已发 · 等回收)
+// 状态: idle (空闲) / pending (流式中 · 空输入显示停止) / queue (流式中有字 · 排队) / stopping
 function setSendButtonState(state) {
   $send.dataset.state = state;
   if (state === 'idle') {
     $send.textContent = '发送';
-    $send.classList.remove('is-stopping', 'is-pending');
+    $send.classList.remove('is-stopping', 'is-pending', 'is-queue');
     $send.disabled = false;
     $send.title = 'Enter 发送 · Shift+Enter 换行';
   } else if (state === 'pending') {
-    $send.textContent = '⏹ 停止';
+    $send.textContent = '停止';
     $send.classList.add('is-pending');
-    $send.classList.remove('is-stopping');
+    $send.classList.remove('is-stopping', 'is-queue');
     $send.disabled = false;
     $send.title = '点击中断当前 turn';
   } else if (state === 'stopping') {
     $send.textContent = '正在停…';
     $send.classList.add('is-stopping');
+    $send.classList.remove('is-queue');
     $send.disabled = true;
   }
 }
 
-// 卷三十八 · 流式期间锁输入 · 用户 反馈"按说他完成后我才能发新消息 (像 cursor 这样)"
-function setInputLocked(locked) {
+// 跑着不锁输入 · 只有 daemon 重启这种"对面没人"才 readonly
+function refreshSendChrome() {
+  if (!$send || !$input) return;
+  if ($send.dataset.state === 'stopping') return;
+  const locked = !!$input.readOnly;
+  const hasPayload = !!($input.value.trim() || _attachments.length);
+  const sid = sessionId;
+  const busy = !!(sid && SessionRuntime.isBusy(sid)) || !!pending;
+  const aiName = window.AI_NAME || 'Daemonkey';
+  if (!locked) {
+    $input.placeholder = busy
+      ? '再说一句就排队 · 空着点停止'
+      : '跟 ' + aiName + ' 说点什么…  (Shift+回车换行)';
+    $input.classList.remove('is-locked');
+  }
+  if (busy && hasPayload) {
+    $send.dataset.state = 'queue';
+    $send.textContent = '排队';
+    $send.classList.add('is-queue');
+    $send.classList.remove('is-pending', 'is-stopping');
+    $send.disabled = false;
+    $send.title = '这轮跑完接着说';
+  } else if (busy) {
+    setSendButtonState('pending');
+  } else {
+    setSendButtonState('idle');
+  }
+  if (SessionRuntime.paintQueueBar) {
+    SessionRuntime.paintQueueBar(document.getElementById('outboundQueue'), sid);
+  }
+}
+
+function setInputLocked(locked, reason) {
   $input.readOnly = !!locked;
   $input.classList.toggle('is-locked', !!locked);
   const aiName = window.AI_NAME || 'Daemonkey';
   if (locked) {
-    $input.placeholder = aiName + ' 还在跑 · 点 ⏹ 停止才能发新消息';
+    $input.placeholder = reason || (aiName + ' 还没回来 · 先别发');
   } else {
-    $input.placeholder = '跟 ' + aiName + ' 说点什么…  (Shift+回车换行)';
+    refreshSendChrome();
   }
 }
 
@@ -8123,9 +5861,11 @@ function setInputLocked(locked) {
 // 切到另一个 session 后 ⏹ 停的是新 active · 不动后台 session
 // follow-up: polling 模式下 (浏览器 F5 后没 SSE 但 daemon 有 active turn) · 走 daemon abort + 立刻 force poll
 async function triggerStop() {
-  if ($send.dataset.state !== 'pending') return;
+  const sid = sessionId;
+  if ($send.dataset.state !== 'pending' && !(sid && SessionRuntime.isBusy(sid)) && !pending) return;
   const s = activeSession();
-  if (!s || !s.pending) return;
+  if (!s || !SessionRuntime.isBusy(s.sessionId || sid)) return;
+  if (SessionRuntime.holdOutbound) SessionRuntime.holdOutbound(s.sessionId || sid);
   setSendButtonState('stopping');
   addSys('· 已发停止信号 · 等 Daemonkey 当前这步跑完就退', s.$container);
   if (s.currentTurnId) {
@@ -8154,13 +5894,74 @@ async function triggerStop() {
 
 $send.addEventListener('click', () => {
   const state = $send.dataset.state || 'idle';
-  if (state === 'pending') {
+  if (state === 'stopping') return;
+  const hasPayload = !!($input.value.trim() || _attachments.length);
+  const busy = !!(sessionId && SessionRuntime.isBusy(sessionId)) || !!pending || state === 'pending' || state === 'queue';
+  if (busy && !hasPayload) {
     triggerStop();
-  } else if (state === 'idle') {
+  } else {
     send();
   }
-  // stopping 状态 disabled 不会触发
 });
+
+function _parkComposer(sid) {
+  const text = $input ? $input.value.trim() : '';
+  const atts = _attachments.map(function (a) { return Object.assign({}, a); });
+  if (!text && !atts.length) return { ok: true, empty: true };
+  const r = (SessionRuntime.editOf && SessionRuntime.editOf(sid))
+    ? SessionRuntime.putBack(sid, { text: text, attachments: atts })
+    : SessionRuntime.enqueue(sid, { text: text, attachments: atts });
+  if (r && r.ok) {
+    $input.value = '';
+    $input.style.height = 'auto';
+    if (typeof clearAttachments === 'function') clearAttachments();
+    else { _attachments.length = 0; renderAttachments(); }
+  }
+  return r || { ok: false };
+}
+
+function _fillComposerFromQueue(rec) {
+  if ($input) {
+    $input.value = (rec && rec.text) || '';
+    $input.style.height = 'auto';
+    $input.style.height = ($input.scrollHeight || 0) + 'px';
+  }
+  _attachments.length = 0;
+  ((rec && rec.attachments) || []).forEach(function (a) {
+    _attachments.push(Object.assign({}, a));
+  });
+  if (typeof renderAttachments === 'function') renderAttachments();
+  if (typeof refreshSendChrome === 'function') refreshSendChrome();
+  if ($input) $input.focus();
+}
+
+function _editQueued(sid, id) {
+  if (!sid || !id || !SessionRuntime.takeQueued) return;
+  const park = _parkComposer(sid);
+  if (!park.ok) {
+    addSys(park.error === 'full' ? '排队满了 · 最多 8 条 · 等这轮完或点掉一条' : '没排上');
+    return;
+  }
+  const taken = SessionRuntime.takeQueued(sid, id);
+  if (!taken) return;
+  _fillComposerFromQueue(taken.item);
+}
+
+if (SessionRuntime.bindQueue) {
+  SessionRuntime.bindQueue({
+    paint: function (sid) {
+      if (sid === sessionId) {
+        SessionRuntime.paintQueueBar(document.getElementById('outboundQueue'), sid);
+      }
+    },
+    drain: function (sid, item) {
+      send({ fromQueue: item, sid: sid });
+    },
+    edit: function (sid, id) {
+      _editQueued(sid, id);
+    },
+  });
+}
 
 // ═══════════ wish-bec4f3b9 · 上下文压缩圆圈 + Context Usage 卡片 ═══════════
 let _ctxOpen = false;
@@ -8254,6 +6055,7 @@ $input.addEventListener('paste', e => {
 });
 
 $input.addEventListener('input', () => {
+  refreshSendChrome();
   if (_inputHeightRAF) return;  // 上一帧还没跑 · 跳过
   _inputHeightRAF = requestAnimationFrame(() => {
     _inputHeightRAF = null;
@@ -8269,7 +6071,9 @@ $input.addEventListener('keydown', e => {
   if (e.isComposing || e.keyCode === 229) return;  // 中文输入法 composing 中
   if (e.shiftKey) return;  // shift+enter 换行
   e.preventDefault();
-  if (pending) return;  // 流式中 · 不响应 (按钮已变成停止 · 自己点)
+  const hasPayload = !!($input.value.trim() || _attachments.length);
+  const busy = !!(sessionId && SessionRuntime.isBusy(sessionId)) || !!pending;
+  if (busy && !hasPayload) return;
   send();
 });
 
@@ -8290,17 +6094,14 @@ const $navRail = document.getElementById('navRail');
 const $navGroups = document.getElementById('navGroups');
 
 // 维度元信息 · 这是唯一真相 · 改这里就够
-// 卷二十九 · 五分组架构（市场咨询面 → 内部决策面 → 产品生产层 → 用户运营层 → 能力扩展层）
+// 卷二十九五分组 · 2026-09-03 用户 撤掉「用户运营」占位 · 客户档案并进执行落地
 const NAV_GROUPS = [
   // 总览 · 工作室看板独立分组放最上 (用户 2026-08-06 · 它不是市场信息·是全局总览)
   { id: 'home',    label: '总览' },
-  // 卷三十三补丁 · 用户 让重排：执行落地排到运营后 · 因为它是"已开干 + 自我观察"
-  // 这个最贴近 用户 本人的事·应该在外部信息 → 决策 → 生产 → 用户之后·作为收束。
   { id: 'market',    label: '市场信息' },
   { id: 'ability',   label: '能力对照' },
   { id: 'studio',    label: '出品工坊' },
-  { id: 'ops',       label: '用户运营' },
-  { id: 'execution', label: '执行落地' },  // 已开干 + Daemonkey 日记 + 收藏
+  { id: 'execution', label: '执行落地' },
   { id: 'plugins',   label: '插件库' },
 ];
 
@@ -8310,7 +6111,7 @@ const DOMAIN_META = {
   // 市场信息 · 外部信号 · Daemonkey 看世界的眼睛 · 不含 Daemonkey 自己的观察
   radar:         { icon: '<i class="ri-radar-fill"></i>', label: '信息雷达', section: 'market', stub: false },
   trends:        { icon: '<i class="ri-line-chart-fill"></i>', label: '今日趋势', section: 'market', stub: false },
-  reports:       { icon: '<i class="ri-article-fill"></i>', label: '报告库',   section: 'market', stub: false },
+  reports:       { icon: '<i class="ri-archive-2-fill"></i>', label: '产物库',   section: 'market', stub: false },
   calendar:      { icon: '<i class="ri-calendar-fill"></i>', label: '信息日历', section: 'market', stub: false },
   // 能力对照 · 内部决策 · 市场 × 用户 能力的交叉
   opportunities: { icon: '<i class="ri-diamond-fill"></i>', label: '掘金机会', section: 'ability', stub: false },
@@ -8326,10 +6127,10 @@ const DOMAIN_META = {
   design:    { icon: '<i class="ri-palette-fill"></i>', label: '产品设计', section: 'apps', stub: false },
   dev:       { icon: '<i class="ri-terminal-box-fill"></i>', label: '产品开发', section: 'apps', stub: false },
   docs:      { icon: '<i class="ri-file-text-fill"></i>', label: '文档撰写', section: 'apps', stub: false },
-  // 用户运营 · 客户档案(合伙人记得每个客户 · notes 进记忆 · 资料可挂到客户名下)
-  clients:   { icon: '<i class="ri-contacts-book-2-fill"></i>', label: '客户档案', section: 'ops', stub: false },
+  // 客户档案跟正在跑的事一块 · 用户运营占位 2026-09-03 撤出侧栏
+  clients:   { icon: '<i class="ri-contacts-book-2-fill"></i>', label: '客户档案', section: 'execution', stub: false },
   service:   { icon: '<i class="ri-team-fill"></i>', label: '用户运营', section: 'ops', stub: true,
-               note: '等先有产品再做用户运营' },
+               navHidden: true, note: '侧栏已撤 · 等先有产品再开' },
   // 执行落地 · 卷三十三 · 闭环反馈独立维度 · 卷三十三补丁 · Daemonkey 日记搬这里
   //   因为"Daemonkey 对 用户 的观察"跟"用户 真正在跑的项目"是同一码事——
   //   都是「自我视角」·跟外部信号（radar/trends/reports）分开
@@ -8562,55 +6363,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────
-// 卷四十六补丁 (wish-3afebd2c) · md 图片 lightbox
-// chat 里点 .md-img → 全屏遮罩看大图 · 不开新 tab
-// 关闭: 点遮罩 / 点 × / ESC
-// ─────────────────────────────────────────────────────────
-function _ensureLightbox() {
-  let box = document.getElementById('md-lightbox');
-  if (box) return box;
-  box = document.createElement('div');
-  box.id = 'md-lightbox';
-  box.hidden = true;
-  box.innerHTML = `
-    <img id="md-lightbox-img" alt="">
-    <button id="md-lightbox-close" type="button" aria-label="关闭 (Esc)">×</button>
-    <div id="md-lightbox-caption"></div>
-  `;
-  document.body.appendChild(box);
-  box.addEventListener('click', (e) => {
-    if (e.target === box || e.target.id === 'md-lightbox-close') _hideLightbox();
-  });
-  return box;
-}
-function _showLightbox(src, alt) {
-  const box = _ensureLightbox();
-  const img = box.querySelector('#md-lightbox-img');
-  const cap = box.querySelector('#md-lightbox-caption');
-  img.src = src;
-  img.alt = alt || '';
-  cap.textContent = alt || '';
-  box.hidden = false;
-  document.body.style.overflow = 'hidden';
-}
-function _hideLightbox() {
-  const box = document.getElementById('md-lightbox');
-  if (!box || box.hidden) return;
-  box.hidden = true;
-  document.body.style.overflow = '';
-  const img = box.querySelector('#md-lightbox-img');
-  if (img) img.removeAttribute('src');
-}
-document.addEventListener('click', (e) => {
-  const img = e.target.closest && e.target.closest('.md-img');
-  if (!img) return;
-  e.preventDefault();
-  _showLightbox(img.dataset.full || img.src, img.alt);
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') _hideLightbox();
-});
+// 灯箱在 chat-lightbox.js · 点 .md-img / .bro-attach-img 看大图
 
 // ─────────────────────────────────────────────────────────
 // 卷四十六 续 3 · wish-2a4d8c1e · inline confirm UI
@@ -8659,7 +6412,7 @@ function _advisorCoopRender() {
     $advisorCoopToggle.setAttribute('aria-pressed', on ? 'true' : 'false');
     $advisorCoopToggle.title = disabled
       ? '当前模型已是顾问模型 · 协同是让它当自己的顾问 · 没意义还烧钱'
-      : '顾问协同: 发消息前先让顾问出施工单 · 执行者按单施工';
+      : '顾问协同: 发消息前先让顾问出计划，再按计划做';
   }
   if ($advisorCoopHint) $advisorCoopHint.hidden = !on;
 }
@@ -9737,127 +7490,13 @@ async function rollbackDaemon() {
   }
 }
 
-let _modelMenuOpen = false;
-let _modelOptions = [];
-
-async function loadCurrentModel() {
-  if (!token) {
-    document.getElementById('modelNameLabel').textContent = '未连接';
-    return;
-  }
-  try {
-    const r = await fetch('/models', {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) {
-      document.getElementById('modelNameLabel').textContent = '加载失败';
-      return;
-    }
-    const data = await r.json();
-    const current = data.current || {};
-    _modelOptions = data.options || [];
-    // 用户 2026-07-28 · 顾问协同 toggle 禁用判断的数据源 (当前模型=总监模型时禁用)
-    window._currentModelId = current.model || '';
-    window._currentConfigId = current.config_id || '';  // 会话记住模型 · 切标签恢复的比较基准
-    window._directorModelId = (data.director && data.director.model) || '';
-    if (typeof _advisorCoopRender === 'function') _advisorCoopRender();
-    // 卷三十八 · 顶栏显示用 cfg.name (友好名) 优先 · fallback model id
-    // 之前是 alias=cfg-xxx · 用户 反馈"丑·要显示模型名"
-    let display = current.model || '?';
-    const matched = _modelOptions.find(o => o.config_id === current.config_id || o.alias === current.config_id);
-    if (matched && matched.name) display = matched.name;
-    else if (current.model) display = current.model;
-    document.getElementById('modelNameLabel').textContent = display;
-    document.getElementById('modelSwitch').dataset.family = current.family || '';
-    renderModelMenuList();
-  } catch (e) {
-    document.getElementById('modelNameLabel').textContent = 'offline';
-  }
+/* 顶栏切模型 · 逻辑在 model-switch.js (工作台 / 陪伴共用 · 2026-08-26 抽出) */
+if (typeof initModelSwitch === 'function' && !window.ModelSwitch) {
+  initModelSwitch({
+    token: function () { return token || ''; },
+    sessionId: function () { return sessionId || ''; },
+  });
 }
-
-function renderModelMenuList() {
-  const list = document.getElementById('modelMenuList');
-  if (!list) return;
-  if (_modelOptions.length === 0) {
-    list.innerHTML = '<div class="model-menu-empty">没有可选模型</div>';
-    return;
-  }
-  // 卷三十八 · 主标题用 cfg.name · 副标题用 model id · cfg-xxx 不再显示 (太丑)
-  list.innerHTML = _modelOptions.map(opt => `
-    <button class="model-menu-item${opt.current ? ' current' : ''}"
-            onclick="switchModel('${jsStr(opt.alias)}')"
-            data-family="${escHtml(opt.family)}">
-      <div class="mmi-row1">
-        <span class="mmi-alias">${escHtml(opt.name || opt.real_id)}</span>
-        <span class="mmi-family">${escHtml(opt.family)}</span>
-        ${opt.cache ? '<span class="mmi-cache" title="支持 cache · 省钱">💰</span>' : ''}
-        ${opt.current ? '<span class="mmi-current">●</span>' : ''}
-      </div>
-      <div class="mmi-real">${escHtml(opt.real_id)}</div>
-      <div class="mmi-note">${escHtml(opt.note || '')}</div>
-    </button>
-  `).join('');
-}
-
-function toggleModelMenu() {
-  if (!_modelMenuOpen && _modelOptions.length === 0) {
-    loadCurrentModel();
-  }
-  const menu = document.getElementById('modelMenu');
-  _modelMenuOpen = !_modelMenuOpen;
-  menu.classList.toggle('open', _modelMenuOpen);
-}
-
-async function switchModel(alias) {
-  if (!token) return;
-  try {
-    const r = await fetch('/models/switch', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ model: alias }),
-    });
-    if (!r.ok) {
-      const t = await r.text();
-      await opusAlert({ title: '切换模型失败', message: t.slice(0, 400) || '服务端没返详情', icon: '<i class="ri-error-warning-fill"></i>' });
-      return;
-    }
-    const data = await r.json();
-    _modelMenuOpen = false;
-    // 会话记住模型 · 手动切模型也记到当前会话 meta (切标签恢复用)
-    if (sessionId && !sessionId.startsWith('tmp-')) {
-      if (!sessionMetaCache[sessionId]) sessionMetaCache[sessionId] = {};
-      sessionMetaCache[sessionId].last_model_cfg = alias;
-      fetch(`/sessions/${encodeURIComponent(sessionId)}/meta`, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ last_model_cfg: alias }),
-      }).catch(() => {});
-    }
-    const _mm = document.getElementById('modelMenu');
-    if (_mm) _mm.classList.remove('open');
-    const _mnl = document.getElementById('modelNameLabel');
-    if (_mnl) _mnl.textContent = alias;
-    const tip = document.createElement('div');
-    tip.className = 'model-switch-tip';
-    tip.textContent = `模型已切到 ${alias} · ${data.note || '下一轮生效'}`;
-    document.body.appendChild(tip);
-    setTimeout(() => tip.remove(), 2800);
-    setTimeout(loadCurrentModel, 600);
-  } catch (e) {
-    await opusAlert({ title: '网络出错', message: e.message, icon: '<i class="ri-error-warning-fill"></i>' });
-  }
-}
-
-// 点 outside 关 model menu
-document.addEventListener('click', (e) => {
-  if (!_modelMenuOpen) return;
-  if (e.target.closest('#modelSwitch')) return;
-  _modelMenuOpen = false;
-  document.getElementById('modelMenu')?.classList.remove('open');
-});
 
 // 手机端 · 点 chat-pane-head 把对话栏从底部抽屉切换出来
 function toggleChatPane() {
@@ -9946,533 +7585,30 @@ function renderDetailWelcome() {
   loadBIDashboard();
 }
 
-async function loadBIDashboard() {
-  if (!token) {
-    $detailPane.innerHTML = `
-      <div class="bi-loading">
-        <div style="font-size:18px;margin-bottom:8px"><i class="ri-diamond-fill"></i> 工作室 BI 看板</div>
-        <div style="font-size:12px;color:var(--dim2)">没有 token · 点右上 ⚙ 填一下</div>
-      </div>`;
-    return;
-  }
-  try {
-    const r = await fetch('/dashboard/cockpit?head=3', {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) {
-      $detailPane.innerHTML = `<div class="bi-loading">加载失败 [${r.status}]</div>`;
-      return;
-    }
-    const data = await r.json();
-    renderBIDashboard(data);
-  } catch (e) {
-    $detailPane.innerHTML = `<div class="bi-loading">网络出错: ${e.message}</div>`;
-  }
-}
-
-function renderBIDashboard(data) {
-  // 从 cockpit 拿所有维度
-  const domainsById = {};
-  for (const d of data.domains || []) domainsById[d.id] = d;
-
-  // ── 搭建 V3 骨架 ──
-  $detailPane.innerHTML = `
-    <div class="bi-dashboard">
-      <div class="bi-head">
-        <h2><i class="ri-dashboard-fill" style="color:var(--opus)"></i> 工作室 BI 看板</h2>
-        <span class="bi-head-meta">
-          ${data.generated_at || ''} ·
-          <button class="bi-link" onclick="renderDetailWelcome()" title="刷新"><i class="ri-refresh-fill"></i> 刷新</button>
-        </span>
-      </div>
-
-      <!-- 建议操作 (0.9.6 · 用户: 页面分散 · 顶部放条件触发的行动建议 · 晨会汇报位) -->
-      <div id="biSuggestBar" style="margin-bottom:12px"></div>
-
-      <!-- KPI 数字条 -->
-      <div class="bi-kpi-bar" id="biKpiBar">
-        <div class="bi-kpi-card"><div class="bi-kpi-value">…</div><div class="bi-kpi-label">加载中</div></div>
-      </div>
-
-      <!-- 自主巡航 -->
-      ${renderAutopilotBanner()}
-
-      <!-- 第一行：价值热力图(占大头) + 信号流(压窄) -->
-      <div class="bi-grid-2 bi-row-heat">
-        <div class="bi-card bi-heat-card">
-          <div class="bi-card-head">
-            <h3><i class="ri-fire-fill" style="color:var(--opus)"></i> 价值热力</h3>
-            <span class="bi-heat-nav">
-              <button class="bi-heat-arrow" onclick="biHeatNav(-1)" title="上个月"><i class="ri-arrow-left-s-line"></i></button>
-              <span class="badge" id="biCalBadge">…</span>
-              <button class="bi-heat-arrow" onclick="biHeatNav(1)" title="下个月"><i class="ri-arrow-right-s-line"></i></button>
-            </span>
-          </div>
-          <div class="bi-heat-domains" id="biHeatDomains"></div>
-          <div class="bi-heat-summary" id="biHeatSummary"></div>
-          <div class="bi-ritual-strip" id="biRitualStrip"></div>
-          <div class="bi-cal-labels"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
-          <div class="bi-cal-grid" id="biCalGrid"></div>
-        </div>
-        <div class="bi-card bi-signal-card">
-          <div class="bi-card-head">
-            <h3><i class="ri-radar-fill" style="color:var(--opus)"></i> 信号流</h3>
-            <span class="bi-sig-head-r">
-              <button class="bi-sig-today" id="biSigToday" onclick="biSigToggleToday()" title="只看今天抓到/发布的信号"><i class="ri-calendar-event-line"></i> 今日</button>
-              <span class="badge" id="biSigCount">…</span>
-            </span>
-          </div>
-          <div class="bi-heat-domains" id="biSigDomains"></div>
-          <div id="biSignalList"><div class="bi-v3-empty">加载中…</div></div>
-        </div>
-      </div>
-
-      <!-- 趋势研判 (卷五十六 P2) · 跟热力图同月同领域 · Daemonkey 用 LLM 给可行性 + 执行方案 -->
-      <div class="bi-card bi-brief-card">
-        <div class="bi-card-head">
-          <h3><i class="ri-lightbulb-flash-fill" style="color:#F6AD55"></i> 趋势研判 <span class="bi-brief-scope" id="biBriefScope"></span></h3>
-          <button class="bi-brief-gen" id="biBriefGenBtn" onclick="biBriefGenerate()"><i class="ri-sparkling-2-line"></i> 研判本月趋势</button>
-        </div>
-        <div class="bi-brief-body" id="biBriefBody"><div class="bi-v3-empty">跟着热力图的月份 / 领域 · 点右上让 Daemonkey 看一遍这段时间的信号·给趋势可行性 + 下一步动作</div></div>
-      </div>
-
-      <!-- 认知行 (卷五十八续 VIII)：Daemonkey 眼里的你 (能力镜像·填孤岛) + 闭环温度计 -->
-      <div class="bi-grid-2">
-        <div class="bi-card bi-mirror-card">
-          <div class="bi-card-head">
-            <h3><i class="ri-aspect-ratio-fill" style="color:#9f7aea"></i> Daemonkey 眼里的你 <span class="bi-mirror-time" id="biMirrorTime"></span></h3>
-            <button class="bi-brief-gen" id="biMirrorBtn" type="button"><i class="ri-camera-lens-fill"></i> 立即照镜</button>
-          </div>
-          <div class="bi-mirror-body" id="biMirrorBody"><div class="bi-v3-empty">加载中…</div></div>
-        </div>
-        <div class="bi-card">
-          <div class="bi-card-head"><h3><i class="ri-temp-hot-fill" style="color:#F6AD55"></i> 闭环温度计 <span class="badge" id="biClosureRate">…</span></h3></div>
-          <div id="biClosureBody"><div class="bi-v3-empty">加载中…</div></div>
-        </div>
-      </div>
-
-      <!-- 记忆体系 + 工坊 (0.9.6 · 用户: 看板 = 用户了解功能的大面板 · 按钮走 spawnQuickly 后台任务 · 跟照镜同款) -->
-      <div class="bi-grid-2" style="margin-top:12px">
-        <div class="bi-card">
-          <div class="bi-card-head">
-            <h3><i class="ri-brain-fill" style="color:#8affd6"></i> 记忆体系 <span class="badge" id="biMemoryBadge">…</span></h3>
-            <span>
-              <button class="bi-link" id="biMemoryAuditBtn" type="button" title="让 Daemonkey 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 手艺体检</button>
-              <button class="bi-link" onclick="loadDashboard('memory_map')" title="记忆星图 · 三道闸治理全景"><i class="ri-sparkling-2-fill"></i> 星图</button>
-            </span>
-          </div>
-          <div class="bi-self-grid" id="biMemoryBody"><div class="bi-v3-empty">加载中…</div></div>
-        </div>
-        <div class="bi-card">
-          <div class="bi-card-head">
-            <h3><i class="ri-tools-fill" style="color:#b794f6"></i> 工坊 <span class="badge" id="biWorkshopBadge">…</span></h3>
-            <button class="bi-link" onclick="loadDashboard('workshop')" title="进工坊编排应用与工作流"><i class="ri-arrow-right-line"></i> 进工坊</button>
-          </div>
-          <div class="bi-self-grid" id="biWorkshopBody"><div class="bi-v3-empty">加载中…</div></div>
-        </div>
-      </div>
-
-      <!-- 第二行：图表 × 2 -->
-      <div class="bi-grid-2">
-        <div class="bi-card">
-          <div class="bi-card-head"><h3><i class="ri-bar-chart-fill" style="color:#4FD1C5"></i> 30 天雷达密度</h3></div>
-          <div class="bi-chart-wrap"><canvas id="biChartRadar"></canvas></div>
-        </div>
-        <div class="bi-card">
-          <div class="bi-card-head"><h3><i class="ri-pie-chart-fill" style="color:#F6AD55"></i> 维度产出分布</h3></div>
-          <div class="bi-chart-wrap"><canvas id="biChartDonut"></canvas></div>
-          <div class="bi-donut-legend" id="biDonutLegend"></div>
-        </div>
-      </div>
-
-      <!-- wish-bec4f3b9 · 计费卡 (价格表 × 用量 → 钱) -->
-      <div class="bi-card" style="margin-top:12px">
-        <div class="bi-card-head">
-          <h3><i class="ri-money-cny-circle-fill" style="color:#F6AD55"></i> 模型计费</h3>
-          <div class="bi-range-bar" id="biBillingRangeBar">
-            <button class="btn-ghost active" data-range="today">今日</button>
-            <button class="btn-ghost" data-range="7d">7天</button>
-            <button class="btn-ghost" data-range="30d">30天</button>
-          </div>          <span class="badge" id="biBillingUnpriced" title="未配价模型不出金额 · 去 设置→LLM模型 配价"></span>
-        </div>
-        <div id="biBillingBody"><div class="bi-v3-empty">加载中…</div></div>
-      </div>
-
-      <!-- 第三行：掘金机会 + 最近动态 -->
-      <div class="bi-grid-2">
-        <div class="bi-card">
-          <div class="bi-card-head"><h3><i class="ri-diamond-fill" style="color:#F6AD55"></i> 掘金机会</h3><span class="badge" id="biOppCount">…</span></div>
-          <div id="biOppList"><div class="bi-v3-empty">加载中…</div></div>
-        </div>
-        <div class="bi-card">
-          <div class="bi-card-head"><h3><i class="ri-history-fill" style="color:var(--dim)"></i> 最近动态</h3></div>
-          <div class="bi-timeline" id="biTimeline"><div class="bi-v3-empty">加载中…</div></div>
-        </div>
-      </div>
-
-      <!-- 元行 (卷五十八续 VIII)：Daemonkey 自况 + 节律时间线 -->
-      <div class="bi-grid-2">
-        <div class="bi-card">
-          <div class="bi-card-head"><h3><i class="ri-pulse-fill" style="color:#4FD1C5"></i> Daemonkey 自况</h3></div>
-          <div class="bi-self-grid" id="biSelfBody"><div class="bi-v3-empty">加载中…</div></div>
-        </div>
-        <div class="bi-card">
-          <div class="bi-card-head"><h3><i class="ri-time-fill" style="color:#63B3ED"></i> 节律 · 周期仪式</h3></div>
-          <div class="bi-rhythm" id="biRhythmBody"><div class="bi-v3-empty">加载中…</div></div>
-        </div>
-      </div>
-    </div>`;
-
-  // ── 同步填充已有数据 ──
-  fillBIV3Blocks(data);
-  // ── 异步拉补充数据 ──
-  loadBIV3Async();
-}
 
 // ═══════════════════════════════════════════
 //  V3 同步填充 (cockpit 已有的数据)
 // ═══════════════════════════════════════════
-function fillBIV3Blocks(data) {
-  const domainsById = {};
-  for (const d of data.domains || []) domainsById[d.id] = d;
-
-  // KPI 条
-  const picks = [
-    { id:'radar',   icon:'ri-radar-fill',     color:'var(--opus)',  label:'雷达信号' },
-    { id:'trends',  icon:'ri-line-chart-fill', color:'#4FD1C5',     label:'今日趋势' },
-    { id:'reports', icon:'ri-article-fill',    color:'#63B3ED',     label:'报告产出' },
-    { id:'wishlist',icon:'ri-lightbulb-fill',  color:'#F6AD55',     label:'Daemonkey 心愿' },
-    { id:'plugins', icon:'ri-puzzle-fill',     color:'var(--dim)',   label:'已装插件' },
-  ];
-  const kpiHtml = picks.map(p => {
-    const d = domainsById[p.id];
-    const v = d ? d.total : 0;
-    return `<div class="bi-kpi-card"><div class="bi-kpi-icon" style="color:${p.color}"><i class="${p.icon}"></i></div><div class="bi-kpi-value">${v}</div><div class="bi-kpi-label">${p.label}</div></div>`;
-  }).join('');
-  const kpiBar = document.getElementById('biKpiBar');
-  if (kpiBar) kpiBar.innerHTML = kpiHtml;
-
-  // 机会
-  const oppDomain = domainsById['opportunities'] || {};
-  const opps = oppDomain.items || [];
-  const oppCount = document.getElementById('biOppCount');
-  if (oppCount) oppCount.textContent = (oppDomain.total || opps.length) + ' 个';
-  const oppList = document.getElementById('biOppList');
-  if (oppList && opps.length) {
-    oppList.innerHTML = opps.map(o => {
-      const sc = o.recommend || o.recommendation_score || 50;
-      const cls = sc >= 70 ? 'hi' : sc >= 40 ? 'md' : 'lo';
-      const tags = o.tags || [];
-      return `<div class="bi-opp-item">
-        <div class="bi-opp-score ${cls}">${sc}</div>
-        <div class="bi-opp-body">
-          <div class="bi-opp-title">${escHtml(o.title || '(未命名)')}</div>
-          ${o.summary ? `<div class="bi-opp-summary">${escHtml(o.summary).slice(0,80)}</div>` : ''}
-          ${tags.length ? `<div class="bi-opp-tags">${tags.map(t => `<span class="bi-opp-tag">${escHtml(t)}</span>`).join('')}</div>` : ''}
-        </div>
-      </div>`;
-    }).join('');
-  } else if (oppList) {
-    oppList.innerHTML = '<div class="bi-v3-empty">暂无掘金机会 · 跟 Daemonkey 说「巡一圈」</div>';
-  }
-
-  // 最近动态（从 cockpit 各维度拼）
-  fillBITimeline(data);
-}
 
 // ═══════════════════════════════════════════
 //  V3 异步补充 (日历 + 雷达 + 趋势 + 图表)
 // ═══════════════════════════════════════════
-async function loadBIV3Async() {
-  try {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-
-    const [cal, radar, trends] = await Promise.all([
-      fetch('/dashboard/calendar?domain_filter=' + y + '-' + m + '&head=42', { headers: { 'Authorization': 'Bearer ' + token } }).then(r => r.ok ? r.json() : null),
-      fetch('/dashboard/radar?head=6', { headers: { 'Authorization': 'Bearer ' + token } }).then(r => r.ok ? r.json() : null),
-      fetch('/dashboard/trends?head=3', { headers: { 'Authorization': 'Bearer ' + token } }).then(r => r.ok ? r.json() : null),
-    ]);
-
-    biHeatLoad();  // 卷五十六 · 价值热力图 (独立拉 calendar_valued · 不再用 cal 计数) · 顺带填节律时间线 D 卡
-    if (radar || trends) fillBISignals(radar, trends);
-    if (cal) fillBIRadarChart(cal);
-    fillBIDonutChart();
-    // 卷五十八续 VIII · 新增卡 (各自独立·互不阻塞)
-    loadBIMirror();   // A·Daemonkey 眼里的你
-    loadBIClosure();  // B·闭环温度计
-    loadBISelf();     // C·Daemonkey 自况
-    loadBIBilling();  // wish-bec4f3b9 · 模型计费卡
-    loadBIMemory();   // 0.9.6 · 记忆体系卡 (lite 端点 · <100ms)
-    loadBIWorkshop(); // 0.9.6 · 工坊卡
-    loadBISuggestions(); // 0.9.6 · 建议操作条 (顶部 · 条件触发)
-  } catch (e) {
-    console.error('BI V3 async load error:', e);
-  }
-}
 
 // ═══════════════════════════════════════════
 //  卷五十八续 VIII · A/B/C 卡加载器 (D 节律时间线在 biHeatRender 里填)
 // ═══════════════════════════════════════════
 // A·Daemonkey 眼里的你 · 市场能力镜像快照 (填"照完即孤岛"的洞)
-async function loadBIMirror() {
-  const body = document.getElementById('biMirrorBody');
-  const timeEl = document.getElementById('biMirrorTime');
-  const btn = document.getElementById('biMirrorBtn');
-  if (btn) btn.onclick = () => spawnQuickly('帮我照一次市场能力镜像 (mirror_capability action=generate)', '市场能力镜像');
-  if (!body) return;
-  try {
-    const r = await fetch('/dashboard/capability_snapshot', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) { body.innerHTML = '<div class="bi-v3-empty">加载失败</div>'; return; }
-    const d = await r.json();
-    if (!d.snapshot) {
-      body.innerHTML = `<div class="bi-v3-empty">${escHtml(d.note || '还没照过镜子 · 点右上「立即照镜」')}</div>`;
-      if (timeEl) timeEl.textContent = '';
-      return;
-    }
-    body.innerHTML = (typeof mdRender === 'function') ? mdRender(d.snapshot) : escHtml(d.snapshot);
-    if (timeEl) timeEl.textContent = d.generated_at ? ('· ' + d.generated_at) : '';
-  } catch (e) { body.innerHTML = '<div class="bi-v3-empty">网络出错</div>'; }
-}
 
 // B·闭环温度计 · 哪些 Daemonkey 输出还在等 用户 反应
-async function loadBIClosure() {
-  const body = document.getElementById('biClosureBody');
-  const rateEl = document.getElementById('biClosureRate');
-  if (!body) return;
-  try {
-    const r = await fetch('/dashboard/closure', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) { body.innerHTML = '<div class="bi-v3-empty">加载失败</div>'; return; }
-    const d = await r.json();
-    if (rateEl) rateEl.textContent = (d.closure_rate != null ? d.closure_rate + '%' : '—');
-    const gauges = d.gauges || [];
-    if (!gauges.length) { body.innerHTML = '<div class="bi-v3-empty">暂无可统计的闭环</div>'; return; }
-    body.innerHTML = gauges.map(g => {
-      const pct = g.total > 0 ? Math.round(100 * g.closed / g.total) : 100;
-      const warn = g.pending > 0 ? ' warn' : '';
-      return `<div class="bi-closure-row">
-        <div class="bi-closure-top"><span class="bi-closure-lbl">${escHtml(g.label)}</span><span class="bi-closure-num${warn}">${g.closed}/${g.total}</span></div>
-        <div class="bi-closure-bar"><div class="bi-closure-fill" style="width:${pct}%"></div></div>
-        <div class="bi-closure-hint">${escHtml(g.hint || '')}</div>
-      </div>`;
-    }).join('');
-  } catch (e) { body.innerHTML = '<div class="bi-v3-empty">网络出错</div>'; }
-}
 
 // C·Daemonkey 自况 · token / 会话 / 在线 (拉现有端点·不加后端)
-function _biFmtNum(n) {
-  n = +n || 0;
-  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
-  return String(n);
-}
-function _biUptime(iso) {
-  const t = Date.parse(iso);
-  if (isNaN(t)) return '—';
-  let s = Math.max(0, Math.floor((Date.now() - t) / 1000));
-  const d = Math.floor(s / 86400); s -= d * 86400;
-  const h = Math.floor(s / 3600); s -= h * 3600;
-  const m = Math.floor(s / 60);
-  if (d > 0) return `${d}天${h}时`;
-  if (h > 0) return `${h}时${m}分`;
-  return `${m}分`;
-}
 // wish-bec4f3b9 · 模型计费卡 (原型 dashboard-billing-proto 完整形态 · 价格表 × 用量 → 钱)
 // 默认今日 · 用户 刷新看到的是当天数据 · 要更多自己切 7天/30天
 let _biBillingRange = 'today';
 // 模型切换「展开更多」(2026-08-20 · 默认 5 条 · 跟缓存经济性卡对齐)
-function biTlToggleMore(btn) {
-  const more = document.getElementById('biTlMoreWrap');
-  if (!more) return;
-  const open = more.style.display !== 'none';
-  more.style.display = open ? 'none' : '';
-  btn.innerHTML = open
-    ? `<i class="ri-arrow-down-s-line"></i> 展开剩余 ${more.children.length} 条`
-    : '<i class="ri-arrow-up-s-line"></i> 收起';
-}
 
-async function loadBIBilling() {
-  const body = document.getElementById('biBillingBody');
-  const badge = document.getElementById('biBillingUnpriced');
-  if (!body) return;
-  try {
-    const r = await fetch('/dashboard/billing?range=' + _biBillingRange, { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) { body.innerHTML = '<div class="bi-v3-empty">计费数据暂不可用</div>'; return; }
-    const d = await r.json();
-    const k = d.kpis || {};
-    if (badge) {
-      badge.textContent = k.unpriced_models ? `⚠ ${k.unpriced_models} 个未配价` : '';
-      badge.style.color = '#F6AD55';
-      badge.title = '未配价模型不出金额 · 去 设置→LLM模型 配价';
-    }
-    const cur = k.currency === 'CNY' ? '¥' : '$';
-    const rl = {today:'今日', '7d':'近7天', '30d':'本月'}[_biBillingRange] || _biBillingRange;
-    const unpricedHint = k.unpriced_models ? '<i class="ri-information-fill bi-hint-i" title="不含 ' + k.unpriced_models + ' 个未配价模型 · 实际花费可能更高 · 口径=已配价模型"></i>' : '';
-
-    // ① KPI 四卡
-    const kpiCards = `
-      <div class="bi-kpi-bar proto-kpi-4" style="grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr));margin-bottom:12px">
-        <div class="bi-kpi-card"><div class="bi-kpi-icon" style="color:#F6AD55"><i class="ri-coin-fill"></i></div>
-          <div class="bi-kpi-value">${cur}${(k.today_cost || 0).toFixed(2)}</div><div class="bi-kpi-label">${rl}花费${unpricedHint}</div></div>
-        <div class="bi-kpi-card"><div class="bi-kpi-icon" style="color:#B794F4"><i class="ri-wallet-3-fill"></i></div>
-          <div class="bi-kpi-value">${cur}${(k.month_cost || 0).toFixed(2)}</div><div class="bi-kpi-label">本月花费</div></div>
-        <div class="bi-kpi-card"><div class="bi-kpi-icon" style="color:#63B3ED"><i class="ri-cpu-fill"></i></div>
-          <div class="bi-kpi-value">${_biFmtTok(k.today_tokens || 0)}</div><div class="bi-kpi-label">${rl} tokens (in+out)</div></div>
-        <div class="bi-kpi-card"><div class="bi-kpi-icon" style="color:#4FD1C5"><i class="ri-flashlight-fill"></i></div>
-          <div class="bi-kpi-value">${Math.round((k.cache_hit_rate||0)*100)}%</div>
-          <div class="bi-kpi-label">缓存命中率<i class="ri-information-fill bi-hint-i" title="口径=已配价模型"></i></div>
-          <div class="bi-kpi-delta" style="color:#48BB78">缓存省 ${cur}${(k.cache_saved||0).toFixed(2)}</div></div>
-      </div>`;
-
-    // ② 按模型成本表 (原型 7 列)
-    const rows = (d.by_model || []).map(m => {
-      const cost = m.price ? _biMoney(m, cur) : '<span class="bi-unpriced">— 未配价</span>';
-      const cr = m.cache_read_tokens || 0;
-      const cacheTag = cr > 0 ? ` <span class="bi-brief-scope" title="含缓存价">含缓存价${m.price && m.price.cache_read != null ? '' : '(估)'}</span>` : '';
-      const src = m.price
-        ? '<span class="bi-brief-scope">价格表</span>'
-        : `<a class="bi-link-btn" href="#" onclick="openSettings();return false;"><i class="ri-price-tag-3-line"></i> 去配价 →</a>`;
-      return `<tr>
-        <td style="padding:5px 8px;color:var(--text)">${escHtml(m.name || m.config_id || m.model_id || '?')}</td>
-        <td class="bi-num" style="padding:5px 8px">${m.calls}</td>
-        <td class="bi-num" style="padding:5px 8px">${_biFmtTok(m.input_tokens||0)}</td>
-        <td class="bi-num" style="padding:5px 8px">${_biFmtTok(m.output_tokens||0)}</td>
-        <td class="bi-num" style="padding:5px 8px">${_biFmtTok(cr)}${cacheTag}</td>
-        <td class="bi-num" style="padding:5px 8px">${cost}</td>
-        <td style="padding:5px 8px">${src}</td>
-      </tr>`;
-    }).join('');
-    const modelTable = `
-      <div style="margin-bottom:12px">
-        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px"><i class="ri-bar-chart-box-fill" style="color:#F6AD55"></i> 按模型成本</div>
-        <div style="overflow-x:auto"><table class="proto-table bi-table" style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead><tr style="color:var(--dim);text-align:left">
-            <th style="padding:5px 8px">模型 (config 名)</th><th class="bi-num" style="padding:5px 8px">调用</th>
-            <th class="bi-num" style="padding:5px 8px">输入 tok</th><th class="bi-num" style="padding:5px 8px">输出 tok</th>
-            <th class="bi-num" style="padding:5px 8px">缓存命中 tok</th><th class="bi-num" style="padding:5px 8px">估算成本</th>
-            <th style="padding:5px 8px">单价来源</th>
-          </tr></thead>
-          <tbody>${rows || '<tr><td colspan="7" class="bi-v3-empty" style="padding:10px">还没有用量数据 · 聊几轮就有了</td></tr>'}</tbody>
-        </table></div>
-      </div>`;
-
-    // ③ 双栏: 模型切换时间线 + 缓存经济性
-    // 方案 B (2026-08-06 用户 拍板) · 普通切换=平铺行 · 顾问唤醒=紫色左边条胶囊
-    const switches = (d.switches || []);
-    const tlItems = switches.slice(0, 8).map(s => {
-      if (s.advisor) {
-        // 2026-08-20 用户: 胶囊只留 皇冠+模型名+tok · 「顾问唤醒」标签和时间/mode 收进悬浮
-        // (窄分辨率下 meta 长串把胶囊撑高/挤爆 · 折叠抗性优先)
-        const full = `顾问唤醒 · ${s.ts || ''} · ${s.mode || ''} · ${_biFmtTok(s.tokens_after || 0)} tok · 系统自动调用的顾问模型 · 独立临时连接`;
-        return `<div class="bi-tl-adv" title="${escHtml(full)}">
-          <i class="ri-vip-crown-fill"></i>
-          <b title="${escHtml(s.to?.name||'')}">${escHtml(s.to?.name||'')}</b>
-          <span class="bi-tl-adv-meta">${_biFmtTok(s.tokens_after||0)} tok</span>
-        </div>`;
-      }
-      const fullMain = `${escHtml(s.from?.name||'')} → ${escHtml(s.to?.name||'')} · ${escHtml(s.ts||'')} · ${_biFmtTok(s.tokens_after||0)} tok`;
-      return `<div class="bi-tl-main">
-        <i class="ri-arrow-right-up-line"></i>
-        <span title="${escHtml(s.from?.name||'')}">${escHtml(s.from?.name||'')}</span>
-        <span class="bi-tl-arr"><i class="ri-arrow-right-line"></i></span>
-        <b title="${escHtml(s.to?.name||'')}">${escHtml(s.to?.name||'')}</b>
-        <span class="bi-tl-main-meta" title="${escHtml(s.ts||'')}">${_biFmtTok(s.tokens_after||0)} tok</span>
-      </div>`;
-    });
-    // 2026-08-20 用户: 最多显 5 条 · 超出收进「展开更多」(左栏比右栏(缓存经济性)高一截 · 对不齐)
-    // 「仅显示最近 8 条」不单起一行 · 并进展开按钮行右侧 (用户 续)
-    const TL_SHOW = 5;
-    const tlCapNote = switches.length > 8 ? '<span class="bi-brief-scope" style="margin-left:auto">仅显示最近 8 条</span>' : '';
-    const tl = tlItems.length ? (
-      tlItems.slice(0, TL_SHOW).join('')
-      + (tlItems.length > TL_SHOW
-        ? `<div id="biTlMoreWrap" style="display:none">${tlItems.slice(TL_SHOW).join('')}</div>
-           <div style="display:flex;align-items:center"><button class="bi-tl-more" onclick="biTlToggleMore(this)"><i class="ri-arrow-down-s-line"></i> 展开剩余 ${tlItems.length - TL_SHOW} 条</button>${tlCapNote}</div>`
-        : tlCapNote ? `<div style="display:flex">${tlCapNote}</div>` : '')
-    ) : '<div class="bi-v3-empty" style="padding:6px 0">还没有模型切换记录</div>';
-    const cacheRows = (d.by_model || []).filter(m => (m.cache_read_tokens||0) > 0 && _biIsLlm(m)).map(m => {
-      const rate = m.input_tokens > 0 ? (m.cache_read_tokens||0) / m.input_tokens : 0;
-      let saved = null;
-      if (m.price) {
-        const pc = (m.price.cache_read != null) ? m.price.cache_read : (m.price.input||0) * 0.1;
-        saved = (m.cache_read_tokens||0) * ((m.price.input||0) - pc) / 1e6;
-      }
-      return `<div style="margin-bottom:7px">
-        <div style="display:flex;justify-content:space-between;font-size:12px">
-          <span style="color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0" title="${escHtml(m.name||'?')}">${escHtml(m.name||'?')}</span>
-          <span style="color:var(--dim);flex-shrink:0;margin-left:8px">${Math.round(rate*100)}% · ${m.price ? cur + saved.toFixed(2) : '<span style="color:#F6AD55">未配价</span>'}</span>
-        </div>
-        <div class="bi-bar-bg" style="height:6px;background:var(--bg3);border-radius:3px;margin-top:3px"><div style="height:100%;border-radius:3px;width:${rate*100}%;background:#4FD1C5"></div></div>
-      </div>`;
-    }).join('');
-    const duo = `
-      <div class="bi-grid-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:12px;margin-bottom:12px">
-        <div>
-          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px"><i class="ri-switch-fill" style="color:#63B3ED"></i> 模型切换</div>
-          ${tl}
-        </div>
-        <div>
-          <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px"><i class="ri-flashlight-fill" style="color:#4FD1C5"></i> 缓存经济性</div>
-          <div style="display:flex;align-items:baseline;gap:8px">
-            <span style="font-size:22px;font-weight:700;color:var(--text)">${Math.round((k.cache_hit_rate||0)*100)}%</span>
-            <span class="bi-brief-scope">总命中率 · 口径=已配价模型</span>
-          </div>
-          <div class="bi-bar-bg" style="height:8px;background:var(--bg3);border-radius:4px;margin:6px 0"><div style="height:100%;border-radius:4px;width:${Math.round((k.cache_hit_rate||0)*100)}%;background:linear-gradient(90deg,#4FD1C5,#48BB78)"></div></div>
-          <div style="font-size:12px;color:var(--text);margin-bottom:8px"><i class="ri-money-cny-circle-fill" style="color:#48BB78"></i> 缓存省下 <b>${cur}${(k.cache_saved||0).toFixed(2)}</b> <span class="bi-brief-scope">(命中价差折算 · 含估)</span></div>
-          ${cacheRows || ''}
-        </div>
-      </div>`;
-
-    // ④ 工坊 App 用量
-    const appRows = (d.app_runs || []).map(a => `<tr>
-      <td style="padding:5px 8px;color:var(--text)">${escHtml(a.app_name || a.app_id || '?')}</td>
-      <td class="bi-num" style="padding:5px 8px">${a.runs}</td>
-      <td class="bi-num" style="padding:5px 8px">${(a.avg_iterations||0).toFixed(1)}</td>
-      <td class="bi-num" style="padding:5px 8px">${_biFmtTok(a.total_tokens||0)}</td>
-      <td class="bi-num" style="padding:5px 8px">${a.est_cost != null ? cur + a.est_cost.toFixed(2) : '<span class="bi-unpriced">— 未配价</span>'}</td>
-    </tr>`).join('');
-    const appTable = `
-      <div>
-        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px"><i class="ri-tools-fill" style="color:#B794F4"></i> 工坊 App 用量</div>
-        <div style="overflow-x:auto"><table class="proto-table bi-table" style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead><tr style="color:var(--dim);text-align:left">
-            <th style="padding:5px 8px">App 名</th><th class="bi-num" style="padding:5px 8px">运行次数</th>
-            <th class="bi-num" style="padding:5px 8px">平均迭代</th><th class="bi-num" style="padding:5px 8px">总 tokens</th>
-            <th class="bi-num" style="padding:5px 8px">估算成本</th>
-          </tr></thead>
-          <tbody>${appRows || '<tr><td colspan="5" class="bi-v3-empty" style="padding:10px">还没有 app 用量</td></tr>'}</tbody>
-        </table></div>
-      </div>`;
-
-    body.innerHTML = kpiCards + modelTable + duo + appTable;
-  } catch (e) {
-    body.innerHTML = '<div class="bi-v3-empty">计费数据加载失败</div>';
-  }
-}
-function _biMoney(m, cur) {
-  const p = m.price;
-  const calc = (u, price) => {
-    if (!price) return null;
-    const pin = price.input, pout = price.output;
-    const pcache = (price.cache_read != null) ? price.cache_read : (pin || 0);
-    const miss = Math.max(0, u.input_tokens - (u.cache_read_tokens||0) - (u.cache_creation_tokens||0));
-    return (miss * (pin||0) + (u.cache_read_tokens||0) * pcache + (u.cache_creation_tokens||0) * (price.cache_creation ?? (pin||0)*1.25) + u.output_tokens * (pout||0)) / 1e6;
-  };
-  const c = calc(m, p);
-  return c == null ? '—' : cur + c.toFixed(2);
-}
-function _biFmtTok(v) {
-  if (v >= 1e6) return (v/1e6).toFixed(1) + 'M';
-  if (v >= 1e3) return (v/1e3).toFixed(1) + 'k';
-  return String(v || 0);
-}
 // 图像/视频/音频类不走 prompt cache · 缓存经济性只算 LLM 模型
 const _biLlmFams = ['deepseek','glm','kimi','moonshot','claude','qwen','gpt-4','gpt-3.5','gpt-5','o1','o3','gemini','minimax'];
-function _biIsLlm(m) {
-  const s = ((m.model_id || '') + ' ' + (m.name || '')).toLowerCase();
-  return _biLlmFams.some(f => s.includes(f));
-}
 // 范围切换
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('#biBillingRangeBar .btn-ghost');
@@ -10482,119 +7618,12 @@ document.addEventListener('click', (e) => {
   loadBIBilling();
 });
 
-async function loadBISelf() {
-  const body = document.getElementById('biSelfBody');
-  if (!body) return;
-  const hdr = { headers: { 'Authorization': 'Bearer ' + token } };
-  const [tb, sess, life] = await Promise.all([
-    fetch('/api/token_budget/status', hdr).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch('/sessions?api_only=true', hdr).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch('/api/lifecycle_status').then(r => r.ok ? r.json() : null).catch(() => null),
-  ]);
-  const cells = [];
-  if (tb) {
-    cells.push({ icon: 'ri-coin-fill', color: '#F6AD55', val: _biFmtNum(tb.day_total || 0), lbl: '今日 token' });
-    cells.push({ icon: 'ri-chat-poll-fill', color: '#4FD1C5', val: (tb.day_calls || 0), lbl: '今日调用' });
-  }
-  if (sess) {
-    const cnt = (sess.total != null) ? sess.total : ((sess.sessions || []).length);
-    cells.push({ icon: 'ri-chat-3-fill', color: 'var(--opus)', val: cnt, lbl: '会话数' });
-  }
-  if (life && life.started_at) {
-    cells.push({ icon: 'ri-time-fill', color: '#63B3ED', val: _biUptime(life.started_at), lbl: '已在线' });
-  }
-  if (!cells.length) { body.innerHTML = '<div class="bi-v3-empty">拿不到运行数据</div>'; return; }
-  body.innerHTML = cells.map(c =>
-    `<div class="bi-self-cell"><div class="bi-self-icon" style="color:${c.color}"><i class="${c.icon}"></i></div><div class="bi-self-val">${escHtml(String(c.val))}</div><div class="bi-self-lbl">${escHtml(c.lbl)}</div></div>`
-  ).join('');
-}
 
 // 0.9.6 · 建议操作条 (顶部 · 条件触发 · 忽略按天记 localStorage)
-function _biSuggestIgnored() {
-  try { return JSON.parse(localStorage.getItem('bi_suggest_ignore') || '{}'); } catch { return {}; }
-}
-function biSuggestIgnore(id) {
-  const m = _biSuggestIgnored();
-  m[id] = new Date().toISOString().slice(0, 10); // 当天有效 · 明天又出现
-  localStorage.setItem('bi_suggest_ignore', JSON.stringify(m));
-  const el = document.getElementById('biSuggest-' + id);
-  if (el) el.remove();
-  const bar = document.getElementById('biSuggestBar');
-  if (bar && !bar.querySelector('.bi-suggest-item')) bar.innerHTML = '';
-}
-async function loadBISuggestions() {
-  const bar = document.getElementById('biSuggestBar');
-  if (!bar) return;
-  try {
-    const r = await fetch('/dashboard/suggestions', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) return;
-    const items = ((await r.json()).items || []);
-    const ignored = _biSuggestIgnored();
-    const today = new Date().toISOString().slice(0, 10);
-    const show = items.filter(it => ignored[it.id] !== today);
-    if (!show.length) { bar.innerHTML = ''; return; }
-    bar.innerHTML = show.map(it => `
-      <div class="bi-suggest-item" id="biSuggest-${escHtml(it.id)}" style="display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:6px;border:1px solid var(--border,#2a2a3a);border-radius:10px;background:var(--bg2,#1a1826);font-size:12px">
-        <i class="${escHtml(it.icon)}" style="color:${escHtml(it.color || 'var(--accent,#8a7dff)')};font-size:14px"></i>
-        <span style="flex:1;color:var(--text,#ece8f5)">${escHtml(it.text)}</span>
-        ${it.prompt ? `<button class="bi-link" style="white-space:nowrap" onclick="spawnQuickly(${JSON.stringify(it.prompt).replace(/"/g, '&quot;')}, ${JSON.stringify(it.label || '建议操作').replace(/"/g, '&quot;')})"><i class="ri-play-fill"></i> ${escHtml(it.label || '执行')}</button>` : ''}
-        <button class="bi-link" title="今天不再提示" onclick="biSuggestIgnore('${escHtml(it.id)}')" style="opacity:.55"><i class="ri-close-line"></i></button>
-      </div>`).join('');
-  } catch (e) { /* 建议条失败不影响看板 */ }
-}
 
 // 0.9.6 · 记忆体系卡 (lite 端点 · 秒出数字 · 详细全景点「星图」进 memory_map tab)
-async function loadBIMemory() {
-  const body = document.getElementById('biMemoryBody');
-  const badge = document.getElementById('biMemoryBadge');
-  const btn = document.getElementById('biMemoryAuditBtn');
-  if (btn) btn.onclick = () => spawnQuickly('帮我看看手艺是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '手艺体检');
-  if (!body) return;
-  try {
-    const r = await fetch('/dashboard/memory_map?lite=1', { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) { body.innerHTML = '<div class="bi-v3-empty">加载失败</div>'; return; }
-    const d = await r.json();
-    if (d.error) { body.innerHTML = `<div class="bi-v3-empty">${escHtml(d.error)}</div>`; return; }
-    const nb = d.notebook || {};
-    const hg = d.hygiene || {};
-    const nbPct = nb.full_chars ? Math.round(nb.core_chars / nb.full_chars * 100) : null;
-    if (badge) badge.textContent = (d.playbook_count || 0) + ' 门手艺';
-    const cells = [
-      { icon: 'ri-database-2-fill', color: '#8affd6', val: _biFmtNum(d.total_chunks || 0), lbl: '记忆总量' },
-      { icon: 'ri-tools-fill', color: '#b794f6', val: d.playbook_count || 0, lbl: '手艺' },
-      { icon: 'ri-shield-check-fill', color: '#6ed27a', val: 'v' + (hg.version || '?'), lbl: hg.migrated ? '卫生闸·已清理' : '卫生闸·待清理' },
-    ];
-    if (nbPct != null) cells.push({ icon: 'ri-stack-fill', color: '#ffd28a', val: '-' + (100 - nbPct) + '%', lbl: '画像分层压缩' });
-    body.innerHTML = cells.map(c =>
-      `<div class="bi-self-cell"><div class="bi-self-icon" style="color:${c.color}"><i class="${c.icon}"></i></div><div class="bi-self-val">${escHtml(String(c.val))}</div><div class="bi-self-lbl">${escHtml(c.lbl)}</div></div>`
-    ).join('');
-  } catch (e) { body.innerHTML = '<div class="bi-v3-empty">网络出错</div>'; }
-}
 
 // 0.9.6 · 工坊卡 (apps/flows 计数 + shipped 数 · 入口卡)
-async function loadBIWorkshop() {
-  const body = document.getElementById('biWorkshopBody');
-  const badge = document.getElementById('biWorkshopBadge');
-  if (!body) return;
-  const hdr = { headers: { 'Authorization': 'Bearer ' + token } };
-  const [apps, flows] = await Promise.all([
-    fetch('/workshop/apps', hdr).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch('/workshop/flows', hdr).then(r => r.ok ? r.json() : null).catch(() => null),
-  ]);
-  if (!apps && !flows) { body.innerHTML = '<div class="bi-v3-empty">拿不到工坊数据</div>'; return; }
-  const appList = (apps && (apps.items || apps.apps)) || [];
-  const flowList = (flows && (flows.items || flows.flows)) || [];
-  const shipped = appList.filter(a => a && a.shipped).length;
-  if (badge) badge.textContent = appList.length + ' 应用';
-  const cells = [
-    { icon: 'ri-apps-2-fill', color: '#b794f6', val: appList.length, lbl: '应用' },
-    { icon: 'ri-flow-chart', color: '#4FD1C5', val: flowList.length, lbl: '工作流' },
-    { icon: 'ri-rocket-fill', color: '#F6AD55', val: shipped, lbl: '已出厂' },
-  ];
-  body.innerHTML = cells.map(c =>
-    `<div class="bi-self-cell"><div class="bi-self-icon" style="color:${c.color}"><i class="${c.icon}"></i></div><div class="bi-self-val">${escHtml(String(c.val))}</div><div class="bi-self-lbl">${escHtml(c.lbl)}</div></div>`
-  ).join('');
-}
 
 // ══════════════════════════════════════════════════════════
 //  价值热力图 (卷五十六 · 2026-06-03)
@@ -10623,729 +7652,62 @@ async function biHeatLoad() {
 // 若按 85/65 切·几乎全挤在 2-3★、5★ 永不出现 → 星级失效。 这里压低让内容铺满 1-5★:
 //   5★(≥70)=⭐/👍 加持的真精品  4★(≥48)=顶级源新鲜文  3★(≥34)=新鲜常规
 //   2★(≥22)=偏旧/弱源  1★(>0)=陈旧低值
-function _biStarN(v) {
-  v = +v || 0;
-  if (v >= 70) return 5;
-  if (v >= 48) return 4;
-  if (v >= 34) return 3;
-  if (v >= 22) return 2;
-  if (v > 0) return 1;
-  return 0;
-}
 function _biStars(v) {
   const n = _biStarN(v);
   // 前 n 个实心·后 (5-n) 个空心
   return '★★★★★☆☆☆☆☆'.slice(5 - n, 10 - n);
 }
 
-function biHeatRender(c) {
-  const badge = document.getElementById('biCalBadge');
-  if (badge) badge.textContent = c.year + '/' + String(c.month).padStart(2, '0');
-
-  const dt = document.getElementById('biHeatDomains');
-  if (dt) {
-    dt.innerHTML = (c.domains || []).map(d => {
-      const on = d.id === _biHeat.domain;
-      const style = on ? `style="--dc:${d.color || 'var(--opus)'}"` : '';
-      return `<button class="bi-heat-dom${on ? ' active' : ''}" ${style} onclick="biHeatSetDomain('${d.id}')">${d.icon || ''} ${escHtml(d.label)} <i>${d.count}</i></button>`;
-    }).join('');
-  }
-
-  const sm = document.getElementById('biHeatSummary');
-  if (sm) {
-    let peakLabel = '—', peakStars = '';
-    if (c.peak_day) {
-      peakLabel = parseInt(c.peak_day.slice(5, 7), 10) + '/' + parseInt(c.peak_day.slice(-2), 10);
-      const pd = (c.days || []).find(x => x.date === c.peak_day);
-      if (pd) peakStars = `<span class="bi-stars" title="当天最高分 ${pd.peak_value || 0}/100">${_biStars(pd.peak_value)}</span>`;
-    }
-    sm.innerHTML = `活跃 <b>${c.active_days || 0}</b> 天 · 最热 <b>${peakLabel}</b> ${peakStars}`;
-  }
-
-  // 节律条 (卷五十八续 VII) · 周期仪式到期 + 起草 → spawnTask 开新会话 (不污染当前对话)
-  const mr = (c.rituals || []).find(r => r.id === 'monthly_review');
-  _biHeat.reviewPrompt = mr ? (mr.draft_prompt || '') : '';
-  _biHeat.ritualByDate = {};
-  for (const dd of (c.days || [])) {
-    if (dd.ritual) {
-      _biHeat.ritualByDate[dd.date] = {
-        label: dd.ritual_label || '周期仪式',
-        days: mr ? mr.days_left : '',
-        done: mr ? mr.drafted_for_next : false,
-      };
-    }
-  }
-  const rs = document.getElementById('biRitualStrip');
-  if (rs) {
-    if (mr) {
-      const dl = mr.days_left;
-      const when = dl === 0 ? '<b>就是今天</b>' : (dl > 0 ? `还有 <b>${dl}</b> 天` : `<b>已过期 ${-dl} 天</b>`);
-      const st = mr.drafted_for_next
-        ? '<span class="bi-ritual-done">本期已起草</span>'
-        : '<span class="bi-ritual-todo">未起草</span>';
-      const dueMd = parseInt(mr.next_due.slice(5, 7), 10) + '/' + parseInt(mr.next_due.slice(-2), 10);
-      rs.innerHTML = `<span class="bi-ritual-lbl"><i class="ri-flag-2-fill"></i> 月度复盘 · ${dueMd} · ${when} · ${st}</span>`
-        + `<button class="bi-ritual-btn" type="button">一键起草</button>`;
-      const btn = rs.querySelector('.bi-ritual-btn');
-      if (btn) btn.onclick = biHeatRitualDraft;
-      rs.style.display = '';
-    } else {
-      rs.innerHTML = '';
-      rs.style.display = 'none';
-    }
-  }
-
-  const grid = document.getElementById('biCalGrid');
-  if (!grid) return;
-  const days = c.days || [];
-  if (!days.length) { grid.innerHTML = '<div class="bi-v3-empty">这个月还没有信号</div>'; return; }
-  const max = c.max_value || 1;
-  const mrDays = mr ? mr.days_left : '';
-  const mrDone = mr ? mr.drafted_for_next : false;
-  const _t = new Date();
-  const todayStr = _t.getFullYear() + '-' + String(_t.getMonth() + 1).padStart(2, '0') + '-' + String(_t.getDate()).padStart(2, '0');
-  grid.innerHTML = days.map(d => {
-    if (d.out_of_month) return '<div class="bi-cal-cell oom"></div>';
-    const ratio = max > 0 ? (d.value / max) : 0;
-    // sqrt 让低价值的天也看得见·不至于被峰值压成全黑
-    const op = d.value > 0 ? (0.16 + 0.84 * Math.sqrt(ratio)) : 0;
-    const bg = d.value > 0 ? `--heat:${op.toFixed(3)}` : '';
-    const dayNum = parseInt(d.date.slice(-2), 10);
-    const ritualCls = d.ritual ? ' bi-cal-ritual' : '';
-    const cls = 'bi-cal-cell' + (d.value > 0 ? ' has' : ' empty') + (d.date === todayStr ? ' today' : '') + ritualCls;
-    // 数据塞 data-* · 自定义多行 tooltip 读它 (取代浏览器单行原生 title)
-    // 点格子永远 = 开抽屉看 (仪式日也开 · 抽屉里给起草按钮 · 不让"点击"既看又起草打架)
-    const click = (d.value > 0 || d.ritual) ? ` onclick="biHeatOpenDay('${d.date}')"` : '';
-    const ritualData = d.ritual
-      ? ` data-ritual="${escHtml(d.ritual_label || '周期仪式')}" data-ritualdays="${mrDays}" data-ritualdone="${mrDone ? 1 : 0}"`
-      : '';
-    const flag = d.ritual ? `<span class="bi-cal-flag"><i class="ri-flag-2-fill"></i></span>` : '';
-    return `<div class="${cls}" style="${bg}" data-date="${d.date}" data-cnt="${d.count}" data-peakval="${d.peak_value || 0}" data-peak="${escHtml(d.peak_title || '')}"${ritualData}${click}><span class="bi-cal-num">${dayNum}</span>${flag}</div>`;
-  }).join('');
-  biHeatBindTip(grid);
-
-  // D·节律时间线 (卷五十八续 VIII) · 复用 c.rituals (恒为当前·与显示月份无关) · 填驾驶舱元行
-  const rb = document.getElementById('biRhythmBody');
-  if (rb) {
-    const rits = c.rituals || [];
-    if (!rits.length) {
-      rb.innerHTML = '<div class="bi-v3-empty">暂无周期仪式</div>';
-    } else {
-      rb.innerHTML = rits.map(r => {
-        if (r.id === 'monthly_review') {
-          const dl = r.days_left;
-          const when = dl === 0 ? '今天' : (dl > 0 ? `还有 ${dl} 天` : `已过期 ${-dl} 天`);
-          const st = r.drafted_for_next ? '<span class="bi-ritual-done">已起草</span>' : '<span class="bi-ritual-todo">未起草</span>';
-          const last = r.last_done ? `上次 ${escHtml(r.last_done)}` : '从未做过';
-          return `<div class="bi-rhythm-row"><i class="ri-calendar-check-fill"></i><div class="bi-rhythm-main"><b>月度复盘</b> · 下次 ${escHtml(r.next_due)} · ${when} · ${st}</div><div class="bi-rhythm-sub">${last}</div></div>`;
-        }
-        if (r.id === 'capability_mirror') {
-          const en = r.enabled ? `每 ${r.interval_days} 天自动` : '未启用自动 (.env 开关)';
-          const last = r.last_done ? `上次 ${escHtml(r.last_done)}` : '从未照过';
-          return `<div class="bi-rhythm-row"><i class="ri-aspect-ratio-fill"></i><div class="bi-rhythm-main"><b>能力镜像</b> · ${en}</div><div class="bi-rhythm-sub">${last}</div></div>`;
-        }
-        return '';
-      }).join('');
-    }
-  }
-}
 
 // ── 热力格子自定义 tooltip (多行 · 取代乱糟糟的浏览器原生 title) ──
 let _biTipEl = null;
-function _biTip() {
-  if (!_biTipEl) {
-    _biTipEl = document.createElement('div');
-    _biTipEl.id = 'biHeatTip';
-    _biTipEl.className = 'bi-heat-tip';
-    document.body.appendChild(_biTipEl);
-  }
-  return _biTipEl;
-}
-function biHeatBindTip(grid) {
-  if (grid.dataset.tipBound) return;  // 委托一次即可·grid 元素本身在重渲时保留
-  grid.dataset.tipBound = '1';
-  grid.addEventListener('mouseover', e => {
-    const cell = e.target.closest('.bi-cal-cell.has, .bi-cal-cell.bi-cal-ritual');
-    if (cell) biHeatTipShow(cell);
-  });
-  grid.addEventListener('mouseout', e => {
-    const cell = e.target.closest('.bi-cal-cell.has, .bi-cal-cell.bi-cal-ritual');
-    if (cell) biHeatTipHide();
-  });
-  grid.addEventListener('click', () => biHeatTipHide());  // 点开抽屉时收起
-}
-function biHeatTipShow(cell) {
-  const tip = _biTip();
-  const date = cell.dataset.date || '';
-  const d = new Date(date + 'T00:00:00');
-  const wd = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()] || '';
-  const md = (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日';
-  const peak = cell.dataset.peak || '';
-  const pv = +cell.dataset.peakval || 0;
-  const cnt = +cell.dataset.cnt || 0;
-  const ritual = cell.dataset.ritual || '';
-  let html = `<div class="bi-tip-date">${md} · ${wd}</div>`;
-  if (ritual) {
-    const days = cell.dataset.ritualdays;
-    const done = cell.dataset.ritualdone === '1';
-    const whenTxt = days === '0' ? '就是今天'
-      : (+days > 0 ? `还有 ${days} 天` : `已过期 ${-days} 天`);
-    html += `<div class="bi-tip-ritual"><i class="ri-flag-2-fill"></i> ${escHtml(ritual)} · ${whenTxt} · ${done ? '本期已起草' : '未起草'}</div>`;
-  }
-  if (cnt > 0) {
-    html += `<div class="bi-tip-val">最高 <span class="bi-stars" title="${pv}/100">${_biStars(pv)}</span> · ${cnt} 条信号</div>`;
-    if (peak) html += `<div class="bi-tip-peak">峰值 · ${escHtml(peak)}</div>`;
-  }
-  if (ritual && cnt === 0) {
-    html += `<div class="bi-tip-hint">点这天让 Daemonkey 起草本期复盘</div>`;
-  } else if (cnt > 0) {
-    html += `<div class="bi-tip-hint">点击看当天高分原文</div>`;
-  }
-  tip.innerHTML = html;
-  tip.style.display = 'block';
-  const r = cell.getBoundingClientRect();
-  const tr = tip.getBoundingClientRect();
-  let left = r.left + r.width / 2 - tr.width / 2;
-  let top = r.top - tr.height - 8;
-  left = Math.max(8, Math.min(left, window.innerWidth - tr.width - 8));
-  if (top < 8) top = r.bottom + 8;  // 太靠顶 → 翻到格子下方
-  tip.style.left = left + 'px';
-  tip.style.top = top + 'px';
-}
-function biHeatTipHide() { if (_biTipEl) _biTipEl.style.display = 'none'; }
 
 // 起草本期复盘 = 派发到新会话 (spawnTask · 不污染当前对话) · 节律条 + 抽屉按钮共用
-function biHeatRitualDraft() {
-  biHeatCloseDrawer();
-  if (_biHeat.reviewPrompt && typeof spawnQuickly === 'function') spawnQuickly(_biHeat.reviewPrompt, '月度复盘起草');
-}
 
-function biHeatNav(delta) {
-  if (!_biHeat.ym) return;
-  let { y, m } = _biHeat.ym;
-  m += delta;
-  if (m < 1) { m = 12; y--; }
-  if (m > 12) { m = 1; y++; }
-  _biHeat.ym = { y, m };
-  biHeatLoad();
-}
-
-function biHeatSetDomain(id) {
-  _biHeat.domain = id || 'all';
-  biHeatLoad();
-}
-
-async function biHeatOpenDay(dateStr) {
-  if (!dateStr) return;
-  const q = new URLSearchParams({ date: dateStr, vdomain: _biHeat.domain });
-  let data = { items: [] };
-  try {
-    const r = await fetch('/dashboard/day_signals?' + q.toString(), {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (r.ok) data = await r.json();
-  } catch (e) { console.warn('day_signals failed', e); }
-  biHeatShowDrawer(dateStr, data);
-}
-
-function biHeatShowDrawer(dateStr, data) {
-  biHeatCloseDrawer();
-  const items = data.items || [];
-  const rows = items.length
-    ? items.map(biHeatItemHtml).join('')
-    : '<div class="bi-v3-empty">这天没有高价值信号</div>';
-  // 仪式日抽屉顶部加节律横幅 + 起草按钮 (点格子=看·起草=明确按钮·派发新会话)
-  const ritual = (_biHeat.ritualByDate || {})[dateStr];
-  const ritualBanner = ritual ? `
-    <div class="bi-drawer-ritual">
-      <span class="bi-drawer-ritual-txt"><i class="ri-flag-2-fill"></i> ${escHtml(ritual.label)}到期 · ${ritual.done ? '本期已起草' : '本期未起草'}</span>
-      <button class="bi-ritual-btn" id="biDrawerDraftBtn" type="button">起草本期复盘</button>
-    </div>` : '';
-  const dr = document.createElement('div');
-  dr.id = 'biHeatDrawer';
-  dr.className = 'bi-heat-drawer';
-  dr.innerHTML = `
-    <div class="bi-heat-drawer-mask" onclick="biHeatCloseDrawer()"></div>
-    <div class="bi-heat-drawer-panel">
-      <div class="bi-heat-drawer-head">
-        <span><i class="ri-fire-fill"></i> ${escHtml(dateStr)} · ${items.length} 条高价值信号</span>
-        <button class="bi-heat-drawer-x" onclick="biHeatCloseDrawer()"><i class="ri-close-line"></i></button>
-      </div>
-      ${ritualBanner}
-      <div class="bi-heat-drawer-body">${rows}</div>
-    </div>`;
-  document.body.appendChild(dr);
-  const draftBtn = document.getElementById('biDrawerDraftBtn');
-  if (draftBtn) draftBtn.onclick = biHeatRitualDraft;
-}
-
-function biHeatCloseDrawer() {
-  const d = document.getElementById('biHeatDrawer');
-  if (d) d.remove();
-}
-
-function biHeatItemHtml(it) {
-  const fb = it.feedback || '';
-  const canFb = !!it.item_id;
-  const fbBtns = canFb ? `
-    <div class="bi-sig-fb">
-      <button class="${fb === 'starred' ? 'on' : ''}" title="收藏" onclick="biHeatFeedback('${it.item_id}','starred',this)"><i class="ri-star-line"></i></button>
-      <button class="${fb === 'thumbs_up' ? 'on' : ''}" title="这类多关注" onclick="biHeatFeedback('${it.item_id}','thumbs_up',this)"><i class="ri-thumb-up-line"></i></button>
-      <button class="${fb === 'thumbs_down' ? 'on' : ''}" title="别再推同类" onclick="biHeatFeedback('${it.item_id}','thumbs_down',this)"><i class="ri-thumb-down-line"></i></button>
-    </div>` : '';
-  const url = it.url || '';
-  const titleHtml = url
-    ? `<a class="bi-sig-title" href="${escHtml(url)}" target="_blank" rel="noopener">${escHtml(it.title)}</a>`
-    : `<span class="bi-sig-title">${escHtml(it.title)}</span>`;
-  return `<div class="bi-sig-row" data-iid="${it.item_id || ''}">
-    <div class="bi-sig-val" title="价值 ${it.value}/100"><span class="bi-stars">${_biStars(it.value)}</span></div>
-    <div class="bi-sig-main">
-      ${titleHtml}
-      <div class="bi-sig-meta">${escHtml(it.source || '')} · ${escHtml(it.domain || '')}</div>
-    </div>
-    ${fbBtns}
-  </div>`;
-}
-
-async function biHeatFeedback(iid, feedback, btn) {
-  if (!token || !iid) return;
-  const row = btn.closest('.bi-sig-row');
-  const wasActive = btn.classList.contains('on');
-  const titleEl = row ? row.querySelector('.bi-sig-title') : null;
-  const payload = {
-    item_id: iid,
-    feedback: wasActive ? null : feedback,
-    title_hint: titleEl ? titleEl.textContent : '',
-    url_hint: (titleEl && titleEl.href) ? titleEl.href : '',
-  };
-  try {
-    const r = await fetch('/radar/feedback', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!r.ok) return;
-  } catch (e) { return; }
-  if (row) {
-    row.querySelectorAll('.bi-sig-fb button').forEach(b => b.classList.remove('on'));
-    if (!wasActive) btn.classList.add('on');
-  }
-  biHeatLoad();  // 反馈改了价值·热力图重算
-}
 
 // ══════════════════════════════════════════════════════════
 //  趋势研判 (卷五十六 P2) · 跟热力图同月同领域 · LLM 给可行性 + 执行方案
 //  数据走 /dashboard/trend_brief (workers/trend_brief.py · refresh=true 才烧 token)
 // ══════════════════════════════════════════════════════════
-function _biBriefScopeQuery() {
-  if (!_biHeat.ym) { const n = new Date(); _biHeat.ym = { y: n.getFullYear(), m: n.getMonth() + 1 }; }
-  const { y, m } = _biHeat.ym;
-  return { mm: y + '-' + String(m).padStart(2, '0'), vd: _biHeat.domain || 'all' };
-}
 
-async function biBriefLoad() {
-  const sc = document.getElementById('biBriefScope');
-  const { mm, vd } = _biBriefScopeQuery();
-  if (sc) sc.textContent = mm + (vd && vd !== 'all' ? (' · ' + vd) : '');
-  const q = new URLSearchParams({ domain_filter: mm, vdomain: vd });
-  try {
-    const r = await fetch('/dashboard/trend_brief?' + q.toString(), {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) return;
-    biBriefRender(await r.json());
-  } catch (e) { console.warn('trend_brief load failed', e); }
-}
-
-async function biBriefGenerate() {
-  const btn = document.getElementById('biBriefGenBtn');
-  const body = document.getElementById('biBriefBody');
-  const { mm, vd } = _biBriefScopeQuery();
-  const ok = await opusConfirm({
-    title: '研判这段时间的趋势',
-    message: {
-      html: `让 Daemonkey 看一遍 <b>${mm}${vd && vd !== 'all' ? ' · ' + escHtml(vd) : ''}</b> 的高价值信号·
-        给出趋势研判 + 执行方案。<span class="om-hint">会调一次 LLM (约 $0.05 · 10-30 秒)·结果会缓存·重看不重烧。</span>`
-    },
-    okText: '研判', cancelText: '再想想',
-  });
-  if (!ok) return;
-  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Daemonkey 研判中…'; }
-  if (body) body.innerHTML = '<div class="bi-v3-empty">Daemonkey 正在看这段时间的信号·研判趋势 + 想执行方案…</div>';
-  const q = new URLSearchParams({ domain_filter: mm, vdomain: vd, refresh: 'true' });
-  try {
-    const r = await fetch('/dashboard/trend_brief?' + q.toString(), {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (r.ok) biBriefRender(await r.json());
-    else if (body) body.innerHTML = '<div class="bi-v3-empty">研判失败 (' + r.status + ') · 看 data/daemon.err</div>';
-  } catch (e) {
-    if (body) body.innerHTML = '<div class="bi-v3-empty">研判出错 · 网络或 daemon 问题</div>';
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-sparkling-2-line"></i> 重新研判'; }
-  }
-}
-
-function biBriefRender(data) {
-  const body = document.getElementById('biBriefBody');
-  if (!body) return;
-  const trends = (data && data.trends) || [];
-  if (!trends.length) {
-    const note = (data && (data.note || data.error)) || '还没研判';
-    body.innerHTML = `<div class="bi-v3-empty">${escHtml(note)}</div>`;
-    return;
-  }
-  const fire = n => '🔥'.repeat(Math.max(1, Math.min(5, n || 3)));
-  body.innerHTML = trends.map(t => {
-    const moves = (t.moves || []).map(m =>
-      `<li>${escHtml(m)}</li>`).join('');
-    const refs = (t.refs || []).map(rf => rf.url
-      ? `<a href="${escHtml(rf.url)}" target="_blank" rel="noopener" title="${escHtml(rf.title || '')}">${escHtml(rf.source || '源')}</a>`
-      : `<span title="${escHtml(rf.title || '')}">${escHtml(rf.source || '源')}</span>`).join('');
-    return `<div class="bi-brief-item">
-      <div class="bi-brief-item-head">
-        <span class="bi-brief-fire" title="强度 ${t.intensity}/5">${fire(t.intensity)}</span>
-        <span class="bi-brief-title">${escHtml(t.title)}</span>
-      </div>
-      <div class="bi-brief-summary">${escHtml(t.summary)}</div>
-      ${moves ? `<div class="bi-brief-moves-label"><i class="ri-arrow-right-circle-line"></i> 下一步</div><ul class="bi-brief-moves">${moves}</ul>` : ''}
-      ${refs ? `<div class="bi-brief-refs"><i class="ri-links-line"></i> 依据: ${refs}</div>` : ''}
-    </div>`;
-  }).join('');
-  if (data.generated_at) {
-    body.innerHTML += `<div class="bi-brief-foot">研判于 ${escHtml((data.generated_at || '').slice(0, 16).replace('T', ' '))} · 扫 ${data.items_scanned || 0} 条信号</div>`;
-  }
-}
 
 // ── 信号流 ──
 // 信号流状态 · 存原始数据 + 领域筛选 + 今日开关 (用户 2026-06-03 · 纯前端过滤·不重新 fetch)
 const _biSig = { trends: [], radar: [], domain: 'all', todayOnly: false };
 
-function fillBISignals(radar, trends) {
-  _biSig.trends = (trends && trends.trends) || [];
-  _biSig.radar = (radar && radar.items) || [];
-  _biSigRenderDomains();
-  _biSigRender();
-}
 
 // 这条信号是不是今天的 (published_at 优先·退 fetched_at·跟后端 item_date 口径一致)
-function _biIsToday(r) {
-  const now = new Date();
-  const t = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-  const src = r.published_at || r.fetched_at || '';
-  if (!src) return false;
-  const d = new Date(src);
-  if (isNaN(d.getTime())) return String(src).slice(0, 10) === t;  // 解析失败退回字符串前10位
-  const ds = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  return ds === t;
-}
 
 // 当前时间维度下的雷达池 (今日开关在这里收口·领域筛选各处再叠加)
-function _biSigRadarPool() {
-  return _biSig.todayOnly ? _biSig.radar.filter(_biIsToday) : _biSig.radar;
-}
 
 // 信号流领域 tab · 跟热力图同款 .bi-heat-dom · 按当前池里实际出现的领域动态生成
-function _biSigRenderDomains() {
-  const box = document.getElementById('biSigDomains');
-  if (!box) return;
-  const pool = _biSigRadarPool();
-  const counts = {};
-  pool.forEach(r => { const d = r.domain || 'ai'; counts[d] = (counts[d] || 0) + 1; });
-  const total = pool.length + _biSig.trends.length;
-  let html = `<button class="bi-heat-dom${_biSig.domain === 'all' ? ' active' : ''}" onclick="biSigSetDomain('all')"><i class="ri-stack-line"></i> 全部 <i>${total}</i></button>`;
-  // 领域按数量从多到少排
-  Object.keys(counts).sort((a, b) => counts[b] - counts[a]).forEach(id => {
-    const m = RADAR_DOMAINS_META[id] || { icon: '', label: id, color: 'var(--opus)' };
-    const on = _biSig.domain === id;
-    const style = on ? `style="--dc:${m.color}"` : '';
-    html += `<button class="bi-heat-dom${on ? ' active' : ''}" ${style} onclick="biSigSetDomain('${id}')">${m.icon || ''} ${escHtml(m.label)} <i>${counts[id]}</i></button>`;
-  });
-  box.innerHTML = html;
-}
 
-function biSigSetDomain(id) {
-  _biSig.domain = id || 'all';
-  _biSigRenderDomains();
-  _biSigRender();
-}
-
-function biSigToggleToday() {
-  _biSig.todayOnly = !_biSig.todayOnly;
-  const btn = document.getElementById('biSigToday');
-  if (btn) btn.classList.toggle('active', _biSig.todayOnly);
-  _biSigRenderDomains();  // 领域 count 跟着今日重算 (当前领域在今日池里可能没了)
-  _biSigRender();
-}
-
-function _biSigRender() {
-  const list = document.getElementById('biSignalList');
-  const cnt = document.getElementById('biSigCount');
-  if (!list) return;
-
-  const items = [];
-  // 趋势是跨领域总结·只在"全部"下显示·选具体领域时只看该领域的雷达信号
-  if (_biSig.domain === 'all') {
-    _biSig.trends.forEach(t => items.push({ dotClass: 'trend', title: t.title || '(趋势)', meta: (t.summary || '').slice(0, 60), url: '' }));
-  }
-  _biSigRadarPool()
-    .filter(r => _biSig.domain === 'all' || (r.domain || 'ai') === _biSig.domain)
-    .forEach(r => items.push({ dotClass: 'radar', title: r.title_zh || r.title || r.title_en || '(信号)', meta: r.source_display || r.source || '', url: r.url || '' }));
-
-  if (cnt) cnt.textContent = items.length + ' 条';
-  if (!items.length) {
-    list.innerHTML = `<div class="bi-v3-empty">${_biSig.todayOnly ? '今日这个领域还没有信号' : '这个领域暂无信号'}</div>`;
-    _biBindSignalSync();
-    return;
-  }
-
-  // 显示足够多条·让信号流内容超过热力卡高度 → 内部滚动填满·不在卡底留空 (用户 2026-06-03)
-  list.innerHTML = items.slice(0, 120).map(it => {
-    const u = it.url || '';
-    const clk = u ? ` data-url="${escHtml(u)}" onclick="biSignalOpen(this)"` : '';
-    return `
-    <div class="bi-signal-item${u ? ' clickable' : ''}"${clk} title="${escHtml(it.meta)}">
-      <div class="bi-signal-dot ${it.dotClass}"></div>
-      <div class="bi-signal-body">
-        <div class="bi-signal-title">${escHtml(it.title)}</div>
-        <div class="bi-signal-meta">${escHtml(it.meta)}</div>
-      </div>
-    </div>`;
-  }).join('');
-  _biBindSignalSync();
-}
 
 // 点信号流条目 → 新标签打开原文 (radar 条目带 url·trend 无原文不可点) ·用户 2026-06-03
-function biSignalOpen(el) {
-  const u = el && el.dataset ? el.dataset.url : '';
-  if (u) window.open(u, '_blank', 'noopener');
-}
 
 // ── 信号流高度跟随热力卡 (用户 2026-06-03 · 正方形格子 + 完美对齐的关键) ──
 //   热力图格子保持正方形·高度随卡片宽度等比变 (分辨率/对话栏宽度都会变)。
 //   纯 CSS 没法让"另一张卡跟随这张卡的高度"·所以用 ResizeObserver 盯热力卡·
 //   把信号流卡的 height 实时设成跟它一样·信号流内部滚动 → 两卡严格等高·底部对齐·谁都不留空。
 let _biSigRO = null;
-function _biSyncSignalHeight() {
-  const heat = document.querySelector('.bi-heat-card');
-  const sig = document.querySelector('.bi-signal-card');
-  if (!heat || !sig) return;
-  // 上下堆叠(窄屏)时不强制等高·各自自然高
-  if (Math.abs(heat.offsetTop - sig.offsetTop) > 4) { sig.style.height = ''; return; }
-  const h = heat.offsetHeight;
-  if (h > 0) sig.style.height = h + 'px';
-}
-function _biBindSignalSync() {
-  const heat = document.querySelector('.bi-heat-card');
-  if (!heat) return;
-  if (_biSigRO) _biSigRO.disconnect();
-  if (typeof ResizeObserver === 'undefined') { _biSyncSignalHeight(); return; }
-  _biSigRO = new ResizeObserver(() => _biSyncSignalHeight());
-  _biSigRO.observe(heat);
-  _biSyncSignalHeight();
-}
 
 // ── chart.js (defer 本地加载) 就绪等待器 ──
 // 卷五十六 · 2026-06-03 修: chart.umd.min.js 改 defer 后 · BI 首次渲染可能早于 Chart 就绪。
 //   旧逻辑"没就绪就静默 return" → 之后无人重渲 → 雷达/环形图永久空白 (用户 实测撞到)。
 //   改成: 没就绪就挂起 · 轮询等 Chart 到位 (最多 ~6s) · 一到位补渲一次。空白根治。
-function _whenChartReady(cb, _tries) {
-  if (typeof Chart !== 'undefined') { cb(); return; }
-  _tries = _tries || 0;
-  if (_tries > 60) return;  // ~6s 还没来 = 脚本真没加载到 · 放弃 · 别死循环
-  setTimeout(() => _whenChartReady(cb, _tries + 1), 100);
-}
 
 // ── 雷达密度柱状图 ──
 let biChartRadarInst = null;
-function fillBIRadarChart(calData) {
-  const canvas = document.getElementById('biChartRadar');
-  if (!canvas) return;
-  if (typeof Chart === 'undefined') { _whenChartReady(() => fillBIRadarChart(calData)); return; }  // defer 未就绪 · 等到了补渲
-  const days = (calData.days || []).filter(d => !d.out_of_month);
-  if (!days.length) return;
-
-  const labels = days.map(d => d.date.slice(-2));
-  const values = days.map(d => d.radar || 0);
-  const ma = [];
-  for (let i = 0; i < values.length; i++) {
-    const s = values.slice(Math.max(0,i-3), Math.min(values.length,i+4));
-    ma.push(s.reduce((a,b)=>a+b,0)/s.length);
-  }
-
-  const ctx = canvas.getContext('2d');
-  if (biChartRadarInst) biChartRadarInst.destroy();
-  biChartRadarInst = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        { label:'雷达信号', data:values, backgroundColor:'rgba(159,122,234,0.5)', borderRadius:3 },
-        { label:'7日均线', data:ma, type:'line', borderColor:'#4FD1C5', borderWidth:1.5, pointRadius:0, tension:0.3, fill:false }
-      ]
-    },
-    options: {
-      responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ display:false } },
-      scales: {
-        x:{ ticks:{ color:'#666', font:{size:9}, maxTicksLimit:15 }, grid:{ display:false } },
-        y:{ ticks:{ color:'#666', font:{size:9} }, grid:{ color:'rgba(255,255,255,0.04)' }, beginAtZero:true }
-      },
-      interaction:{ intersect:false, mode:'index' }
-    }
-  });
-}
 
 // ── 维度产出环形图 ──
 let biChartDonutInst = null;
-function fillBIDonutChart() {
-  const canvas = document.getElementById('biChartDonut');
-  if (!canvas) return;
-  if (typeof Chart === 'undefined') { _whenChartReady(() => fillBIDonutChart()); return; }  // defer 未就绪 · 等到了补渲
-  // 从 KPI bar 的 5 个数字反向读（已经渲染好了）
-  const kpiCards = document.querySelectorAll('.bi-kpi-value');
-  if (kpiCards.length < 5) return;
-
-  const labels = ['雷达','趋势','报告','心愿','插件'];
-  const colors = ['#9F7AEA','#4FD1C5','#63B3ED','#F6AD55','#888'];
-  const values = [];
-  kpiCards.forEach((el, i) => { if (i < 5) values.push(parseInt(el.textContent) || 0); });
-
-  const legend = document.getElementById('biDonutLegend');
-  if (legend) legend.innerHTML = labels.map((l,i) => `<div class="bi-donut-legend-item"><div class="bi-donut-legend-dot" style="background:${colors[i]}"></div>${l} ${values[i]}</div>`).join('');
-
-  const ctx = canvas.getContext('2d');
-  if (biChartDonutInst) biChartDonutInst.destroy();
-  biChartDonutInst = new Chart(ctx, {
-    type:'doughnut',
-    data:{ labels, datasets:[{ data:values, backgroundColor:colors, borderColor:'#252525', borderWidth:2 }] },
-    options:{ responsive:true, maintainAspectRatio:false, cutout:'65%', plugins:{ legend:{ display:false } } }
-  });
-}
 
 // ── 最近动态 ──
-function fillBITimeline(data) {
-  const tl = document.getElementById('biTimeline');
-  if (!tl) return;
-  const domains = data.domains || [];
-  const colors = {
-    radar:'var(--opus)', trends:'#4FD1C5', reports:'#63B3ED',
-    content:'#48BB78', dev:'#F6AD55', docs:'#4FD1C5',
-    cognition:'var(--opus)', opportunities:'#F6AD55',
-    wishlist:'#F6AD55', plugins:'var(--dim)',
-  };
-  const items = domains
-    .filter(d => d.total > 0 && d.last_updated)
-    .sort((a,b) => (b.last_updated||'').localeCompare(a.last_updated||''))
-    .slice(0, 8);
-
-  if (!items.length) { tl.innerHTML = '<div class="bi-v3-empty">暂无动态</div>'; return; }
-
-  tl.innerHTML = items.map(d => {
-    const t = d.last_updated ? new Date(d.last_updated).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'}) : '--:--';
-    return `<div class="bi-tl-item">
-      <span class="bi-tl-time">${t}</span>
-      <div class="bi-tl-dot" style="background:${colors[d.id]||'var(--dim)'}"></div>
-      <span class="bi-tl-text">${escHtml(d.label)} <span style="color:var(--dim2)">+${d.total}</span></span>
-      <span class="bi-tl-domain">${escHtml(d.id)}</span>
-    </div>`;
-  }).join('');
-}
 
 // 卷四十六续 10 · BI 看板"今日动态" digest 卡 (用户 候选 E)
-async function loadBIDigest() {
-  if (!token) return;
-  const slot = document.getElementById('biDigestSlot');
-  if (!slot) return;
-  try {
-    const r = await fetch('/digest?hours=24', {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) {
-      slot.innerHTML = `<div class="bi-digest-empty"><i class="ri-newspaper-fill"></i> 今日动态加载失败 [${r.status}]</div>`;
-      return;
-    }
-    const data = await r.json();
-    renderBIDigest(data);
-  } catch (e) {
-    slot.innerHTML = `<div class="bi-digest-empty"><i class="ri-newspaper-fill"></i> 今日动态网络出错: ${escHtml(e.message)}</div>`;
-  }
-}
 
-function renderBIDigest(data) {
-  const slot = document.getElementById('biDigestSlot');
-  if (!slot) return;
-  const items = (data && data.items) || [];
-  const totals = (data && data.totals) || {};
-  const newOnly = items.filter(it => (it.new_count || 0) > 0);
-
-  if (newOnly.length === 0) {
-    slot.innerHTML = `
-      <div class="bi-digest bi-digest-quiet">
-        <div class="bi-digest-head">
-          <h3><i class="ri-newspaper-fill"></i> 今日动态 · 过去 ${data.since_hours}h</h3>
-          <span class="bi-digest-meta">所有维度都安静 · 没有新数据</span>
-        </div>
-        <div class="bi-digest-empty-inner">
-          用户 · 24h 内 7 个维度都没新增。要不要 ${renderAutopilotInlineBtn()}?
-        </div>
-      </div>`;
-    return;
-  }
-
-  const tilesHtml = items.map(it => {
-    const n = it.new_count || 0;
-    const isHot = n > 0;
-    const click = isHot ? `onclick="switchView('${jsStr(it.domain)}')"` : '';
-    const cls = isHot ? 'bi-digest-tile bi-digest-hot' : 'bi-digest-tile bi-digest-cold';
-    const hl = it.highlight ? `<div class="bi-digest-hl" title="${escHtml(it.highlight)}">${escHtml(it.highlight)}</div>` : '<div class="bi-digest-hl bi-digest-hl-empty">无更新</div>';
-    return `
-      <div class="${cls}" ${click} title="${isHot ? '点击进入 · 看新增内容' : '无新增'}">
-        <div class="bi-digest-icon">${it.icon}</div>
-        <div class="bi-digest-body">
-          <div class="bi-digest-label">${escHtml(it.label)}</div>
-          ${hl}
-        </div>
-        <div class="bi-digest-count">
-          ${isHot ? `<span class="bi-digest-new">+${n}</span>` : '<span class="bi-digest-zero">0</span>'}
-          <span class="bi-digest-total">/${it.total || 0}</span>
-        </div>
-      </div>`;
-  }).join('');
-
-  slot.innerHTML = `
-    <div class="bi-digest">
-      <div class="bi-digest-head">
-        <h3><i class="ri-newspaper-fill"></i> 今日动态 · 过去 ${data.since_hours}h</h3>
-        <span class="bi-digest-meta">
-          ${totals.new_items || 0} 项新增 · ${totals.domains_with_new || 0} 个维度有动静
-        </span>
-      </div>
-      <div class="bi-digest-grid">${tilesHtml}</div>
-    </div>`;
-}
-
-function renderAutopilotInlineBtn() {
-  return `<button class="bi-link" onclick="spawnQuickly('帮我自主巡航一遍 · 调 auto_pipeline 工具 · 三步全跑 · 跑完告诉我看到了什么 + 推 1-2 个最值得动手的机会', '自主巡航')">🛰️ 跑一圈巡航</button>`;
-}
 
 // 卷三十四 · Daemonkey 自主巡航 banner · 一键跑 radar→trends→opps
-function renderAutopilotBanner() {
-  return `
-    <div class="bi-autopilot">
-      <div class="bi-autopilot-left">
-        <div class="bi-autopilot-icon">🛰️</div>
-        <div class="bi-autopilot-text">
-          <div class="bi-autopilot-title">Daemonkey 自主巡航</div>
-          <div class="bi-autopilot-sub">一键跑完 信息雷达 → 今日趋势 → 掘金机会 (约 60-180s)</div>
-        </div>
-      </div>
-      <button class="bi-autopilot-btn"
-              onclick="spawnQuickly('Daemonkey 你自主巡航一遍·从信息雷达跑到掘金机会·把整个链路跑完·跑完跟我说看到了什么·给我推荐 1-2 个最值得动手的机会', '自主巡航')">
-        <i class="ri-play-fill"></i> 现在巡一圈
-      </button>
-    </div>`;
-}
 
 function renderOppCard(o) {
   const fitIcon = { yes: '<i class="ri-checkbox-circle-fill"></i>', maybe: '<i class="ri-error-warning-fill"></i>', no: '<i class="ri-close-circle-fill"></i>' }[o.fit] || '?';
@@ -11530,18 +7892,22 @@ function _splitMissing(name) {
 //   纯文字"加载中…"在秒级等待里太单薄。 星尘是星图专属 · 这里用克制的三点。
 //   text 参数给慢 tab 配专属文案 · 颜色全走 CSS 变量 · 深浅肤自适应)
 function dashLoadingHTML(text) {
-  return `<style>
-@keyframes dkLdDot { 0%,60%,100%{transform:translateY(0);opacity:.35} 30%{transform:translateY(-6px);opacity:1} }
-.dkLdDot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent,#8a7dff); animation:dkLdDot 1.2s ease-in-out infinite; }
-</style>
-<div class="dash-empty" style="display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:80px">
-  <div><span class="dkLdDot"></span> <span class="dkLdDot" style="animation-delay:.15s"></span> <span class="dkLdDot" style="animation-delay:.3s"></span></div>
-  <div style="font-size:12px;color:var(--dim);letter-spacing:1px">${text || '加载中'}</div>
+  return `<div class="dash-empty dk-ld">
+  <div class="dk-ld-row"><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span></div>
+  <div class="dk-ld-txt">${text || '加载中'}</div>
 </div>`;
 }
 function _depotTabs(domain) { if (typeof _maybeDepotTabs === 'function') _maybeDepotTabs(domain); }
 
+if (typeof window._dashLoadSeq !== 'number') window._dashLoadSeq = 0;
 async function loadDashboard(domain, opts = {}) {
+  if (opts.silent && (
+    (typeof _shelfPreviewOpen !== 'undefined' && _shelfPreviewOpen)
+    || window._shelfPreviewOpen
+    || window._stageMode
+  )) return;
+  const seq = ++window._dashLoadSeq;
+  const stale = () => seq !== window._dashLoadSeq;
   // 卷五十七 · 2026-06-06 · settings 是伪视图 (进 $detailPane · renderSettingsView 渲染 · 不走 /dashboard/{domain})。
   //   对话里跑工具后的静默刷新 (scheduleDashboardRefresh / stream finally) 会拿 currentView='settings' 调进来
   //   → fetch /dashboard/settings → 后端没这个域 → 404 → 把 用户 正看的设置页冲成"加载失败 [404]"。 这里直接短路。
@@ -11576,12 +7942,7 @@ async function loadDashboard(domain, opts = {}) {
     window.OPUS_WORKSHOP_VIEW.mount($detailPane);
     return;
   }
-  if (!token) {
-    $dashView.innerHTML = `
-      <div class="dash-head"><h2>需要 token</h2></div>
-      <div class="dash-empty">点右上角 ⚙ 填 token 后再试</div>`;
-    return;
-  }
+  /* 本机回环中间件自己注 token · 前端不再用空 localStorage 挡人 */
   if (!opts.silent) {
     // 慢 tab 专属文案 (实测: calendar 4.8s · wishlist 2.3s · radar 0.45s · 其余 <0.2s)
     // memory_map 分支自己会覆盖成星尘加载态 · 这里给它什么无所谓
@@ -11592,6 +7953,7 @@ async function loadDashboard(domain, opts = {}) {
   if (domain === 'sinks') {
     try {
       const r = await fetch('/sinks', { headers: { 'Authorization': 'Bearer ' + token } });
+      if (stale()) return;
       if (!r.ok) { $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`; return; }
       const data = await r.json();
       renderSinks(data);
@@ -11605,6 +7967,7 @@ async function loadDashboard(domain, opts = {}) {
     if (typeof memoryMapLoadingHTML === 'function') $dashView.innerHTML = memoryMapLoadingHTML();
     try {
       const r = await fetch('/dashboard/memory_map', { headers: { 'Authorization': 'Bearer ' + token } });
+      if (stale()) return;
       if (!r.ok) { $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`; return; }
       const data = await r.json();
       if (typeof renderMemoryMap === 'function') renderMemoryMap(data); else return _splitMissing('记忆星图');
@@ -11616,6 +7979,7 @@ async function loadDashboard(domain, opts = {}) {
   if (domain === 'reviews') {
     try {
       const r = await fetch('/reviews', { headers: { 'Authorization': 'Bearer ' + token } });
+      if (stale()) return;
       if (!r.ok) { $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`; return; }
       const data = await r.json();
       if (typeof renderReviews === 'function') renderReviews(data); else return _splitMissing('月度复盘');
@@ -11629,9 +7993,10 @@ async function loadDashboard(domain, opts = {}) {
       const r = await fetch(`/dashboard/cognition${opts.refresh ? '?refresh=true' : ''}`, {
         headers: { 'Authorization': 'Bearer ' + token },
       });
+      if (stale()) return;
       if (!r.ok) { $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`; return; }
       const data = await r.json();
-      if (typeof renderDiary === 'function') renderDiary(data); else return _splitMissing('Daemonkey 日记');
+      if (typeof renderDiary === 'function') renderDiary(data); else return _splitMissing('心情日记');
       _depotTabs('diary');
     } catch (e) { $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`; }
     return;
@@ -11641,6 +8006,7 @@ async function loadDashboard(domain, opts = {}) {
     const r = await fetch(`/dashboard/${domain}${qs}`, {
       headers: { 'Authorization': 'Bearer ' + token },
     });
+    if (stale()) return;
     if (!r.ok) {
       $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`;
       return;
@@ -11658,8 +8024,9 @@ async function loadDashboard(domain, opts = {}) {
     else if (domain === 'execution') renderExecution(data);
     else if (domain === 'favorites') renderFavorites(data);
     else if (domain === 'calendar') renderCalendar(data);
-    else if (domain === 'plugins') renderPlugins(data);
+    else if (domain === 'plugins') (window.renderPlugins || renderPlugins)(data);
     else if (domain === 'wishlist') renderWishlist(data);
+    else if (domain === 'she_state') { if (typeof renderSheState === 'function') renderSheState(data); else _splitMissing((window.AI_NAME||'她') + ' · 状态'); }
     else if (domain === 'scheduled_tasks') renderScheduledTasks(data);
     else if (['content', 'design', 'dev', 'docs'].includes(domain)) renderWorkshop(domain, data);
     else renderDashboardStub(domain, data);
@@ -11669,122 +8036,7 @@ async function loadDashboard(domain, opts = {}) {
   }
 }
 
-// ── 0.5.0 · ⏰ 定时任务 (NLP 建·到点跑 LLM turn·复用 fav-* 卡片体系) ──
-function _schedLocalTime(iso) {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleString('zh-CN', {
-      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-    });
-  } catch (e) { return iso; }
-}
-
-function _schedSummaryCN(sch) {
-  if (!sch) return '?';
-  if (sch.type === 'daily') return `每天 ${sch.time || '09:00'}`;
-  if (sch.type === 'weekly') {
-    const wd = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-    const i = sch.weekday;
-    return `每${(typeof i === 'number' && i >= 0 && i < 7) ? wd[i] : '周?'} ${sch.time || '09:00'}`;
-  }
-  if (sch.type === 'interval') return `每 ${sch.interval_min || '?'} 分钟`;
-  if (sch.type === 'once') return `一次性 @ ${_schedLocalTime(sch.once_at)}`;
-  return sch.type || '?';
-}
-
-async function _schedAction(path, body) {
-  try {
-    const r = await fetch(path, {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) { alert('操作失败 [' + r.status + ']'); return; }
-    loadDashboard('scheduled_tasks');
-  } catch (e) { alert('网络出错: ' + e.message); }
-}
-
-function renderScheduledTasks(data) {
-  if (data && data.error) {
-    $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-timer-2-fill"></i> 定时任务</h2></div>
-      <div class="dash-empty">${escHtml(data.error)}</div>`;
-    return;
-  }
-  const tasks = (data && data.tasks) || [];
-  const alive = data && data.scheduler_alive;
-  const draft = (data && data.draft_prompt) || '帮我建个定时任务：每天早上9点扫一遍AI行情并汇总';
-  const banner = `
-    <p class="muted" style="margin-bottom:12px">
-      调度线程: ${alive ? '<span style="color:#4fd1c5">运行中</span>' : '<span style="color:#fc8181">未运行</span>'}
-      · 新建 / 修改请直接对话说（"每天9点扫AI行情" / "每周五提醒我复盘"）· 我会建好放这里。
-    </p>`;
-
-  if (tasks.length === 0) {
-    $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-timer-2-fill"></i> 定时任务</h2>
-        <span class="dash-meta">空</span></div>
-      ${banner}
-      <div class="dash-empty">
-        <p>还没有定时任务</p>
-        <p class="muted" style="margin-top:8px">对我说一句「${escHtml(draft)}」就能建第一个。</p>
-      </div>`;
-    return;
-  }
-
-  const cards = tasks.map(t => {
-    const a = t.action || {};
-    const enabled = !!t.enabled;
-    const color = enabled ? '#4fd1c5' : '#6b7280';
-    const kindLabel = a.kind === 'reminder'
-      ? '<i class="ri-notification-3-fill"></i> 提醒'
-      : '<i class="ri-play-circle-fill"></i> 执行';
-    const last = t.last_run_at
-      ? `<div class="fav-note">上次 ${_schedLocalTime(t.last_run_at)} [${escHtml(t.last_run_status || '')}] ${escHtml((t.last_run_summary || '').slice(0, 80))}</div>`
-      : '';
-    return `
-      <div class="fav-card" style="border-left-color:${color}">
-        <div class="fav-card-top">
-          <span class="fav-kind" style="color:${color}">${kindLabel} · ${escHtml(_schedSummaryCN(t.schedule))}</span>
-          <span class="fav-domain">${enabled ? '✅ 启用' : '⏸ 停用'}${a.notify_wechat ? ' · 📱微信' : ''}</span>
-        </div>
-        <div class="fav-title">${escHtml(a.prompt || t.raw_text || '(无指令)')}</div>
-        <div class="fav-note">下次 ${_schedLocalTime(t.next_run_at)} · 已跑 ${t.runs_completed || 0} 次</div>
-        ${last}
-        <div class="fav-foot">
-          <span class="muted">${escHtml(t.id)}</span>
-          <div class="fav-actions">
-            <button class="fav-open sched-toggle" data-id="${escHtml(t.id)}" data-enabled="${enabled ? '1' : '0'}">${enabled ? '停用' : '启用'}</button>
-            <button class="fav-remove sched-del" data-id="${escHtml(t.id)}">删除</button>
-          </div>
-        </div>
-      </div>`;
-  }).join('');
-
-  $dashView.innerHTML = `
-    <div class="dash-head">
-      <h2><i class="ri-timer-2-fill"></i> 定时任务</h2>
-      <span class="dash-meta">${tasks.length} 个 · ${tasks.filter(t => t.enabled).length} 启用</span>
-    </div>
-    ${banner}
-    <div class="fav-grid">${cards}</div>`;
-
-  $dashView.querySelectorAll('.sched-toggle').forEach(btn => {
-    btn.onclick = () => _schedAction('/dashboard/scheduled_tasks/toggle', {
-      task_id: btn.getAttribute('data-id'),
-      enabled: btn.getAttribute('data-enabled') !== '1',
-    });
-  });
-  $dashView.querySelectorAll('.sched-del').forEach(btn => {
-    btn.onclick = async () => {
-      const ok = await opusConfirm({
-        title: '删除定时任务', message: '删掉这个定时任务吗？', okText: '删除', cancelText: '保留',
-      });
-      if (!ok) return;
-      _schedAction('/dashboard/scheduled_tasks/delete', { task_id: btn.getAttribute('data-id') });
-    };
-  });
-}
+// 定时任务卡片 · 收在 dashboard-panels.js renderScheduledTasks
 
 // ── 卷二十六 · 工坊维度 · content / design / dev / docs ──
 function renderWorkshop(domain, data) {
@@ -11991,9 +8243,12 @@ function flushOpenActions(state) {
   const bar = document.createElement('div');
   bar.className = 'open-actions';
   const seen = new Set();
+  const staged = [];
   list.forEach(({ path }) => {
     if (!path || seen.has(path)) return;
     seen.add(path);
+    staged.push(path);
+    if (typeof bindWorkingDoc === "function") bindWorkingDoc(path);
     const name = String(path).split(/[\\/]/).pop() || path;
     const row = document.createElement('div');
     row.className = 'open-actions-row';
@@ -12001,16 +8256,27 @@ function flushOpenActions(state) {
     label.className = 'open-actions-name';
     label.innerHTML = '<i class="ri-file-line"></i> ';
     label.appendChild(document.createTextNode(name));
+    if (typeof stageCanOpen === 'function' && stageCanOpen(path)) {
+      const mid = document.createElement('button');
+      mid.className = 'tr-open';
+      mid.innerHTML = '<i class="ri-layout-column-line"></i> 在中间看';
+      mid.title = path;
+      mid.onclick = () => { if (typeof openStage === 'function') openStage({ path }); };
+      row.appendChild(label);
+      row.appendChild(mid);
+    } else {
+      row.appendChild(label);
+    }
     const btn = document.createElement('button');
     btn.className = 'tr-open';
     btn.innerHTML = '<i class="ri-external-link-line"></i> 用对应软件打开';
     btn.title = path;
     btn.onclick = () => revealFile(path, btn);
-    row.appendChild(label);
     row.appendChild(btn);
     bar.appendChild(row);
   });
   state.$container.appendChild(bar);
+  if (typeof openStageLast === 'function') openStageLast(staged);
   try { scrollToBottom(state.$container, { force: false }); } catch (e) { /* noop */ }
   list.length = 0;
 }
@@ -12042,31 +8308,7 @@ function flushImages(state) {
   list.length = 0;
 }
 
-async function revealFile(path, btn) {
-  if (!path) return;
-  const old = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line"></i> 打开中…'; }
-  try {
-    const r = await fetch('/reveal-file', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.ok) {
-      const msg = (j && (j.error || j.detail || j.hint)) || ('HTTP ' + r.status);
-      if (btn) { btn.innerHTML = '<i class="ri-error-warning-line"></i> 打不开'; btn.title = msg; btn.disabled = false; }
-      else alert('打开失败: ' + msg);
-      return;
-    }
-    if (btn) {
-      btn.innerHTML = '<i class="ri-check-line"></i> 已打开';
-      setTimeout(() => { btn.disabled = false; btn.innerHTML = old; }, 1800);
-    }
-  } catch (e) {
-    if (btn) { btn.innerHTML = '<i class="ri-error-warning-line"></i> 打不开'; btn.title = String(e); btn.disabled = false; }
-  }
-}
+// revealFile 住在 dashboard-panels.js · 工作台/房间同一份 · 打 POST /reveal-file
 
 function renderDashboardStub(domain, data) {
   const m = DOMAIN_META[domain] || {};
@@ -12170,553 +8412,11 @@ function renderFeasibility(data) {
   $dashView.innerHTML = html;
 }
 
-async function runFeasibilityFromOpp(opp_id, idx) {
-  // 卷四十六续 9 · 用户 反馈"可行性分析也是不通过 LLM 来跑·我想他和信息雷达今日趋势对齐·都是 LLM 开始呈现思考过程·最后刷新结果"
-  // 旧路径: 直接 fetch /dashboard/feasibility?refresh=true (HTTP 黑盒 · 整个面板空白等 5-15s)
-  // 新路径: injectAndSend → LLM 调 analyze_feasibility 工具 · 用户 看分析过程 · 完成后 MUTATING_TOOLS 自动 reload feasibility view
-  if (opp_id) {
-    spawnTask(
-      `分析机会 ${opp_id} (第 ${idx} 个) 的可行性 · ` +
-      `调 analyze_feasibility 工具 · 参数 action=analyze, opp_id="${opp_id}" · ` +
-      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 用户 真动手`,
-      `可行性分析 · 机会#${idx}`
-    );
-  } else {
-    spawnTask(
-      `分析第 ${idx} 个机会的可行性 · ` +
-      `调 analyze_feasibility 工具 · 参数 action=analyze, opp_index=${idx} · ` +
-      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 用户 真动手`,
-      `可行性分析 · 机会#${idx}`
-    );
-  }
-}
-
-async function loadFeasibilityDetail(opp_id) {
-  if (!token) return;
-  $dashView.innerHTML = `<div class="dash-empty">加载分析中…</div>`;
-  try {
-    const r = await fetch(`/dashboard/feasibility?domain_filter=${encodeURIComponent(opp_id)}`, {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) {
-      $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`;
-      return;
-    }
-    const data = await r.json();
-    renderFeasibilityDetail(data);
-  } catch (e) {
-    $dashView.innerHTML = `<div class="dash-empty">出错: ${e.message}</div>`;
-  }
-}
-
-async function renderFeasibilityDetail(d) {
-  if (!d || !d.opp_id) {
-    $dashView.innerHTML = `<div class="dash-empty">数据为空</div>`;
-    return;
-  }
-  const v = _VERDICT_BADGES[d.verdict] || { label: '?', color: '#666' };
-  const score = d.feasibility_score || 0;
-  const scoreColor = score >= 70 ? '#22c55e' : score >= 40 ? '#eab308' : '#ef4444';
-
-  // 卷三十三 · 查可行性的 <i class="ri-star-fill"></i> 状态
-  const favSet = await _fetchFavoriteSet('feasibility');
-  const isFav = favSet.has(d.opp_id);
-
-  let html = `
-    <div class="dash-head">
-      <h2><i class="ri-bar-chart-fill"></i> 可行性分析</h2>
-      <button onclick="loadDashboard('feasibility')">← 返回列表</button>
-      <button onclick="loadFeasibilityDetail('${jsStr(d.opp_id)}')">刷新</button>
-      <button class="feas-star-btn ${isFav ? 'starred' : ''}"
-              data-ref="${escHtml(d.opp_id)}"
-              data-title="${escHtml(d.opp_title || '')}"
-              data-domain="${escHtml(d.opp_domain || '')}"
-              title="${isFav ? '已收藏 · 点击取消' : '收藏此可行性'}">
-        ${isFav ? '★ 已收藏' : '☆ 收藏'}
-      </button>
-    </div>
-    <div class="feas-detail">
-      <div class="feas-detail-head">
-        <div class="feas-detail-title">${escHtml(d.opp_title || '?')}</div>
-        <div class="feas-detail-meta">
-          领域: ${escHtml(d.opp_domain || '?')} ·
-          ${d.elapsed_ms ? `分析用时: ${(d.elapsed_ms / 1000).toFixed(1)}s · ` : ''}
-          模型: ${escHtml(d.model || '')}
-        </div>
-      </div>
-
-      <div class="feas-summary">
-        <div class="feas-score-big" style="color:${scoreColor}">
-          ${score}<span class="feas-score-big-tot">/100</span>
-        </div>
-        <div class="feas-summary-right">
-          <div class="feas-verdict-big" style="background:${v.color}22;color:${v.color}">
-            ${v.label}
-          </div>
-          <div class="feas-verdict-reason">${escHtml(d.verdict_reason || '')}</div>
-        </div>
-      </div>`;
-
-  // ───────── 卷三十二补丁 · 信源（宪法第 5 条 · 人机认知对齐）─────────
-  // 放在最前面——用户 先看到"这次分析基于什么"·再读 Daemonkey 的判断
-  const sources = d.sources || {};
-  const radarItems = sources.radar_items || [];
-  const reportItems = sources.reports || [];
-  const docItems = sources.docs || [];
-  const hasSources = radarItems.length > 0 || reportItems.length > 0 || docItems.length > 0;
-  if (hasSources) {
-    html += `<div class="feas-block feas-sources">
-      <h3>📚 信源 · 这次分析基于的原始信息
-        <span class="feas-sources-hint">点击直达原文 · 用户 可顺着同一根线对齐认知</span>
-      </h3>`;
-    if (radarItems.length) {
-      html += `<div class="feas-src-section">
-        <div class="feas-src-section-label"><i class="ri-radar-fill"></i> 雷达条目 (${radarItems.length})</div>
-        <div class="feas-src-list">`;
-      for (const r of radarItems) {
-        const src = r.source_display || r.source || '?';
-        const title = r.title || '?';
-        const url = r.url || '#';
-        const fetchedAt = r.fetched_at || '';
-        const fetchedShort = fetchedAt ? formatTimeShort(fetchedAt) : '';
-        html += `
-          <div class="feas-src-item feas-src-radar" title="${escHtml(title)}">
-            <span class="feas-src-ref">[${escHtml(r.ref_id || '?')}]</span>
-            <span class="feas-src-source">${escHtml(src)}</span>
-            <a class="feas-src-link" href="${escHtml(url)}" target="_blank" rel="noopener">${escHtml(title.slice(0, 80))}</a>
-            ${fetchedShort ? `<span class="feas-src-time">${escHtml(fetchedShort)}</span>` : ''}
-            ${r.match_score ? `<span class="feas-src-score" title="关键词命中分数">·${r.match_score}</span>` : ''}
-          </div>`;
-      }
-      html += `</div></div>`;
-    }
-    if (reportItems.length) {
-      html += `<div class="feas-src-section">
-        <div class="feas-src-section-label"><i class="ri-file-text-fill"></i> 同主题报告 (${reportItems.length})</div>
-        <div class="feas-src-list">`;
-      for (const rp of reportItems) {
-        const url = rp.download_url || '#';
-        html += `
-          <div class="feas-src-item feas-src-report">
-            <span class="feas-src-ref">[${escHtml(rp.ref_id || '?')}]</span>
-            <span class="feas-src-source">DOCX</span>
-            <a class="feas-src-link" href="${escHtml(url)}" target="_blank" rel="noopener">${escHtml(rp.name || '?')}</a>
-            ${rp.match_score ? `<span class="feas-src-score" title="关键词命中分数">·${rp.match_score}</span>` : ''}
-          </div>`;
-      }
-      html += `</div></div>`;
-    }
-    if (docItems.length) {
-      html += `<div class="feas-src-section">
-        <div class="feas-src-section-label"><i class="ri-book-2-fill"></i> 私有知识库 (${docItems.length})</div>
-        <div class="feas-src-list">`;
-      for (const dc of docItems) {
-        html += `
-          <div class="feas-src-item feas-src-doc" title="${escHtml(dc.snippet || '')}">
-            <span class="feas-src-ref">[${escHtml(dc.ref_id || '?')}]</span>
-            <span class="feas-src-source">资料</span>
-            <a class="feas-src-link" href="javascript:void(0)" onclick="_kbPreview('${jsStr(dc.doc_id || '')}')">${escHtml((dc.title || '?').slice(0, 80))}</a>
-          </div>`;
-      }
-      html += `</div></div>`;
-    }
-    html += `</div>`;
-  } else if (sources.collected_at !== undefined) {
-    // 收集了 sources 但什么都没找到——明确告诉 用户·别藏
-    html += `<div class="feas-block feas-sources feas-sources-empty">
-      <h3>📚 信源</h3>
-      <div class="feas-sources-empty-msg">
-        <strong>没找到相关雷达条目 / 报告 / 私有资料</strong> · 这次分析信源不足。<br>
-        建议：先让 Daemonkey 跑一份相关报告 · 存点相关资料进知识库 · 或扩大雷达源 · 再重新分析。
-      </div>
-    </div>`;
-  }
-
-  // ───────── 卷三十五补丁3 · 市场实证 · web_search 拉的真实信源 ─────────
-  // 跟「信源」(雷达 + 报告) 不同 · 这是分析时**实时去网上拉的**·更新鲜·补盲点
-  const evidence = d.evidence || null;
-  if (evidence && evidence.ok && (evidence.results || []).length > 0) {
-    html += `<div class="feas-block feas-evidence">
-      <h3><i class="ri-search-fill"></i> 市场实证 · 分析时 web_search 拉的真实信源
-        <span class="feas-sources-hint">分析当时从公网拉的·比雷达条目更新鲜·点链接直达原文</span>
-      </h3>
-      <div class="feas-evidence-query">查询: <code>${escHtml(evidence.query || '?')}</code></div>
-      <div class="feas-src-list">`;
-    for (let i = 0; i < evidence.results.length; i++) {
-      const r = evidence.results[i];
-      const url = r.url || '#';
-      const title = r.title || '?';
-      const snippet = (r.snippet || '').slice(0, 200);
-      html += `
-        <div class="feas-src-item feas-src-evidence">
-          <span class="feas-src-ref">[${i + 1}]</span>
-          <a class="feas-src-link" href="${escHtml(url)}" target="_blank" rel="noopener">${escHtml(title)}</a>
-          ${snippet ? `<div class="feas-evidence-snippet">${escHtml(snippet)}</div>` : ''}
-        </div>`;
-    }
-    html += `</div></div>`;
-  } else if (evidence && !evidence.ok) {
-    html += `<div class="feas-block feas-evidence feas-evidence-fail">
-      <h3><i class="ri-search-fill"></i> 市场实证</h3>
-      <div class="feas-evidence-fail-msg">
-        分析时 web_search 失败 · ${escHtml(evidence.error || '?')}<br>
-        <span class="om-hint">这意味着 LLM 没有最新公网实证·verdict 可信度会打折</span>
-      </div>
-    </div>`;
-  }
-
-  // 风险评估
-  if (d.risks && d.risks.length) {
-    html += `<div class="feas-block"><h3>⚠ 风险评估</h3><div class="feas-risks">`;
-    for (const r of d.risks) {
-      const icon = { low: '<i class="ri-circle-fill" style="color:#22c55e"></i>', medium: '<i class="ri-circle-fill" style="color:#eab308"></i>', high: '<i class="ri-circle-fill" style="color:#ef4444"></i>' }[r.level] || '<i class="ri-circle-line"></i>';
-      html += `
-        <div class="feas-risk feas-risk-${r.level || 'unknown'}">
-          <div class="feas-risk-head">
-            ${icon} <b>${escHtml(r.type || '?')}</b>
-            <span class="feas-risk-level">${escHtml(r.level || '?')}</span>
-          </div>
-          <div class="feas-risk-detail">${escHtml(r.detail || '')}</div>
-        </div>`;
-    }
-    html += `</div></div>`;
-  }
-
-  // ───────── 卷三十一 · SWOT 四象限 ─────────
-  const swot = d.swot || {};
-  const hasSwot = ['strengths', 'weaknesses', 'opportunities', 'threats']
-    .some(k => Array.isArray(swot[k]) && swot[k].length);
-  if (hasSwot) {
-    html += `<div class="feas-block"><h3><i class="ri-focus-3-fill"></i> SWOT 战略四象限</h3><div class="feas-swot-grid">`;
-    const swotCells = [
-      { k: 'strengths',     label: '💪 优势 · S', cls: 'sw-s', tip: '自身相对这件事真正有的牌' },
-      { k: 'weaknesses',    label: '⚠ 劣势 · W', cls: 'sw-w', tip: '自身真的缺的 · 不绕弯' },
-      { k: 'opportunities', label: '🌱 机会 · O', cls: 'sw-o', tip: '外部环境的机会窗口' },
-      { k: 'threats',       label: '🌪 威胁 · T', cls: 'sw-t', tip: '会被谁卡脖子 / 时间窗收缩' },
-    ];
-    for (const cell of swotCells) {
-      const items = swot[cell.k] || [];
-      html += `<div class="feas-swot-cell ${cell.cls}">
-        <div class="feas-swot-head">${cell.label}</div>
-        <div class="feas-swot-tip">${cell.tip}</div>
-        <ul class="feas-swot-list">`;
-      if (items.length === 0) {
-        html += `<li class="feas-swot-empty">—</li>`;
-      } else {
-        for (const x of items) html += `<li>${escHtml(x)}</li>`;
-      }
-      html += `</ul></div>`;
-    }
-    html += `</div></div>`;
-  }
-
-  // ───────── 卷三十一 · 未来预期时间轴 ─────────
-  const outlook = d.future_outlook || {};
-  if (outlook.three_months || outlook.six_months || outlook.one_year) {
-    html += `<div class="feas-block"><h3>🔭 未来预期 · 按 用户 现实节奏</h3>
-             <div class="feas-outlook">`;
-    const slots = [
-      { k: 'three_months', label: '3 个月', dot: '●' },
-      { k: 'six_months',   label: '6 个月', dot: '●' },
-      { k: 'one_year',     label: '12 个月', dot: '●' },
-    ];
-    for (const s of slots) {
-      const txt = (outlook[s.k] || '').trim();
-      if (!txt) continue;
-      html += `<div class="feas-outlook-row">
-        <div class="feas-outlook-when">
-          <span class="feas-outlook-dot">${s.dot}</span>
-          <span class="feas-outlook-label">${s.label}</span>
-        </div>
-        <div class="feas-outlook-text">${escHtml(txt)}</div>
-      </div>`;
-    }
-    html += `</div></div>`;
-  }
-
-  // ───────── 卷三十一 · 成功路径阶段 ─────────
-  const path = d.success_path || {};
-  const stages = path.stages || [];
-  if (stages.length || path.end_state) {
-    html += `<div class="feas-block"><h3>🛤️ 成功路径</h3>
-             <div class="feas-path">`;
-    stages.forEach((st, i) => {
-      const weeks = st.weeks ? `<span class="feas-stage-weeks">${escHtml(String(st.weeks))} 周</span>` : '';
-      html += `<div class="feas-stage">
-        <div class="feas-stage-num">${i + 1}</div>
-        <div class="feas-stage-body">
-          <div class="feas-stage-head">
-            <span class="feas-stage-name">${escHtml(st.name || '?')}</span>
-            ${weeks}
-          </div>
-          <div class="feas-stage-milestone">
-            <b>里程碑</b>: ${escHtml(st.milestone || '')}
-          </div>
-          <div class="feas-stage-criteria">
-            <b>判断</b>: ${escHtml(st.criteria || '')}
-          </div>
-        </div>
-      </div>`;
-    });
-    if (path.end_state) {
-      html += `<div class="feas-end-state">
-        <div class="feas-end-state-icon">🏁</div>
-        <div class="feas-end-state-body">
-          <div class="feas-end-state-label">终态</div>
-          <div class="feas-end-state-text">${escHtml(path.end_state)}</div>
-        </div>
-      </div>`;
-    }
-    html += `</div></div>`;
-  }
-
-  // 资源
-  if ((d.resources_have && d.resources_have.length) || (d.resources_need && d.resources_need.length)) {
-    html += `<div class="feas-block"><h3><i class="ri-archive-fill"></i> 资源</h3>`;
-    if (d.resources_have && d.resources_have.length) {
-      html += `<div class="feas-res feas-res-have"><b><i class="ri-checkbox-circle-fill"></i> 用户 已有：</b><ul>`;
-      for (const x of d.resources_have) html += `<li>${escHtml(x)}</li>`;
-      html += `</ul></div>`;
-    }
-    if (d.resources_need && d.resources_need.length) {
-      html += `<div class="feas-res feas-res-need"><b><i class="ri-search-fill"></i> 还需要找：</b><ul>`;
-      for (const x of d.resources_need) html += `<li>${escHtml(x)}</li>`;
-      html += `</ul></div>`;
-    }
-    html += `</div>`;
-  }
-
-  // 能力对照
-  if (d.capability_match && d.capability_match.length) {
-    html += `<div class="feas-block"><h3><i class="ri-brain-fill"></i> 能力对照</h3><div class="feas-caps">`;
-    for (const c of d.capability_match) {
-      const mark = { yes: '<i class="ri-checkbox-circle-fill"></i>', partial: '<i class="ri-circle-fill" style="color:#eab308"></i>', no: '<i class="ri-close-circle-fill"></i>' }[c.bro_has] || '?';
-      html += `
-        <div class="feas-cap">
-          <div class="feas-cap-head">${mark} <b>${escHtml(c.capability || '?')}</b></div>
-          <div class="feas-cap-evi">${escHtml(c.evidence || '')}</div>
-        </div>`;
-    }
-    html += `</div></div>`;
-  }
-
-  // 成本拆解
-  const cost = d.cost_breakdown || {};
-  if (Object.keys(cost).length) {
-    html += `<div class="feas-block"><h3>💰 成本拆解</h3><div class="feas-cost">`;
-    if (cost.time_hours_min || cost.time_hours_max) {
-      html += `<div class="feas-cost-row"><span class="lbl">⏱️ 时间</span>
-               <span class="val">${cost.time_hours_min || '?'} - ${cost.time_hours_max || '?'} 小时</span></div>`;
-    }
-    if (cost.tokens_estimate_usd != null) {
-      html += `<div class="feas-cost-row"><span class="lbl">🪙 LLM token</span>
-               <span class="val">$${cost.tokens_estimate_usd}</span></div>`;
-    }
-    if (cost.subscriptions_monthly_usd != null) {
-      html += `<div class="feas-cost-row"><span class="lbl"><i class="ri-calendar-fill"></i> 月订阅</span>
-               <span class="val">$${cost.subscriptions_monthly_usd}/月</span></div>`;
-    }
-    if (cost.opportunity_cost) {
-      html += `<div class="feas-cost-row"><span class="lbl"><i class="ri-refresh-fill"></i> 机会成本</span>
-               <span class="val">${escHtml(cost.opportunity_cost)}</span></div>`;
-    }
-    html += `</div></div>`;
-  }
-
-  // 替代方案
-  if (d.alternatives && d.alternatives.length) {
-    html += `<div class="feas-block"><h3>🔀 替代方案</h3><div class="feas-alts">`;
-    for (const a of d.alternatives) {
-      html += `
-        <div class="feas-alt">
-          <div class="feas-alt-name">${escHtml(a.name || '?')}</div>
-          <div class="feas-alt-delta">差异: ${escHtml(a.delta || '')}</div>
-          <div class="feas-alt-why">为什么值得考虑: ${escHtml(a.why_consider || '')}</div>
-        </div>`;
-    }
-    html += `</div></div>`;
-  }
-
-  // 立刻能做的第一步
-  if (d.first_30_min) {
-    html += `<div class="feas-block"><h3><i class="ri-rocket-fill"></i> 立刻能做的第一步</h3>
-             <div class="feas-first30">${escHtml(d.first_30_min)}</div></div>`;
-  }
-
-  // Go/No-Go
-  if (d.go_no_go) {
-    html += `<div class="feas-block"><h3><i class="ri-focus-3-fill"></i> Go / No-Go</h3>
-             <div class="feas-gonogo">${escHtml(d.go_no_go)}</div></div>`;
-  }
-
-  // ───────── 卷三十一 · 闭环反馈区 ─────────
-  // 用户 在这里直接更新决策 / 实际产出 / 经验·下次 LLM 跑会读到这些
-  const outcome = d.outcome || {};
-  const curStatus = outcome.status || 'not_started';
-  const _STATUS_BTN = [
-    { v: 'in_progress', label: '<i class="ri-play-fill"></i> 开干', cls: 'fb-go' },
-    { v: 'completed',   label: '<i class="ri-check-fill"></i> 已完成', cls: 'fb-done' },
-    { v: 'abandoned',   label: '<i class="ri-close-fill"></i> 不做了', cls: 'fb-skip' },
-    { v: 'not_started', label: '⟲ 重置', cls: 'fb-reset' },
-  ];
-  html += `<div class="feas-block feas-feedback">
-    <h3><i class="ri-refresh-fill"></i> 闭环反馈 · 用户 的真实决策（卷三十一）</h3>
-    <div class="feas-fb-intro">
-      你在这里更新的所有信息·都会被下次 Daemonkey 跑掘金 / 可行性时读到——
-      让 Daemonkey 越用越懂你 · 不再推已经拒过的机会。
-    </div>
-
-    <div class="feas-fb-status-row">
-      <span class="feas-fb-label">当前状态:</span>
-      <span class="feas-fb-status-pill feas-fb-${curStatus}" id="fbStatusPill">
-        ${{ not_started: '<i class="ri-add-circle-fill"></i> 未启动',
-            in_progress: '<i class="ri-play-fill"></i> 进行中',
-            completed:   '<i class="ri-check-fill"></i> 已完成',
-            abandoned:   '<i class="ri-close-fill"></i> 已放弃' }[curStatus] || curStatus}
-      </span>
-    </div>
-
-    <div class="feas-fb-buttons">
-      ${_STATUS_BTN.map(b => `
-        <button class="feas-fb-btn ${b.cls} ${curStatus === b.v ? 'active' : ''}"
-                data-status="${b.v}"
-                onclick="submitOutcomeStatus('${jsStr(d.opp_id)}', '${b.v}')">
-          ${b.label}
-        </button>
-      `).join('')}
-    </div>
-
-    <div class="feas-fb-grid">
-      <label class="feas-fb-field feas-fb-field-full">
-        <span class="lbl">为什么做 / 为什么不做（最关键）</span>
-        <textarea id="fbReason" rows="2"
-                  placeholder="比如「这事其实有 3 个大厂在做了 · 我切不进去」">${escHtml(outcome.decision_reason || '')}</textarea>
-      </label>
-      <label class="feas-fb-field">
-        <span class="lbl">实际收入 ¥</span>
-        <input id="fbRevenue" type="number" step="any"
-               value="${outcome.actual_revenue_cny != null ? outcome.actual_revenue_cny : ''}"
-               placeholder="0">
-      </label>
-      <label class="feas-fb-field">
-        <span class="lbl">实际成本 ¥</span>
-        <input id="fbCost" type="number" step="any"
-               value="${outcome.actual_cost_cny != null ? outcome.actual_cost_cny : ''}"
-               placeholder="0">
-      </label>
-      <label class="feas-fb-field feas-fb-field-full">
-        <span class="lbl">增效部分（自动化省了多少时间等）</span>
-        <input id="fbEff" type="text"
-               value="${escHtml(outcome.efficiency_gain || '')}"
-               placeholder="每周省 4 小时 / 写文档速度 3 倍">
-      </label>
-      <label class="feas-fb-field feas-fb-field-full">
-        <span class="lbl">经验教训</span>
-        <textarea id="fbLessons" rows="2"
-                  placeholder="复盘 · 哪一步是真问题">${escHtml(outcome.lessons_learned || '')}</textarea>
-      </label>
-    </div>
-
-    <div class="feas-fb-save-row">
-      <button class="feas-fb-save-btn"
-              onclick="submitOutcomeFull('${jsStr(d.opp_id)}')">
-        <i class="ri-save-fill"></i> 保存反馈
-      </button>
-      <div class="feas-fb-save-hint" id="fbSaveHint"></div>
-    </div>
-
-    ${outcome.updates && outcome.updates.length ? `
-      <details class="feas-fb-history">
-        <summary>变更历史 · ${outcome.updates.length} 次</summary>
-        <ul>${outcome.updates.slice(-10).reverse().map(u => `
-          <li>
-            <span class="hist-at">${(u.at || '').slice(0, 16).replace('T', ' ')}</span>
-            <span class="hist-status feas-fb-${u.status}">${u.status}</span>
-            ${u.note ? `· ${escHtml(u.note)}` : ''}
-          </li>`).join('')}</ul>
-      </details>` : ''
-    }
-  </div>`;
-
-  html += `</div>`;
-  $dashView.innerHTML = html;
-
-  // 卷三十三 · <i class="ri-star-fill"></i> 按钮交互
-  $dashView.querySelectorAll('.feas-star-btn').forEach(btn => {
-    btn.onclick = async (ev) => {
-      ev.stopPropagation();
-      const refId = btn.getAttribute('data-ref');
-      const titleHint = btn.getAttribute('data-title') || '';
-      const domain = btn.getAttribute('data-domain') || '';
-      const r = await _toggleFavorite('feasibility', refId, titleHint, domain, 'toggle');
-      if (r && r.now_starred !== undefined) {
-        if (r.now_starred) {
-          btn.classList.add('starred');
-          btn.title = '已收藏 · 点击取消';
-          btn.textContent = '★ 已收藏';
-        } else {
-          btn.classList.remove('starred');
-          btn.title = '收藏此可行性';
-          btn.textContent = '☆ 收藏';
-        }
-      }
-    };
-  });
-}
 
 // 卷三十三 · 跳可行性详情 · 给 renderExecutionDetail / renderFavorites 用
-async function _loadFeasibilityDetail(oppId) {
-  if (!oppId) return;
-  currentView = 'feasibility';
-  $dashView.innerHTML = `<div class="dash-empty">加载详情中...</div>`;
-  try {
-    const r = await fetch(`/dashboard/feasibility?domain_filter=${encodeURIComponent(oppId)}`, {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) {
-      $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`;
-      return;
-    }
-    const data = await r.json();
-    await renderFeasibilityDetail(data);
-  } catch (e) {
-    $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`;
-  }
-}
 
 // ───────── 卷三十一 · outcome 提交 ─────────
-async function submitOutcomeStatus(opp_id, status) {
-  if (!token) return;
-  if (!opp_id) return;
-  // 只动 status 一个字段·快速切换用
-  await _postOutcome(opp_id, { status });
-  // 重新加载详情·刷新 UI 状态
-  loadFeasibilityDetail(opp_id);
-}
 
-async function submitOutcomeFull(opp_id) {
-  if (!token) return;
-  if (!opp_id) return;
-  const hint = document.getElementById('fbSaveHint');
-  const body = {
-    decision_reason: document.getElementById('fbReason')?.value || '',
-    efficiency_gain: document.getElementById('fbEff')?.value || '',
-    lessons_learned: document.getElementById('fbLessons')?.value || '',
-  };
-  const rev = document.getElementById('fbRevenue')?.value;
-  const cost = document.getElementById('fbCost')?.value;
-  if (rev !== '' && rev != null) body.actual_revenue_cny = Number(rev);
-  if (cost !== '' && cost != null) body.actual_cost_cny = Number(cost);
-
-  if (hint) { hint.textContent = '保存中…'; hint.className = 'feas-fb-save-hint'; }
-  const ok = await _postOutcome(opp_id, body);
-  if (hint) {
-    hint.textContent = ok ? '<i class="ri-check-fill"></i> 已保存 · 下次 Daemonkey 跑掘金/可行性会读到' : '<i class="ri-close-fill"></i> 保存失败';
-    hint.className = 'feas-fb-save-hint ' + (ok ? 'ok' : 'err');
-    setTimeout(() => { hint.textContent = ''; hint.className = 'feas-fb-save-hint'; }, 3500);
-  }
-  if (ok) loadFeasibilityDetail(opp_id);
-}
 
 async function _postOutcome(opp_id, fields) {
   try {
@@ -12743,140 +8443,7 @@ async function _postOutcome(opp_id, fields) {
 // 卷三十三 · <i class="ri-refresh-fill"></i> 执行反馈 · 闭环反馈独立维度
 //   跟 outcomes 共享数据 · 视图按状态分组
 // ═════════════════════════════════════════════════════════
-function renderExecution(data) {
-  if (data && data.error) {
-    $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-refresh-fill"></i> 执行反馈</h2></div>
-      <div class="dash-empty">${escHtml(data.error)}</div>`;
-    return;
-  }
 
-  // 单项详情？— 如果 data.opp_id 存在·说明是 single
-  if (data && data.opp_id && data.status !== undefined && !data.grouped) {
-    renderExecutionDetail(data);
-    return;
-  }
-
-  const total = data.total || 0;
-  const grouped = data.grouped || {};
-  const statusMeta = data.status_meta || {};
-  const updatedAt = data.updated_at;
-
-  // 状态卡片顺序：进行中优先 → 未启动 → 已完成 → 已放弃
-  const order = ['in_progress', 'not_started', 'completed', 'abandoned'];
-
-  const breadcrumbHtml = `
-    <div class="exec-breadcrumb">
-      <span><i class="ri-bar-chart-fill"></i> 可行性分析</span>
-      <span class="arrow">→</span>
-      <span><i class="ri-refresh-fill"></i> 执行反馈</span>
-      <span class="arrow">→</span>
-      <span class="muted">下一轮 LLM 分析</span>
-    </div>
-  `;
-
-  if (total === 0) {
-    $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-refresh-fill"></i> 执行反馈</h2>
-        <span class="dash-meta">闭环还没起步</span></div>
-      ${breadcrumbHtml}
-      <div class="dash-empty">
-        <p>还没有项目在执行</p>
-        <p class="muted" style="margin-top:8px">
-          流程：<i class="ri-diamond-fill"></i> 掘金机会 → <i class="ri-bar-chart-fill"></i> 可行性分析 → <i class="ri-checkbox-circle-fill"></i>「开干」/「不做了」<br>
-          决定一旦做出·这里就会出现项目卡 · 后续每一次进展都记录在这。
-        </p>
-      </div>`;
-    return;
-  }
-
-  let buckets = '';
-  for (const st of order) {
-    const items = grouped[st] || [];
-    if (items.length === 0) continue;
-    const meta = statusMeta[st] || {};
-    const icon = meta.icon || '·';
-    const label = meta.label || st;
-    const color = meta.color || '#7c869c';
-    const cards = items.map(it => `
-      <div class="exec-card" data-opp="${escHtml(it.opp_id)}"
-           style="border-left-color:${color}">
-        <div class="exec-card-top">
-          <span class="exec-status" style="color:${color}">${icon} ${escHtml(label)}</span>
-          <span class="exec-domain">${escHtml(it.opp_domain || '-')}</span>
-        </div>
-        <div class="exec-title">${escHtml(it.opp_title || '?')}</div>
-        ${it.decision_reason ? `
-          <div class="exec-reason">${escHtml(it.decision_reason.slice(0, 120))}${it.decision_reason.length > 120 ? '…' : ''}</div>
-        ` : ''}
-        ${it.status === 'completed' && (it.actual_revenue_cny != null || it.actual_cost_cny != null) ? `
-          <div class="exec-numbers">
-            <span class="exec-rev">收入 ¥${it.actual_revenue_cny || 0}</span>
-            <span class="exec-cost">成本 ¥${it.actual_cost_cny || 0}</span>
-          </div>
-        ` : ''}
-        <div class="exec-foot">
-          <span class="exec-time">${escHtml(_formatTimeAgo(it.updated_at))}</span>
-          <button class="exec-open" data-opp="${escHtml(it.opp_id)}">查看详情 →</button>
-        </div>
-      </div>
-    `).join('');
-
-    buckets += `
-      <section class="exec-bucket" data-status="${st}">
-        <h3 style="color:${color}">${icon} ${escHtml(label)} <span class="exec-count">${items.length}</span></h3>
-        <div class="exec-grid">${cards}</div>
-      </section>
-    `;
-  }
-
-  $dashView.innerHTML = `
-    <div class="dash-head">
-      <h2><i class="ri-refresh-fill"></i> 执行反馈</h2>
-      <span class="dash-meta">${total} 个项目 · ${escHtml(_formatTimeAgo(updatedAt))}</span>
-    </div>
-    ${breadcrumbHtml}
-    <div class="exec-summary">
-      <span class="muted">这里记录每个落地项目的状态 / 决策 / 实际收支 / 经验教训</span><br>
-      <span class="muted">→ 下次 LLM 做可行性分析·会自动抓"同类"反馈做合并分析（卷三十三闭环深化）</span>
-    </div>
-    ${buckets}
-  `;
-
-  // 绑定"查看详情"
-  $dashView.querySelectorAll('.exec-open').forEach(btn => {
-    btn.onclick = (ev) => {
-      ev.stopPropagation();
-      const oppId = btn.getAttribute('data-opp');
-      _loadExecutionDetail(oppId);
-    };
-  });
-  // 整卡也可点
-  $dashView.querySelectorAll('.exec-card').forEach(card => {
-    card.onclick = () => {
-      const oppId = card.getAttribute('data-opp');
-      _loadExecutionDetail(oppId);
-    };
-  });
-}
-
-async function _loadExecutionDetail(oppId) {
-  if (!oppId) return;
-  $dashView.innerHTML = `<div class="dash-empty">加载详情中...</div>`;
-  try {
-    const r = await fetch(`/dashboard/execution?domain_filter=${encodeURIComponent(oppId)}`, {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) {
-      $dashView.innerHTML = `<div class="dash-empty">加载失败 [${r.status}]</div>`;
-      return;
-    }
-    const data = await r.json();
-    renderExecutionDetail(data);
-  } catch (e) {
-    $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`;
-  }
-}
 
 function renderExecutionDetail(d) {
   const snap = d.opp_snapshot || {};
@@ -13041,125 +8608,8 @@ function renderExecutionDetail(d) {
 // ═════════════════════════════════════════════════════════
 // 卷三十三 · <i class="ri-star-fill"></i> 收藏夹 · 三类统一视图
 // ═════════════════════════════════════════════════════════
-function renderFavorites(data) {
-  if (data && data.error) {
-    $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-star-fill"></i> 收藏夹</h2></div>
-      <div class="dash-empty">${escHtml(data.error)}</div>`;
-    return;
-  }
-  const items = data.items || [];
-  const byKind = data.by_kind || {};
-  const total = data.total || 0;
-
-  if (total === 0) {
-    $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-star-fill"></i> 收藏夹</h2>
-        <span class="dash-meta">空</span></div>
-      <div class="dash-empty">
-        <p>还没收藏过任何东西</p>
-        <p class="muted" style="margin-top:8px">
-          在 <i class="ri-radar-fill"></i> 信息雷达 / <i class="ri-diamond-fill"></i> 掘金机会 / <i class="ri-bar-chart-fill"></i> 可行性分析 各处都能点 <i class="ri-star-fill"></i> 收藏 · 一处汇总在这。
-        </p>
-      </div>`;
-    return;
-  }
-
-  const kindMeta = {
-    opportunity: { icon: '<i class="ri-diamond-fill"></i>', label: '掘金机会', color: '#ffd166' },
-    feasibility: { icon: '<i class="ri-bar-chart-fill"></i>', label: '可行性分析', color: '#a78bfa' },
-  };
-
-  const cards = items.map(it => {
-    const km = kindMeta[it.kind] || { icon: '·', label: it.kind, color: '#6b7280' };
-    return `
-      <div class="fav-card" data-kind="${escHtml(it.kind)}" data-ref="${escHtml(it.ref_id)}"
-           style="border-left-color:${km.color}">
-        <div class="fav-card-top">
-          <span class="fav-kind" style="color:${km.color}">${km.icon} ${km.label}</span>
-          ${it.domain ? `<span class="fav-domain">${escHtml(it.domain)}</span>` : ''}
-        </div>
-        <div class="fav-title">${escHtml(it.title_snap || '?')}</div>
-        ${it.note ? `<div class="fav-note">${escHtml(it.note)}</div>` : ''}
-        <div class="fav-foot">
-          <span class="muted">${escHtml(_formatTimeAgo(it.starred_at))}</span>
-          <div class="fav-actions">
-            <button class="fav-open" data-kind="${escHtml(it.kind)}" data-ref="${escHtml(it.ref_id)}">查看 →</button>
-            <button class="fav-remove" data-kind="${escHtml(it.kind)}" data-ref="${escHtml(it.ref_id)}">取消收藏</button>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
-  $dashView.innerHTML = `
-    <div class="dash-head">
-      <h2><i class="ri-star-fill"></i> 收藏夹</h2>
-      <span class="dash-meta">${total} 条 · <i class="ri-diamond-fill"></i> ${byKind.opportunity||0} · <i class="ri-bar-chart-fill"></i> ${byKind.feasibility||0}</span>
-    </div>
-    <p class="muted" style="margin-bottom:12px">
-      雷达条目的 <i class="ri-star-fill"></i> 在「信息雷达」里查（走 radar feedback）· 这里管掘金机会 + 可行性分析。
-    </p>
-    <div class="fav-grid">${cards}</div>
-  `;
-
-  $dashView.querySelectorAll('.fav-open').forEach(btn => {
-    btn.onclick = (ev) => {
-      ev.stopPropagation();
-      const kind = btn.getAttribute('data-kind');
-      const ref = btn.getAttribute('data-ref');
-      if (kind === 'opportunity') {
-        loadDashboard('opportunities');
-      } else if (kind === 'feasibility') {
-        _loadFeasibilityDetail(ref);
-      }
-    };
-  });
-  $dashView.querySelectorAll('.fav-remove').forEach(btn => {
-    btn.onclick = async (ev) => {
-      ev.stopPropagation();
-      const kind = btn.getAttribute('data-kind');
-      const ref = btn.getAttribute('data-ref');
-      const ok = await opusConfirm({
-        title: '取消收藏',
-        message: '不再收藏这一条吗？',
-        okText: '取消收藏',
-        cancelText: '保留',
-      });
-      if (!ok) return;
-      await _toggleFavorite(kind, ref, '', '', 'remove');
-      loadDashboard('favorites');
-    };
-  });
-}
 
 // 全局 · 切换收藏 / 加 / 减
-async function _toggleFavorite(kind, refId, titleHint, domain, action = 'toggle') {
-  if (!kind || !refId) return null;
-  try {
-    const r = await fetch('/favorites', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        kind, ref_id: refId,
-        title_hint: titleHint || '',
-        domain: domain || '',
-        action,
-      }),
-    });
-    if (!r.ok) {
-      console.warn('favorites post failed', r.status, await r.text());
-      return null;
-    }
-    return await r.json();
-  } catch (e) {
-    console.warn('favorites post error', e);
-    return null;
-  }
-}
 
 // 全局 · 把当前 opportunities / feasibility 的 ref_id 在 UI 上标记 starred
 async function _fetchFavoriteSet(kind) {
@@ -13273,9 +8723,9 @@ function renderCalendar(data) {
         const lastTxt = r.last_done ? `上次 ${escHtml(r.last_done)}` : '从未照过';
         return `
           <div class="cal-ritual-card">
-            <div class="cal-ritual-main"><i class="ri-aspect-ratio-fill"></i> 能力镜像 · ${en}</div>
+            <div class="cal-ritual-main"><i class="ri-aspect-ratio-fill"></i> 能力对照 · ${en}</div>
             <div class="cal-ritual-sub">${lastTxt} · 吃对话摘要后照得见对话</div>
-            <button class="cal-ritual-btn" data-prompt="${escHtml(r.draft_prompt || '')}" data-label="市场能力镜像">立即照镜</button>
+            <button class="cal-ritual-btn" data-prompt="${escHtml(r.draft_prompt || '')}" data-label="能力对照">现在对照</button>
           </div>`;
       }
       if (r.id === 'skill_discovery') {
@@ -13635,7 +9085,7 @@ function renderPlugins(data) {
       html += `
             <div class="plugin-tryit">
               <button class="plugin-try-btn"
-                onclick="injectAndSend('用 ${escHtml(p.name)} 帮我做一件事 · 你看上下文判断要传什么参数')">
+                onclick="injectAndSend('用 ${jsStr(p.name)} 帮我做一件事 · 你看上下文判断要传什么参数')">
                 <i class="ri-lightbulb-fill"></i> 让 Daemonkey 用这个工具做点事
               </button>
             </div>
@@ -13672,11 +9122,6 @@ function renderPlugins(data) {
   $dashView.innerHTML = html;
 }
 
-function escHtml(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
 
 // wish-b199c9fa · inline onclick JS 字符串参数专用转义 (双层·顺序不能反):
 //   1) JS 层: \ → \\ · ' → \' · 换行 → \n 字面量 (防 JS 字符串被提前闭合)
@@ -13704,7 +9149,7 @@ function pipelineBreadcrumb(current) {
   const stages = [
     { id: 'radar',   icon: '<i class="ri-radar-fill"></i>', label: '雷达',   hint: '原料层 · 多源抓取' },
     { id: 'trends',  icon: '<i class="ri-line-chart-fill"></i>', label: '趋势',   hint: '提炼层 · Daemonkey 军师视图' },
-    { id: 'reports', icon: '<i class="ri-article-fill"></i>', label: '报告',   hint: '成品层 · 正式 docx 出货' },
+    { id: 'reports', icon: '<i class="ri-archive-2-fill"></i>', label: '产物',   hint: '成品层 · 报告 docx + 演示稿 pptx' },
   ];
   const parts = stages.map((s, i) => {
     const active = (s.id === current) ? ' active' : '';
@@ -13717,23 +9162,6 @@ function pipelineBreadcrumb(current) {
 }
 
 // 卷二十七 · 简易 inline SVG 直方图（信源贡献）
-function toggleSourceHistogram(btn) {
-  const histogram = btn.closest('.radar-histogram');
-  if (!histogram) return;
-  const svg = histogram.querySelector('svg');
-  const collapsed = histogram.querySelectorAll('.sh-collapsed');
-  const isHidden = collapsed.length > 0 && collapsed[0].style.display !== 'block';
-  collapsed.forEach(g => { g.style.display = isHidden ? 'block' : 'none'; });
-  if (svg && svg.dataset.fullHeight) {
-    const fullH = parseInt(svg.dataset.fullHeight);
-    const collH = parseInt(svg.dataset.collapsedHeight);
-    const newH = isHidden ? fullH : collH;
-    svg.setAttribute('height', newH);
-    const vb = svg.viewBox.baseVal;
-    svg.setAttribute('viewBox', `0 0 ${vb.width} ${newH}`);
-  }
-  btn.textContent = isHidden ? '收起' : `+ 显示剩余 ${collapsed.length} 个信源`;
-}
 
 function renderSourceHistogram(meta, scopeLabel) {
   const scoped = scopeLabel ? ` · ${escHtml(scopeLabel)}` : '';
@@ -13790,331 +9218,17 @@ function renderSourceHistogram(meta, scopeLabel) {
     </div>`;
   return html;
 }
-function renderRadar(data) {
-  if (data && data.error) {
-    $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-radar-fill"></i> 信息雷达</h2></div>
-      <div class="dash-empty">${escHtml(data.error)}</div>`;
-    return;
-  }
-  if (data && data.note && (data.items || []).length === 0) {
-    $dashView.innerHTML = `
-      ${pipelineBreadcrumb('radar')}
-      <div class="dash-head">
-        <h2><i class="ri-radar-fill"></i> 信息雷达</h2>
-        <button onclick="backToChat()">✕ 收起</button>
-        <button onclick="spawnQuickly('帮我跑一遍信息雷达 · 调 auto_pipeline 工具 · 参数 refresh_radar=true, regen_trends=false, mine_opps=false · 只抓取雷达不动趋势机会 · 跑完告诉我新增了哪些条目·特别是 self-evolve 域的', '抓取信息雷达')">立即抓取</button>
-      </div>
-      <div class="dash-stub">
-        <h3>雷达还没数据</h3>
-        <div>${escHtml(data.note)}</div>
-      </div>`;
-    return;
-  }
-  const allItems = data.items || [];
-  const meta = data.sources_meta || [];
-  const trMeta = data.translation || {};
-  const overview = data.domains_overview || [];
-  const generatedTxt = data.generated_at
-    ? formatRadarTime(data.generated_at) : '未知';
-
-  // 卷二十八 · 顶部领域 chip 过滤器
-  const allCount = allItems.length;
-  const filteredItems = (radarDomainFilter && radarDomainFilter !== 'all')
-    ? allItems.filter(it => (it.domain || 'ai') === radarDomainFilter)
-    : allItems;
-
-  let domainChips = `
-    <div class="radar-domain-chips">
-      <button class="rdc ${radarDomainFilter === 'all' ? 'active' : ''}"
-              onclick="setRadarDomainFilter('all')"
-              title="不过滤 · 所有领域">
-        <i class="ri-global-fill"></i> 全部 <span class="rdc-n">${allCount}</span>
-      </button>`;
-  for (const d of overview) {
-    const isActive = radarDomainFilter === d.id;
-    // 卷三十四补丁 · self-evolve 是 Daemonkey 自演化的镜子·不能删·不显示删除按钮
-    const isProtected = d.id === 'self-evolve';
-    const deleteBtn = isProtected ? '' : `
-      <span class="rdc-del"
-            title="删除「${escHtml(d.label)}」类目"
-            onclick="event.stopPropagation();confirmRemoveDomain('${d.id}', ${JSON.stringify(d.label).replace(/"/g, '&quot;')}, ${d.items_count || 0}, ${d.sources_count || 0})">×</span>`;
-    domainChips += `
-      <button class="rdc ${isActive ? 'active' : ''} ${isProtected ? 'protected' : 'deletable'}"
-              data-domain="${d.id}"
-              onclick="setRadarDomainFilter('${d.id}')"
-              title="${escHtml(d.description || d.label)}${isProtected ? ' · 内置锁定·不可删' : ''}"
-              style="${isActive ? `border-color: ${d.color}; color: ${d.color}` : ''}">
-        ${d.icon} ${escHtml(d.label)} <span class="rdc-n">${d.items_count || 0}</span>${deleteBtn}
-      </button>`;
-  }
-  domainChips += `</div>`;
-
-  // 顶部数据卡 · 卷五十八续 X · 今日新增(首见·跟着 tab 走) + 共(可见总数·已扣hidden)
-  const items = filteredItems;
-  const okSources = meta.filter(m => m.ok).length;
-  const translatedN = trMeta.translated || items.filter(it => it.title_zh).length;
-  const rstats = data.stats || {};
-  const isFiltered = (radarDomainFilter && radarDomainFilter !== 'all');
-  // 今日新增跟着 tab 走: 选了领域=该领域今天首见·全部=全领域总和 (用户 2026-06-06·别两个口径混一格)
-  const newTodayByDom = rstats.new_today_by_domain || {};
-  const newToday = isFiltered
-    ? Number(newTodayByDom[radarDomainFilter] || 0)
-    : Number(rstats.new_today || 0);
-  const totalVisible = (rstats.total != null) ? Number(rstats.total) : allCount;
-  const todayLabel = isFiltered ? '本类今日新增' : '今日新增';
-  const statsCards = `
-    <div class="radar-stats">
-      <div class="rs-card rs-card-today" title="${isFiltered ? '本领域今天首次出现的新条目' : '全领域今天首次出现的新条目'} · 跟「本类/共」同一领域口径">
-        <div class="rs-n">${newToday > 0 ? '+' + newToday : '0'}</div>
-        <div class="rs-l">${todayLabel}</div>
-      </div>
-      <div class="rs-card" title="可见条目总数 (已扣除你隐藏的条目)">
-        <div class="rs-n">${isFiltered ? items.length + '/' + totalVisible : totalVisible}</div>
-        <div class="rs-l">${isFiltered ? '本类/共' : '条信息'}</div>
-      </div>
-      <div class="rs-card">
-        <div class="rs-n">${okSources}/${meta.length}</div>
-        <div class="rs-l">信源在线</div>
-      </div>
-      <div class="rs-card" title="${translatedN} 条英文条目已翻译成中文">
-        <div class="rs-n">${translatedN}</div>
-        <div class="rs-l">已翻译</div>
-      </div>
-      <div class="rs-card">
-        <div class="rs-n" title="${escHtml(generatedTxt)}">${formatTimeShort(data.generated_at)}</div>
-        <div class="rs-l">最新抓取</div>
-      </div>
-    </div>`;
-
-  let html = `
-    ${pipelineBreadcrumb('radar')}
-    <div class="dash-head">
-      <h2><i class="ri-radar-fill"></i> 信息雷达</h2>
-      <span class="meta">原料层 · 多源抓取 · 多领域</span>
-      <button onclick="backToChat()">✕ 收起</button>
-      <button onclick="spawnQuickly('帮我跑一遍信息雷达 · 调 auto_pipeline 工具 · 参数 refresh_radar=true, regen_trends=false, mine_opps=false · 只抓取雷达不动趋势机会 · 跑完告诉我新增了哪些条目·特别是 self-evolve 域的', '重新抓取雷达')">重新抓取</button>
-      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 用户 · 为什么', '生成今日趋势')">让 Daemonkey 总结趋势 →</button>
-    </div>
-    ${domainChips}
-    ${statsCards}
-    ${renderSourceHistogram(
-      (radarDomainFilter && radarDomainFilter !== 'all') ? meta.filter(m => (m.domain || 'ai') === radarDomainFilter) : meta,
-      (radarDomainFilter && radarDomainFilter !== 'all') ? ((overview.find(o => o.id === radarDomainFilter) || {}).label || radarDomainFilter) : ''
-    )}`;
-
-  if (items.length === 0) {
-    if (radarDomainFilter && radarDomainFilter !== 'all') {
-      html += `<div class="dash-empty">该领域目前没数据 · 切回"全部"或加这个领域的信源</div>`;
-    } else {
-      html += `<div class="dash-empty">还没抓到数据 · 点"重新抓取"试一下</div>`;
-    }
-  } else {
-    // 卷三十二 · feedback/softness 统计·渲染顶部小统计条
-    const fbCnt = data.feedback_counts || {};
-    const sfCnt = data.softness_counts || {};
-    const totalFb = (fbCnt.thumbs_up || 0) + (fbCnt.thumbs_down || 0)
-                  + (fbCnt.starred || 0) + (fbCnt.hidden || 0);
-    if (totalFb > 0 || (sfCnt.high || 0) > 0) {
-      html += `<div class="radar-stats">
-        ${totalFb > 0 ? `
-          <span class="rs-fb">
-            <span class="rs-tag fb-up"><i class="ri-thumb-up-fill"></i> ${fbCnt.thumbs_up || 0}</span>
-            <span class="rs-tag fb-down"><i class="ri-thumb-down-fill"></i> ${fbCnt.thumbs_down || 0}</span>
-            <span class="rs-tag fb-star"><i class="ri-star-fill"></i> ${fbCnt.starred || 0}</span>
-            <span class="rs-tag fb-hide"><i class="ri-delete-bin-fill"></i> ${fbCnt.hidden || 0}</span>
-          </span>` : ''}
-        ${(sfCnt.high || 0) + (sfCnt.medium || 0) > 0 ? `
-          <span class="rs-soft" title="软文判别: 高=大概率营销稿·会被排到末尾">
-            软文 · 高 <b>${sfCnt.high || 0}</b> · 中 <b>${sfCnt.medium || 0}</b> · 低 <b>${sfCnt.low || 0}</b>
-          </span>` : ''}
-      </div>`;
-    }
-
-    html += `<div class="radar-list">`;
-    for (const it of items) {
-      // 中文优先 · 有 title_zh 用中文 · 原文 hover 显示
-      const showTitle = it.title_zh || it.title;
-      const origTitle = it.title_zh ? it.title : '';
-      const showSummary = it.summary_zh || it.summary || '';
-      const transBadge = it.title_zh ? '<span class="ri-tr-badge" title="Daemonkey 已翻译 · 鼠标移到标题看原文">中</span>' : '';
-      const origAttr = origTitle ? ` title="原文: ${escHtml(origTitle)}"` : '';
-
-      // 卷三十二 · feedback 状态 / softness 徽章 / item_id
-      const iid = it.item_id || '';
-      const fb = it.feedback || '';
-      const softLevel = (it.softness || {}).level || 'low';
-      const softBadge = softLevel === 'high'
-        ? '<span class="ri-soft soft-high" title="高软文嫌疑 · 已自动压到末尾">软</span>'
-        : softLevel === 'medium'
-        ? '<span class="ri-soft soft-medium" title="疑似软文">软?</span>'
-        : '';
-      const fbClass = fb ? `fb-${fb}` : '';
-      const fbBtns = `
-        <div class="ri-fb-actions" data-iid="${escHtml(iid)}">
-          <button class="ri-fb-btn ${fb === 'thumbs_up' ? 'active' : ''}"
-                  title="👍 多关注这类"
-                  onclick="event.stopPropagation();toggleRadarFeedback('${jsStr(iid)}', 'thumbs_up', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-thumb-up-fill"></i></button>
-          <button class="ri-fb-btn ${fb === 'thumbs_down' ? 'active' : ''}"
-                  title="👎 别再抓这种"
-                  onclick="event.stopPropagation();toggleRadarFeedback('${jsStr(iid)}', 'thumbs_down', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-thumb-down-fill"></i></button>
-          <button class="ri-fb-btn ${fb === 'starred' ? 'active' : ''}"
-                  title="⭐ 收藏"
-                  onclick="event.stopPropagation();toggleRadarFeedback('${jsStr(iid)}', 'starred', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-star-fill"></i></button>
-          <button class="ri-fb-btn ${fb === 'hidden' ? 'active' : ''}"
-                  title="🗑 隐藏 · 下次刷新不再出现"
-                  onclick="event.stopPropagation();toggleRadarFeedback('${jsStr(iid)}', 'hidden', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-delete-bin-fill"></i></button>
-          <button class="ri-fb-btn ri-deep-btn"
-                  title="🔍 深挖 · Daemonkey 用 web_search 拓展这个话题"
-                  onclick="event.stopPropagation();deepDiveRadar(${JSON.stringify(showTitle).replace(/"/g, '&quot;')})"><i class="ri-search-fill"></i></button>
-          ${(it.domain === 'self-evolve') ? `
-          <button class="ri-fb-btn ri-wish-btn"
-                  title="🤔 让 Daemonkey 看一眼 · 推给 Daemonkey · 让他自己判断要不要装"
-                  onclick="event.stopPropagation();wishFromRadar(${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-emotion-think-line"></i></button>` : ''}
-        </div>`;
-
-      html += `
-        <div class="radar-item ${fbClass} soft-${softLevel}" data-iid="${escHtml(iid)}">
-          <a class="ri-title"${origAttr} href="${escHtml(it.url)}" target="_blank" rel="noopener">${escHtml(showTitle)}${transBadge}${softBadge}</a>
-          <div class="ri-meta">
-            ${it.value != null ? `<span class="ri-stars" title="价值 ${it.value}/100">${_biStars(it.value)}</span>` : ''}
-            <span class="ri-src">${escHtml(it.source_display || it.source)}</span>
-            <span class="ri-cat">${escHtml(it.category || '')}</span>
-            <span class="ri-cat">${escHtml(formatRadarTime(it.published_at) || it.published_at || '')}</span>
-            ${fb ? `<span class="ri-fb-state fb-${fb}">${ {thumbs_up:'<i class="ri-thumb-up-fill"></i>',thumbs_down:'<i class="ri-thumb-down-fill"></i>',starred:'<i class="ri-star-fill"></i>',hidden:'<i class="ri-delete-bin-fill"></i>'}[fb] || '' }</span>` : ''}
-          </div>
-          ${showSummary ? `<div class="ri-summary">${escHtml(showSummary)}</div>` : ''}
-          ${fbBtns}
-        </div>`;
-    }
-    html += `</div>`;
-  }
-  $dashView.innerHTML = html;
-}
 
 // 卷三十二 · 雷达条目打标
-async function toggleRadarFeedback(iid, feedback, titleHint, urlHint) {
-  if (!token || !iid) return;
-  // 找到当前 item 的状态·点同一个 feedback = 取消
-  const card = document.querySelector(`.radar-item[data-iid="${iid}"]`);
-  const wasActive = card ? card.classList.contains(`fb-${feedback}`) : false;
-  const payload = {
-    item_id: iid,
-    feedback: wasActive ? null : feedback,
-    title_hint: titleHint,
-    url_hint: urlHint,
-  };
-  try {
-    const r = await fetch('/radar/feedback', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-    if (!r.ok) {
-      console.warn('radar feedback failed', r.status, await r.text());
-      return;
-    }
-  } catch (e) {
-    console.warn('radar feedback error', e);
-    return;
-  }
-  // 重新拉雷达 · 让 sort 立刻生效
-  loadDashboard('radar', { silent: true });
-}
 
 // 卷二十八 · 雷达 domain 过滤器切换
-function setRadarDomainFilter(domain) {
-  radarDomainFilter = domain;
-  if (domain === 'all') localStorage.removeItem('radar_domain_filter');
-  else localStorage.setItem('radar_domain_filter', domain);
-  loadDashboard('radar', { silent: true });
-}
 
 // 卷三十五补丁3 · 手动删类目 · 直接走 API · 不再喂 LLM
 // 修两件事:
 //   1. BUG · starter 4 删了重启复活 (后端用 domains_removed.json 记账解决)
 //   2. token · 删按钮不应该烧 LLM token · 用户点 x 就是确定动作
 // 自然语言删除依然可以走 Daemonkey · 这个函数只服务"按钮点击"场景
-async function confirmRemoveDomain(slug, label, itemsCount, sourcesCount) {
-  if (!slug || slug === 'self-evolve') return;
-  const ok = await opusConfirm({
-    title: '删除雷达领域',
-    message: {
-      html: `确认删除领域 <b>「${escHtml(label)}」</b> 吗？
-        <span class="om-hint">${sourcesCount} 个信源 · ${itemsCount} 条历史条目<br>
-        信源会自动 reassign 到 wildcard (或其他可用域)·不会丢失。<br>
-        删除会持久化·重启浏览器或 daemon 都不会复活。</span>`
-    },
-    okText: '直接删',
-    cancelText: '取消',
-    danger: true,
-  });
-  if (!ok) return;
-  if (radarDomainFilter === slug) {
-    setRadarDomainFilter('all');
-  }
-  try {
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = 'Bearer ' + token;
-    const resp = await fetch('/radar/domains/remove', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        slug,
-        sources_action: 'reassign',
-      }),
-    });
-    if (!resp.ok) {
-      const errText = await resp.text();
-      await opusAlert({
-        title: '删除失败',
-        message: `${resp.status} · ${errText}`,
-        danger: true,
-      });
-      return;
-    }
-    const result = await resp.json();
-    const affected = (result && result.affected_sources && result.affected_sources.length) || 0;
-    const target = (result && result.target_domain) || '—';
-    await opusAlert({
-      title: '删除成功',
-      message: {
-        html: `已删除领域 <b>「${escHtml(label)}」</b>。<br>
-          <span class="om-hint">影响 ${affected} 个信源·已 reassign 到 <b>${escHtml(target)}</b></span>`
-      },
-    });
-    if (typeof loadDashboard === 'function') loadDashboard();
-  } catch (e) {
-    await opusAlert({
-      title: '删除失败',
-      message: '网络或服务异常: ' + (e && e.message || e),
-      danger: true,
-    });
-  }
-}
 
-function formatTimeShort(iso) {
-  if (!iso) return '—';
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '—';
-    const now = new Date();
-    const diffMs = now - d;
-    const diffMin = Math.floor(diffMs / 60000);
-    if (diffMin < 1) return '刚刚';
-    if (diffMin < 60) return `${diffMin}分前`;
-    const diffH = Math.floor(diffMin / 60);
-    if (diffH < 24) return `${diffH}小时前`;
-    const diffD = Math.floor(diffH / 24);
-    if (diffD < 7) return `${diffD}天前`;
-    return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
-  } catch {
-    return '—';
-  }
-}
 
 // 卷二十七 · 今日趋势 = Daemonkey 军师视图（不只是「今日」· 是前瞻+操作建议）
 // 数据 schema: title / summary / intensity (1-5) / angles[] / refs[] / radar_index
@@ -14126,17 +9240,6 @@ const _ANGLE_LABELS = {
   service: { icon: '<i class="ri-team-fill"></i>', label: '用户服务', action: '设服务', cls: 'angle-service' },
 };
 
-function renderIntensityBar(intensity) {
-  const n = Math.max(0, Math.min(5, intensity || 0));
-  let dots = '';
-  for (let i = 0; i < 5; i++) {
-    dots += i < n ? '●' : '○';
-  }
-  const cls = n >= 5 ? 'intensity-5' : n >= 4 ? 'intensity-4'
-            : n >= 3 ? 'intensity-3' : 'intensity-low';
-  const labels = ['', '弱信号', '观望', '值得跟进', '强信号', '立刻动手'];
-  return `<span class="tc-intensity ${cls}" title="${labels[n] || ''}">${dots} <span class="tc-int-n">${n}/5</span></span>`;
-}
 
 // 触发一键动作：直接给 chat 输入框塞一条指令然后发送
 function triggerTrendAction(trendIndex, kind) {
@@ -14239,212 +9342,17 @@ function renderTrends(data) {
 // 私有文档知识库 · 第二大脑 · 文档清单 + 参考开关 + 删除(灌文档走对话 NLP)
 // 复用 report-card / rc-* 样式 · 不另起 CSS
 // 单篇知识库文档卡片 HTML · 文件夹分组和平铺共用
-function _kbCardHtml(d, typeIcon) {
-  const icon = (typeIcon && typeIcon[d.type]) || '<i class="ri-file-fill"></i>';
-  const off = d.enabled === false;
-  const tagBadges = (d.tags || []).map(t => `<span class="rc-src-badge">#${escHtml(t)}</span>`).join(' ');
-  const flagBadges = [];
-  if (d.pinned) flagBadges.push('<span class="rc-src-badge kb-flag-badge"><i class="ri-pushpin-2-fill"></i> 常驻</span>');
-  if (d.sensitive) flagBadges.push('<span class="rc-src-badge kb-flag-badge kb-flag-sensitive"><i class="ri-shield-keyhole-fill"></i> 敏感</span>');
-  const pinCls = d.pinned ? ' on' : '';
-  const senCls = d.sensitive ? ' on' : '';
-  return `
-    <div class="report-card${off ? ' kb-off' : ''}">
-      <div class="rc-head">
-        <span class="rc-name kb-open" data-id="${escHtml(d.id)}" title="点击查看内容">${icon} ${escHtml(d.title)}</span>
-        ${off ? '<span class="rc-src-badge rc-src-extract">已静音</span>' : ''}
-        ${flagBadges.join('')}
-      </div>
-      <div class="rc-meta">
-        <span class="rc-size">${d.chunks || 0} 块</span>
-        <span class="rc-time">${d.chars || 0} 字 · ${escHtml((d.added_at || '').slice(0, 10))}</span>
-        ${tagBadges}
-        <button class="rc-preview-btn kb-toggle" data-id="${escHtml(d.id)}" data-enabled="${off ? '0' : '1'}">${off ? '恢复参考' : '停止参考'}</button>
-        <button class="kb-flag kb-flag-pin${pinCls}" data-id="${escHtml(d.id)}" data-flag="pinned" data-on="${d.pinned ? '1' : '0'}" title="常驻:命中优先靠前"><i class="ri-pushpin-2-line"></i></button>
-        <button class="kb-flag kb-flag-sen${senCls}" data-id="${escHtml(d.id)}" data-flag="sensitive" data-on="${d.sensitive ? '1' : '0'}" title="敏感:不自动注入·仅显式召回可见"><i class="ri-shield-keyhole-line"></i></button>
-        <a class="rc-dl kb-del" href="javascript:void(0)" data-id="${escHtml(d.id)}" data-title="${escHtml(d.title)}">删除 ✕</a>
-      </div>
-    </div>`;
-}
 
-function renderKnowledge(data) {
-  if (data && data.error) {
-    $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-book-2-fill"></i> 知识库</h2></div>
-      <div class="dash-empty">${escHtml(data.error)}</div>`;
-    return;
-  }
-  const items = (data && data.items) || [];
-  const st = (data && data.stats) || {};
-  const typeIcon = {
-    pdf:  '<i class="ri-file-pdf-2-fill"></i>',
-    docx: '<i class="ri-file-word-2-fill"></i>',
-    pptx: '<i class="ri-file-ppt-2-fill"></i>',
-    md:   '<i class="ri-markdown-fill"></i>',
-    txt:  '<i class="ri-file-text-fill"></i>',
-  };
-
-  let html = `
-    <div class="dash-head">
-      <h2><i class="ri-book-2-fill"></i> 知识库 · 第二大脑</h2>
-      <span class="meta">${items.length} 篇 · ${st.enabled || 0} 参考中 · ${st.disabled || 0} 静音</span>
-      <button onclick="backToChat()">✕ 收起</button>
-      <button onclick="loadDashboard('knowledge')">刷新列表</button>
-    </div>`;
-
-  if (items.length === 0) {
-    html += `
-      <div class="dash-stub">
-        <h3>知识库还是空的</h3>
-        <div>在底部输入框跟 Daemonkey 说：「把 <code>D:\\资料\\合同.pdf</code> 加进知识库」<br>
-             支持 md / txt / docx / pptx / pdf(文本型)。灌进来后能被召回并 cite 回原文。</div>
-      </div>`;
-  } else {
-    if (items.length > 3) {
-      html += renderListFilter({ targetSelector: '.report-card', placeholder: '搜文档标题 / 标签...' });
-    }
-    // 按文件夹分组显示 · folder 字段优先 · 无则退回第一个标签 · 都没有 → 未分类
-    const folderOf = (d) => (d.folder && String(d.folder).trim())
-      || ((d.tags && d.tags.length) ? String(d.tags[0]) : '未分类');
-    const groups = {};
-    for (const d of items) { const f = folderOf(d); (groups[f] = groups[f] || []).push(d); }
-    const names = Object.keys(groups).sort((a, b) => {
-      if (a === '未分类') return 1;
-      if (b === '未分类') return -1;
-      return a.localeCompare(b, 'zh');
-    });
-    html += `<div class="kb-folders">`;
-    for (const f of names) {
-      const cards = groups[f].map(d => _kbCardHtml(d, typeIcon)).join('');
-      html += `
-        <div class="kb-folder">
-          <div class="kb-folder-head">
-            <i class="ri-folder-3-fill kb-folder-ico"></i>
-            <span class="kb-folder-name">${escHtml(f)}</span>
-            <span class="kb-folder-count">${groups[f].length}</span>
-            <i class="ri-arrow-down-s-line kb-folder-caret"></i>
-          </div>
-          <div class="kb-folder-body">${cards}</div>
-        </div>`;
-    }
-    html += `</div>`;
-  }
-  $dashView.innerHTML = html;
-
-  $dashView.querySelectorAll('.kb-folder-head').forEach(h => {
-    h.onclick = () => h.parentElement.classList.toggle('collapsed');
-  });
-  $dashView.querySelectorAll('.kb-toggle').forEach(btn => {
-    btn.onclick = () => _kbAction('/dashboard/knowledge/toggle', {
-      doc_id: btn.getAttribute('data-id'),
-      enabled: btn.getAttribute('data-enabled') !== '1',
-    });
-  });
-  $dashView.querySelectorAll('.kb-flag').forEach(btn => {
-    btn.onclick = () => {
-      const body = { doc_id: btn.getAttribute('data-id') };
-      body[btn.getAttribute('data-flag')] = btn.getAttribute('data-on') !== '1';
-      _kbAction('/dashboard/knowledge/flag', body);
-    };
-  });
-  $dashView.querySelectorAll('.kb-del').forEach(btn => {
-    btn.onclick = () => {
-      const t = btn.getAttribute('data-title') || '这篇';
-      if (confirm(`删除「${t}」？原文和索引都会清掉(不影响你磁盘上的原始文件)。`)) {
-        _kbAction('/dashboard/knowledge/delete', { doc_id: btn.getAttribute('data-id') });
-      }
-    };
-  });
-  $dashView.querySelectorAll('.kb-open').forEach(el => {
-    el.onclick = () => _kbPreview(el.getAttribute('data-id'));
-  });
-  if (items.length > 3) _applyListFilter($dashView.querySelector('.list-filter-input'));
-}
 
 // 报告库 → 一键存入知识库 (灌 md 源优先·归「报告」文件夹·已灌过不重复)
-async function _importReportToKb(name, btn) {
-  if (!token || !name) return;
-  const old = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '存入中…'; }
-  try {
-    const r = await fetch('/dashboard/knowledge/import-report', {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) { alert('存入失败 [' + r.status + ']' + (data.detail ? ' · ' + data.detail : '')); return; }
-    if (btn) {
-      btn.innerHTML = data.existed ? '已在库中' : '✓ 已存入';
-      setTimeout(() => { btn.disabled = false; btn.innerHTML = old; }, 2200);
-    }
-    if (typeof showChatToast === 'function') {
-      showChatToast(data.existed ? '这份报告已经在知识库里了' : '已存入知识库 · 「报告」文件夹 · 之后能被召回并 cite');
-    }
-  } catch (e) {
-    alert('网络出错: ' + e.message);
-    if (btn) { btn.disabled = false; btn.innerHTML = old; }
-  }
-}
 
 // 点知识库卡片标题 → 拉正文 → 弹窗预览 (markdown 渲染)
-async function _kbPreview(docId) {
-  if (!token || !docId) return;
-  try {
-    const r = await fetch('/dashboard/knowledge/doc?doc_id=' + encodeURIComponent(docId), {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) { alert('打开失败 [' + r.status + ']'); return; }
-    _showKbModal(await r.json());
-  } catch (e) { alert('网络出错: ' + e.message); }
-}
 
 // 卷八十一续 · 统一预览弹框渲染器 · 知识库/playbook/文件产物 共用一套骨架
 // (用户 拍板: 别各处重写预览逻辑 · 弹框统一 · 以后改一处全生效)
 // 2026-08-11 F1 (墨言审查): _showPreviewModal 的 keydown 防堆积 · 模块级单例
 let _previewModalKeyBound = false;
-function _previewModalKeyHandler(e) {
-  if (e.key === 'Escape') {
-    const host = document.getElementById('kbModalHost');
-    if (host && host.classList.contains('show')) host.classList.remove('show');
-  }
-}
 
-function _showPreviewModal(opts) {
-  const { title, metaLine, bodyHtml, tags, raw } = opts || {};
-  _closeAllKbModals();  // 2026-08-14 · 单例互斥 (墨言094-2) · 开新弹框前先关旧的
-  let host = document.getElementById('kbModalHost');
-  if (!host) {
-    host = document.createElement('div');
-    host.id = 'kbModalHost';
-    host.className = 'kb-modal-host';
-    document.body.appendChild(host);
-  }
-  const tagHtml = (tags || []).map(t => `<span class="rc-src-badge">#${escHtml(t)}</span>`).join(' ');
-  host.innerHTML = `
-    <div class="kb-modal-mask"></div>
-    <div class="kb-modal" role="dialog" aria-modal="true">
-      <div class="kb-modal-head">
-        <span class="kb-modal-title">${escHtml(title || '文档')}</span>
-        ${metaLine ? `<span class="kb-modal-meta">${escHtml(metaLine)}</span>` : ''}
-        <button class="kb-modal-close" title="关闭 (Esc)">✕</button>
-      </div>
-      ${tagHtml ? `<div class="kb-modal-tags">${tagHtml}</div>` : ''}
-      <div class="kb-modal-body ${raw ? 'kb-modal-raw' : 'markdown-body'}">${bodyHtml || ''}</div>
-    </div>`;
-  host.classList.add('show');
-  // 2026-08-11 F1 (墨言审查): 每次打开 add keydown · 连续开多个弹框会堆积 listener。
-  // 改成"模块级标志"——只注册一次 · close 只清当前 · 多次开叠弹框不重复挂。
-  if (!_previewModalKeyBound) {
-    document.addEventListener('keydown', _previewModalKeyHandler);
-    _previewModalKeyBound = true;
-  }
-  const close = () => {
-    host.classList.remove('show');
-  };
-  host.querySelector('.kb-modal-close').onclick = close;
-  host.querySelector('.kb-modal-mask').onclick = close;
-}
 
 // 2026-08-14 · kbModalHost 单例互斥 (墨言 094-2 审查 · wish-2b43ffe7):
 // depot.js(_cogDimModal) / clients.js(pickClient + _showClientImportModal) 各自
@@ -14452,20 +9360,7 @@ function _showPreviewModal(opts) {
 // 先后打开会静默互相覆盖 (先开的状态丢失)。
 // 修法: 每个弹框打开前先调用 _closeAllKbModals() 关掉当前已开的 → 再开新的。
 // 用户心智: "打开新弹框 = 旧的先关掉" · 不再静默覆盖。
-function _closeAllKbModals() {
-  const host = document.getElementById('kbModalHost');
-  if (host) host.classList.remove('show');
-}
 
-function _showKbModal(data) {
-  const meta = (data && data.meta) || {};
-  const text = (data && data.text) || '';
-  const bodyHtml = (typeof mdRender === 'function')
-    ? mdRender(text) : ('<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>');
-  const metaLine = [meta.type, (meta.chars || 0) + ' 字', (meta.chunks || 0) + ' 块',
-    data && data.truncated ? '预览已截断' : ''].filter(Boolean).join(' · ');
-  _showPreviewModal({ title: meta.title || '文档', metaLine, bodyHtml, tags: meta.tags || [] });
-}
 
 async function _kbAction(url, body) {
   if (!token) return;
@@ -14480,113 +9375,21 @@ async function _kbAction(url, body) {
   } catch (e) { alert('网络出错: ' + e.message); }
 }
 
-function renderReports(data) {
-  if (data && data.error) {
-    $dashView.innerHTML = `
-      ${pipelineBreadcrumb('reports')}
-      <div class="dash-head"><h2><i class="ri-article-fill"></i> 报告库</h2></div>
-      <div class="dash-empty">${escHtml(data.error)}</div>`;
-    return;
-  }
-  const items = (data && data.items) || [];
-  const dir = (data && data.directory) || 'data/reports';
-
-  let html = `
-    ${pipelineBreadcrumb('reports')}
-    <div class="dash-head">
-      <h2><i class="ri-article-fill"></i> 报告库</h2>
-      <span class="meta">成品层 · ${items.length} 份 · ${escHtml(dir)}</span>
-      <button onclick="backToChat()">✕ 收起</button>
-      <button onclick="loadDashboard('trends')">← 回到趋势</button>
-      <button onclick="loadDashboard('reports')">刷新列表</button>
-    </div>`;
-
-  if (items.length === 0) {
-    html += `
-      <div class="dash-stub">
-        <h3>还没生成过报告</h3>
-        <div>在底部输入框跟 Daemonkey 说：「整理一下本周雷达写成报告」<br>
-             Daemonkey 会调 <code>generate_report</code> · docx 自动落在这里。</div>
-      </div>`;
-  } else {
-    if (items.length > 3) {
-      html += renderListFilter({targetSelector: '.report-card', placeholder: '搜报告文件名 / 时间...'});
-    }
-    html += `<div class="reports-list">`;
-    for (const it of items) {
-      const dlUrl = `${it.download_url}?token=${encodeURIComponent(token || '')}`;
-      const previewable = !!it.preview_url;
-      const srcBadge = it.has_md_source
-        ? `<span class="rc-src-badge rc-src-md" title="新报告 · 有 markdown 源">md 源</span>`
-        : `<span class="rc-src-badge rc-src-extract" title="旧报告 · 预览是从 docx 反推的">兜底抽取</span>`;
-      html += `
-        <div class="report-card">
-          <div class="rc-head">
-            <a class="rc-name" href="javascript:void(0)" data-name="${escHtml(it.name)}" data-preview="1">
-              ${escHtml(it.name)}
-            </a>
-            ${srcBadge}
-          </div>
-          <div class="rc-meta">
-            <span class="rc-size">${it.size_kb} KB</span>
-            <span class="rc-time">${escHtml(it.created_at)}</span>
-            ${previewable ? `<button class="rc-preview-btn" data-name="${escHtml(it.name)}">📖 预览</button>` : ''}
-            <button class="rc-preview-btn rp-kb" data-name="${escHtml(it.name)}" title="把这份报告灌进知识库 · 之后能被召回并 cite"><i class="ri-book-2-line"></i> 存入知识库</button>
-            <a class="rc-dl" href="${escHtml(dlUrl)}" download="${escHtml(it.name)}">下载 ↓</a>
-          </div>
-        </div>`;
-    }
-    html += `</div>`;
-  }
-  $dashView.innerHTML = html;
-
-  // 卷三十三补丁 · 预览按钮绑定
-  $dashView.querySelectorAll('.rc-preview-btn:not(.rp-kb), .rc-name[data-preview]').forEach(el => {
-    el.onclick = (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      const name = el.getAttribute('data-name');
-      if (name) loadReportPreview(name);
-    };
-  });
-  $dashView.querySelectorAll('.rp-kb').forEach(btn => {
-    btn.onclick = (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      _importReportToKb(btn.getAttribute('data-name'), btn);
-    };
-  });
-
-  if (items.length > 3) _applyListFilter($dashView.querySelector('.list-filter-input'));
-}
 
 // 卷三十三补丁 · 加载并渲染单份报告的预览
-async function loadReportPreview(filename) {
-  if (!token || !filename) return;
-  $dashView.innerHTML = `<div class="dash-empty">加载预览中...</div>`;
-  try {
-    const r = await fetch(`/reports/preview/${encodeURIComponent(filename)}`, {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) {
-      const errTxt = await r.text();
-      $dashView.innerHTML = `<div class="dash-empty">预览失败 [${r.status}]<br>${escHtml(errTxt.slice(0,300))}</div>`;
-      return;
-    }
-    const data = await r.json();
-    renderReportPreview(data);
-  } catch (e) {
-    $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`;
-  }
-}
 
 function renderReportPreview(d) {
+  if (typeof renderShelfPreview === 'function') return renderShelfPreview(d);
   const name = d.name || '?';
   const meta = d.meta || {};
   const md = d.markdown || '';
   const hasMd = !!d.has_md_source;
   const note = d.note || '';
-  const dlUrl = `/reports/${encodeURIComponent(name)}?token=${encodeURIComponent(token || '')}`;
+  const isDeck = (d.kind === 'decks') || /\.pptx$/i.test(name);
+  const isSheet = (d.kind === 'sheets') || /\.xlsx$/i.test(name);
+  const rawDl = d.download_url || (isDeck ? `/presentations/${name}` : (isSheet ? `/spreadsheets/${name}` : `/reports/${name}`));
+  const dlUrl = `${rawDl}${rawDl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token || '')}`;
+  const dlLabel = isDeck ? '下载 pptx' : (isSheet ? '下载 xlsx' : '下载 docx');
 
   // 标题 / 副标题 / 受众 / 备注 / footer 渲染封面
   const coverBlock = (meta.title || meta.subtitle || meta.audience || meta.note) ? `
@@ -14604,14 +9407,16 @@ function renderReportPreview(d) {
 
   $dashView.innerHTML = `
     <div class="dash-head">
-      <h2>📖 ${escHtml(name)}</h2>
-      <button onclick="loadDashboard('reports')">← 返回报告库</button>
-      <a class="rp-dl-btn" href="${escHtml(dlUrl)}" download="${escHtml(name)}">下载 docx ↓</a>
+      <h2><i class="ri-eye-line"></i> ${escHtml(name)}</h2>
+      <button onclick="loadDashboard('reports')">← 返回产物库</button>
+      <a class="rp-dl-btn" href="${escHtml(dlUrl)}" download="${escHtml(name)}">${dlLabel}</a>
     </div>
     <div class="rp-meta-strip">
       ${hasMd
         ? '<span class="rp-src rp-src-md"><i class="ri-file-text-fill"></i> markdown 源</span>'
-        : '<span class="rp-src rp-src-extract"><i class="ri-error-warning-fill"></i> 旧报告 · 从 docx 反推的简陋版</span>'}
+        : (isDeck
+          ? '<span class="rp-src rp-src-extract"><i class="ri-error-warning-fill"></i> 没有 markdown 源</span>'
+          : '<span class="rp-src rp-src-extract"><i class="ri-error-warning-fill"></i> 旧报告 · 从 docx 反推的简陋版</span>')}
       ${note ? `<span class="rp-note">${escHtml(note)}</span>` : ''}
     </div>
     <article class="rp-body">
@@ -14622,275 +9427,20 @@ function renderReportPreview(d) {
 }
 
 // 卷二十八 · <i class="ri-diamond-fill"></i> 掘金机会维度
-async function renderOpportunities(data) {
-  if (data && data.error) {
-    $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-diamond-fill"></i> 掘金机会</h2></div>
-      <div class="dash-empty">${escHtml(data.error)}</div>`;
-    return;
-  }
-  const opps = (data && data.opportunities) || [];
-  const generated = data && data.generated_at;
-  const note = data && data.note;
-  const trendsScanned = data && data.trends_scanned;
-  const elapsedS = data && data.elapsed_ms ? (data.elapsed_ms / 1000).toFixed(1) : '?';
 
-  // 卷三十三 · 抓收藏集合·标 <i class="ri-star-fill"></i>
-  const favSet = await _fetchFavoriteSet('opportunity');
-
-  let html = `
-    <div class="dash-head">
-      <h2><i class="ri-diamond-fill"></i> 掘金机会</h2>
-      <span class="meta">${opps.length} 个机会 · 市场 × 用户 能力</span>
-      <button onclick="backToChat()">✕ 收起</button>
-      <button onclick="spawnQuickly('基于今日趋势 · 调 mine_opportunities 工具 · 参数 action=mine · 重新挖一遍掘金机会 · 形态要多样(内容账号 / 实体产品 / 服务咨询 / 信息差套利 / 软件产品 / 投资副业 · 不要全是 SaaS · 卷三十三第 6 条铁律) · 跑完告诉我最推哪 1-2 个 + 为什么', '重新挖掘机会')" title="派发到新会话 · Daemonkey 跑 mine_opportunities · 完成后切过去看结果">
-        <i class="ri-refresh-fill"></i> 重新挖掘
-      </button>
-    </div>`;
-
-  if (opps.length === 0) {
-    html += `
-      <div class="dash-stub">
-        <h3>还没挖过掘金机会</h3>
-        <div>${escHtml(note || '点上方"重新挖掘"按钮 · Daemonkey 会基于最新趋势 + 用户 画像 LLM 跑一次')}</div>
-        <div style="margin-top:12px;font-size:11px;color:var(--dim2)">
-          需要先有趋势 · 没趋势的话先去 <i class="ri-line-chart-fill"></i> 今日趋势 跑一次
-        </div>
-      </div>`;
-  } else {
-    html += `
-      <div class="opp-intro">
-        生成于 ${formatTimeShort(generated)} · 扫描了 ${trendsScanned || 0} 条趋势 · 耗时 ${elapsedS}s<br>
-        <span style="font-size:11px;color:var(--dim2)">
-          每个机会都基于 用户 画像评估了适配度 · 点机会卡可让 Daemonkey 展开成完整方案
-        </span>
-      </div>
-      ${opps.length > 3 ? renderListFilter({targetSelector: '.opp-card', placeholder: '搜机会标题 / 领域 / 适配理由...'}) : ''}
-      <div class="opp-list">`;
-    for (let i = 0; i < opps.length; i++) {
-      const o = opps[i];
-      o._is_favorited = o.id && favSet.has(o.id);
-      html += renderOppFullCard(o, i);
-    }
-    html += `</div>`;
-  }
-  $dashView.innerHTML = html;
-
-  // 绑定 <i class="ri-star-fill"></i> 按钮
-  $dashView.querySelectorAll('.opp-star-btn').forEach(btn => {
-    btn.onclick = async (ev) => {
-      ev.stopPropagation();
-      const refId = btn.getAttribute('data-ref');
-      const titleHint = btn.getAttribute('data-title') || '';
-      const domain = btn.getAttribute('data-domain') || '';
-      const r = await _toggleFavorite('opportunity', refId, titleHint, domain, 'toggle');
-      if (r && r.now_starred !== undefined) {
-        if (r.now_starred) {
-          btn.classList.add('starred');
-          btn.title = '已收藏 · 点击取消';
-          btn.textContent = '★';
-        } else {
-          btn.classList.remove('starred');
-          btn.title = '收藏';
-          btn.textContent = '☆';
-        }
-      }
-    };
-  });
-
-  if (opps.length > 3) _applyListFilter($dashView.querySelector('.list-filter-input'));
-}
-
-function renderOppFullCard(o, idx) {
-  const fitIcon = { yes: '<i class="ri-checkbox-circle-fill"></i>', maybe: '<i class="ri-error-warning-fill"></i>', no: '<i class="ri-close-circle-fill"></i>' }[o.fit] || '?';
-  const fitLabel = { yes: '能干', maybe: '可干但需准备', no: '不建议' }[o.fit] || o.fit;
-  const effortLabel = { light: '轻量·半天-3天', moderate: '中等·1-2周', heavy: '重投入·1月+' }[o.cost_effort] || o.cost_effort;
-  const upsideLabel = { low: '小·自己玩', medium: '中·兴趣副业', high: '高·撑一条线' }[o.upside] || o.upside;
-  const stars = '<i class="ri-star-fill"></i>'.repeat(Math.max(1, Math.min(5, o.recommend || 3)));
-  const dMeta = RADAR_DOMAINS_META[o.domain] || { icon: '·', label: o.domain, color: '#888' };
-
-  let stepsHtml = '';
-  if (o.next_steps && o.next_steps.length) {
-    stepsHtml = `
-      <div class="opp-steps">
-        <div class="opp-section-label">下一步:</div>
-        <ol>${o.next_steps.map(s => `<li>${escHtml(s)}</li>`).join('')}</ol>
-      </div>`;
-  }
-  let refsHtml = '';
-  if (o.trend_refs && o.trend_refs.length) {
-    refsHtml = `
-      <div class="opp-refs">
-        <div class="opp-section-label">关联趋势:</div>
-        ${o.trend_refs.map(r => `<span class="opp-ref">${escHtml(r.title || '?')}</span>`).join(' ')}
-      </div>`;
-  }
-
-  const starred = o._is_favorited;
-  return `
-    <div class="opp-card" data-opp-idx="${idx + 1}" data-opp-title="${escHtml(o.title || '')}" style="border-left-color: ${dMeta.color}">
-      <div class="opp-head">
-        <span class="opp-domain-chip" style="background: ${dMeta.color}33; color: ${dMeta.color}">
-          ${dMeta.icon} ${escHtml(dMeta.label)}
-        </span>
-        <span class="opp-title">${escHtml(o.title || '?')}</span>
-        <span class="opp-rec" title="Daemonkey 推荐度 ${o.recommend}/5">${stars}</span>
-        <button class="opp-star-btn ${starred ? 'starred' : ''}"
-                data-ref="${escHtml(o.id || '')}"
-                data-title="${escHtml(o.title || '')}"
-                data-domain="${escHtml(o.domain || '')}"
-                title="${starred ? '已收藏 · 点击取消' : '收藏'}">
-          ${starred ? '★' : '☆'}
-        </button>
-      </div>
-      <div class="opp-metas">
-        <span class="opp-meta-pill" title="用户 适配度">${fitIcon} ${fitLabel}</span>
-        <span class="opp-meta-pill" title="投入预估">⏱️ ${effortLabel}</span>
-        <span class="opp-meta-pill" title="收益级别">📈 ${upsideLabel}</span>
-      </div>
-      <div class="opp-summary">${escHtml(o.summary || '')}</div>
-      ${o.fit_reason ? `<div class="opp-fit-reason"><b>为什么 用户 ${o.fit === 'no' ? '不' : ''}适合:</b> ${escHtml(o.fit_reason)}</div>` : ''}
-      ${renderOppStats(o)}
-      ${stepsHtml}
-      ${refsHtml}
-      <div class="opp-actions">
-        <button class="opp-act-btn" onclick="spawnQuickly('把第 ${idx + 1} 个机会展开成完整方案', '展开机会方案')">
-          <i class="ri-draft-fill"></i> 展开成方案
-        </button>
-        <button class="opp-act-btn opp-act-feas"
-                onclick="runFeasibilityFromOpp('${jsStr(o.id || '')}', ${idx + 1})"
-                title="跳到 📊 可行性分析维度 · Daemonkey 跑一次深度评估">
-          <i class="ri-bar-chart-fill"></i> 跑可行性
-        </button>
-        <button class="opp-act-btn" onclick="spawnQuickly('针对第 ${idx + 1} 个机会·写一份调研报告', '机会调研报告')">
-          <i class="ri-article-fill"></i> 写报告
-        </button>
-        <button class="opp-act-btn opp-act-deep"
-                onclick="deepDiveOpp(${idx + 1})"
-                title="让 Daemonkey 用 web_search + web_fetch 深挖这个机会">
-          <i class="ri-search-fill"></i> 深挖
-        </button>
-        ${(o.domain === 'self-evolve') ? `
-        <button class="opp-act-btn opp-act-wish"
-                onclick="wishFromOpp(${idx + 1})"
-                title="🤔 让 Daemonkey 看一眼 · 推给 Daemonkey · 让他自己判断要不要装">
-          <i class="ri-emotion-think-line"></i> 让 Daemonkey 看一眼
-        </button>` : ''}
-      </div>
-    </div>`;
-}
 
 // 卷三十四 · 掘金机会卡片的"数字面板"——6 个评估字段可视化
-function renderOppStats(o) {
-  const hours = o.estimated_hours;
-  const token = o.estimated_token_cost_usd;
-  const rev = o.revenue_range_cny;
-  const ch = o.sales_channels || [];
-  const res = o.resources_needed || [];
-  const skill = o.skill_match_score;
-
-  // 任何一个字段有数据就渲染
-  if (!hours && !token && !rev && ch.length === 0 && res.length === 0 && (skill === undefined || skill === null)) {
-    return '';
-  }
-
-  let html = `<div class="opp-stats">`;
-
-  // 第一行：硬指标
-  html += `<div class="opp-stats-row">`;
-  if (hours) html += `<div class="opp-stat"><span class="opp-stat-icon">⏱️</span><span class="opp-stat-label">时间</span><span class="opp-stat-val">${escHtml(hours)}h</span></div>`;
-  if (token) html += `<div class="opp-stat"><span class="opp-stat-icon">💸</span><span class="opp-stat-label">Token</span><span class="opp-stat-val">$${escHtml(token)}</span></div>`;
-  if (rev)   html += `<div class="opp-stat opp-stat-rev"><span class="opp-stat-icon">💰</span><span class="opp-stat-label">预期</span><span class="opp-stat-val">${escHtml(rev)}</span></div>`;
-  html += `</div>`;
-
-  // 技能匹配条
-  if (skill !== undefined && skill !== null && !isNaN(skill)) {
-    const color = skill >= 75 ? '#22c55e' : skill >= 50 ? '#eab308' : '#ef4444';
-    html += `
-      <div class="opp-skill">
-        <div class="opp-skill-head">
-          <span><i class="ri-focus-3-fill"></i> 技能匹配</span>
-          <span class="opp-skill-val" style="color:${color}">${skill}/100</span>
-        </div>
-        <div class="opp-skill-bar"><div class="opp-skill-fill" style="width:${skill}%;background:${color}"></div></div>
-      </div>`;
-  }
-
-  // 销售渠道 chips
-  if (ch.length > 0) {
-    html += `<div class="opp-chips-row"><span class="opp-chips-label">📢 渠道</span>`;
-    for (const c of ch) html += `<span class="opp-chip opp-chip-channel">${escHtml(c)}</span>`;
-    html += `</div>`;
-  }
-
-  // 所需资源 chips
-  if (res.length > 0) {
-    html += `<div class="opp-chips-row"><span class="opp-chips-label">🧰 资源</span>`;
-    for (const r of res) html += `<span class="opp-chip opp-chip-resource">${escHtml(r)}</span>`;
-    html += `</div>`;
-  }
-
-  html += `</div>`;
-  return html;
-}
 
 // 卷三十四 · "<i class="ri-search-fill"></i> 深挖" 按钮 · 让 Daemonkey 调 web_search + web_fetch 深挖某个点
 // 复用对话框 inject · 不引入新 endpoint · 让 LLM 自己规划 tool 调用
-function deepDive(kind, label) {
-  if (!label) return;
-  const msg = `深挖一下「${label}」这个${kind}：\n` +
-    `1. 用 web_search 找最近 3-6 个权威/技术深度的资料\n` +
-    `2. 选 2 个最值得读的·用 web_fetch 拿全文\n` +
-    `3. 给我一份结构化分析：背景 + 当前进展 + 跟我们工作室的关系 + 你的判断`;
-  spawnTask(msg, `深挖${kind}: ${label}`);
-}
 
 // 掘金机会卡片"深挖"——从 idx 取 title 再调 deepDive
-function deepDiveOpp(oneBasedIdx) {
-  const card = document.querySelectorAll('.opp-card')[oneBasedIdx - 1];
-  if (!card) return;
-  const titleEl = card.querySelector('.opp-title');
-  const title = titleEl ? titleEl.textContent.trim() : `第 ${oneBasedIdx} 个机会`;
-  deepDive('掘金机会', title);
-}
 
 // 趋势卡片"深挖"——读 data-trend-title 拿原始标题
-function deepDiveTrend(zeroBasedIdx) {
-  const card = document.querySelector(`.trend-card[data-trend-idx="${zeroBasedIdx}"]`);
-  if (!card) return;
-  const title = card.getAttribute('data-trend-title') ||
-                (card.querySelector('.tc-head') || {}).textContent ||
-                `第 ${zeroBasedIdx + 1} 个趋势`;
-  deepDive('趋势', title.trim());
-}
 
 // 雷达条目"深挖"——直接传 title
-function deepDiveRadar(title) {
-  if (!title) return;
-  deepDive('信息雷达条目', title);
-}
 
 // 卷三十五 · self-evolve domain 的 radar 条目 → 让 Daemonkey 写心愿
-function wishFromRadar(title, url) {
-  if (!title) return;
-  const urlPart = url ? `· URL: ${url}` : '';
-  spawnTask(
-    `用户 邀请你看一眼 self-evolve 雷达上的这个工程：「${title}」${urlPart}\n\n` +
-    `**这是邀请·不是命令** —— 你要自己判断·不是 用户 让你装你就装。\n\n` +
-    `请你：\n` +
-    `1. 用 web_search / web_fetch 弄清这个工程做啥 · 看 README / 主要特性\n` +
-    `2. 对照 Daemonkey 现状·想清楚：\n` +
-    `   - 你有没有这个能力·还是缺\n` +
-    `   - 它的设计哲学跟 Daemonkey 是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
-    `   - 如果合拍·这能力对 用户 这个具体的人有啥用 (而不是"通用上有用")\n` +
-    `3. 然后明确告诉 用户：\n` +
-    `   - 值得装 → 调 wish_add 写一份心愿 (title / why / source_kind=radar / source_ref + url / design_sketch / complexity / hours / priority / opus_take = 你自己的态度)\n` +
-    `   - 不值得装 → 说清为啥·别强加 wish 占心愿单\n` +
-    `   - 拿不准 → 就说拿不准·要 用户 给更多 context\n` +
-    `**你才是搭档·不是给 用户 端菜的工具人**·拿出判断力。`,
-    `勘察: ${title}`
-  );
-}
 
 // 卷三十五 · self-evolve domain 的 opportunity → 让 Daemonkey 把它转成心愿
 function wishFromOpp(oneBasedIdx) {
@@ -14944,13 +9494,17 @@ renderDetailWelcome();
 if (!token) {
   const _probeLoopback = async function () {
     try {
-      const r = await fetch('/status', { signal: AbortSignal.timeout(2500) });
+      const r = await fetch('/status');
       return r.ok;   // 无 token 能过 /status = loopback 中间件注入了有效 token
     } catch (e) { return false; }
   };
   _probeLoopback().then(function (ok) {
     if (ok) {
-      // 本机回环注入生效 · 无需 token · 静默进 chat (等价于有 token 的 else 分支)
+      // 本机回环注入生效 · 前端闸也要放行, 否则顶栏一直「未连接」、中间栏「需要 token」
+      token = token || '__loopback__';
+      try { loadCurrentModel(); } catch (e) {}
+      try { if (typeof refreshNavBadges === 'function') refreshNavBadges(); } catch (e) {}
+      try { if (typeof _showCoreVersion === 'function') _showCoreVersion(); } catch (e) {}
       if (sessionId && !sessionId.startsWith('tmp-')) {
         _metaTried.add(sessionId);
         _ensureSessionMeta(sessionId);
@@ -14977,14 +9531,14 @@ if (!token) {
               }
             }
           } else {
-            addSys('Daemonkey 在线 · ' + aliasFor(sessionId) + ' · 点 ≡ 看历史对话');
+            addSys('Daemonkey 在线 · ' + aliasFor(sessionId) + ' · 点 ≡ 看话题列表');
             _maybeStartPoll(st);
           }
         }).catch(() => {
-          addSys('Daemonkey 在线 · ' + aliasFor(sessionId) + ' · (历史加载失败) · 点 ≡ 看历史对话');
+          addSys('Daemonkey 在线 · ' + aliasFor(sessionId) + ' · (历史加载失败) · 点 ≡ 看话题列表');
         });
       } else {
-        addSys('Daemonkey 在线 · 新对话 · 点 ≡ 看历史对话');
+        addSys('Daemonkey 在线 · 新话题 · 点 ≡ 看话题列表');
       }
     } else {
       // 连不上 = 远程 / 隧道 / loopback 禁用 · 必须手填 token
@@ -15030,15 +9584,15 @@ if (!token) {
           }
         }
       } else {
-        addSys('Daemonkey 在线 · ' + aliasFor(sessionId) + ' · 点 ≡ 看历史对话');
+        addSys('Daemonkey 在线 · ' + aliasFor(sessionId) + ' · 点 ≡ 看话题列表');
         // wish-3fef4bc7 follow-up · 查 daemon 是否仍有 active turn · 有就启 polling auto-refresh
         _maybeStartPoll(st);
       }
     }).catch(() => {
-      addSys('Daemonkey 在线 · ' + aliasFor(sessionId) + ' · (历史加载失败) · 点 ≡ 看历史对话');
+      addSys('Daemonkey 在线 · ' + aliasFor(sessionId) + ' · (历史加载失败) · 点 ≡ 看话题列表');
     });
   } else {
-    addSys('Daemonkey 在线 · 新对话 · 点 ≡ 看历史对话');
+    addSys('Daemonkey 在线 · 新话题 · 点 ≡ 看话题列表');
   }
 }
 
@@ -15076,27 +9630,24 @@ if (!token) {
 })();
 
 // 左侧维度 badge 首次加载 + 30s 自动刷新
-if (token) {
-  refreshNavBadges();
-  loadCurrentModel();  // 卷二十九 · 顶栏模型切换器
-  _showCoreVersion();  // 卷七十四续二十 · 顶部品牌区显示内核版本号
-  _checkProactiveInbox();  // 卷六十 · 开页先查一次 Daemonkey 有没有主动找过
-  _checkWechatActivity();  // 卷七十四续十七 · 开页先探一次微信后台 turn
-  setInterval(() => {
-    if (!document.hidden) {
-      refreshNavBadges();
-      _checkProactiveInbox();  // 卷六十 · 主动 CALL 收件箱心跳
-      // 当前选中的维度数据 30s 刷新一次 · 雷达/趋势/报告这种数据型维度看着会"活"
-      if (currentView && ['radar', 'trends', 'reports', 'opportunities'].includes(currentView)) {
-        loadDashboard(currentView, { silent: true });
-      }
+// 本机放行: 不看 localStorage 有没有 token · 直接拉 (loopback 中间件会注)
+refreshNavBadges();
+loadCurrentModel();
+_showCoreVersion();
+_checkProactiveInbox();
+_checkWechatActivity();
+setInterval(() => {
+  if (!document.hidden) {
+    refreshNavBadges();
+    _checkProactiveInbox();
+    if (currentView && ['radar', 'trends', 'reports', 'opportunities'].includes(currentView)) {
+      loadDashboard(currentView, { silent: true });
     }
-  }, 30000);
-  // 卷七十四续十七 · 微信入站对话探测心跳(6s · 比 30s 跟手 · 微信 turn 短 · 30s 会整段错过)
-  setInterval(() => {
-    if (!document.hidden) _checkWechatActivity();
-  }, 6000);
-}
+  }
+}, 30000);
+setInterval(() => {
+  if (!document.hidden) _checkWechatActivity();
+}, 6000);
 
 
 // ═══════════════════════════════════════════════════════════════
@@ -15278,6 +9829,7 @@ function showSpawnBanner() { /* no-op · spawnTask 自动切标签无需 banner 
 window.switchSessionById = switchSessionById;
 
 /* 提问轨道 → chat-rail.js */
+
 // 卷五十五 · 就绪信标必须在 chat.js 最末尾。
 // 拆出去的三块若 404，旧逻辑仍置 true · boot-guard 当图片跳过 · 第一条 md/时间线才 ReferenceError。
 (function () {

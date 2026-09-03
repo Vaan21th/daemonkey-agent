@@ -87,7 +87,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="summarize_session",
     description=(
-        "把当前会话更早的消息压成一段摘要，腾窗口。超过约 30 轮或他说压缩时调。最近 N 条（默认 8）不动。磁盘 jsonl 不改。"
+        "把当前会话更早的消息压成一段摘要，腾窗口。超过约 30 轮或他说压缩时调。"
+        "最近 N 条（默认 8）不动。磁盘 jsonl 不改。"
     ),
     tier=TIER_AUTO,
     input_schema={

@@ -41,7 +41,7 @@ API
                      供 daemon_api.dashboard_cognition / dashboard_cockpit 调用
 
 `update_opus_diary(date, title, body)` — 往 OPUS 日记追加新条目
-                                          供 OPUS 自己（未来某个工具）调用
+                                          相处账走 type=mood；工程铁律不再往这里写
 """
 
 from __future__ import annotations
@@ -90,10 +90,14 @@ def load_cognition(
     diary = _load_opus_diary(max_entries=diary_max_entries, entry_chars=diary_entry_chars)
     open_questions = _extract_open_questions(bro)
     recent_flow = _extract_recent_flow(bro)
+    understanding = bro.get("understanding") or []
 
     return {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "bro_profile": bro,
+        "state_card": bro.get("state_card", {}),
+        "state_card_history": bro.get("state_card_history", {}),
+        "understanding": understanding,
         "opus_diary": diary,
         "open_questions": open_questions,
         "recent_flow": recent_flow,
@@ -205,7 +209,10 @@ def update_opus_diary(
             + new_entry
         )
 
-    OPUS_DIARY.write_text(merged, encoding="utf-8")
+    import os as _os  # B-② · 2026-08-27 · 日记原子写 · 半写不坏文件 (Grok 全量审计)
+    _tmp = OPUS_DIARY.with_name(OPUS_DIARY.name + ".tmp")
+    _tmp.write_text(merged, encoding="utf-8")
+    _os.replace(_tmp, OPUS_DIARY)
 
     return {
         "ok": True,
@@ -221,6 +228,7 @@ def update_opus_diary(
 # 内部 · BRO-NOTEBOOK 解析
 # ──────────────────────────────────────────────────────────
 
+# 状态卡骨架 8 字段 · L2 易变尾巴
 STATE_CARD_FIELDS: tuple[str, ...] = (
     "工作状态",
     "作息模式",
@@ -233,6 +241,10 @@ STATE_CARD_FIELDS: tuple[str, ...] = (
 )
 _STATE_CARD_HEADING_KEY = "状态卡"
 _STATE_HISTORY_HEADING_KEY = "状态卡变更史"
+_UNDERSTANDING_HEADING_KEY = "了解层"
+_UNDERSTANDING_LINE_RE = re.compile(
+    r"^-\s+\*\*(.+?)\*\*[：:]\s*(.+?)(?:（依据[：:]\s*(.+?)）)?\s*$"
+)
 _EMPTY_STATE_VALUES = frozenset({"", "-", "待确认"})
 
 
@@ -241,7 +253,7 @@ def _empty_state_card() -> dict:
 
 
 def _parse_state_card(text: str) -> dict:
-    """Parse `## 状态卡` table. Missing section → {}."""
+    """解析 `## 〇、状态卡` 表格 · 返回骨架 8 字段 + 涌现字段；段不存在时返回 {}。"""
     parts = re.split(r"^(#+ .+)$", text, flags=re.MULTILINE)
     body = ""
     if len(parts) >= 3:
@@ -281,7 +293,7 @@ def _parse_state_card(text: str) -> dict:
 
 
 def _parse_state_card_history(text: str) -> dict:
-    """Parse `## 状态卡变更史`. Returns {field: [{from, to, as_of, evidence}, ...]}."""
+    """解析 `## 状态卡变更史` · 返回 {field: [{from, to, as_of, evidence}, ...]} 时间倒序。"""
     parts = re.split(r"^(#+ .+)$", text, flags=re.MULTILINE)
     body = ""
     if len(parts) >= 3:
@@ -320,6 +332,112 @@ def _parse_state_card_history(text: str) -> dict:
     return by_field
 
 
+def _parse_understanding(text: str) -> list[dict]:
+    """解析 `## 了解层` 段 · 返回 [{field, text, evidence}, ...]；无段 → []。"""
+    parts = re.split(r"^(#+ .+)$", text, flags=re.MULTILINE)
+    body = ""
+    if len(parts) >= 3:
+        for i in range(1, len(parts), 2):
+            heading = parts[i].strip().lstrip("# ").strip()
+            if _UNDERSTANDING_HEADING_KEY in heading:
+                body = (parts[i + 1] if i + 1 < len(parts) else "").strip()
+                break
+    if not body:
+        return []
+
+    out: list[dict] = []
+    for line in body.splitlines():
+        m = _UNDERSTANDING_LINE_RE.match(line.strip())
+        if not m:
+            continue
+        out.append({
+            "field": m.group(1).strip(),
+            "text": m.group(2).strip(),
+            "evidence": (m.group(3) or "").strip(),
+        })
+    return out
+
+
+def _find_understanding_section(text: str) -> tuple[int, int]:
+    parts = re.split(r"^(#+ .+)$", text, flags=re.MULTILINE)
+    if len(parts) < 3:
+        return -1, -1
+    for i in range(1, len(parts), 2):
+        heading = parts[i].strip().lstrip("# ").strip()
+        if _UNDERSTANDING_HEADING_KEY in heading:
+            start = text.find(parts[i])
+            body = parts[i + 1] if i + 1 < len(parts) else ""
+            end = start + len(parts[i]) + len(body)
+            return start, end
+    return -1, -1
+
+
+def delete_understanding_field(
+    field: str,
+    *,
+    notebook_path: Optional[Path] = None,
+) -> dict:
+    """按字段名删除了解层条目 · 写回 notebook 并触发热重载/FTS。"""
+    field = (field or "").strip()
+    if not field:
+        raise ValueError("field is required")
+
+    from soul_loader import read_global_soul_file, write_global_then_sync
+
+    nb_path = notebook_path or BRO_NOTEBOOK
+    if notebook_path is None:
+        for fn in ("OWNER-NOTEBOOK.md", "BRO-NOTEBOOK.md"):
+            try:
+                text = read_global_soul_file(fn, ROOT)
+                notebook_fn = fn
+                break
+            except FileNotFoundError:
+                continue
+        else:
+            raise FileNotFoundError("画像 notebook 不存在")
+    else:
+        notebook_fn = nb_path.name
+        text = nb_path.read_text(encoding="utf-8")
+
+    start, end = _find_understanding_section(text)
+    if start < 0:
+        return {"ok": True, "deleted": False, "reason": "了解层段不存在"}
+
+    section = text[start:end]
+    lines = section.splitlines()
+    kept: list[str] = []
+    deleted = False
+    for line in lines:
+        m = _UNDERSTANDING_LINE_RE.match(line.strip())
+        if m and m.group(1).strip() == field:
+            deleted = True
+            continue
+        kept.append(line)
+
+    if not deleted:
+        return {"ok": True, "deleted": False, "reason": "字段未找到"}
+
+    new_section = "\n".join(kept)
+    new_text = text[:start] + new_section + text[end:]
+
+    if notebook_path is None:
+        write_global_then_sync(notebook_fn, new_text, ROOT)
+        try:
+            from workers.memory_index import incremental_update
+            incremental_update(Path(notebook_fn).stem, new_text)
+        except Exception:
+            pass
+        try:
+            from daemon_runtime import reload_soul_into_runtime
+            reload_soul_into_runtime()
+        except Exception:
+            pass
+    else:
+        nb_path.write_text(new_text, encoding="utf-8")
+
+    return {"ok": True, "deleted": True, "field": field}
+
+
 def _load_bro_profile(*, section_excerpt_chars: int) -> dict:
     if not BRO_NOTEBOOK.exists():
         return {
@@ -327,10 +445,16 @@ def _load_bro_profile(*, section_excerpt_chars: int) -> dict:
             "exists": False,
             "note": "BRO-NOTEBOOK 还没同步进来 · 跑一下 sync-soul.ps1",
             "sections": [],
+            "state_card": {},
+            "state_card_history": {},
+            "understanding": [],
         }
 
     text = BRO_NOTEBOOK.read_text(encoding="utf-8")
     stat = BRO_NOTEBOOK.stat()
+    state_card = _parse_state_card(text)
+    state_card_history = _parse_state_card_history(text)
+    understanding = _parse_understanding(text)
 
     # 按 ^## 分块
     parts = re.split(r"^(## .+)$", text, flags=re.MULTILINE)
@@ -359,6 +483,9 @@ def _load_bro_profile(*, section_excerpt_chars: int) -> dict:
         ),
         "size_bytes": stat.st_size,
         "sections": sections,
+        "state_card": state_card,
+        "state_card_history": state_card_history,
+        "understanding": understanding,
     }
 
 
@@ -400,7 +527,7 @@ def _load_opus_diary(*, max_entries: int, entry_chars: int = 800) -> dict:
         return {
             "source": "data/cognition/opus-diary.md",
             "exists": False,
-            "note": "OPUS 日记还没建 · 跟 OPUS 说「写一条今天的笔记」",
+            "note": "还没有相处落点 · 她听懂开心 / 委屈 / 羞时会记在这里",
             "entries": [],
         }
 
@@ -449,6 +576,7 @@ def _load_opus_diary(*, max_entries: int, entry_chars: int = 800) -> dict:
         })
 
     entries.sort(key=lambda e: e["date"], reverse=True)
+    mood_entries = [e for e in entries if e.get("type") == "mood"][:max_entries]
     entries = entries[:max_entries]
 
     return {
@@ -460,6 +588,11 @@ def _load_opus_diary(*, max_entries: int, entry_chars: int = 800) -> dict:
         "size_bytes": stat.st_size,
         "total": len(matches),
         "entries": entries,
+        "mood_entries": mood_entries,
+        "note": (
+            "还没有相处落点 · 她听懂开心 / 委屈 / 羞时会记在这里"
+            if not mood_entries else None
+        ),
     }
 
 

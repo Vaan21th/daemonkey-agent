@@ -55,7 +55,10 @@ def _fire_wake() -> None:
     global _wake_timer, _wake_pending, _wake_busy
     with _wake_lock:
         if _wake_busy:
-            return  # 上次唤醒还在跑 · 留给收尾补发 (审查 P2-1)
+            # B-① · 2026-08-27 · busy 时清掉已 fire 的 timer · 否则收尾补发 (L71 判 _wake_timer is None)
+            # 看到旧对象不重排 → pending 永久搁置 (Grok 全量审计)
+            _wake_timer = None
+            return  # 上次唤醒还在跑 · 收尾补发会重排
         pending = list(_wake_pending)
         _wake_pending = []
         _wake_timer = None

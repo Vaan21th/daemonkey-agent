@@ -310,6 +310,8 @@ def repair_session(
             continue
         try:
             rec = json.loads(raw)
+            if not isinstance(rec, dict):  # B-③ · 2026-08-27 · json 可能是 list/str · .get 崩整个 repair (Grok 全量审计)
+                continue
         except Exception:
             continue
         if rec.get("role") == "tool":
@@ -350,11 +352,14 @@ def repair_session(
     if not insert_after_indices:
         return result
 
-    # 按 line_idx 倒序插入 · 避免改一处影响下一处的 idx
+    # B-① · 2026-08-27 · 同行多条悬空 tool_call 按原始顺序插入 (原来倒序会把 tool result 顺序颠倒) (Grok 全量审计)
     new_raw = list(raw_lines)
-    insert_after_indices.sort(key=lambda x: x[0], reverse=True)
+    by_idx: dict[int, list[str]] = {}
     for line_idx, synth_line in insert_after_indices:
-        new_raw.insert(line_idx + 1, synth_line)
+        by_idx.setdefault(line_idx, []).append(synth_line)
+    for line_idx in sorted(by_idx.keys(), reverse=True):
+        for j, synth_line in enumerate(by_idx[line_idx]):
+            new_raw.insert(line_idx + 1 + j, synth_line)
 
     new_text = "\n".join(new_raw) + ("\n" if raw_lines and raw_lines[-1] != "" else "")
     write_res = atomic_write_text(sp, new_text, backup=True)

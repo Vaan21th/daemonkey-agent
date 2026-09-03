@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -66,9 +67,12 @@ class FeishuSessionManager:
     def _save(self) -> None:
         try:
             self.store_path.parent.mkdir(parents=True, exist_ok=True)
-            self.store_path.write_text(
+            # B-① · 2026-08-27 · 原子写 (tmp + os.replace) · 半写不会当空壳盖掉台账 (Grok 全量审计)
+            tmp = self.store_path.with_suffix(self.store_path.suffix + ".tmp")
+            tmp.write_text(
                 json.dumps(self.data, ensure_ascii=False, indent=2), encoding="utf-8"
             )
+            os.replace(tmp, self.store_path)
         except Exception as e:
             logger.warning("feishu sessions 保存失败: %s", e)
     # ── key / sid 构造 ──────────────────────────────────────
@@ -240,18 +244,21 @@ def real_stats(sid: str) -> dict:
 
 
 _manager: Optional[FeishuSessionManager] = None
+_manager_lock = threading.Lock()  # B-① · 2026-08-27 · 单例创建加锁 · 防双实例后写覆盖 (Grok 全量审计)
 
 
 def get_manager() -> FeishuSessionManager:
     """全局单例 · reset_on_idle_mins 从 feishu_config.json 读 (默认关)。"""
     global _manager
     if _manager is None:
-        reset = 0
-        try:
-            from workers import feishu_client
-            cfg = feishu_client.load_config() or {}
-            reset = int(cfg.get("reset_on_idle_mins") or 0)
-        except Exception:
-            logger.warning("sessions 清理失败 (L254)", exc_info=True)
-        _manager = FeishuSessionManager(reset_on_idle_mins=reset)
+        with _manager_lock:
+            if _manager is None:  # double-checked locking
+                reset = 0
+                try:
+                    from workers import feishu_client
+                    cfg = feishu_client.load_config() or {}
+                    reset = int(cfg.get("reset_on_idle_mins") or 0)
+                except Exception:
+                    logger.warning("sessions 清理失败 (L254)", exc_info=True)
+                _manager = FeishuSessionManager(reset_on_idle_mins=reset)
     return _manager

@@ -29,9 +29,9 @@ logger = logging.getLogger("opus.scheduler")
 
 _SCHEDULER_THREAD: Optional[threading.Thread] = None
 _CAPABILITY_MIRROR_THREAD: Optional[threading.Thread] = None
-_PROACTIVE_THREAD: Optional[threading.Thread] = None
 _STATE_CONDENSER_THREAD: Optional[threading.Thread] = None
 _SHE_GALLERY_THREAD: Optional[threading.Thread] = None
+_PROACTIVE_THREAD: Optional[threading.Thread] = None
 _SCHEDULER_STATE = {
     "started_at": None,
     "last_run_at": None,
@@ -51,6 +51,21 @@ _SCHEDULER_STATE = {
     "mirror_next_run_at": None,
     "mirror_runs_completed": 0,
     "mirror_interval_days": 0,
+    # H4 · state_condenser 周度凝练
+    "condenser_started_at": None,
+    "condenser_last_run_at": None,
+    "condenser_last_run_ok": None,
+    "condenser_last_error": None,
+    "condenser_last_skipped_reason": None,
+    "condenser_last_condensed": None,
+    "condenser_next_run_at": None,
+    "condenser_runs_completed": 0,
+    # 她·画廊 · 羁绊式朋友圈
+    "gallery_started_at": None,
+    "gallery_last_run_at": None,
+    "gallery_last_result": None,
+    "gallery_next_run_at": None,
+    "gallery_runs_completed": 0,
     # 卷六十 · 主动 CALL BRO 自驱
     "proactive_started_at": None,
     "proactive_last_tick_at": None,
@@ -296,6 +311,163 @@ def is_capability_mirror_scheduler_alive() -> bool:
     return _CAPABILITY_MIRROR_THREAD is not None and _CAPABILITY_MIRROR_THREAD.is_alive()
 
 
+def _state_condenser_loop(first_delay_sec: int) -> None:
+    """H4 · 周度凝练 · 每 6 小时 tick · 条件满足才跑。"""
+    from workers.state_condenser import condense_state_card
+
+    interval_sec = 6 * 3600
+    _SCHEDULER_STATE["condenser_started_at"] = datetime.now(timezone.utc).isoformat()
+
+    logger.info(
+        "state_condenser scheduler started · first tick in %ds · then every 6h",
+        first_delay_sec,
+    )
+
+    time.sleep(first_delay_sec)
+
+    while True:
+        run_started = datetime.now(timezone.utc).isoformat()
+        _SCHEDULER_STATE["condenser_last_run_at"] = run_started
+        try:
+            result = condense_state_card()
+            if result.get("skipped"):
+                _SCHEDULER_STATE["condenser_last_run_ok"] = True
+                _SCHEDULER_STATE["condenser_last_error"] = result.get("error")
+                _SCHEDULER_STATE["condenser_last_skipped_reason"] = (
+                    result.get("reason") or result.get("error") or "skipped"
+                )
+                _SCHEDULER_STATE["condenser_last_condensed"] = 0
+                logger.info(
+                    "state_condenser tick skipped: %s",
+                    _SCHEDULER_STATE["condenser_last_skipped_reason"],
+                )
+            else:
+                _SCHEDULER_STATE["condenser_last_run_ok"] = True
+                _SCHEDULER_STATE["condenser_last_error"] = None
+                _SCHEDULER_STATE["condenser_last_skipped_reason"] = None
+                _SCHEDULER_STATE["condenser_runs_completed"] = (
+                    _SCHEDULER_STATE.get("condenser_runs_completed", 0) + 1
+                )
+                n = int(result.get("condensed") or 0)
+                _SCHEDULER_STATE["condenser_last_condensed"] = n
+                logger.info(
+                    "state_condenser run #%d ok · condensed=%d total=%d",
+                    _SCHEDULER_STATE["condenser_runs_completed"],
+                    n,
+                    result.get("total_entries", 0),
+                )
+        except Exception as e:
+            _SCHEDULER_STATE["condenser_last_run_ok"] = False
+            _SCHEDULER_STATE["condenser_last_error"] = str(e)[:200]
+            logger.exception("state_condenser scheduler crashed: %s", e)
+
+        try:
+            from datetime import timedelta
+            next_ts = datetime.now(timezone.utc) + timedelta(seconds=interval_sec)
+            _SCHEDULER_STATE["condenser_next_run_at"] = next_ts.isoformat()
+        except Exception:
+            pass
+
+        time.sleep(interval_sec)
+
+
+def start_state_condenser_scheduler_in_background(
+    first_delay_sec: int = 120,
+) -> Optional[threading.Thread]:
+    """周度凝练 · 每 6 小时 tick 一次 · 条件满足才跑（≥7天 或 ≥30条）。
+
+    开机补偿天然成立：daemon 没开机就不跑，开机后第一个 tick 检测到 overdue 自动补。
+    """
+    global _STATE_CONDENSER_THREAD
+    if _STATE_CONDENSER_THREAD is not None and _STATE_CONDENSER_THREAD.is_alive():
+        return _STATE_CONDENSER_THREAD
+
+    t = threading.Thread(
+        target=_state_condenser_loop,
+        kwargs={"first_delay_sec": first_delay_sec},
+        name="OpusStateCondenserScheduler",
+        daemon=True,
+    )
+    t.start()
+    _STATE_CONDENSER_THREAD = t
+    # 红线只改本文件 · 跟 condenser 同处拉起，避免再改 opus_daemon.py
+    try:
+        start_she_gallery_scheduler_in_background(first_delay_sec=first_delay_sec + 60)
+    except Exception:
+        pass
+    return t
+
+
+def is_state_condenser_scheduler_alive() -> bool:
+    return _STATE_CONDENSER_THREAD is not None and _STATE_CONDENSER_THREAD.is_alive()
+
+
+def _she_gallery_loop(first_delay_sec: int) -> None:
+    """每 6h 来问一句。开机第一拍只排下次，不补发。交差由画廊闸自己掷。"""
+    try:
+        from workers.she_gallery import make_gallery_entry
+    except ImportError:
+        return
+
+    interval_sec = 6 * 3600
+    _SCHEDULER_STATE["gallery_started_at"] = datetime.now(timezone.utc).isoformat()
+    logger.info(
+        "she_gallery scheduler started · first tick in %ds (boot skip) · then every 6h",
+        first_delay_sec,
+    )
+    time.sleep(first_delay_sec)
+    boot_skip = True
+    while True:
+        _SCHEDULER_STATE["gallery_last_run_at"] = datetime.now(timezone.utc).isoformat()
+        try:
+            if boot_skip:
+                boot_skip = False
+                _SCHEDULER_STATE["gallery_last_result"] = "boot_skip"
+                logger.info("she_gallery tick skipped: boot_skip")
+            else:
+                result = make_gallery_entry()
+                reason = result.get("reason") if not result.get("ok") else "ok"
+                _SCHEDULER_STATE["gallery_last_result"] = reason
+                if result.get("ok"):
+                    _SCHEDULER_STATE["gallery_runs_completed"] = (
+                        _SCHEDULER_STATE.get("gallery_runs_completed", 0) + 1
+                    )
+                    logger.info("she_gallery tick · posted")
+                else:
+                    logger.info("she_gallery tick skipped: %s", reason)
+        except Exception:
+            pass
+        try:
+            from datetime import timedelta
+            next_ts = datetime.now(timezone.utc) + timedelta(seconds=interval_sec)
+            _SCHEDULER_STATE["gallery_next_run_at"] = next_ts.isoformat()
+        except Exception:
+            pass
+        time.sleep(interval_sec)
+
+
+def start_she_gallery_scheduler_in_background(
+    first_delay_sec: int = 180,
+) -> Optional[threading.Thread]:
+    """她·画廊 · 6h 来问。冷却 18–48h + 新信号 + 骰子。开机不补发。"""
+    global _SHE_GALLERY_THREAD
+    if _SHE_GALLERY_THREAD is not None and _SHE_GALLERY_THREAD.is_alive():
+        return _SHE_GALLERY_THREAD
+    t = threading.Thread(
+        target=_she_gallery_loop,
+        kwargs={"first_delay_sec": first_delay_sec},
+        name="OpusSheGalleryScheduler",
+        daemon=True,
+    )
+    t.start()
+    _SHE_GALLERY_THREAD = t
+    return t
+
+
+def is_she_gallery_scheduler_alive() -> bool:
+    return _SHE_GALLERY_THREAD is not None and _SHE_GALLERY_THREAD.is_alive()
+
+
 def _proactive_loop(interval_min: int, first_delay_sec: int) -> None:
     """卷六十 · 主动 CALL BRO 自驱循环 · daemon thread · catch-all 不退出。
 
@@ -382,93 +554,6 @@ def start_proactive_scheduler_in_background(
 
 def is_proactive_scheduler_alive() -> bool:
     return _PROACTIVE_THREAD is not None and _PROACTIVE_THREAD.is_alive()
-
-
-def _state_condenser_loop(first_delay_sec: int) -> None:
-    from workers.state_condenser import condense_state_card
-
-    interval_sec = 6 * 3600
-    _SCHEDULER_STATE["condenser_started_at"] = datetime.now(timezone.utc).isoformat()
-    time.sleep(first_delay_sec)
-    while True:
-        _SCHEDULER_STATE["condenser_last_run_at"] = datetime.now(timezone.utc).isoformat()
-        try:
-            result = condense_state_card()
-            _SCHEDULER_STATE["condenser_last_run_ok"] = True
-            _SCHEDULER_STATE["condenser_last_error"] = (
-                None if not result.get("skipped") else (result.get("error") or result.get("reason"))
-            )
-        except Exception as e:
-            _SCHEDULER_STATE["condenser_last_run_ok"] = False
-            _SCHEDULER_STATE["condenser_last_error"] = str(e)[:200]
-            logger.exception("state_condenser scheduler crashed: %s", e)
-        time.sleep(interval_sec)
-
-
-def start_state_condenser_scheduler_in_background(
-    first_delay_sec: int = 120,
-) -> Optional[threading.Thread]:
-    """周度凝练 · 每 6 小时 tick。纯净盘补符号，跟 opus_daemon 对上。"""
-    global _STATE_CONDENSER_THREAD
-    if _STATE_CONDENSER_THREAD is not None and _STATE_CONDENSER_THREAD.is_alive():
-        return _STATE_CONDENSER_THREAD
-    t = threading.Thread(
-        target=_state_condenser_loop,
-        kwargs={"first_delay_sec": first_delay_sec},
-        name="OpusStateCondenserScheduler",
-        daemon=True,
-    )
-    t.start()
-    _STATE_CONDENSER_THREAD = t
-    try:
-        start_she_gallery_scheduler_in_background(first_delay_sec=first_delay_sec + 60)
-    except Exception:
-        pass
-    return t
-
-
-def is_state_condenser_scheduler_alive() -> bool:
-    return _STATE_CONDENSER_THREAD is not None and _STATE_CONDENSER_THREAD.is_alive()
-
-
-def _she_gallery_loop(first_delay_sec: int) -> None:
-    try:
-        from workers.she_gallery import make_gallery_entry
-    except ImportError:
-        return
-    interval_sec = 6 * 3600
-    time.sleep(first_delay_sec)
-    boot_skip = True
-    while True:
-        try:
-            if boot_skip:
-                boot_skip = False
-            else:
-                make_gallery_entry()
-        except Exception:
-            pass
-        time.sleep(interval_sec)
-
-
-def start_she_gallery_scheduler_in_background(
-    first_delay_sec: int = 180,
-) -> Optional[threading.Thread]:
-    global _SHE_GALLERY_THREAD
-    if _SHE_GALLERY_THREAD is not None and _SHE_GALLERY_THREAD.is_alive():
-        return _SHE_GALLERY_THREAD
-    t = threading.Thread(
-        target=_she_gallery_loop,
-        kwargs={"first_delay_sec": first_delay_sec},
-        name="OpusSheGalleryScheduler",
-        daemon=True,
-    )
-    t.start()
-    _SHE_GALLERY_THREAD = t
-    return t
-
-
-def is_she_gallery_scheduler_alive() -> bool:
-    return _SHE_GALLERY_THREAD is not None and _SHE_GALLERY_THREAD.is_alive()
 
 
 def _safe_int_env(name: str, default: int) -> int:

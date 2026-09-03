@@ -88,8 +88,7 @@ def _create_run(args: dict) -> ToolResult:
 SPEC_CREATE = ToolSpec(
     name="create_scheduled_task",
     description=(
-        "创建定时任务。你把自然语言解析成参数再调。schedule_type: daily/weekly/interval/once。action_kind: pipeline 或 reminder。"
-    ),
+        "创建定时任务。你把自然语言解析成参数再调。schedule_type: daily/weekly/interval/once。action_kind: pipeline 或 reminder。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

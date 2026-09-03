@@ -14,13 +14,21 @@
  */
 
 // ── 成长档案 (depot) · 把 日记/心愿/沉淀位/技能库 并成一个 hub · 内部标签切换 ──
+// Grok-2 轮 · 2026-08-27 · inline onclick JS 字符串参数专用转义 (双层·顺序不能反) ·
+// 母体 chat.js / 陪伴 panels.js 已有 · 这里兜底一份 (两种环境都保证可用)。
+function jsStr(v) {
+  var s = String(v == null ? '' : v);
+  s = s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r?\n/g, '\\n');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 // 复用各子维度现成的 render fn (renderCognition/renderWishlist/renderSinks/renderPlaybooks)·
 // 不重写渲染 · 只在 $dashView 顶部补一条标签条。切子标签 = 重新 loadDepot(sub)。
 // 信息架构 (用户 2026-07-12 拍板):画像/日记拆开·工艺铁律并入技能库·砍"当下关注"。
 // cognition=画像(对你的记忆·rich viewer) · diary=Daemonkey 日记(它的内心反思·复用 /dashboard/cognition 数据)。
 const DEPOT_TABS = [
   { id: 'cognition', label: '画像',      icon: 'ri-user-heart-line' },
-  { id: 'diary',     label: 'Daemonkey 日记', icon: 'ri-brain-fill' },
+  { id: 'she_state', label: (window.AI_NAME || 'Daemonkey') + ' · 状态',   icon: 'ri-hearts-line' },
+  { id: 'diary',     label: '心情日记', icon: 'ri-hearts-line' },
   { id: 'wishlist',  label: 'Daemonkey 心愿', icon: 'ri-lightbulb-fill' },
   { id: 'playbooks', label: '技能库',    icon: 'ri-tools-fill' },
   { id: 'memory_map', label: '记忆星图', icon: 'ri-sparkling-2-fill' },
@@ -35,12 +43,12 @@ const _DEPOT_BANNERS = {
   cognition: {
     icon: 'ri-user-heart-line',
     title: '这是 Daemonkey 对你的画像',
-    sub: 'Daemonkey 持续维护的"你当下是个什么样"——作息/情绪/在做的项目/偏好/风险,聊天里它觉得值得长期记住的都写进这里。daemon 每次启动都自动装上,让它一上线就带着"你的当下"。顶部"最近记了什么"能看到它最近记了些啥。',
+    sub: 'Daemonkey 持续维护的"你当下是个什么样"——作息/情绪/在做的项目/偏好/风险,聊天里它觉得值得长期记住的都写进这里。每次打开都会带上这些记录，不用重新介绍你。顶部"最近记了什么"能看到它最近记了些啥。',
   },
   diary: {
-    icon: 'ri-brain-fill',
-    title: '这是 Daemonkey 的日记',
-    sub: 'Daemonkey 给自己写的笔记——每次大动作后的反思/观察/学到的东西。你在这里读到的等于"读 Daemonkey 的眼睛"。这不是给你的报告,是它自己的内心记录。',
+    icon: 'ri-hearts-line',
+    title: '这是心情日记',
+    sub: '她听懂你夸她、说重了、表白，或你在置物架接住她寄来的，都会落在这里。心情和往来分开记，这里合在一起看。当天的心情过了零点会换，但会留下记录。工程纪律不在这里，在技能库。',
   },
   sinks: {
     icon: 'ri-archive-drawer-fill',
@@ -240,6 +248,123 @@ function _cogDimModal(dim) {
   document.addEventListener('keydown', onKey);
 }
 
+// 状态卡骨架 8 字段 · L2 易变尾巴
+const _STATE_SKELETON = [
+  '工作状态', '作息模式', '健康基线', '情绪基线',
+  '当前主线', '关系家庭', '经济预算', '忌口过敏',
+];
+
+// 状态卡 · 骨架 8 字段专属图标（Remix Icon · 铁律 10）
+const _STATE_ICONS = {
+  '工作状态': 'ri-briefcase-2-line',
+  '作息模式': 'ri-moon-line',
+  '健康基线': 'ri-heart-pulse-line',
+  '情绪基线': 'ri-emotion-line',
+  '当前主线': 'ri-focus-3-line',
+  '关系家庭': 'ri-group-line',
+  '经济预算': 'ri-wallet-3-line',
+  '忌口过敏': 'ri-restaurant-line',
+};
+
+// 了解层 · 字段 → 图标映射（按字段名关键字猜 · 用于"她了解你"卡片视觉）
+const _UNDERSTAND_ICONS = {
+  '产品思维': 'ri-lightbulb-line',
+  'JRPG': 'ri-gamepad-line',
+  '重命名能手': 'ri-edit-2-line',
+  '释权': 'ri-hand-heart-line',
+  '看得远': 'ri-eye-line',
+  '不肉麻': 'ri-chat-smile-2-line',
+  '省钱敏感': 'ri-money-cny-circle-line',
+};
+function _cogUnderstandIcon(field) {
+  const f = String(field || '');
+  if (_UNDERSTAND_ICONS[f]) return _UNDERSTAND_ICONS[f];
+  if (/思维|思考|逻辑/i.test(f)) return 'ri-lightbulb-line';
+  if (/游戏|JRPG|战棋|RPG/i.test(f)) return 'ri-gamepad-line';
+  if (/命名|语言|命名家/i.test(f)) return 'ri-edit-2-line';
+  if (/释权|信任|授权/i.test(f)) return 'ri-hand-heart-line';
+  if (/远|视野|格局/i.test(f)) return 'ri-eye-line';
+  if (/肉麻|直接|直率|性格/i.test(f)) return 'ri-chat-smile-2-line';
+  if (/省钱|预算|经济|精打细算/i.test(f)) return 'ri-money-cny-circle-line';
+  return 'ri-heart-3-line';
+}
+
+function _cogStateEmpty(fd) {
+  return !fd || !Object.keys(fd).length || !fd.value || fd.value === '待确认';
+}
+
+function _cogStateExpired(asOf) {
+  if (!asOf || asOf === '-') return false;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(asOf).trim());
+  if (!m) return false;
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  if (Number.isNaN(d.getTime())) return false;
+  return (Date.now() - d.getTime()) / 86400000 > 7;
+}
+
+function _cogStateMetaHtml(fd) {
+  if (_cogStateEmpty(fd)) return '';
+  const parts = [];
+  if (fd.as_of && fd.as_of !== '-') parts.push(escHtml(fd.as_of));
+  if (fd.evidence && fd.evidence !== '-') {
+    // 铁律 10 · 证据图标用 Remix Icon · 不用 emoji ⓘ
+    parts.push(`<span class="cog-state-ev" title="${escHtml(fd.evidence)}"><i class="ri-focus-2-line"></i> ${escHtml(fd.evidence)}</span>`);
+  }
+  return parts.length ? `<span class="cog-state-meta">${parts.join(' · ')}</span>` : '';
+}
+
+function _cogStateRowHtml(field, fd, opts) {
+  const stale = _cogStateEmpty(fd);
+  const val = stale ? '待更新' : escHtml(fd.value);
+  const valCls = stale ? ' cog-stale' : '';
+  const expired = !stale && _cogStateExpired(fd.as_of);
+  const badge = expired ? ' <span class="cog-state-badge">待更新</span>' : '';
+  // 可点 = 有变更史才显示箭头（无变更史点开只有"暂无变更史"，不如不点）
+  const hasHist = opts && (opts.history && opts.history.length);
+  const clickable = opts && opts.clickable !== false && hasHist;
+  const cls = 'cog-state-row' + (clickable ? ' cog-state-click' : '');
+  const dataAttr = clickable ? ` data-field="${escHtml(field)}"` : '';
+  const ico = _STATE_ICONS[field] || 'ri-sparkling-2-line';
+  const meta = _cogStateMetaHtml(fd);
+  const more = clickable ? '<i class="ri-arrow-right-s-line cog-state-more"></i>' : '';
+  return `<div class="${cls}"${dataAttr}>
+    <div class="cog-state-top">
+      <i class="${ico} cog-state-ico"></i>
+      <span class="cog-state-k">${escHtml(field)}</span>
+      ${more}
+    </div>
+    <div class="cog-state-v${valCls}">${val}${badge}</div>
+    ${meta ? `<div class="cog-state-foot">${meta}</div>` : ''}
+  </div>`;
+}
+
+function _cogStateHistoryModal(field, history) {
+  if (!field) return;
+  if (typeof _closeAllKbModals === 'function') _closeAllKbModals();
+  let host = document.getElementById('kbModalHost');
+  if (!host) { host = document.createElement('div'); host.id = 'kbModalHost'; host.className = 'kb-modal-host'; document.body.appendChild(host); }
+  const rows = (history || []).map(h => {
+    const ev = (h.evidence && h.evidence !== '-') ? ` · ${escHtml(h.evidence)}` : '';
+    return `<div class="cog-de">${escHtml(h.from || '?')} → ${escHtml(h.to || '?')} · ${escHtml(h.as_of || '')}${ev}</div>`;
+  }).join('');
+  host.innerHTML = `
+    <div class="kb-modal-mask"></div>
+    <div class="kb-modal" role="dialog" aria-modal="true">
+      <div class="kb-modal-head">
+        <span class="kb-modal-title">${escHtml(field)} · 变更史</span>
+        <span class="kb-modal-meta">${(history || []).length} 条</span>
+        <button class="kb-modal-close" title="关闭 (Esc)">✕</button>
+      </div>
+      <div class="kb-modal-body"><div class="cog-modal-list">${rows || '<div class="cog-de sub">（暂无变更史）</div>'}</div></div>
+    </div>`;
+  host.classList.add('show');
+  const close = () => { host.classList.remove('show'); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  host.querySelector('.kb-modal-close').onclick = close;
+  host.querySelector('.kb-modal-mask').onclick = close;
+  document.addEventListener('keydown', onKey);
+}
+
 // ── 画像 (对你的记忆本 · rich viewer) · Hero+pills+软提醒 / 时间线 / 六维卡片网格 ──
 // 工艺铁律→技能库 · Daemonkey 日记→独立 tab · 当下关注已砍。数据源 /dashboard/cognition。
 function renderCognition(data) {
@@ -253,6 +378,10 @@ function renderCognition(data) {
   const flow = data.recent_flow || [];
   const sections = bro.sections || [];
   const lastUpd = _fmtCogTime(bro.last_updated);
+  const stateCard = data.state_card || {};
+  const stateHistory = data.state_card_history || {};
+  const understanding = data.understanding || [];
+  const hasStateCard = stateCard && Object.keys(stateCard).length > 0;
 
   let html = `
     <div class="dash-head">
@@ -280,12 +409,56 @@ function renderCognition(data) {
         <span class="cog-live"><i class="ri-checkbox-blank-circle-fill cog-live-dot"></i> 活着${lastUpd ? ' · 最后更新 ' + escHtml(lastUpd) : ''}</span>
       </div>
       <div class="cog-hero-sub">Daemonkey 持续维护的"你当下是个什么样"· daemon 每次启动自动装上 · 共 ${sections.length} 节</div>`;
+  if (hasStateCard) {
+    html += `<div class="cog-state-card">
+      <div class="cog-state-title"><i class="ri-pulse-line"></i> 当下状态</div>
+      <div class="cog-state-grid">`;
+    for (const k of _STATE_SKELETON) {
+      html += _cogStateRowHtml(k, stateCard[k] || {}, { history: stateHistory[k] || [] });
+    }
+    html += `</div>`;
+    const emergent = Object.keys(stateCard).filter(k => !_STATE_SKELETON.includes(k));
+    if (emergent.length) {
+      html += `<div class="cog-state-emergent-title">涌现 · 相处中长出的了解</div><div class="cog-state-grid">`;
+      for (const k of emergent) {
+        html += _cogStateRowHtml(k, stateCard[k] || {}, { history: stateHistory[k] || [] });
+      }
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
   if (pills.length) {
     html += `<div class="cog-pills">` + pills.map(p => `
         <div class="cog-pill"><i class="${p.icon}"></i><span><span class="k">${escHtml(p.k)}</span><span class="v">${escHtml(p.v)}</span></span></div>`).join('') + `</div>`;
   }
   if (checkin) {
     html += `<div class="cog-checkin"><i class="ri-hand-heart-line"></i><span>${escHtml(checkin)}</span><span class="tagx">温柔回访</span></div>`;
+  }
+  html += `</div>`;
+
+  // 她了解你 · L1 了解层（周度凝练 · 可看可删）
+  html += `<div class="cog-understand">`;
+  html += `<div class="cog-sec-title"><i class="ri-heart-3-line"></i> 她了解你 · 相处中长出的长期模式</div>`;
+  if (understanding.length) {
+    html += `<div class="cog-understand-list">`;
+    for (const u of understanding) {
+      const ev = u.evidence
+        ? `<span class="cog-understand-ev" title="${escHtml(u.evidence)}"><i class="ri-focus-2-line"></i> ${escHtml(u.evidence)}</span>`
+        : '';
+      html += `
+        <div class="cog-understand-card cog-understand-hover">
+          <div class="cog-understand-head">
+            <span class="cog-understand-ico"><i class="${_cogUnderstandIcon(u.field)}"></i></span>
+            <span class="cog-understand-field">${escHtml(u.field || '')}</span>
+            <button type="button" class="cog-understand-del" data-field="${escHtml(u.field || '')}" title="删除这条了解"><i class="ri-delete-bin-line"></i> 删</button>
+          </div>
+          <div class="cog-understand-text">${escHtml(u.text || '')}</div>
+          ${ev}
+        </div>`;
+    }
+    html += `</div>`;
+  } else {
+    html += `<div class="cog-understand-empty">还在相处中慢慢沉淀……（周度凝练会把她学到的写进来）</div>`;
   }
   html += `</div>`;
 
@@ -306,8 +479,11 @@ function renderCognition(data) {
     html += `</div>`;
   }
 
-  // 六维画像 · 2 列卡片网格(过滤"使用说明/维护流水"这类噪声段·纯净版兜底显示全部)
-  const skip = /使用说明|使用方式|如何维护|维护日志|维护流水|更新流水|更新日志|变更记录|changelog|元信息|须知|给下一|下一根毛|的提示$/i;
+  // 六维画像 · 2 列卡片网格(过滤"使用说明/维护流水/当下状态/了解层"这类已在顶部独立板块显示的冗余段·纯净版兜底显示全部)
+  // 状态卡(〇) / 了解层(二) 已在上方独立板块展示 · 从网格剔除避免重复·Profile(一)保留作背景明细维
+  // 顶部独立板块已展示：状态卡(〇) / 了解层(无序号) / 状态卡变更史(无序号) / 近期更新流水
+  // 这些是"顶部 Hero 或独立区块"，不是六维画像网格的维度——从网格剔除避免重复(纯净版兜底显示全部)
+  const skip = /使用说明|使用方式|如何维护|维护日志|维护流水|更新流水|更新日志|变更记录|changelog|元信息|须知|给下一|下一根毛|的提示$|^〇|^二、了解层|了解层（L1|状态卡（Daemonkey|状态卡变更史|变更史.*状态卡/i;
   let cards = sections.filter(s => !skip.test(s.heading || ''));
   if (cards.length < 2) cards = sections;
 
@@ -317,7 +493,9 @@ function renderCognition(data) {
     const icon = _cogDimIcon(sec.heading);
     const clean = String(sec.heading || '').replace(/^[一二三四五六七八九十\d]+[、.．]\s*/, '');
     const parts = clean.split(' · ');
-    const name = parts[0] || clean || '未命名';
+    let name = parts[0] || clean || '未命名';
+    // "当下画像"的当下状态已被顶部状态卡接管·这一维的长期背景明细改叫"成长背景"避免语义重复 (2026-08-27)
+    if (/当下画像|当下 \u00b7|profile.*(高|更)/i.test(name) || /当下画像/i.test(clean)) name = '成长背景';
     const meta = parts.slice(1).join(' · ');
     const entries = _cogEntries(sec.body_full || sec.body_excerpt || '', 60);
     // 事件流/流水/压缩段这类 time_ordered 分节是"末尾追加=正序"·反转成最新在前
@@ -345,34 +523,62 @@ function renderCognition(data) {
   html += `</div>`;
   $dashView.innerHTML = html;
 
+  // 状态卡字段行 → 变更史弹窗
+  $dashView.querySelectorAll('.cog-state-click').forEach(row => {
+    row.onclick = () => _cogStateHistoryModal(row.dataset.field, stateHistory[row.dataset.field]);
+  });
+
+  // 了解层 · 可删闭环
+  $dashView.querySelectorAll('.cog-understand-del').forEach(btn => {
+    btn.onclick = async () => {
+      const field = btn.getAttribute('data-field') || '';
+      if (!field || !token) return;
+      if (!confirm('确定删除「' + field + '」这条了解？删后她不会再提。')) return;
+      try {
+        const r = await fetch('/dashboard/understanding/delete', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ field }),
+        });
+        if (!r.ok) { alert('删除失败 [' + r.status + ']'); return; }
+        loadDashboard('cognition', { silent: true });
+      } catch (e) { alert('网络出错: ' + e.message); }
+    };
+  });
+
   // 展开全部 → 弹窗看整维(卡片保持齐平·弹窗滚动看全量)
   $dashView.querySelectorAll('.cog-dim-btn').forEach(btn => {
     btn.onclick = () => _cogDimModal(_cogDims[parseInt(btn.dataset.i, 10)]);
   });
 }
 
-// ── Daemonkey 日记 (它的内心反思 · 独立 tab · 复用 /dashboard/cognition 数据) ──
+// ── 心情日记 (只展 mood · 工程反思仍在文件里，不进这个标签) ──
 function renderDiary(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-brain-fill"></i> Daemonkey 日记</h2></div>
+      <div class="dash-head"><h2><i class="ri-hearts-line"></i> 心情日记</h2></div>
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
   }
   const diary = data.opus_diary || {};
-  const entries = (diary.entries || []).filter(e => (e.type || 'reflection') !== 'iron_rule');
+  const bond = Array.isArray(data.bond_entries) ? data.bond_entries : null;
+  const entries = bond || diary.mood_entries || (diary.entries || []).filter(e => (e.type || '') === 'mood');
   const lastUpd = _fmtCogTime(diary.last_updated);
+  const why = _hasBond(data) ? (data.bond_why || '').trim() : '';
+  const pts = _hasBond(data) && data.bond_band && data.bond_band !== 'empty'
+    ? ' · 陪伴值 ' + Number(data.bond_now != null ? data.bond_now : data.bond_points || 0)
+    : '';
 
   let html = `
     <div class="dash-head">
-      <h2><i class="ri-brain-fill"></i> Daemonkey 日记</h2>
-      <span class="meta">${entries.length} 条${lastUpd ? ' · 最后更新 ' + escHtml(lastUpd) : ''}</span>
+      <h2><i class="ri-hearts-line"></i> 心情日记</h2>
+      <span class="meta">${entries.length} 条${pts}${why ? ' · ' + escHtml(why) : ''}${lastUpd ? ' · 最后更新 ' + escHtml(lastUpd) : ''}</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('diary')">刷新</button>
     </div>`;
 
   if (!entries.length) {
-    html += `<div class="dash-empty">${escHtml(diary.note || '还没写过 · 跟 Daemonkey 说「记一笔今天的观察」')}</div>`;
+    html += `<div class="dash-empty">${escHtml(diary.note || '还没有相处落点 · 她听懂心情、或你接住置物架上的信，会记在这里')}</div>`;
     $dashView.innerHTML = html;
     return;
   }
@@ -381,18 +587,53 @@ function renderDiary(data) {
   entries.forEach((e, i) => {
     const body = e.body_excerpt || e.body || '';
     const bodyHtml = (typeof mdRender === 'function') ? mdRender(body) : escHtml(body);
+    const kind = e.kind === 'shelf' ? '置物架' : (e.kind === 'mood' ? '心情' : '');
+    const toy = _bondReplayToy(e);
     html += `
       <details class="cog-card cog-diary-entry"${i === 0 ? ' open' : ''}>
         <summary class="cog-card-head">
           <span class="cog-e-date">${escHtml(e.date || '')}</span>
+          ${kind ? '<span class="cog-e-kind">' + escHtml(kind) + '</span>' : ''}
           <span class="cog-card-name">${escHtml(e.title || '')}</span>
+          ${e.weight != null && e.weight !== '' ? '<span class="cog-e-w">' + (Number(e.weight) > 0 ? '+' : '') + escHtml(String(e.weight)) + '</span>' : ''}
           <i class="ri-arrow-down-s-line cog-card-caret"></i>
         </summary>
-        <div class="cog-card-body markdown-body">${bodyHtml}</div>
+        <div class="cog-card-body markdown-body">${bodyHtml}
+          ${toy ? '<button type="button" class="cog-again" data-bond-replay="' + escHtml(toy) + '"><i class="ri-refresh-line"></i> 再来一盘</button>' : ''}
+        </div>
       </details>`;
   });
   html += `</div>`;
   $dashView.innerHTML = html;
+  $dashView.querySelectorAll('[data-bond-replay]').forEach(btn => {
+    btn.onclick = ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      replayBondToy(btn.getAttribute('data-bond-replay'));
+    };
+  });
+}
+
+function _hasBond(data) {
+  return !!(data && (data.bond_now != null || data.bond_points != null || data.bond_band));
+}
+
+function _bondReplayToy(e) {
+  if (!e || e.kind !== 'shelf') return '';
+  const toy = String(e.toy || '');
+  return (toy === 'tictac' || toy === 'flip') ? toy : '';
+}
+
+function replayBondToy(toy) {
+  if (toy !== 'tictac' && toy !== 'flip') return;
+  if (typeof closeModal === 'function') closeModal();
+  if (typeof openReplay === 'function') {
+    setTimeout(() => openReplay(toy), 0);
+    return;
+  }
+  var url = '/companion/index.html?play=' + encodeURIComponent(toy);
+  if (window.dkModeTransit) { window.dkModeTransit.play(url); return; }
+  location.href = url;
 }
 
 
@@ -814,7 +1055,7 @@ function _mmWebglOk() {
   } catch (e) { return false; }
 }
 
-// 浅色皮肤判定 (皮肤系统适配 · 2026-08-20): 白天/护眼暖黄/粉白 下星图换浅色版
+// 浅色皮肤判定 (皮肤系统适配 · 2026-08-20): 白天/日间纸色/粉白 下星图换浅色版
 // (additive 混合在浅底=洗白 · 必须换 normal blending + 深色星点)
 function _mmIsLight() {
   return /theme-light|theme-sepia|theme-pink-white/.test(document.body.className || '');
@@ -1105,9 +1346,9 @@ function renderReviews(data) {
         <span class="sink-card-role review-status ${st.cls}">${st.label}</span>
         <span class="sink-card-meta">${sizeStr} · ${escHtml((it.mtime || '').slice(0, 10))}</span>
         <span class="sink-card-actions">
-          <button class="wb" onclick="reviewPreview('${escHtml(it.filename)}')"><i class="ri-eye-fill"></i> 预览</button>
-          <button class="wb" onclick="reviewDownload('${escHtml(it.filename)}')"><i class="ri-download-fill"></i> 下载</button>
-          <button class="wb" onclick="reviewReveal('${escHtml(it.filename)}')"><i class="ri-external-link-fill"></i> 打开文件夹</button>
+          <button class="wb" onclick="reviewPreview('${jsStr(it.filename)}')"><i class="ri-eye-fill"></i> 预览</button>
+          <button class="wb" onclick="reviewDownload('${jsStr(it.filename)}')"><i class="ri-download-fill"></i> 下载</button>
+          <button class="wb" onclick="reviewReveal('${jsStr(it.filename)}')"><i class="ri-external-link-fill"></i> 打开文件夹</button>
         </span>
       </div>`;
   }
@@ -1146,7 +1387,7 @@ function reviewDownload(filename) {
 // 月度复盘打开所在文件夹
 async function reviewReveal(filename) {
   try {
-    const r = await fetch(`/reviews/file/${encodeURIComponent(filename)}?reveal=1`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
+    const r = await fetch(`/reviews/reveal/${encodeURIComponent(filename)}`, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
     const data = await r.json();
     if (!data.ok) alert('打开文件夹失败 · ' + (data.error || 'unknown'));
   } catch (e) { alert('网络出错: ' + e.message); }
@@ -1162,8 +1403,8 @@ function renderSinkCard(it) {
       ${it.role ? `<span class="sink-card-role">${escHtml(it.role)}</span>` : ''}
       <span class="sink-card-meta">${it.lines ? escHtml(String(it.lines)) + ' lines' : ''}${it.lines && it.size_bytes ? ' · ' : ''}${sizeStr}</span>
       <span class="sink-card-actions">
-        <button class="wb" onclick="sinkPreview('${escHtml(it.slug)}')"><i class="ri-eye-fill"></i> 预览</button>
-        <button class="wb" onclick="sinkReveal('${escHtml(it.slug)}')"><i class="ri-external-link-fill"></i> 打开</button>
+        <button class="wb" onclick="sinkPreview('${jsStr(it.slug)}')"><i class="ri-eye-fill"></i> 预览</button>
+        <button class="wb" onclick="sinkReveal('${jsStr(it.slug)}')"><i class="ri-external-link-fill"></i> 打开</button>
       </span>
     </div>`;
 }
@@ -1250,40 +1491,40 @@ function renderWishCard(w, idx) {
   const hasBranch = !!(w.dev_branch && !w.dev_branch.includes(' ') && w.dev_branch !== 'master');
 
   if (w.status === 'pending') {
-    actions.push(`<button class="wb wb-ok" onclick="wishAction('${w.id}', 'approve_daemon')" title="Daemonkey 先勘察出方案·你批方案了才写码"><i class="ri-checkbox-circle-fill"></i> 批准 · 让 Daemonkey 装</button>`);
-    actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'approve_cursor')" title="你去 Cursor 里让 Claude 装"><i class="ri-focus-3-fill"></i> 我去 Cursor 装</button>`);
-    actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
-    actions.push(`<button class="wb wb-deep" onclick="wishAction('${w.id}', 'deep_dive')"><i class="ri-search-fill"></i> 让 Daemonkey 深挖</button>`);
+    actions.push(`<button class="wb wb-ok" onclick="wishAction('${jsStr(w.id)}', 'approve_daemon')" title="Daemonkey 先勘察出方案·你批方案了才写码"><i class="ri-checkbox-circle-fill"></i> 批准 · 让 Daemonkey 装</button>`);
+    actions.push(`<button class="wb" onclick="wishAction('${jsStr(w.id)}', 'approve_cursor')" title="你去 Cursor 里让 Claude 装"><i class="ri-focus-3-fill"></i> 我去 Cursor 装</button>`);
+    actions.push(`<button class="wb wb-no" onclick="wishAction('${jsStr(w.id)}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
+    actions.push(`<button class="wb wb-deep" onclick="wishAction('${jsStr(w.id)}', 'deep_dive')"><i class="ri-search-fill"></i> 让 Daemonkey 深挖</button>`);
   } else if (w.status === 'active') {
     if (sub === 'plan_pending') {
-      actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'approve_plan')" title="关卡1 · 按 Daemonkey 方案开干·自动从 master 切分支写码"><i class="ri-rocket-fill"></i> 批方案 → 开干</button>`);
-      actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'replan')" title="对方案不满意·让 Daemonkey 重新勘察"><i class="ri-refresh-fill"></i> 重新勘察</button>`);
-      actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
+      actions.push(`<button class="wb wb-go" onclick="wishAction('${jsStr(w.id)}', 'approve_plan')" title="关卡1 · 按 Daemonkey 方案开干·自动从 master 切分支写码"><i class="ri-rocket-fill"></i> 批方案 → 开干</button>`);
+      actions.push(`<button class="wb" onclick="wishAction('${jsStr(w.id)}', 'replan')" title="对方案不满意·让 Daemonkey 重新勘察"><i class="ri-refresh-fill"></i> 重新勘察</button>`);
+      actions.push(`<button class="wb wb-no" onclick="wishAction('${jsStr(w.id)}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
     } else if (sub === 'blocked') {
-      actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'view_log')" title="看 Daemonkey 撞墙过程"><i class="ri-clipboard-fill"></i> 看撞墙日志</button>`);
-      actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'retry_impl')"><i class="ri-refresh-fill"></i> 重新实施</button>`);
-      actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
+      actions.push(`<button class="wb wb-no" onclick="wishAction('${jsStr(w.id)}', 'view_log')" title="看 Daemonkey 撞墙过程"><i class="ri-clipboard-fill"></i> 看撞墙日志</button>`);
+      actions.push(`<button class="wb" onclick="wishAction('${jsStr(w.id)}', 'retry_impl')"><i class="ri-refresh-fill"></i> 重新实施</button>`);
+      actions.push(`<button class="wb wb-no" onclick="wishAction('${jsStr(w.id)}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
     } else {
       if (isDaemon) {
         actions.push(`<button class="wb wb-go" disabled title="Daemonkey 在自己分支上写码·完工自动进待验收">⏳ Daemonkey 进行中…</button>`);
-        actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'abort_impl')">⏹ 紧急叫停</button>`);
+        actions.push(`<button class="wb wb-no" onclick="wishAction('${jsStr(w.id)}', 'abort_impl')">⏹ 紧急叫停</button>`);
       } else {
-        actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'mark_review')" title="装完了·提交给 用户 验收">📬 装完了 → 提交验收</button>`);
-        actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
+        actions.push(`<button class="wb wb-go" onclick="wishAction('${jsStr(w.id)}', 'mark_review')" title="装完了·提交给 用户 验收">📬 装完了 → 提交验收</button>`);
+        actions.push(`<button class="wb wb-no" onclick="wishAction('${jsStr(w.id)}', 'reject')"><i class="ri-close-circle-fill"></i> 弃</button>`);
       }
-      if (hasBranch) actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'view_diff')"><i class="ri-search-fill"></i> 看 diff</button>`);
+      if (hasBranch) actions.push(`<button class="wb" onclick="wishAction('${jsStr(w.id)}', 'view_diff')"><i class="ri-search-fill"></i> 看 diff</button>`);
     }
-    actions.push(`<button class="wb wb-deep" onclick="wishAction('${w.id}', 'deep_dive')"><i class="ri-search-fill"></i> 让 Daemonkey 深挖</button>`);
+    actions.push(`<button class="wb wb-deep" onclick="wishAction('${jsStr(w.id)}', 'deep_dive')"><i class="ri-search-fill"></i> 让 Daemonkey 深挖</button>`);
   } else if (w.status === 'review') {
-    if (hasBranch) actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'view_diff')" title="看 Daemonkey 改了啥"><i class="ri-search-fill"></i> 查看 diff</button>`);
-    actions.push(`<button class="wb wb-go" onclick="wishAction('${w.id}', 'verify_live')" title="关卡2 · 验收通过·自动合进 master 主干上线"><i class="ri-checkbox-circle-fill"></i> 验收通过 → 合主干上线</button>`);
-    actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'reject_to_active')" title="有问题·打回让 Daemonkey 继续改"><i class="ri-arrow-go-back-fill"></i> 有问题 → 打回</button>`);
-    if (!w.reflection) actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'add_reflection')">✏️ 补反思</button>`);
+    if (hasBranch) actions.push(`<button class="wb wb-go" onclick="wishAction('${jsStr(w.id)}', 'view_diff')" title="看 Daemonkey 改了啥"><i class="ri-search-fill"></i> 查看 diff</button>`);
+    actions.push(`<button class="wb wb-go" onclick="wishAction('${jsStr(w.id)}', 'verify_live')" title="关卡2 · 验收通过·自动合进 master 主干上线"><i class="ri-checkbox-circle-fill"></i> 验收通过 → 合主干上线</button>`);
+    actions.push(`<button class="wb wb-no" onclick="wishAction('${jsStr(w.id)}', 'reject_to_active')" title="有问题·打回让 Daemonkey 继续改"><i class="ri-arrow-go-back-fill"></i> 有问题 → 打回</button>`);
+    if (!w.reflection) actions.push(`<button class="wb" onclick="wishAction('${jsStr(w.id)}', 'add_reflection')">✏️ 补反思</button>`);
   } else if (w.status === 'live') {
     if (w.git_lie) {
-      actions.push(`<button class="wb wb-no" onclick="wishAction('${w.id}', 'remerge')" title="status=live 但 git 没合进 master·重新触发真合并"><i class="ri-error-warning-fill"></i> 修复 · 重新合并主干</button>`);
+      actions.push(`<button class="wb wb-no" onclick="wishAction('${jsStr(w.id)}', 'remerge')" title="status=live 但 git 没合进 master·重新触发真合并"><i class="ri-error-warning-fill"></i> 修复 · 重新合并主干</button>`);
     }
-    if (!w.reflection) actions.push(`<button class="wb" onclick="wishAction('${w.id}', 'add_reflection')">✏️ 补反思</button>`);
+    if (!w.reflection) actions.push(`<button class="wb" onclick="wishAction('${jsStr(w.id)}', 'add_reflection')">✏️ 补反思</button>`);
   }
 
   const reflectionHtml = w.reflection
@@ -1532,4 +1773,276 @@ async function _loadWishlistFiltered(filter, page = 1) {
     $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`;
   }
 }
+// ── 她·状态 (GALGAME 式 · 关系成长的呈现 · 五维只读 · 出生地/口癖可填) ──
+// 数据源 /dashboard/she_state : dims(五维) + mood(心情) + note(关系描述) + as_of
+// 三个消费端(成长档案/陪伴惦记卡/对话风格)读同一份 soul/SHE-STATE.md —— 闭环不孤岛。
+const _SHE_DIM_META = {
+  '话量':   { ico: 'ri-chat-3-line',         color: '#34d399', desc: '她话量的多寡（无口↔话痨）' },
+  '调性':   { ico: 'ri-emotion-happy-line',  color: '#fbbf24', desc: '说话调性（正经↔梗多）' },
+  '语气':   { ico: 'ri-sword-line',          color: '#f87171', desc: '她说话带不带刺（毒舌↔温柔）' },
+  '礼节':   { ico: 'ri-shield-user-line',    color: '#60a5fa', desc: '她对你客不客气（敬语↔随便）' },
+  '表现力': { ico: 'ri-voiceprint-line',     color: '#c084fc', desc: '情绪外放程度（棒读↔鲜活）' },
+};
+function _sheDimBar(k, v) {
+  const m = _SHE_DIM_META[k] || { ico: 'ri-sparkling-2-line', color: '#c084fc', desc: k };
+  v = typeof v === 'number' ? Math.max(0, Math.min(100, v)) : 50;
+  return `<div class="she-dim">
+    <div class="she-dim-head"><i class="${m.ico} she-dim-ico" style="color:${m.color}"></i><span class="she-dim-k">${escHtml(k)}</span><span class="she-dim-v">${v}</span></div>
+    <div class="she-dim-track"><div class="she-dim-fill" style="width:${v}%;background:${m.color}"></div></div>
+    <div class="she-dim-desc">${escHtml(m.desc)}</div>
+  </div>`;
+}
+function _sheDimKeys(dims) {
+  const order = Object.keys(_SHE_DIM_META);
+  const have = dims && typeof dims === 'object' ? dims : {};
+  const known = order.filter(k => have[k] != null);
+  if (known.length) return known;
+  return Object.keys(have).filter(k => k !== '力度');
+}
 
+function _sheRadar(dims) {
+  const keys = _sheDimKeys(dims);
+  const n = keys.length || 1;
+  const cx = 180, cy = 180, R = 100;
+  const pt = (i, val) => {
+    const ang = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    const r = R * (Math.max(0, Math.min(100, val)) / 100);
+    return [cx + r * Math.cos(ang), cy + r * Math.sin(ang)];
+  };
+  // 5 边标签推到 R*1.3 · viewBox 360 给「表现力」三字留边, 避免裁切
+  const labelPt = (i) => {
+    const ang = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    const r = R * 1.3;
+    return [cx + r * Math.cos(ang), cy + r * Math.sin(ang)];
+  };
+  const ring = (f) => keys.map((_, i) => {
+    const [x, y] = pt(i, f * 100);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const poly = keys.map((k, i) => {
+    const [x, y] = pt(i, dims[k] ?? 0);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const grid = [0.25, 0.5, 0.75, 1].map(f => `<polygon points="${ring(f)}" fill="none" stroke="rgba(192,132,252,.16)" stroke-width="1"/>`).join('');
+  const labels = keys.map((k, i) => {
+    const [x, y] = labelPt(i);
+    const m = _SHE_DIM_META[k] || {};
+    // 5 边按单位向量锚定: 左右两极 (i=1 右 / i=4 左) 锚 x;
+    // 上极 (i=0) 锚 y; 底对角 (i=2 / i=3) 同时给 x+y, 以免挤底或裁切
+    const ang = -Math.PI / 2 + (2 * Math.PI * i) / n;
+    const nx = Math.cos(ang), ny = Math.sin(ang);
+    let anchor = 'middle', dx = 0, dy = 0;
+    if (Math.abs(nx) > 0.75) {
+      anchor = nx > 0 ? 'start' : 'end';
+      dx = nx > 0 ? 10 : -10;
+    } else if (Math.abs(ny) > 0.85) {
+      dy = ny < 0 ? -8 : 16;
+    } else {
+      anchor = nx > 0 ? 'start' : 'end';
+      dx = nx > 0 ? 8 : -8;
+      dy = ny < 0 ? -4 : 14;
+    }
+    return `<text x="${(x + dx).toFixed(1)}" y="${(y + dy).toFixed(1)}" class="she-radar-label" text-anchor="${anchor}" fill="${m.color || 'var(--text)'}">${escHtml(k)}</text>`;
+  }).join('');
+  return `<svg class="she-radar" viewBox="0 0 360 360" role="img" aria-label="她状态雷达图">
+    <defs>
+      <linearGradient id="sheRadarGrad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="rgba(192,132,252,.55)"/>
+        <stop offset="100%" stop-color="rgba(255,159,209,.40)"/>
+      </linearGradient>
+    </defs>
+    ${grid}
+    <g fill="none" stroke="var(--dim2)" stroke-width="0.6">${keys.map((_, i) => { const [x, y] = pt(i, 100); return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`; }).join('')}</g>
+    <polygon points="${poly}" fill="url(#sheRadarGrad)" stroke="rgba(192,132,252,.9)" stroke-width="2" stroke-linejoin="round"/>
+    ${keys.map((k, i) => { const [x, y] = pt(i, dims[k] ?? 0); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" fill="var(--opus)" stroke="#fff" stroke-width="0.8"/>`; }).join('')}
+    <circle cx="${cx}" cy="${cy}" r="6" fill="rgba(192,132,252,.55)"/>
+    ${labels}
+  </svg>`;
+}
+function renderSheState(data) {
+  if (data && data.error) {
+    $dashView.innerHTML = `<div class="dash-head"><h2><i class="ri-hearts-line"></i> ${(window.AI_NAME||"Daemonkey")} · 状态</h2></div>
+      <div class="dash-empty">${escHtml(data.error)}</div>`;
+    return;
+  }
+  const dims = Object.assign({}, data.dims || {});
+  if (dims.语气 == null && dims.力度 != null) dims.语气 = dims.力度;
+  const mood = data.mood || '';
+  const moodAs = data.mood_as_of || '';
+  const note = data.note || '';
+  const asOf = data.as_of || '';
+  const dimKeys = _sheDimKeys(dims);
+  const prof = data.profile || {};   // 她·档案身份卡
+  const name = prof.名字 || (window.AI_NAME || 'Daemonkey');
+  const avatar = prof.头像 || '';
+
+  let html = `<div class="she-wrap">`;
+
+  // ① 身份卡 —— 方形头像 + 名字 + 引语 (初见名)
+  html += `<div class="she-idcard">
+    <div class="she-idcard-top">
+      <div class="she-idcard-avatar-wrap">
+        ${avatar ? `<img class="she-idcard-avatar" src="${escHtml(avatar)}" alt="${escHtml(name)} 的头像" onerror="this.style.visibility='hidden'">` : ''}
+      </div>
+      <div class="she-idcard-namewrap">
+        <div class="she-idcard-name"><span class="she-idcard-dot"></span>${escHtml(name)}${mood ? `<span class="she-idcard-tag">· ${escHtml(mood)}</span>` : ''}</div>
+        ${prof.引语 ? `<div class="she-idcard-motto">${escHtml(prof.引语)}</div>` : ''}
+      </div>
+    </div>
+    <div class="she-chip-row">
+      ${prof.生日 && prof.生日 !== '——' ? `<span class="she-chip"><i class="ri-cake-2-line"></i>生日<b>${escHtml(prof.生日)}</b></span>` : ''}
+      ${prof.相遇日 ? `<span class="she-chip"><i class="ri-hand-heart-line"></i>相遇<b>${escHtml(prof.相遇日)}</b></span>` : ''}
+      ${prof.关注点 ? `<span class="she-chip"><i class="ri-focus-3-line"></i>关注<b>${escHtml(prof.关注点)}</b></span>` : ''}
+      ${(data.voice || prof.口吻) ? `<span class="she-chip"><i class="ri-chat-voice-line"></i>口吻<b>${escHtml(data.voice || prof.口吻)}</b></span>` : ''}
+      ${_hasBond(data) ? `<span class="she-chip"><i class="ri-hearts-line"></i>陪伴值<b>${escHtml(String(data.bond_now != null ? data.bond_now : (data.bond_points || 0)))}</b></span>` : ''}
+    </div>
+    <div class="she-chip-row">
+      ${_sheProfChip('origin', '出生地', 'ri-map-pin-2-line', prof.出生地, '填一个出生地，会影响我说话的语气')}
+      ${_sheProfChip('quirk', '口癖', 'ri-chat-quote-line', prof.口癖, '填一个口癖（比如「的说」），她说话会带着')}
+    </div>
+  </div>`;
+
+  // ② 心情横条
+  html += `<div class="she-block">
+    <div class="she-sec-title"><i class="ri-live-line"></i>她现在的感受</div>
+    <div class="she-mood"><span class="she-mood-pulse"></span><span class="she-mood-txt">${mood ? escHtml(mood) : '她很平静 · 多聊聊她会更有情绪'}</span>${moodAs ? `<span class="she-mood-asof">${escHtml(moodAs)}</span>` : ''}</div>
+  </div>`;
+
+  // ③ 五维雷达 —— GALGAME 状态面板 (雷达 + 五维条左右)
+  html += `<div class="she-block she-dims-block">
+    <div class="she-sec-title"><i class="ri-radar-line"></i>相处质感 · AI 自然生长</div>
+    <div class="she-dim-desc" style="margin-top:-8px;margin-bottom:12px">${escHtml(dimKeys.join(' / ') || '相处质感')}</div>
+    <div class="she-taste"><span class="she-taste-label"><i class="ri-vip-diamond-line"></i>整体对话风格</span><span class="she-taste-val">${note ? escHtml(note) : '自然'}</span></div>
+    ${data.bond_why ? `<div class="she-dim-desc">${escHtml(data.bond_why)}</div>` : ''}
+    <div class="she-body">
+      <div class="she-radar-wrap">
+        <div class="she-radar-box">${_sheRadar(dims)}</div>
+      </div>
+      <div class="she-dims">
+        ${dimKeys.map(k => _sheDimBar(k, dims[k])).join('')}
+      </div>
+    </div>
+  </div>`;
+
+  // ④ 关系描述 —— 味道行已并入上方「整体对话风格」，若另有描述字段再显示
+  if (note && note.indexOf('对话') !== -1) {}
+
+  // ⑤ 她·画廊 —— 羁绊式朋友圈 (像 LOFTER 瀑布流卡片)
+  if (Array.isArray(data.gallery) && data.gallery.length) {
+    html += `<div class="she-block she-gallery">
+      <div class="she-sec-title"><i class="ri-gallery-line"></i>她 · 画廊 · ${data.gallery.length} 条想对你说的话</div>
+      <div class="she-gallery-grid">`;
+    for (const g of data.gallery) {
+      let gImg = (g.image || '').trim();
+      // 磁盘路径 data/workshop/outputs/... → 可访问 URL /workshop/outputs/...
+      if (gImg.startsWith('data/')) gImg = '/' + gImg.slice(5);
+      else if (gImg.startsWith('static/')) gImg = '/' + gImg;
+      html += `<div class="she-gallery-item">
+        <div class="she-gallery-head">
+          <div class="she-gallery-meta">
+            <span class="she-gallery-name">${escHtml(name)}</span>
+            <span class="she-gallery-date">${g.date ? escHtml(g.date) : ''}</span>
+          </div>
+        </div>
+        ${gImg ? `<img class="she-gallery-img" src="${escHtml(gImg)}" alt="她寄给你的照片 · 点击查看大图" loading="lazy" onerror="this.style.display='none'" onclick="if(window._showLightbox)_showLightbox('${escHtml(gImg)}','她寄给你的照片')">` : ''}
+        <div class="she-gallery-body">
+          <div class="she-gallery-msg">${g.text ? escHtml(g.text) : ''}</div>
+          <div class="she-gallery-meta">
+            ${g.mood ? `<span class="she-gallery-mood"><i class="ri-heart-2-line"></i>${escHtml(g.mood)}</span>` : ''}
+            <span class="she-gallery-like"><i class="ri-heart-3-line"></i>她想着你</span>
+          </div>
+        </div>
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  // ⑥ 让她说一句 —— 不设按钮 · 羁绊式小惊喜是她悄悄来 (像旅行青蛙)
+  if (!(Array.isArray(data.gallery) && data.gallery.length)) {
+    html += `<div class="she-gallery-hint"><i class="ri-magic-line"></i> 她会在某个合适的时刻，悄悄给你留一句话、一张照片——想到你的时候。</div>`;
+  }
+
+  html += `<div class="she-foot">数值是 AI 在相处中自然生长出来的 · 不是你能拖拽的开关</div>`;
+  html += `</div>`;
+
+  $dashView.innerHTML = html;
+}
+
+// 出生地 / 口癖 · 成长档案里唯一可编辑处 (五维本身不能拖)
+function _sheProfFilled(v) {
+  return !!(v && v !== '——');
+}
+function _sheProfChip(field, label, ico, value, placeholder) {
+  const shown = _sheProfFilled(value);
+  return `<span class="she-chip" id="she-prof-${field}" data-field="${field}" data-value="${escHtml(shown ? value : '')}">
+    <i class="${ico}"></i>${escHtml(label)}
+    ${shown ? `<b>${escHtml(value)}</b>` : `<span>${escHtml(placeholder)}</span>`}
+    <button type="button" class="btn-ghost" title="编辑${escHtml(label)}" onclick="sheBeginEditProfile('${field}')"><i class="ri-pencil-line"></i></button>
+  </span>`;
+}
+function sheBeginEditProfile(field) {
+  const chip = document.getElementById('she-prof-' + field);
+  if (!chip) return;
+  const cur = chip.getAttribute('data-value') || '';
+  const isOrigin = field === 'origin';
+  const label = isOrigin ? '出生地' : '口癖';
+  const ico = isOrigin ? 'ri-map-pin-2-line' : 'ri-chat-quote-line';
+  const ph = isOrigin ? '填一个出生地，会影响我说话的语气' : '填一个口癖（比如「的说」），她说话会带着';
+  chip.innerHTML = `<i class="${ico}"></i>${label}
+    <input id="she-prof-${field}-input" value="${escHtml(cur)}" placeholder="${escHtml(ph)}" maxlength="40" style="width:180px;padding:4px 10px;font-size:12.5px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:8px;font-family:inherit">
+    <button type="button" class="btn-ghost" title="保存" onclick="sheSaveProfile('${field}')"><i class="ri-check-line"></i></button>
+    <button type="button" class="btn-ghost" title="取消" onclick="loadDashboard('she_state')"><i class="ri-close-line"></i></button>`;
+  const inp = document.getElementById('she-prof-' + field + '-input');
+  if (inp) {
+    inp.focus();
+    inp.select();
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); sheSaveProfile(field); }
+      if (e.key === 'Escape') { e.preventDefault(); loadDashboard('she_state'); }
+    });
+  }
+}
+async function sheSaveProfile(field) {
+  const inp = document.getElementById('she-prof-' + field + '-input');
+  const val = ((inp && inp.value) || '').trim();
+  if (!val) {
+    if (typeof loadDashboard === 'function') loadDashboard('she_state');
+    return;
+  }
+  const payload = field === 'origin' ? { origin: val } : { quirk: val };
+  try {
+    const r = await fetch('/dashboard/she_profile', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) { alert('保存失败 [' + r.status + ']'); return; }
+    if (typeof loadDashboard === 'function') loadDashboard('she_state');
+  } catch (e) {
+    alert('保存出错了: ' + e.message);
+  }
+}
+
+// 她·画廊 —— 让她说一句 (羁绊式小惊喜 · 不刷屏)
+async function sheMakeGalleryEntry(btn) {
+  if (!btn) return;
+  btn.disabled = true;
+  const old = btn.textContent;
+  btn.textContent = '她想了一会儿…';
+  try {
+    const r = await fetch('/api/dashboard/she_gallery/make', { method: 'POST' });
+    const j = await r.json();
+    if (j && j.ok) {
+      // 刷新展示
+      if (typeof loadDashboard === 'function') loadDashboard('she_state');
+    } else {
+      let hint = (j && j.reason === 'no_image_app') ? (j.hint || '没有生图应用') : ((j && j.reason) || '这次她没想说');
+      alert(hint || '这次她没想说');
+    }
+  } catch (e) {
+    alert('调用出错了: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
+}

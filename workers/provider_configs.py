@@ -260,6 +260,7 @@ def add_config(
     vision: bool | None = None,
     director: bool = False,
     pricing: dict | None = None,
+    context_window: int | None = None,
 ) -> dict:
     """新增一条 config.
 
@@ -294,6 +295,9 @@ def add_config(
         "created_at": _now(),
         "updated_at": _now(),
     }
+    cw = _normalize_context_window(context_window)
+    if cw:
+        cfg["context_window"] = cw
     data.setdefault("configs", []).append(cfg)
     if set_active or not data.get("active_id"):
         data["active_id"] = cfg["id"]
@@ -302,8 +306,8 @@ def add_config(
 
 
 def update_config(cfg_id: str, patch: dict) -> dict:
-    """局部更新一条 config · 只能改: name / base_url / model / api_key / pinned / preset_id / max_tokens / vision / director / pricing."""
-    ALLOWED = {"name", "base_url", "model", "api_key", "pinned", "preset_id", "max_tokens", "vision", "director", "pricing"}
+    """局部更新一条 config · 只能改: name / base_url / model / api_key / pinned / preset_id / max_tokens / vision / director / pricing / context_window."""
+    ALLOWED = {"name", "base_url", "model", "api_key", "pinned", "preset_id", "max_tokens", "vision", "director", "pricing", "context_window"}
     data = load_configs()
     for c in data.get("configs") or []:
         if c.get("id") == cfg_id:
@@ -323,6 +327,13 @@ def update_config(cfg_id: str, patch: dict) -> dict:
                     # pricing 是可选 dict · 走归一化 (None/空 = 清除)
                     if k == "pricing":
                         c[k] = _normalize_pricing(v)
+                        continue
+                    if k == "context_window":
+                        n = _normalize_context_window(v)
+                        if n is None:
+                            c.pop("context_window", None)
+                        else:
+                            c["context_window"] = n
                         continue
                     c[k] = v.strip() if isinstance(v, str) else v
             # wish-8ffb9d65 follow-up (BRO 2026-07-28): 顾问(director)全局只能有一个 ·

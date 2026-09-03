@@ -120,6 +120,7 @@ def stt_status(authorization: Optional[str] = Header(None)):
     from workers import stt_transcribe
     st = stt_transcribe.stt_status()
     st["boot_load"] = _env_flag("OPUS_STT_BOOT_LOAD")
+    st["enabled"] = _env_flag("OPUS_STT_ENABLED", default="1")
     st["setup_running"] = _setup_state["running"]
     st["setup_step"] = _setup_state["step"]
     return st
@@ -149,6 +150,14 @@ def stt_set_boot_load(req: SttBootLoadReq, authorization: Optional[str] = Header
     """设置页「随 daemon 启动加载模型」开关 → .env OPUS_STT_BOOT_LOAD。"""
     check_auth(authorization)
     _write_env_flag("OPUS_STT_BOOT_LOAD", req.enabled)
+    return {"ok": True, "enabled": req.enabled}
+
+
+@router.post("/stt/enabled")
+def stt_set_enabled(req: SttBootLoadReq, authorization: Optional[str] = Header(None)):
+    """设置页「启用语音识别」· 只关开关，不删模型。"""
+    check_auth(authorization)
+    _write_env_flag("OPUS_STT_ENABLED", req.enabled)
     return {"ok": True, "enabled": req.enabled}
 
 

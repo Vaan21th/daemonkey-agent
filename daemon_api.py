@@ -150,6 +150,13 @@ def _get_session_lock(sid: str) -> threading.RLock:
         # 等持有者天然释放 · 字典里没引用了就完全 GC
         while len(_SESSION_LOCKS_LRU) > _SESSION_LOCKS_MAX:
             old_sid = _SESSION_LOCKS_LRU.pop(0)
+            lock = _SESSION_LOCKS.get(old_sid)
+            if lock is not None and lock._is_owned():
+                # B-① · 2026-08-27 · 持有中的锁不能 evict (否则同 sid 下次拿新锁 →
+                # 两锁并行写同一 jsonl · 对话交错/工具双跑) · 放回尾部当最近用过 ·
+                # 本轮 evict 停止 (LRU 上限是软上限 · 锁安全优先)
+                _SESSION_LOCKS_LRU.append(old_sid)
+                break
             _SESSION_LOCKS.pop(old_sid, None)
         return lock
 
@@ -206,16 +213,29 @@ def register_turn(
                 "started_at": _now, "updated_at": _now,
                 "iteration": 0, "label": label, "tool": "",
             })
+    try:
+        from desktop_pet.activities import write_turn_start
+        write_turn_start()
+    except Exception:
+        pass
 
 
 def unregister_turn(turn_id: str) -> None:
     """活儿结束 · 三张表一起清 (务必放在 finally 里)。"""
     if not turn_id:
         return
+    idle = False
     with _TURNS_LOCK:
         _ACTIVE_TURNS.pop(turn_id, None)
         _TURN_TO_SID.pop(turn_id, None)
         _TURN_PROGRESS.pop(turn_id, None)
+        idle = not _ACTIVE_TURNS
+    if idle:
+        try:
+            from desktop_pet.activities import write_state_idle
+            write_state_idle()
+        except Exception:
+            pass
 
 
 def get_turn_cancel(turn_id: str) -> Optional[threading.Event]:
@@ -445,8 +465,19 @@ def _supports_trust(tool_name: str) -> bool:
 
 def cleanup_pending_confirm(tool_call_id: str) -> None:
     """worker 跑完后清掉该 tool_call_id 的 pending · 防内存泄漏"""
+    leftover = None
     with _PENDING_CONFIRMS_LOCK:
         _PENDING_CONFIRMS.pop(tool_call_id, None)
+        if _PENDING_CONFIRMS:
+            leftover = max(_PENDING_CONFIRMS.values(), key=lambda p: p.get("created_at") or 0)
+    try:
+        from desktop_pet.activities import clear_confirm, tool_desc, write_confirm
+        if leftover:
+            write_confirm(f"等你拍板 · {tool_desc(leftover.get('tool_name') or '')}")
+        else:
+            clear_confirm()
+    except Exception:
+        pass
 
 
 # WebUI / API 接入时追加到 system prompt 的"接入方式告知"
@@ -484,7 +515,8 @@ def _build_remote_system(base: str, session_id: str = "") -> str:
 
 
 def _safe_style_note() -> str:
-    """角色卡一句 + 当天心情。失败 → 空。"""
+    """每轮读盘上的口吻 + 味道。铁律 14: 易变内容不塞稳定前缀·放 system_suffix。
+    口吻焊前缀的话，换嘴必须重载/重启，跨话题还会用旧嘴。"""
     try:
         from identity import style_dims_card
         dims = None
@@ -494,15 +526,76 @@ def _safe_style_note() -> str:
         except Exception:
             dims = None
         taste = (style_dims_card(dims=dims) or "").strip()
+        extra = ""
+        try:
+            from soul_loader import _load_identity, _persona_archive_fields
+            origin, quirk = _persona_archive_fields(_load_identity())
+            bits = []
+            if origin:
+                bits.append(f"出生地：{origin}。")
+            if quirk:
+                bits.append(f"口癖：{quirk}。")
+            extra = "".join(bits)
+        except Exception:
+            extra = ""
         mood = ""
         try:
             from workers.mood_shift import live_mood_line
             mood = (live_mood_line() or "").strip()
         except Exception:
             mood = ""
-        return "\n".join(x for x in (taste, mood) if x)
+        return "\n".join(x for x in (taste, extra, mood) if x)
     except Exception:
         return ""
+
+
+def _companion_weather_hint(mode: str) -> str:
+    """天气否决只住房间尾巴。工作台不扮天气。失败 → 空。"""
+    if mode != "companion":
+        return ""
+    try:
+        from workers.weather import veto_hint
+        return veto_hint() or ""
+    except Exception:
+        return ""
+
+
+def _state_tail() -> str:
+    """L2 状态卡 → 易变尾巴 · 缓存外 · 变一百次免费。
+
+    返回紧凑文本：'[状态卡 · 工作状态: 自由职业(as_of 08-20) · 作息模式: 正常(as_of 08-27) ...]'
+    过期纪律(wish-…· 中等项): 字段 as_of 距今 >7 天 → 尾巴标「待更新(旧: xxx)」而非直接喂旧值，
+    避免她拿着过期的"良好·近期熬夜偏多"这种值继续装知道、而 BRO 已经变了。
+    """
+    try:
+        from workers.cognition_loader import load_cognition
+        sc = load_cognition().get("state_card") or {}
+        parts = []
+        for k, v in sc.items():
+            if not isinstance(v, dict) or not v.get("value"):
+                continue
+            val = v["value"]
+            a = (v.get("as_of") or "")[:10]
+            # 过期判定：as_of 解析成功且距今 >7 天 → 标待更新
+            if _state_as_of_stale(a):
+                parts.append(f"{k}: 待更新(旧: {val}@{a})")
+            else:
+                parts.append(f"{k}: {val}" + (f"({a})" if a else ""))
+        return ("[状态卡 · " + " · ".join(parts) + "]\n") if parts else ""
+    except Exception:
+        return ""
+
+
+def _state_as_of_stale(as_of: str) -> bool:
+    """state 字段 as_of(YYYY-MM-DD) 距今是否 >7 天。解析失败 → False(按未过期处理,别误标)。"""
+    if not as_of or as_of == "-":
+        return False
+    try:
+        from datetime import datetime
+        d = datetime.strptime(as_of[:10], "%Y-%m-%d")
+        return (datetime.now() - d).days > 7
+    except Exception:
+        return False
 
 
 def _build_remote_tail(session_id: str = "") -> str:
@@ -653,6 +746,11 @@ def _make_remote_confirm(
             "tool_name": spec.name,
             "args_clean": dict(args),  # 净版 (已 pop risk/mitigation)
             "command": (args.get("command") or "") if spec.name == "shell_exec" else "",
+            # 卷四十六续 · 把 risk/mitigation 存进 pending · 让后台 turn 的
+            # 轮询补捞 (GET /turns/{tid}/pending_confirms) 也能拿到真实文本渲染卡片 · 不丢信息
+            # args_summary 在下面 summary 计算出来后补 (L777 后才可定义)
+            "risk_explanation": risk,
+            "mitigation": mitigation,
             "decision": None,
             "reason": "",
             "created_at": time.time(),
@@ -665,6 +763,7 @@ def _make_remote_confirm(
             summary = spec.summarize(args) if hasattr(spec, "summarize") else spec.name
         except Exception:
             summary = spec.name
+        pending_data["args_summary"] = summary
 
         tier_reason_map = {
             TIER_CONFIRM: "CONFIRM tier · 改动类操作 · 当前策略要 BRO 点确认",
@@ -690,8 +789,9 @@ def _make_remote_confirm(
             })
             # 2026-07-28 BRO 需求 · 桌宠同步弹「等你拍板」· 不盯 WebUI 也知道 OPUS 在等
             try:
+                from desktop_pet.activities import tool_desc as _pet_zh
                 from desktop_pet.activities import write_notify as _pet_notify
-                _pet_notify("confirm", f"等你拍板 · {spec.name}")
+                _pet_notify("confirm", f"等你拍板 · {_pet_zh(spec.name)}")
             except Exception:
                 pass
             # 事项 B · Windows toast · 不看屏幕也能收到 (独立 try · 不跟 pet_notify 串扰)
@@ -960,26 +1060,18 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
     import time as _time
     from pathlib import Path as _Path
 
+    # ROOT 绝对路径 · 跟 /attachments 读盘同一处。相对 cwd 会跟 core.py 分脑。
+    _ATTACH_DIR = _Path(__file__).resolve().parent / "data" / "runtime" / "attachments"
+
     if not attachments:
         return "", []
 
-    _ATTACH_DIR = _Path("data/runtime/attachments")
+    # B6 · 2026-08-27 · session_id 进文件名前先清洗 · 防路径穿越 (与 daemon_session 同源消毒)
+    _sid_safe = _re.sub(r"[^\w.\-]", "_", str(session_id or "anon"))[:40] or "anon"
+
     _ATTACH_DIR.mkdir(parents=True, exist_ok=True)
     _ATTACH_MAX_BYTES = 50 * 1024 * 1024
     _ATTACH_MAX_B64_CHARS = _ATTACH_MAX_BYTES * 4 // 3 + 16
-
-    # 粘贴/上传的图按会话留存(不再看完即删)· 让 OPUS 之后能换个问法再 look_at 同一张。
-    # 顺手清掉 7 天前的旧图 · 防目录无限堆积 (best-effort · 失败不影响主流程)。
-    try:
-        _cutoff = _time.time() - 7 * 86400
-        for _old in _ATTACH_DIR.glob("*"):
-            try:
-                if _old.is_file() and _old.stat().st_mtime < _cutoff:
-                    _old.unlink()
-            except Exception:
-                pass
-    except Exception:
-        pass
 
     descriptions = []
     saved_meta: list[dict] = []  # wish-7c579a20 · 结构化附件 meta · 落 jsonl 供 WebUI 刷新重建
@@ -1040,7 +1132,7 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
         _safe = _re.sub(r"[^\w.\-]", "_", (name or f"image_{i+1}").rsplit("/", 1)[-1].rsplit("\\", 1)[-1])[:60] or f"image_{i+1}"
         if not _re.search(r"\.\w{2,5}$", _safe):
             _safe += f".{ext}"
-        keep_path = _ATTACH_DIR / f"{session_id}_{int(_time.time())}_{i}_{_safe}"
+        keep_path = _ATTACH_DIR / f"{_sid_safe}_{int(_time.time())}_{i}_{_safe}"
         try:
             keep_path.write_bytes(_b64.b64decode(b64_str))
         except Exception as e:
@@ -1065,13 +1157,13 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
                 saved_meta.append({"name": name, "path": rel_path, "mime": mime, "kind": "file"})
                 descriptions.append(
                     f"附件{i+1} ({name}) · 入库失败: {type(e).__name__}: {e}。"
-                    f"下一刀用 extend_office / revise_office path={rel_path}，工具会先入库。"
+                    f"下一刀用 revise_office / extend_office / illustrate_office path={rel_path}，工具会先入库。"
                 )
             continue
         saved_meta.append({"name": name, "path": rel_path, "mime": mime,
                            "kind": "image" if is_image else "file"})
 
-        # 文档附件: 不进视觉链 · 留路径提示 (需要内容时可 pdf_read / read_file)
+        # 文档附件: 不进视觉链 · 留路径提示 (OPUS 需要内容时可 pdf_read / read_file)
         if not is_image:
             descriptions.append(
                 f"附件{i+1} ({name}) · 已存: {rel_path} · "
@@ -1114,7 +1206,7 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
     elif any("办公稿已挂进本话题" in d for d in descriptions):
         header = (
             f"[用户上传了办公稿 · 已挂进这场对话]\n"
-            "改字 revise_office，加页 extend_office。path 用下面的 data/presentations|reports|spreadsheets 路径。"
+            "改字 revise_office，加图 illustrate_office，加页 extend_office。path 用下面的 data/presentations|reports|spreadsheets 路径。"
             "不要当 attachments 临时文件，不要 pdf_read。\n"
         )
     else:
@@ -1134,7 +1226,16 @@ _WECHAT_CHANNEL_NOTE = (
     "发文件用 wechat_send(media_path=本地路径)。write_clipboard 和 C:\\ 路径他拿不到。"
     "文字会自动回微信。换模型走设置，别改 .env。\n"
 )
+_FEISHU_CHANNEL_NOTE = (
+    "\n\n=== 当前渠道：飞书（他在手机上） ===\n"
+    "发文件用 feishu_send(media_path=本地路径)。write_clipboard 和 C:\\ 路径他拿不到。"
+    "文字会自动回飞书。群里要发回群，feishu_send 会认当前群。换模型走设置，别改 .env。\n"
+)
 
+
+# 陪伴模式渠道感知 (2026-08-26 · 2026-08-27 改挂 system)。
+# 病根是房间和工作台共用灵魂前缀。常量说明拼在 system 灵魂后头 (不写进灵魂文件):
+# 工作台 system 仍是原来的 71K; 房间只是 71K + 这段固定字。易变 telemetry 仍走 suffix。
 _COMPANION_MODE_NOTE = (
     "\n\n=== 当前渠道：陪伴模式（他在房间里，不在工作台） ===\n"
     "他现在看到的是一个房间：你站在里面，有家具、有日夜、有你的表情。"
@@ -1161,14 +1262,8 @@ _COMPANION_MODE_NOTE = (
 )
 
 
-def _companion_weather_hint(mode: str) -> str:
-    if mode != "companion":
-        return ""
-    try:
-        from workers.weather import veto_hint
-        return veto_hint() or ""
-    except Exception:
-        return ""
+# 铁律 14 · 对话温度四维"语义驱动"· 删除关键词字面匹配版(2026-08-28 BRO 拍板)。
+# 四维微调由周度凝练器(LLM 读相处痕迹语义判断)负责·不在这逐字扫原文。
 
 
 def _chat_impl(
@@ -1257,8 +1352,11 @@ def _chat_impl(
             try:
                 from daemon_session import get_session_meta, set_session_meta
                 if not (get_session_meta(sid).get("label") or "").strip():
-                    _lbl_src = " ".join(_first_turn_text.split())
-                    _lbl = _lbl_src[:24] + ("…" if len(_lbl_src) > 24 else "")
+                    if mode == "taste":
+                        _lbl = "说话方式"
+                    else:
+                        _lbl_src = " ".join(_first_turn_text.split())
+                        _lbl = _lbl_src[:24] + ("…" if len(_lbl_src) > 24 else "")
                     if _lbl:
                         set_session_meta(sid, label=_lbl)
             except Exception:
@@ -1290,6 +1388,11 @@ def _chat_impl(
             from agent_tools import set_session_context, set_current_turn_id
             set_session_context(sid)
             set_current_turn_id(turn_id)
+        except Exception:
+            pass
+        try:
+            from workers.she_play import set_chat_mode
+            set_chat_mode(mode)
         except Exception:
             pass
 
@@ -1524,9 +1627,9 @@ def _chat_impl(
         try:
             from workers import closure_check as _cc
             _cc.begin_turn()
-            if _user_meta.get("src") == "wechat":
+            if _user_meta.get("src") in ("wechat", "feishu"):
                 from agent_tools._hotpath_guard import set_channel as _set_ch
-                _set_ch("wechat")
+                _set_ch(_user_meta.get("src"))
             _closure_observe = _cc.make_observe()
             _pb_hint = _cc.relevant_playbooks(message, session_id=sid)  # wish-599c46bd · 注入冷却+统计
             # ① 记忆自动注入 (保守版) · 相关 BRO 画像命中即递到 OPUS 手边
@@ -1566,12 +1669,23 @@ def _chat_impl(
         #   走 system_suffix 留在缓存断点之外 → 尾巴变也不冲掉灵魂缓存 (省钱关键)。
         #   localize 对两段分别做 (纯 token 替换·分段等价)。
         _sys_stable = _build_remote_system(RUNTIME.system_prompt)
-        _style_note = _safe_style_note()
+        # 铁律 14 · 易变内容不塞稳定前缀。相处风格描述随四维每轮可能变·放 system 易变尾巴。
+        _state_prefix = _state_tail()  # H4 跨渠道: 陪伴模式也要读状态卡尾巴("我睡了"跨渠道)
+        _sys_base = _sys_stable
         _sys_tail = (
-            ("\n\n## 口吻与温度\n" + _style_note if _style_note else "")
+            _state_prefix
+            + "\n\n## 口吻与温度\n"
+            + (_style_note if (_style_note := _safe_style_note()) else "")
             + _build_remote_tail(sid)
-            + _pb_hint + _mem_hint + _workshop_hint + _docs_hint
-            + _memwrite_hint + _client_hint + _casual_hint + _care_hint + _ledger_hint
+            + _pb_hint
+            + _mem_hint
+            + _workshop_hint
+            + _docs_hint
+            + _memwrite_hint
+            + _client_hint
+            + _casual_hint
+            + _care_hint
+            + _ledger_hint
             + _companion_weather_hint(mode)
         )
         try:
@@ -1602,6 +1716,9 @@ def _chat_impl(
                 pass
         if _user_meta.get("src") == "wechat":
             _sys_tail = _sys_tail + _WECHAT_CHANNEL_NOTE
+        elif _user_meta.get("src") == "feishu":
+            _sys_tail = _sys_tail + _FEISHU_CHANNEL_NOTE
+        # 陪伴常量进 system · 易变尾巴仍走 suffix。了解走画像图鉴，不另灌样本。
         if mode == "companion":
             try:
                 from workers.mood_shift import face_word
@@ -1610,64 +1727,103 @@ def _chat_impl(
                     _sys_tail += f"这一场出 <face>{fw}</face>。\n"
             except Exception:
                 pass
-            _sys_for_llm = _sys_stable + _COMPANION_MODE_NOTE
+            _sys_for_llm = _sys_base + _COMPANION_MODE_NOTE
         elif mode == "taste":
             try:
                 from workers.taste_chat import taste_mode_note
-                _sys_for_llm = _sys_stable + taste_mode_note()
+                _sys_for_llm = _sys_base + taste_mode_note()
             except ImportError:
-                _sys_for_llm = _sys_stable
+                _sys_for_llm = _sys_base
         else:
-            _sys_for_llm = _sys_stable
-        _gate_tools = None
+            _sys_for_llm = _sys_base
+        # 闲聊只许落味道，别把工作台整套工具敞着给 Flash 乱伸
+        _note_tools = None
         try:
-            from workers.office_extend import apply_extend_gate
-            _gate_tools, thinking, _ext_hint = apply_extend_gate(message, thinking)
-            if _ext_hint:
-                _sys_tail = _sys_tail + _ext_hint
+            from workers.stage_note_gate import apply_office_note_gate
+            _note_tools, thinking, _note_hint = apply_office_note_gate(message, thinking)
+            if _note_hint:
+                _sys_tail = _sys_tail + _note_hint
         except Exception:
-            _gate_tools = None
+            _note_tools = None
+        if not _note_tools:
+            try:
+                from workers.office_extend import apply_extend_gate
+                _ext_tools, thinking, _ext_hint = apply_extend_gate(message, thinking)
+                if _ext_hint:
+                    _sys_tail = _sys_tail + _ext_hint
+                if _ext_tools:
+                    _note_tools = _ext_tools
+            except Exception:
+                pass
         if mode == "taste":
             _allowed_tools = {"commit_taste"}
-        elif _gate_tools:
-            _allowed_tools = _gate_tools
-        elif _user_meta.get("src") == "wechat":
+        elif _note_tools:
+            _allowed_tools = _note_tools
+        elif _user_meta.get("src") in ("wechat", "feishu"):
             from agent_tools import REGISTRY as _REG
             _allowed_tools = {n for n in _REG if n != "write_clipboard"}
         else:
             _allowed_tools = None
+        _note_direct = None
         try:
-            reply, messages, usage = run_tool_loop(
-                client=RUNTIME.client,
-                provider=RUNTIME.provider,
-                model=RUNTIME.model,
-                max_tokens=max_tokens,
-                system=_localize(_sys_for_llm),
-                system_suffix=_localize(_sys_tail),
-                messages=messages,
-                confirm=confirm,
-                observe=_closure_observe,
-                base_url=RUNTIME.base_url,
-                progress=progress,
-                cancel_check=(cancel_event.is_set if cancel_event is not None else None),
-                on_message_commit=_persist_entry,
-                thinking=thinking,
-                reasoning_effort=reasoning_effort,
-                allowed_tool_names=_allowed_tools,
-                # wish-8914f90c · 墙钟熔断: 后台续场 turn 传环境变量收紧预算 (resume_runner 设置)
-                wall_clock_sec=_env_float("_RESUME_WALL_CLOCK_SEC"),
-                llm_timeout_sec=_env_float("_RESUME_LLM_TIMEOUT_SEC"),
+            from workers.stage_note_gate import try_apply_office_notes
+            _note_direct = try_apply_office_notes(_store_text)
+        except Exception:
+            _note_direct = None
+        if _note_direct:
+            from types import SimpleNamespace as _NS
+            from workers.stage_note_gate import take_open_marks
+            reply, _open_hits = take_open_marks(_note_direct)
+            usage = _NS(
+                input_tokens=0, output_tokens=0,
+                cache_read_tokens=0, cache_creation_tokens=0,
             )
-        except Exception as e:
-            # 失败时回滚那条 user msg（不让 stale 状态污染下次）
-            # 注意: tool_loop 内部已经增量落盘 · 这里不需要再补落
-            if messages and messages[-1].get("role") == "user":
-                messages.pop()
+            messages.append({"role": "assistant", "content": reply})
+            append_turn(sid, "assistant", reply, meta={"src": "api", "stage_note_direct": True})
             _API_SESSIONS[sid] = messages
-            raise RuntimeError(f"{type(e).__name__}: {e}") from e
+            # 直改不走 tool_loop，前端只能靠 tool_result.open_path 才知道要铺中栏
+            if progress and _open_hits:
+                try:
+                    progress("tool_result", {
+                        "ok": True,
+                        "name": "revise_office",
+                        "open_path": _open_hits[-1],
+                        "preview": (reply.split("\n", 1)[0] if reply else "局部改完")[:180],
+                    })
+                except Exception:
+                    pass
+        else:
+            try:
+                reply, messages, usage = run_tool_loop(
+                    client=RUNTIME.client,
+                    provider=RUNTIME.provider,
+                    model=RUNTIME.model,
+                    max_tokens=max_tokens,
+                    system=_localize(_sys_for_llm),
+                    system_suffix=_localize(_sys_tail),
+                    messages=messages,
+                    confirm=confirm,
+                    observe=_closure_observe,
+                    base_url=RUNTIME.base_url,
+                    progress=progress,
+                    cancel_check=(cancel_event.is_set if cancel_event is not None else None),
+                    on_message_commit=_persist_entry,
+                    thinking=thinking,
+                    reasoning_effort=reasoning_effort,
+                    allowed_tool_names=_allowed_tools,
+                    wall_clock_sec=_env_float("_RESUME_WALL_CLOCK_SEC"),
+                    llm_timeout_sec=_env_float("_RESUME_LLM_TIMEOUT_SEC"),
+                )
+            except Exception as e:
+                if messages and messages[-1].get("role") == "user":
+                    messages.pop()
+                _API_SESSIONS[sid] = messages
+                raise RuntimeError(f"{type(e).__name__}: {e}") from e
 
         _API_SESSIONS[sid] = messages
         # 不再批量 append_turn · tool_loop 已经在每个 turn commit 时增量落盘了
+
+        # 铁律 14 · 四维语义驱动· 由周度凝练器(LLM 读相处痕迹)负责· 不在这关键词扫。
 
         # BRO 2026-07-28 方案 B · 协同模式自动验收 (三唤醒点第三环·从「自觉」升级成「管线强制」):
         # 触发 = 本轮协同出了施工单 + 本轮有副作用(closure_check 台账) + BRO 没点停止。
@@ -2010,10 +2166,12 @@ def build_app():
     from api_routes import models as _routes_models
     from api_routes import providers as _routes_providers
     from api_routes import dashboard as _routes_dashboard
+    from api_routes import market as _routes_market
     from api_routes import knowledge as _routes_knowledge
     from api_routes import playbooks as _routes_playbooks
     from api_routes import clients as _routes_clients
     from api_routes import vision as _routes_vision
+    from api_routes import search_config as _routes_search
     from api_routes import notifications as _routes_notifications
     from api_routes import advisor as _routes_advisor
     from api_routes import plan as _routes_plan  # 任务计划条 (task_ledger 的步骤层)
@@ -2038,14 +2196,18 @@ def build_app():
     app.include_router(_routes_knowledge.router)
     app.include_router(_routes_playbooks.router)
     app.include_router(_routes_clients.router)
+    app.include_router(_routes_market.router)
     app.include_router(_routes_dashboard.router)
     app.include_router(_routes_vision.router)  # wish-4a6331b2 · /vision-config (曾漏注册→404)
+    app.include_router(_routes_search.router)  # /search-config · 外网搜索 KEY（可选）
+    from api_routes import media_defaults as _routes_media
+    app.include_router(_routes_media.router)
     app.include_router(_routes_notifications.router)  # wish-fb6b7427 · /notification-config
     app.include_router(_routes_advisor.router)  # wish-ea8922f7 · /api/advisor/status + trace
     app.include_router(_routes_plan.router)  # /api/plan/* · 对话框上方的任务计划条 (读+改)
     app.include_router(_routes_stt.router)  # wish-241e0014 · /stt/* 语音识别增强 (可选更新)
     from api_routes import companion as _routes_companion
-    app.include_router(_routes_companion.router)
+    app.include_router(_routes_companion.router)  # DAIMON 陪伴模式 · /companion/* 目录级静态服务
 
     # wish-241e0014 · 随 daemon 启动预加载 whisper 模型 (设置页开关 OPUS_STT_BOOT_LOAD=1)
     # 后台线程加载 · 不阻塞启动 · 缺依赖/模型静默跳过 (可选功能零负担)

@@ -237,7 +237,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="search_code",
     description=(
-        "按意思找代码，不是字面正则（字面用 grep_files）。问「重启后续场在哪」这类概念。返回文件:行号，再 read_file / outline_file / edit_file。"
+        "按意思找代码，不是字面正则（字面用 grep_files）。问「重启后续场在哪」这类概念。"
+        "返回文件:行号，再 read_file / outline_file / edit_file。"
     ),
     tier=TIER_AUTO,
     input_schema={

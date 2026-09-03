@@ -85,8 +85,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="safe_merge",
     description=(
-        "把指定分支安全合回 master。BRO 说合主干时用这个，不要裸 git merge。失败自动回到干净 master。allow_override 仅 BRO 明确知道时用。"
-    ),
+        "把指定分支安全合回 master。BRO 说合主干时用这个，不要裸 git merge。失败自动回到干净 master。allow_override 仅 BRO 明确知道时用。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

@@ -2,7 +2,7 @@
 agent_tools/generate_presentation.py
 =====================================
 
-OPUS 用自然语言产出【原生可编辑、有高级感、可切换设计风格】的 .pptx 演示稿。
+Daemonkey 用自然语言产出【原生可编辑、有高级感、可切换设计风格】的 .pptx 演示稿。
 
 镜像 generate_report(docx)的定位与用法:分页 markdown → 精排 PPTX · 落 data/presentations/ ·
 BRO 在 WebUI 下载或直接开 PowerPoint/WPS/Keynote,每个元素都能改(不是一页一张图)。
@@ -10,7 +10,7 @@ BRO 在 WebUI 下载或直接开 PowerPoint/WPS/Keynote,每个元素都能改(�
 设计取向(研究 anthropics/skills·pptx / ppt-master / slide-kit 后定):原生 DrawingML 形状 +
 多"设计风格"(art direction · 不只是换配色)+ CRAP 排版纪律 + 出片前 QA 关。
 
-档位:CONFIRM —— 产物类 · BRO 应看见"OPUS 要给我做一份《X》演示稿"这一步。误生成也只是
+档位:CONFIRM —— 产物类 · BRO 应看见"Daemonkey 要给我做一份《X》演示稿"这一步。误生成也只是
 多个落盘文件,不破坏任何东西。
 
 配图:先用 web_search_image 把图搜进 embed_image_dir,再在页里用相对路径 ![](x.png) 引用。
@@ -241,11 +241,22 @@ def _run(args: dict) -> ToolResult:
             cover["cover_layout"] = cl
 
     safe = _safe_filename(title)
-    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M")
-    out_path = _DECK_DIR / f"{safe}__{ts}.pptx"
+    from workers.output_versions import publish, safe_family, staged_path
+    family = safe_family(safe)
+    out_path = staged_path(_DECK_DIR, family, ".pptx")
 
     embed_arg = args.get("embed_image_dir")
-    here_dir = Path(str(embed_arg)).resolve() if embed_arg else (_DECK_DIR / "_assets" / safe)
+    if embed_arg:
+        here_dir = Path(str(embed_arg))
+        if not here_dir.is_absolute():
+            here_dir = _ROOT / here_dir
+        here_dir = here_dir.resolve()
+        try:
+            here_dir.relative_to(_ROOT.resolve())
+        except ValueError:
+            return ToolResult(ok=False, output="", error=f"embed_image_dir 越界: {embed_arg}")
+    else:
+        here_dir = _DECK_DIR / "_assets" / safe
 
     try:
         from slides_engine import audit_deck, list_styles, parse_deck, render_deck, resolve_style
@@ -264,7 +275,8 @@ def _run(args: dict) -> ToolResult:
             _pp("📝 排版渲染", f"{len(slides)} 页 · 生成 PPTX 中…")
         except Exception:
             pass
-        final_path = render_deck(slides, out_path, cover=cover, style=deck_style, here_dir=here_dir)
+        wip = render_deck(slides, out_path, cover=cover, style=deck_style, here_dir=here_dir)
+        final_path, ver = publish(wip, _DECK_DIR, family, ".pptx")
     except Exception as e:
         return ToolResult(ok=False, output="", error=f"渲染失败: {type(e).__name__}: {e}")
 
@@ -291,7 +303,7 @@ def _run(args: dict) -> ToolResult:
     size_kb = final_path.stat().st_size / 1024
     rel = final_path.relative_to(_ROOT) if _ROOT in final_path.parents else final_path
     lines = [
-        f"已生成演示稿 · {final_path.name}",
+        f"已生成演示稿 · {final_path.name} · V{ver}",
         f"  路径: {rel}",
         f"  页数: {len(slides)} · 风格: {style_label} · 大小: {size_kb:.1f} KB",
     ]
@@ -320,7 +332,10 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="generate_presentation",
     description=(
-        "把分页 markdown 渲成可编辑 .pptx，落 data/presentations/。提案 / 汇报 / 课件 / 配图稿。除非他说「直接做」或只有三五页，先出施工单再调本工具。版式、配图硬要求、风格参数、markdown 写法 → 先 read_scenario(name='presentation')。CONFIRM：产物要他点头。"
+        "从零新建可编辑 .pptx，落 data/presentations/。六套风格只在新建时用。"
+        "已有稿加页走 extend_office，圈字 revise_office，加图 illustrate_office。禁止对用户上传的成品整份重出。"
+        "除非他说「直接做」或只有三五页，先出施工单再调本工具。"
+        "版式写法 → read_scenario(name='presentation')。CONFIRM：产物要他点头。"
     ),
     tier=TIER_CONFIRM,
     input_schema={
@@ -347,7 +362,10 @@ SPEC = ToolSpec(
             },
             "style_spec": {
                 "type": "object",
-                "description": "高级设计 token。现成 style/accent/mood 盖不住时才用。字段见 read_scenario('presentation')。",
+                "description": (
+                    "高级：现成 style/accent/mood 盖不住时自己产一组设计 token 叠加。"
+                    "可用字段与示例 → read_scenario(name='presentation')。"
+                ),
             },
             "subtitle": {"type": "string", "description": "封面副标题 · 可选"},
             "audience": {"type": "string", "description": "封面眉标/面向 · 可选"},

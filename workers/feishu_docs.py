@@ -323,7 +323,8 @@ def fetch_image(message_id: str, image_key: str, save_dir: str = "data/cache/fei
                        e, r.headers.get("content-type"), head.hex())
         try:
             from pathlib import Path
-            d = Path("data/cache/feishu_img")
+            # B-③ · 2026-08-27 · 相对 ROOT · 非项目根 cwd 启动也写对地方 (Grok 全量审计)
+            d = Path(__file__).resolve().parent.parent / "data" / "cache" / "feishu_img"
             d.mkdir(parents=True, exist_ok=True)
             (d / "_debug_download.bin").write_bytes(data[:4096])
         except Exception:

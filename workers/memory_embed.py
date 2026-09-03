@@ -45,7 +45,8 @@ _CIRCUIT_MAX_FAILS = 3
 _CIRCUIT_OPEN_SEC = 300
 
 # 用户配置持久化 (wish-b313583b · 前端可编辑 · 独立文件方便开源纯净版)
-_EMBED_CONFIG_PATH = pathlib.Path("data/embedding_config.json")
+_ROOT = pathlib.Path(__file__).resolve().parent.parent  # B-① · 2026-08-27 · 非项目根 cwd 启动也能找对 (Grok 全量审计)
+_EMBED_CONFIG_PATH = _ROOT / "data" / "embedding_config.json"
 
 
 def load_config() -> dict:
@@ -76,7 +77,7 @@ def load_config() -> dict:
 
     # 2. fallback: provider_configs 里的智谱 (母体开箱即用 · 不配也能跑)
     try:
-        cfg_path = pathlib.Path("data/provider_configs.json")
+        cfg_path = _ROOT / "data" / "provider_configs.json"
         if cfg_path.exists():
             pcfg = json.loads(cfg_path.read_text(encoding="utf-8"))
             for c in pcfg.get("configs", []):

@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import zipfile
 from pathlib import Path
@@ -31,6 +32,15 @@ from pathlib import Path
 from . import REGISTRY, TIER_AUTO, TIER_CONFIRM, ToolResult, ToolSpec, register_tool
 
 _DKPKG_VERSION = 1
+
+
+def _sanitize_asset_name(s) -> str:
+    """防路径穿越: 去路径分隔符 / .. 段 · 保留中文/字母/数字/._- · 空回 'asset'。"""
+    s = str(s or "").strip().replace("\\", "/")
+    s = re.sub(r"[^A-Za-z0-9_\u4e00-\u9fff.\-]", "_", s)
+    s = re.sub(r"\.{2,}", ".", s)
+    s = s.strip(".")
+    return s or "asset"
 
 
 def _root() -> Path:
@@ -65,6 +75,7 @@ def _find_asset(kind: str, name: str) -> tuple:
                 return None, f"flow {name} 的定义文件不存在: {p.name}"
         return None, f"找不到 flow: {name} (用 list_flows 看现有 id)"
     if kind == "skin":
+        name = _sanitize_asset_name(name)
         d = root / "static" / "user" / "skins" / name
         if not d.is_dir():
             return None, f"找不到皮肤: static/user/skins/{name}/ (每皮肤一个文件夹: skin.json + style.css + 图)"
@@ -122,7 +133,9 @@ def _safe_extract(z: zipfile.ZipFile, dest: Path) -> None:
     dest_real = dest.resolve()
     for member in z.namelist():
         target = (dest_real / member).resolve()
-        if not str(target).startswith(str(dest_real)):
+        try:
+            target.relative_to(dest_real)
+        except ValueError:
             raise ValueError(f"包内路径越界 (zip slip): {member}")
     z.extractall(dest_real)
 
@@ -145,6 +158,7 @@ def _import(args: dict) -> ToolResult:
             name = str(manifest.get("name") or "").strip()
             if kind not in ("app", "flow", "skin") or not name:
                 return ToolResult(ok=False, output="", error=f"manifest 非法: kind={kind} name={name}")
+            name = _sanitize_asset_name(name)
 
             root = _root()
             if kind == "skin":
@@ -159,7 +173,7 @@ def _import(args: dict) -> ToolResult:
                     return ToolResult(ok=False, output="", error=f"包内缺 {src_name0}")
                 try:
                     _body0 = json.loads(z.read(src_name0).decode("utf-8"))
-                    asset_id = str(_body0.get("id") or name)
+                    asset_id = _sanitize_asset_name(str(_body0.get("id") or name))
                 except Exception:
                     asset_id = name
             target_file = dest / (f"{asset_id}.json" if kind in ("app", "flow") else "skin.json")
@@ -174,8 +188,11 @@ def _import(args: dict) -> ToolResult:
                 bak = target_file.with_suffix(target_file.suffix + f".bak-{int(time.time())}")
                 try:
                     target_file.rename(bak)
-                except Exception:
-                    pass
+                except Exception as e:
+                    return ToolResult(
+                        ok=False, output="",
+                        error=f"覆盖前备份失败，已中止导入（原文件未动）: {type(e).__name__}: {e}",
+                    )
 
             dest.mkdir(parents=True, exist_ok=True)
             if kind == "skin":

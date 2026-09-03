@@ -200,6 +200,7 @@ def tick_poll(pet) -> None:
                 text = latest.get("text", "")
                 if kind == "done":
                     emerge(pet, "done")
+                    pet._state = DEFAULT_STATE
                     pet._play_clip("work_done", once=True)
                     play_done_sound(pet)
                     pet._bubble.show_text(text or "做完了", 6000)

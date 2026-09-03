@@ -109,7 +109,11 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="create_workflow",
     description=(
-        "在出品工坊造一个 workflow，把多个 app 串成可跑的流程。他说「排个工作流」时第一刀：先落档，再调节点。推荐 steps 线性清单；互不依赖的取材可写成 parallel 组（默认仍串行）。steps 字段、并行纪律、litegraph 老格式 → read_scenario(name='app_creation')。缺 app 先 create_app。steps 里的 app 必须已存在。"
+        "在出品工坊造一个 workflow，把多个 app 串成可跑的流程。"
+        "他说「排个工作流」时第一刀：先落档，再调节点。"
+        "推荐 steps 线性清单；互不依赖的取材可写成 parallel 组（默认仍串行）。"
+        "steps 字段、并行纪律、litegraph 老格式 → read_scenario(name='app_creation')。"
+        "缺 app 先 create_app。steps 里的 app 必须已存在。"
     ),
     tier=TIER_AUTO,
     input_schema={

@@ -45,8 +45,11 @@ def run_verify_subprocess(timeout: int = 150) -> tuple[bool, str]:
     except Exception:
         pass
     try:
-        r = subprocess.run([_python(), "-c", _SNIPPET], **kw)
-        report = ((r.stdout or "") + (("\n--- stderr ---\n" + r.stderr) if r.stderr.strip() else ""))
+        kw.setdefault("timeout", 30)  # B-② · gate 自身超时兜底 (Grok 全量审计)
+        r = subprocess.run([_python(), "-c", _SNIPPET], capture_output=True, text=True, **kw)
+        err = r.stderr or ""
+        # B-② · 2026-08-27 · 原来没 capture_output → r.stderr=None → None.strip() 崩 → 永远 fail-open (Grok 全量审计)
+        report = ((r.stdout or "") + (("\n--- stderr ---\n" + err) if err.strip() else ""))
         return (r.returncode == 0), report[-6000:]
     except Exception as e:
         # 闸自己崩了 (起不来/超时) → fail-open · 别卡死正当上线 (坏的有 A 柱自愈兜底)

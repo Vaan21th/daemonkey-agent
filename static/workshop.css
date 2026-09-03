@@ -1705,9 +1705,9 @@ dialog.ws-asset-modal::backdrop {
 /* ─── 右:工作台 (canvas) ─── */
 .workshop-view .ws-canvas-wrap {
   position: relative;
-  background: #14141a;
+  background: #1c181c;
   background-image:
-    radial-gradient(circle, #22222a 1px, transparent 1px);
+    radial-gradient(circle, #3a3238 1px, transparent 1px);
   background-size: 24px 24px;
   overflow: hidden;
   display: flex;
@@ -1720,7 +1720,7 @@ dialog.ws-asset-modal::backdrop {
   gap: 8px;
   padding: 6px 12px;
   height: 36px;
-  background: rgba(30, 30, 34, .92);
+  background: color-mix(in srgb, var(--bg2, #1e1e22) 92%, transparent);
   border-bottom: 1px solid var(--border, #352c4d);
   backdrop-filter: blur(6px);
   flex-shrink: 0;
@@ -1782,7 +1782,7 @@ dialog.ws-asset-modal::backdrop {
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  color: #444;
+  color: var(--dim, #8b7355);
   text-align: center;
   z-index: 1;
 }
@@ -1791,7 +1791,7 @@ dialog.ws-asset-modal::backdrop {
 .workshop-view .ws-canvas-empty[hidden] { display: none; }
 .workshop-view .ws-empty-icon { font-size: 48px; opacity: .25; margin-bottom: 12px; }
 .workshop-view .ws-empty-title { font-size: 16px; color: var(--dim2, #6f6685); margin-bottom: 4px; }
-.workshop-view .ws-empty-hint { font-size: 12px; color: #444; max-width: 360px; line-height: 1.6; }
+.workshop-view .ws-empty-hint { font-size: 12px; color: var(--dim, #8b7355); max-width: 360px; line-height: 1.6; }
 
 /* ─── 卷七十二 v2 · 用户 反馈: 左侧工具集 → 工作流列表 (主入口 · 直接点击加载) ─── */
 .workshop-view .ws-flows-list {
@@ -2551,4 +2551,99 @@ dialog.ws-asset-modal::backdrop {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 浅色主题 (日间纸色 / 白天 / 粉白) · 工坊里写死的深底跟 --text 深字叠一起看不见 */
+.workshop-view.ws-paper .ws-tab:hover {
+  background: var(--bg3);
+  color: var(--text);
+}
+.workshop-view.ws-paper .wawt-row,
+.workshop-view.ws-paper .ws-app-slot-card,
+.workshop-view.ws-paper .ws-app-md blockquote,
+.workshop-view.ws-paper .ws-app-md th,
+.workshop-view.ws-paper .ws-run-media-item,
+.workshop-view.ws-paper .ws-opus-app-header {
+  background: var(--bg2);
+  color: var(--text);
+}
+.workshop-view.ws-paper .ws-app-card.ws-app-add {
+  background: var(--bg2);
+}
+.workshop-view.ws-paper .ws-app-slot-type {
+  background: var(--bg3);
+  color: var(--dim);
+}
+.workshop-view.ws-paper .ws-app-slot-value pre,
+.workshop-view.ws-paper .ws-run-outputs-json {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--border);
+}
+.workshop-view.ws-paper .ws-app-md code { color: var(--opus); }
+.workshop-view.ws-paper .ws-fre-tool .ws-fre-text { color: var(--text); }
+.workshop-view.ws-paper .ws-canvas-wrap {
+  background-color: #fbf8f1;
+  background-image: radial-gradient(circle, var(--border, #c4b998) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.workshop-view.ws-paper .ws-canvas-toolbar {
+  background: color-mix(in srgb, var(--bg2, #faf3e0) 92%, transparent);
+  border-bottom-color: var(--border);
+}
+.workshop-view.ws-paper .ws-canvas-empty { color: var(--dim); }
+.workshop-view.ws-paper .ws-canvas-readonly-banner {
+  color: var(--opus);
+  background: color-mix(in srgb, var(--opus) 10%, var(--bg2));
+  border-color: color-mix(in srgb, var(--opus) 35%, var(--border));
+}
+.workshop-view.ws-paper .ws-canvas-readonly-banner strong { color: var(--opus-dim); }
+.workshop-view.ws-paper .ws-steps-panel {
+  background: var(--bg2);
+  box-shadow: 0 -4px 12px rgba(80, 50, 20, 0.08);
+}
+.workshop-view.ws-paper .ws-steps-header {
+  background: var(--bg);
+  color: var(--opus);
+}
+.workshop-view.ws-paper .ws-steps-count {
+  background: color-mix(in srgb, var(--opus) 16%, var(--bg3));
+  color: var(--opus-dim);
+}
+.workshop-view.ws-paper .ws-step-card { border-color: var(--border); }
+.workshop-view.ws-paper .ws-step-card.is-running,
+.workshop-view.ws-paper .ws-step-card.is-done,
+.workshop-view.ws-paper .ws-step-card.is-error {
+  background: var(--bg3);
+}
+.workshop-view.ws-paper .ws-btn:hover,
+.workshop-view.ws-paper .ws-tb-show:hover {
+  background: var(--bg3);
+}
+.workshop-view.ws-paper .ws-tool-unimpl:hover { background: var(--bg3); }
+
+body.theme-sepia dialog.ws-asset-modal,
+body.theme-light dialog.ws-asset-modal,
+body.theme-pink-white dialog.ws-asset-modal,
+.theme-sepia dialog.ws-asset-modal,
+.theme-light dialog.ws-asset-modal,
+.theme-pink-white dialog.ws-asset-modal {
+  background: var(--bg2);
+  color: var(--text);
+}
+body.theme-sepia dialog.ws-asset-modal input,
+body.theme-light dialog.ws-asset-modal input,
+body.theme-pink-white dialog.ws-asset-modal input,
+body.theme-sepia dialog.ws-asset-modal textarea,
+body.theme-light dialog.ws-asset-modal textarea,
+body.theme-pink-white dialog.ws-asset-modal textarea,
+.theme-sepia dialog.ws-asset-modal input,
+.theme-light dialog.ws-asset-modal input,
+.theme-pink-white dialog.ws-asset-modal input,
+.theme-sepia dialog.ws-asset-modal textarea,
+.theme-light dialog.ws-asset-modal textarea,
+.theme-pink-white dialog.ws-asset-modal textarea {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--border);
 }

@@ -127,7 +127,10 @@ def _in_quiet_hours(now: Optional[datetime] = None) -> bool:
 
 
 def _global_silence() -> tuple[Optional[float], str]:
-    """返回 (距 BRO 最近一条消息的小时数, 上次聊啥摘要)。无 session 返 (None, '')。"""
+    """返回 (距 BRO 最近一条消息的小时数, 空摘要)。无 session 返 (None, '')。
+
+    第二项以前是 mtime 抽奖「上次聊到」· 2026-08-29 卸下，元组形状留给旧调用方。
+    """
     from daemon_session import list_sessions_with_meta, get_last_user_turn_ts
 
     rows = [r for r in list_sessions_with_meta() if not r.get("archived_at")]
@@ -142,13 +145,7 @@ def _global_silence() -> tuple[Optional[float], str]:
         gap_h = (datetime.now() - datetime.fromisoformat(last_ts)).total_seconds() / 3600
     except ValueError:
         return None, ""
-    summary = ""
-    try:
-        from workers.dynamic_telemetry import _get_last_summary
-        summary = _get_last_summary("") or ""
-    except Exception:
-        pass
-    return gap_h, summary
+    return gap_h, ""
 
 
 def collect_triggers() -> list[dict]:
@@ -251,8 +248,16 @@ def _build_injection(trigger: dict) -> str:
             "别连环问、别列清单、别显得在查户口或监控他。他要是没接这个话头，就自然带过，"
             "别反复戳；他也许早就好了，别把它当伤疤。语气是老友顺口一问，不是打卡回访。"
         )
-    if trigger.get("last_summary"):
-        lines.append(f"你们上次聊的是：{trigger['last_summary']}")
+    try:
+        from workers.mood_shift import live_mood, live_mood_line
+        mood = live_mood()
+        if mood:
+            lines.append(
+                f"她这场先{mood}。{live_mood_line()} "
+                "开口跟这场走，别装没事、别写成安定日常。"
+            )
+    except Exception:
+        pass
     lines.append(
         "现在主动跟 BRO 说句话。要求：用你自己的方式开口，像老友自然搭话，一两句就够，"
         "具体、不要模板腔、不要『打扰了』这种客套。如果上面有未了的事可以自然提一句，"
@@ -282,12 +287,14 @@ def _run_bg_turn(message: str, sid: str, reason: str, max_tokens=None) -> dict:
     即用户在 WebUI 设的全局 max_tokens (卷七十四续三十一·真相源统一)·不再写死小值把长输出截断。
     """
     import threading
+    import time as _t  # B-② · 2026-08-27 · turn_id 撞键修复 (Grok 全量审计)
     from daemon_api import _chat_impl, register_turn, unregister_turn
     if max_tokens is None:
         from daemon_runtime import bg_max_tokens
         max_tokens = bg_max_tokens()
 
-    turn_id = "proactive-" + (sid[-8:] if sid else "x")
+    # B-② · 2026-08-27 · 加毫秒时间戳 · 同 sid 多次 proactive 不撞 register_turn 键 (原覆盖旧 cancel_event)
+    turn_id = f"proactive-{(sid[-8:] if sid else 'x')}-{int(_t.time() * 1000)}"
     cancel_event = threading.Event()
     register_turn(turn_id, sid, cancel_event)
     try:

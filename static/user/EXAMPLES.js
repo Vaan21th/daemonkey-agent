@@ -30,10 +30,13 @@
  *   Daemonkey.addDomain(key, meta)     加一个自定义维度(侧边栏入口 + 你自己的渲染函数)
  *   Daemonkey.addNavGroup(id, label)   加一个侧边栏分组·opts.before 可指定插在谁前面
  *   Daemonkey.ready(fn)                等页面就绪后执行
- *   Daemonkey.pane()                   中栏容器 DOM
+ *   Daemonkey.pane()                   中栏容器 DOM (工作台=#detailPane · 陪伴房间=#dashView)
  *   Daemonkey.refresh()                重新渲染当前维度
  *   Daemonkey.currentView()            当前在看哪个维度
  *   Daemonkey.ctx()                    当前会话的 token / 缓存命中等实时数据
+ *
+ * 陪伴房间同一套 API: addDomain 挂到房间右边那扇「门」上, 不进侧栏。
+ * addNavGroup 在房间里是空操作 (没有导航分组可插), 从工作台抄来的代码不会炸。
  *
  * 改完刷新页面 (F5) 生效·样式没变通常是缓存 → Ctrl+F5 强刷。
  * 你的代码报错不会拖垮主界面·但会记在浏览器控制台 (F12)。

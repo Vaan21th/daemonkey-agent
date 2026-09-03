@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import sys
 import time
+from pathlib import Path  # B-③ · 独立脚本路径锚定 ROOT · 任何 cwd 启动都能 import 到 workers (Grok 全量审计)
 
-sys.path.insert(0, ".")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from workers.memory_index import _get_conn, embed_where_sql
 from workers.memory_embed import backfill_all, stats, embed_texts, _vec_to_blob  # noqa: F401
 

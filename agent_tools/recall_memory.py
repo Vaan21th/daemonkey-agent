@@ -154,7 +154,11 @@ def _run(args: dict) -> ToolResult:
     if not query:
         return ToolResult(ok=False, output="", error="query 不能为空（或 mode=full 时给 ids 数组）")
 
-    top_k = args.get("top_k", 5)
+    try:
+        top_k = int(args.get("top_k", 5))
+    except (TypeError, ValueError):
+        top_k = 5
+    top_k = max(1, min(top_k, 20))
     scope = (args.get("scope") or "all").strip().lower()
     context_window = args.get("context_window", 8000)
 
@@ -230,8 +234,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="recall_memory",
     description=(
-        "搜长期记忆（画像/自传/日记/会话/playbook/知识库/客户）。先 mode=list 看摘要，不够再 mode=full+ids。scope: all/bro/self/sessions/skill/docs/clients。"
-    ),
+        "搜长期记忆（画像/自传/日记/会话/playbook/知识库/客户）。先 mode=list 看摘要，不够再 mode=full+ids。scope: all/bro/self/sessions/skill/docs/clients。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

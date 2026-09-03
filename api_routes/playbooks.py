@@ -15,6 +15,8 @@ playbook 的主入口仍是 NLP(extract_playbook 沉淀 / 召回时自动取用)
 from __future__ import annotations
 
 import logging
+import re
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
@@ -25,27 +27,31 @@ logger = logging.getLogger("opus.daemon.playbooks")
 
 router = APIRouter()
 
+_ROOT = Path(__file__).resolve().parent.parent
+_DAEMON_RULES = _ROOT / "data" / "cognition" / "daemon_rules.md"
+_IRON_HEAD = re.compile(r"^## 铁律 (\d+)\s+·\s+(.+)$", re.MULTILINE)
+_IRON_DOMAIN = re.compile(r"<!--\s*domain:\s*(\w+)\s*-->")
+
 
 def _iron_rules() -> list[dict]:
-    """从 OPUS 日记里抽工艺铁律(entry_type=iron_rule) · 给技能库顶部「铁律」区展示。
-
-    信息架构(卷·2026-07-12):铁律=工程纪律·跟 playbook(打法)同属"工艺库"·
-    从画像/日记里挪到技能库这边。数据仍在 data/cognition(never_sync)·不外泄。
-    """
+    """技能库铁律读 daemon_rules.md，不再从日记抽。"""
     try:
-        from workers.cognition_loader import load_cognition
-        cog = load_cognition(diary_max_entries=60)
-        rules = [
-            {
-                "date": e.get("date", ""),
-                "title": e.get("title", ""),
-                "domain": e.get("domain") or "global",
-                "body": e.get("body_excerpt") or e.get("body", ""),
-            }
-            for e in (cog.get("opus_diary", {}).get("entries") or [])
-            if (e.get("type") or "reflection") == "iron_rule"
-        ]
-        rules.sort(key=lambda r: r["date"], reverse=True)
+        if not _DAEMON_RULES.exists():
+            return []
+        text = _DAEMON_RULES.read_text(encoding="utf-8")
+        matches = list(_IRON_HEAD.finditer(text))
+        rules = []
+        for idx, m in enumerate(matches):
+            body_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+            body = text[m.end():body_end].strip()
+            domain_m = _IRON_DOMAIN.search(body)
+            rules.append({
+                "date": "",
+                "title": f"铁律 {m.group(1)} · {m.group(2).strip()}",
+                "domain": (domain_m.group(1).strip().lower() if domain_m else "global"),
+                "body": body[:800],
+            })
+        rules.sort(key=lambda r: r["title"], reverse=True)
         return rules
     except Exception as e:
         logger.warning("iron_rules load failed: %s", e)

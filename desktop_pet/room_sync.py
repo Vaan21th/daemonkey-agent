@@ -18,12 +18,24 @@ from desktop_pet.room_dock import maybe_redock
 from desktop_pet.room_rest import after_getup, wake_from_rest
 
 
-def _busy(pet) -> bool:
+def _state_txt(pet) -> str:
     try:
-        txt = pet._state_file.read_text(encoding="utf-8").strip()
-        return should_stay_working(txt) or pet._state in WORK_STATES
+        return pet._state_file.read_text(encoding="utf-8").strip()
     except Exception:
-        return pet._state in WORK_STATES
+        return ""
+
+
+def _turn_busy(pet) -> bool:
+    """只认文件桥 / 脉搏，不认内存里残留的 working。"""
+    return should_stay_working(_state_txt(pet))
+
+
+def _write_face(pet, face: str) -> None:
+    try:
+        pet._state_file.write_text(face, encoding="utf-8")
+    except Exception:
+        pass
+    pet._last_state_txt = face
 
 
 def finish_once(pet) -> None:
@@ -33,16 +45,11 @@ def finish_once(pet) -> None:
         return
     pet._poking = False
     if pet._clip_id in ONCE_CLIPS:
-        if _busy(pet):
-            pet._last_state_txt = "working"
+        if _turn_busy(pet):
+            _write_face(pet, "working")
             pet._play_state("working")
             return
-        if pet._state in WORK_STATES or pet._state in ONCE_MOODS:
-            try:
-                pet._state_file.write_text(DEFAULT_STATE, encoding="utf-8")
-            except Exception:
-                pass
-            pet._last_state_txt = DEFAULT_STATE
+        _write_face(pet, DEFAULT_STATE)
         pet._play_state(DEFAULT_STATE)
         maybe_redock(pet)
         return
@@ -51,11 +58,7 @@ def finish_once(pet) -> None:
         return
     if pet._state in ONCE_MOODS or pet._clip_id == "drag":
         if pet._state in ONCE_MOODS:
-            try:
-                pet._state_file.write_text(DEFAULT_STATE, encoding="utf-8")
-            except Exception:
-                pass
-            pet._last_state_txt = DEFAULT_STATE
+            _write_face(pet, DEFAULT_STATE)
         pet._play_state(DEFAULT_STATE)
         maybe_redock(pet)
         return
@@ -66,7 +69,7 @@ def finish_once(pet) -> None:
 
 def wake_if_working(pet) -> None:
     try:
-        txt = pet._state_file.read_text(encoding="utf-8").strip()
+        txt = _state_txt(pet)
         if not should_stay_working(txt):
             return
         if txt == pet._last_state_txt and pet._state in WORK_STATES:
@@ -83,17 +86,30 @@ def wake_if_working(pet) -> None:
 
 def apply_work_face(pet) -> None:
     try:
-        txt = pet._state_file.read_text(encoding="utf-8").strip()
-        if should_stay_working(txt) and pet._state not in WORK_STATES and not pet._guard:
-            if pet._clip_id not in ONCE_CLIPS and not pet._dragging:
+        txt = _state_txt(pet)
+        if pet._clip_id in ONCE_CLIPS or pet._guard:
+            return
+        if should_stay_working(txt):
+            if pet._dragging:
+                return
+            if pet._state not in WORK_STATES:
                 pet._last_state_txt = "working"
                 pet._play_state("working")
+            return
+        if txt in ONCE_MOODS:
+            if pet._last_state_txt == txt:
                 return
+            pet._last_state_txt = txt
+            if getattr(pet, "_docked", False):
+                pet._state = txt
+            elif not pet._dragging:
+                pet._play_state(txt)
+            return
         if txt and txt != pet._last_state_txt and txt in EXPRESSIONS:
             pet._last_state_txt = txt
             if getattr(pet, "_docked", False):
                 pet._state = txt
-            elif not pet._guard and pet._clip_id != "work_done":
+            elif not pet._dragging:
                 pet._play_state(txt)
     except Exception:
         pass

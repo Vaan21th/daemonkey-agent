@@ -117,9 +117,11 @@ def save_playbook(
 
         # 卷四十六 II · wish-1c229865 · agentskills.io 兼容 frontmatter (phase C)
         # 给 LLM 调 recall_memory(scope='skill') 时 · 头部 metadata 帮助判断相关性
+        # B-③ · 2026-08-27 · title 含换行/冒号会坏 YAML frontmatter · 单行化 + 引号包裹 (Grok 全量审计)
+        _safe_title = str(title).strip().replace(chr(10), " ").replace(chr(13), " ").replace('"', '\\"')
         frontmatter = (
             "---\n"
-            f"title: {title}\n"
+            f'title: "{_safe_title}"\n'
             f"task_type: {task_type}\n"
             f"created_at: {now.isoformat()}\n"
             f"used_count: 0\n"

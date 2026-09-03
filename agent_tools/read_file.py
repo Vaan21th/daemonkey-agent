@@ -13,7 +13,7 @@ Daemonkey 的"读"——读项目里任何文本文件。
 卷四十六 III · 2026-05-26 · binary 误判修:
   - _looks_binary 返回 (bool, reason)·拒绝时给 LLM 看 hexdump + 失败位置·
     让它能判断"是真 binary 还是文本但有怪字符"
-  - 加 force 参数·LLM 看完诊断觉得是误判·可以 force=True 强读 (latin-1 容错解码)
+  - 加 force 参数·LLM 看完诊断觉得是误判·可以 force=True 强读 (utf-8 errors=replace)
   - 加 encoding 参数·BRO 已知文件是 GBK 之类时 Daemonkey 可以显式指定
   - 之前: 误判 → `file looks binary; refusing to dump` → Daemonkey fallback shell_exec Get-Content
     → PS 5.1 乱码污染 context (反面教材·BRO 截图过)
@@ -201,7 +201,7 @@ def _run(args: dict) -> ToolResult:
                     f"--- first 64 bytes ---\n{dump}\n\n"
                     "Decision aid for Daemonkey:\n"
                     "  - If header looks like text (mostly printable ASCII / CJK UTF-8 fragments) → "
-                    "retry with force=true (latin-1 lossy decode) or encoding='gb18030' if you know it's CJK legacy.\n"
+                    "retry with force=true (utf-8 replace) or encoding='gb18030' if you know it's CJK legacy.\n"
                     "  - If header looks binary (PK\\x03\\x04 zip / \\x89PNG / SQLite / msgpack) → "
                     "don't force-read; use a parser tool instead (json/sqlite3/zipfile via python_exec)."
                 ),
@@ -226,7 +226,7 @@ def _run(args: dict) -> ToolResult:
                     f"file is not valid UTF-8: {e}. "
                     "Daemonkey refuses silent GBK fallback to prevent mojibake. "
                     "Choose one:\n"
-                    "  - force=true (latin-1 replace · garbled but readable)\n"
+                    "  - force=true (utf-8 replace · garbled but readable)\n"
                     "  - encoding='gb18030' (legacy CJK files)\n"
                     "  - encoding='utf-16' (Windows Notepad default)\n"
                     "If this file is really legacy GBK and should be migrated:\n"
@@ -262,8 +262,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="read_file",
     description=(
-        "读项目或本机文本，带行号。大文件用 start_line/end_line。误判 binary 看 hexdump 再 force。禁止 shell_exec Get-Content。默认 UTF-8。"
-    ),
+        "读项目或本机文本，带行号。大文件用 start_line/end_line。误判 binary 看 hexdump 再 force。禁止 shell_exec Get-Content。默认 UTF-8。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",
@@ -283,8 +282,8 @@ SPEC = ToolSpec(
             "force": {
                 "type": "boolean",
                 "description": (
-                    "Force-read even if binary-looking. Uses latin-1 errors='replace' decode · "
-                    "garbled chars become ? / replacement char · still readable. "
+                    "Force-read even if binary-looking. Uses utf-8 errors='replace' decode · "
+                    "garbled chars become replacement char · still readable. "
                     "Only use when you've seen the hexdump diagnostic and confirmed it's text-with-quirks."
                 ),
             },

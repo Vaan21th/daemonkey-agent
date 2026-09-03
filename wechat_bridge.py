@@ -160,9 +160,15 @@ class Bridge:
             text = OUTBOX_FILE.read_text(encoding="utf-8")
             if text.strip():
                 self.send_to_bro(text.strip())
-                # 清空 outbox
-                OUTBOX_FILE.write_text("", encoding="utf-8")
-            self._last_outbox_mtime = OUTBOX_FILE.stat().st_mtime
+                # B-② · 2026-08-27 · 原子 rename 清空 (原来覆盖写空 · daemon 并发写 outbox 时新内容会被一起清掉) (Grok 全量审计)
+                try:
+                    os.replace(OUTBOX_FILE, OUTBOX_FILE.with_name("outbox.txt.consumed"))
+                except FileNotFoundError:
+                    pass
+            try:
+                self._last_outbox_mtime = OUTBOX_FILE.stat().st_mtime
+            except OSError:
+                self._last_outbox_mtime = 0
         except Exception as e:
             print(f"[bridge] outbox poll error: {e}")
 

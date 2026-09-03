@@ -13,9 +13,13 @@ OPUS 看到的都是同样的"静态身份 + BRO 这条消息 + 历史"。缺动
 方案：每次 chat 请求时在 system_prompt 末尾拼一段动态 telemetry，跟 Cursor
 IDE 自动塞 `<timestamp>` / `<git_status>` 同款哲学——host 偷偷塞，LLM 自然消化。
 
-wish-bf6a14fa · 扩展：上次对话摘要 + Git 脏工作区
+wish-bf6a14fa · 扩展：Git 脏工作区（上次对话摘要已卸）
 ---------------------------------------------------
 纯读磁盘 + 字符串操作，不调 LLM。
+2026-08-29 · 「上次聊到」mtime 抽奖已证无用（串台、Flash 当任务）· 从每轮
+prompt / 茶桌 / 主动 CALL 卸下。连续性走状态卡、画像、relevant_memories；
+BRO 点名再用 session_search / recall_memory(scope=sessions)。算法留在
+`_get_last_summary`，不再接线。
 
 设计原则（跟 Cursor 端一致）：
   1. host 偷偷塞 · LLM 自然推理 —— 不要复述这段
@@ -96,14 +100,12 @@ def _session_label(stem: str) -> str:
 
 
 def _get_last_summary(current_session_id: str) -> str:
-    """扫 sessions/ 目录 · 找最近一个非当前 session 的 BRO user message · 压成一句摘要。
+    """[已卸 · 2026-08-29] mtime 抽最近另一本末尾 3 句。不再进 prompt / 茶桌 / CALL。
 
-    0.8.8 续 (telemetry 串台修 · wish 注入收敛):
-      - 排除 3 分钟内刚活跃的其他会话 → 正在另一个标签页聊的不算"上次聊到" (多开误读)
-      - 标注来源会话时间标签 → 用户知道这条来自哪个会话 · 消除"串台"误解
-    纯字符串操作 · 不调 LLM。 开销 ~1ms（扫目录 + 读 jsonl 末尾 20 行）。
+    留算法是为了万一要复盘旧行为。新代码不要再调。
     """
-    sessions_dir = pathlib.Path("sessions")
+    # B-② · 2026-08-27 · sessions 目录相对 ROOT · 非项目根 cwd 启动也能找到 (Grok 全量审计)
+    sessions_dir = pathlib.Path(__file__).resolve().parent.parent / "sessions"
     if not sessions_dir.is_dir():
         return ""
 
@@ -238,7 +240,7 @@ def _get_abandoned_outcomes_line() -> str:
 def build_dynamic_telemetry(session_id: str) -> str:
     """构造一段 telemetry 追加到 system prompt 末尾。
 
-    每次 /chat 请求调一次 · 开销 ~2ms（读 jsonl 末尾 20 行 + 算时间差 + 扫 sessions + git status）。
+    每次 /chat 请求调一次 · 开销 ~2ms（算时间差 + git status）。
     """
     from daemon_session import get_last_user_turn_ts
 
@@ -257,8 +259,7 @@ def build_dynamic_telemetry(session_id: str) -> str:
     # daemon 启动多久
     uptime_sec = time.time() - RUNTIME.started_at if RUNTIME.started_at > 0 else 0.0
 
-    # wish-bf6a14fa · 上次对话摘要 + Git 脏区
-    summary_line = _get_last_summary(session_id)
+    # wish-bf6a14fa · Git 脏区（上次聊到已卸 · 2026-08-29）
     git_line = _get_git_dirty_line()
     abandoned_line = _get_abandoned_outcomes_line()
 
@@ -276,7 +277,6 @@ def build_dynamic_telemetry(session_id: str) -> str:
         f"- BRO 上一条消息: {_format_gap(gap_sec)}\n"
         f"- daemon 起来: {_format_gap(uptime_sec)}\n"
         f"- 当前实际模型: {RUNTIME.model or '(未知)'}  ← 你真正在跑的模型 (provider_configs active · 不是 .env 的 OPUS_MODEL)\n"
-        f"{summary_line}"
         f"{git_line}"
         f"{abandoned_line}"
         "\n"

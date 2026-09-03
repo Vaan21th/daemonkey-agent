@@ -194,6 +194,10 @@ def supports_vision(model: str) -> bool:
     # 实测 glm-5v-turbo 走智谱官方能直接看图·所以按型号名特判·让 auto 档不必手动勾也对。
     if re.search(r"glm-\d[\d.]*v", m):
         return True
+    # L4.5 · 型号名含 vision/vl/multimodal 后缀 → 多模态特判 (2026-08-27 · BRO 用 deepseek-v4-flash-vision-exp
+    # 模型名带 -vision-exp 但 L5 family 不认识 → 判纯文本走了竞速池。带 vision 后缀的模型就该自动能用视觉)
+    if re.search(r"(?:^|[_-])vision(?:[-_.]|$)|(?:^|[_-])vl(?:[-_.]|$)|multimodal", m):
+        return True
     # L5 · family 白名单
     return family_of(model) in VISION_CAPABLE_FAMILIES
 

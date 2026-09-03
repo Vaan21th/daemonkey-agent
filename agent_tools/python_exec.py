@@ -2,7 +2,7 @@
 agent_tools/python_exec.py
 ==========================
 
-OPUS 跑 Python 代码的手——绕过 shell 转义地狱。
+Daemonkey 跑 Python 代码的手——绕过 shell 转义地狱。
 
 为什么造这个工具——
   扫最近 30 个 session 的 224 次 shell_exec · 42 次 (18.8%) 失败 ·

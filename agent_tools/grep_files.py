@@ -53,7 +53,8 @@ def _summarize(args: dict) -> str:
 def _try_rg(pattern: str, path: Path, glob: str | None, case_insensitive: bool) -> tuple[str, str]:
     """返回 (status, output)。status: ok / missing / timeout / error。
 
-    timeout 绝不能落到 Python 整树硬扫 —— 两个 grep 并行时会把 daemon 卡死几分钟。
+    timeout 绝不能落到 Python 整树硬扫 —— 两个 grep 并行时会把 daemon 卡死几分钟,
+    下一轮 self_heal 还写成「异常退出」。
     """
     cmd = ["rg", "--no-heading", "-n", "--color=never", "-M", "300"]
     if case_insensitive:

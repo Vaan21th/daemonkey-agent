@@ -17,19 +17,19 @@ function openSettingsView() {
 
 function renderSettingsView() {
   const tabs = [
-    { id: 'llm', label: '<i class="ri-brain-fill"></i> LLM 模型', hint: 'Provider + Model + API Key 多配置管理' },
-    { id: 'vision', label: '<i class="ri-cpu-fill"></i> 多模态', hint: '看图 + 微信语音识别 · 主模型不支持时自动走这里的 fallback' },
-    { id: 'embedding', label: '<i class="ri-brain-line"></i> Embedding', hint: '记忆语义检索 · 词面召回之外的语义通道' },
+    { id: 'llm', label: '<i class="ri-brain-fill"></i> LLM 模型', hint: '平台、模型和密钥，可存多套配置' },
+    { id: 'vision', label: '<i class="ri-cpu-fill"></i> 多模态', hint: '看图 + 听 + 说 + 画 · 默认生图/语音合成也在这里选择' },
+    { id: 'embedding', label: '<i class="ri-search-eye-line"></i> Embedding & 搜索', hint: '记忆语义检索 + 可选外网搜索 KEY' },
     { id: 'access', label: '<i class="ri-key-fill"></i> 访问 & 会话', hint: 'API Token / Session / Auto-confirm' },
     { id: 'wechat', label: '<i class="ri-wechat-fill"></i> 微信 & 飞书', hint: '扫码连微信 · 配飞书机器人 · 主动找你的频率 (猫系↔犬系)' },
-    { id: 'notify', label: '<i class="ri-notification-3-fill"></i> 通知', hint: '干完/等你拍板时怎么提醒你 · 音效 / Windows 通知 / 标签闪烁' },
+    { id: 'notify', label: '<i class="ri-notification-3-fill"></i> 通知', hint: '做完或等你点确认时，怎么提醒你 · 音效 / Windows 通知 / 标签闪烁' },
     { id: 'data', label: '<i class="ri-save-fill"></i> 本地数据', hint: '别名 / 缓存 / 重置' },
   ];
   $detailPane.innerHTML = `
     <div class="settings-pane">
       <div class="settings-head">
         <h2>⚙ 设置</h2>
-        <span class="meta">可热切换 · 不重启 daemon</span>
+        <span class="meta">改完立刻生效，不用重启</span>
         <button onclick="backToChat()" title="返回对话">✕ 关闭</button>
       </div>
       <div class="settings-tabs">
@@ -201,7 +201,7 @@ async function testLlmConfig() {
   const cfg = _readLlmFormConfig();
   if (!cfg) return;
   const $status = document.getElementById('llmStatus');
-  if (!cfg.model) { $status.textContent = '⚠ 没填 model'; $status.className = 'field-hint fail'; return; }
+  if (!cfg.model) { $status.textContent = '⚠ 没填模型名'; $status.className = 'field-hint fail'; return; }
   if (cfg.api_key === '__keep_current__') {
     $status.textContent = '⚠ 测试必须填 API Key (不能沿用 .env 里的 · 那是后端的事)';
     $status.className = 'field-hint fail';
@@ -233,7 +233,7 @@ async function switchLlmConfig() {
   const cfg = _readLlmFormConfig();
   if (!cfg) return;
   const $status = document.getElementById('llmStatus');
-  if (!cfg.model) { $status.textContent = '⚠ 没填 model'; $status.className = 'field-hint fail'; return; }
+  if (!cfg.model) { $status.textContent = '⚠ 没填模型名'; $status.className = 'field-hint fail'; return; }
   // 没填 key · 用户想沿用 · 让用户确认
   if (cfg.api_key === '__keep_current__') {
     const ok = await opusConfirm({
@@ -267,7 +267,7 @@ async function switchLlmConfig() {
       $status.className = 'field-hint ok';
       // 刷新当前显示
       loadLlmConfig();
-      addSys(`LLM 已热切换 · ${data.provider_kind} / ${data.model} · session 不丢`);
+      addSys(`已换成这个模型 · ${data.provider_kind} / ${data.model} · 当前对话还在`);
     } else {
       $status.innerHTML = '<i class="ri-close-fill"></i> ' + (data.detail || data.error || 'failed');
       $status.className = 'field-hint fail';
@@ -321,7 +321,7 @@ async function renderSettingsLLM() {
     <div class="llm-section">
       <div class="llm-section-head">
         <h3>已保存的 LLM 配置 · ${activeCount} 条 · ${pinnedCount} 条已勾选显示</h3>
-        <span class="llm-hint">勾选的会出现在右上角切换器 · 不勾选只在这里保留 · 想要常用模型直接对 OPUS 说「加几个 aihub 常用模型」即可</span>
+        <span class="llm-hint">打勾的会出现在右上角。没打勾的只留在这页。常用模型也可以直接跟我说「加几个常用模型」。</span>
         <button class="btn-primary" onclick="openLlmConfigAddForm()">+ 新增配置</button>
       </div>
       <div class="llm-config-list" id="llmConfigList">
@@ -338,20 +338,20 @@ async function renderSettingsLLM() {
 function renderLlmConfigCard(c) {
   const isActive = c.id === _providerConfigsActiveId;
   const presetIcon = ({
-    'deepseek-official': '🟦',
-    'aihubmix': '🟪',
-    'anthropic': '🟧',
-    'openrouter': '🟩',
-    'dashscope': '🟥',
-    'custom': '<i class="ri-circle-line"></i>',
-  })[c.preset_id] || '<i class="ri-circle-line"></i>';
+    'deepseek-official': '<i class="ri-brain-line"></i>',
+    'aihubmix': '<i class="ri-apps-2-line"></i>',
+    'anthropic': '<i class="ri-sparkling-2-line"></i>',
+    'openrouter': '<i class="ri-route-line"></i>',
+    'dashscope': '<i class="ri-cloud-line"></i>',
+    'custom': '<i class="ri-settings-3-line"></i>',
+  })[c.preset_id] || '<i class="ri-cpu-line"></i>';
   return `
     <div class="llm-config-card${isActive ? ' active' : ''}${c.director ? ' director-on' : ''}" data-cfg-id="${escHtml(c.id)}">
       <div class="lc-row1">
         <span class="lc-icon">${presetIcon}</span>
         <span class="lc-name">${escHtml(c.name || c.model || c.id)}</span>
         ${isActive ? '<span class="lc-active-badge">当前</span>' : ''}
-        ${c.director ? '<span class="lc-director-badge" title="顾问模型 · 能力最强 · 蓝图/破局/验收三唤醒点被 replan 召唤"><i class="ri-vip-crown-fill"></i> 顾问</span>' : ''}
+        ${c.director ? '<span class="lc-director-badge" title="顾问 · 出方案、卡住、收尾时会请它把关"><i class="ri-vip-crown-fill"></i> 顾问</span>' : ''}
         <label class="lc-pin" title="勾选 = 右上角切换器显示">
           <input type="checkbox" ${c.pinned ? 'checked' : ''}
                  onchange="togglePinConfig('${escHtml(c.id)}', this.checked)">
@@ -363,15 +363,15 @@ function renderLlmConfigCard(c) {
         <span class="lc-model">${escHtml(c.model || '?')}</span>
         <span class="lc-base">${escHtml(c.base_url || '(SDK 默认)')}</span>
         ${c.max_tokens ? `<span class="lc-mt" title="单次输出上限">↗ ${formatTokenK(c.max_tokens)} max</span>` : ''}
-        ${c.context_window ? `<span class="lc-mt" title="上下文窗户 · 压缩按这个算">窗 ${formatTokenK(c.context_window)}</span>` : ''}
+        ${c.context_window ? `<span class="lc-mt" title="上下文长度（用来判断何时压缩）">${formatTokenK(c.context_window)}</span>` : ''}
       </div>
       <div class="lc-row3">
         <span class="lc-key">${escHtml(c.api_key || '(未设)')}</span>
         <div class="lc-actions">
           ${isActive ? '' : `<button onclick="activateConfig('${jsStr(c.id)}')" title="切换 OPUS 用这个跑">激活</button>`}
           <button onclick="testConfig('${jsStr(c.id)}')" title="ping 一下试通不通">测试</button>
-          <button class="lc-director-btn${c.director ? ' on' : ''}" onclick="toggleDirectorConfig('${jsStr(c.id)}', ${c.director ? 'false' : 'true'})" title="${c.director ? '取消这个配置的顾问身份' : '把它设为顾问 · 蓝图/破局/验收时被召唤（全局只能有一个顾问）'}"><i class="ri-vip-crown-${c.director ? 'fill' : 'line'}"></i> ${c.director ? '取消顾问' : '设为顾问'}</button><i class="ri-question-line lc-director-help" onclick="showDirectorHelp()" title="顾问模型是干啥的？点我"></i>
-          <button onclick="openLlmConfigEditForm('${jsStr(c.id)}')" title="改名 / 改 key / 改 model">编辑</button>
+          <button class="lc-director-btn${c.director ? ' on' : ''}" onclick="toggleDirectorConfig('${jsStr(c.id)}', ${c.director ? 'false' : 'true'})" title="${c.director ? '取消这个配置的顾问身份' : '设为顾问。出方案、卡住、收尾时会请来看一眼。只能有一个。'}"><i class="ri-vip-crown-${c.director ? 'fill' : 'line'}"></i> ${c.director ? '取消顾问' : '设为顾问'}</button><i class="ri-question-line lc-director-help" onclick="showDirectorHelp()" title="顾问模型是干啥的？点我"></i>
+          <button onclick="openLlmConfigEditForm('${jsStr(c.id)}')" title="改名称、密钥、模型">编辑</button>
           <button class="btn-danger-mini" onclick="deleteConfig('${jsStr(c.id)}')" title="删除">删除</button>
         </div>
       </div>
@@ -556,7 +556,7 @@ function _showLlmEditForm({ title, submit, config, onSubmit, isEdit }) {
       <div class="field">
         <label>API Key ${isEdit ? '(留空 = 不改)' : ''}</label>
         <input id="llmEditApiKey" type="password" value="" placeholder="${isEdit ? '不填就用原 key' : 'sk-xxx'}">
-        <div class="field-hint">key 存在 data/provider_configs.json · 已在 .gitignore</div>
+        <div class="field-hint">密钥存在本机配置里，不会被提交到网上</div>
       </div>
       <div class="field">
         <label>输出长度上限 (max_tokens · 单次 LLM 调用的最长输出)</label>
@@ -564,15 +564,15 @@ function _showLlmEditForm({ title, submit, config, onSubmit, isEdit }) {
                value="${escHtml(String(config.max_tokens || 8192))}"
                placeholder="按模型推荐">
         <div class="field-hint" id="llmEditMaxTokensHint">
-          单位: token · 约 token×0.7 个汉字 · 太小会"做一半就停"·太大可能某些模型拒
+          数字越大，一次能写越长。太小会写到一半停；太大有的模型会拒。
         </div>
       </div>
       <div class="field">
-        <label>上下文窗户 (token · 可选 · 压缩按这个算)</label>
+        <label>上下文长度 (可选 · 用来判断何时压缩)</label>
         <input id="llmEditCtxWindow" type="number" min="0" max="10000000" step="1024"
                value="${escHtml(config.context_window ? String(config.context_window) : '')}"
-               placeholder="不填 = 认目录；目录也没有就按 25.6 万压">
-        <div class="field-hint">官方 FLASH / Pro 不用填。自己加的新 id 填了就准，忘了也不会停压缩。</div>
+               placeholder="不填就用常见值">
+        <div class="field-hint">官方常用模型不用填。自己加的填了更准，忘了也能用。</div>
       </div>
       <div class="field">
         <label><i class="ri-price-tag-3-fill"></i> 价格表 (每 1M tokens · 用于成本估算)</label>
@@ -610,7 +610,7 @@ function _showLlmEditForm({ title, submit, config, onSubmit, isEdit }) {
             <i class="ri-close-circle-fill"></i> 纯文本
           </label>
         </div>
-        <div class="field-hint">自动检测按模型家族判断 · 不确定时可以手动覆盖</div>
+        <div class="field-hint">一般会自动判断。不对再手改。</div>
       </div>
       <div class="field">
         <label>
@@ -619,16 +619,14 @@ function _showLlmEditForm({ title, submit, config, onSubmit, isEdit }) {
           <i class="ri-question-line director-help-icon" id="directorHelpIcon" title="顾问模型是干啥的？点我"></i>
         </label>
         <div class="field-hint" id="directorHelpText" hidden>
-          顾问 = 能力最强的贵模型。主对话日常用便宜模型干活时 · 它只在「蓝图 / 破局 / 验收」三个唤醒点被 replan 召唤进来把关
-          (跨 provider 现场连接 · 干净上下文不装灵魂 · 全局只能设一个 · 设新的旧的自动取消)。不配则不启用顾问功能 · replan 照旧用当前主模型当顾问。
-          省钱场景: DeepSeek 干活 + K3 当顾问 · 同强度任务估省 50-70%。
+          日常用便宜模型干活。出方案、卡住、收尾时，另请一个更强的模型看一眼。只能设一个。不设就还是当前这个模型自己看。常见搭配：便宜的干活，贵的当顾问，能省不少。
         </div>
       </div>
       ${isEdit ? '' : `
       <div class="field">
         <label>
           <input id="llmEditSetActive" type="checkbox">
-          保存后立即激活 (OPUS 切到这条跑)
+          保存后立即激活
         </label>
       </div>`}
       <div class="actions">
@@ -656,7 +654,7 @@ function _showLlmEditForm({ title, submit, config, onSubmit, isEdit }) {
   document.getElementById('llmEditSubmit').addEventListener('click', async () => {
     const form = _readLlmEditForm();
     if (!form.name || !form.model) {
-      document.getElementById('llmEditStatus').textContent = '⚠ name 和 model 必填';
+      document.getElementById('llmEditStatus').textContent = '⚠ 名称和模型必填';
       return;
     }
     if (!isEdit && !form.api_key) {
@@ -912,12 +910,12 @@ async function toggleDirectorConfig(cfgId, val) {
   const label = cfg.name || cfg.model || cfgId;
   const ok = await opusConfirm(val ? {
     title: '设为顾问模型',
-    message: `把 "${label}" 设为顾问？\n\n顾问 = 能力最强的贵模型。主对话日常用便宜模型干活时 · 它只在「蓝图 / 破局 / 验收」三个唤醒点被 replan 召唤进来把关（跨 provider 现场连接 · 干净上下文不装灵魂）。\n\n全局只能有一个顾问 · 设它为顾问后 · 之前的顾问会自动取消。\n\n省钱场景：DeepSeek 干活 + K3 当顾问 · 同强度任务估省 50-70%。`,
+    message: `把 "${label}" 设为顾问？\n\n日常用便宜模型干活。出方案、卡住、收尾时，另请一个更强的模型看一眼。只能设一个。设它之后，之前的顾问会自动取消。\n\n常见搭配：便宜的干活，贵的当顾问，能省不少。`,
     okText: '设为顾问',
     cancelText: '再想想',
   } : {
     title: '取消顾问模型',
-    message: `取消 "${label}" 的顾问身份？\n取消后 replan 顾问回到当前主模型（不再跨 provider 召唤贵模型）。`,
+    message: `取消 "${label}" 的顾问身份？\n取消后，出方案、卡住、收尾时还是当前这个模型自己看。`,
     okText: '取消顾问',
     cancelText: '保留',
   });
@@ -939,7 +937,7 @@ async function toggleDirectorConfig(cfgId, val) {
 function showDirectorHelp() {
   opusAlert({
     title: '<i class="ri-vip-crown-fill"></i> 顾问模型是干啥的？',
-    message: '顾问 = 能力最强的贵模型。\n\n主对话日常用便宜模型干活时 · 它只在「蓝图 / 破局 / 验收」三个唤醒点被 replan 召唤进来把关（跨 provider 现场连接 · 干净上下文不装灵魂）。\n\n全局只能有一个顾问 · 设新的顾问后旧的自动取消。不配则不启用顾问功能 · replan 照旧用当前主模型当顾问。\n\n省钱场景：DeepSeek 干活 + K3 当顾问 · 同强度任务估省 50-70%。',
+    message: '日常用便宜模型干活。出方案、卡住、收尾时，另请一个更强的模型看一眼。只能设一个。不设就还是当前这个模型自己看。\n\n常见搭配：便宜的干活，贵的当顾问，能省不少。',
   });
 }
 
@@ -982,6 +980,8 @@ async function renderSettingsVision() {
       <div id="visResult" style="margin-top:8px;font-size:13px"></div>
     </div>
 
+    <div id="mediaCaps"></div>
+
     <!-- wish-241e0014 · 语音识别增强 whisper (可选更新 · 设置页开关驱动安装) -->
     <div class="llm-section" style="margin-top:18px">
       <div class="llm-section-head">
@@ -997,9 +997,14 @@ async function renderSettingsVision() {
     const u = document.getElementById('visBaseUrl').value.trim();
     const k = document.getElementById('visApiKey').value.trim();
     let storedKey = k;
-    if (!m || !u || !storedKey) {
-      const resEl = document.getElementById('visResult');
-      if (resEl) resEl.innerHTML = '<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> 三个字段都要填</span>';
+    const resNeed = document.getElementById('visResult');
+    if (!m || !u) {
+      if (resNeed) resNeed.innerHTML = '<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> 模型名和 API 地址必填</span>';
+      return;
+    }
+    if (storedKey.includes('****')) storedKey = '';
+    if (!storedKey && !hasCfg) {
+      if (resNeed) resNeed.innerHTML = '<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> 第一次要填完整 API key</span>';
       return;
     }
     const resEl = document.getElementById('visResult');
@@ -1033,7 +1038,174 @@ async function renderSettingsVision() {
   document.getElementById('visSave').onclick = () => doSave(false);
   document.getElementById('visTest').onclick = () => doSave(true);
 
+  loadMediaDefaults();
   loadSttConfig();
+}
+
+function _mediaUnlocks(items) {
+  return (items || []).map(x => `<li>${escHtml(x)}</li>`).join('');
+}
+
+function _mediaAppOptions(apps, selected, kind) {
+  const guessed = (apps || []).filter(a => a.kind === kind);
+  const rest = (apps || []).filter(a => a.kind !== kind);
+  const rows = [{ id: '', name: '（还没指定默认应用）' }].concat(guessed, rest);
+  if (selected && !rows.some(a => a.id === selected)) {
+    rows.splice(1, 0, { id: selected, name: selected + '（工坊里暂时找不到）' });
+  }
+  return rows.map(a => {
+    const mark = a.kind === kind ? (kind === 'tts' ? ' · 适合配音' : ' · 适合生图') : '';
+    const sel = a.id === selected ? ' selected' : '';
+    return `<option value="${escHtml(a.id)}"${sel}>${escHtml(a.name || a.id || '未选')}${mark}</option>`;
+  }).join('');
+}
+
+async function pinMediaDefault(kind, appId) {
+  const r = await fetch('/media-defaults', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+    body: JSON.stringify({ kind, app_id: appId || '' }),
+  });
+  if (!r.ok) throw new Error('保存失败');
+  return r.json();
+}
+
+function _activeChatRoot() {
+  if (typeof chatBox === 'function') {
+    const box = chatBox();
+    if (box) return box;
+  }
+  if (window.SessionRuntime && typeof SessionRuntime.activeContainer === 'function') {
+    const box = SessionRuntime.activeContainer();
+    if (box) return box;
+  }
+  return document.getElementById('messages') || document.getElementById('pane-chat');
+}
+
+function _currentTopicHasTalk() {
+  const root = _activeChatRoot();
+  if (!root) return false;
+  return !!root.querySelector('.msg.bro');
+}
+
+function _mediaGuideStayHere(prompt) {
+  if (typeof injectAndSend === 'function') {
+    injectAndSend(prompt);
+    return true;
+  }
+  if (typeof sendCompanionText === 'function') {
+    sendCompanionText(prompt);
+    return true;
+  }
+  if (typeof send === 'function') {
+    send({ fromQueue: { text: prompt } });
+    return true;
+  }
+  return false;
+}
+
+async function _mediaGuideNewTopic(prompt, label) {
+  if (typeof switchToSession === 'function' && typeof spawnTask === 'function') {
+    await spawnTask(prompt, label);
+    return;
+  }
+  if (typeof startNewTopic === 'function' && typeof send === 'function') {
+    startNewTopic();
+    send({ fromQueue: { text: prompt } });
+    return;
+  }
+  _mediaGuideStayHere(prompt);
+}
+
+async function startMediaGuide(kind) {
+  let prompt = '';
+  try {
+    const r = await fetch('/media-defaults', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (r.ok) {
+      const d = await r.json();
+      prompt = (d.guides && d.guides[kind]) || '';
+    }
+  } catch (_) {}
+  if (!prompt) prompt = kind === 'tts'
+    ? '帮我接上配音。先看工坊有没有现成的；没有就建一个应用。带我去官网拿 Key，不要登录、不要编造。Key 写进应用后，告诉我回设置里把它选成默认。'
+    : '帮我接上生图。先看工坊有没有现成的；没有就建一个应用。带我去官网拿 Key，不要登录、不要编造。Key 写进应用后，告诉我回设置里把它选成默认。';
+  const label = kind === 'tts' ? '接入语音合成' : '接入生图';
+  if (typeof backToChat === 'function') try { backToChat(); } catch (_) {}
+  if (typeof closeModal === 'function') try { closeModal(); } catch (_) {}
+  if (_currentTopicHasTalk()) await _mediaGuideNewTopic(prompt, label);
+  else _mediaGuideStayHere(prompt);
+}
+
+async function loadMediaDefaults() {
+  const host = document.getElementById('mediaCaps');
+  if (!host) return;
+  let d = { apps: [], image: {}, tts: {} };
+  try {
+    const r = await fetch('/media-defaults', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (r.ok) d = await r.json();
+  } catch (_) {}
+  const img = d.image || {};
+  const tts = d.tts || {};
+  const apps = d.apps || [];
+  const imgOk = !!img.ready;
+  const ttsOk = !!tts.ready;
+  host.innerHTML = `
+    <div class="llm-section" style="margin-top:18px">
+      <div class="llm-section-head">
+        <h3><i class="ri-image-fill"></i> 生图 · ${imgOk ? '<span style="color:#6ed27a">已装载 ✓</span>' : '<span style="color:var(--sys)">未接入</span>'}</h3>
+        <span class="llm-hint">选一个工坊生图应用当默认。没接好 Key 就不会出图。</span>
+      </div>
+      <div class="field-hint">接上之后可以用：</div>
+      <ul class="field-hint" style="margin:4px 0 10px 1.2em">${_mediaUnlocks(img.unlocks)}</ul>
+      <div class="field">
+        <label>默认生图应用</label>
+        <select id="mediaImageApp" style="max-width:360px">${_mediaAppOptions(apps, img.app_id || '', 'image')}</select>
+      </div>
+      <div class="actions" style="margin-top:10px">
+        <button class="btn-ghost" type="button" id="mediaImageGuide"><i class="ri-compass-3-line"></i> 帮我接入</button>
+        <span class="field-hint">当前对话是空的就在这儿接入；正在聊别的会新开一个对话</span>
+      </div>
+      <div id="mediaImageNote" style="margin-top:8px;font-size:13px"></div>
+    </div>
+    <div class="llm-section" style="margin-top:18px">
+      <div class="llm-section-head">
+        <h3><i class="ri-volume-up-fill"></i> 语音合成 · ${ttsOk ? '<span style="color:#6ed27a">已装载 ✓</span>' : '<span style="color:var(--sys)">未接入</span>'}</h3>
+        <span class="llm-hint">海螺 MiniMax 或火山语音都可以。没接好她还能打字，只是没声音。想好听：去官网拿 Key，回来选成默认。</span>
+      </div>
+      <div class="field-hint">接上之后可以用：</div>
+      <ul class="field-hint" style="margin:4px 0 10px 1.2em">${_mediaUnlocks(tts.unlocks)}</ul>
+      <div class="field">
+        <label>默认语音合成应用</label>
+        <select id="mediaTtsApp" style="max-width:360px">${_mediaAppOptions(apps, tts.app_id || '', 'tts')}</select>
+      </div>
+      <div class="actions" style="margin-top:10px">
+        <button class="btn-ghost" type="button" id="mediaTtsGuide"><i class="ri-compass-3-line"></i> 帮我接入</button>
+        <span class="field-hint">当前对话是空的就在这儿接入；正在聊别的会新开一个对话</span>
+      </div>
+      <div id="mediaTtsNote" style="margin-top:8px;font-size:13px"></div>
+    </div>
+  `;
+  const bindPin = (selId, kind, noteId) => {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+    sel.onchange = async () => {
+      const note = document.getElementById(noteId);
+      try {
+        await pinMediaDefault(kind, sel.value);
+        await loadMediaDefaults();
+        const after = document.getElementById(noteId);
+        if (after) after.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 已设为默认</span>';
+      } catch (e) {
+        if (note) note.innerHTML = `<span style="color:var(--red)">${escHtml(e.message || '没存上')}</span>`;
+      }
+    };
+  };
+  bindPin('mediaImageApp', 'image', 'mediaImageNote');
+  bindPin('mediaTtsApp', 'tts', 'mediaTtsNote');
+  const ig = document.getElementById('mediaImageGuide');
+  if (ig) ig.onclick = () => startMediaGuide('image');
+  const tg = document.getElementById('mediaTtsGuide');
+  if (tg) tg.onclick = () => startMediaGuide('tts');
 }
 
 // ─── wish-241e0014 · 语音识别增强 whisper (可选更新 · 开关驱动安装) ───
@@ -1055,7 +1227,7 @@ async function loadSttConfig() {
   $body.innerHTML = `
     <div class="field">
       <label style="display:flex;align-items:center;gap:8px">
-        <input type="checkbox" id="sttEnable" ${st.ready ? 'checked' : ''} style="width:auto">
+        <input type="checkbox" id="sttEnable" ${(st.enabled !== false && st.ready) ? 'checked' : ''} style="width:auto">
         启用语音识别增强 (whisper)
       </label>
       <div class="field-hint">开启后：①安装转写依赖 (pilk + faster-whisper) ②下载模型 (~${st.expected_size_mb}MB · 国内镜像) · 装好微信语音自动转文字</div>
@@ -1103,6 +1275,17 @@ async function loadSttConfig() {
         body: JSON.stringify({ enabled: e.target.checked }),
       });
     } catch (_) {}
+  };
+  document.getElementById('sttEnable').onchange = async (e) => {
+    const on = e.target.checked;
+    try {
+      await fetch('/stt/enabled', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ enabled: on }),
+      });
+    } catch (_) {}
+    if (on && !st.ready) setupStt();
   };
 }
 
@@ -1185,8 +1368,16 @@ async function renderSettingsEmbedding() {
       </div>
       <div id="embBody" style="min-height:60px"><span class="field-hint">加载中…</span></div>
     </div>
+    <div class="llm-section" style="margin-top:22px">
+      <div class="llm-section-head">
+        <h3><i class="ri-global-line"></i> 外网搜索 · <span id="srchStatusLabel" style="color:var(--dim)">加载中…</span></h3>
+        <span class="llm-hint">可选。不填也能搜（免费刮网页）。贴上搜索 KEY 之后，中文教程 / 口播 /「怎么做」能搜到真文章，对话里会列出带站点的结果卡。</span>
+      </div>
+      <div id="srchBody" style="min-height:60px"><span class="field-hint">加载中…</span></div>
+    </div>
   `;
   loadEmbedConfig();
+  loadSearchConfig();
 }
 
 // ─── wish-b313583b · Embedding 语义检索配置卡 ───
@@ -1318,6 +1509,108 @@ async function toggleEmbed() {
   }
 }
 
+async function loadSearchConfig() {
+  const $status = document.getElementById('srchStatusLabel');
+  const $body = document.getElementById('srchBody');
+  if (!$status || !$body) return;
+
+  let cfg = { enabled: true, configured: false, active: false, source: '', api_key: '', provider: 'bocha' };
+  try {
+    const resp = await fetch('/search-config', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (resp.ok) cfg = await resp.json();
+  } catch (_) {}
+
+  const on = !!(cfg.active && cfg.enabled);
+  $status.innerHTML = on
+    ? '<span style="color:#6ed27a">已接博查 ✓</span>'
+    : '<span style="color:var(--sys)">免费刮取 · 可选加强</span>';
+
+  $body.innerHTML = `
+    <div class="srch-guide">
+      <div class="srch-guide-title"><i class="ri-information-line"></i> 不是必须填</div>
+      <p>空着就能用现在的搜索。加了博查 KEY 会变好的地方：</p>
+      <ul>
+        <li>中文长尾：口播文案、短视频开头、平台玩法</li>
+        <li>「怎么做 / 今天有什么」不再被拆成单字词典</li>
+        <li>对话里出现带站点、日期的结果卡，点得开</li>
+        <li>雷达深挖、选题查资料更准</li>
+      </ul>
+      <p class="srch-guide-link">去 <a href="https://open.bochaai.com/" target="_blank" rel="noopener">open.bochaai.com</a> 领取，新用户有免费次数。</p>
+    </div>
+    <div class="field">
+      <label>博查 API Key</label>
+      <input id="srchApiKey" type="password" value="${escHtml(cfg.api_key || '')}" placeholder="${cfg.configured ? '已存 key · 不改就留空' : '选填 · sk-…'}">
+      <div class="field-hint">${cfg.configured ? '已存 key · 改的话贴新的' : '不填也没关系 · 搜索继续走免费刮取'}</div>
+    </div>
+    <div class="field">
+      <label>使用搜索 API</label>
+      <label class="switch" style="margin-left:0">
+        <input type="checkbox" id="srchToggle" ${cfg.enabled ? 'checked' : ''} onchange="toggleSearchApi()">
+        <span class="slider"></span>
+      </label>
+      <div class="field-hint">关 = 即使贴了 KEY 也走免费刮取</div>
+    </div>
+    <div class="actions" style="margin-top:8px;gap:8px">
+      <button class="btn-primary" id="srchSave"><i class="ri-save-fill"></i> 保存</button>
+      <button class="btn-ghost" id="srchTest"><i class="ri-flashlight-fill"></i> 测试（口播文案技巧）</button>
+    </div>
+    <div id="srchResult" style="margin-top:8px;font-size:13px"></div>
+  `;
+  document.getElementById('srchSave').onclick = () => doSearchSave(false);
+  document.getElementById('srchTest').onclick = () => doSearchSave(true);
+}
+
+async function doSearchSave(testOnly) {
+  const k = (document.getElementById('srchApiKey') || {}).value || '';
+  const on = !!(document.getElementById('srchToggle') || {}).checked;
+  const resEl = document.getElementById('srchResult');
+  const body = { enabled: on, action: testOnly ? 'test' : undefined };
+  if (k.trim() && !k.includes('****')) body.api_key = k.trim();
+  if (resEl) resEl.innerHTML = `<span style="color:var(--sys)"><i class="ri-loader-fill"></i> ${testOnly ? '测试中…' : '保存中…'}</span>`;
+  try {
+    const resp = await fetch('/search-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(data.detail || '失败')}</span>`;
+      return;
+    }
+    if (testOnly && data.test) {
+      if (data.test.ok) {
+        const titles = (data.test.titles || []).map(t => escHtml(String(t).slice(0, 42))).join('<br>');
+        if (resEl) resEl.innerHTML = `<span style="color:#6ed27a"><i class="ri-check-fill"></i> 通了 · ${data.test.n} 条</span><div class="field-hint" style="margin-top:6px">${titles}</div>`;
+      } else {
+        if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(data.test.error || '失败')}</span>`;
+      }
+      return;
+    }
+    if (resEl) resEl.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 已保存</span>';
+    setTimeout(() => loadSearchConfig(), 500);
+  } catch (e) {
+    if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
+  }
+}
+
+async function toggleSearchApi() {
+  const $on = document.getElementById('srchToggle');
+  const resEl = document.getElementById('srchResult');
+  try {
+    const resp = await fetch('/search-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ enabled: !!$on.checked }),
+    });
+    if (!resp.ok) throw new Error('保存失败');
+    if (resEl) resEl.innerHTML = `<span style="color:#6ed27a"><i class="ri-check-fill"></i> 已${$on.checked ? '开启' : '关闭'}搜索 API</span>`;
+    loadSearchConfig();
+  } catch (e) {
+    if (resEl) resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
+  }
+}
+
 async function doEmbedBackfill() {
   const resEl = document.getElementById('embResult');
   if (resEl) resEl.innerHTML = '<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 回填启动… 后台跑 · 刷新此页看进度</span>';
@@ -1346,25 +1639,25 @@ function renderSettingsAccess() {
       <div class="field">
         <label>API Token (Bearer)</label>
         <input id="accTokenIn" type="password" value="${escHtml(token || '')}" placeholder="OPUS_API_TOKEN 的值">
-        <div class="field-hint">⚠ 这是【连接 daemon 的门禁钥匙】· 不是 LLM 的 API Key（模型 Key 在「模型/Provider」里配）</div>
-        <div class="field-hint">在 daemon 目录的 <code>.env</code> 文件里找 <code>OPUS_API_TOKEN</code> 那一行 · 复制粘贴进来 · 填一次浏览器记住 · 本机访问通常自动放行不用填</div>
+        <div class="field-hint">⚠ 这是打开这个页面用的密码，不是模型的 Key。模型 Key 在「模型」里配。</div>
+        <div class="field-hint">在这个软件目录的 <code>.env</code> 文件里找 <code>OPUS_API_TOKEN</code> 那一行，把等号后面复制进来。本机一般不用填。</div>
       </div>
 
-      <div class="llm-section-head" style="margin-top:18px"><h3>📂 当前 Session</h3></div>
+      <div class="llm-section-head" style="margin-top:18px"><h3>📂 当前对话</h3></div>
       <div class="field">
-        <label>Session ID</label>
-        <input id="accSessionIn" type="text" value="${escHtml(sessionId || '')}" placeholder="留空 = 新话题">
+        <label>当前对话编号</label>
+        <input id="accSessionIn" type="text" value="${escHtml(sessionId || '')}" placeholder="留空 = 新对话，或粘贴已有对话的编号">
       </div>
 
       <div class="llm-section-head" style="margin-top:18px"><h3>✋ 工具确认策略</h3></div>
       <div class="field">
-        <label>Auto-confirm 策略</label>
+        <label>工具确认</label>
         <select id="accAutoIn">
-          <option value="auto" ${autoConfirm === 'auto' ? 'selected' : ''}>auto · 只跑 AUTO 工具 (最保守)</option>
-          <option value="confirm" ${autoConfirm === 'confirm' ? 'selected' : ''}>confirm · AUTO + CONFIRM 自动跑 (推荐)</option>
-          <option value="guard" ${autoConfirm === 'guard' ? 'selected' : ''}>guard · 三档全开·全自动 (无人值守 yolo · 慎用)</option>
+          <option value="auto" ${autoConfirm === 'auto' ? 'selected' : ''}>保守 · 只跑安全的</option>
+          <option value="confirm" ${autoConfirm === 'confirm' ? 'selected' : ''}>推荐 · 普通操作自动跑，危险的仍要你点</option>
+          <option value="guard" ${autoConfirm === 'guard' ? 'selected' : ''}>全自动 · 没人看着才用</option>
         </select>
-        <div class="field-hint">默认 confirm 档下·GUARD 工具会在 WebUI 弹卡片等你点；这个 guard 预设连 GUARD 也自动放行·只在没人能点(无人值守)时才用</div>
+        <div class="field-hint">推荐档：危险操作会弹出卡片等你点。全自动档：连危险操作也不问，只在没人能点的时候用。</div>
       </div>
 
       <!-- wish-f563a56d · trusted commands · BRO 临时给 OPUS 30min/24h/永久 信任窗口 -->
@@ -1389,8 +1682,8 @@ function renderSettingsAccess() {
           </select>
         </div>
         <div style="flex:2;min-width:180px">
-          <label style="font-size:11px">理由 (审计用 · 可选)</label>
-          <input id="accTrustReason" type="text" placeholder="例如: BRO 让 OPUS 装 duckduckgo_search">
+          <label style="font-size:11px">为什么信任（可选）</label>
+          <input id="accTrustReason" type="text" placeholder="例如：让它装一个搜索库">
         </div>
         <button class="btn-primary" onclick="addTrustedCommand()">➕ 加入</button>
       </div>
@@ -1864,7 +2157,7 @@ function wechatRenderFreq(currentId) {
     const ic = cur ? freqIcon(cur.emoji) : null;
     const curIcon = ic ? `<i class="${ic}"></i>` : (cur ? cur.emoji : '');
     desc.innerHTML = currentId === 'custom'
-      ? '当前是<b>自定义</b>档 (你手改过 .env 的 OPUS_PROACTIVE_* )·点任意档位归一'
+      ? '你以前在配置文件里手改过。点下面任一档就按档走。'
       : (cur ? `当前:${curIcon} <b>${escHtml(cur.label)}</b> · ${escHtml(cur.desc)}` : '');
   }
 }
@@ -1901,22 +2194,22 @@ async function renderSettingsNotify() {
   body.innerHTML = `
     <div class="llm-section">
       <div class="llm-section-head">
-        <h3><i class="ri-notification-3-fill"></i> 通知 · 干完 / 等你拍板时怎么提醒你</h3>
-        <span class="llm-hint">三条通道各自开关 · 保存即生效 · 不用重启 daemon</span>
+        <h3><i class="ri-notification-3-fill"></i> 通知 · 做完或等你点确认时，怎么提醒你</h3>
+        <span class="llm-hint">三个开关分开，保存就生效</span>
       </div>
       <div class="field">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="ntfPetSound" ${cfg.pet_sound ? 'checked' : ''}>
           <span><i class="ri-volume-up-fill"></i> 桌宠提示音</span>
         </label>
-        <div class="field-hint">干完一个 turn 时 · 桌宠「喵」动作 + 播 ding/manbo.wav · 需桌宠在跑</div>
+        <div class="field-hint">做完一轮时桌宠出声。桌宠没开就没声音。</div>
       </div>
       <div class="field">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="ntfToast" ${cfg.windows_toast ? 'checked' : ''}>
           <span><i class="ri-windows-fill"></i> Windows 系统通知</span>
         </label>
-        <div class="field-hint">浏览器不开 WebUI 也能在通知中心收到 · 需 daemon 机装 winotify</div>
+        <div class="field-hint">浏览器没开也能弹系统通知。</div>
       </div>
       <div class="field">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -1964,14 +2257,14 @@ function renderSettingsData() {
     <div class="llm-section">
       <div class="llm-section-head"><h3><i class="ri-save-fill"></i> 本地数据</h3></div>
       <div class="field-hint">
-        浏览器本地存了:
+        浏览器只记住：
         <ul style="margin:6px 0 0 18px;padding:0;color:var(--dim)">
-          <li>token (Bearer · 跟 daemon 握手用)</li>
-          <li>sessionId (当前对话 id)</li>
-          <li>autoConfirm (工具确认策略)</li>
-          <li>别名 (session 重命名 / 置顶 / 归档)</li>
+          <li>登录密码</li>
+          <li>当前对话</li>
+          <li>工具确认策略</li>
+          <li>对话的别名、置顶、归档</li>
         </ul>
-        服务端的数据 (对话历史 / 心愿单 / 雷达 / 工坊) 不受影响 · 都在本机磁盘.
+        对话和工坊都在这台电脑的磁盘上，清这里清不掉。
       </div>
       <div class="actions" style="margin-top:18px">
         <button class="btn-danger" onclick="resetAll()">清空本地数据 + 刷新</button>

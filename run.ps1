@@ -262,12 +262,11 @@ if (-not (Test-Path $envPath)) {
     Write-Host ''
     Write-Host '         C) See .env.example for the full templated guide.'
     Write-Host ''
-    Write-Step 'auto-creating .env from template now...' 'warn'
+    Write-Step '.env not found - auto-creating from template...' 'warn'
     Copy-Item -Path (Join-Path $PSScriptRoot '.env.example') -Destination $envPath
-    Write-Step 'opened .env in notepad - fill it in and save' 'warn'
-    notepad $envPath
-    Write-Host ''
-    Write-Step 'after saving .env, re-run: .\run.ps1' 'warn'
+    # B-① · 2026-08-27 · 不再强制开 notepad 卡流程 · 新装走 WebUI 相遇页填 Key (Grok 全量审计)
+    Write-Host '   已从模板创建 .env · 新装请直接启动 (WebUI 相遇页会引导填 Key) ·' -ForegroundColor Yellow
+    Write-Host '   或手动编辑 .env 填好 ANTHROPIC_API_KEY / OPUS_API_KEY 后重跑 .\run.ps1' -ForegroundColor Yellow
     exit 0
 }
 

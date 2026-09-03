@@ -120,7 +120,7 @@ def init_logging(level: Optional[str] = None, file_max_bytes: int = 10 * 1024 * 
         root.setLevel(numeric_level)
         # 不清已有 handler · 防 uvicorn 之类已经装上的也被吃掉
         # 但要避免重复加自己装的 → 用 mark 标识
-        for h in root.handlers:
+        for h in list(root.handlers):  # B-② · 遍历副本 · 边遍历边删会跳过相邻 handler (Grok 全量审计)
             if getattr(h, "_opus_handler", False):
                 root.removeHandler(h)
         file_handler._opus_handler = True  # type: ignore[attr-defined]

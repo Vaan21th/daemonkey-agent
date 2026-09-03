@@ -116,8 +116,12 @@ def _run(args: dict) -> "ToolResult":
         content = args.get("content")
         if not f or content is None:
             return ToolResult(ok=False, output="", error="missing 'file' + 'content' (合并结果写回目标)")
+        cur = (ROOT / f).resolve()
+        try:
+            cur.relative_to(ROOT.resolve())
+        except ValueError:
+            return ToolResult(ok=False, output="", error=f"file 越界工程根: {f}")
         bak = BACKUP_DIR / _path_to_bak_name(f)
-        cur = ROOT / f
         if not bak.is_file():
             return ToolResult(ok=False, output="", error=f"备份不存在: {bak}")
         # 写回 (先备份当前官方版到 .official 防手抖)
@@ -196,8 +200,7 @@ def _summarize(args: dict) -> str:
 SPEC = ToolSpec(
     name="merge_user_override",
     description=(
-        "升级后把用户魔改从备份区合并回来。list/diff/apply。若提示两边一致但用户改动丢了，先 rescue 再 rescue_apply。"
-    ),
+        "升级后把用户魔改从备份区合并回来。list/diff/apply。若提示两边一致但用户改动丢了，先 rescue 再 rescue_apply。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

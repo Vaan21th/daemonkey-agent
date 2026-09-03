@@ -46,9 +46,8 @@ def check_auth(authorization: Optional[str]) -> None:
         )
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="missing Bearer token")
-    if authorization[7:].strip() != expected:
-        raise HTTPException(status_code=401, detail="invalid token")
     # 恒时比较 (防时序侧信道 · 本地威胁模型下低优先但零成本 · 龙头 H-01 附带)
+    # B-③ · 2026-08-27 · 原来前面先做了一次非恒时 `!=` 提前返回 → 恒时比较恒真 = 死代码 (Grok 全量审计)
     if not hmac.compare_digest(
         authorization[7:].strip().encode("utf-8", "replace"),
         expected.encode("utf-8", "replace"),

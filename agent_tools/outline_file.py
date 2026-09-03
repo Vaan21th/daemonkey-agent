@@ -187,7 +187,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="outline_file",
     description=(
-        "列出文件骨架（函数/类/常量/标题 + 行号）。改大文件先用这个定位，再 read_file 那一段，再 edit_file。支持 py / js / ts / md。"
+        "列出文件骨架（函数/类/常量/标题 + 行号）。改大文件先用这个定位，再 read_file 那一段，再 edit_file。"
+        "支持 py / js / ts / md。"
     ),
     tier=TIER_AUTO,
     input_schema={

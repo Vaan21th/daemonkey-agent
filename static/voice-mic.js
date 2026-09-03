@@ -79,9 +79,42 @@ function initVoice(opts) {
       })
       .catch(() => { /* 网络异常 → 保持隐藏 */ });
   }
-  // 播放一条语音回复: 调 /api/tts 合成 → <audio> 播放 → 播完回调 (恢复收音)
-  window.__speakReply = function (text, onDone) {
-    if (!window.__voiceTtsEnabled || !(text || '').trim()) { if (onDone) onDone(); return; }
+  let _ttsAudio = null;
+  let _ttsPlaying = false;
+  let _ttsOnDone = null;
+
+  function _releaseSpeech(fromUser) {
+    if (_ttsAudio) {
+      try { _ttsAudio.pause(); } catch (_) {}
+      try { if (_ttsAudio.src) URL.revokeObjectURL(_ttsAudio.src); } catch (_) {}
+      _ttsAudio = null;
+    }
+    _ttsPlaying = false;
+    const cb = _ttsOnDone;
+    _ttsOnDone = null;
+    if (cb) try { cb(!!fromUser); } catch (_) {}
+    _resumeAfterReply();
+  }
+
+  function _holdForSpeech() {
+    _ttsPlaying = true;
+    if (mode === 'transcribe') {
+      _voicePaused = true;
+      _srGen++;
+      if (_silenceTimer) { clearTimeout(_silenceTimer); _silenceTimer = null; }
+      _pendingBuf = '';
+      if (_rec) { try { _rec.stop(); } catch (_) {} }
+      _stopMeter();
+      $micBtn.classList.remove('listening');
+      _renderChat('');
+      _setRecNote('<i class="ri-volume-up-line"></i> 她在说话 · 点她或音量可打断', 'wait');
+    }
+  }
+
+  function _playTtsBlob(text, onDone) {
+    if (_ttsAudio) _releaseSpeech(false);
+    _ttsOnDone = onDone;
+    _holdForSpeech();
     const body = JSON.stringify({ text: (text || '').slice(0, 1500) });
     fetch('/api/tts', {
       method: 'POST',
@@ -91,16 +124,33 @@ function initVoice(opts) {
       if (!r.ok) throw new Error('TTS HTTP ' + r.status);
       return r.blob();
     }).then(blob => {
+      if (!_ttsPlaying) return;
       const url = URL.createObjectURL(blob);
       const au = new Audio(url);
-      au.onended = () => { URL.revokeObjectURL(url); if (onDone) onDone(); };
-      au.onerror = () => { URL.revokeObjectURL(url); if (onDone) onDone(); };
-      au.play().catch(() => { if (onDone) onDone(); });
+      _ttsAudio = au;
+      au.onended = () => _releaseSpeech(false);
+      au.onerror = () => _releaseSpeech(false);
+      au.play().catch(() => _releaseSpeech(false));
     }).catch(e => {
       console.warn('TTS 播放失败:', e);
-      if (onDone) onDone();
+      _releaseSpeech(false);
     });
+  }
+
+  window.__speakNow = function (text, onDone) {
+    if (!(text || '').trim()) { if (onDone) onDone(); return; }
+    _playTtsBlob(text, onDone);
   };
+  window.__speakReply = function (text, onDone) {
+    if (!window.__voiceTtsEnabled || !(text || '').trim()) { if (onDone) onDone(); return; }
+    _playTtsBlob(text, onDone);
+  };
+  window.__interruptSpeech = function () {
+    if (!_ttsPlaying && !_ttsAudio) return false;
+    _releaseSpeech(true);
+    return true;
+  };
+  window.__isSpeaking = function () { return !!_ttsPlaying; };
 
   let _rec = null;              // SpeechRecognition 实例
   let _listening = false;
@@ -118,6 +168,7 @@ function initVoice(opts) {
   let _startTs = 0;
 
   function _autosize() {
+    if ($input.closest && $input.closest('#listen-dock.open')) return;
     $input.style.height = 'auto';
     $input.style.height = Math.min($input.scrollHeight, maxH) + 'px';
   }
@@ -323,11 +374,13 @@ function initVoice(opts) {
     _replyWatcher = setInterval(() => {
       _pauseTicks++;
       if (isPending()) { _sawPending = true; return; }
+      if (_ttsPlaying) return;
       if (_sawPending || _pauseTicks > 12) _resumeAfterReply();   // 见过 turn 又结束·或 ~5s 没起 turn 兜底
     }, 400);
   }
   function _resumeAfterReply() {
     if (_replyWatcher) { clearInterval(_replyWatcher); _replyWatcher = null; }
+    if (_ttsPlaying) return;
     if (!_voicePaused) return;
     _voicePaused = false;
     if (_manualStop || !_listening || mode !== 'transcribe') return;  // 期间用户点了停 → 不恢复
@@ -457,6 +510,10 @@ function initVoice(opts) {
   window.__voice = {
     start: _startVoice,
     stop: function () { _stopVoice(true); },
+    interruptSpeech: window.__interruptSpeech,
+    isSpeaking: window.__isSpeaking,
+    holdForSpeech: _holdForSpeech,
+    releaseSpeech: function () { _releaseSpeech(false); },
     setMode: function (m) {
       if (!MODES[m]) return;
       mode = m;

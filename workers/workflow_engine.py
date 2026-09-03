@@ -282,7 +282,7 @@ def run_workflow(
                 "ok": False,
                 "error": (
                     f"phase B 仅支持 opus/app/<aid> 节点 · "
-                    f"node {nid} 是 {node_type} · 跳过"
+                    f"node {nid} 是 {node_type} · 流程中止"
                 ),
                 "outputs": {}, "text": "",
             }

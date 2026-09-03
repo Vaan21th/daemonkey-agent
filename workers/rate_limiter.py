@@ -146,10 +146,9 @@ def check(ip: str | None, token: str | None) -> dict:
                 bucket.tokens -= 1.0
                 remaining[kind] = bucket.tokens
             else:
-                # 拒了 · 但不能因为 ip 拒就忽略 token 的扣减——保持简单只在第一个拒的地方算 retry
-                if result_ok:
-                    needed = 1.0 - bucket.tokens
-                    retry_after = needed / rate_per_s if rate_per_s > 0 else 60.0
+                # 拒了 · 计算 retry 是必须的 · 不管 ip 是否已拒 (B-③ · 2026-08-27 · 原 if result_ok 漏算 retry · Grok 全量审计)
+                needed = 1.0 - bucket.tokens
+                retry_after = needed / rate_per_s if rate_per_s > 0 else 60.0
                 result_ok = False
                 remaining[kind] = bucket.tokens
 

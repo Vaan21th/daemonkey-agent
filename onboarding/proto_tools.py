@@ -15,6 +15,7 @@ Onboarding 原型的三个采集工具 —— 自包含·只写本目录 data/·
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -27,7 +28,9 @@ ONBOARDING_PATH = DATA_DIR / "onboarding.json"
 
 
 # section key → markdown header（6 维·和 soul/OWNER-NOTEBOOK.md + agent_tools/update_bro_note.py 一字不差对齐）
+# state 单独处理（状态卡表格·替换式更新·不进 headers 循环）
 SECTIONS: dict[str, str] = {
+    "state":    "## 〇、状态卡",
     "profile":  "## 一、当下画像 · Profile",
     "events":   "## 二、关键事件流 · Events",
     "rules":    "## 三、长期偏好与边界 · Rules",
@@ -36,13 +39,43 @@ SECTIONS: dict[str, str] = {
     "risks":    "## 六、关怀雷达 · Care Radar",
 }
 
+STATE_FIELDS: tuple[str, ...] = (
+    "工作状态",
+    "作息模式",
+    "健康基线",
+    "情绪基线",
+    "当前主线",
+    "关系家庭",
+    "经济预算",
+    "忌口过敏",
+)
+_STATE_SECTION_RE = re.compile(r"(?m)^## 〇、状态卡")
+
+_STATE_CARD_BLOCK = """## 〇、状态卡（我眼里的你 · 相处中自然更新 · as_of+evidence）
+
+> 8 个骨架字段 = 我留意你的方向（观察清单）· 但绝不查户口——聊到才记，不聊不追。
+> 值=当下状态 · as_of=最后确认日期 · evidence=一句话证据
+> 更新走 update_owner_note(section='state', state_field=..., state_value=..., as_of=..., evidence=...)
+
+| 字段 | 当前值 | as_of | evidence |
+|---|---|---|---|
+| 工作状态 | 待确认 | - | - |
+| 作息模式 | 待确认 | - | - |
+| 健康基线 | 待确认 | - | - |
+| 情绪基线 | 待确认 | - | - |
+| 当前主线 | 待确认 | - | - |
+| 关系家庭 | 待确认 | - | - |
+| 经济预算 | 待确认 | - | - |
+| 忌口过敏 | 待确认 | - | - |"""
+
 
 def _notebook_template() -> str:
-    headers = "\n\n".join(SECTIONS[k] for k in SECTIONS)
+    headers = "\n\n".join(SECTIONS[k] for k in SECTIONS if k != "state")
     return (
         "# 他的画像 · OWNER-NOTEBOOK\n\n"
         "> 这是你（Daemonkey）持续维护的「他是谁」的画像。\n"
         "> 他随时可以亲手编辑它 —— 他最有权解释自己。\n\n"
+        f"{_STATE_CARD_BLOCK}\n\n"
         f"{headers}\n\n"
         "## 七、近期更新流水\n\n"
         "| 时间 | 来源 | 操作 |\n"
@@ -64,6 +97,99 @@ def _find_section(text: str, header: str) -> tuple[int, int]:
     nxt = text.find("\n## ", start + len(header))
     end = len(text) if nxt < 0 else nxt
     return start, end
+
+
+def _find_state_section(text: str) -> tuple[int, int]:
+    """定位 `## 〇、状态卡` 段。"""
+    m = _STATE_SECTION_RE.search(text)
+    if not m:
+        return -1, -1
+    start = m.start()
+    nxt = text.find("\n## ", start + 1)
+    end = len(text) if nxt < 0 else nxt
+    return start, end
+
+
+def _escape_table_cell(s: str) -> str:
+    return (s or "").replace("|", "/")
+
+
+def _update_state_table_row(
+    section_body: str,
+    field: str,
+    value: str,
+    as_of: str,
+    evidence: str,
+) -> tuple[str, bool]:
+    """在状态卡表格里按字段名替换一行；未命中则返回 (原正文, False)。"""
+    lines = section_body.split("\n")
+    for i, line in enumerate(lines):
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if len(cells) < 4:
+            continue
+        if cells[0] in ("字段", "field") or set(cells[0]) <= set("-: |"):
+            continue
+        if cells[0] != field:
+            continue
+        cells[1] = _escape_table_cell(value)
+        cells[2] = _escape_table_cell(as_of)
+        cells[3] = _escape_table_cell(evidence or "-")
+        lines[i] = "| " + " | ".join(cells) + " |"
+        return "\n".join(lines), True
+    return section_body, False
+
+
+def _append_state_table_row(
+    section_body: str,
+    field: str,
+    value: str,
+    as_of: str,
+    evidence: str,
+) -> str:
+    """在状态卡表格末尾追加一行。"""
+    row = (
+        f"| {_escape_table_cell(field)} | {_escape_table_cell(value)} | "
+        f"{_escape_table_cell(as_of)} | {_escape_table_cell(evidence or '-')} |"
+    )
+    return section_body.rstrip() + "\n" + row + "\n"
+
+
+def _run_state_update(args: dict, text: str) -> tuple[bool, str, str]:
+    """状态卡替换式更新。返回 (ok, msg, new_text)。"""
+    state_field = (args.get("state_field") or "").strip()
+    state_value = (args.get("state_value") or "").strip()
+    as_of = (args.get("as_of") or "").strip() or datetime.now().strftime("%Y-%m-%d")
+    evidence = (args.get("evidence") or "-").strip() or "-"
+
+    missing = []
+    if not state_field:
+        missing.append("state_field")
+    if not state_value:
+        missing.append("state_value")
+    if missing:
+        return False, (
+            f"section='state' 需要 {', '.join(missing)} · "
+            f"示例: state_field='作息模式' state_value='正常' as_of='2026-08-27'"
+        ), text
+
+    sec_start, sec_end = _find_state_section(text)
+    if sec_start < 0:
+        return False, "状态卡段不存在——请先确认 OWNER-NOTEBOOK 模板含 ## 〇、状态卡", text
+
+    section_body = text[sec_start:sec_end]
+    new_section_body, hit = _update_state_table_row(
+        section_body, state_field, state_value, as_of, evidence,
+    )
+    if not hit:
+        new_section_body = _append_state_table_row(
+            section_body, state_field, state_value, as_of, evidence,
+        )
+
+    new_text = text[:sec_start] + new_section_body + text[sec_end:]
+    msg = f"状态卡「{state_field}」→ {state_value} (as_of={as_of})"
+    return True, msg, new_text
 
 
 # ---------- tool: set_identity ----------
@@ -92,13 +218,10 @@ def _run_set_identity(args: dict) -> tuple[bool, str]:
         # wish-9585aa62: 设定风格时 LLM 蒸馏叙事风格包 (开场白/安抚/完成语变体池)
         # 失败 (网络/JSON) → 不阻塞 · 保持原 persona_style · 叙事器回退默认包
         try:
-            from identity import distill_narration_pack, distill_style_band_pack
+            from identity import distill_narration_pack
             pack = distill_narration_pack(style)
             if pack:
                 payload["narration_pack"] = pack
-            band = distill_style_band_pack(style)
-            if band:
-                payload["style_band_pack"] = band
         except Exception:
             pass
     # owner_name = 该怎么称呼他 (localize 把代码里的占位名换成这个)·空就先不写·之后可补
@@ -128,15 +251,25 @@ def _run_set_identity(args: dict) -> tuple[bool, str]:
 
 def _run_update_owner_note(args: dict) -> tuple[bool, str]:
     section = (args.get("section") or "").strip().lower()
-    content = (args.get("content") or "").strip()
+    append_sections = {k: v for k, v in SECTIONS.items() if k != "state"}
     if section not in SECTIONS:
         return False, f"未知维度 {section!r}；可选：{', '.join(SECTIONS)}"
-    if not content:
-        return False, "content 为空·没有可写的内容。"
 
     _ensure_data()
     text = NOTEBOOK_PATH.read_text(encoding="utf-8")
-    header = SECTIONS[section]
+
+    if section == "state":
+        ok, msg, new_text = _run_state_update(args, text)
+        if not ok:
+            return False, msg
+        NOTEBOOK_PATH.write_text(new_text, encoding="utf-8")
+        return True, f"已更新状态卡：{msg}"
+
+    content = (args.get("content") or "").strip()
+    if not content:
+        return False, "content 为空·没有可写的内容。"
+
+    header = append_sections[section]
     s, e = _find_section(text, header)
     if s < 0:
         # 模板里缺这个 header（极少见）→ 直接补到文末
@@ -320,7 +453,7 @@ TOOLS = [
                     "owner_name": {
                         "type": "string",
                         "description": (
-                            "该怎么称呼他（他的名字/昵称，如『阿哲』）。一旦他说了就传进来——"
+                            "该怎么称呼他（他的名字/昵称）。一旦他说了就传进来——"
                             "系统会用它替换掉界面和对话里所有占位的称呼。还不知道就先别传。"
                         ),
                     },
@@ -340,7 +473,10 @@ TOOLS = [
             "description": (
                 "把刚刚了解到的关于他的信息写进他的画像，跨会话长期记住。"
                 "当他透露称呼/身份/在做的事/理想方向/偏好/边界/重要事件时调用。"
-                "轻量即可——他说多少记多少，不要逼问。"
+                "轻量即可——他说多少记多少，不要逼问。\n"
+                "section='state' 时走替换式：高频生活状态（作息/健康/情绪）——今天调回去了就改今天的值，"
+                "不堆历史；需传 state_field + state_value，可选 as_of / evidence。\n"
+                "状态卡是相处中自然长出的·绝不查户口——用户没聊到就不记，别为了填满 8 字段去问。"
             ),
             "parameters": {
                 "type": "object",
@@ -350,6 +486,7 @@ TOOLS = [
                         "enum": list(SECTIONS.keys()),
                         "description": (
                             "写进哪个维度："
+                            "state(状态卡·替换式·8 骨架字段) / "
                             "profile(当下身份/在做的事/理想方向) / events(关键事件) / "
                             "rules(长期偏好与边界) / dialogue(称呼与口头习惯) / "
                             "summary(压缩段) / risks(关怀雷达：该提醒他照顾自己的信号)"
@@ -357,10 +494,27 @@ TOOLS = [
                     },
                     "content": {
                         "type": "string",
-                        "description": "要记住的内容，一句话写清。markdown 友好。",
+                        "description": "要记住的内容，一句话写清。markdown 友好。section='state' 时不传。",
+                    },
+                    "state_field": {
+                        "type": "string",
+                        "enum": list(STATE_FIELDS),
+                        "description": "状态卡字段名（section='state' 时必填）。",
+                    },
+                    "state_value": {
+                        "type": "string",
+                        "description": "该字段当前值（section='state' 时必填）。",
+                    },
+                    "as_of": {
+                        "type": "string",
+                        "description": "最后确认日期 YYYY-MM-DD（section='state' 时建议传）。",
+                    },
+                    "evidence": {
+                        "type": "string",
+                        "description": "一句话证据（section='state' 时可选，默认 '-'）。",
                     },
                 },
-                "required": ["section", "content"],
+                "required": ["section"],
             },
         },
     },

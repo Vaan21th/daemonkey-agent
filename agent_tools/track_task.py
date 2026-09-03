@@ -167,8 +167,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="track_task",
     description=(
-        "多步任务账本。三步以上开工先 action=plan；做完一步立刻 step=done。结论用 note。新窗口先 open。action: plan/step/open/note/list。"
-    ),
+        "多步任务账本。三步以上开工先 action=plan；做完一步立刻 step=done。结论用 note。新窗口先 open。action: plan/step/open/note/list。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

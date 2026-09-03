@@ -13,9 +13,9 @@ function _tlHost() {
   return document.querySelector('.session-msgs:not([hidden])');
 }
 
-/* ═══ wish-5256d2a4 · 工具时间线 + 人话翻译层（方案 D · 用户 2026-07-27 验收 demo 拍板） ═══
+/* ═══ wish-5256d2a4 · 工具时间线 + 人话翻译层（方案 D · BRO 2026-07-27 验收 demo 拍板） ═══
    零 token：全部前端本地正则翻译 · daemon 只传原始 tool name/summary/result
-   整轮折叠块【默认展开】（用户 拍板"工具默认是不折叠的"）· 单步技术细节默认折叠（点人话行展开） */
+   整轮折叠块【默认展开】（BRO 拍板"工具默认是不折叠的"）· 单步技术细节默认折叠（点人话行展开） */
 const TL_T2C = {
   read_file:'file', write_file:'file', edit_file:'file', glob_files:'file', grep_files:'file',
   outline_file:'file', search_code:'file', lint_check:'file', read_scenario:'file', pdf_read:'file', read_dashboard:'file',
@@ -86,11 +86,17 @@ const TL_HUMAN = {
   wish_update: c => ({ action: '更新心愿单状态', result: String(c.r).includes('review') ? '已标记为「等你验收」' : (String(c.r).includes('live') ? '已上线合入主干' : '已更新') }),
   wish_add: c => ({ action: '往心愿单记了一条新想法', result: '已存档，等你拍板' }),
   track_task: c => ({ action: '往任务账本记了一笔', result: '已记住，下次接着干不用重来' }),
-  web_search: c => ({ action: `上网搜索 <b>${String(c.s).replace(/"/g, '').slice(0, 40)}</b>`, result: c.r }),
+  web_search: c => {
+    const m = String(c.r || '').match(/(\d+)\s+results?\s+\(via\s+([^)]+)\)/i);
+    const res = m ? `找到 ${m[1]} 条 · ${m[2]}` : c.r;
+    const q = String(c.s || '').replace(/^web_search\s+query=/, '').replace(/["']/g, '').slice(0, 40);
+    return { action: `上网搜索 <b>${escHtml(q)}</b>`, result: res };
+  },
   web_fetch: c => ({ action: '抓取网页正文', result: c.r }),
   browser_act: c => ({ action: '操作网页（点击/填表/收图）', result: c.ok ? '操作完成' : (c.r || '操作失败') }),
   generate_image: c => ({ action: '画了一张图', result: '图片已生成并保存' }),
-  generate_report: c => ({ action: '生成了一份报告文档', result: '已落盘，报告库可下载' }),
+  generate_report: c => ({ action: '生成了一份报告文档', result: '已落盘，产物库可下载' }),
+  generate_presentation: c => ({ action: '生成了一份演示稿', result: '已落盘，产物库可下载' }),
   wechat_send: c => ({ action: '给你发了条微信', result: '已送达' }),
   update_owner_note: c => ({ action: '记一笔到你的画像档案', result: '已记住，以后每次开机都会带上' }),
   extract_playbook: c => ({ action: '沉淀经验成操作手册', result: '已存档，下次同类任务直接照着做' }),
@@ -122,7 +128,7 @@ function tlHumanize(tool, summary, resultText, ok) {
   return { action: `<b>${escHtml(tool)}</b> ${escHtml(s)}`, result: String(resultText || '') };
 }
 
-// app_id → 名字 映射缓存 · 工具卡片显示 app 名 (用户: 别显示 app-ddfd7d92)
+// app_id → 名字 映射缓存 · 工具卡片显示 app 名 (BRO: 别显示 app-ddfd7d92)
 let _appNameMap = null;   // {aid: name} · null = 还没拉
 let _appNameMapT = 0;
 const _APP_NAME_TTL = 60000;   // 60s 内不重复拉
@@ -236,7 +242,7 @@ function tlAddStep(state, name, summary, tier) {
   return rec;
 }
 
-function tlFillStep(state, name, ok, resultText) {
+function tlFillStep(state, name, ok, resultText, hits) {
   const tl = state._tl; if (!tl) return;
   let rec = null;
   for (let i = tl.steps.length - 1; i >= 0; i--) {
@@ -249,7 +255,12 @@ function tlFillStep(state, name, ok, resultText) {
   const $r = rec.$card.querySelector('.tl-step-result');
   $r.classList.remove('tl-pending');
   $r.classList.add(ok ? 'tl-ok' : 'tl-fail');
-  $r.innerHTML = (ok ? '<i class="ri-check-fill"></i> ' : '<i class="ri-close-fill"></i> ') + escHtml(String(h.result || (ok ? '完成' : '失败')).slice(0, 220));
+  let resultLine = String(h.result || (ok ? '完成' : '失败')).slice(0, 220);
+  if (ok && Array.isArray(hits) && hits.length) {
+    const eng = hits[0].engine || '';
+    resultLine = `找到 ${hits.length} 条` + (eng ? ` · ${eng}` : '');
+  }
+  $r.innerHTML = (ok ? '<i class="ri-check-fill"></i> ' : '<i class="ri-close-fill"></i> ') + escHtml(resultLine);
   const $d = rec.$card.querySelector('.tl-step-dur');
   if ($d && durS > 0) $d.textContent = tlHumanDur(durS);
   const $tech = rec.$card.querySelector('.tl-step-tech');
@@ -259,7 +270,39 @@ function tlFillStep(state, name, ok, resultText) {
     rd.textContent = String(resultText).slice(0, 300);
     $tech.appendChild(rd);
   }
+  if (ok && Array.isArray(hits) && hits.length) tlMountHits(rec.$card, hits);
   _tlUpdateHead(state);
+}
+
+function tlMountHits(card, hits) {
+  const main = card && card.querySelector('.tl-step-main');
+  if (!main) return;
+  let box = card.querySelector('.dk-search-hits');
+  if (!box) {
+    box = document.createElement('div');
+    box.className = 'dk-search-hits';
+    main.appendChild(box);
+  }
+  box.innerHTML = hits.slice(0, 8).map((h) => {
+    const title = escHtml(String(h.title || '').slice(0, 80));
+    const url = String(h.url || '');
+    const href = /^https?:\/\//i.test(url) ? url : '';
+    const site = escHtml(String(h.site || '').slice(0, 40));
+    const date = escHtml(String(h.date || '').slice(0, 16));
+    const snip = escHtml(String(h.snippet || '').slice(0, 120));
+    const icon = String(h.icon || '');
+    const icoOk = /^https?:\/\//i.test(icon);
+    const meta = [site, date].filter(Boolean).join(' · ');
+    const head = href
+      ? `<a class="dk-hit-title" href="${escHtml(href)}" target="_blank" rel="noopener">${title}</a>`
+      : `<span class="dk-hit-title">${title}</span>`;
+    return `<div class="dk-hit">`
+      + (icoOk ? `<img class="dk-hit-ico" src="${escHtml(icon)}" alt="" loading="lazy">` : '<i class="ri-window-line dk-hit-ico-fallback"></i>')
+      + `<div class="dk-hit-body">${head}`
+      + (meta ? `<div class="dk-hit-meta">${meta}</div>` : '')
+      + (snip ? `<div class="dk-hit-snip">${snip}</div>` : '')
+      + `</div></div>`;
+  }).join('');
 }
 
 function _tlHeadSummary(steps) {
@@ -284,7 +327,7 @@ function tlFinishRound(state) {
   if ($t) $t.innerHTML = _tlHeadSummary(tl.steps);
   const $s = tl.$head.querySelector('.tl-round-stats');
   if ($s) $s.textContent = `${n} 步 · ${tlHumanDur(totalS)}${fails ? ` · ${fails} 失败` : ''}`;
-  /* 默认保持展开（用户 拍板"工具默认是不折叠的"）· 用户想收自己点头部 */
+  /* 默认保持展开（BRO 拍板"工具默认是不折叠的"）· 用户想收自己点头部 */
   state._tl = null;
 }
 
@@ -332,4 +375,3 @@ function renderToolTimeline(items, target) {
     state._tl = null;
   }
 }
-

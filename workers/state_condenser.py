@@ -36,7 +36,7 @@ def _resolve_notebook() -> tuple[str, Path]:
 
 NOTEBOOK_FILENAME, DEFAULT_NOTEBOOK = _resolve_notebook()
 
-STYLE_DIM_KEYS = ("话量", "调性", "力度", "礼节", "表现力")
+STYLE_DIM_KEYS = ("话量", "调性", "语气", "礼节", "表现力")
 
 UNDERSTANDING_HEADING_KEY = "了解层"
 HISTORY_HEADING_KEY = "状态卡变更史"
@@ -61,12 +61,12 @@ CONDENSE_SYSTEM = """你是 OPUS 的认知凝练器——从 L2 状态卡变更�
 4. 短条：content ≤ 200 字，禁止整段聊天糊进去。日期故事不属于了解层。
 5. 输出合法 JSON 对象，不要 markdown 围栏、不要前后解释
 
-格式：{"entries": [{"field": "了解条目名", "content": "凝练内容", "evidence": "依据（带 as_of/来源）"}, ...], "style_dims": {"话量": 55, "调性": 50, "力度": 48, "礼节": 52, "表现力": 60}}
+格式：{"entries": [{"field": "了解条目名", "content": "凝练内容", "evidence": "依据（带 as_of/来源）"}, ...], "style_dims": {"话量": 55, "调性": 50, "语气": 48, "礼节": 52, "表现力": 60}}
 
 - entries：无符合条目时 []
 - style_dims：**可选** · 只在相处模式有明确风格信号时给出微调值（0-100 整数）· 每次最多变动几个点 · 无信号则省略整个 style_dims 字段
   · 认他要的，不认关怀学：他说「别太正经」→ 调性略降 · 多次嫌话多 → 话量略降
-  · 深夜 / 累 / 谢谢 / 难过 ≠ 力度往温柔。没人要软，力度不动"""
+  · 深夜 / 累 / 谢谢 / 难过 ≠ 语气往温柔。没人要软，语气不动"""
 
 
 def _load_runtime_state(path: Path) -> dict:
@@ -279,6 +279,8 @@ def _save_style_dims(path: Path, dims: dict) -> bool:
         if path.suffix.lower() == ".json":
             path = DEFAULT_STYLE_DIMS
     cleaned: dict[str, int] = {}
+    if isinstance(dims, dict) and "语气" not in dims and "力度" in dims:
+        dims = {**dims, "语气": dims["力度"]}
     for k in STYLE_DIM_KEYS:
         v = dims.get(k)
         if not isinstance(v, (int, float)):
@@ -457,6 +459,15 @@ def condense_state_card(
         runtime = _load_runtime_state(rt_path)
         history_count = _count_history_rows(text)
 
+        # 了解层已抽过。自动跑不再让模型改写；force 只落提案，不覆盖本子。
+        if not force:
+            return {
+                "skipped": True,
+                "reason": "了解层冻结 · 只追加不重写",
+                "frozen": True,
+                "history_count": history_count,
+            }
+
         ok, reason = _should_condense(
             force=force, runtime=runtime, history_count=history_count,
         )
@@ -503,20 +514,22 @@ def condense_state_card(
         new_entries, new_style_dims = _parse_condense_response(raw)
         merged = _merge_entries(existing, new_entries)
         new_body = _render_understanding_body(merged)
-        new_text = _replace_understanding_section(text, new_body)
+        _ = new_style_dims
 
-        style_dims_updated = False
-        if new_style_dims and _save_style_dims(sd_path, new_style_dims):
-            style_dims_updated = True
-
-        if notebook_path is None and runtime_path is None:
-            _write_notebook(new_text, nb_path)
-        else:
-            nb_path.write_text(new_text, encoding="utf-8")
+        proposal = (ROOT / "data" / "runtime" / "understanding_proposal.md")
+        if runtime_path is not None:
+            proposal = Path(runtime_path).parent / "understanding_proposal.md"
+        proposal.parent.mkdir(parents=True, exist_ok=True)
+        proposal.write_text(
+            "# 了解层提案 · 未写入本子\n\n"
+            f"reason: {reason}\n\n"
+            f"{new_body.rstrip()}\n",
+            encoding="utf-8",
+        )
 
         now_iso = datetime.now(timezone.utc).isoformat()
         runtime.update({
-            "last_condensed_at": now_iso,
+            "last_proposal_at": now_iso,
             "last_history_count": history_count,
             "last_entry_count": len(merged),
         })
@@ -524,13 +537,15 @@ def condense_state_card(
 
         return {
             "skipped": False,
+            "applied": False,
+            "proposal": str(proposal),
             "condensed": len(new_entries),
             "entries": new_entries,
             "total_entries": len(merged),
             "history_count": history_count,
             "reason": reason,
             "usage": usage,
-            "style_dims_updated": style_dims_updated,
+            "style_dims_updated": False,
         }
     except Exception as e:
         logger.exception("state_condenser failed")

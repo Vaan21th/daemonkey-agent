@@ -217,15 +217,21 @@ async def office_doc_home(
     sid: str = "",
     authorization: Optional[str] = Header(None),
 ):
-    """办公稿的家话题 · 工作台打开产物时先切到这场，不绑到当前对话。"""
+    """稿的去处：这场认领过就回这场；没认领才回最早挂上的那场。"""
     check_auth(authorization)
     from workers.session_docs import _canon_rel, home_of, list_bound
     rel = _canon_rel(path or "")
-    home = home_of(rel) if rel else None
+    first = home_of(rel) if rel else None
     claimed = False
     if sid and rel:
         claimed = any(_canon_rel(d.get("path") or "") == rel for d in list_bound(sid))
-    return {"ok": True, "path": rel, "home_sid": home, "claimed": claimed}
+    return {
+        "ok": True,
+        "path": rel,
+        "home_sid": sid if claimed else first,
+        "first_sid": first,
+        "claimed": claimed,
+    }
 
 
 @router.delete("/sessions/{sid}")
@@ -326,6 +332,13 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
                 parts.append(f"{f.name}:{st.st_size}:{int(st.st_mtime)}")
             except Exception:
                 pass
+        try:
+            docs = get_session_meta(sid).get("working_docs") or []
+            parts.append("wd:" + ",".join(
+                str(d.get("path") or "") for d in docs if isinstance(d, dict)
+            ))
+        except Exception:
+            pass
         return "|".join(parts)
 
     ck = _cache_key()

@@ -45,6 +45,9 @@ openpyxl>=3.1.0
 # 卷 · 客户档案上传端点 (FastAPI UploadFile/File 依赖) · 缺则 /import-preview 起不来
 python-multipart>=0.0.9
 
+# 产物库成品预览 · 本机 Word/WPS→PDF、PPT/WPS→PNG（没装则预览退回文稿）
+pywin32>=306; sys_platform == "win32"
+
 # wish-fb6b7427 · 事项 B · Windows toast 系统通知 (纯 ctypes · 零传递依赖)
 winotify>=1.1.0; sys_platform == "win32"
 

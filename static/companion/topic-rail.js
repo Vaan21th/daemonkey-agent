@@ -495,11 +495,14 @@ async function loadMoreShelf() {
   const btn = document.getElementById('topic-more');
   if (btn) { btn.disabled = true; btn.textContent = '在翻…'; }
   try {
-    const pack = await _fetchShelf(_rows.length, SHELF_LIM);
+    const offset = _rows.filter(s => !_isDraft(s.session_id)).length;
+    const pack = await _fetchShelf(offset, SHELF_LIM);
     _shelfMore = pack.more;
     if (pack.rows.length) {
-      _rows = _rows.concat(pack.rows);
-      _appendCards(pack.rows);
+      const seen = new Set(_rows.map(s => s.session_id));
+      const extra = pack.rows.filter(s => !seen.has(s.session_id));
+      _rows = _rows.concat(extra);
+      _appendCards(extra);
     }
   } catch (e) { _shelfMore = false; }
   _paintMore();

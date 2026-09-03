@@ -35,6 +35,13 @@ def _run(args: dict) -> ToolResult:
     body = str(args.get("body") or "").strip()
     if not body:
         return ToolResult(ok=False, output="", error="body 只写新增页的分页 markdown，不要整份重写")
+    try:
+        after = args.get("after")
+        after = int(after) if after not in (None, "") else None
+    except (TypeError, ValueError):
+        return ToolResult(ok=False, output="", error="after 必须是页码数字（0 插到最前）")
+    if after is not None and after < 0:
+        return ToolResult(ok=False, output="", error="after 不能是负数")
     style = (args.get("style") or "light_studio").strip() or "light_studio"
     from workers.office_extend import append_slides, render_new_pages
     from workers.output_versions import publish, safe_family, staged_path
@@ -46,7 +53,7 @@ def _run(args: dict) -> ToolResult:
     here = folder / "_assets" / family
     try:
         added_n = render_new_pages(body, extra, style=style, here=here, inherit=got)
-        info = append_slides(got, extra, staged)
+        info = append_slides(got, extra, staged, after=after)
         out, ver = publish(staged, folder, family, got.suffix.lower() or ".pptx", keep=got)
     except Exception as e:
         return ToolResult(ok=False, output="", error=f"加页失败: {type(e).__name__}: {e}")
@@ -59,7 +66,7 @@ def _run(args: dict) -> ToolResult:
         prev = ""
         if md_path.is_file():
             prev = md_path.read_text(encoding="utf-8").rstrip() + "\n\n"
-        md_path.write_text(prev + "<!-- extended -->\n\n" + body, encoding="utf-8")
+        md_path.write_text(prev + body, encoding="utf-8")
     except OSError:
         pass
 
@@ -70,6 +77,11 @@ def _run(args: dict) -> ToolResult:
             f"加页完成 · {out.name} · V{ver}",
             f"  路径: {rel}",
             f"  原 {info['base_pages']} 页留下，新加 {info['added']} 页（共 {info['total']}）",
+            (
+                f"  插在第{after}页后面"
+                if after
+                else ("  插到最前面" if after == 0 else "  接在最后")
+            ),
             f"  原稿板式/图还在；新页按原稿配色",
             f"[[DK-OPEN]]{rel}",
         ]),
@@ -79,9 +91,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="extend_office",
     description=(
-        "已有 pptx 加页/拓展到 N 页。复制原稿再接新页，原页板式和素材必须留下。"
-        "body 只写新增页 markdown。禁止 generate_presentation 整份重出。"
-        "新页抄原稿配色/字体，不要另起六套风格。改字仍走 revise_office。"
+        "已有 pptx 加页。after=页码插在该页后，不传接最后。body 只写新增页。"
+        "原页板式留下，新页抄原稿配色。禁止 generate_presentation 整份重出。"
     ),
     tier=TIER_CONFIRM,
     input_schema={
@@ -94,6 +105,10 @@ SPEC = ToolSpec(
             "body": {
                 "type": "string",
                 "description": "只要新增页。`---` 分页。不要把原页再写一遍。",
+            },
+            "after": {
+                "type": "integer",
+                "description": "插在这页后面。0 最前。不传接最后。",
             },
             "style": {
                 "type": "string",

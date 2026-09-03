@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -27,6 +28,7 @@ from typing import Any, Optional
 _ROOT = Path(__file__).resolve().parent.parent
 _LIVE_PATH = _ROOT / "data" / "runtime" / "advisor_live.json"
 _SESSIONS = _ROOT / "sessions"
+_LIVE_LOCK = threading.Lock()  # B-② · 2026-08-27 · live 状态 RMW 原子 · 防并发半写/交错 (Grok 全量审计)
 
 _SUB_ID_RE = re.compile(r"^[a-f0-9]{6,16}$")
 
@@ -71,21 +73,25 @@ def update_live(*, turn: Optional[int] = None, action: str = "", think: str = ""
                 files: Optional[int] = None) -> None:
     """顾问跑的过程中 · 更新轮次 / 最近动作 / 最近思考片段 / 已读文件数。"""
     try:
-        if not _LIVE_PATH.exists():
-            return
-        payload = json.loads(_LIVE_PATH.read_text(encoding="utf-8"))
-        if not payload.get("active"):
-            return
-        payload["last_ts"] = time.time()  # 每步心跳 · stale 判定的命
-        if turn is not None:
-            payload["turn"] = turn
-        if action:
-            payload["last_action"] = action[:120]
-        if think:
-            payload["last_think"] = think[:200]
-        if files is not None:
-            payload["files_read"] = files  # 协同模式金卡/刷新恢复卡都能显示"已读 N 个文件"
-        _LIVE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+        with _LIVE_LOCK:  # B-② · 读-改-写整段原子 · 防并发 update 半写 (Grok 全量审计)
+            if not _LIVE_PATH.exists():
+                return
+            payload = json.loads(_LIVE_PATH.read_text(encoding="utf-8"))
+            if not payload.get("active"):
+                return
+            payload["last_ts"] = time.time()  # 每步心跳 · stale 判定的命
+            if turn is not None:
+                payload["turn"] = turn
+            if action:
+                payload["last_action"] = action[:120]
+            if think:
+                payload["last_think"] = think[:200]
+            if files is not None:
+                payload["files_read"] = files  # 协同模式金卡/刷新恢复卡都能显示"已读 N 个文件"
+            import os as _os
+            _tmp = _LIVE_PATH.with_name(_LIVE_PATH.name + ".tmp")
+            _tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+            _os.replace(_tmp, _LIVE_PATH)
     except Exception:
         pass
 
@@ -95,20 +101,24 @@ def finish_live(*, ok: bool, iterations: int, sub_session_id: str = "",
     """顾问跑完 · active:false · 留最近一次活动的摘要 (status 端点可回"上次顾问")。
     text/verdict 可选 · 自动验收场景由 daemon_api 补写 · 前端 polling 自愈时读。"""
     try:
-        if not _LIVE_PATH.exists():
-            return
-        payload = json.loads(_LIVE_PATH.read_text(encoding="utf-8"))
-        payload["active"] = False
-        payload["finished_at"] = _now_iso()
-        payload["ok"] = ok
-        payload["iterations"] = iterations
-        if sub_session_id:
-            payload["sub_session_id"] = sub_session_id
-        if text is not None:
-            payload["text"] = text[:3000]
-        if verdict is not None:
-            payload["verdict"] = verdict
-        _LIVE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+        with _LIVE_LOCK:  # B-② · 同上 RMW 原子 (Grok 全量审计)
+            if not _LIVE_PATH.exists():
+                return
+            payload = json.loads(_LIVE_PATH.read_text(encoding="utf-8"))
+            payload["active"] = False
+            payload["finished_at"] = _now_iso()
+            payload["ok"] = ok
+            payload["iterations"] = iterations
+            if sub_session_id:
+                payload["sub_session_id"] = sub_session_id
+            if text is not None:
+                payload["text"] = text[:3000]
+            if verdict is not None:
+                payload["verdict"] = verdict
+            import os as _os
+            _tmp = _LIVE_PATH.with_name(_LIVE_PATH.name + ".tmp")
+            _tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+            _os.replace(_tmp, _LIVE_PATH)
     except Exception:
         pass
 

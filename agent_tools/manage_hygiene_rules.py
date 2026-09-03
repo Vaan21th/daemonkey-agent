@@ -68,15 +68,17 @@ def _run(args: dict) -> ToolResult:
         source = (args.get("source") or "").strip()
         reason = (args.get("reason") or "").strip()
         if not name or not match:
-            return ToolResult(False, "add 需要 name 和 match (match 是 substring · 命中即噪音)")
+            return ToolResult(ok=False, output="", error="add 需要 name 和 match (match 是 substring · 命中即噪音)")
         if len(match) < 6:
             return ToolResult(
-                False,
-                f"match 只有 {len(match)} 字符 · 太短会误伤一片 · 至少 6 字符 · "
-                "挑这段噪音里独一无二的一句",
+                ok=False, output="",
+                error=(
+                    f"match 只有 {len(match)} 字符 · 太短会误伤一片 · 至少 6 字符 · "
+                    "挑这段噪音里独一无二的一句"
+                ),
             )
         if any(r.get("name") == name for r in rules):
-            return ToolResult(False, f"规则名「{name}」已存在 · 换个名或先 remove")
+            return ToolResult(ok=False, output="", error=f"规则名「{name}」已存在 · 换个名或先 remove")
         rules.append({
             "name": name,
             "match": match,
@@ -87,36 +89,39 @@ def _run(args: dict) -> ToolResult:
         _save(data)
         scope = f" · 仅 source={source}" if source else " · 全来源"
         return ToolResult(
-            True,
-            f"规则「{name}」已加入本地层{scope} · 命中串: 「{match[:50]}」\n"
-            f"下次启动 (或 hygiene migrate) 时生效清理 · 判错可恢复 (jsonl 原文永远在)",
+            ok=True,
+            output=(
+                f"规则「{name}」已加入本地层{scope} · 命中串: 「{match[:50]}」\n"
+                f"下次启动 (或 hygiene migrate) 时生效清理 · 判错可恢复 (jsonl 原文永远在)"
+            ),
         )
 
     if action == "list":
         if not rules:
-            return ToolResult(True, "本地规则层为空 · 母体内置规则在 workers/memory_hygiene.py")
+            return ToolResult(ok=True, output="本地规则层为空 · 母体内置规则在 workers/memory_hygiene.py")
         lines = [f"本地自治规则 {len(rules)} 条:"]
         for r in rules:
             scope = f" [source={r['source']}]" if r.get("source") else ""
             lines.append(f"  · {r['name']}{scope} · 命中「{str(r.get('match', ''))[:40]}」 · {r.get('reason', '')[:50]}")
-        return ToolResult(True, "\n".join(lines))
+        return ToolResult(ok=True, output="\n".join(lines))
 
     if action == "remove":
         name = (args.get("name") or "").strip()
         before = len(rules)
         data["rules"] = [r for r in rules if r.get("name") != name]
         if len(data["rules"]) == before:
-            return ToolResult(False, f"没找到规则「{name}」")
+            return ToolResult(ok=False, output="", error=f"没找到规则「{name}」")
         _save(data)
-        return ToolResult(True, f"规则「{name}」已删 · 已被它清掉的 chunk 不会自动回来 (rebuild 才恢复) · 但它不会再误伤新的")
+        return ToolResult(ok=True, output=f"规则「{name}」已删 · 已被它清掉的 chunk 不会自动回来 (rebuild 才恢复) · 但它不会再误伤新的")
 
-    return ToolResult(False, f"未知 action: {action} · 支持 add / list / remove")
+    return ToolResult(ok=False, output="", error=f"未知 action: {action} · 支持 add / list / remove")
 
 
 SPEC = ToolSpec(
     name="manage_hygiene_rules",
     description=(
-        "管本地记忆卫生规则（data/my_hygiene_rules.json）。回忆里反复出现的噪音模板就 add 一条字面子串。重启后生效。宁窄勿宽。"
+        "管本地记忆卫生规则（data/my_hygiene_rules.json）。回忆里反复出现的噪音模板就 add 一条字面子串。"
+        "重启后生效。宁窄勿宽。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

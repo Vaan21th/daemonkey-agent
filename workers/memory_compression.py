@@ -46,7 +46,6 @@ SUMMARY_TAG_CLOSE = "</compaction-summary>"
 PRUNED_MARKER = "[已修剪工具结果 — "
 MIN_FOLD_TOKENS = 400            # 经济性: 可折叠区低于此 token 不值一次摘要调用
 TAIL_TOKEN_BUDGET = int(os.environ.get("OPUS_COMPACT_TAIL_TOKENS") or "16384")
-TAIL_USER_TURNS = int(os.environ.get("OPUS_TAIL_USER_TURNS") or "2")
 TAIL_MAX_WINDOW_FRAC = 0.5       # 尾部 token 预算不超窗口此比例
 PRUNE_MIN_CHARS = int(os.environ.get("OPUS_PRUNE_MIN_CHARS") or "1024")
 PRUNE_RATIO = float(os.environ.get("OPUS_COMPACT_PRUNE_RATIO") or "0.6")  # 先修剪档
@@ -55,6 +54,7 @@ PIN_FIRST_USER_WINDOW_FRAC = 0.15
 MAX_CONSECUTIVE_COMPACTS = 2     # 连续压缩仍超阈值 → 暂停自动压缩 (防每轮重建缓存)
 _TOK_PER_CHAR_FALLBACK = 0.35    # CJK 偏多·介于 Go 0.25 与 1.0 之间
 DEFAULT_ABS_CAP_TOKENS = 256_000  # 0.8.8 · 压缩绝对线: 大窗口(1M)模型普通会话到不了 70% → 按体验拐点硬触发
+TAIL_USER_TURNS = int(os.environ.get("OPUS_TAIL_USER_TURNS") or "2")  # 最近 N 个 user 回合原文保活 (OpenCode DEFAULT_TAIL_TURNS)
 PRUNE_HISTORY_PRESSURE = int(os.environ.get("OPUS_PRUNE_HISTORY_TOKENS") or "40000")  # 历史过这线先免费剪工具
 MIN_PRUNE_SAVED_CHARS = int(os.environ.get("OPUS_PRUNE_MIN_SAVED_CHARS") or "40000")  # 省不够就不动盘 (护缓存)
 _PREFIX_TOK_CACHE: dict = {"n": 0, "t": 0.0}
@@ -344,8 +344,27 @@ def _is_compaction_summary(m: dict) -> bool:
     return isinstance(content, str) and content.lstrip().startswith(SUMMARY_TAG_OPEN)
 
 
+def _pinnable_user_turn(m: dict, ctx_window: int) -> bool:
+    """用户说的一句话能否原样保留 (不被折叠进摘要)。
+
+    判定: user turn 且估算 token ≤ min(PIN_FIRST_USER_MAX_TOKENS, ctx×0.15)。
+    用户说过的事实永不摘要——无论在会话哪里说的 (Reasonix partitionFold 精神)。
+    """
+    if not isinstance(m, dict) or m.get("role") != "user":
+        return False
+    if _is_compaction_summary(m):
+        return True  # 旧 digest 永远保留 (增量 · 治漂移)
+    cap = PIN_FIRST_USER_MAX_TOKENS
+    if ctx_window > 0:
+        cap = min(cap, int(ctx_window * PIN_FIRST_USER_WINDOW_FRAC))
+    return int(_msg_chars(m) * _tok_per_char()) <= cap
+
+
 def tail_protect_index(msgs: list, user_turns: int | None = None) -> int:
-    """从尾往头数 N 个真 user 回合 · 返回该回合起点。整段 [i:] 不 diet / 不 prune。"""
+    """从尾往头数 N 个真 user 回合 · 返回该回合起点。整段 [i:] 不 diet / 不 prune。
+
+    不足 N 个 user → 0 (整段都是活尾巴)。digest user 不占名额。
+    """
     n = TAIL_USER_TURNS if user_turns is None else user_turns
     if n <= 0:
         return len(msgs)
@@ -390,22 +409,6 @@ def estimate_prefix_tokens() -> int:
         return n
     except Exception:
         return int(_PREFIX_TOK_CACHE["n"] or 0)
-
-
-def _pinnable_user_turn(m: dict, ctx_window: int) -> bool:
-    """用户说的一句话能否原样保留 (不被折叠进摘要)。
-
-    判定: user turn 且估算 token ≤ min(PIN_FIRST_USER_MAX_TOKENS, ctx×0.15)。
-    用户说过的事实永不摘要——无论在会话哪里说的 (Reasonix partitionFold 精神)。
-    """
-    if not isinstance(m, dict) or m.get("role") != "user":
-        return False
-    if _is_compaction_summary(m):
-        return True  # 旧 digest 永远保留 (增量 · 治漂移)
-    cap = PIN_FIRST_USER_MAX_TOKENS
-    if ctx_window > 0:
-        cap = min(cap, int(ctx_window * PIN_FIRST_USER_WINDOW_FRAC))
-    return int(_msg_chars(m) * _tok_per_char()) <= cap
 
 
 def _pinned_prefix_len(msgs: list[dict], ctx_window: int) -> int:
@@ -688,11 +691,12 @@ def prune_stale_tool_results(messages: list[dict]) -> tuple[list[dict], dict]:
     返回 (新 messages, stats{pruned, saved_chars, archive})
     """
     candidates: list[tuple[int, str]] = []
+    protect = tail_protect_index(messages)
     for i, m in enumerate(messages):
         if not isinstance(m, dict) or m.get("role") != "tool":
             continue
-        if len(messages) - i <= 8:
-            continue  # 保护尾
+        if i >= protect:
+            continue  # 最近 N 个 user 回合原文保活
         content = m.get("content") or ""
         if not isinstance(content, str):
             continue

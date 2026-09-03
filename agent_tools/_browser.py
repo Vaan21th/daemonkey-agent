@@ -23,6 +23,7 @@ import os
 import re
 import socket
 import subprocess
+import threading
 import time
 from pathlib import Path
 
@@ -40,6 +41,7 @@ EDGE_PROFILE = Path(
     os.environ.get("DAEMONKEY_EDGE_PROFILE") or (PROJECT_ROOT / "sessions" / "edge_cdp_profile")
 )
 BROWSER_PID_FILE = EDGE_PROFILE / "daemon_browser.pid"
+_CDP_LOCK = threading.Lock()
 
 # 候选浏览器——都是 Chromium 内核，CDP 完全一样。Edge 优先（Win 出厂自带、几乎人人有），
 # 没有再退 Chrome。用户也可用 DAEMONKEY_BROWSER_PATH 显式指定（绿色版 / 其他 Chromium 内核）。
@@ -112,12 +114,37 @@ def _kill_stale_browser() -> int:
     # 兜底: wmic 没查到但 pid 档案在 → 直接按 pid 杀
     if killed == 0 and BROWSER_PID_FILE.exists():
         pid = BROWSER_PID_FILE.read_text().split()[0]
-        if pid.isdigit():
+        if pid.isdigit() and _pid_alive(int(pid)):
             subprocess.run(["taskkill", "/F", "/T", "/PID", pid], capture_output=True)
             killed += 1
+        else:
+            try:
+                BROWSER_PID_FILE.unlink(missing_ok=True)
+            except OSError:
+                pass
     if killed:
         time.sleep(1.5)  # 等句柄/锁释放
     return killed
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        try:
+            import ctypes
+            h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+            if h:
+                ctypes.windll.kernel32.CloseHandle(h)
+                return True
+        except Exception:
+            return False
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
 
 
 def _clean_singleton_locks():
@@ -147,6 +174,16 @@ def restart_browser(wait_secs: int = 25) -> bool:
 
 
 def ensure_cdp(launch: bool = True, wait_secs: int = 25) -> bool:
+    """确保 daemon 专属 CDP Edge 在跑且健康。
+
+    健康 → True；不健康/没在且 launch → 清僵尸+锁后重拉。
+    起不来（没装 Edge/Chrome / 端口没拉起）→ False，由调用方给出可读错误。
+    """
+    with _CDP_LOCK:
+        return _ensure_cdp_locked(launch, wait_secs)
+
+
+def _ensure_cdp_locked(launch: bool = True, wait_secs: int = 25) -> bool:
     """确保 daemon 专属 CDP Edge 在跑且健康。
 
     健康 → True；不健康/没在且 launch → 清僵尸+锁后重拉。

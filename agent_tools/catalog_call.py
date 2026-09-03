@@ -50,9 +50,17 @@ SPEC = ToolSpec(
         "type": "object",
         "properties": {
             "name": {"type": "string", "description": "Deferred tool name"},
-            "args": {"type": "object", "description": "Arguments for that tool"},
+            "args": {
+                "type": ["object", "string"],
+                "description": (
+                    "Arguments for that tool: object or JSON object string. "
+                    "You may also put the tool's fields next to name. "
+                    "Never pass an empty string."
+                ),
+            },
         },
         "required": ["name"],
+        "additionalProperties": True,
     },
     run=_run,
     classify=_classify,

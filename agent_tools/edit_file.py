@@ -95,9 +95,10 @@ def _run_batch(args: dict, raw: str, edits: list) -> ToolResult:
     except Exception as e:
         return ToolResult(ok=False, output="", error=f"{type(e).__name__}: {e}")
 
-    # 在归一化副本上逐对替换 · 全程不写盘
+    # 在原文上定位全部 old · 重叠/级联一律拒 · 全程不写盘
     _eol = "\r\n" if "\r\n" in original else "\n"
     _norm = original.replace("\r\n", "\n").replace("\r", "\n")
+    spans: list[tuple[int, int, str]] = []
     n_repl_total = 0
     for i, e in enumerate(edits):
         old = e.get("old_string", "").replace("\r\n", "\n").replace("\r", "\n")
@@ -105,19 +106,35 @@ def _run_batch(args: dict, raw: str, edits: list) -> ToolResult:
         ra = bool(e.get("replace_all"))
         if old == new:
             return ToolResult(ok=False, output="", error=f"edits[{i}]: old_string == new_string · 无改动")
-        count = _norm.count(old)
-        if count == 0:
+        positions: list[int] = []
+        start = 0
+        while True:
+            j = _norm.find(old, start)
+            if j < 0:
+                break
+            positions.append(j)
+            start = j + max(len(old), 1)
+            if not ra:
+                break
+        if not positions:
             return ToolResult(
                 ok=False, output="",
                 error=f"edits[{i}]: old_string 在文件里【一处都没匹配到】。先 read_file 重读那段原样复制。",
             )
-        if count > 1 and not ra:
+        if len(positions) > 1 and not ra:
             return ToolResult(
                 ok=False, output="",
-                error=f"edits[{i}]: old_string 匹配 {count} 处·不唯一。扩大上下文或传 replace_all=true。",
+                error=f"edits[{i}]: old_string 匹配 {len(positions)} 处·不唯一。扩大上下文或传 replace_all=true。",
             )
-        _norm = _norm.replace(old, new)
-        n_repl_total += count if ra else 1
+        for j in positions:
+            spans.append((j, j + len(old), new))
+            n_repl_total += 1
+    spans.sort(key=lambda x: x[0])
+    for a, b in zip(spans, spans[1:]):
+        if a[1] > b[0]:
+            return ToolResult(ok=False, output="", error="批量 edits 替换区间重叠 · 整批不写")
+    for start, end, new in reversed(spans):
+        _norm = _norm[:start] + new + _norm[end:]
 
     # 全部替换成功 → 空文件兜底
     if not _norm.strip():
@@ -168,7 +185,10 @@ def _run_batch(args: dict, raw: str, edits: list) -> ToolResult:
         from workers.edit_selfcheck import budget_check, selfcheck
         sc_ok, sc_warn = selfcheck([str(path)])
         if not sc_ok:
-            base = f"{base}\n\n{sc_warn}"
+            return ToolResult(
+                ok=False, output="",
+                error=f"语法自检失败{_rollback(path, original)}\n{sc_warn}",
+            )
         b_ok, b_warn = budget_check([str(path)])
         if not b_ok:
             base = f"{base}\n\n{b_warn}"
@@ -312,10 +332,19 @@ def _run(args: dict) -> ToolResult:
         from workers.edit_selfcheck import budget_check, selfcheck
         sc_ok, sc_warn = selfcheck([str(path)])
         if not sc_ok:
-            base = f"{base}\n\n{sc_warn}"
+            return ToolResult(
+                ok=False, output="",
+                error=f"语法自检失败{_rollback(path, original)}\n{sc_warn}",
+            )
         b_ok, b_warn = budget_check([str(path)])
         if not b_ok:
             base = f"{base}\n\n{b_warn}"
+    except Exception:
+        pass
+
+    try:
+        from workers.stage_open import append_open_mark
+        base = append_open_mark(base, path)
     except Exception:
         pass
 
@@ -325,15 +354,14 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="edit_file",
     description=(
-        "按唯一片段替换改已有文本（大文件首选，别 write_file 整文件覆盖）。old_string 必须精确唯一命中一处；0 处就重新 read_file（不要带行号前缀）。参数尽量短（铁律 12）。"
-    ),
+        "按唯一片段替换改已有文本（大文件首选，别 write_file 整文件覆盖）。old_string 必须精确唯一命中一处；0 处就重新 read_file（不要带行号前缀）。参数尽量短（铁律 12）。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
         "properties": {
             "path": {
                 "type": "string",
-                "description": "Target file (must already exist). Relative resolves from Daemonkey root.",
+                "description": "Target file (must already exist). Relative resolves from project root.",
             },
             "old_string": {
                 "type": "string",

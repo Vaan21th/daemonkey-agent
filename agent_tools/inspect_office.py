@@ -69,12 +69,20 @@ def _extract_pptx(path: Path, limit: int = 20) -> str:
             lines.append("…")
             break
         texts = []
+        charts = []
         for sh in slide.shapes:
+            if getattr(sh, "has_chart", False):
+                try:
+                    charts.append(str(sh.chart.chart_type).split(".")[-1])
+                except Exception:
+                    charts.append("chart")
             if getattr(sh, "has_text_frame", False):
                 t = (sh.text_frame.text or "").strip()
                 if t:
                     texts.append(t)
         lines.append(f"# 第 {i} 页")
+        if charts:
+            lines.append("图表: " + ", ".join(charts))
         lines.extend(texts[:12])
     return "\n".join(lines) or "(空演示稿)"
 
@@ -88,35 +96,64 @@ def _fallback_text(path: Path) -> str:
     return _extract_pptx(path)
 
 
+def _has_eq_formula(text: str) -> bool:
+    for line in text.splitlines():
+        for part in line.replace("\t", "|").split("|"):
+            if part.strip().startswith("="):
+                return True
+    return False
+
+
+def _officecli_text(path: Path) -> str:
+    try:
+        from workers import officecli
+        if officecli.available():
+            return (officecli.view_text(path) or "").strip()
+    except Exception:
+        return ""
+    return ""
+
+
+def _read_body(path: Path) -> tuple[str, str]:
+    cli = _officecli_text(path)
+    if path.suffix.lower() == ".xlsx":
+        try:
+            formulas = _extract_xlsx(path)
+        except Exception:
+            formulas = ""
+        # view text 只给算完的数；改稿要看见 = 原文
+        if formulas.strip() and cli and _has_eq_formula(formulas):
+            return f"{formulas}\n\n# 计算后\n{cli}", "officecli+formula"
+        if cli:
+            return cli, "officecli"
+        if formulas.strip():
+            return formulas, "fallback"
+        raise RuntimeError("empty xlsx")
+    if cli:
+        return cli, "officecli"
+    return _fallback_text(path), "fallback"
+
+
 def _run(args: dict) -> ToolResult:
     got = _resolve(str(args.get("path") or ""))
     if isinstance(got, ToolResult):
         return got
     path = got
-    engine = "fallback"
-    text = ""
     try:
-        from workers import officecli
-        if officecli.available():
-            text = officecli.view_text(path)
-            engine = "officecli"
-    except Exception:
-        text = ""
+        text, engine = _read_body(path)
+    except Exception as e:
+        return ToolResult(ok=False, output="", error=f"读不开: {type(e).__name__}: {e}")
     if not text.strip():
-        try:
-            text = _fallback_text(path)
-            engine = "fallback"
-        except Exception as e:
-            return ToolResult(ok=False, output="", error=f"读不开: {type(e).__name__}: {e}")
+        return ToolResult(ok=False, output="", error="读不开: 空内容")
 
     rel = path.relative_to(_ROOT).as_posix()
     lines = [
         f"回看 {rel} · 引擎 {engine}",
-        "公式若还是原文，打开 Excel 或再看成品预览。",
+        "xlsx 先给公式原文；有 OfficeCLI 再附计算后。",
         "",
         text[:6000],
     ]
-    if engine == "officecli":
+    if engine.startswith("officecli"):
         lines.append("")
         lines.append("若要看版式，产物库点「成品」；或 look_at 预览 PNG。")
     return ToolResult(ok=True, output="\n".join(lines))
@@ -126,7 +163,8 @@ SPEC = ToolSpec(
     name="inspect_office",
     description=(
         "回看已生成的 docx/pptx/xlsx 文本（公式、表头、页大纲）。"
-        "改稿前先看自己写出了什么。只读 data/reports|presentations|spreadsheets。"
+        "出稿后核对用。圈字改句直接 revise_office；加图/换版式前可以先回看这一页。"
+        "只读 data/reports|presentations|spreadsheets。"
     ),
     tier=TIER_AUTO,
     input_schema={

@@ -87,11 +87,12 @@ def _parse_block(block: str, is_first: bool) -> Optional[Slide]:
         if found:
             for m in found:
                 directives[m.group(1).lower()] = m.group(2).strip()
-            residual = _DIRECTIVE_RE.sub("", ln).strip()
-            if residual:                       # 指令后还剩正文 → 保留
-                body_lines.append(residual)
+            residual = _DIRECTIVE_RE.sub("", ln)
         else:
-            body_lines.append(ln)
+            residual = ln
+        residual = re.sub(r"<!--.*?-->", "", residual)
+        if residual.strip():
+            body_lines.append(residual)
 
     # 指令
     if "kicker" in directives:
