@@ -26,7 +26,7 @@
   if (!doAI && !doOwner) return;                // 母体两者都默认 → 保持原样
   // 正则跳过 OPUS_API_TOKEN / Daemonkey / OWNER-NOTEBOOK 这类技术标识·只换作为称呼出现的词
   var RE_AI = /Daemonkey(?![\w-])/g;
-  var RE_OWNER = /\bBRO(?![\w-])/g;
+  var RE_OWNER = /用户(?![\w-])/g;
   // Daemonkey 分家: 取了自己名字的实例·把母体私有 lore「<名字> 的家」中性成「<名字> 的家」。
   // 前端 localizer 原本只换 Daemonkey/用户·「<名字> 的家」这类叙事得单独抹·否则纯净版界面会漏出来。
   var HOME = NAME ? (NAME + ' 的家') : '';

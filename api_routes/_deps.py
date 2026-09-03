@@ -79,6 +79,26 @@ def _is_loopback(request: "Request") -> bool:
     return host in _LOOPBACK_HOSTS
 
 
+def _ensure_local_token() -> str:
+    """本机单用户冷启动：.env 里 token 空就现场发一把并落盘。
+
+    why: 相遇若已有 LLM key 会跳过 save-key；官方测场也会故意清空 token。
+    空 token 时 check_auth 一律 503，看板/工坊整面死。只在 loopback 信任路径调用。
+    """
+    tok = (os.environ.get("OPUS_API_TOKEN") or "").strip()
+    if tok:
+        return tok
+    import secrets
+    tok = secrets.token_urlsafe(32)
+    os.environ["OPUS_API_TOKEN"] = tok
+    try:
+        from daemon_provider import write_env_kv
+        write_env_kv("OPUS_API_TOKEN", tok)
+    except Exception:
+        pass
+    return tok
+
+
 def _host_is_local(request: "Request") -> bool:
     """Host 头必须是本机名 (localhost / 127.0.0.1 / [::1] · 可带端口)。
 
@@ -116,7 +136,7 @@ async def loopback_auth_middleware(request: "Request", call_next):
          原 check_auth 严格鉴权继续生效
     """
     if _loopback_trust_enabled() and _is_loopback(request) and _host_is_local(request):
-        env_token = (os.environ.get("OPUS_API_TOKEN") or "").strip()
+        env_token = _ensure_local_token()
         if env_token:
             scope = request.scope
             existing = [

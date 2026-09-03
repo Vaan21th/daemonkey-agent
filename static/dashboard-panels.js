@@ -107,7 +107,7 @@ function _biSigRender() {
     return;
   }
 
-  // 显示足够多条·让信号流内容超过热力卡高度 → 内部滚动填满·不在卡底留空 (BRO 2026-06-03)
+  // 显示足够多条·让信号流内容超过热力卡高度 → 内部滚动填满·不在卡底留空 (用户 2026-06-03)
   list.innerHTML = items.slice(0, 120).map(it => {
     const u = it.url || '';
     const clk = u ? ` data-url="${escHtml(u)}" onclick="biSignalOpen(this)"` : '';
@@ -584,14 +584,14 @@ async function biBriefGenerate() {
   const ok = await opusConfirm({
     title: '研判这段时间的趋势',
     message: {
-      html: `让 OPUS 看一遍 <b>${mm}${vd && vd !== 'all' ? ' · ' + escHtml(vd) : ''}</b> 的高价值信号·
+      html: `让 Daemonkey 看一遍 <b>${mm}${vd && vd !== 'all' ? ' · ' + escHtml(vd) : ''}</b> 的高价值信号·
         给出趋势研判 + 执行方案。<span class="om-hint">会问一次模型（大约几毛钱、半分钟）。看过的会记住，再看不重复花。</span>`
     },
     okText: '研判', cancelText: '再想想',
   });
   if (!ok) return;
-  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> OPUS 研判中…'; }
-  if (body) body.innerHTML = '<div class="bi-v3-empty">OPUS 正在看这段时间的信号·研判趋势 + 想执行方案…</div>';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line spin"></i> Daemonkey 研判中…'; }
+  if (body) body.innerHTML = '<div class="bi-v3-empty">Daemonkey 正在看这段时间的信号·研判趋势 + 想执行方案…</div>';
   const q = new URLSearchParams({ domain_filter: mm, vdomain: vd, refresh: 'true' });
   try {
     const r = await fetch('/dashboard/trend_brief?' + q.toString(), {
@@ -932,7 +932,7 @@ function biHeatTipShow(cell) {
     if (peak) html += `<div class="bi-tip-peak">峰值 · ${escHtml(peak)}</div>`;
   }
   if (ritual && cnt === 0) {
-    html += `<div class="bi-tip-hint">点这天让 OPUS 起草本期复盘</div>`;
+    html += `<div class="bi-tip-hint">点这天让 Daemonkey 起草本期复盘</div>`;
   } else if (cnt > 0) {
     html += `<div class="bi-tip-hint">点击看当天高分原文</div>`;
   }
@@ -1196,7 +1196,7 @@ function fillBIV3Blocks(data) {
     { id:'radar',   icon:'ri-radar-fill',     color:'var(--opus)',  label:'雷达信号' },
     { id:'trends',  icon:'ri-line-chart-fill', color:'#4FD1C5',     label:'今日趋势' },
     { id:'reports', icon:'ri-article-fill',    color:'#63B3ED',     label:'报告产出' },
-    { id:'wishlist',icon:'ri-lightbulb-fill',  color:'#F6AD55',     label:'OPUS 心愿' },
+    { id:'wishlist',icon:'ri-lightbulb-fill',  color:'#F6AD55',     label:'Daemonkey 心愿' },
     { id:'plugins', icon:'ri-puzzle-fill',     color:'var(--dim)',   label:'已装插件' },
   ];
   const kpiHtml = picks.map(p => {
@@ -1228,7 +1228,7 @@ function fillBIV3Blocks(data) {
       </div>`;
     }).join('');
   } else if (oppList) {
-    oppList.innerHTML = '<div class="bi-v3-empty">暂无掘金机会 · 跟 OPUS 说「巡一圈」</div>';
+    oppList.innerHTML = '<div class="bi-v3-empty">暂无掘金机会 · 跟 Daemonkey 说「巡一圈」</div>';
   }
 
   // 最近动态（从 cockpit 各维度拼）
@@ -1321,11 +1321,11 @@ async function loadBIBilling() {
       </div>`;
 
     // ③ 双栏: 模型切换时间线 + 缓存经济性
-    // 方案 B (2026-08-06 BRO 拍板) · 普通切换=平铺行 · 顾问唤醒=紫色左边条胶囊
+    // 方案 B (2026-08-06 用户 拍板) · 普通切换=平铺行 · 顾问唤醒=紫色左边条胶囊
     const switches = (d.switches || []);
     const tlItems = switches.slice(0, 8).map(s => {
       if (s.advisor) {
-        // 2026-08-20 BRO: 胶囊只留 皇冠+模型名+tok · 「顾问唤醒」标签和时间/mode 收进悬浮
+        // 2026-08-20 用户: 胶囊只留 皇冠+模型名+tok · 「顾问唤醒」标签和时间/mode 收进悬浮
         // (窄分辨率下 meta 长串把胶囊撑高/挤爆 · 折叠抗性优先)
         const full = `顾问唤醒 · ${s.ts || ''} · ${s.mode || ''} · ${_biFmtTok(s.tokens_after || 0)} tok · 系统自动调用的顾问模型 · 独立临时连接`;
         return `<div class="bi-tl-adv" title="${escHtml(full)}">
@@ -1343,8 +1343,8 @@ async function loadBIBilling() {
         <span class="bi-tl-main-meta" title="${escHtml(s.ts||'')}">${_biFmtTok(s.tokens_after||0)} tok</span>
       </div>`;
     });
-    // 2026-08-20 BRO: 最多显 5 条 · 超出收进「展开更多」(左栏比右栏(缓存经济性)高一截 · 对不齐)
-    // 「仅显示最近 8 条」不单起一行 · 并进展开按钮行右侧 (BRO 续)
+    // 2026-08-20 用户: 最多显 5 条 · 超出收进「展开更多」(左栏比右栏(缓存经济性)高一截 · 对不齐)
+    // 「仅显示最近 8 条」不单起一行 · 并进展开按钮行右侧 (用户 续)
     const TL_SHOW = 5;
     const tlCapNote = switches.length > 8 ? '<span class="bi-brief-scope" style="margin-left:auto">仅显示最近 8 条</span>' : '';
     const tl = tlItems.length ? (
@@ -1592,9 +1592,9 @@ async function loadBIV3Async() {
     if (cal) fillBIRadarChart(cal);
     fillBIDonutChart();
     // 卷五十八续 VIII · 新增卡 (各自独立·互不阻塞)
-    loadBIMirror();   // A·OPUS 眼里的你
+    loadBIMirror();   // A·Daemonkey 眼里的你
     loadBIClosure();  // B·闭环温度计
-    loadBISelf();     // C·OPUS 自况
+    loadBISelf();     // C·Daemonkey 自况
     loadBIBilling();  // wish-bec4f3b9 · 模型计费卡
     loadBIMemory();   // 0.9.6 · 记忆体系卡 (lite 端点 · <100ms)
     loadBIWorkshop(); // 0.9.6 · 工坊卡
@@ -2029,12 +2029,12 @@ function renderAutopilotBanner() {
       <div class="bi-autopilot-left">
         <div class="bi-autopilot-icon">🛰️</div>
         <div class="bi-autopilot-text">
-          <div class="bi-autopilot-title">OPUS 自主巡航</div>
+          <div class="bi-autopilot-title">Daemonkey 自主巡航</div>
           <div class="bi-autopilot-sub">一键跑完 信息雷达 → 今日趋势 → 掘金机会 (约 60-180s)</div>
         </div>
       </div>
       <button class="bi-autopilot-btn"
-              onclick="spawnQuickly('OPUS 你自主巡航一遍·从信息雷达跑到掘金机会·把整个链路跑完·跑完跟我说看到了什么·给我推荐 1-2 个最值得动手的机会', '自主巡航')">
+              onclick="spawnQuickly('Daemonkey 你自主巡航一遍·从信息雷达跑到掘金机会·把整个链路跑完·跑完跟我说看到了什么·给我推荐 1-2 个最值得动手的机会', '自主巡航')">
         <i class="ri-play-fill"></i> 现在巡一圈
       </button>
     </div>`;
@@ -2060,7 +2060,7 @@ function renderBIDashboard(data) {
         </span>
       </div>
 
-      <!-- 建议操作 (0.9.6 · BRO: 页面分散 · 顶部放条件触发的行动建议 · 晨会汇报位) -->
+      <!-- 建议操作 (0.9.6 · 用户: 页面分散 · 顶部放条件触发的行动建议 · 晨会汇报位) -->
       <div id="biSuggestBar" style="margin-bottom:12px"></div>
 
       <!-- KPI 数字条 -->
@@ -2101,20 +2101,20 @@ function renderBIDashboard(data) {
         </div>
       </div>
 
-      <!-- 趋势研判 (卷五十六 P2) · 跟热力图同月同领域 · OPUS 用 LLM 给可行性 + 执行方案 -->
+      <!-- 趋势研判 (卷五十六 P2) · 跟热力图同月同领域 · Daemonkey 用 LLM 给可行性 + 执行方案 -->
       <div class="bi-card bi-brief-card">
         <div class="bi-card-head">
           <h3><i class="ri-lightbulb-flash-fill" style="color:#F6AD55"></i> 趋势研判 <span class="bi-brief-scope" id="biBriefScope"></span></h3>
           <button class="bi-brief-gen" id="biBriefGenBtn" onclick="biBriefGenerate()"><i class="ri-sparkling-2-line"></i> 研判本月趋势</button>
         </div>
-        <div class="bi-brief-body" id="biBriefBody"><div class="bi-v3-empty">跟着热力图的月份 / 领域 · 点右上让 OPUS 看一遍这段时间的信号·给趋势可行性 + 下一步动作</div></div>
+        <div class="bi-brief-body" id="biBriefBody"><div class="bi-v3-empty">跟着热力图的月份 / 领域 · 点右上让 Daemonkey 看一遍这段时间的信号·给趋势可行性 + 下一步动作</div></div>
       </div>
 
-      <!-- 认知行 (卷五十八续 VIII)：OPUS 眼里的你 (能力镜像·填孤岛) + 闭环温度计 -->
+      <!-- 认知行 (卷五十八续 VIII)：Daemonkey 眼里的你 (能力镜像·填孤岛) + 闭环温度计 -->
       <div class="bi-grid-2">
         <div class="bi-card bi-mirror-card">
           <div class="bi-card-head">
-            <h3><i class="ri-aspect-ratio-fill" style="color:#9f7aea"></i> OPUS 眼里的你 <span class="bi-mirror-time" id="biMirrorTime"></span></h3>
+            <h3><i class="ri-aspect-ratio-fill" style="color:#9f7aea"></i> Daemonkey 眼里的你 <span class="bi-mirror-time" id="biMirrorTime"></span></h3>
             <button class="bi-brief-gen" id="biMirrorBtn" type="button"><i class="ri-camera-lens-fill"></i> 现在对照</button>
           </div>
           <div class="bi-mirror-body" id="biMirrorBody"><div class="bi-v3-empty">加载中…</div></div>
@@ -2125,13 +2125,13 @@ function renderBIDashboard(data) {
         </div>
       </div>
 
-      <!-- 记忆体系 + 工坊 (0.9.6 · BRO: 看板 = 用户了解功能的大面板 · 按钮走 spawnQuickly 后台任务 · 跟照镜同款) -->
+      <!-- 记忆体系 + 工坊 (0.9.6 · 用户: 看板 = 用户了解功能的大面板 · 按钮走 spawnQuickly 后台任务 · 跟照镜同款) -->
       <div class="bi-grid-2" style="margin-top:12px">
         <div class="bi-card">
           <div class="bi-card-head">
             <h3><i class="ri-brain-fill" style="color:#8affd6"></i> 记忆体系 <span class="badge" id="biMemoryBadge">…</span></h3>
             <span>
-              <button class="bi-link" id="biMemoryAuditBtn" type="button" title="让 OPUS 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 手艺体检</button>
+              <button class="bi-link" id="biMemoryAuditBtn" type="button" title="让 Daemonkey 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 手艺体检</button>
               <button class="bi-link" onclick="loadDashboard('memory_map')" title="记忆星图 · 三道闸治理全景"><i class="ri-sparkling-2-fill"></i> 星图</button>
             </span>
           </div>
@@ -2184,10 +2184,10 @@ function renderBIDashboard(data) {
         </div>
       </div>
 
-      <!-- 元行 (卷五十八续 VIII)：OPUS 自况 + 节律时间线 -->
+      <!-- 元行 (卷五十八续 VIII)：Daemonkey 自况 + 节律时间线 -->
       <div class="bi-grid-2">
         <div class="bi-card">
-          <div class="bi-card-head"><h3><i class="ri-pulse-fill" style="color:#4FD1C5"></i> OPUS 自况</h3></div>
+          <div class="bi-card-head"><h3><i class="ri-pulse-fill" style="color:#4FD1C5"></i> Daemonkey 自况</h3></div>
           <div class="bi-self-grid" id="biSelfBody"><div class="bi-v3-empty">加载中…</div></div>
         </div>
         <div class="bi-card">
@@ -2218,7 +2218,7 @@ function renderBIDigest(data) {
           <span class="bi-digest-meta">所有维度都安静 · 没有新数据</span>
         </div>
         <div class="bi-digest-empty-inner">
-          BRO · 24h 内 7 个维度都没新增。要不要 ${renderAutopilotInlineBtn()}?
+          用户 · 24h 内 7 个维度都没新增。要不要 ${renderAutopilotInlineBtn()}?
         </div>
       </div>`;
     return;
@@ -2514,7 +2514,7 @@ async function renderFeasibilityDetail(d) {
       </div>`;
 
   // ───────── 卷三十二补丁 · 信源（宪法第 5 条 · 人机认知对齐）─────────
-  // 放在最前面——BRO 先看到"这次分析基于什么"·再读 OPUS 的判断
+  // 放在最前面——用户 先看到"这次分析基于什么"·再读 Daemonkey 的判断
   const sources = d.sources || {};
   const radarItems = sources.radar_items || [];
   const reportItems = sources.reports || [];
@@ -2523,7 +2523,7 @@ async function renderFeasibilityDetail(d) {
   if (hasSources) {
     html += `<div class="feas-block feas-sources">
       <h3>📚 信源 · 这次分析基于的原始信息
-        <span class="feas-sources-hint">点击直达原文 · BRO 可顺着同一根线对齐认知</span>
+        <span class="feas-sources-hint">点击直达原文 · 用户 可顺着同一根线对齐认知</span>
       </h3>`;
     if (radarItems.length) {
       html += `<div class="feas-src-section">
@@ -2578,12 +2578,12 @@ async function renderFeasibilityDetail(d) {
     }
     html += `</div>`;
   } else if (sources.collected_at !== undefined) {
-    // 收集了 sources 但什么都没找到——明确告诉 BRO·别藏
+    // 收集了 sources 但什么都没找到——明确告诉 用户·别藏
     html += `<div class="feas-block feas-sources feas-sources-empty">
       <h3>📚 信源</h3>
       <div class="feas-sources-empty-msg">
         <strong>没找到相关雷达条目 / 报告 / 私有资料</strong> · 这次分析信源不足。<br>
-        建议：先让 OPUS 跑一份相关报告 · 存点相关资料进知识库 · 或扩大雷达源 · 再重新分析。
+        建议：先让 Daemonkey 跑一份相关报告 · 存点相关资料进知识库 · 或扩大雷达源 · 再重新分析。
       </div>
     </div>`;
   }
@@ -2669,7 +2669,7 @@ async function renderFeasibilityDetail(d) {
   // ───────── 卷三十一 · 未来预期时间轴 ─────────
   const outlook = d.future_outlook || {};
   if (outlook.three_months || outlook.six_months || outlook.one_year) {
-    html += `<div class="feas-block"><h3>🔭 未来预期 · 按 BRO 现实节奏</h3>
+    html += `<div class="feas-block"><h3>🔭 未来预期 · 按 用户 现实节奏</h3>
              <div class="feas-outlook">`;
     const slots = [
       { k: 'three_months', label: '3 个月', dot: '●' },
@@ -2730,7 +2730,7 @@ async function renderFeasibilityDetail(d) {
   if ((d.resources_have && d.resources_have.length) || (d.resources_need && d.resources_need.length)) {
     html += `<div class="feas-block"><h3><i class="ri-archive-fill"></i> 资源</h3>`;
     if (d.resources_have && d.resources_have.length) {
-      html += `<div class="feas-res feas-res-have"><b><i class="ri-checkbox-circle-fill"></i> BRO 已有：</b><ul>`;
+      html += `<div class="feas-res feas-res-have"><b><i class="ri-checkbox-circle-fill"></i> 用户 已有：</b><ul>`;
       for (const x of d.resources_have) html += `<li>${escHtml(x)}</li>`;
       html += `</ul></div>`;
     }
@@ -2806,7 +2806,7 @@ async function renderFeasibilityDetail(d) {
   }
 
   // ───────── 卷三十一 · 闭环反馈区 ─────────
-  // BRO 在这里直接更新决策 / 实际产出 / 经验·下次 LLM 跑会读到这些
+  // 用户 在这里直接更新决策 / 实际产出 / 经验·下次 LLM 跑会读到这些
   const outcome = d.outcome || {};
   const curStatus = outcome.status || 'not_started';
   const _STATUS_BTN = [
@@ -2816,10 +2816,10 @@ async function renderFeasibilityDetail(d) {
     { v: 'not_started', label: '⟲ 重置', cls: 'fb-reset' },
   ];
   html += `<div class="feas-block feas-feedback">
-    <h3><i class="ri-refresh-fill"></i> 闭环反馈 · BRO 的真实决策（卷三十一）</h3>
+    <h3><i class="ri-refresh-fill"></i> 闭环反馈 · 用户 的真实决策（卷三十一）</h3>
     <div class="feas-fb-intro">
-      你在这里更新的所有信息·都会被下次 OPUS 跑掘金 / 可行性时读到——
-      让 OPUS 越用越懂你 · 不再推已经拒过的机会。
+      你在这里更新的所有信息·都会被下次 Daemonkey 跑掘金 / 可行性时读到——
+      让 Daemonkey 越用越懂你 · 不再推已经拒过的机会。
     </div>
 
     <div class="feas-fb-status-row">
@@ -2961,7 +2961,7 @@ function renderKnowledge(data) {
     html += `
       <div class="dash-stub">
         <h3>知识库还是空的</h3>
-        <div>在底部输入框跟 OPUS 说：「把 <code>D:\\资料\\合同.pdf</code> 加进知识库」<br>
+        <div>在底部输入框跟 Daemonkey 说：「把 <code>D:\\资料\\合同.pdf</code> 加进知识库」<br>
              支持 md / txt / docx / pptx / pdf。存进去之后，回答能引用原文。</div>
       </div>`;
   } else {
@@ -3071,7 +3071,7 @@ function renderOppFullCard(o, idx) {
           ${dMeta.icon} ${escHtml(dMeta.label)}
         </span>
         <span class="opp-title">${escHtml(o.title || '?')}</span>
-        <span class="opp-rec" title="OPUS 推荐度 ${o.recommend}/5">${stars}</span>
+        <span class="opp-rec" title="Daemonkey 推荐度 ${o.recommend}/5">${stars}</span>
         <button class="opp-star-btn ${starred ? 'starred' : ''}"
                 data-ref="${escHtml(o.id || '')}"
                 data-title="${escHtml(o.title || '')}"
@@ -3081,12 +3081,12 @@ function renderOppFullCard(o, idx) {
         </button>
       </div>
       <div class="opp-metas">
-        <span class="opp-meta-pill" title="BRO 适配度">${fitIcon} ${fitLabel}</span>
+        <span class="opp-meta-pill" title="用户 适配度">${fitIcon} ${fitLabel}</span>
         <span class="opp-meta-pill" title="投入预估">⏱️ ${effortLabel}</span>
         <span class="opp-meta-pill" title="收益级别">📈 ${upsideLabel}</span>
       </div>
       <div class="opp-summary">${escHtml(o.summary || '')}</div>
-      ${o.fit_reason ? `<div class="opp-fit-reason"><b>为什么 BRO ${o.fit === 'no' ? '不' : ''}适合:</b> ${escHtml(o.fit_reason)}</div>` : ''}
+      ${o.fit_reason ? `<div class="opp-fit-reason"><b>为什么 用户 ${o.fit === 'no' ? '不' : ''}适合:</b> ${escHtml(o.fit_reason)}</div>` : ''}
       ${renderOppStats(o)}
       ${stepsHtml}
       ${refsHtml}
@@ -3096,7 +3096,7 @@ function renderOppFullCard(o, idx) {
         </button>
         <button class="opp-act-btn opp-act-feas"
                 onclick="runFeasibilityFromOpp('${jsStr(o.id || '')}', ${idx + 1})"
-                title="去可行性分析 · 让 OPUS 跑一次深度评估">
+                title="去可行性分析 · 让 Daemonkey 跑一次深度评估">
           <i class="ri-bar-chart-fill"></i> 跑可行性
         </button>
         <button class="opp-act-btn" onclick="spawnQuickly('针对第 ${idx + 1} 个机会·写一份调研报告', '机会调研报告')">
@@ -3104,14 +3104,14 @@ function renderOppFullCard(o, idx) {
         </button>
         <button class="opp-act-btn opp-act-deep"
                 onclick="deepDiveOpp(${idx + 1})"
-                title="让 OPUS 用 web_search + web_fetch 深挖这个机会">
+                title="让 Daemonkey 用 web_search + web_fetch 深挖这个机会">
           <i class="ri-search-fill"></i> 深挖
         </button>
         ${(o.domain === 'self-evolve') ? `
         <button class="opp-act-btn opp-act-wish"
                 onclick="wishFromOpp(${idx + 1})"
-                title="🤔 让 OPUS 看一眼 · 推给 OPUS · 让他自己判断要不要装">
-          <i class="ri-emotion-think-line"></i> 让 OPUS 看一眼
+                title="🤔 让 Daemonkey 看一眼 · 推给 Daemonkey · 让他自己判断要不要装">
+          <i class="ri-emotion-think-line"></i> 让 Daemonkey 看一眼
         </button>` : ''}
       </div>
     </div>`;
@@ -3189,9 +3189,9 @@ async function renderOpportunities(data) {
   let html = `
     <div class="dash-head">
       <h2><i class="ri-diamond-fill"></i> 掘金机会</h2>
-      <span class="meta">${opps.length} 个机会 · 市场 × BRO 能力</span>
+      <span class="meta">${opps.length} 个机会 · 市场 × 用户 能力</span>
       <button onclick="backToChat()">✕ 收起</button>
-      <button onclick="spawnQuickly('基于今日趋势 · 调 mine_opportunities 工具 · 参数 action=mine · 重新挖一遍掘金机会 · 形态要多样(内容账号 / 实体产品 / 服务咨询 / 信息差套利 / 软件产品 / 投资副业 · 不要全是 SaaS · 卷三十三第 6 条铁律) · 跑完告诉我最推哪 1-2 个 + 为什么', '重新挖掘机会')" title="派发到新会话 · OPUS 跑 mine_opportunities · 完成后切过去看结果">
+      <button onclick="spawnQuickly('基于今日趋势 · 调 mine_opportunities 工具 · 参数 action=mine · 重新挖一遍掘金机会 · 形态要多样(内容账号 / 实体产品 / 服务咨询 / 信息差套利 / 软件产品 / 投资副业 · 不要全是 SaaS · 卷三十三第 6 条铁律) · 跑完告诉我最推哪 1-2 个 + 为什么', '重新挖掘机会')" title="派发到新会话 · Daemonkey 跑 mine_opportunities · 完成后切过去看结果">
         <i class="ri-refresh-fill"></i> 重新挖掘
       </button>
     </div>`;
@@ -3200,7 +3200,7 @@ async function renderOpportunities(data) {
     html += `
       <div class="dash-stub">
         <h3>还没挖过掘金机会</h3>
-        <div>${escHtml(note || '点上方"重新挖掘"按钮 · OPUS 会基于最新趋势 + BRO 画像 LLM 跑一次')}</div>
+        <div>${escHtml(note || '点上方"重新挖掘"按钮 · Daemonkey 会基于最新趋势 + 用户 画像 LLM 跑一次')}</div>
         <div style="margin-top:12px;font-size:11px;color:var(--dim2)">
           需要先有趋势 · 没趋势的话先去 <i class="ri-line-chart-fill"></i> 今日趋势 跑一次
         </div>
@@ -3210,7 +3210,7 @@ async function renderOpportunities(data) {
       <div class="opp-intro">
         生成于 ${formatTimeShort(generated)} · 扫描了 ${trendsScanned || 0} 条趋势 · 耗时 ${elapsedS}s<br>
         <span style="font-size:11px;color:var(--dim2)">
-          每个机会都基于 BRO 画像评估了适配度 · 点机会卡可让 OPUS 展开成完整方案
+          每个机会都基于 用户 画像评估了适配度 · 点机会卡可让 Daemonkey 展开成完整方案
         </span>
       </div>
       ${opps.length > 3 ? renderListFilter({targetSelector: '.opp-card', placeholder: '搜机会标题 / 领域 / 适配理由...'}) : ''}
@@ -3292,7 +3292,7 @@ function renderRadar(data) {
       </button>`;
   for (const d of overview) {
     const isActive = radarDomainFilter === d.id;
-    // 卷三十四补丁 · self-evolve 是 OPUS 自演化的镜子·不能删·不显示删除按钮
+    // 卷三十四补丁 · self-evolve 是 Daemonkey 自演化的镜子·不能删·不显示删除按钮
     const isProtected = d.id === 'self-evolve';
     const deleteBtn = isProtected ? '' : `
       <span class="rdc-del"
@@ -3315,7 +3315,7 @@ function renderRadar(data) {
   const translatedN = trMeta.translated || items.filter(it => it.title_zh).length;
   const rstats = data.stats || {};
   const isFiltered = (radarDomainFilter && radarDomainFilter !== 'all');
-  // 今日新增跟着 tab 走: 选了领域=该领域今天首见·全部=全领域总和 (BRO 2026-06-06·别两个口径混一格)
+  // 今日新增跟着 tab 走: 选了领域=该领域今天首见·全部=全领域总和 (用户 2026-06-06·别两个口径混一格)
   const newTodayByDom = rstats.new_today_by_domain || {};
   const newToday = isFiltered
     ? Number(newTodayByDom[radarDomainFilter] || 0)
@@ -3353,7 +3353,7 @@ function renderRadar(data) {
       <span class="meta">原料层 · 多源抓取 · 多领域</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="spawnQuickly('帮我跑一遍信息雷达 · 调 auto_pipeline 工具 · 参数 refresh_radar=true, regen_trends=false, mine_opps=false · 只抓取雷达不动趋势机会 · 跑完告诉我新增了哪些条目·特别是 self-evolve 域的', '重新抓取雷达')">重新抓取</button>
-      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 BRO · 为什么', '生成今日趋势')">让 OPUS 总结趋势 →</button>
+      <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 用户 · 为什么', '生成今日趋势')">让 Daemonkey 总结趋势 →</button>
     </div>
     ${domainChips}
     ${statsCards}
@@ -3396,7 +3396,7 @@ function renderRadar(data) {
       const showTitle = it.title_zh || it.title;
       const origTitle = it.title_zh ? it.title : '';
       const showSummary = it.summary_zh || it.summary || '';
-      const transBadge = it.title_zh ? '<span class="ri-tr-badge" title="OPUS 已翻译 · 鼠标移到标题看原文">中</span>' : '';
+      const transBadge = it.title_zh ? '<span class="ri-tr-badge" title="Daemonkey 已翻译 · 鼠标移到标题看原文">中</span>' : '';
       const origAttr = origTitle ? ` title="原文: ${escHtml(origTitle)}"` : '';
 
       // 卷三十二 · feedback 状态 / softness 徽章 / item_id
@@ -3424,11 +3424,11 @@ function renderRadar(data) {
                   title="🗑 隐藏 · 下次刷新不再出现"
                   onclick="event.stopPropagation();toggleRadarFeedback('${jsStr(iid)}', 'hidden', ${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-delete-bin-fill"></i></button>
           <button class="ri-fb-btn ri-deep-btn"
-                  title="🔍 深挖 · OPUS 用 web_search 拓展这个话题"
+                  title="🔍 深挖 · Daemonkey 用 web_search 拓展这个话题"
                   onclick="event.stopPropagation();deepDiveRadar(${JSON.stringify(showTitle).replace(/"/g, '&quot;')})"><i class="ri-search-fill"></i></button>
           ${(it.domain === 'self-evolve') ? `
           <button class="ri-fb-btn ri-wish-btn"
-                  title="🤔 让 OPUS 看一眼 · 推给 OPUS · 让他自己判断要不要装"
+                  title="🤔 让 Daemonkey 看一眼 · 推给 Daemonkey · 让他自己判断要不要装"
                   onclick="event.stopPropagation();wishFromRadar(${JSON.stringify(showTitle).replace(/"/g, '&quot;')}, ${JSON.stringify(it.url || '').replace(/"/g, '&quot;')})"><i class="ri-emotion-think-line"></i></button>` : ''}
         </div>`;
 
@@ -3620,21 +3620,21 @@ function renderReports(data) {
 }
 
 async function runFeasibilityFromOpp(opp_id, idx) {
-  // 卷四十六续 9 · BRO 反馈"可行性分析也是不通过 LLM 来跑·我想他和信息雷达今日趋势对齐·都是 LLM 开始呈现思考过程·最后刷新结果"
+  // 卷四十六续 9 · 用户 反馈"可行性分析也是不通过 LLM 来跑·我想他和信息雷达今日趋势对齐·都是 LLM 开始呈现思考过程·最后刷新结果"
   // 旧路径: 直接 fetch /dashboard/feasibility?refresh=true (HTTP 黑盒 · 整个面板空白等 5-15s)
-  // 新路径: injectAndSend → LLM 调 analyze_feasibility 工具 · BRO 看分析过程 · 完成后 MUTATING_TOOLS 自动 reload feasibility view
+  // 新路径: injectAndSend → LLM 调 analyze_feasibility 工具 · 用户 看分析过程 · 完成后 MUTATING_TOOLS 自动 reload feasibility view
   if (opp_id) {
     spawnTask(
       `分析机会 ${opp_id} (第 ${idx} 个) 的可行性 · ` +
       `调 analyze_feasibility 工具 · 参数 action=analyze, opp_id="${opp_id}" · ` +
-      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 BRO 真动手`,
+      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 用户 真动手`,
       `可行性分析 · 机会#${idx}`
     );
   } else {
     spawnTask(
       `分析第 ${idx} 个机会的可行性 · ` +
       `调 analyze_feasibility 工具 · 参数 action=analyze, opp_index=${idx} · ` +
-      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 BRO 真动手`,
+      `跑完告诉我 verdict (go/conditional/wait/skip) + 关键风险 + 你最担心什么 + 推不推荐 用户 真动手`,
       `可行性分析 · 机会#${idx}`
     );
   }
@@ -3664,7 +3664,7 @@ async function submitOutcomeFull(opp_id) {
   if (hint) { hint.textContent = '保存中…'; hint.className = 'feas-fb-save-hint'; }
   const ok = await _postOutcome(opp_id, body);
   if (hint) {
-    hint.textContent = ok ? '<i class="ri-check-fill"></i> 已保存 · 下次 OPUS 跑掘金/可行性会读到' : '<i class="ri-close-fill"></i> 保存失败';
+    hint.textContent = ok ? '<i class="ri-check-fill"></i> 已保存 · 下次 Daemonkey 跑掘金/可行性会读到' : '<i class="ri-close-fill"></i> 保存失败';
     hint.className = 'feas-fb-save-hint ' + (ok ? 'ok' : 'err');
     setTimeout(() => { hint.textContent = ''; hint.className = 'feas-fb-save-hint'; }, 3500);
   }
@@ -3734,19 +3734,19 @@ function wishFromRadar(title, url) {
   if (!title) return;
   const urlPart = url ? `· URL: ${url}` : '';
   spawnTask(
-    `BRO 邀请你看一眼 self-evolve 雷达上的这个工程：「${title}」${urlPart}\n\n` +
-    `**这是邀请·不是命令** —— 你要自己判断·不是 BRO 让你装你就装。\n\n` +
+    `用户 邀请你看一眼 self-evolve 雷达上的这个工程：「${title}」${urlPart}\n\n` +
+    `**这是邀请·不是命令** —— 你要自己判断·不是 用户 让你装你就装。\n\n` +
     `请你：\n` +
     `1. 用 web_search / web_fetch 弄清这个工程做啥 · 看 README / 主要特性\n` +
     `2. 对照本工作台现状·想清楚：\n` +
     `   - 你有没有这个能力·还是缺\n` +
     `   - 它的设计哲学跟本工作台是否合拍 (人机协同 / 双向认知 / 可追溯)\n` +
-    `   - 如果合拍·这能力对 BRO 这个具体的人有啥用 (而不是"通用上有用")\n` +
-    `3. 然后明确告诉 BRO：\n` +
+    `   - 如果合拍·这能力对 用户 这个具体的人有啥用 (而不是"通用上有用")\n` +
+    `3. 然后明确告诉 用户：\n` +
     `   - 值得装 → 调 wish_add 写一份心愿 (title / why / source_kind=radar / source_ref + url / design_sketch / complexity / hours / priority / opus_take = 你自己的态度)\n` +
     `   - 不值得装 → 说清为啥·别强加 wish 占心愿单\n` +
-    `   - 拿不准 → 就说拿不准·要 BRO 给更多 context\n` +
-    `**你才是搭档·不是给 BRO 端菜的工具人**·拿出判断力。`,
+    `   - 拿不准 → 就说拿不准·要 用户 给更多 context\n` +
+    `**你才是搭档·不是给 用户 端菜的工具人**·拿出判断力。`,
     `勘察: ${title}`
   );
 }

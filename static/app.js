@@ -194,6 +194,14 @@ function hideTyping() {
 
 function scroll() { chat.scrollTop = chat.scrollHeight; }
 
+function paintMeetBrand(name) {
+  const n = String(name || "").trim();
+  if (!n) return;
+  const el = document.querySelector(".brand-name");
+  if (el) el.textContent = n;
+  document.title = n;
+}
+
 // ── key 配置 ──
 const PRESET_MODEL = {
   "https://api.deepseek.com": "deepseek-v4-flash",
@@ -254,6 +262,7 @@ async function startChat() {
     for (const m of data.messages) addMsg(m.role, m.content);
     if (data.tool_events && data.tool_events.length && chat.lastElementChild)
       addChips(chat.lastElementChild, data.tool_events);
+    if (data.name) paintMeetBrand(data.name);
     if (data.onboarded) doneBanner();
     $("input").focus();
   } catch (err) {
@@ -275,6 +284,7 @@ async function send() {
     hideTyping();
     const el = addMsg("ai", data.reply || "");
     addChips(el, data.tool_events);
+    if (data.name) paintMeetBrand(data.name);
     if (data.onboarded) doneBanner();
   } catch (err) {
     hideTyping();

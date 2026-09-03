@@ -1196,6 +1196,8 @@ function paintFirstSeenName() {
   const brand = document.getElementById('brand-name');
   if (brand) brand.textContent = n;
   if (n !== '她') document.title = n + ' · 陪伴模式';
+  const tts = document.getElementById('tts-btn');
+  if (tts) tts.title = n + '的声音开关';
   const tip = SHELF.el && SHELF.el.querySelector('.tip');
   if (tip) tip.innerHTML = '<i class="ri-archive-2-line"></i> ' + shelfTitle();
 }
@@ -2574,7 +2576,7 @@ function refreshSendChrome() {
   const busy = !!(st && (st.pending || st.currentAbortController || st.currentTurnId));
   const hasPayload = !!(input.value.trim() || _attachments.length);
   if (!input.readOnly) {
-    input.placeholder = busy ? '再说一句就排队 · 空着点停止' : '对着她说…';
+    input.placeholder = busy ? '再说一句就排队 · 空着点停止' : ('对着' + firstSeenName() + '说…');
     input.classList.remove('is-locked');
   }
   if (busy && hasPayload) setSendState('queue');

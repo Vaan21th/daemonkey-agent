@@ -72,7 +72,7 @@ function initVoice(opts) {
           localStorage.setItem('opus_voice_tts', $ttsToggle.checked ? '1' : '0');
           if (typeof _setRecNote === 'function' && _listening && mode === 'transcribe') {
             _setRecNote($ttsToggle.checked
-              ? '<i class="ri-volume-up-line"></i> TTS 已开 · OPUS 回复会朗读'
+              ? '<i class="ri-volume-up-line"></i> TTS 已开 · Daemonkey 回复会朗读'
               : '<i class="ri-volume-mute-line"></i> TTS 已关', 'wait');
           }
         });
@@ -369,7 +369,7 @@ function initVoice(opts) {
     _stopMeter();
     $micBtn.classList.remove('listening');
     _renderChat('');
-    _setRecNote('<i class="ri-pause-circle-line"></i> OPUS 回复中 · 已暂停收音 · 回完自动继续听', 'wait');
+    _setRecNote('<i class="ri-pause-circle-line"></i> Daemonkey 回复中 · 已暂停收音 · 回完自动继续听', 'wait');
     if (_replyWatcher) clearInterval(_replyWatcher);
     _replyWatcher = setInterval(() => {
       _pauseTicks++;
@@ -385,7 +385,7 @@ function initVoice(opts) {
     _voicePaused = false;
     if (_manualStop || !_listening || mode !== 'transcribe') return;  // 期间用户点了停 → 不恢复
     $micBtn.classList.add('listening');
-    _setRecNote('<i class="ri-mic-fill"></i> 在听 · 你说完停约 1 秒会自动发给 OPUS', 'rec');
+    _setRecNote('<i class="ri-mic-fill"></i> 在听 · 你说完停约 1 秒会自动发给 Daemonkey', 'rec');
     _startMeter();
     _startVoiceChat();                           // 建新 SR 实例·继续听下一句
   }
@@ -468,7 +468,7 @@ function initVoice(opts) {
     _startMeter();
     _setListening(true);
     if (mode === 'transcribe') {
-      _setRecNote('<i class="ri-mic-fill"></i> 在听 · 你说完停约 1 秒会自动发给 OPUS', 'rec');
+      _setRecNote('<i class="ri-mic-fill"></i> 在听 · 你说完停约 1 秒会自动发给 Daemonkey', 'rec');
       _startVoiceChat();
     } else {
       _setRecNote('<i class="ri-record-circle-fill"></i> 录制中 · 边说边记 · 完了点【停止录制】', 'rec');
@@ -495,7 +495,7 @@ function initVoice(opts) {
     } else if (mode === 'meeting') {
       if ($panelMode) $panelMode.textContent = '会议纪要 · 已停止';
       const n = (_finalText || '').trim().length;
-      if (n > 0) _setRecNote('<i class="ri-stop-circle-fill"></i> 已停止 · 记录 ' + n + ' 字 · 点【整理成纪要】交给 OPUS 拆分', 'done');
+      if (n > 0) _setRecNote('<i class="ri-stop-circle-fill"></i> 已停止 · 记录 ' + n + ' 字 · 点【整理成纪要】交给 Daemonkey 拆分', 'done');
       else _setRecNote('<i class="ri-information-line"></i> 没记到文字 · 检查麦克风权限后重录', 'warn');
     }
   }

@@ -368,7 +368,7 @@ function renderLlmConfigCard(c) {
       <div class="lc-row3">
         <span class="lc-key">${escHtml(c.api_key || '(未设)')}</span>
         <div class="lc-actions">
-          ${isActive ? '' : `<button onclick="activateConfig('${jsStr(c.id)}')" title="切换 OPUS 用这个跑">激活</button>`}
+          ${isActive ? '' : `<button onclick="activateConfig('${jsStr(c.id)}')" title="切换 Daemonkey 用这个跑">激活</button>`}
           <button onclick="testConfig('${jsStr(c.id)}')" title="ping 一下试通不通">测试</button>
           <button class="lc-director-btn${c.director ? ' on' : ''}" onclick="toggleDirectorConfig('${jsStr(c.id)}', ${c.director ? 'false' : 'true'})" title="${c.director ? '取消这个配置的顾问身份' : '设为顾问。出方案、卡住、收尾时会请来看一眼。只能有一个。'}"><i class="ri-vip-crown-${c.director ? 'fill' : 'line'}"></i> ${c.director ? '取消顾问' : '设为顾问'}</button><i class="ri-question-line lc-director-help" onclick="showDirectorHelp()" title="顾问模型是干啥的？点我"></i>
           <button onclick="openLlmConfigEditForm('${jsStr(c.id)}')" title="改名称、密钥、模型">编辑</button>
@@ -586,7 +586,7 @@ function _showLlmEditForm({ title, submit, config, onSubmit, isEdit }) {
           <input type="number" step="0.0001" min="0" placeholder="缓存命中价(可空)" id="llmEditPriceCache" value="${escHtml(String((config.pricing && config.pricing.cache_read) ?? ''))}">
           <button type="button" class="btn-ghost" id="llmEditLookup"><i class="ri-search-eye-line"></i> 自动查官方价</button>
         </div>
-        <div class="field-hint" id="llmEditPricingHint">未配置 · 点「自动查官方价」由 OPUS 搜官网填入 · 你确认后才保存</div>
+        <div class="field-hint" id="llmEditPricingHint">未配置 · 点「自动查官方价」由 Daemonkey 搜官网填入 · 你确认后才保存</div>
       </div>
       <div class="field">
         <label>
@@ -1664,7 +1664,7 @@ function renderSettingsAccess() {
       <div class="llm-section-head" style="margin-top:18px"><h3>🔓 Trusted Commands · 信任清单</h3></div>
       <div class="field-hint" style="margin-bottom:8px">
         当 auto_confirm=auto 时·CONFIRM 档命令 (例如 <code>pip install</code>) 会被 skip。
-        把命令头加到信任清单后·窗口期内 OPUS 调这类命令自动通过。
+        把命令头加到信任清单后·窗口期内 Daemonkey 调这类命令自动通过。
         <br><strong>红线</strong>: GUARD 黑名单 (rm -rf / format / git push --force) 永远不会被 trusted。
       </div>
       <div class="field" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
@@ -1713,7 +1713,7 @@ async function refreshTrustedCommands() {
     const j = await r.json();
     const items = (j && j.items) || [];
     if (!items.length) {
-      target.innerHTML = '<i>暂无 trusted commands · OPUS 调 CONFIRM 档命令时会被 auto_confirm 策略卡住</i>';
+      target.innerHTML = '<i>暂无 trusted commands · Daemonkey 调 CONFIRM 档命令时会被 auto_confirm 策略卡住</i>';
       return;
     }
     const rows = items.map(it => {
@@ -1835,7 +1835,7 @@ function renderSettingsWechat() {
             <span class="field-hint" style="margin:0">手机微信扫一扫 → 授权『微信 ClawBot』· 重新扫可换绑</span>
           </div>
           <div id="wechatQrBox" style="display:none;text-align:center;margin-top:12px"></div>
-          <div class="chan-info-bar warn"><i class="ri-time-line"></i> <b>24 小时窗口</b>：你在微信先发一句 → 开窗 · 窗口内 OPUS 能主动找你 · 跨天零互动发不出（腾讯反骚扰）</div>
+          <div class="chan-info-bar warn"><i class="ri-time-line"></i> <b>24 小时窗口</b>：你在微信先发一句 → 开窗 · 窗口内 Daemonkey 能主动找你 · 跨天零互动发不出（腾讯反骚扰）</div>
         </div>
         <!-- 飞书卡 (0.9.1 · 两层: L1 webhook 推送 + L2 机器人对话) -->
         <div class="chan-card">
