@@ -135,16 +135,25 @@ def _fetch_via_standalone(url: str, wait_seconds: int, visible: bool) -> tuple[b
 
     try:
         with sync_playwright() as p:
-            try:
-                ctx = p.chromium.launch_persistent_context(
-                    user_data_dir=str(PW_PROFILE),
-                    channel="msedge",
-                    headless=not visible,
-                    args=["--disable-blink-features=AutomationControlled"],
-                )
-            except Exception as e:
+            from workers.host_bins import playwright_channels
+            ctx = None
+            last_err = ""
+            for ch in playwright_channels():
+                kw = {
+                    "user_data_dir": str(PW_PROFILE),
+                    "headless": not visible,
+                    "args": ["--disable-blink-features=AutomationControlled"],
+                }
+                if ch:
+                    kw["channel"] = ch
+                try:
+                    ctx = p.chromium.launch_persistent_context(**kw)
+                    break
+                except Exception as e:
+                    last_err = f"{type(e).__name__}: {e}"
+            if ctx is None:
                 return False, (
-                    f"failed to launch standalone Edge: {type(e).__name__}: {e}"
+                    f"failed to launch standalone browser: {last_err}"
                 ), "", ""
 
             try:

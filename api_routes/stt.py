@@ -5,7 +5,6 @@
 import logging
 import os
 import subprocess
-import sys
 import threading
 from pathlib import Path
 
@@ -20,7 +19,6 @@ logger = logging.getLogger("opus.stt")
 router = APIRouter(tags=["stt"])
 
 ROOT = Path(__file__).resolve().parent.parent
-VENV_PY = ROOT / ".venv" / "Scripts" / "python.exe"
 STT_REQ = ROOT / "requirements-stt.txt"
 ENV_PATH = ROOT / ".env"
 
@@ -65,10 +63,8 @@ def _write_env_flag(name: str, value: bool) -> None:
 
 
 def _venv_python() -> str:
-    """选择 venv python (有 .venv 用它 · 没有用系统 python)"""
-    if VENV_PY.exists():
-        return str(VENV_PY)
-    return sys.executable
+    from workers.host_bins import venv_python
+    return venv_python(ROOT)
 
 
 def _pip_install_stt() -> bool:

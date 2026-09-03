@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from . import TIER_CONFIRM, ToolResult, ToolSpec, register_tool
@@ -64,6 +65,21 @@ APP_ALIASES: dict[str, list[str]] = {
     "terminal": [r"wt.exe"],  # Windows Terminal
 }
 
+# Mac 走 `open -a` · 名字是启动台里看到的应用名
+MAC_OPEN_NAMES: dict[str, str] = {
+    "cursor": "Cursor",
+    "chrome": "Google Chrome",
+    "edge": "Microsoft Edge",
+    "wechat": "WeChat",
+    "微信": "WeChat",
+    "vscode": "Visual Studio Code",
+    "code": "Visual Studio Code",
+    "explorer": "Finder",
+    "finder": "Finder",
+    "calc": "Calculator",
+    "terminal": "Terminal",
+}
+
 
 def _resolve_path(candidates: list[str]) -> Path | None:
     for raw in candidates:
@@ -93,6 +109,17 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(ok=False, output="", error="'args' must be a list of strings")
 
     key = target.lower()
+    if sys.platform == "darwin" and (key in MAC_OPEN_NAMES or key in APP_ALIASES):
+        app_name = MAC_OPEN_NAMES.get(key) or target
+        try:
+            cmd = ["open", "-a", app_name] + [str(a) for a in extra_args]
+            subprocess.Popen(cmd, **detached_kwargs())
+        except Exception as e:
+            return ToolResult(ok=False, output="", error=f"launch failed: {e!r}")
+        return ToolResult(
+            ok=True,
+            output=f"launched: open -a {app_name}\n  args: {extra_args or '(none)'}",
+        )
     if key in APP_ALIASES:
         path = _resolve_path(APP_ALIASES[key])
         if not path:

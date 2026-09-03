@@ -102,8 +102,8 @@ A：这是 macOS 对未签名应用的正常提示。右键 → 打开 → 仍�
 **Q：我的 Mac 是 Intel 还是 Apple Silicon？**
 A：点左上角  → 关于本机。Apple Silicon（M1/M2/M3/M4）用 **arm64** 包原生跑；Intel 用 **x86_64** 包。图形启动器下载时认准对应架构。
 
-**Q：哪些功能在 Mac 上暂不可用？**
-A：桌宠（桌面小动物）、剪贴板监听、打开 Windows 应用等 **Windows 专属能力**暂未适配——不影响 WebUI 对话 / 记忆 / 工坊 / 报告等核心功能。
+**Q：哪些功能和 Windows 对齐了？哪些还不行？**
+A：对话 / 记忆 / 工坊 / 剪贴板 / 开应用（Chrome、微信等走 `open -a`）/ 浏览器手眼（本机 Chrome/Edge，没有则启动器拉 Chromium）已经能用。成品预览有 LibreOffice 就行（`brew install --cask libreoffice`）。录屏要 `brew install ffmpeg` 并打开「屏幕录制」权限。桌宠能从启动器拉开，透明穿透还没 Windows 细。OfficeCOM / OfficeCLI / Windows 通知仍然是 Windows 的。
 
 **Q：端口 7860 被占用？**
 A：改端口启动：`OPUS_API_PORT=7861 ./start.sh`（源码方式）。

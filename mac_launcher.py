@@ -21,6 +21,7 @@ Win:  同一份代码可跑 (pywebview 走 EdgeChromium) · 用于本地开发�
 
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -118,6 +119,10 @@ def ensure_daemon_dir(api):
                 return False, f"git clone 失败: {r.stderr[-200:]}"
         except Exception as e:
             return False, f"clone 异常: {e}"
+    win_py = os.path.join(d, ".venv", "Scripts", "python.exe")
+    if os.path.isdir(os.path.join(d, ".venv")) and not os.path.exists(py_venv) and os.path.exists(win_py):
+        api.log("检测到 Windows 的 .venv · 正在换成 Mac 环境...", "warn")
+        shutil.rmtree(os.path.join(d, ".venv"), ignore_errors=True)
     if not os.path.exists(py_venv):
         api.log("首次使用 · 创建运行环境 (venv)...", "warn")
         try:
@@ -136,7 +141,24 @@ def ensure_daemon_dir(api):
             return False, f"依赖安装失败: {err}"
     except Exception as e:
         return False, f"依赖异常: {e}"
+    _ensure_mac_browser(api, d, py_venv)
     return True, "就绪"
+
+
+def _ensure_mac_browser(api, d, py_venv):
+    """没有本机 Chrome/Edge 就拉 Playwright Chromium · 浏览器手/眼才能用。"""
+    try:
+        sys.path.insert(0, d)
+        from workers.host_bins import find_chromium, ensure_playwright_chromium
+        if find_chromium():
+            return
+        api.log("未发现 Chrome/Edge · 正在拉 Playwright Chromium...", "warn")
+        if ensure_playwright_chromium(py_venv):
+            api.log("Playwright Chromium 已就绪", "ok")
+        else:
+            api.log("Chromium 未拉下 · 可稍后 brew install --cask google-chrome", "warn")
+    except Exception as e:
+        api.log(f"浏览器准备跳过: {e}", "warn")
 
 
 class LauncherApi:
@@ -148,6 +170,7 @@ class LauncherApi:
         self.win = None                  # 主窗口 (launcher.html)
         self.guard_win = None            # 守护面板窗口 (guard-panel.html)
         self.daemon = None               # subprocess.Popen
+        self.pet = None
         self.opts = {"daemon": True, "pet": False, "browser": True, "crash": True}
         self.port = PORT
         self._stop = threading.Event()
@@ -181,6 +204,11 @@ class LauncherApi:
             if key in self.opts:
                 self.opts[key] = bool(msg.get("on"))
                 self.log(f"开关 {key} → {'开' if self.opts[key] else '关'}")
+                if key == "pet":
+                    if self.opts[key]:
+                        self.start_pet()
+                    else:
+                        self.stop_pet()
                 self.push_state()
         elif t == "port":
             try:
@@ -228,6 +256,8 @@ class LauncherApi:
             self.restart_daemon()
         elif action_id == "stop":
             self.stop_daemon()
+        elif action_id == "pet-egg-cat":
+            self.start_pet(cat=True)
 
     def on_openurl(self, url_id):
         import webbrowser
@@ -293,6 +323,36 @@ class LauncherApi:
         self.stop_daemon()
         time.sleep(1)
         self.start_daemon()
+
+    def start_pet(self, cat=False):
+        if self.pet and self.pet.poll() is None:
+            self.log("桌宠已在运行", "ok")
+            return
+        script = os.path.join(ROOT, "desktop_pet", "run.py")
+        if not os.path.isfile(script):
+            self.log("没有桌宠脚本", "warn")
+            return
+        args = [self._python(), script]
+        if cat:
+            args.append("--cat")
+        try:
+            self.pet = subprocess.Popen(args, cwd=ROOT)
+            self.log(f"桌宠启动中 (pid={self.pet.pid})", "ok")
+        except Exception as e:
+            self.log(f"桌宠启动失败: {e} · 可 brew 后再开，或只用 WebUI", "err")
+
+    def stop_pet(self):
+        if self.pet and self.pet.poll() is None:
+            try:
+                self.pet.terminate()
+                self.pet.wait(timeout=5)
+            except Exception:
+                try:
+                    self.pet.kill()
+                except Exception:
+                    pass
+            self.log("桌宠已停", "ok")
+        self.pet = None
 
     @staticmethod
     def _port_open(port):
@@ -378,6 +438,7 @@ class LauncherApi:
         # 全退: 停 daemon + 退托盘 + 关窗口
         try:
             self.stop_daemon()
+            self.stop_pet()
         except Exception:
             pass
         self._stop.set()

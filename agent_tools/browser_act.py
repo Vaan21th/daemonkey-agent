@@ -29,9 +29,9 @@ def _run(args: dict) -> ToolResult:
             ok=False, output="",
             error=(
                 "起不来 daemon 专属浏览器（独立 profile 那个）。\n"
-                "通常是没装 Edge / Chrome（任一 Chromium 内核浏览器），或装在非标准路径。\n"
-                "→ 装个 Edge 或 Chrome 即可；绿色版/非标准路径可设环境变量 DAEMONKEY_BROWSER_PATH "
-                "指向浏览器 exe 后重启 daemon。"
+                "通常是没装 Chrome / Edge，或装在非标准路径。\n"
+                "Mac 把 Chrome 放进 /Applications；或设 DAEMONKEY_BROWSER_PATH 指向浏览器可执行文件。\n"
+                "启动器首装也会在没有本机浏览器时拉一份 Playwright Chromium。"
             ),
         )
     try:

@@ -257,11 +257,18 @@ def build_visual(kind: str, filename: str, *, root: Path | None = None) -> dict:
             dest.mkdir(parents=True, exist_ok=True)
             ok = _try_officecli(kind, src_abs, dest)
     if not ok:
+        from workers import soffice_preview
+        if soffice_preview.available():
+            dest.mkdir(parents=True, exist_ok=True)
+            ok = soffice_preview.export(src_abs, dest, fmt="html")
+            if not ok:
+                ok = soffice_preview.export(src_abs, dest, fmt="pdf")
+    if not ok:
         shutil.rmtree(dest, ignore_errors=True)
         return _fail(
             kind, filename,
-            "成品预览渲不出来。本机没有 Office/WPS，也没有 OfficeCLI。"
-            "可以下载或用软件打开。",
+            "成品预览渲不出来。本机没有 Office/WPS/OfficeCLI，也没有 LibreOffice。"
+            "Mac 可 brew install --cask libreoffice。可以下载或用软件打开。",
         )
     _prune(base)
     pages = deck_pages(src) if kind == "decks" else 0

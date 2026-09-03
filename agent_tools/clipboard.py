@@ -5,8 +5,8 @@ agent_tools/clipboard.py
 剪贴板读写——OPUS 和 BRO 之间最快的"无打字"通道。
 
 实现：
-  - Windows 走 PowerShell Get-Clipboard / Set-Clipboard（stdlib subprocess，零依赖）
-  - 其他平台先返回错误，等真有需要再加
+  - Windows 走 PowerShell Get-Clipboard / Set-Clipboard
+  - macOS 走 pbpaste / pbcopy
   - 写入用 stdin pipe 避免命令行注入
 
 档位：
@@ -18,12 +18,22 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 
 from . import TIER_AUTO, TIER_CONFIRM, ToolResult, ToolSpec, register_tool
 from ._subprocess_helper import no_window_kwargs
 
 
 _IS_WIN = os.name == "nt"
+_IS_MAC = sys.platform == "darwin"
+
+
+def _read_cmd() -> list[str] | None:
+    if _IS_WIN:
+        return ["powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"]
+    if _IS_MAC:
+        return ["pbpaste"]
+    return None
 
 
 def _read_summarize(_args: dict) -> str:
@@ -31,13 +41,13 @@ def _read_summarize(_args: dict) -> str:
 
 
 def _read_run(_args: dict) -> ToolResult:
-    if not _IS_WIN:
-        from identity import localize_narration as _ln
-        return ToolResult(ok=False, output="", error=_ln("only Windows supported in v0.1; ask OPUS to add macOS/Linux"))
+    cmd = _read_cmd()
+    if not cmd:
+        return ToolResult(ok=False, output="", error="clipboard read needs Windows or macOS")
 
     try:
         proc = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"],
+            cmd,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -47,7 +57,7 @@ def _read_run(_args: dict) -> ToolResult:
     except subprocess.TimeoutExpired:
         return ToolResult(ok=False, output="", error="clipboard read timed out")
     except Exception as e:
-        return ToolResult(ok=False, output="", error=f"powershell error: {e!r}")
+        return ToolResult(ok=False, output="", error=f"clipboard error: {e!r}")
 
     text = proc.stdout or ""
     text = text.rstrip("\r\n")
@@ -76,16 +86,20 @@ def _write_run(args: dict) -> ToolResult:
             return ToolResult(ok=False, output="", error=blocked)
     except Exception:
         pass
-    if not _IS_WIN:
-        return ToolResult(ok=False, output="", error="only Windows supported in v0.1")
+    if not (_IS_WIN or _IS_MAC):
+        return ToolResult(ok=False, output="", error="clipboard write needs Windows or macOS")
 
     text = args.get("text")
     if text is None:
         return ToolResult(ok=False, output="", error="missing 'text'")
 
+    if _IS_WIN:
+        wcmd = ["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value $input"]
+    else:
+        wcmd = ["pbcopy"]
     try:
         proc = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", "Set-Clipboard -Value $input"],
+            wcmd,
             input=str(text),
             capture_output=True,
             text=True,
@@ -96,10 +110,10 @@ def _write_run(args: dict) -> ToolResult:
     except subprocess.TimeoutExpired:
         return ToolResult(ok=False, output="", error="clipboard write timed out")
     except Exception as e:
-        return ToolResult(ok=False, output="", error=f"powershell error: {e!r}")
+        return ToolResult(ok=False, output="", error=f"clipboard error: {e!r}")
 
     if proc.returncode != 0:
-        return ToolResult(ok=False, output="", error=f"powershell exit {proc.returncode}: {proc.stderr}")
+        return ToolResult(ok=False, output="", error=f"clipboard exit {proc.returncode}: {proc.stderr}")
 
     from identity import localize_narration as _ln
     return ToolResult(

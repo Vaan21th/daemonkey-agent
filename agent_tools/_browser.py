@@ -43,36 +43,10 @@ EDGE_PROFILE = Path(
 BROWSER_PID_FILE = EDGE_PROFILE / "daemon_browser.pid"
 _CDP_LOCK = threading.Lock()
 
-# 候选浏览器——都是 Chromium 内核，CDP 完全一样。Edge 优先（Win 出厂自带、几乎人人有），
-# 没有再退 Chrome。用户也可用 DAEMONKEY_BROWSER_PATH 显式指定（绿色版 / 其他 Chromium 内核）。
-_BROWSER_CANDIDATES = (
-    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-)
-
-_LOCAL_CANDIDATES = (
-    Path("Microsoft") / "Edge" / "Application" / "msedge.exe",
-    Path("Google") / "Chrome" / "Application" / "chrome.exe",
-)
-
-
 def _find_browser() -> str | None:
-    """找一个 Chromium 内核浏览器：用户指定 > Edge > Chrome。找不到返回 None。"""
-    override = os.environ.get("DAEMONKEY_BROWSER_PATH")
-    if override and Path(override).exists():
-        return override
-    for p in _BROWSER_CANDIDATES:
-        if Path(p).exists():
-            return p
-    local = os.environ.get("LOCALAPPDATA")
-    if local:
-        for sub in _LOCAL_CANDIDATES:
-            cand = Path(local) / sub
-            if cand.exists():
-                return str(cand)
-    return None
+    """用户指定 > 本机 Chrome/Edge > Playwright 自带 Chromium。"""
+    from workers.host_bins import find_chromium
+    return find_chromium()
 
 
 def cdp_available() -> bool:
@@ -91,7 +65,7 @@ def cdp_available() -> bool:
 def _kill_stale_browser() -> int:
     """只杀命令行里带本 profile 路径的浏览器进程。返回杀掉的个数。"""
     if os.name != "nt":
-        return 0
+        return _kill_stale_posix()
     killed = 0
     needle = str(EDGE_PROFILE).lower().replace("/", "\\")
     try:
@@ -124,6 +98,37 @@ def _kill_stale_browser() -> int:
                 pass
     if killed:
         time.sleep(1.5)  # 等句柄/锁释放
+    return killed
+
+
+def _kill_stale_posix() -> int:
+    killed = 0
+    if BROWSER_PID_FILE.exists():
+        raw = BROWSER_PID_FILE.read_text(encoding="utf-8", errors="replace").split()
+        pid = raw[0] if raw else ""
+        if pid.isdigit() and _pid_alive(int(pid)):
+            try:
+                os.kill(int(pid), 15)
+                killed += 1
+            except OSError:
+                pass
+        else:
+            try:
+                BROWSER_PID_FILE.unlink(missing_ok=True)
+            except OSError:
+                pass
+    needle = str(EDGE_PROFILE)
+    try:
+        r = subprocess.run(
+            ["pkill", "-f", needle],
+            capture_output=True, timeout=5,
+        )
+        if r.returncode == 0:
+            killed += 1
+    except Exception:
+        pass
+    if killed:
+        time.sleep(1.0)
     return killed
 
 
@@ -208,12 +213,14 @@ def _ensure_cdp_locked(launch: bool = True, wait_secs: int = 25) -> bool:
         "--no-first-run",
         "--no-default-browser-check",
     ]
-    flags = 0
+    popen_kw: dict = {"close_fds": True}
     if os.name == "nt":
         # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP —— Edge 不随 daemon 重启而死
-        flags = 0x00000008 | 0x00000200
+        popen_kw["creationflags"] = 0x00000008 | 0x00000200
+    else:
+        popen_kw["start_new_session"] = True
     try:
-        proc = subprocess.Popen(args, creationflags=flags, close_fds=True)
+        proc = subprocess.Popen(args, **popen_kw)
         BROWSER_PID_FILE.write_text(f"{proc.pid} {time.time():.0f}", encoding="utf-8")
     except Exception:
         return False

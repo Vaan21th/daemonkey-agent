@@ -3,8 +3,7 @@
 # ---------------------------------------------------------------
 # 对标 Windows 的 run.ps1 + GUI 启动器：备环境 → 起 daemon → 开浏览器。
 # 用法：  chmod +x start.sh && ./start.sh
-# 说明：  桌宠 / 剪贴板 / 打开应用等 Windows 专属能力在 *nix 暂未适配，
-#         不影响 WebUI 对话 / 记忆 / 工坊等核心功能。
+# 说明：  剪贴板 / 开应用 / 浏览器手眼已对齐；桌宠可从启动器开（穿透弱于 Windows）。
 # ---------------------------------------------------------------
 set -u
 cd "$(dirname "$0")"
@@ -28,6 +27,10 @@ fi
 say "Python: $("$PY" --version 2>&1)"
 
 # 2) 虚拟环境
+if [ -f ".venv/Scripts/python.exe" ] && [ ! -x ".venv/bin/python" ]; then
+  say "检测到 Windows 的 .venv · 重建 Mac 环境..."
+  rm -rf .venv
+fi
 if [ ! -d ".venv" ]; then
   say "创建虚拟环境 .venv ..."
   "$PY" -m venv .venv || { echo "  [X] venv 创建失败"; exit 1; }
@@ -51,6 +54,17 @@ if ! python -c "import fastapi, uvicorn, openai, anthropic" 2>/dev/null; then
   say "依赖就绪"
 else
   say "依赖已就绪"
+fi
+
+# 3b) 没有本机 Chrome/Edge 时拉 Playwright Chromium（浏览器手/眼）
+if [ ! -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ] \
+   && [ ! -x "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" ]; then
+  say "未发现 Chrome/Edge · 尝试 Playwright Chromium..."
+  python -m playwright install chromium >/dev/null 2>&1 \
+    || say "(Chromium 未拉下 · 可 brew install --cask google-chrome)"
+fi
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  say "(录屏需要 ffmpeg · brew install ffmpeg，并打开系统「屏幕录制」权限)"
 fi
 
 # 4) .env（没有就从模板建；key 启动后在网页里填）

@@ -468,9 +468,10 @@ async def screen_record(
     request: Request,
     authorization: Optional[str] = Header(None),
 ):
-    """FFmpeg gdigrab 录屏 · 给 scripted app '屏幕录制' 用"""
+    """FFmpeg 录屏 · Windows gdigrab / Mac avfoundation"""
     check_auth(authorization)
     import subprocess, time as _time
+    from workers.host_bins import ffmpeg_grab_args, find_ffmpeg
 
     try:
         body = await request.json()
@@ -489,26 +490,15 @@ async def screen_record(
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     outfile = OUTPUT_DIR / f"{output_name}.mp4"
 
-    if region == "desktop" or not region:
-        ffmpeg_args = [
-            "ffmpeg", "-y", "-f", "gdigrab", "-framerate", "30",
-            "-i", "desktop", "-t", str(duration),
-            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-            str(outfile)
-        ]
-    else:
-        parts = region.replace(":", " ").replace("x", " ").split()
-        if len(parts) != 4:
-            raise HTTPException(400, f"invalid region format: {region}")
-        x, y, w, h = parts
-        ffmpeg_args = [
-            "ffmpeg", "-y", "-f", "gdigrab", "-framerate", "30",
-            "-offset_x", str(x), "-offset_y", str(y),
-            "-video_size", f"{w}x{h}", "-i", "desktop",
-            "-t", str(duration),
-            "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
-            str(outfile)
-        ]
+    if not find_ffmpeg():
+        return {
+            "ok": False,
+            "error": "本机没有 ffmpeg。Windows 把 ffmpeg 加到 PATH；Mac 用 brew install ffmpeg，并在系统设置里打开屏幕录制权限。",
+        }
+    try:
+        ffmpeg_args = ffmpeg_grab_args(str(outfile), duration, region)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
     t0 = _time.time()
     try:
