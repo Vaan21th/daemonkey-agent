@@ -70,6 +70,7 @@ chmod +x start.sh
 5. 以上都没有，才 clone Gitee（远端还是旧 master，不是桌上这份 1.0.0）
 
 旁边已经有根目录、也有 `.venv` 时，不再每次 `pip install`。
+首次装依赖和终端 `start.sh` 一样：先清华源 `pypi.tuna.tsinghua.edu.cn`，不通再官方 PyPI。
 
 **不要做的：**
 

@@ -84,6 +84,19 @@ else:
     ASSET_DIR = os.path.join(DAEMON_DIR, "assets")
 ROOT = DAEMON_DIR
 
+# 对齐 start.sh：大陆先清华源，不通再官方 PyPI。Windows run.ps1 没写死镜像，
+# 这台机能装上是因为 .venv 已经在；Mac 首装走 .app 必须自己带源。
+_PIP_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+
+def _pip_install(py, args, timeout=900):
+    base = [py, "-m", "pip", "install", "-q"]
+    r = subprocess.run(base + ["-i", _PIP_MIRROR] + args,
+                       timeout=timeout, capture_output=True)
+    if r.returncode == 0:
+        return r
+    return subprocess.run(base + args, timeout=timeout, capture_output=True)
+
 
 def ensure_daemon_dir(api):
     """打包模式首装：旁边已有根目录就用；没有才 clone 到 DAEMON_DIR。"""
@@ -112,13 +125,11 @@ def ensure_daemon_dir(api):
                            timeout=300)
         except Exception as e:
             return False, f"venv 创建失败: {e}"
-    api.log("首次使用 · 安装依赖 (几分钟·请稍候)...", "warn")
+    api.log("首次使用 · 安装依赖 (清华源·几分钟)...", "warn")
     try:
-        subprocess.run([py_venv, "-m", "pip", "install", "--upgrade", "pip", "-q"],
-                       timeout=300)
-        r = subprocess.run([py_venv, "-m", "pip", "install", "-r",
-                            os.path.join(d, "requirements.txt"), "-q"],
-                           timeout=900)
+        _pip_install(py_venv, ["--upgrade", "pip"], timeout=300)
+        r = _pip_install(py_venv, ["-r", os.path.join(d, "requirements.txt")],
+                         timeout=900)
         if r.returncode != 0:
             # B-① · 2026-08-27 · stderr 可能为 None (未 capture) · 不再切片炸 (Grok 全量审计)
             err = (r.stderr or b"").decode("utf-8", "replace")[-200:] if r.stderr else "无 stderr 输出"
