@@ -74,7 +74,12 @@ def remote_core_version(remote: str, branch: str = "master") -> str:
 
 
 def kernel_files(manifest: Optional[dict] = None) -> list[str]:
-    """把 manifest.kernel 下所有分类的文件名拍平成一个去重列表 (posix 斜杠)。"""
+    """把 manifest.kernel 下所有分类的文件名拍平成一个去重列表 (posix 斜杠)。
+
+    data/ soul/ sessions/ static/user/ .env 即使误写入白名单也不会进列表 ——
+    升级物理上碰不到用户产物和灵魂。
+    """
+    from workers.output_sinks import drop_user_data_paths
     m = manifest or load_manifest()
     files: list[str] = []
     for group in (m.get("kernel") or {}).values():
@@ -82,7 +87,8 @@ def kernel_files(manifest: Optional[dict] = None) -> list[str]:
             f = str(f).strip().replace("\\", "/")
             if f and f not in files:
                 files.append(f)
-    return files
+    keep, _ = drop_user_data_paths(files)
+    return keep
 
 
 def dirty_kernel_files(manifest: Optional[dict] = None) -> list[str]:
@@ -419,6 +425,12 @@ def _pull_pass_locked(remote: str, branch: str, base: str, do_commit: bool) -> d
     if taken:
         res["skipped_takeover"] = [f for f in to_pull if f in taken]
         to_pull = [f for f in to_pull if f not in taken]
+
+    from workers.output_sinks import drop_user_data_paths
+    to_pull, blocked_data = drop_user_data_paths(to_pull)
+    if blocked_data:
+        extra = f"拒拉用户数据 {len(blocked_data)} 个: {', '.join(blocked_data[:6])}"
+        res["note"] = (res["note"] + " · " + extra).strip(" ·")
 
     if not to_pull:
         res["ok"] = True

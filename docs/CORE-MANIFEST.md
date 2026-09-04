@@ -89,7 +89,7 @@
 - **L2 功能**: 雷达 / 掘金 / 可行性 / 复盘 / 能力镜像 / 报告引擎 / 心愿单 / 工坊应用 / 工作流 / 微信·iLink 渠道 / 视觉 / 日历 / dashboard —— 所有这些 `workers/*` + `agent_tools/*` + `api_routes/*` 功能件
 - **前端 UI · 皮肤层**: `static/*` 里用户自定义的主题/样式 (用户最爱改的一层 · 永不覆盖)
   - 例外: `static/chat.js` · `static/workshop.js` 是**前端机制层** · 已上移进 L1 白名单随 update_core 同步 (见上「7. 核心前端机制」)
-- **L3 私人数据**: `soul/` · `data/` · `sessions/` (本就 gitignore / 私人,git 都不碰)
+- **L3 私人数据**: `soul/` · `data/`（含 reports / presentations / spreadsheets / workshop / runtime） · `sessions/`。gitignore + `update_core` 双重不碰；白名单误写这些路径也会在 checkout 前丢掉。
 
 ---
 

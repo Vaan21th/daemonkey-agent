@@ -112,7 +112,10 @@ def _save_binary(content: bytes, save_dir: str, filename: str) -> tuple[str, str
     if not safe_filename:
         safe_filename = f"output-{int(time.time())}"
 
-    dir_path = ROOT / save_dir
+    from workers.output_sinks import coerce_out_dir
+    default = ROOT / "data" / "workshop" / "outputs"
+    raw_dir = save_dir if Path(save_dir).is_absolute() else (ROOT / save_dir)
+    dir_path = coerce_out_dir(raw_dir, default, ROOT)
     dir_path.mkdir(parents=True, exist_ok=True)
 
     # 并发防覆盖(卷七十九续二十四 · BRO 反馈:批量走同一 app 时·app 模板多用 {ts} 秒级命名·

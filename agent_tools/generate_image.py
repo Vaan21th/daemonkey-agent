@@ -219,11 +219,14 @@ def _extract_app_image_path(res: dict):
     return None
 
 
+def _resolved_out(out_dir) -> Path:
+    from workers.output_sinks import coerce_out_dir
+    return coerce_out_dir(out_dir, DEFAULT_OUT, ROOT)
+
+
 def _copy_into(src: Path, out_dir, tag: str = "app") -> Path:
     """把生成图复制进目标目录(唯一命名·防并发覆盖)· 返回落到 out_dir 的 Path。"""
-    out = Path(out_dir) if out_dir else DEFAULT_OUT
-    if not out.is_absolute():
-        out = ROOT / out
+    out = _resolved_out(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     ext = src.suffix or ".png"
     # uuid 保证并发下文件名唯一(ms+pid 在同进程同毫秒会撞·卷七十九续实测)
@@ -316,9 +319,7 @@ def generate_images(prompt: str, out_dir=None, size: str = "1024x1024", n: int =
         raise ImageGenUnavailable("openai 包未安装·先装依赖。") from e
 
     n = max(1, min(int(n or 1), HARD_MAX_N))
-    out = Path(out_dir) if out_dir else DEFAULT_OUT
-    if not out.is_absolute():
-        out = ROOT / out
+    out = _resolved_out(out_dir)
     out.mkdir(parents=True, exist_ok=True)
 
     client = OpenAI(api_key=cfg["key"], base_url=cfg["base"], timeout=120.0)
@@ -573,7 +574,7 @@ SPEC = ToolSpec(
                         "description": f"【批量·首选】多张【不同】图的提示词数组(≤{HARD_MAX_BATCH})· 一次并发出图 · 结果按顺序一一对应。要多张图时用它,别发多个调用"},
             "n": {"type": "integer", "description": f"同一 prompt 出几张变体 1-{HARD_MAX_N}(默认 1)· 仅对单个 prompt 生效"},
             "size": {"type": "string", "description": "尺寸,如 1024x1024 / 1792x1024(16:9 封面)。默认 1024x1024"},
-            "out_dir": {"type": "string", "description": "落盘目录(相对工程根即可)。默认 data/presentations/generated"},
+            "out_dir": {"type": "string", "description": "落盘目录。默认 data/presentations/generated；乱开的新目录会改回默认。"},
             "art_boost": {"type": "boolean", "description": "自动补艺术方向(电影布光/明暗对比/讲究构图)· 默认 True · 已自带光影描述则不叠加"},
         },
         "required": [],

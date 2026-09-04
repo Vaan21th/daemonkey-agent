@@ -266,6 +266,12 @@ def _run(args: dict) -> ToolResult:
     if mode == "create" and path.exists():
         return ToolResult(ok=False, output="", error=f"file already exists: {path}")
 
+    if not path.exists():
+        from workers.output_sinks import refuse_new_path
+        sink_err = refuse_new_path(path, ROOT)
+        if sink_err:
+            return ToolResult(ok=False, output="", error=sink_err)
+
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except Exception as e:
@@ -442,7 +448,7 @@ SPEC = ToolSpec(
         "properties": {
             "path": {
                 "type": "string",
-                "description": "相对工程根。HTML 原型写 data/design/ 或 data/workshop/outputs/。",
+                "description": "相对工程根。新文件必须落已有分类：HTML→data/design 或 data/workshop/outputs；草稿→data/runtime/scratch。禁止新建 data/ 下未知目录。",
             },
             "content": {
                 "type": "string",

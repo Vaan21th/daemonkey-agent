@@ -246,17 +246,8 @@ def _run(args: dict) -> ToolResult:
     out_path = staged_path(_DECK_DIR, family, ".pptx")
 
     embed_arg = args.get("embed_image_dir")
-    if embed_arg:
-        here_dir = Path(str(embed_arg))
-        if not here_dir.is_absolute():
-            here_dir = _ROOT / here_dir
-        here_dir = here_dir.resolve()
-        try:
-            here_dir.relative_to(_ROOT.resolve())
-        except ValueError:
-            return ToolResult(ok=False, output="", error=f"embed_image_dir 越界: {embed_arg}")
-    else:
-        here_dir = _DECK_DIR / "_assets" / safe
+    from workers.output_sinks import coerce_out_dir
+    here_dir = coerce_out_dir(embed_arg, _DECK_DIR / "_assets" / safe, _ROOT)
 
     try:
         from slides_engine import audit_deck, list_styles, parse_deck, render_deck, resolve_style
