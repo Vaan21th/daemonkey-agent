@@ -7,24 +7,45 @@
 
 ---
 
-## [1.0.0] — 2026-09-03
+## [1.0.1] — 2026-09-06
 
-**正式版 · 出厂冷启动**
+**对外正式介绍这一版**
+
+1.0.0 的能力都在。这一版把用户能看见的门面写清楚，并补两件升级安全网。
 
 ### 新增 Added
-- **拓展市集走合并申请** —— 上架先打袋子、过机器闸，再向市集仓开 PR。红灯当场挡住；仓主待审里黄灯才打开看，绿灯可一批合，红灯可一批关
-- **启动器全套随内核** —— Windows：`start.bat` / `Daemonkey.exe` / `daemonkey-launcher.ps1`（壳肉分离）。macOS：`start.sh` 终端一键 + `mac_launcher.py` 图形壳（同一份 `assets/launcher.html`）；`.app` / `.dmg` 仍走 GitHub Actions
-- **出厂身份冷启动** —— 本机测场身份已清掉。第一次打开走相遇，自己起名
+- **介绍文档按 1.0 重写** —— 中英分开写。工作台、房间用真机图。写清三件事：第一次聊完你就有了属于自己的专属 AI；固定说明书约 1.9 万 token、工具目录 8113 字（低于 OpenClaw 同类上限 1.8 万字）；长对话前缀缓存 95% 以上。ATM-Bench 主成绩 51.6%（DeepSeek V4 Flash，对照 OpenCode 38.3%）
+- **产物落点归类** —— 生成的 PPT / Word / 表落到该去的目录，不再随便堆
 
 ### 变更 Changed
-- **侧栏撤掉用户运营占位** —— 客户档案并进执行落地。工坊复合/原子节点不再接执行器：画布是 `create_workflow(steps)` 的只读投影
-- **内核从 0.9.9 收到母体 1.0.0** —— 出稿（Word/PPT/表）、中栏舞台、市集、房间/桌宠、记忆分层与启动器与母体对齐，只剥身份
+- **升级不碰你的东西** —— 官方更新拒拉 `data/`、灵魂文件、对话记录。只换程序
 
-### 修复 / 卫生 Fixed
-- 发布闸把测场人名列进硬名单，不能再进开源盘
-- Gitee 市集清单优先 contents API，下载允许官方 CDN 跳转，避免拉到空袋子
+> Public face of 1.0. README is bilingual with real workbench/room shots, prefix size (~19k tokens, 8113-char tool directory under OpenClaw’s 18k cap), 95%+ prefix cache, and ATM-Bench 51.6%. Updates refuse user data paths.
 
-> First public 1.0.0. Factory identity is empty (onboarding). Marketplace submissions go through a pull request and a red/yellow/green static gate. Windows and macOS launchers ship in-tree; signed `.app` still comes from Actions after a push.
+---
+
+## [1.0.0] — 2026-09-03
+
+**第一次凑齐：工作台、房间、出稿、双系统启动器**
+
+这一版开始，打开之后不再是「只有聊天框的测试版」。对外以 1.0.1 的介绍为准，下面是当时落地的能力。
+
+### 新增 Added
+- **第一次对话自己起名** —— 出厂没有现成身份。填 Key、起名字、告诉它怎么叫你，写进画像
+- **工作台出稿** —— 对话里直接出 PPT / Word / Excel，中间能预览，圈一段字可以只改那里
+- **房间和桌宠** —— 干活之外有一个在的地方，和对话是同一份记忆
+- **Windows / macOS 启动器都在这份代码里** —— Windows 双击 `Daemonkey.exe`；Mac 用 `start.sh` 或图形壳。签名过的 `.app` 仍由 GitHub Actions 出
+- **新本事走申请，不是货架** —— 先打成袋子、机器过一遍，再提合并。红灯当场挡住，不是上架商店
+
+### 变更 Changed
+- **侧栏不再堆运营占位** —— 客户档案并进执行落地。工作流画布按步骤只读展示
+- **工坊节点不再私下接执行器** —— 画布是工作流步骤的投影，避免点一下跑飞
+
+### 修复 Fixed
+- 出厂盘清掉测试用的人名
+- 市集下载认官方跳转，避免拉到空文件
+
+> First 1.0 cut: empty factory identity, workbench outputs, room/pet, in-tree Windows/macOS launchers, marketplace as gated PRs not a store. The public write-up lives in 1.0.1.
 
 ---
 

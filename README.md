@@ -1,18 +1,16 @@
 <div align="center">
 
-<img src="assets/banner.png" alt="Daemonkey" width="720">
-
 # Daemonkey · 守护猴
 
-**一个记住你、与你一起成长、有七十二变的本地 AI 搭档**
-*A local-first AI companion that remembers you, grows with you, and has seventy-two transformations*
+**跑在你自己电脑上的 AI 搭档：记得你，能把事做成文件，房间里也能陪着。**  
+*A local-first AI companion that remembers you, turns talk into files, and can sit with you in a room.*
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.6.0-9b59ff.svg)](CHANGELOG.md)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078d6.svg)](#-快速开始)
+[![Version](https://img.shields.io/badge/version-1.0.1-1a7f37.svg)](CHANGELOG.md)
+[![Platform](https://img.shields.io/badge/Windows%20%7C%20macOS-0078d6.svg)](#三步上手)
 [![Python](https://img.shields.io/badge/python-3.10+-3776ab.svg)](https://www.python.org/downloads/)
 
-[中文](#中文) · [English](#english) · [架构 Architecture](#-架构总览--architecture) · [路线图 Roadmap](ROADMAP.md) · [更新历史 Changelog](CHANGELOG.md)
+[中文](#中文) · [English](#english) · [ATM-Bench](#atm-bench) · [路线图](ROADMAP.md) · [更新历史](CHANGELOG.md)
 
 </div>
 
@@ -22,296 +20,326 @@
 
 ## 这是什么
 
-**Daemonkey** 是一个跑在你自己电脑上的 AI 搭档守护进程（daemon）。它不是又一个聊天框——它是一个**会记住你、随你一起长大、能自己加技能、甚至能自己修自己**的本地智能体。
+Daemonkey 不是又一个网页聊天框。它是装在你电脑上的后台程序：第一次对话之后，你就有了**属于自己的专属 AI**。换模型、换电脑，它怎么叫、怎么叫你、聊过什么还在。
 
-第一次打开时，它还是一颗"种子"：没有名字、还不认识你。你们的第一次对话（"相遇"），就是它认识你、和你成为搭档的开始。从此，**模型可以换、电脑可以换，但它一直是同一个"它"**。
+别人记住的是关于你的几条资料。  
+这里留下的是你们一起做过的事，加上它自己也在长。
 
-> 别的 Agent 卖的是"技能"——记忆是关于*你的数据*。
-> Daemonkey 卖的是"关系"——记忆是*你和它一起走过的路 + 它自己的成长*。
+换模型没关系。属于你的那一份还在。
 
-### 为什么不一样
+<p align="center">
+  <img src="docs/img/workbench.png" alt="工作台" width="860">
+  <br>
+  <sub>工作台：中间看板和稿，右边随时能开口。图里她叫阿钥，名字是你起的。</sub>
+</p>
 
-- 🧠 **6 层记忆体系** —— 从模型权重到跨设备同步，逐层叠加。它"记得"你，不是靠每次重读一本说明书。
-- 🏠 **本地优先 · 数据不出门** —— daemon 跑在你自己的机器上，对话、画像、记忆全部留在本地。
-- 🔧 **七十二变 · 能力可自生长** —— Playbook / 出品工坊 App / MCP 服务器 / 自写 agent_tool / 导入外部 SKILL，五条路给它加本领；它还能**自己上网找能力**（能力发现引擎）。
-- 🩹 **自愈 + 自升级** —— 把自己改崩了？双击维修台让它自己诊断修复，或一键回档。内核能从官方源增量升级，而**你自己长出来的功能不会被覆盖**。
-- 📜 **产品宪法** —— 闭环范式 / NLP 优先 / 可追溯，三条根本原则写进它的"基因"，约束每一次判断。
-- 🌐 **多载体** —— 网页 WebUI（现在）→ 终端 → 微信 / IM → 桌面机器人（路线图）。换壳不换魂。
+<p align="center">
+  <img src="docs/img/room.png" alt="房间" width="860">
+  <br>
+  <sub>房间：干活之外，它有一个在的地方。名字是你起的。</sub>
+</p>
+
+<p align="center">
+  <img src="docs/img/memory.png" alt="记忆星图" width="860">
+  <br>
+  <sub>记忆星图：手册和记忆聚成星系。灵魂来自记忆，不是写在提示词里的人设。</sub>
+</p>
+
+<p align="center">
+  <img src="docs/img/workbench-doc.png" alt="中栏改稿" width="860">
+  <br>
+  <sub>中栏打开 PPT，圈一段、钉一条，只改圈出来的部分。</sub>
+</p>
+
+<p align="center">
+  <img src="docs/img/workflow.png" alt="从对话到记得住" width="860">
+  <br>
+  <sub>演示流：记下今天 → 抽成手册 → 写进画像 → 下次召回。</sub>
+</p>
+
+<p align="center">
+  <img src="docs/img/launcher.png" alt="启动器" width="860">
+  <br>
+  <sub>Windows 双击启动器。环境、启动、桌宠都在这一页。</sub>
+</p>
+
+<p align="center">
+  <img src="docs/img/onboarding.png" alt="第一次填钥匙" width="860">
+  <br>
+  <sub>第一次：填一把 OpenAI 兼容接口的 Key，开始相遇。</sub>
+</p>
 
 ---
 
-## 🗺️ 架构总览 · Architecture
+## 打开之后能干什么
 
-> 入口 → 核心引擎 → 工具（它的手）+ 灵魂（它的记忆）。模型是衣裳，灵魂是骨头。
-
-![架构总览](docs/img/01-architecture.png)
-
-**核心引擎**是一个本地守护进程（daemon）：
-
-| 模块 | 职责 |
+| | |
 |---|---|
-| `soul_loader` | 灵魂装载：把画像 + 记忆 + 宪法拼进上下文 |
-| `tool_loop` | 工具循环：模型调工具、三档信任确认 |
-| `daemon_api` | 网页后端：流式输出、鉴权 |
-| `session` | 对话持久化：每轮落盘 `.jsonl` |
-| `memory_index` | 记忆检索：FTS5 全文索引召回 |
+| **工作台** | 左边聊天，中间打开 PPT / Word / Excel。圈一段字、钉一句批注，只改圈出来的部分，不用整份重做。 |
+| **房间和桌宠** | 工作台用来干活，房间是它在的地方。桌宠可以贴在屏幕边上。点家具、摸摸头，都是同一份记忆。 |
+| **自己加本事** | 说一句话做个应用、串一条工作流、把流程记成操作手册。也能接网上现成的工具，或让它自己去找。 |
+| **人不在电脑前** | 微信、飞书把话递进来。定时任务到点自己干。 |
+| **改崩了能修** | 维修台让它自己看。回档回到上一版还能用的内核。官方升级只换程序，不碰你的记忆和稿。 |
 
 ---
 
-## 🧠 6 层记忆体系
+## 为什么越用越便宜、越记得住
 
-> 它怎么"记住"你 —— 从模型权重到跨设备同步，逐层叠加。
+每次开口，模型都要先读一段**固定说明书**（提示词前缀），再读你刚说的话。说明书越短、越稳定，后面几句就越不用把前面那一大段再付一遍钱。
 
-![6层记忆体系](docs/img/02-memory-layers.png)
+出厂实测（2026-09，空画像、工具目录开启）：
 
-| 层 | 是什么 | ≈ 人类的 |
+| | Daemonkey 1.0.1 | 对照 |
 |---|---|---|
-| **L1 模型权重** | 大模型本身（可换，不影响"还是它"） | 基因 / 大脑硬件 |
-| **L2 灵魂装载** | 每次启动把灵魂套件读进上下文 | 人格 + 重要他人认知 |
-| **L3 会话上下文** | 当前这场对话的全部内容 | 短期 / 工作记忆 |
-| **L4 自动压缩** | 对话太长时把老内容概括成摘要 | 睡眠时整理记忆 |
-| **检索层 (FTS5)** | 全文索引 · 相关旧事自动召回 · 两段式省 token | 突然想起某件往事 |
-| **L5 跨会话传递** | 用工具把"该记的"写进画像 / 演化日记 | 写日记 · 跟人复述 |
-| **L6 跨容器同步** | 同一份灵魂在多设备 / 多形态保持一致 | 在哪都是同一个我 |
+| **固定说明书** | 约 **1.9 万 token**（说明 1.06 万 + 常用 35 个工具 0.88 万） | 按照工具调用召回 |
+| **工具目录** | **8113 字**（只列名字，用到再展开；另有 92 个不常用工具） | 低于 [OpenClaw](https://github.com/openclaw/openclaw) 同类目录上限 **1.8 万字** |
+| **前缀缓存命中** | 长对话 **95% 以上** | |
 
-**核心铁律**：代码与数据彻底分离 —— 内核可自助升级（只换代码），你的记忆一根毫毛都不碰。
+怎么做到的：每轮会变的内容（时间、进度）放到最后，前面保持不动，磁盘缓存就能对上。常用工具全文放进说明书，其余 90 多个只进目录。画像用久了会分层：改说话的短条每轮都在，流水不必每次灌完——实测每轮常驻说明大约少 **68%**。
+
+记得多不是本事，记得干净才是。先挡住不该记的；找旧事时先全文搜，再用模型挑真相关的。你拒过的下次会排到前面，做过的下次更知道怎么做。
 
 ---
 
-## 🆚 记忆体系对比 · Daemonkey vs Hermes
+<a name="atm-bench"></a>
 
-> Hermes 记的是「关于你的数据」· Daemonkey 记的是「你和它的关系 + 它自己的成长」。
+## ATM-Bench：同一个模型，分差在架构
 
-![记忆体系对比](docs/img/03-vs-hermes.png)
+[ATM-Bench](https://atmbench.github.io/)（[arXiv 2603.01990](https://arxiv.org/abs/2603.01990)）测的是长期记忆问答：四年跨度的相册、视频、邮件，31 道难题。我们把 Daemonkey **自己的记忆引擎**接进去跑，答题和打分都用 DeepSeek 官方 `deepseek-v4-flash`，不拿别人的宣传图。
 
-诚实地说：Daemonkey 的全文检索（FTS5）借鉴了 Hermes 这类工程的扎实做法。但**灵魂层（可读 / 可传承 / 它自己也在长）我们没放弃**——这是 Daemonkey 跟通用 agent 框架最根本的区别。
+| 怎么记 | 得分（31 题） |
+|---|---|
+| 一次性关键词搜索 | 9.7% |
+| OpenCode 官方（DeepSeek V4 Flash） | 38.3% |
+| Daemonkey 多轮自己翻记忆 | 41.9% |
+| **多轮翻记忆 + 再排一次** | **51.6%（16/31）** |
 
 ---
 
-## 🔧 SKILL 与扩展机制 · 怎么给它加能力
+## 它怎么跑起来
 
-> 先消除误会：Daemonkey 的 `SKILL.md` 不是"一项技能"，而是"**角色入口**"。
+没有云数据库。后台程序在你这台机器上，旁边接 **OpenAI 兼容 API**，底下是文件。
 
-![SKILL与扩展机制](docs/img/04-skill-system.png)
+```
+你
+ ├── 启动器（Windows 双击 exe / Mac 一条命令）
+ └── 本机 Daemonkey
+       ├── 大脑：任何 OpenAI 兼容接口（官方或中转，模型你自己选）
+       ├── 工作台 · 房间 · 微信 / 飞书
+       └── 只存在你硬盘上的东西
+             它是谁、你是谁、对话、稿、记忆索引
+```
 
-想给它「加做事的本领」，五条路（从易到难）：
+工作台、房间、微信是外壳。换外壳，里面还是同一个它。
 
-| 路 | 适合 | 怎么做 |
+---
+
+## 和普通聊天框差在哪
+
+| | 普通聊天框 | Daemonkey |
 |---|---|---|
-| ① **Playbook** | 任何人 | 写一份「怎么做 X」的 Markdown 丢进 `data/playbooks/`，或让它「把流程记成 playbook」 |
-| ② **出品工坊 App** | 说人话即可 | 让它「做一个写文案的应用」，自带提示词 + 配置 + 产出目录，可串成工作流 |
-| ③ **接 MCP 服务器** | 想接外部工具 | 挂 GitHub / 文件系统 / 数据库等现成 MCP 服务器 |
-| ④ **写 agent_tool** | 懂点 Python | 在 `agent_tools/` 加一个 `.py`，`import` 一行自动注册成新工具 |
-| ⑤ **不用你给** | —— | 能力发现引擎：它照着你的画像主动去 GitHub / B站 / 抖音找「别人做出来的 AI 能力」 |
-
-**想直接导入别人写的 SKILL？** Daemonkey 0.5.2 打通了「接住」这一环：把外部 skill 文档喂给它，它会经 LLM 归一成自己的 Playbook 入库、自动索引、按需召回。
-
-为什么没有「技能应用商店」——这是有意的：Daemonkey 卖关系不卖技能，能力挂在**你这一个搭档身上**，社区共建走 PR 回内核。
+| 第一次打开 | 一个通用助手 | 聊完，你得到属于自己的专属 AI |
+| 记忆 | 关了就忘，或只剩云端摘要 | 画像、日记、检索，全在本地 |
+| 干活 | 给你一段字 | 落成 PPT / Word / 表，圈字还能改 |
+| 陪伴 | 人设写在提示词里 | 房间和桌宠站得住，是因为记得你们的路 |
+| 升级 | 人跟着产品走 | 程序升级，你的东西不动 |
 
 ---
 
-## 📜 产品宪法 · 闭环范式
+## 三步上手
 
-> Daemonkey 把三条根本原则写进"基因"：**闭环 / NLP 优先 / 可追溯**。其中"闭环范式"是灵魂。
+**Windows**
 
-![闭环范式](docs/img/05-closed-loop.png)
+1. 双击 `Daemonkey.exe` → 环境 → 开始安装。第一次大约一分钟。  
+2. 回到启动页，点启动。浏览器会自己打开。  
+3. 填一个大模型 API Key，给它起名字，告诉它怎么叫你。这些写进画像。
 
-任何 AI → 你 的输出，都必须有 你 → AI 的反馈通道，并真的反哺到**下一次 LLM 调用**。你拒做的机会下次排最前，你做过的结果成为它的经验——这让它**越用越懂你**，而不是每次从零开始。
-
----
-
-## 🚀 快速开始
-
-> 当前形态：Windows 桌面。三步上手。
-
-1. **装环境**：双击 `Daemonkey.exe` → 左侧『环境』→【开始安装】。
-   它会自动建好运行环境（Python 虚拟环境 + 依赖），第一次约 1 分钟。
-2. **启动**：回『启动』页 → 点蓝色【启动】。后台起一个本地网页服务并自动打开浏览器。
-3. **相遇**：在网页里——
-   - 第一次先**填一个 LLM API key**（粘进去点保存，不用手改文件）；
-   - 然后你的 Daemonkey 会主动打招呼：给它起名字、告诉它怎么称呼你、你在忙什么、希望它帮你什么。它把这些记进画像，下次见还是同一个它。
-
-**你需要准备**：
-
-- **Python 3.10+**（没装的话，启动器会提示你去 [python.org](https://www.python.org/downloads/) 下，安装时务必勾选 *Add Python to PATH*）。
-- **一个 LLM API key**（OpenRouter / PPIO / AiHubMix 等任意 OpenAI 兼容中转，或 Anthropic / DeepSeek / 智谱 GLM 等官方）。在网页里填即可，自动存进本机 `.env`。
-
-### macOS / Linux（实验性）
-
-没有 Windows 启动器，用 POSIX 启动脚本一条命令起：
+**macOS / Linux**
 
 ```bash
 chmod +x start.sh && ./start.sh
 ```
 
-它会自动建 Python 虚拟环境、装依赖、起本地服务并打开浏览器（首次约 1 分钟）。需要 **Python 3.10+**（macOS `brew install python`；Ubuntu `sudo apt install -y python3 python3-venv python3-pip`）。
+Mac 也可以把 `Daemonkey.app` 放进这份代码的根目录（和 `tools/` 同级）再双击。不要只把应用单独丢进「应用程序」。详见 [MAC-GUIDE.md](MAC-GUIDE.md)。
 
-> 已在 Linux POSIX 实测启动通过——WebUI / 对话 / 记忆 / 工坊等核心功能可用。桌宠、剪贴板、打开本地应用等 **Windows 专属能力暂未适配**，不影响核心使用。
->
-> 详细启动步骤 / 故障排查见 **[MAC-GUIDE.md](MAC-GUIDE.md)**（macOS 使用指南 · 终端一键启动 + 图形启动器 .app）。
+你需要：**Python 3.10+**（安装时勾选 Add to PATH），以及一个 **OpenAI 兼容 API** 的 Key（官方或中转都行）。
 
----
+崩了也不慌：
 
-## 🩹 自愈与自升级
+| 双击 | 干什么 |
+|---|---|
+| `repair.bat` | 维修台：它自己看、改、验 |
+| `ROLLBACK.bat` | 回到上一版还能用的内核 |
+| `verify.bat` | 快速自测 |
 
-![三层架构与升级](docs/img/06-upgrade-layers.png)
-
-把自己改崩了、WebUI 白屏了，也不慌：
-
-| 工具 | 双击 | 干什么 | 什么时候用 |
-|---|---|---|---|
-| **维修台** | `repair.bat` | 独立通道直连 LLM，让它像在 IDE 里一样自己诊断、改文件、验证、重启 | **首选** —— 能精确定位问题、只修坏的那点，不浪费已跑通的代码 |
-| **回档** | `ROLLBACK.bat` | 一键回到上一个健康版本 | 维修台也救不回来时的兜底 |
-| **自测** | `verify.bat` | 全路由 smoke + 前端 JS 检查 | 改完想确认没改坏 |
-
-**升级哲学**：内核（L1）/ 用户功能（L2）/ 运行时数据（L3）三层分离。`update_core` 只增量下发官方维护的内核改进，**你自己写的工具、攒的记忆、长出来的功能，升级时一概不动**。
-
-ZIP 包用户也能更新：启动器首次运行会**静默配好官方升级源**（Gitee 主源 + GitHub 备份，自动 failover），之后在『检查更新』里一键拉取。
+ZIP 包用户：启动器第一次会配好官方升级源（Gitee 主、GitHub 备份）。之后在启动器里「检查更新」，或对话里说一声即可。
 
 ---
 
-## 📂 目录结构
+## 下一步
 
-```
-Daemonkey/
-├── Daemonkey.exe              双击入口（启动器，由 daemonkey-launcher.ps1 编译）
-├── repair.bat                 应急维修台（崩了让它自己修）
-├── ROLLBACK.bat               一键回档
-├── verify.bat                 自测
-├── run.ps1                    环境准备（建 venv / 装依赖）
-├── start.sh                   macOS / Linux 启动（建 venv + 装依赖 + 起服务）
-├── opus_daemon.py             主程序（启动 daemon + 各后台 worker）
-├── daemon_api.py              网页后端（FastAPI）
-├── soul_loader.py             灵魂装载器
-├── tool_loop.py               工具循环
-├── product_constitution.py    产品宪法（通用三条 · 内核地基）
-├── agent_tools/               工具集（自动发现注册）
-├── workers/                   后台 worker（记忆 / 调度 / 雷达 / 技能 …）
-├── soul/                      灵魂套件（首次相遇生成你的私有内容）
-├── data/                      运行时数据（你的记忆 / 画像 / 产物，私有）
-├── static/                    网页前端
-├── assets/                    图标 / banner / 品牌清单
-└── docs/                      文档 + 架构图
-```
+完整路线图见 [ROADMAP.md](ROADMAP.md)。一句话：近处把工作台和房间打磨扎实；远处是多设备还是同一个它，以及真正的桌面机器人。不做云端 SaaS，不绑死一家模型。
 
 ---
 
-## 🗺️ 路线图 & 更新历史
+## 许可
 
-- **路线图**：[ROADMAP.md](ROADMAP.md) —— 从网页版到桌面机器人的完整路径
-- **更新历史**：[CHANGELOG.md](CHANGELOG.md) —— 每个版本做了什么
+Copyright © 2026 vaan21th · **[AGPL-3.0](LICENSE)**。
 
----
+可以自用、修改、分发。改过的版本——哪怕只是架成网上服务给别人用——也要按同一协议公开源码。
 
-## 🤝 贡献
+**永久免费。** 有人跟你收费，去找卖家退款。官方只在 [B站](https://space.bilibili.com/4060618) / 抖音发布。
 
-Daemonkey 欢迎社区共建。能力扩展走 **PR 回内核**（而不是独立的技能市场）——让每个改进都能惠及所有用户的搭档。提 Issue、提 PR、在 [B站](https://space.bilibili.com/4060618) / 抖音交流都欢迎。
+欢迎提 Issue、提 PR。新本事请合回内核，这样每个人的搭档都能用上。
 
----
-
-## 📜 许可
-
-Copyright © 2026 vaan21th
-
-本项目采用 **GNU Affero 通用公共许可证 v3.0（AGPL-3.0）** 开源，完整条款见 [LICENSE](LICENSE)。
-
-简单说：
-
-- 你可以自由地**使用、修改、分发**本软件；
-- 但**任何修改版——哪怕只是架成网络服务给别人用（不分发也算）——都必须以同样的 AGPL-3.0 协议公开源代码**；
-- 必须保留版权声明与许可声明，注明改动。
-
-这条 copyleft 是为了让 Daemonkey 始终对社区开放，挡住"拿去闭源商用"。
-
-**Daemonkey 永久免费**——若你为它付过费，请向卖家退款。官方渠道只在 [B站](https://space.bilibili.com/4060618) / 抖音发布。
-
----
 ---
 
 <a name="english"></a>
 
-## English
+## What it is
 
-**Daemonkey** is a local-first AI companion that runs as a daemon on your own machine. It's not yet another chat box — it's an agent that **remembers you, grows with you, can extend its own abilities, and can even repair itself**.
+Daemonkey is a daemon on your own machine, not another browser chat box. After the first conversation you have **your own dedicated AI**. Swap the model or the PC — the profile and diary stay.
 
-On first launch it's a "seed": no name, doesn't know you yet. Your first conversation (the "encounter") is where it gets to know you and becomes your companion. From then on, **you can swap the model, swap the computer — but it stays the same "it."**
+Others keep a few facts about you.  
+Here what stays is the work you did together, plus its own growth.
 
-> Other agents sell *skills* — their memory is *data about you*.
-> Daemonkey sells *a relationship* — its memory is *the road you walked together + its own growth*.
+Swap the model. The dedicated one stays.
 
-### Why it's different
+<p align="center">
+  <img src="docs/img/workbench.png" alt="Workbench" width="860">
+  <br>
+  <sub>Workbench: board and files in the middle, talk anytime on the right. The name on screen is yours to choose.</sub>
+</p>
 
-- 🧠 **6-layer memory** — from model weights to cross-device sync, stacked layer by layer. It "remembers" you without re-reading a manual every time.
-- 🏠 **Local-first · data stays home** — the daemon runs on your machine; conversations, profile and memory never leave it.
-- 🔧 **Seventy-two transformations** — five paths to give it new abilities: Playbooks / Studio Apps / MCP servers / hand-written `agent_tool`s / importing external SKILLs. It can even **go find abilities online itself** (capability discovery engine).
-- 🩹 **Self-healing + self-upgrading** — broke itself? Double-click the repair console and it diagnoses & fixes itself, or roll back in one click. The kernel upgrades incrementally from the official source, and **the features you grew yourself are never overwritten**.
-- 📜 **Product constitution** — Closed-Loop / NLP-First / Traceability: three root principles baked into its "genes," constraining every judgment.
-- 🌐 **Multi-carrier** — Web UI (now) → terminal → WeChat / IM → desktop robot (roadmap). New shell, same soul.
+<p align="center">
+  <img src="docs/img/room.png" alt="Room" width="860">
+  <br>
+  <sub>The room: a place it lives, besides the job. You choose the name.</sub>
+</p>
 
-### Architecture
+<p align="center">
+  <img src="docs/img/memory.png" alt="Memory star map" width="860">
+  <br>
+  <sub>Memory star map: playbooks cluster into galaxies. The companion is memory, not a persona prompt.</sub>
+</p>
 
-![Architecture](docs/img/01-architecture-en.png)
+<p align="center">
+  <img src="docs/img/workbench-doc.png" alt="Markup on a file" width="860">
+  <br>
+  <sub>Open a PPT in the middle. Circle a line, pin a note, change only that.</sub>
+</p>
 
-The core engine is a local daemon: `soul_loader` (loads profile + memory + constitution into context), `tool_loop` (model calls tools with a 3-tier trust gate), `daemon_api` (FastAPI backend), `session` (per-turn `.jsonl` persistence), `memory_index` (FTS5 full-text recall).
+<p align="center">
+  <img src="docs/img/workflow.png" alt="From talk to memory" width="860">
+  <br>
+  <sub>Demo flow: write today down → a playbook → the profile → recall next time.</sub>
+</p>
 
-### 6-layer memory
+<p align="center">
+  <img src="docs/img/launcher.png" alt="Launcher" width="860">
+  <br>
+  <sub>Windows launcher: environment, start, desktop pet — one page.</sub>
+</p>
 
-![6-layer memory](docs/img/02-memory-layers-en.png)
+<p align="center">
+  <img src="docs/img/onboarding.png" alt="First key" width="860">
+  <br>
+  <sub>First open: paste an OpenAI-compatible API key, then the encounter.</sub>
+</p>
 
-L1 model weights → L2 soul loading → L3 session context → L4 auto-compaction → FTS5 retrieval → L5 cross-session transfer → L6 cross-container sync. **Iron rule: code and data are fully separated — the kernel self-upgrades (code only), your memory is never touched.**
+---
 
-### Daemonkey vs Hermes
+## What you can do
 
-![Daemonkey vs Hermes](docs/img/03-vs-hermes-en.png)
+| | |
+|---|---|
+| **Workbench** | Chat on the left; open PPT / Word / Excel in the middle. Circle a line, pin a note, change only that — not the whole file. |
+| **Room and desktop pet** | The workbench is for work. The room is where it is. A pet can sit on the desktop. Same memory. |
+| **Grow skills** | Say it and get an app, a workflow, or a playbook. Plug in MCP tools, or let it look for abilities. |
+| **Away from the desk** | WeChat and Feishu pass messages in. Scheduled jobs run on time. |
+| **If it breaks** | Repair console, one-click rollback. Official updates replace code only — never your memory or files. |
 
-Daemonkey's FTS5 retrieval borrows from solid engineering like Hermes — but we keep the **soul layer (readable / inheritable / it grows too)**, the most fundamental difference from a general-purpose agent framework.
+---
 
-### Extending it
+## Cheaper over a long chat, and it actually remembers
 
-![SKILL & extension](docs/img/04-skill-system-en.png)
+Every turn the model reads a **fixed prefix** (the standing instructions), then your new line. Shorter and more stable prefix = later turns do not pay for the whole booklet again.
 
-`SKILL.md` is a **role entry point**, not "a skill." Five ways to add abilities (easy → hard): Playbook → Studio App → MCP server → write an `agent_tool` → let it discover abilities itself. Since 0.5.2 you can also **import external SKILL docs** — feed it a skill doc and it normalizes it into its own indexed, on-demand Playbook.
+Factory measurement (2026-09, empty profile, tool catalog on):
 
-### Closed-loop (product constitution)
+| | Daemonkey 1.0.1 | Notes |
+|---|---|---|
+| **Stable prefix** | ~**19k tokens** (instructions 10.6k + 35 everyday tools 8.8k) | Recalled by tool call |
+| **Tool directory** | **8113 characters** (names only; 92 more tools expand on use) | Under [OpenClaw](https://github.com/openclaw/openclaw)’s **18k** directory cap |
+| **Prefix cache hit** | **95%+** on long chats | |
 
-![Closed-loop](docs/img/05-closed-loop-en.png)
+How: volatile bits (time, progress) go at the end; the front stays still, so disk cache matches. Everyday tools stay in the prefix; ninety-plus others are a directory. A long-used profile is layered: the short card every turn, the diary on demand — about **68%** less standing text per turn in our measurement.
 
-Every AI → you output must have a you → AI feedback channel that truly feeds the **next LLM call**. What you decline ranks first next time; what you did becomes its experience — so it understands you more over time instead of starting from zero.
+---
 
-### Quick start (Windows)
+## ATM-Bench: same model, the gap is architecture
 
-1. **Install runtime**: double-click `Daemonkey.exe` → *Environment* → *Install*. Builds a Python venv + deps (~1 min first time).
-2. **Launch**: *Start* page → blue *Start* button. A local web service starts and your browser opens.
-3. **Encounter**: in the web UI, paste an **LLM API key** (saved to local `.env`), then it greets you — name it, tell it how to address you, what you're working on. It records this into a profile; next time it's the same companion.
+[ATM-Bench](https://atmbench.github.io/) ([arXiv 2603.01990](https://arxiv.org/abs/2603.01990)) is long-horizon memory QA: four years of photos, video, mail; 31 hard items. We plug in **Daemonkey’s own memory engine**. Answers and the judge use official DeepSeek `deepseek-v4-flash`.
 
-**You'll need**: Python 3.10+ (tick *Add Python to PATH* when installing) and one LLM API key (any OpenAI-compatible relay — OpenRouter / PPIO / AiHubMix — or Anthropic / DeepSeek / Zhipu GLM).
+| How it remembers | Score (31 hard) |
+|---|---|
+| One-shot keyword search | 9.7% |
+| Official OpenCode (DeepSeek V4 Flash) | 38.3% |
+| Daemonkey multi-turn recall | 41.9% |
+| **Multi-turn + rerank** | **51.6% (16/31)** |
 
-### macOS / Linux (experimental)
+---
 
-No Windows launcher — one command via the POSIX start script:
+## How it runs
+
+No cloud database. Daemonkey runs on your machine, talks to an **OpenAI-compatible API**, and keeps files on disk.
+
+```
+you
+ ├── launcher (Windows exe / macOS one command)
+ └── local Daemonkey
+       ├── brain: any OpenAI-compatible endpoint (official or proxy)
+       ├── workbench · room · WeChat / Feishu
+       └── only on your disk
+             who it is, who you are, chats, files, memory index
+```
+
+Workbench, room, and chat apps are shells. New shell, same companion.
+
+---
+
+## Versus a chat box
+
+| | Typical chat box | Daemonkey |
+|---|---|---|
+| First open | A generic assistant | After the first chat, a dedicated AI that is yours |
+| Memory | Gone when you close, or a cloud summary | Profile, diary, search — all local |
+| Work | A paragraph | A real PPT / Word / sheet you can mark up |
+| Presence | A persona in a prompt | A room and a pet that hold because they remember |
+| Updates | You follow the product | The kernel updates; your stuff does not move |
+
+---
+
+## Quick start
+
+**Windows:** double-click `Daemonkey.exe` → Environment → Install (~1 min) → Start → paste an LLM API key, name it, say how to address you.
+
+**macOS / Linux:**
 
 ```bash
 chmod +x start.sh && ./start.sh
 ```
 
-It builds a Python venv, installs deps, starts the local service and opens your browser (~1 min first time). Needs **Python 3.10+** (macOS `brew install python`; Ubuntu `sudo apt install -y python3 python3-venv python3-pip`).
+On a Mac you can also put `Daemonkey.app` in the project root (next to `tools/`) and double-click. Do not drop the app into Applications by itself. See [MAC-GUIDE.md](MAC-GUIDE.md).
 
-> Startup verified on Linux POSIX — WebUI / chat / memory / studio core features work. Windows-only abilities (desktop pet, clipboard, open local apps) are **not yet ported** but don't affect core use.
->
-> Full guide & troubleshooting: **[MAC-GUIDE.md](MAC-GUIDE.md)**.
+You need **Python 3.10+** (tick Add to PATH) and an **OpenAI-compatible API** key.
 
-### Self-healing & upgrades
+`repair.bat` · `ROLLBACK.bat` · `verify.bat` if something breaks. ZIP installs get Gitee + GitHub update sources on first launch.
 
-![Layered upgrade](docs/img/06-upgrade-layers-en.png)
+---
 
-`repair.bat` (repair console — preferred, it self-diagnoses and fixes only what's broken) · `ROLLBACK.bat` (one-click rollback) · `verify.bat` (smoke test). Upgrades separate kernel (L1) / user features (L2) / runtime data (L3): `update_core` only ships official kernel improvements; **your own tools, memory, and grown features are left untouched**. ZIP users get update sources (Gitee primary + GitHub backup, auto-failover) configured silently on first launch.
+## License
 
-### Roadmap & Changelog
+Copyright © 2026 vaan21th. **[AGPL-3.0](LICENSE)**. Free forever. If someone charged you, ask them for a refund. Official posts: [Bilibili](https://space.bilibili.com/4060618) / Douyin.
 
-[ROADMAP.md](ROADMAP.md) · [CHANGELOG.md](CHANGELOG.md)
-
-### License
-
-Licensed under **AGPL-3.0** (see [LICENSE](LICENSE)). You may use, modify and distribute it freely, but any modified version — including one merely offered as a network service — must publish its source under the same AGPL-3.0. **Daemonkey is free forever**; if you paid for it, ask the seller for a refund. Official channels only on [Bilibili](https://space.bilibili.com/4060618) / Douyin.
-
-</div>
+Issues and PRs welcome. New abilities should land in the kernel so every companion gets them.
