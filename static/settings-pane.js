@@ -6,7 +6,15 @@
 
 // 卷三十七 · 中栏 settings view (BRO 截图反馈 · 弹窗装不下 · 改 tabs)
 let _settingsTab = 'llm';  // 'llm' | 'access' | 'data'
+let _settingsPaintGen = 0;
+function _settingsStill(tab, gen) {
+  if (gen != null && gen !== _settingsPaintGen) return false;
+  if (typeof currentView !== 'undefined' && currentView !== 'settings') return false;
+  if (tab && _settingsTab !== tab) return false;
+  return !!document.getElementById('settingsBody');
+}
 function openSettingsView() {
+  if (typeof window._dashLoadSeq === 'number') window._dashLoadSeq += 1;
   currentView = 'settings';
   // 清左 nav 高亮 · settings 不属于任何 dashboard 维度
   document.querySelectorAll('.nav-item.active').forEach(b => b.classList.remove('active'));
@@ -18,19 +26,19 @@ function openSettingsView() {
 function renderSettingsView() {
   const tabs = [
     { id: 'llm', label: '<i class="ri-brain-fill"></i> LLM 模型', hint: '平台、模型和密钥，可存多套配置' },
-    { id: 'vision', label: '<i class="ri-cpu-fill"></i> 多模态', hint: '看图 + 听 + 说 + 画 · 默认生图/语音合成也在这里选择' },
+    { id: 'vision', label: '<i class="ri-cpu-fill"></i> 多模态', hint: '看图 + 听 + 说 + 画 · 默认生图/语音合成/语音识别也在这里选择' },
     { id: 'embedding', label: '<i class="ri-search-eye-line"></i> Embedding & 搜索', hint: '记忆语义检索 + 可选外网搜索 KEY' },
     { id: 'access', label: '<i class="ri-key-fill"></i> 访问 & 会话', hint: 'API Token / Session / Auto-confirm' },
     { id: 'wechat', label: '<i class="ri-wechat-fill"></i> 微信 & 飞书', hint: '扫码连微信 · 配飞书机器人 · 主动找你的频率 (猫系↔犬系)' },
     { id: 'notify', label: '<i class="ri-notification-3-fill"></i> 通知', hint: '做完或等你点确认时，怎么提醒你 · 音效 / Windows 通知 / 标签闪烁' },
-    { id: 'data', label: '<i class="ri-save-fill"></i> 本地数据', hint: '别名 / 缓存 / 重置' },
+    { id: 'data', label: '<i class="ri-save-fill"></i> 本地数据', hint: '占用 / 可选清理' },
   ];
   $detailPane.innerHTML = `
     <div class="settings-pane">
       <div class="settings-head">
-        <h2>⚙ 设置</h2>
+        <h2><i class="ri-settings-3-fill"></i> 设置</h2>
         <span class="meta">改完立刻生效，不用重启</span>
-        <button onclick="backToChat()" title="返回对话">✕ 关闭</button>
+        <button onclick="backToChat()" title="返回对话"><i class="ri-close-line"></i> 关闭</button>
       </div>
       <div class="settings-tabs">
         ${tabs.map(t => `
@@ -56,6 +64,7 @@ function switchSettingsTab(tabId) {
 }
 
 function renderSettingsBody() {
+  _settingsPaintGen += 1;
   if (_settingsTab === 'llm') renderSettingsLLM();
   else if (_settingsTab === 'vision') renderSettingsVision();
   else if (_settingsTab === 'embedding') renderSettingsEmbedding();
@@ -294,7 +303,9 @@ let _providerConfigsActiveId = null;
 let _providerPresets = [];      // 预设 (来自 GET /providers)
 
 async function renderSettingsLLM() {
+  const gen = _settingsPaintGen;
   const body = document.getElementById('settingsBody');
+  if (!_settingsStill('llm', gen) || !body) return;
   body.innerHTML = `<div class="dash-empty">加载中…</div>`;
   // 同时拉 configs + presets
   try {
@@ -310,9 +321,12 @@ async function renderSettingsLLM() {
     _providerConfigsActiveId = confData.active_id;
     _providerPresets = presetData.presets || [];
   } catch (e) {
-    body.innerHTML = `<div class="dash-empty">加载失败: ${escHtml(e.message)}</div>`;
+    if (!_settingsStill('llm', gen)) return;
+    const dead = document.getElementById('settingsBody');
+    if (dead) dead.innerHTML = `<div class="dash-empty">加载失败: ${escHtml(e.message)}</div>`;
     return;
   }
+  if (!_settingsStill('llm', gen)) return;
 
   const activeCount = _providerConfigs.length;
   const pinnedCount = _providerConfigs.filter(c => c.pinned).length;
@@ -368,7 +382,7 @@ function renderLlmConfigCard(c) {
       <div class="lc-row3">
         <span class="lc-key">${escHtml(c.api_key || '(未设)')}</span>
         <div class="lc-actions">
-          ${isActive ? '' : `<button onclick="activateConfig('${jsStr(c.id)}')" title="切换 Daemonkey 用这个跑">激活</button>`}
+          ${isActive ? '' : `<button onclick="activateConfig('${jsStr(c.id)}')" title="切换 OPUS 用这个跑">激活</button>`}
           <button onclick="testConfig('${jsStr(c.id)}')" title="ping 一下试通不通">测试</button>
           <button class="lc-director-btn${c.director ? ' on' : ''}" onclick="toggleDirectorConfig('${jsStr(c.id)}', ${c.director ? 'false' : 'true'})" title="${c.director ? '取消这个配置的顾问身份' : '设为顾问。出方案、卡住、收尾时会请来看一眼。只能有一个。'}"><i class="ri-vip-crown-${c.director ? 'fill' : 'line'}"></i> ${c.director ? '取消顾问' : '设为顾问'}</button><i class="ri-question-line lc-director-help" onclick="showDirectorHelp()" title="顾问模型是干啥的？点我"></i>
           <button onclick="openLlmConfigEditForm('${jsStr(c.id)}')" title="改名称、密钥、模型">编辑</button>
@@ -586,7 +600,7 @@ function _showLlmEditForm({ title, submit, config, onSubmit, isEdit }) {
           <input type="number" step="0.0001" min="0" placeholder="缓存命中价(可空)" id="llmEditPriceCache" value="${escHtml(String((config.pricing && config.pricing.cache_read) ?? ''))}">
           <button type="button" class="btn-ghost" id="llmEditLookup"><i class="ri-search-eye-line"></i> 自动查官方价</button>
         </div>
-        <div class="field-hint" id="llmEditPricingHint">未配置 · 点「自动查官方价」由 Daemonkey 搜官网填入 · 你确认后才保存</div>
+        <div class="field-hint" id="llmEditPricingHint">未配置 · 点「自动查官方价」由 OPUS 搜官网填入 · 你确认后才保存</div>
       </div>
       <div class="field">
         <label>
@@ -943,7 +957,9 @@ function showDirectorHelp() {
 
 // ─── wish-4a6331b2 · 视觉模型配置 tab ───
 async function renderSettingsVision() {
+  const gen = _settingsPaintGen;
   const body = document.getElementById('settingsBody');
+  if (!_settingsStill('vision', gen) || !body) return;
   body.innerHTML = '<div class="dash-empty">加载中…</div>';
 
   let cfg = { model: '', base_url: '', api_key: '', configured: false };
@@ -951,6 +967,7 @@ async function renderSettingsVision() {
     const resp = await fetch('/vision-config', { headers: { 'Authorization': 'Bearer ' + token } });
     if (resp.ok) cfg = await resp.json();
   } catch (_) {}
+  if (!_settingsStill('vision', gen)) return;
 
   const hasCfg = cfg.configured;
   body.innerHTML = `
@@ -982,11 +999,11 @@ async function renderSettingsVision() {
 
     <div id="mediaCaps"></div>
 
-    <!-- wish-241e0014 · 语音识别增强 whisper (可选更新 · 设置页开关驱动安装) -->
+    <!-- wish-241e0014 · 本地 whisper (可选 · 设置页开关驱动安装) -->
     <div class="llm-section" style="margin-top:18px">
       <div class="llm-section-head">
-        <h3><i class="ri-mic-fill"></i> 语音识别增强 (whisper) · <span id="sttStatusLabel" style="color:var(--dim)">加载中…</span></h3>
-        <span class="llm-hint">微信语音转文字 · 可选功能 · 打开开关才下载依赖+模型 (~500MB) · 不需要就不装 · 装好前语音自动降级存证</span>
+        <h3><i class="ri-mic-fill"></i> 本地语音识别 (whisper) · <span id="sttStatusLabel" style="color:var(--dim)">加载中…</span></h3>
+        <span class="llm-hint">本机转写 · 可选 · 打开后下载依赖与你选的模型。唤醒词走这一份，不替你改大小</span>
       </div>
       <div id="sttBody" style="min-height:60px"><span class="field-hint">加载中…</span></div>
     </div>
@@ -1054,7 +1071,9 @@ function _mediaAppOptions(apps, selected, kind) {
     rows.splice(1, 0, { id: selected, name: selected + '（工坊里暂时找不到）' });
   }
   return rows.map(a => {
-    const mark = a.kind === kind ? (kind === 'tts' ? ' · 适合配音' : ' · 适合生图') : '';
+    const mark = a.kind === kind
+      ? (kind === 'tts' ? ' · 适合配音' : kind === 'stt' ? ' · 适合转写' : ' · 适合生图')
+      : '';
     const sel = a.id === selected ? ' selected' : '';
     return `<option value="${escHtml(a.id)}"${sel}>${escHtml(a.name || a.id || '未选')}${mark}</option>`;
   }).join('');
@@ -1126,10 +1145,12 @@ async function startMediaGuide(kind) {
       prompt = (d.guides && d.guides[kind]) || '';
     }
   } catch (_) {}
-  if (!prompt) prompt = kind === 'tts'
-    ? '帮我接上配音。先看工坊有没有现成的；没有就建一个应用。带我去官网拿 Key，不要登录、不要编造。Key 写进应用后，告诉我回设置里把它选成默认。'
-    : '帮我接上生图。先看工坊有没有现成的；没有就建一个应用。带我去官网拿 Key，不要登录、不要编造。Key 写进应用后，告诉我回设置里把它选成默认。';
-  const label = kind === 'tts' ? '接入语音合成' : '接入生图';
+  if (!prompt) {
+    if (kind === 'tts') prompt = '帮我接上配音。先看工坊有没有现成的；没有就建一个应用。带我去官网拿 Key，不要登录、不要编造。Key 写进应用后，告诉我回设置里把它选成默认。';
+    else if (kind === 'stt') prompt = '帮我接上云端语音识别。先看工坊有没有现成的转写应用；没有就建一个。带我去官网拿 Key，不要登录、不要编造。Key 写进应用后，告诉我回设置→多模态把它选成默认。没接就继续用本机 whisper。';
+    else prompt = '帮我接上生图。先看工坊有没有现成的；没有就建一个应用。带我去官网拿 Key，不要登录、不要编造。Key 写进应用后，告诉我回设置里把它选成默认。';
+  }
+  const label = kind === 'tts' ? '接入语音合成' : kind === 'stt' ? '接入语音识别' : '接入生图';
   if (typeof backToChat === 'function') try { backToChat(); } catch (_) {}
   if (typeof closeModal === 'function') try { closeModal(); } catch (_) {}
   if (_currentTopicHasTalk()) await _mediaGuideNewTopic(prompt, label);
@@ -1139,16 +1160,18 @@ async function startMediaGuide(kind) {
 async function loadMediaDefaults() {
   const host = document.getElementById('mediaCaps');
   if (!host) return;
-  let d = { apps: [], image: {}, tts: {} };
+  let d = { apps: [], image: {}, tts: {}, stt: {} };
   try {
     const r = await fetch('/media-defaults', { headers: { 'Authorization': 'Bearer ' + token } });
     if (r.ok) d = await r.json();
   } catch (_) {}
   const img = d.image || {};
   const tts = d.tts || {};
+  const stt = d.stt || {};
   const apps = d.apps || [];
   const imgOk = !!img.ready;
   const ttsOk = !!tts.ready;
+  const sttOk = !!stt.ready;
   host.innerHTML = `
     <div class="llm-section" style="margin-top:18px">
       <div class="llm-section-head">
@@ -1184,6 +1207,23 @@ async function loadMediaDefaults() {
       </div>
       <div id="mediaTtsNote" style="margin-top:8px;font-size:13px"></div>
     </div>
+    <div class="llm-section" style="margin-top:18px">
+      <div class="llm-section-head">
+        <h3><i class="ri-mic-2-fill"></i> 语音识别 · ${sttOk ? '<span style="color:#6ed27a">已装载 ✓</span>' : '<span style="color:var(--sys)">未接入 · 用本机 whisper</span>'}</h3>
+        <span class="llm-hint">和配音一样，愿意接云端就接。整句走 API；唤醒词仍用下面你选的本地模型。没接不影响现有功能。</span>
+      </div>
+      <div class="field-hint">接上之后可以用：</div>
+      <ul class="field-hint" style="margin:4px 0 10px 1.2em">${_mediaUnlocks(stt.unlocks)}</ul>
+      <div class="field">
+        <label>默认语音识别应用</label>
+        <select id="mediaSttApp" style="max-width:360px">${_mediaAppOptions(apps, stt.app_id || '', 'stt')}</select>
+      </div>
+      <div class="actions" style="margin-top:10px">
+        <button class="btn-ghost" type="button" id="mediaSttGuide"><i class="ri-compass-3-line"></i> 帮我接入</button>
+        <span class="field-hint">当前对话是空的就在这儿接入；正在聊别的会新开一个对话</span>
+      </div>
+      <div id="mediaSttNote" style="margin-top:8px;font-size:13px"></div>
+    </div>
   `;
   const bindPin = (selId, kind, noteId) => {
     const sel = document.getElementById(selId);
@@ -1202,13 +1242,16 @@ async function loadMediaDefaults() {
   };
   bindPin('mediaImageApp', 'image', 'mediaImageNote');
   bindPin('mediaTtsApp', 'tts', 'mediaTtsNote');
+  bindPin('mediaSttApp', 'stt', 'mediaSttNote');
   const ig = document.getElementById('mediaImageGuide');
   if (ig) ig.onclick = () => startMediaGuide('image');
   const tg = document.getElementById('mediaTtsGuide');
   if (tg) tg.onclick = () => startMediaGuide('tts');
+  const sg = document.getElementById('mediaSttGuide');
+  if (sg) sg.onclick = () => startMediaGuide('stt');
 }
 
-// ─── wish-241e0014 · 语音识别增强 whisper (可选更新 · 开关驱动安装) ───
+// ─── wish-241e0014 · 本地 whisper (可选 · 开关驱动安装) ───
 async function loadSttConfig() {
   const $status = document.getElementById('sttStatusLabel');
   const $body = document.getElementById('sttBody');
@@ -1228,18 +1271,18 @@ async function loadSttConfig() {
     <div class="field">
       <label style="display:flex;align-items:center;gap:8px">
         <input type="checkbox" id="sttEnable" ${(st.enabled !== false && st.ready) ? 'checked' : ''} style="width:auto">
-        启用语音识别增强 (whisper)
+        启用本地 whisper
       </label>
-      <div class="field-hint">开启后：①安装转写依赖 (pilk + faster-whisper) ②下载模型 (~${st.expected_size_mb}MB · 国内镜像) · 装好微信语音自动转文字</div>
+      <div class="field-hint">本机 faster-whisper，按你选的大小来，现在是 <b>${escHtml(st.model_name || '')}</b>。不替你换成别的。<br>桌宠叫名字、以及没接云端时的整句 / 微信转写，都用这一只。接了云端 API，整句走云，唤醒仍用你选的这只。<br>工作台 / 房间浏览器听环不靠它。</div>
     </div>
     <div class="field">
       <label>模型大小</label>
       <select id="sttModelSize" style="max-width:220px">
         <option value="tiny" ${st.model_name === 'tiny' ? 'selected' : ''}>tiny · ~75MB · 最快最省</option>
         <option value="base" ${st.model_name === 'base' ? 'selected' : ''}>base · ~150MB · 均衡</option>
-        <option value="small" ${st.model_name === 'small' ? 'selected' : ''}>small · ~460MB · 最准 (默认)</option>
+        <option value="small" ${st.model_name === 'small' ? 'selected' : ''}>small · ~460MB · 更大更准</option>
       </select>
-      <div class="field-hint">切换大小后需重新下载对应模型</div>
+      <div class="field-hint">换大小只在你点选之后生效，并要下载对应模型。没下好不会拿旧模型顶替</div>
     </div>
     <div class="field">
       <label>随 daemon 启动加载模型</label>
@@ -1265,6 +1308,7 @@ async function loadSttConfig() {
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
         body: JSON.stringify({ model_name: e.target.value }),
       });
+      await loadSttConfig();
     } catch (_) {}
   };
   document.getElementById('sttBootLoad').onchange = async (e) => {
@@ -1324,7 +1368,7 @@ function pollSttProgress() {
       const st = await resp.json();
       if (st.ready) {
         clearInterval(timer);
-        $res.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 语音识别增强已就绪 · 微信语音现在能转文字了</span>';
+        $res.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 本地 whisper 已就绪 · 微信转写与桌宠语音唤醒可用</span>';
         loadSttConfig();
       } else if (n > 600) {  // 10 分钟超时 (small 模型 ~460MB · hf-mirror 下载可能要几分钟)
         clearInterval(timer);
@@ -1633,6 +1677,7 @@ async function doEmbedBackfill() {
 
 function renderSettingsAccess() {
   const body = document.getElementById('settingsBody');
+  const processExpand = (typeof chatProcessExpanded === 'function') && chatProcessExpanded();
   body.innerHTML = `
     <div class="llm-section">
       <div class="llm-section-head"><h3>🔑 API Token · 决定 WebUI 能否连 daemon</h3></div>
@@ -1647,6 +1692,16 @@ function renderSettingsAccess() {
       <div class="field">
         <label>当前对话编号</label>
         <input id="accSessionIn" type="text" value="${escHtml(sessionId || '')}" placeholder="留空 = 新对话，或粘贴已有对话的编号">
+      </div>
+
+      <div class="llm-section-head" style="margin-top:18px"><h3><i class="ri-expand-up-down-line"></i> 对话过程密度</h3></div>
+      <div class="field">
+        <label>思考链和过程卡片</label>
+        <select id="accProcessIn">
+          <option value="fold" ${processExpand ? '' : 'selected'}>默认折叠 · 一行摘要，点开再看</option>
+          <option value="expand" ${processExpand ? 'selected' : ''}>默认展开 · 思考和卡片都摊开</option>
+        </select>
+        <div class="field-hint">只影响工作台对话栏。折叠是现在这样；展开是改密度之前那种过程全看得见。当场改，不用刷新。你点开或折上的这一轮按你点的来。</div>
       </div>
 
       <div class="llm-section-head" style="margin-top:18px"><h3>✋ 工具确认策略</h3></div>
@@ -1664,7 +1719,7 @@ function renderSettingsAccess() {
       <div class="llm-section-head" style="margin-top:18px"><h3>🔓 Trusted Commands · 信任清单</h3></div>
       <div class="field-hint" style="margin-bottom:8px">
         当 auto_confirm=auto 时·CONFIRM 档命令 (例如 <code>pip install</code>) 会被 skip。
-        把命令头加到信任清单后·窗口期内 Daemonkey 调这类命令自动通过。
+        把命令头加到信任清单后·窗口期内 OPUS 调这类命令自动通过。
         <br><strong>红线</strong>: GUARD 黑名单 (rm -rf / format / git push --force) 永远不会被 trusted。
       </div>
       <div class="field" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
@@ -1685,7 +1740,7 @@ function renderSettingsAccess() {
           <label style="font-size:11px">为什么信任（可选）</label>
           <input id="accTrustReason" type="text" placeholder="例如：让它装一个搜索库">
         </div>
-        <button class="btn-primary" onclick="addTrustedCommand()">➕ 加入</button>
+        <button class="btn-primary" onclick="addTrustedCommand()">+ 加入</button>
       </div>
       <div id="accTrustList" class="field-hint" style="margin-top:8px;font-size:12px">加载中…</div>
 
@@ -1695,6 +1750,12 @@ function renderSettingsAccess() {
       <div id="accSaveStatus" class="field-hint" style="margin-top:6px"></div>
     </div>
   `;
+  const processSel = document.getElementById('accProcessIn');
+  if (processSel) {
+    processSel.onchange = () => {
+      if (typeof setChatProcessMode === 'function') setChatProcessMode(processSel.value);
+    };
+  }
   // 异步刷一次 trusted 列表
   setTimeout(() => { try { refreshTrustedCommands(); } catch {} }, 50);
 }
@@ -1713,7 +1774,7 @@ async function refreshTrustedCommands() {
     const j = await r.json();
     const items = (j && j.items) || [];
     if (!items.length) {
-      target.innerHTML = '<i>暂无 trusted commands · Daemonkey 调 CONFIRM 档命令时会被 auto_confirm 策略卡住</i>';
+      target.innerHTML = '<i>暂无 trusted commands · OPUS 调 CONFIRM 档命令时会被 auto_confirm 策略卡住</i>';
       return;
     }
     const rows = items.map(it => {
@@ -1805,6 +1866,8 @@ function saveAccessSettings() {
   localStorage.setItem(STORAGE.token, token);
   localStorage.setItem(STORAGE.session, sessionId);
   localStorage.setItem(STORAGE.autoConfirm, autoConfirm);
+  const processSel = document.getElementById('accProcessIn');
+  if (processSel && typeof setChatProcessMode === 'function') setChatProcessMode(processSel.value);
   if (typeof updateCurrentLabel === 'function') updateCurrentLabel();
   if (typeof saveSid === 'function') saveSid(sessionId);
   document.getElementById('accSaveStatus').innerHTML = '<i class="ri-check-fill"></i> 已保存 · ' + (token ? '可以聊了' : '⚠ token 为空');
@@ -1835,7 +1898,7 @@ function renderSettingsWechat() {
             <span class="field-hint" style="margin:0">手机微信扫一扫 → 授权『微信 ClawBot』· 重新扫可换绑</span>
           </div>
           <div id="wechatQrBox" style="display:none;text-align:center;margin-top:12px"></div>
-          <div class="chan-info-bar warn"><i class="ri-time-line"></i> <b>24 小时窗口</b>：你在微信先发一句 → 开窗 · 窗口内 Daemonkey 能主动找你 · 跨天零互动发不出（腾讯反骚扰）</div>
+          <div class="chan-info-bar warn"><i class="ri-time-line"></i> <b>24 小时窗口</b>：你在微信先发一句 → 开窗 · 窗口内 OPUS 能主动找你 · 跨天零互动发不出（腾讯反骚扰）</div>
         </div>
         <!-- 飞书卡 (0.9.1 · 两层: L1 webhook 推送 + L2 机器人对话) -->
         <div class="chan-card">
@@ -2182,7 +2245,9 @@ async function wechatSetFrequency(presetId) {
 // ─── wish-fb6b7427 · 通知设置面板 ───
 // 三条通道各自开关 · 音效(事项A已上线) / Windows toast(事项B) / 标签闪烁(事项C)
 async function renderSettingsNotify() {
+  const gen = _settingsPaintGen;
   const body = document.getElementById('settingsBody');
+  if (!_settingsStill('notify', gen) || !body) return;
   body.innerHTML = '<div class="dash-empty">加载中…</div>';
 
   let cfg = { pet_sound: true, windows_toast: false, tab_flash: false };
@@ -2190,6 +2255,7 @@ async function renderSettingsNotify() {
     const resp = await fetch('/notification-config', { headers: { 'Authorization': 'Bearer ' + token } });
     if (resp.ok) cfg = await resp.json();
   } catch (_) {}
+  if (!_settingsStill('notify', gen)) return;
 
   body.innerHTML = `
     <div class="llm-section">
@@ -2253,35 +2319,185 @@ async function renderSettingsNotify() {
 
 function renderSettingsData() {
   const body = document.getElementById('settingsBody');
-  body.innerHTML = `
-    <div class="llm-section">
-      <div class="llm-section-head"><h3><i class="ri-save-fill"></i> 本地数据</h3></div>
-      <div class="field-hint">
-        浏览器只记住：
-        <ul style="margin:6px 0 0 18px;padding:0;color:var(--dim)">
-          <li>登录密码</li>
-          <li>当前对话</li>
-          <li>工具确认策略</li>
-          <li>对话的别名、置顶、归档</li>
-        </ul>
-        对话和工坊都在这台电脑的磁盘上，清这里清不掉。
-      </div>
-      <div class="actions" style="margin-top:18px">
-        <button class="btn-danger" onclick="resetAll()">清空本地数据 + 刷新</button>
-      </div>
-    </div>
-  `;
+  body.innerHTML = `<div id="ldUsage" class="field-hint">正在扫磁盘… 文件多时要几秒，扫完还在这一页，不会跳走。</div>`;
+  loadLocalDataUsage();
 }
 
-async function resetAll() {
+let _ldLoadGen = 0;
+function _ldStillHere(gen) {
+  if (gen != null && gen !== _ldLoadGen) return false;
+  if (typeof currentView !== 'undefined' && currentView !== 'settings') return false;
+  if (_settingsTab !== 'data') return false;
+  return !!document.getElementById('ldUsage');
+}
+
+async function loadLocalDataUsage() {
+  const gen = ++_ldLoadGen;
+  const box = document.getElementById('ldUsage');
+  if (!box) return;
+  try {
+    const resp = await fetch('/local-data', { headers: { 'Authorization': 'Bearer ' + token } });
+    const data = await resp.json();
+    if (!_ldStillHere(gen)) return;
+    if (!resp.ok) {
+      box.innerHTML = '<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ' + escHtml(data.detail || '扫盘失败') + '</span>';
+      return;
+    }
+    paintLocalDataUsage(data);
+  } catch (e) {
+    if (!_ldStillHere(gen)) return;
+    box.innerHTML = '<span style="color:var(--red)"><i class="ri-close-fill"></i> ' + escHtml(e.message) + '</span>';
+  }
+}
+
+const LD_COLORS = {
+  workshop_outputs: '#7c5cbf',
+  sessions: '#e07a5f',
+  presentations: '#4ea8d9',
+  shelf_preview: '#6bbf8a',
+  attachments: '#d4a373',
+  design: '#5c9ead',
+  scratch: '#9aa0a6',
+  reports: '#8b7ec8',
+  cache: '#6b7280',
+  spreadsheets: '#3d9b8f',
+  workshop_exports: '#c4b5fd',
+  _other: '#64748b',
+};
+
+function _ldHuman(n) {
+  n = Math.max(0, Number(n) || 0);
+  if (n >= 1073741824) return (n / 1073741824).toFixed(1) + ' GB';
+  if (n >= 1048576) return (n / 1048576).toFixed(1) + ' MB';
+  if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+  return n + ' B';
+}
+
+function paintLocalDataUsage(data) {
+  const box = document.getElementById('ldUsage');
+  if (!box) return;
+  const buckets = (data.buckets || []).slice().sort((a, b) => (b.bytes || 0) - (a.bytes || 0));
+  const totalBytes = buckets.reduce((s, b) => s + (b.bytes || 0), 0);
+  const stack = totalBytes
+    ? buckets.filter((b) => b.bytes > 0).map((b) => {
+        const color = LD_COLORS[b.id] || '#888';
+        return `<span class="ld-stack-slice" style="flex:${b.bytes};background:${color}" title="${escHtml(b.label)} ${escHtml(b.size || '')}"></span>`;
+      }).join('')
+    : '';
+  const rows = buckets.map((b) => {
+    const color = LD_COLORS[b.id] || '#888';
+    const danger = b.danger ? ' ld-row-danger' : '';
+    const checked = b.suggest ? ' checked' : '';
+    const warn = b.danger ? '<i class="ri-error-warning-line" title="清了找不回"></i>' : '';
+    return `<label class="ld-row${danger}" title="${escHtml(b.hint || '')}">
+      <span class="ld-name"><i class="ld-dot" style="background:${color}"></i>${escHtml(b.label)}${warn}</span>
+      <span class="ld-count">${Number(b.files || 0).toLocaleString('zh-CN')}</span>
+      <span class="ld-size">${escHtml(b.size || '0 B')}</span>
+      <input type="checkbox" class="ld-pick" value="${escHtml(b.id)}" data-label="${escHtml(b.label)}" data-size="${escHtml(b.size || '')}" data-danger="${b.danger ? '1' : '0'}"${checked}>
+    </label>`;
+  }).join('');
+  const html = `
+    <div class="llm-section ld-section">
+      <div class="llm-section-head">
+        <h3><i class="ri-hard-drive-2-line"></i> 磁盘占用 · ${escHtml(data.total_size || '0 B')} · ${Number(data.total_files || 0).toLocaleString('zh-CN')} 个文件</h3>
+        <span class="llm-hint">勾选再清。灵魂、应用配方、知识库不在这里。</span>
+      </div>
+      ${stack ? `<div class="ld-stack">${stack}</div>` : ''}
+      <div class="ld-table">
+        <div class="ld-thead"><span>类别</span><span>文件</span><span>占用</span><span>清</span></div>
+        <div class="ld-list">${rows}</div>
+      </div>
+      <div class="ld-bar">
+        <button type="button" class="btn-ghost" id="ldSuggest">只勾缓存</button>
+        <button type="button" class="btn-ghost" id="ldNone">取消全选</button>
+        <span class="ld-bar-gap"></span>
+        <button type="button" class="btn-danger" id="ldPurge"><i class="ri-delete-bin-line"></i> 清理选中的</button>
+      </div>
+    </div>
+    <div class="llm-section">
+      <div class="llm-section-head">
+        <h3><i class="ri-window-line"></i> 浏览器缓存</h3>
+        <span class="llm-hint">只清草稿和界面状态。WebUI 密码和当前对话不动，不用重填。</span>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn-ghost" id="ldBrowserClear">清理浏览器缓存</button>
+      </div>
+    </div>
+    <div id="ldResult" class="field-hint"></div>
+  `;
+  const body = document.getElementById('settingsBody');
+  if (body) body.innerHTML = `<div id="ldUsage">${html}</div>`;
+  else { box.className = ''; box.innerHTML = html; }
+  const root = document.getElementById('ldUsage') || box;
+  const suggest = document.getElementById('ldSuggest');
+  if (suggest) suggest.onclick = () => {
+    root.querySelectorAll('.ld-pick').forEach((el) => {
+      const spec = (data.buckets || []).find((b) => b.id === el.value);
+      el.checked = !!(spec && spec.suggest);
+    });
+  };
+  const none = document.getElementById('ldNone');
+  if (none) none.onclick = () => root.querySelectorAll('.ld-pick').forEach((el) => { el.checked = false; });
+  const btn = document.getElementById('ldPurge');
+  if (btn) btn.onclick = () => purgeLocalDataPicks();
+  const br = document.getElementById('ldBrowserClear');
+  if (br) br.onclick = () => resetAll();
+}
+
+async function purgeLocalDataPicks() {
+  const picks = [...document.querySelectorAll('.ld-pick:checked')];
+  const resEl = document.getElementById('ldResult');
+  if (!picks.length) {
+    if (resEl) resEl.innerHTML = '<span style="color:var(--red)">先勾要清的类别</span>';
+    return;
+  }
+  const danger = picks.filter((el) => el.dataset.danger === '1');
+  const lines = picks.map((el) => el.dataset.label + ' · ' + el.dataset.size).join('\n');
   const ok = await opusConfirm({
-    title: '清空所有本地数据',
-    message: '会清掉 token / sessionId / 别名等浏览器本地数据·然后刷新。\n服务端的对话不会动·随时能找回来。',
-    okText: '清空并退出',
+    title: danger.length ? '清掉选中的（含对话记录）' : '清掉选中的',
+    message: '会从这台电脑删掉：\n' + lines + (danger.length ? '\n\n对话记录清了找不回。' : ''),
+    okText: '删',
     cancelText: '再想想',
     danger: true,
   });
   if (!ok) return;
-  localStorage.clear();
-  location.reload();
+  if (resEl) resEl.innerHTML = '<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 清理中…</span>';
+  try {
+    const resp = await fetch('/local-data/purge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ ids: picks.map((el) => el.value) }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      if (resEl) resEl.innerHTML = '<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ' + escHtml(data.detail || '清理失败') + '</span>';
+      return;
+    }
+    if (data.usage) paintLocalDataUsage(data.usage);
+    const after = document.getElementById('ldResult');
+    if (after) after.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 已清 ' + escHtml(String(data.deleted || 0)) + ' 个文件 · 腾出 ' + escHtml(data.freed_size || '0 B') + '</span>';
+  } catch (e) {
+    if (resEl) resEl.innerHTML = '<span style="color:var(--red)"><i class="ri-close-fill"></i> ' + escHtml(e.message) + '</span>';
+  }
+}
+
+async function resetAll() {
+  const ok = await opusConfirm({
+    title: '清理浏览器缓存',
+    message: '只清草稿和界面临时状态。\nWebUI 密码和当前对话不动，不用重填，也不会跳出这一页。',
+    okText: '清缓存',
+    cancelText: '再想想',
+  });
+  if (!ok) return;
+  const keep = new Set([
+    'opus_ui_token', 'Daemonkey_ui_token',
+    'opus_ui_session', 'opus_ui_auto_confirm',
+    'opus_chat_process',
+    'opus_ui_theme', 'opus_ui_theme_custom', 'opus_ui_theme_label',
+  ]);
+  const keys = [];
+  for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+  keys.forEach((k) => { if (k && !keep.has(k)) localStorage.removeItem(k); });
+  const after = document.getElementById('ldResult');
+  if (after) after.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 浏览器缓存已清 · 密码还在</span>';
 }

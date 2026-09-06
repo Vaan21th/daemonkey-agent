@@ -156,6 +156,24 @@ async def companion_play_ignore(authorization: Optional[str] = Header(None)):
     return ignore()
 
 
+@router.get("/api/companion/sid")
+def companion_sid_get(authorization: Optional[str] = Header(None)):
+    check_auth(authorization)
+    from workers.companion_sid import load_sid
+    return {"session_id": load_sid()}
+
+
+@router.post("/api/companion/sid")
+async def companion_sid_set(request: Request, authorization: Optional[str] = Header(None)):
+    check_auth(authorization)
+    body = await request.json()
+    from workers.companion_sid import save_sid, valid_sid
+    sid = str((body or {}).get("session_id") or "").strip()
+    if sid and not valid_sid(sid):
+        raise HTTPException(400, "bad sid")
+    return {"session_id": save_sid(sid) if sid else ""}
+
+
 ROOT = Path(__file__).resolve().parent.parent
 _COMPANION_DIR = ROOT / "static" / "companion"
 _GAMES_DIR = ROOT / "static" / "games"

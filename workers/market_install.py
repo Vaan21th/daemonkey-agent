@@ -148,7 +148,7 @@ def install(item_id: str, overwrite: bool = False) -> dict:
         return {"ok": False, "output": "", "error": f"货架上没有 `{item_id}`"}
     kind = str(item.get("kind") or "")
     if kind == "playbook":
-        return {"ok": False, "output": "", "error": "技能文上架安装下一刀再接（先用导入 playbook）"}
+        return {"ok": False, "output": "", "error": "操作手册上架安装下一刀再接（先用导入操作手册）"}
     try:
         path = _resolve_file(item)
     except Exception as e:

@@ -478,7 +478,10 @@ document.addEventListener('keydown', function (e) {
 // 访问到 TDZ 里的 token 抛 ReferenceError · 列表静默空白 (用户 2026-08-14 会话列表空白根因)
 function _bootToken() {
   try {
-    const t = localStorage.getItem(STORAGE.token) || '';
+    const t = localStorage.getItem(STORAGE.token)
+      || localStorage.getItem('Daemonkey_ui_token')
+      || localStorage.getItem('opus_ui_token')
+      || '';
     if (t) return t;
   } catch (e) {}
   if (typeof _loopbackAuthToken === 'function') return _loopbackAuthToken();
@@ -2283,6 +2286,7 @@ if (typeof escHtml === 'undefined') {
 // debounce dashboard refresh · 避免连续工具调用刷爆 UI
 let _dashRefreshTimer = null;
 function _dashSilentRefreshBlocked() {
+  if (typeof currentView !== 'undefined' && currentView === 'settings') return true;
   if (typeof _shelfPreviewOpen !== 'undefined' && _shelfPreviewOpen) return true;
   const roots = [];
   if (typeof $dashView !== 'undefined' && $dashView) roots.push($dashView);
@@ -6137,7 +6141,7 @@ const DOMAIN_META = {
   execution:     { icon: '<i class="ri-refresh-fill"></i>', label: '执行反馈', section: 'execution', stub: false },
   scheduled_tasks: { icon: '<i class="ri-timer-2-fill"></i>', label: '定时任务', section: 'execution', stub: false },
   favorites:     { icon: '<i class="ri-star-fill"></i>', label: '收藏夹',   section: 'execution', stub: false },
-  // ── 成长档案 (depot hub) · 把 日记/心愿/沉淀位/技能库 并成一个入口 · 内部标签切换 ──
+  // ── 成长档案 (depot hub) · 把 日记/心愿/沉淀位/操作手册 并成一个入口 · 内部标签切换 ──
   // 这 4 个本就是「Daemonkey 自己积累/沉淀的东西」· 并成一栏减少侧边栏拥挤 (用户 2026-07-11)
   // 2026-08-06 · 用户 拍板: 成长档案挪「总览」分组 (执行落地=用户 正在跑的事·成长档案=Daemonkey 自我成长·两者不同层)
   // 子维度 navHidden · 不单独占导航位 · 但 DOMAIN_META 条目保留 · loadDepot 仍复用它们的 render fn
@@ -6146,8 +6150,8 @@ const DOMAIN_META = {
   // 卷三十五 · Daemonkey 自我演化心愿单 · "我想装这个能力"
   wishlist:      { icon: '<i class="ri-lightbulb-fill"></i>', label: 'Daemonkey 心愿', section: 'home', stub: false, navHidden: true },
   sinks:         { icon: '<i class="ri-archive-drawer-fill"></i>', label: '沉淀位',   section: 'home', stub: false, navHidden: true },
-  // 技能库 · playbook 沉淀查看器 · 灌/召回仍走 NLP·这里只读+可删
-  playbooks:     { icon: '<i class="ri-tools-fill"></i>', label: '技能库', section: 'home', stub: false, navHidden: true },
+  // 操作手册 · playbook 沉淀查看器 · 灌/召回仍走 NLP·这里只读+可删
+  playbooks:     { icon: '<i class="ri-tools-fill"></i>', label: '操作手册', section: 'home', stub: false, navHidden: true },
   // 插件库 · 能力扩展 · Daemonkey 自己用产品开发能写新插件回填这里
   plugins:   { icon: '<i class="ri-puzzle-fill"></i>', label: '插件库', section: 'plugins', stub: false },
 };
@@ -8020,7 +8024,7 @@ async function loadDashboard(domain, opts = {}) {
     else if (domain === 'feasibility') renderFeasibility(data);
     else if (domain === 'knowledge') renderKnowledge(data);
     else if (domain === 'clients') { if (typeof renderClients === 'function') renderClients(data); else _splitMissing('客户档案'); }
-    else if (domain === 'playbooks') { if (typeof renderPlaybooks === 'function') renderPlaybooks(data); else _splitMissing('技能库'); }
+    else if (domain === 'playbooks') { if (typeof renderPlaybooks === 'function') renderPlaybooks(data); else _splitMissing('操作手册'); }
     else if (domain === 'execution') renderExecution(data);
     else if (domain === 'favorites') renderFavorites(data);
     else if (domain === 'calendar') renderCalendar(data);

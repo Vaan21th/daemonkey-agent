@@ -4,7 +4,7 @@ report_engine/markdown_to_docx.py
 
 通用 markdown → docx 渲染器
 
-源流：抽象自 upstream/docs\\cooperation\\volcano-cmcc-haishan\\build-doc.py
+源流：抽象自 G:\\community\\docs\\cooperation\\volcano-cmcc-haishan\\build-doc.py
      （以及同源的 competitive-analysis / recruiting 三个 build-*-doc.py）
 
 跟社区原版的差异：

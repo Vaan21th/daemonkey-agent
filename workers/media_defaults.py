@@ -1,7 +1,7 @@
-"""工坊应用钉成 Daemonkey 默认生图 / 语音合成。
+"""工坊应用钉成 Daemonkey 默认生图 / 语音合成 / 语音识别。
 
 启发式只预填。人在设置里选定之后写入 data/runtime/media_defaults.json，
-generate_image / /api/tts 先认这只，不再每次猜。
+generate_image / /api/tts / 整句转写 先认这只，不再每次猜。
 """
 from __future__ import annotations
 
@@ -23,6 +23,13 @@ _NON_TTS_KW = (
     "视频", "video", "wan2", "kling", "vidu", "runway", "sora",
     "生图", "文生图", "出图", "flux", "midjourney",
 )
+_STT_KW = (
+    "stt", "asr", "转写", "语音识别", "speech to text", "speech-to-text",
+    "whisper-api", "sensevoice", "听写", "transcription",
+)
+_NON_STT_KW = (
+    "视频", "video", "clip", "剪辑", "funclip", "字幕", "srt",
+)
 
 
 def load() -> dict:
@@ -33,18 +40,25 @@ def load() -> dict:
                 return {
                     "image_app_id": str(data.get("image_app_id") or "").strip(),
                     "tts_app_id": str(data.get("tts_app_id") or "").strip(),
+                    "stt_app_id": str(data.get("stt_app_id") or "").strip(),
                 }
     except Exception:
         pass
-    return {"image_app_id": "", "tts_app_id": ""}
+    return {"image_app_id": "", "tts_app_id": "", "stt_app_id": ""}
 
 
-def save(image_app_id: Optional[str] = None, tts_app_id: Optional[str] = None) -> dict:
+def save(
+    image_app_id: Optional[str] = None,
+    tts_app_id: Optional[str] = None,
+    stt_app_id: Optional[str] = None,
+) -> dict:
     cur = load()
     if image_app_id is not None:
         cur["image_app_id"] = (image_app_id or "").strip()
     if tts_app_id is not None:
         cur["tts_app_id"] = (tts_app_id or "").strip()
+    if stt_app_id is not None:
+        cur["stt_app_id"] = (stt_app_id or "").strip()
     CONFIG.parent.mkdir(parents=True, exist_ok=True)
     from workers.safe_write import atomic_write_text
     atomic_write_text(CONFIG, json.dumps(cur, ensure_ascii=False, indent=2), backup=False)
@@ -57,6 +71,8 @@ def pinned_app_id(kind: str) -> str:
         return cur.get("image_app_id") or ""
     if kind == "tts":
         return cur.get("tts_app_id") or ""
+    if kind == "stt":
+        return cur.get("stt_app_id") or ""
     return ""
 
 
@@ -79,7 +95,18 @@ def is_tts_app(app: dict) -> bool:
     return False
 
 
+def is_stt_app(app: dict) -> bool:
+    if not isinstance(app, dict):
+        return False
+    blob = ((app.get("name") or "") + " " + (app.get("description") or "")).lower()
+    if any(k in blob for k in _NON_STT_KW):
+        return False
+    return any(k in blob for k in _STT_KW)
+
+
 def classify_app(app: dict) -> str:
+    if is_stt_app(app):
+        return "stt"
     if is_tts_app(app):
         return "tts"
     from agent_tools.generate_image import _is_image_app
@@ -106,7 +133,7 @@ def picker_rows() -> list[dict]:
             "id": aid,
             "name": a.get("name") or aid,
             "kind": classify_app(a),
-            "guess": classify_app(a) in ("image", "tts"),
+            "guess": classify_app(a) in ("image", "tts", "stt"),
         })
     return rows
 
@@ -125,6 +152,22 @@ def resolve_tts_app_id() -> str:
                                     -int(a.get("runs") or 0)))
         return guessed[0].get("id") or LEGACY_TTS_APP
     return LEGACY_TTS_APP
+
+
+def resolve_stt_app_id() -> str:
+    import os
+    env = (os.environ.get("DAEMONKEY_STT_APP_ID") or os.environ.get("OPUS_STT_APP_ID") or "").strip()
+    if env:
+        return env
+    pin = pinned_app_id("stt")
+    if pin:
+        return pin
+    guessed = [a for a in _apps() if is_stt_app(a)]
+    if guessed:
+        guessed.sort(key=lambda a: (0 if (a.get("exec_kind") == "scripted") else 1,
+                                    -int(a.get("runs") or 0)))
+        return guessed[0].get("id") or ""
+    return ""
 
 
 def _has_key(app_id: str) -> bool:
@@ -166,6 +209,7 @@ def status() -> dict:
         img_app = None
     img_id = (img_app or {}).get("id") or pinned_app_id("image")
     tts_id = resolve_tts_app_id()
+    stt_id = resolve_stt_app_id()
     env_image = False
     try:
         env_image = bool(is_configured())
@@ -194,9 +238,20 @@ def status() -> dict:
             "ready": _has_key(tts_id),
             "unlocks": tts_unlock,
         },
+        "stt": {
+            "app_id": stt_id,
+            "name": _app_name(stt_id),
+            "ready": bool(stt_id and _has_key(stt_id)),
+            "unlocks": [
+                "桌宠叫到之后的整句更准",
+                "微信语音转写更准",
+                "没接就继续用你选的本地 whisper",
+            ],
+        },
         "guides": {
             "image": GUIDE_IMAGE,
             "tts": GUIDE_TTS,
+            "stt": GUIDE_STT,
         },
     }
 
@@ -219,4 +274,17 @@ GUIDE_IMAGE = (
     "Key 写进应用后，告诉我回设置里把它选成默认。"
     "不要跑题。有现成的先用；没有就 create_app（输入 prompt，输出图片），"
     "Key 用 app_set_secret 写入 api_key。"
+)
+
+GUIDE_STT = (
+    "帮我接上云端语音识别。先看工坊有没有现成的转写应用；没有就建一个。"
+    "带我去官网拿 Key，不要登录、不要编造。"
+    "要 OpenAI 兼容的 /v1/audio/transcriptions："
+    "OpenAI https://platform.openai.com/ ；"
+    "Groq https://console.groq.com/ ；"
+    "硅基流动 https://cloud.siliconflow.cn/ 。"
+    "Key 用 app_set_secret 写入 api_key。"
+    "可选再写 base_url（默认 https://api.openai.com/v1）和 model（默认 whisper-1）。"
+    "接好后告诉我回设置→多模态，把这个应用选成默认语音识别。"
+    "没接就继续用本机 whisper。不要跑题。"
 )

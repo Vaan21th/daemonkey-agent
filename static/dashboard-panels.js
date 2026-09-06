@@ -1437,8 +1437,16 @@ async function loadBIClosure() {
   } catch (e) { body.innerHTML = '<div class="bi-v3-empty">网络出错</div>'; }
 }
 
+function _biStillWanted() {
+  if (typeof currentView !== 'undefined' && currentView && currentView !== 'bi') return false;
+  return true;
+}
+
 async function loadBIDashboard() {
+  if (typeof window._dashLoadSeq === 'number') window._dashLoadSeq += 1;
+  const seq = window._dashLoadSeq;
   if (!token) {
+    if (!_biStillWanted()) return;
     $detailPane.innerHTML = `
       <div class="bi-loading">
         <div style="font-size:18px;margin-bottom:8px"><i class="ri-diamond-fill"></i> 工作室 BI 看板</div>
@@ -1450,13 +1458,16 @@ async function loadBIDashboard() {
     const r = await fetch('/dashboard/cockpit?head=3', {
       headers: { 'Authorization': 'Bearer ' + token },
     });
+    if (seq !== window._dashLoadSeq || !_biStillWanted()) return;
     if (!r.ok) {
       $detailPane.innerHTML = `<div class="bi-loading">加载失败 [${r.status}]</div>`;
       return;
     }
     const data = await r.json();
+    if (seq !== window._dashLoadSeq || !_biStillWanted()) return;
     renderBIDashboard(data);
   } catch (e) {
+    if (seq !== window._dashLoadSeq || !_biStillWanted()) return;
     $detailPane.innerHTML = `<div class="bi-loading">网络出错: ${e.message}</div>`;
   }
 }
@@ -1484,7 +1495,7 @@ async function loadBIMemory() {
   const body = document.getElementById('biMemoryBody');
   const badge = document.getElementById('biMemoryBadge');
   const btn = document.getElementById('biMemoryAuditBtn');
-  if (btn) btn.onclick = () => spawnQuickly('帮我看看手艺是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '手艺体检');
+  if (btn) btn.onclick = () => spawnQuickly('帮我看看操作手册是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '检查操作手册');
   if (!body) return;
   try {
     const r = await fetch('/dashboard/memory_map?lite=1', { headers: { 'Authorization': 'Bearer ' + token } });
@@ -1494,10 +1505,10 @@ async function loadBIMemory() {
     const nb = d.notebook || {};
     const hg = d.hygiene || {};
     const nbPct = nb.full_chars ? Math.round(nb.core_chars / nb.full_chars * 100) : null;
-    if (badge) badge.textContent = (d.playbook_count || 0) + ' 门手艺';
+    if (badge) badge.textContent = (d.playbook_count || 0) + ' 份操作手册';
     const cells = [
       { icon: 'ri-database-2-fill', color: '#8affd6', val: _biFmtNum(d.total_chunks || 0), lbl: '记忆总量' },
-      { icon: 'ri-tools-fill', color: '#b794f6', val: d.playbook_count || 0, lbl: '手艺' },
+      { icon: 'ri-tools-fill', color: '#b794f6', val: d.playbook_count || 0, lbl: '操作手册' },
       { icon: 'ri-shield-check-fill', color: '#6ed27a', val: 'v' + (hg.version || '?'), lbl: hg.migrated ? '卫生闸·已清理' : '卫生闸·待清理' },
     ];
     if (nbPct != null) cells.push({ icon: 'ri-stack-fill', color: '#ffd28a', val: '-' + (100 - nbPct) + '%', lbl: '画像分层压缩' });
@@ -1653,7 +1664,16 @@ async function loadReportPreview(filename, previewUrl) {
   let kind = _shelfKind || "reports";
   if (/\.pptx?$/i.test(filename)) kind = "decks";
   else if (/\.xlsx?$/i.test(filename)) kind = "sheets";
+  else if (/\.html?$/i.test(filename)) kind = "protos";
   else if (/\.docx?$/i.test(filename)) kind = "reports";
+  if (kind === "protos") {
+    const protoRel = String(filename).replace(/\\/g, "/");
+    const path = protoRel.startsWith("data/design/") ? protoRel : ("data/design/" + protoRel);
+    if (typeof openStage === "function") {
+      openStage({ path: path });
+      return;
+    }
+  }
   const rel = kind === "decks"
     ? ("data/presentations/" + filename)
     : (kind === "sheets" ? ("data/spreadsheets/" + filename) : ("data/reports/" + filename));
@@ -1691,8 +1711,10 @@ async function loadReportPreview(filename, previewUrl) {
 function shelfKindOf(d) {
   if (d && d.kind === 'decks') return 'decks';
   if (d && d.kind === 'sheets') return 'sheets';
+  if (d && d.kind === 'protos') return 'protos';
   if (d && /\.pptx$/i.test(d.name || '')) return 'decks';
   if (d && /\.xlsx$/i.test(d.name || '')) return 'sheets';
+  if (d && /\.html?$/i.test(d.name || '')) return 'protos';
   return 'reports';
 }
 
@@ -1702,6 +1724,7 @@ function shelfOpenPath(d) {
   const kind = shelfKindOf(d);
   if (kind === 'decks') return 'data/presentations/' + name;
   if (kind === 'sheets') return 'data/spreadsheets/' + name;
+  if (kind === 'protos') return (String(name).replace(/\\/g, '/').startsWith('data/design/') ? String(name).replace(/\\/g, '/') : ('data/design/' + name));
   return 'data/reports/' + name;
 }
 
@@ -1715,6 +1738,7 @@ function shelfPreviewUrl(kind, filename) {
   const name = encodeURIComponent(filename || '');
   if (kind === 'decks') return '/shelf/preview/decks/' + name;
   if (kind === 'sheets') return '/shelf/preview/sheets/' + name;
+  if (kind === 'protos') return '/stage/file/data/design/' + name;
   return '/reports/preview/' + name;
 }
 
@@ -2045,6 +2069,7 @@ function renderAutopilotInlineBtn() {
 }
 
 function renderBIDashboard(data) {
+  if (typeof currentView !== 'undefined' && currentView && currentView !== 'bi') return;
   // 从 cockpit 拿所有维度
   const domainsById = {};
   for (const d of data.domains || []) domainsById[d.id] = d;
@@ -2131,7 +2156,7 @@ function renderBIDashboard(data) {
           <div class="bi-card-head">
             <h3><i class="ri-brain-fill" style="color:#8affd6"></i> 记忆体系 <span class="badge" id="biMemoryBadge">…</span></h3>
             <span>
-              <button class="bi-link" id="biMemoryAuditBtn" type="button" title="让 Daemonkey 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 手艺体检</button>
+              <button class="bi-link" id="biMemoryAuditBtn" type="button" title="让 Daemonkey 用语义向量检查操作手册 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 检查操作手册</button>
               <button class="bi-link" onclick="loadDashboard('memory_map')" title="记忆星图 · 三道闸治理全景"><i class="ri-sparkling-2-fill"></i> 星图</button>
             </span>
           </div>
@@ -3456,9 +3481,19 @@ try { _shelfKind = localStorage.getItem('opus_shelf_kind') || 'reports'; } catch
 let _shelfLastData = null;
 
 function switchShelfKind(kind) {
-  _shelfKind = (kind === 'decks' || kind === 'sheets') ? kind : 'reports';
+  _shelfKind = (kind === 'decks' || kind === 'sheets' || kind === 'protos') ? kind : 'reports';
   try { localStorage.setItem('opus_shelf_kind', _shelfKind); } catch (e) {}
   if (_shelfLastData) renderReports(_shelfLastData);
+}
+
+function reviseShelfProto(path) {
+  const rel = String(path || '').replace(/\\/g, '/');
+  if (!rel || typeof spawnTask !== 'function') return;
+  spawnTask(
+    '改 HTML 原型 `' + rel + '` · 先 read_file 看现在的结构 · 按我接下来的要求改 (edit_file) · 改完中栏刷新能看到。我先点开了这份，你等我说改哪里。',
+    '改原型'
+  );
+  if (typeof openStage === 'function') openStage({ path: rel });
 }
 
 function renderReports(data) {
@@ -3479,22 +3514,24 @@ function renderReports(data) {
   };
   const decks = kinds.decks || { items: [], count: 0, directory: 'data/presentations' };
   const sheets = kinds.sheets || { items: [], count: 0, directory: 'data/spreadsheets' };
-  const kind = (_shelfKind === 'decks' || _shelfKind === 'sheets') ? _shelfKind : 'reports';
-  const pack = kind === 'decks' ? decks : (kind === 'sheets' ? sheets : reports);
+  const protos = kinds.protos || { items: [], count: 0, directory: 'data/design' };
+  const kind = (_shelfKind === 'decks' || _shelfKind === 'sheets' || _shelfKind === 'protos') ? _shelfKind : 'reports';
+  const pack = kind === 'decks' ? decks : (kind === 'sheets' ? sheets : (kind === 'protos' ? protos : reports));
   const items = pack.items || [];
-  const dir = pack.directory || (kind === 'decks' ? 'data/presentations' : (kind === 'sheets' ? 'data/spreadsheets' : 'data/reports'));
+  const dir = pack.directory || (kind === 'decks' ? 'data/presentations' : (kind === 'sheets' ? 'data/spreadsheets' : (kind === 'protos' ? 'data/design' : 'data/reports')));
   const nR = reports.count != null ? reports.count : (reports.items || []).length;
   const nD = decks.count != null ? decks.count : (decks.items || []).length;
   const nS = sheets.count != null ? sheets.count : (sheets.items || []).length;
+  const nP = protos.count != null ? protos.count : (protos.items || []).length;
 
   let html = `
     ${pipelineBreadcrumb('reports')}
     <div class="dash-head">
       <h2><i class="ri-archive-2-fill"></i> 产物库</h2>
       <span class="meta">成品层 · ${items.length} 份 · ${escHtml(dir)}</span>
-      <button onclick="backToChat()">收起</button>
-      <button onclick="loadDashboard('trends')">← 回到趋势</button>
-      <button onclick="loadDashboard('reports')">刷新列表</button>
+      <button class="btn-ghost" onclick="backToChat()">收起</button>
+      <button class="btn-ghost" onclick="loadDashboard('trends')">回到趋势</button>
+      <button class="btn-primary" onclick="loadDashboard('reports')">刷新列表</button>
     </div>
     <div class="depot-tabs" role="tablist">
       <button type="button" class="depot-tab${kind === 'reports' ? ' active' : ''}" onclick="switchShelfKind('reports')">
@@ -3505,6 +3542,9 @@ function renderReports(data) {
       </button>
       <button type="button" class="depot-tab${kind === 'sheets' ? ' active' : ''}" onclick="switchShelfKind('sheets')">
         <i class="ri-table-fill"></i><span>表格</span><span class="shelf-n">${nS}</span>
+      </button>
+      <button type="button" class="depot-tab${kind === 'protos' ? ' active' : ''}" onclick="switchShelfKind('protos')">
+        <i class="ri-window-fill"></i><span>原型</span><span class="shelf-n">${nP}</span>
       </button>
     </div>`;
 
@@ -3517,27 +3557,34 @@ function renderReports(data) {
       <div class="dash-stub">
         <h3>还没生成过表格</h3>
         <div>跟我说做表格，文件会出现在这里。</div>
+      </div>` : kind === 'protos' ? `
+      <div class="dash-stub">
+        <h3>还没有 HTML 原型</h3>
+        <div>跟我说做个页面原型，会出现在这里。点「让我改」就能接着改。</div>
       </div>` : `
       <div class="dash-stub">
         <h3>还没生成过报告</h3>
         <div>跟我说写报告，文件会出现在这里。</div>
       </div>`;
   } else {
-    if (items.length > 3) {
-      html += renderListFilter({targetSelector: '.report-card', placeholder: kind === 'decks' ? '搜演示稿文件名 / 时间...' : (kind === 'sheets' ? '搜表格文件名 / 时间...' : '搜报告文件名 / 时间...')});
-    }
+    html += renderListFilter({targetSelector: '.report-card', placeholder: kind === 'decks' ? '搜演示稿文件名 / 时间...' : (kind === 'sheets' ? '搜表格文件名 / 时间...' : (kind === 'protos' ? '搜原型文件名 / 路径...' : '搜报告文件名 / 时间...'))});
     html += `<div class="reports-list">`;
     for (const it of items) {
-      const rawDl = it.download_url || (kind === 'decks' ? `/presentations/${it.name}` : (kind === 'sheets' ? `/spreadsheets/${it.name}` : `/reports/${it.name}`));
+      const rawDl = it.download_url || (kind === 'decks' ? `/presentations/${it.name}` : (kind === 'sheets' ? `/spreadsheets/${it.name}` : (kind === 'protos' ? `/stage/file/data/design/${it.name}` : `/reports/${it.name}`)));
       const dlUrl = `${rawDl}${rawDl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token || '')}`;
       const previewUrl = it.preview_url || '';
-      const srcBadge = it.has_md_source
+      const srcBadge = kind === 'protos'
+        ? `<span class="rc-src-badge rc-src-md" title="HTML 就是源 · 中栏预览，跟我说改">可改</span>`
+        : (it.has_md_source
         ? `<span class="rc-src-badge rc-src-md" title="有源文件">有源文件</span>`
-        : `<span class="rc-src-badge rc-src-extract" title="${kind === 'decks' ? '没有源文件 · 下载用本机软件打开' : (kind === 'sheets' ? '没有源文件 · 成品仍可看表' : '旧报告 · 预览是从成品反推的')}">${kind === 'decks' || kind === 'sheets' ? '没有源文件' : '旧版预览'}</span>`;
+        : `<span class="rc-src-badge rc-src-extract" title="${kind === 'decks' ? '没有源文件 · 下载用本机软件打开' : (kind === 'sheets' ? '没有源文件 · 成品仍可看表' : '旧报告 · 预览是从成品反推的')}">${kind === 'decks' || kind === 'sheets' ? '没有源文件' : '旧版预览'}</span>`);
       const kbBtn = kind === 'reports'
         ? `<button class="rc-preview-btn rp-kb" data-name="${escHtml(it.name)}" title="存进知识库，之后回答能引用原文"><i class="ri-book-2-line"></i> 存入知识库</button>`
         : '';
-      const openRel = it.open_path || (kind === 'decks' ? ('data/presentations/' + it.name) : (kind === 'sheets' ? ('data/spreadsheets/' + it.name) : ('data/reports/' + it.name)));
+      const openRel = it.open_path || (kind === 'decks' ? ('data/presentations/' + it.name) : (kind === 'sheets' ? ('data/spreadsheets/' + it.name) : (kind === 'protos' ? ('data/design/' + it.name) : ('data/reports/' + it.name))));
+      const reviseBtn = kind === 'protos'
+        ? `<button type="button" class="rc-preview-btn" data-revise="${escHtml(openRel)}" title="丢给对话，按你的话改这份"><i class="ri-pencil-line"></i> 让我改</button>`
+        : '';
       const showName = it.title || it.name;
       const ver = it.version ? `<span class="rc-ver">V${it.version}</span>` : '';
       const hist = Array.isArray(it.history) ? it.history : [];
@@ -3575,6 +3622,7 @@ function renderReports(data) {
             <span class="rc-time">${escHtml(it.created_at)}</span>
             ${previewUrl ? `<button class="rc-preview-btn" data-name="${escHtml(it.name)}" data-preview-url="${escHtml(previewUrl)}"><i class="ri-eye-line"></i> 预览</button>` : ''}
             <button class="rc-preview-btn" data-open="${escHtml(openRel)}"><i class="ri-external-link-line"></i> 打开</button>
+            ${reviseBtn}
             ${kbBtn}
             <a class="rc-dl" href="${escHtml(dlUrl)}" download="${escHtml(it.name)}">下载</a>
           </div>
@@ -3585,12 +3633,18 @@ function renderReports(data) {
   }
   $dashView.innerHTML = html;
 
-  $dashView.querySelectorAll('.rc-preview-btn:not(.rp-kb):not([data-open]):not([data-restore]), .rc-name[data-preview]').forEach(el => {
+  $dashView.querySelectorAll('.rc-preview-btn:not(.rp-kb):not([data-open]):not([data-restore]):not([data-revise]), .rc-name[data-preview]').forEach(el => {
     el.onclick = (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
       const name = el.getAttribute('data-name');
       const previewUrl = el.getAttribute('data-preview-url');
+      if (kind === 'protos') {
+        const rel = el.closest('.report-card') && el.closest('.report-card').querySelector('[data-open]');
+        const path = (rel && rel.getAttribute('data-open')) || ('data/design/' + name);
+        if (typeof openStage === 'function') openStage({ path: path });
+        return;
+      }
       if (name) loadReportPreview(name, previewUrl || undefined);
     };
   });
@@ -3599,6 +3653,13 @@ function renderReports(data) {
       ev.preventDefault();
       ev.stopPropagation();
       revealFile(btn.getAttribute('data-open'), btn);
+    };
+  });
+  $dashView.querySelectorAll('[data-revise]').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      reviseShelfProto(btn.getAttribute('data-revise'));
     };
   });
   $dashView.querySelectorAll('[data-restore]').forEach(btn => {
@@ -3616,7 +3677,7 @@ function renderReports(data) {
     };
   });
 
-  if (items.length > 3) _applyListFilter($dashView.querySelector('.list-filter-input'));
+  if (items.length) _applyListFilter($dashView.querySelector('.list-filter-input'));
 }
 
 async function runFeasibilityFromOpp(opp_id, idx) {

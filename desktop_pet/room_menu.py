@@ -11,6 +11,7 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMenu,
     QSlider,
@@ -117,6 +118,25 @@ def build_menu(pet) -> QMenu:
     dock_act.toggled.connect(lambda on: _toggle_dock(pet, on))
     menu.addAction(dock_act)
     pet._dock_act = dock_act
+    voice = menu.addMenu("语音唤醒")
+    play = QAction("启用", pet)
+    play.setCheckable(True)
+    play.setChecked(bool(getattr(pet, "_play_on", False)))
+    play.toggled.connect(lambda on: _toggle_play(pet, on))
+    voice.addAction(play)
+    pet._play_act = play
+    think = QAction("思考", pet)
+    think.setCheckable(True)
+    think.setChecked(_load_think())
+    think.toggled.connect(lambda on: _toggle_think(pet, on))
+    voice.addAction(think)
+    pet._think_act = think
+    wake = QAction("设置唤醒词", pet)
+    wake.triggered.connect(lambda: _edit_wake(pet))
+    voice.addAction(wake)
+    nxt = QAction("新开一轮对话", pet)
+    nxt.triggered.connect(lambda: _new_round(pet))
+    voice.addAction(nxt)
     flip = QAction("水平翻转", pet)
     flip.setCheckable(True)
     flip.setChecked(load_flip())
@@ -148,6 +168,44 @@ def build_menu(pet) -> QMenu:
     quit_act.triggered.connect(QApplication.instance().quit)
     menu.addAction(quit_act)
     return menu
+
+
+def _edit_wake(pet) -> None:
+    from desktop_pet.play_mode import load_wake, save_wake
+    cur = load_wake()
+    text, ok = QInputDialog.getText(pet, "唤醒词", "中文两三个字更好认：", text=cur)
+    if not ok:
+        return
+    word = save_wake(text)
+    bub = getattr(pet, "_bubble", None)
+    if bub is not None:
+        bub.show_text(f"以后叫「{word}」", 4000)
+        bub.follow(pet)
+
+
+def _new_round(pet) -> None:
+    hook = getattr(pet, "_play", None)
+    if hook is not None:
+        hook.new_round()
+
+
+def _load_think() -> bool:
+    from desktop_pet.play_mode import load_think
+    return load_think()
+
+
+def _toggle_think(pet, on: bool) -> None:
+    from desktop_pet.play_mode import save_think
+    save_think(on)
+    hook = getattr(pet, "_play", None)
+    if hook is not None:
+        hook.set_think(on)
+
+
+def _toggle_play(pet, on: bool) -> None:
+    hook = getattr(pet, "_play", None)
+    if hook is not None:
+        hook.enable(on)
 
 
 def _toggle_dock(pet, on: bool) -> None:

@@ -102,15 +102,18 @@ def get_model_name() -> str:
 
 
 def set_model_name(name: str) -> None:
-    """设置页切换模型大小 (tiny/base/small) · 立即生效 + 持久化到 .env (重启不丢)。
-
-    08-15 修复: 旧版只改内存 · daemon 重启后回到默认 small · 已下载的 base/tiny
-    模型找不到 → 语音识别静默失效。现在切换即写 .env · 重启后从 .env 恢复。"""
-    global _MODEL_NAME
+    """设置页切换模型大小 · 写 .env，并卸掉内存里另一只，避免唤醒还在用旧模型。"""
+    global _MODEL_NAME, _model, _model_loaded_name
     valid = {"tiny", "base", "small"}
-    if name in valid:
-        _MODEL_NAME = name
-        _write_model_name_to_env(name)
+    if name not in valid:
+        return
+    changed = name != _MODEL_NAME
+    _MODEL_NAME = name
+    _write_model_name_to_env(name)
+    if changed:
+        with _model_lock:
+            _model = None
+            _model_loaded_name = ""
 
 
 def deps_installed() -> bool:
@@ -162,37 +165,49 @@ def stt_status() -> dict:
         "enabled": stt_enabled(),
         "model_dir": str(stt_models_dir() / _MODEL_NAME),
         "expected_size_mb": {"tiny": 75, "base": 150, "small": 460}.get(_MODEL_NAME, 150),
+        "cloud": _cloud_status(),
     }
 
 
+def _cloud_status() -> dict:
+    try:
+        from workers.stt_cloud import status as cloud_status
+        return cloud_status()
+    except Exception:
+        return {"ready": False, "app_id": "", "name": ""}
+
+
 _model = None
+_model_loaded_name = ""
 _model_lock = threading.Lock()
 
 
 def _load_model():
-    """懒加载 + 双检锁 · 并发语音消息不重复加载模型 (Hermes #24767 同款)。
-
-    只读本地预下载目录 · 缺 model.bin 返回 None 不触发在线下载 (review P1-2:
-    同步消息路径静默下载 150MB 会卡死 getupdates 轮询 · 模型下载交给设置页显式下载)。"""
-    global _model
-    if _model is None:
-        with _model_lock:
-            if _model is None:
-                local_dir = stt_models_dir() / _MODEL_NAME
-                model_src = str(local_dir) if (local_dir / "model.bin").is_file() else None
-                if not model_src:
-                    logger.warning(
-                        "本地无 whisper 模型 %s/model.bin · STT 降级不可用 (去设置页下载可启用)",
-                        local_dir,
-                    )
-                    return None
-                try:
-                    from faster_whisper import WhisperModel
-                    logger.info("加载 faster-whisper 模型 '%s' (src=%s)...", _MODEL_NAME, model_src)
-                    _model = WhisperModel(model_src, device="cpu", compute_type="int8")
-                except Exception as e:
-                    logger.warning("faster-whisper 模型加载失败: %s", e)
-                    return None
+    """只加载设置页选中的那一只。内存里是另一只就卸掉，不顶替。"""
+    global _model, _model_loaded_name
+    if _model is not None and _model_loaded_name == _MODEL_NAME:
+        return _model
+    with _model_lock:
+        if _model is not None and _model_loaded_name == _MODEL_NAME:
+            return _model
+        _model = None
+        _model_loaded_name = ""
+        local_dir = stt_models_dir() / _MODEL_NAME
+        model_src = str(local_dir) if (local_dir / "model.bin").is_file() else None
+        if not model_src:
+            logger.warning(
+                "本地无 whisper 模型 %s/model.bin · STT 降级不可用 (去设置页下载可启用)",
+                local_dir,
+            )
+            return None
+        try:
+            from faster_whisper import WhisperModel
+            logger.info("加载 faster-whisper 模型 '%s' (src=%s)...", _MODEL_NAME, model_src)
+            _model = WhisperModel(model_src, device="cpu", compute_type="int8")
+            _model_loaded_name = _MODEL_NAME
+        except Exception as e:
+            logger.warning("faster-whisper 模型加载失败: %s", e)
+            return None
     return _model
 
 
@@ -210,53 +225,48 @@ def _is_hallucinated_segment(seg, no_speech_threshold: float = 0.6, logprob_thre
         return False
 
 
-def transcribe_silk(silk_path: str, timeout: float = 120) -> str:
-    """silk → wav → whisper 转写。失败/超时返回 ""（调用方降级提示）。
+def _fill_whisper(wav: str, result: dict, *, vad: bool = True, prompt: str = "") -> None:
+    model = _load_model()
+    if model is None:
+        result["error"] = "whisper 模型不可用 (本地缺 model.bin)"
+        return
+    # 短窗不锁语言会漂到 en/ja，「呆萌」就被听成 time
+    kw = {
+        "language": "zh",
+        "beam_size": 5,
+        "condition_on_previous_text": False,
+        "no_speech_threshold": 0.6,
+        "log_prob_threshold": -1.0,
+        "vad_filter": bool(vad),
+    }
+    if vad:
+        kw["vad_parameters"] = {"min_silence_duration_ms": 500}
+    hint = (prompt or "").strip()
+    if hint:
+        kw["initial_prompt"] = hint
+    segments, _info = model.transcribe(wav, **kw)
+    parts = []
+    for seg in segments:
+        if _is_hallucinated_segment(seg):
+            continue
+        t = (seg.text or "").strip()
+        if t:
+            parts.append(t)
+    result["text"] = " ".join(parts).strip()
 
-    真超时: 模型加载 + 转写放线程跑 · join(timeout) 超时返回 "" (review P1-2)。"""
-    silk = Path(silk_path)
-    if not silk.is_file() or silk.stat().st_size == 0:
-        logger.warning("silk 文件不存在或为空: %s", silk_path)
-        return ""
 
+def _join_transcribe(work, timeout: float) -> str:
     result: dict = {}
 
-    def _work() -> None:
+    def _wrap() -> None:
         try:
-            import pilk
-            with tempfile.TemporaryDirectory(prefix="wechat-silk-") as td:
-                wav = os.path.join(td, silk.stem + ".wav")
-                pilk.silk_to_wav(str(silk), wav)
-                if not Path(wav).is_file() or Path(wav).stat().st_size == 0:
-                    result["error"] = f"pilk 转 wav 失败: {silk_path}"
-                    return
-                model = _load_model()
-                if model is None:
-                    result["error"] = "whisper 模型不可用 (本地缺 model.bin)"
-                    return
-                segments, _info = model.transcribe(
-                    wav,
-                    beam_size=5,
-                    condition_on_previous_text=False,  # 防幻觉自强化
-                    vad_filter=True,
-                    vad_parameters={"min_silence_duration_ms": 500},
-                    no_speech_threshold=0.6,
-                    log_prob_threshold=-1.0,
-                )
-                parts = []
-                for seg in segments:
-                    if _is_hallucinated_segment(seg):
-                        continue
-                    t = (seg.text or "").strip()
-                    if t:
-                        parts.append(t)
-                result["text"] = " ".join(parts).strip()
+            work(result)
         except ImportError:
-            result["error"] = "STT 依赖未安装 (pilk/faster-whisper) · 去设置页打开语音识别增强"
+            result["error"] = "STT 依赖未安装 (pilk/faster-whisper) · 去设置页打开本地 whisper"
         except Exception as e:
             result["error"] = f"{type(e).__name__}: {e}"
 
-    t = threading.Thread(target=_work, name="stt-transcribe", daemon=True)
+    t = threading.Thread(target=_wrap, name="stt-transcribe", daemon=True)
     t.start()
     t.join(timeout)
     if t.is_alive():
@@ -266,3 +276,51 @@ def transcribe_silk(silk_path: str, timeout: float = 120) -> str:
         logger.warning("语音转写失败: %s", result["error"])
         return ""
     return result.get("text", "")
+
+
+def transcribe_wav(wav_path: str, timeout: float = 60, *, vad: bool = True, prompt: str = "") -> str:
+    """wav → 文字。整句优先云端（接了就走），短窗/没接回本机 whisper。"""
+    wav = Path(wav_path)
+    if not wav.is_file() or wav.stat().st_size == 0:
+        return ""
+    if vad:
+        try:
+            from workers.stt_cloud import transcribe_cloud
+            cloud = transcribe_cloud(str(wav), timeout=min(timeout, 25), prompt=prompt)
+            if cloud:
+                return cloud
+        except Exception:
+            pass
+
+    def _work(result: dict) -> None:
+        _fill_whisper(str(wav), result, vad=vad, prompt=prompt)
+
+    return _join_transcribe(_work, timeout)
+
+
+def transcribe_silk(silk_path: str, timeout: float = 120) -> str:
+    """silk → wav → whisper 转写。失败/超时返回 ""（调用方降级提示）。"""
+    silk = Path(silk_path)
+    if not silk.is_file() or silk.stat().st_size == 0:
+        logger.warning("silk 文件不存在或为空: %s", silk_path)
+        return ""
+
+    def _work(result: dict) -> None:
+        import pilk
+        with tempfile.TemporaryDirectory(prefix="wechat-silk-") as td:
+            wav = os.path.join(td, silk.stem + ".wav")
+            pilk.silk_to_wav(str(silk), wav)
+            if not Path(wav).is_file() or Path(wav).stat().st_size == 0:
+                result["error"] = f"pilk 转 wav 失败: {silk_path}"
+                return
+            try:
+                from workers.stt_cloud import transcribe_cloud
+                cloud = transcribe_cloud(wav, timeout=min(timeout, 25))
+                if cloud:
+                    result["text"] = cloud
+                    return
+            except Exception:
+                pass
+            _fill_whisper(wav, result)
+
+    return _join_transcribe(_work, timeout)

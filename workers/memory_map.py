@@ -60,7 +60,7 @@ def _constellation_empty_reason(conn: sqlite3.Connection, n_pb: int) -> dict:
         cfg = load_config()
         if not cfg.get("configured"):
             return {"code": "no_embed_config", "action": "settings",
-                    "msg": "星图靠语义向量把相似手艺聚成星系·但embedding服务还没配——配上后历史记忆自动向量化·星图就亮"}
+                    "msg": "星图靠语义向量把相似操作手册聚成星系·但embedding服务还没配——配上后历史记忆自动向量化·星图就亮"}
         st = stats(conn)
         if st.get("total", 0) > 0 and st.get("covered", 0) == 0:
             return {"code": "no_vectors", "action": "settings",
@@ -68,7 +68,7 @@ def _constellation_empty_reason(conn: sqlite3.Connection, n_pb: int) -> dict:
     except Exception:
         pass
     return {"code": "few_playbooks", "action": "",
-            "msg": f"星图至少要 3 门已向量的手艺才开图 (现在 {n_pb} 门)——手艺是踩坑之后说「抽成 playbook」攒下来的·用着用着就亮了"}
+            "msg": f"星图至少要 3 份已向量的操作手册才开图 (现在 {n_pb} 份)——操作手册是踩坑之后说「抽成操作手册」攒下来的·用着用着就亮了"}
 
 
 def _constellation(conn: sqlite3.Connection) -> dict:

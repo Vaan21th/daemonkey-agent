@@ -14,14 +14,14 @@
 ### 新增 Added
 - **拓展市集走合并申请** —— 上架先打袋子、过机器闸，再向市集仓开 PR。红灯当场挡住；仓主待审里黄灯才打开看，绿灯可一批合，红灯可一批关
 - **启动器全套随内核** —— Windows：`start.bat` / `Daemonkey.exe` / `daemonkey-launcher.ps1`（壳肉分离）。macOS：`start.sh` 终端一键 + `mac_launcher.py` 图形壳（同一份 `assets/launcher.html`）；`.app` / `.dmg` 仍走 GitHub Actions
-- **出厂身份冷启动** —— 本机测场身份（小石头 / 阿哲）已清掉。第一次打开走相遇，自己起名
+- **出厂身份冷启动** —— 本机测场身份已清掉。第一次打开走相遇，自己起名
 
 ### 变更 Changed
 - **侧栏撤掉用户运营占位** —— 客户档案并进执行落地。工坊复合/原子节点不再接执行器：画布是 `create_workflow(steps)` 的只读投影
 - **内核从 0.9.9 收到母体 1.0.0** —— 出稿（Word/PPT/表）、中栏舞台、市集、房间/桌宠、记忆分层与启动器与母体对齐，只剥身份
 
 ### 修复 / 卫生 Fixed
-- 发布闸把「小石头」「阿哲」列进硬名单，测场人名不能再进开源盘
+- 发布闸把测场人名列进硬名单，不能再进开源盘
 - Gitee 市集清单优先 contents API，下载允许官方 CDN 跳转，避免拉到空袋子
 
 > First public 1.0.0. Factory identity is empty (onboarding). Marketplace submissions go through a pull request and a red/yellow/green static gate. Windows and macOS launchers ship in-tree; signed `.app` still comes from Actions after a push.

@@ -202,6 +202,44 @@ def write_env_kv(key: str, value: str) -> None:
     ENV_PATH.write_bytes("\n".join(lines).encode("utf-8"))
 
 
+def _remove_env_kv(key: str) -> None:
+    """从 .env 删掉某个 key= 行（找不到就什么都不做）。
+
+    写新的 DAEMONKEY_xxx 时顺手清掉历史残留的 OPUS_xxx，避免两项并存。
+    """
+    if not ENV_PATH.exists():
+        return
+    raw = ENV_PATH.read_bytes()
+    text = raw.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    lines = text.split("\n")
+    pat = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    kept = [ln for ln in lines if not pat.match(ln)]
+    if len(kept) != len(lines):
+        ENV_PATH.write_bytes("\n".join(kept).encode("utf-8"))
+
+
+PUBLIC_ENV_PREFIX = "DAEMONKEY_"
+
+
+def write_public_env(key: str, value: str) -> None:
+    """写用户可见配置到 .env——OPUS_ 前缀一律落成 DAEMONKEY_。
+
+    内核仍读 os.environ['OPUS_*']，这里同时写入内部名，运行中立刻生效。
+    非 OPUS_ 前缀原样写。
+    """
+    if not key.startswith("OPUS_"):
+        write_env_kv(key, value)
+        os.environ[key] = value
+        return
+    suffix = key[len("OPUS_"):]
+    pub = PUBLIC_ENV_PREFIX + suffix
+    write_env_kv(pub, value)
+    if pub != key:
+        _remove_env_kv(key)
+    os.environ[pub] = value
+    os.environ[key] = value
+
+
 def clean_base_url(url: str) -> str:
     """去掉用户误贴的完整端点尾巴。
 

@@ -1662,6 +1662,8 @@ a.dk-hit-title:hover { color: var(--opus); text-decoration: underline; }
 .settings-body .actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 /* 卷六十一 · 主动频率 猫系↔犬系 分段药丸 */
@@ -1697,25 +1699,13 @@ a.dk-hit-title:hover { color: var(--opus); text-decoration: underline; }
 .freq-pill .freq-emoji { font-size: 20px; line-height: 1; }
 .freq-pill .freq-label { font-size: 11px; }
 .settings-body .actions button {
-  padding: 7px 16px;
-  border-radius: 5px;
+  padding: 5px 14px;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 13px;
-  border: 1px solid var(--field-border);
-  background: var(--field-bg);
-  color: var(--text);
-}
-.settings-body .actions .btn-primary {
-  background: var(--opus);
-  color: #fff;
-  border-color: var(--opus);
-}
-.settings-body .actions .btn-primary:hover {
-  filter: brightness(1.15);
-}
-.settings-body .actions .btn-ghost {
-  border: 1px solid var(--field-border) !important;
-  background: var(--field-bg);
+  font-size: 12px;
+  font-weight: 500;
+  flex: none;
+  width: auto;
 }
 .settings-body .actions .btn-ghost:hover {
   background: var(--field-hover);
@@ -1759,6 +1749,82 @@ body.day .settings-pane .llm-section {
   color: #fff;
   border-color: var(--red, #f56565);
 }
+.ld-section { margin-bottom: 8px; }
+.ld-stack {
+  display: flex;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--field-bg, rgba(255,255,255,.06));
+  margin: 4px 0 12px;
+}
+.ld-stack-slice { min-width: 2px; }
+.ld-table {
+  min-width: 0;
+  border: 1px solid var(--field-border, var(--line, #2a2f3a));
+  border-radius: 8px;
+  overflow: hidden;
+}
+.ld-thead, .ld-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px 88px 36px;
+  align-items: center;
+  gap: 8px;
+}
+.ld-thead {
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--dim2, #94a3b8);
+  background: var(--field-bg, rgba(255,255,255,.03));
+  border-bottom: 1px solid var(--field-border, var(--line, #2a2f3a));
+}
+.ld-thead span:nth-child(2),
+.ld-thead span:nth-child(3),
+.ld-thead span:nth-child(4) { text-align: right; }
+.ld-list { display: flex; flex-direction: column; }
+.ld-row {
+  padding: 9px 12px;
+  cursor: pointer;
+  border-top: 1px solid var(--field-border, var(--line, #2a2f3a));
+}
+.ld-list .ld-row:first-child { border-top: 0; }
+.ld-row:hover { background: var(--field-hover, rgba(255,255,255,.04)); }
+.ld-row:has(.ld-pick:checked) { background: rgba(155, 89, 182, 0.1); }
+.ld-row-danger { box-shadow: inset 3px 0 0 #e07a5f; }
+.ld-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ld-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ld-name .ri-error-warning-line { color: #e07a5f; font-size: 13px; flex-shrink: 0; }
+.ld-count, .ld-size {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 12px;
+}
+.ld-count { color: var(--dim2, #94a3b8); }
+.ld-size { color: var(--text); }
+.ld-row input { margin: 0; justify-self: end; }
+.ld-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.ld-bar-gap { flex: 1; }
 
 .llm-section {
   margin-bottom: 24px;
@@ -1968,8 +2034,11 @@ body.day .settings-pane .llm-section {
   color: var(--dim2);
   font-size: 11px;
 }
-.llm-section-head .btn-primary {
-  margin-left: auto;
+.llm-section-head .btn-primary,
+.settings-pane .btn-primary,
+.settings-body .actions .btn-primary,
+.dash-head .btn-primary {
+  margin-left: 0;
   background: var(--opus);
   color: #fff;
   border: 1px solid var(--opus);
@@ -1977,6 +2046,37 @@ body.day .settings-pane .llm-section {
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
+  font-weight: 500;
+  flex: none;
+  width: auto;
+}
+.llm-section-head .btn-primary { margin-left: auto; }
+.settings-pane .btn-ghost,
+.settings-body .actions .btn-ghost,
+.dash-head .btn-ghost {
+  background: var(--field-bg, transparent);
+  color: var(--text);
+  border: 1px solid var(--field-border, var(--border)) !important;
+  padding: 5px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  flex: none;
+  width: auto;
+}
+.settings-pane .btn-danger,
+.settings-body .actions .btn-danger {
+  background: var(--red, #f56565);
+  color: #fff;
+  border: 1px solid var(--red, #f56565);
+  padding: 5px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  flex: none;
+  width: auto;
 }
 .llm-config-list {
   display: flex;

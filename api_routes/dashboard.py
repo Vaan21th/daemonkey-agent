@@ -1079,7 +1079,7 @@ def dashboard_suggestions(authorization: Optional[str] = Header(None)):
             "label": "月度复盘",
         })
 
-    # 2. 手艺体检: 上次判重 >14 天 且手艺 >30 门
+    # 2. 操作手册体检: 上次判重 >14 天 且手册 >30 份
     learnings = root / "data" / "learnings"
     dedup_days = None
     if learnings.exists():
@@ -1100,9 +1100,9 @@ def dashboard_suggestions(authorization: Optional[str] = Header(None)):
     if pb_count > 30 and (dedup_days is None or dedup_days > 14):
         out.append({
             "id": "audit_playbooks", "icon": "ri-search-eye-line", "color": "#8affd6",
-            "text": f"{pb_count} 门手艺 · 该体检有没有重复的了",
-            "prompt": "帮我看看手艺是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)",
-            "label": "手艺体检",
+            "text": f"{pb_count} 份操作手册 · 该检查有没有重复的了",
+            "prompt": "帮我看看操作手册是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)",
+            "label": "检查操作手册",
         })
 
     # 3. 卫生闸: 有待迁移的清理 (重启自动清 · 纯提示)

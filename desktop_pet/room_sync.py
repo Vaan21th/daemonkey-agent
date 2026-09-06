@@ -109,7 +109,11 @@ def apply_work_face(pet) -> None:
             pet._last_state_txt = txt
             if getattr(pet, "_docked", False):
                 pet._state = txt
-            elif not pet._dragging:
+                # 贴边不播片子，但仍要走 idle 把「在对话」收掉
+                if txt == DEFAULT_STATE:
+                    pet._play_state(txt)
+                return
+            if not pet._dragging:
                 pet._play_state(txt)
     except Exception:
         pass

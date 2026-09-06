@@ -242,7 +242,10 @@ $("saveKeyBtn").addEventListener("click", async () => {
     // 否则相遇完跳 chat.html 时前端 token 为空 → 弹"第一次需要填 token"设置框
     // (0.9.2 初见验收发现 · wish 修复)
     if (saveResp && saveResp.token) {
-      try { localStorage.setItem("Daemonkey_ui_token", saveResp.token); } catch (_) {}
+      try {
+        localStorage.setItem("Daemonkey_ui_token", saveResp.token);
+        localStorage.setItem("opus_ui_token", saveResp.token);
+      } catch (_) {}
     }
     $("keyCard").classList.add("hidden");
     showIntro(() => startChat());

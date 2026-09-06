@@ -200,6 +200,12 @@ def release_dock(pet, e) -> bool:
         save_dock(True, pet._dock_edge)
         e.accept()
         return True
+    if getattr(pet, "_play_on", False):
+        hook = getattr(pet, "_play", None)
+        if hook is not None:
+            hook.tap()
+        e.accept()
+        return True
     t = getattr(pet, "_peek_t", None)
     if t is not None:
         t.start(280)

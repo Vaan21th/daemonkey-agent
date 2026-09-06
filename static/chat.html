@@ -94,7 +94,7 @@
   setTimeout(check, 12000);   // 绝对兜底 · 防 load 因脚本卡住迟迟不触发
 })();
 </script>
-<link rel="stylesheet" href="/static/chat.css?v=20260903mkt">
+<link rel="stylesheet" href="/static/chat.css?v=20260906pb1">
 <link rel="stylesheet" href="/static/lib/litegraph.core.css">
 <link rel="stylesheet" href="/static/workshop.css?v=20260826c">
 <link rel="stylesheet" href="/static/lib/remixicon/remixicon.css">
@@ -465,9 +465,9 @@
     <h2>设置 · 第一次需要填 token</h2>
     <div class="field">
       <label>API Token (Bearer)</label>
-      <input id="tokenInput" type="password" placeholder="OPUS_API_TOKEN 的值（在 .env 文件里）">
+      <input id="tokenInput" type="password" placeholder="DAEMONKEY_API_TOKEN 的值（在 .env 文件里）">
       <div class="field-hint">这是打开这个页面用的密码，不是模型的 Key。模型 Key 在「模型」里配。</div>
-      <div class="field-hint">在这个软件目录的 <code>.env</code> 文件里找 <code>OPUS_API_TOKEN</code> 那一行，把等号后面复制进来。本机一般不用填。</div>
+      <div class="field-hint">在这个软件目录的 <code>.env</code> 文件里找 <code>DAEMONKEY_API_TOKEN</code> 那一行，把等号后面复制进来。本机 127.0.0.1 一般不用填。</div>
     </div>
     <div class="field">
       <label>当前对话编号</label>
@@ -540,23 +540,23 @@
 <script defer src="/static/lib/three/OrbitControls.js"></script>
 <script src="/static/lib/litegraph.core.js"></script>
 <script src="/companion/mode-transit.js?v=20260830b"></script>
-<script src="/static/dashboard-panels.js?v=20260903ld"></script>
+<script src="/static/dashboard-panels.js?v=20260906pb1"></script>
 <script src="/static/stage.js?v=20260903look"></script>
 <script src="/static/stage_notes.js?v=20260903ppt"></script>
 <script src="/static/voice-mic.js?v=20260901input"></script>
 <script src="/static/model-switch.js?v=20260826b"></script>
-<script src="/static/settings-pane.js?v=20260903srch"></script>
+<script src="/static/settings-pane.js?v=20260906pb1"></script>
 <script src="/static/workshop.js?v=20260903ops"></script>
-<script src="/static/depot.js?v=20260901copy"></script>
+<script src="/static/depot.js?v=20260906pb1"></script>
 <script src="/static/clients.js?v=20260903ops"></script>
 <script src="/static/session-runtime.js?v=20260831sendnow"></script>
 <script src="/static/ckpt-restore.js?v=20260831roomckpt"></script>
 <script src="/static/chat-lightbox.js?v=20260831vis"></script>
 <script src="/static/chat-md.js?v=20260831split"></script>
-<script src="/static/chat-timeline.js?v=20260903srch"></script>
+<script src="/static/chat-timeline.js?v=20260906proc"></script>
 <script src="/static/chat-rail.js?v=20260831split"></script>
-<script src="/static/chat.js?v=20260903ops"></script>
-<script src="/static/market.js?v=20260903mkt"></script>
+<script src="/static/chat.js?v=20260906pb1"></script>
+<script src="/static/market.js?v=20260906pb1"></script>
 
 <!-- 用户装修区 (0.9.6) · static/user/ 在 never_sync 里 —— 官方升级永远不会覆盖这两个文件。
      样式写 user.css / 行为写 user.js (用 window.Daemonkey API)·刷新页面即生效。

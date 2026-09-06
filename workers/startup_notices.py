@@ -48,7 +48,7 @@ _OPTIONAL_DEPS: list[tuple[str, str, str, bool]] = [
     ("jieba", "jieba", "中文记忆全文检索", False),
     ("PIL", "Pillow", "图片理解/压缩", False),
     ("pypdf", "pypdf", "PDF 文档读取", False),
-    ("numpy", "numpy", "记忆向量化/记忆星图/手艺判重", False),
+    ("numpy", "numpy", "记忆向量化/记忆星图/操作手册判重", False),
     ("docx", "python-docx", "Word 文档读取", False),
     ("pptx", "python-pptx", "PPT 文档读取", False),
     ("openpyxl", "openpyxl", "客户档案 Excel 导入", False),

@@ -113,7 +113,7 @@ def _inbox(args: dict) -> ToolResult:
 
 register_tool(ToolSpec(
     name="list_market",
-    description="看扩展市场货架和本机可以上架的皮肤/工坊/技能文。货架是市集仓清单，不是源码仓。",
+    description="看扩展市场货架和本机可以上架的皮肤/工坊/操作手册。货架是市集仓清单，不是源码仓。",
     tier=TIER_AUTO,
     input_schema={"type": "object", "properties": {}, "required": []},
     run=_list,

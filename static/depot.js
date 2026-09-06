@@ -8,12 +8,12 @@
  *   renderListFilter / _applyListFilter / backToChat 都在 chat.js·运行时才解析·安全。
  *
  * 承载:hub 骨架(DEPOT_TABS / loadDepot / 标签条) + 画像(renderCognition)
- *       + Daemonkey 日记(renderDiary) + 技能库(renderPlaybooks + 工艺铁律)
+ *       + Daemonkey 日记(renderDiary) + 操作手册(renderPlaybooks + 工艺铁律)
  *       + 心愿单 / 沉淀位(renderWishlist / renderSinks · 2026-07-12 从 chat.js 搬来)。
  * 仍在 chat.js:loadDashboard 分发(调这里的 render fn)。
  */
 
-// ── 成长档案 (depot) · 把 日记/心愿/沉淀位/技能库 并成一个 hub · 内部标签切换 ──
+// ── 成长档案 (depot) · 把 日记/心愿/沉淀位/操作手册 并成一个 hub · 内部标签切换 ──
 // Grok-2 轮 · 2026-08-27 · inline onclick JS 字符串参数专用转义 (双层·顺序不能反) ·
 // 母体 chat.js / 陪伴 panels.js 已有 · 这里兜底一份 (两种环境都保证可用)。
 function jsStr(v) {
@@ -23,14 +23,14 @@ function jsStr(v) {
 }
 // 复用各子维度现成的 render fn (renderCognition/renderWishlist/renderSinks/renderPlaybooks)·
 // 不重写渲染 · 只在 $dashView 顶部补一条标签条。切子标签 = 重新 loadDepot(sub)。
-// 信息架构 (用户 2026-07-12 拍板):画像/日记拆开·工艺铁律并入技能库·砍"当下关注"。
+// 信息架构 (用户 2026-07-12 拍板):画像/日记拆开·工艺铁律并入操作手册·砍"当下关注"。
 // cognition=画像(对你的记忆·rich viewer) · diary=Daemonkey 日记(它的内心反思·复用 /dashboard/cognition 数据)。
 const DEPOT_TABS = [
   { id: 'cognition', label: '画像',      icon: 'ri-user-heart-line' },
   { id: 'she_state', label: (window.AI_NAME || 'Daemonkey') + ' · 状态',   icon: 'ri-hearts-line' },
   { id: 'diary',     label: '心情日记', icon: 'ri-hearts-line' },
   { id: 'wishlist',  label: 'Daemonkey 心愿', icon: 'ri-lightbulb-fill' },
-  { id: 'playbooks', label: '技能库',    icon: 'ri-tools-fill' },
+  { id: 'playbooks', label: '操作手册',    icon: 'ri-tools-fill' },
   { id: 'memory_map', label: '记忆星图', icon: 'ri-sparkling-2-fill' },
   { id: 'reviews',   label: '月度复盘',  icon: 'ri-calendar-check-fill' },
   { id: 'sinks',     label: '沉淀位',    icon: 'ri-archive-drawer-fill' },
@@ -48,7 +48,7 @@ const _DEPOT_BANNERS = {
   diary: {
     icon: 'ri-hearts-line',
     title: '这是心情日记',
-    sub: '她听懂你夸她、说重了、表白，或你在置物架接住她寄来的，都会落在这里。心情和往来分开记，这里合在一起看。当天的心情过了零点会换，但会留下记录。工程纪律不在这里，在技能库。',
+    sub: '她听懂你夸她、说重了、表白，或你在置物架接住她寄来的，都会落在这里。心情和往来分开记，这里合在一起看。当天的心情过了零点会换，但会留下记录。工程纪律不在这里，在操作手册。',
   },
   sinks: {
     icon: 'ri-archive-drawer-fill',
@@ -57,13 +57,13 @@ const _DEPOT_BANNERS = {
   },
   playbooks: {
     icon: 'ri-tools-fill',
-    title: '这是 Daemonkey 的工艺库 · 打法 + 铁律',
-    sub: '打法:把一次踩过坑、后来走顺的流程,跟 Daemonkey 说"抽成 playbook",它就沉淀在这里,之后同类任务自动取用。铁律:Daemonkey 用失败换来的工程纪律,写进来就注入它每一次的判断里——经验和纪律都不再每次从零试。',
+    title: '这是 Daemonkey 的操作手册 + 铁律',
+    sub: '操作手册:把一次踩过坑、后来走顺的流程,跟 Daemonkey 说"抽成操作手册",它就沉淀在这里,之后同类任务自动取用。铁律:Daemonkey 用失败换来的工程纪律,写进来就注入它每一次的判断里——经验和纪律都不再每次从零试。',
   },
   memory_map: {
     icon: 'ri-sparkling-2-fill',
     title: '这是 Daemonkey 的记忆星图 · 三道闸治理全景',
-    sub: '每个光点是一门手艺(playbook),位置由语义向量降维而来——挨得近的天然成团,亮线连着的是内容相似的同类。下面三道闸是记忆体系的治理实测:写入闸(卫生)/分层闸(画像)/重排闸(召回),每个数字都是现算的真值。',
+    sub: '每个光点是一份操作手册,位置由语义向量降维而来——挨得近的天然成团,亮线连着的是内容相似的同类。下面三道闸是记忆体系的治理实测:写入闸(卫生)/分层闸(画像)/重排闸(召回),每个数字都是现算的真值。',
   },
 };
 
@@ -366,7 +366,7 @@ function _cogStateHistoryModal(field, history) {
 }
 
 // ── 画像 (对你的记忆本 · rich viewer) · Hero+pills+软提醒 / 时间线 / 六维卡片网格 ──
-// 工艺铁律→技能库 · Daemonkey 日记→独立 tab · 当下关注已砍。数据源 /dashboard/cognition。
+// 工艺铁律→操作手册 · Daemonkey 日记→独立 tab · 当下关注已砍。数据源 /dashboard/cognition。
 function renderCognition(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
@@ -637,11 +637,11 @@ function replayBondToy(toy) {
 }
 
 
-// ── 技能库 · playbook 沉淀查看器 (只读 + 删除 · 灌/召回走 NLP) ──────────
+// ── 操作手册 · playbook 沉淀查看器 (只读 + 删除 · 灌/召回走 NLP) ──────────
 function renderPlaybooks(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
-      <div class="dash-head"><h2><i class="ri-tools-fill"></i> 技能库</h2></div>
+      <div class="dash-head"><h2><i class="ri-tools-fill"></i> 操作手册</h2></div>
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
   }
@@ -650,11 +650,11 @@ function renderPlaybooks(data) {
   const st = (data && data.stats) || {};
   let html = `
     <div class="dash-head">
-      <h2><i class="ri-tools-fill"></i> 技能库</h2>
-      <span class="meta">工艺库 · 打法 ${st.total || items.length} 条${st.used ? ' · ' + st.used + ' 条用过' : ''}${iron.length ? ' · 铁律 ' + iron.length + ' 条' : ''}</span>
-      <button onclick="backToChat()">✕ 收起</button>
-      <button onclick="loadDashboard('playbooks')">刷新列表</button>
-      <button onclick="spawnQuickly('帮我看看手艺是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '手艺体检')" title="让 Daemonkey 用语义向量体检手艺箱 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 检查重复</button>
+      <h2><i class="ri-tools-fill"></i> 操作手册</h2>
+      <span class="meta">操作手册 ${st.total || items.length} 条${st.used ? ' · ' + st.used + ' 条用过' : ''}${iron.length ? ' · 铁律 ' + iron.length + ' 条' : ''}</span>
+      <button class="btn-ghost" onclick="backToChat()">收起</button>
+      <button class="btn-ghost" onclick="loadDashboard('playbooks')">刷新列表</button>
+      <button class="btn-primary" onclick="spawnQuickly('帮我看看操作手册是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '检查操作手册')" title="让 Daemonkey 用语义向量检查操作手册 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 检查重复</button>
     </div>`;
 
   // 工艺铁律区(Daemonkey 用失败换来的工程纪律 · 会注入它每一次的判断)
@@ -678,33 +678,31 @@ function renderPlaybooks(data) {
     html += `</div></div>`;
   }
 
-  html += `<div class="cog-sec-title"><i class="ri-tools-fill"></i> 打法 · playbook <span class="cog-sec-hint">${items.length} 条</span></div>`;
+  html += `<div class="cog-sec-title"><i class="ri-tools-fill"></i> 操作手册 <span class="cog-sec-hint">${items.length} 条</span></div>`;
 
   if (!items.length) {
     html += `
       <div class="dash-stub">
-        <h3>还没沉淀过打法</h3>
-        <div>跟 Daemonkey 把一次踩过坑的流程走顺后·说「把刚才这套抽成 playbook」<br>
+        <h3>还没沉淀过操作手册</h3>
+        <div>跟 Daemonkey 把一次踩过坑的流程走顺后·说「把刚才这套抽成操作手册」<br>
              Daemonkey 会调 <code>extract_playbook</code> 沉淀·之后遇到同类任务自动取用。</div>
       </div>`;
   } else {
-    if (items.length > 3) {
-      html += renderListFilter({ targetSelector: '.report-card', placeholder: '搜技能标题 / 标签...' });
-    }
+    html += renderListFilter({ targetSelector: '.report-card', placeholder: '搜操作手册标题 / 标签...' });
     html += `<div class="reports-list">`;
     for (const p of items) {
       const tagBadges = (p.tags || []).map(t => `<span class="rc-src-badge">#${escHtml(t)}</span>`).join(' ');
       html += `
         <div class="report-card">
           <div class="rc-head">
-            <span class="rc-name pb-open" data-id="${escHtml(p.id)}" title="点击查看招式全文"><i class="ri-tools-fill"></i> ${escHtml(p.title || p.id)}</span>
+            <span class="rc-name pb-open" data-id="${escHtml(p.id)}" title="点击查看操作手册"><i class="ri-tools-fill"></i> ${escHtml(p.title || p.id)}</span>
             ${p.task_type ? `<span class="rc-src-badge">${escHtml(p.task_type)}</span>` : ''}
             ${p.used_count ? `<span class="rc-src-badge">用过 ${p.used_count} 次</span>` : ''}
           </div>
           <div class="rc-meta">
             <span class="rc-time">${escHtml((p.created_at || '').slice(0, 10))}</span>
             ${tagBadges}
-            <a class="rc-dl pb-del" href="javascript:void(0)" data-id="${escHtml(p.id)}" data-title="${escHtml(p.title || '')}" title="删除这条打法"><i class="ri-delete-bin-line"></i></a>
+            <a class="rc-dl pb-del" href="javascript:void(0)" data-id="${escHtml(p.id)}" data-title="${escHtml(p.title || '')}" title="删除这份操作手册"><i class="ri-delete-bin-line"></i></a>
           </div>
         </div>`;
     }
@@ -717,12 +715,12 @@ function renderPlaybooks(data) {
   $dashView.querySelectorAll('.pb-del').forEach(btn => {
     btn.onclick = () => {
       const t = btn.getAttribute('data-title') || '这条';
-      if (confirm(`删除技能「${t}」？沉淀的招式会清掉(以后不再自动取用 · 不影响本次对话)。`)) {
+      if (confirm(`删除操作手册「${t}」？沉淀的步骤会清掉(以后不再自动取用 · 不影响本次对话)。`)) {
         _pbAction('/dashboard/playbooks/delete', { id: btn.getAttribute('data-id') });
       }
     };
   });
-  if (items.length > 3) _applyListFilter($dashView.querySelector('.list-filter-input'));
+  if (items.length) _applyListFilter($dashView.querySelector('.list-filter-input'));
 }
 
 async function _pbPreview(id) {
@@ -744,7 +742,7 @@ function _showPbModal(data) {
     ? mdRender(text) : ('<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>');
   const metaLine = [meta.task_type, meta.used_count ? ('用过 ' + meta.used_count + ' 次') : '',
     (meta.created_at || '').slice(0, 10)].filter(Boolean).join(' · ');
-  _showPreviewModal({ title: data.title || meta.title || '技能', metaLine, bodyHtml, tags: meta.tags || [] });
+  _showPreviewModal({ title: data.title || meta.title || '操作手册', metaLine, bodyHtml, tags: meta.tags || [] });
 }
 
 async function _pbAction(url, body) {
@@ -952,7 +950,7 @@ function renderMemoryMap(data) {
     _mmStatCard('ri-stack-fill', '分层闸·画像', '-' + (100 - nbPct) + '%', `每轮 ${(nb.full_chars || 0).toLocaleString()}→${(nb.core_chars || 0).toLocaleString()} 字符`, '#ffd28a') +
     _mmStatCard('ri-filter-3-fill', '重排闸·漏斗', fnPct != null ? fnPct + '%' : '—', `递送 ${fn.delivered ?? '?'} · 取用 ${fn.loaded ?? '?'} 门`, '#f687b3') +
     `</div>`;
-  html += `<div style="padding:2px 2px 0;color:var(--dim);font-size:11px;line-height:1.6"><i class="ri-sparkling-2-fill"></i> ${pts.length} 门手艺 · ${data.constellation && data.constellation.clusters || 0} 个星系 · 亮线 = 语义相似 ≥0.80 · 亮点 = 被取用过 <a href="javascript:void(0)" onclick="spawnQuickly('帮我看看手艺是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '手艺体检')" style="color:var(--accent,#8a7dff);text-decoration:none;margin-left:6px;white-space:nowrap"><i class="ri-search-eye-line"></i> 手艺体检</a></div>`;
+  html += `<div style="padding:2px 2px 0;color:var(--dim);font-size:11px;line-height:1.6"><i class="ri-sparkling-2-fill"></i> ${pts.length} 份操作手册 · ${data.constellation && data.constellation.clusters || 0} 个星系 · 亮线 = 语义相似 ≥0.80 · 亮点 = 被取用过 <a href="javascript:void(0)" onclick="spawnQuickly('帮我看看操作手册是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '检查操作手册')" style="color:var(--accent,#8a7dff);text-decoration:none;margin-left:6px;white-space:nowrap"><i class="ri-search-eye-line"></i> 检查重复</a></div>`;
   // 星图框 flex:1 弹性填满剩余空间 (2026-08-20 用户: 折叠条贴底 · 展开了整栏滚动 · 不写死高度)
   html += `<div style="position:relative;flex:1 1 auto;min-height:400px;margin:6px 0 4px;border:1px solid var(--border,#2a2a3a);border-radius:10px;overflow:hidden;background:var(--bg2,#05060d)">` +
     `<div id="mmStar3d" style="position:absolute;inset:0"></div>` +
@@ -974,7 +972,7 @@ function renderMemoryMap(data) {
     if (box0) {
       // 空态分层提示 (2026-08-21 · test3 实测: 空数组无说明 = 用户对着黑框猜)
       const er = (data.constellation && data.constellation.empty_reason) || null;
-      const msg = er ? er.msg : '还没有可向量聚类的手艺·用着用着就亮了';
+      const msg = er ? er.msg : '还没有可向量聚类的操作手册·用着用着就亮了';
       const btn = (er && er.action === 'settings')
         ? `<a href="javascript:void(0)" onclick="openSettings()" style="display:inline-block;margin-top:10px;padding:6px 16px;border:1px solid var(--accent,#8a7dff);border-radius:8px;color:var(--accent,#8a7dff);font-size:12px;text-decoration:none"><i class="ri-settings-3-line"></i> 去设置</a>` : '';
       box0.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;padding:0 32px;text-align:center">` +

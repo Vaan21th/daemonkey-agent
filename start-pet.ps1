@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 <#
 .SYNOPSIS
   启动桌宠。默认小房间；-Cat 开旧橙猫彩蛋。

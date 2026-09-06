@@ -85,17 +85,22 @@ def _ensure_local_token() -> str:
     why: 相遇若已有 LLM key 会跳过 save-key；官方测场也会故意清空 token。
     空 token 时 check_auth 一律 503，看板/工坊整面死。只在 loopback 信任路径调用。
     """
-    tok = (os.environ.get("OPUS_API_TOKEN") or "").strip()
+    tok = (os.environ.get("OPUS_API_TOKEN") or os.environ.get("DAEMONKEY_API_TOKEN") or "").strip()
     if tok:
+        os.environ["OPUS_API_TOKEN"] = tok
         return tok
     import secrets
     tok = secrets.token_urlsafe(32)
     os.environ["OPUS_API_TOKEN"] = tok
     try:
-        from daemon_provider import write_env_kv
-        write_env_kv("OPUS_API_TOKEN", tok)
+        from daemon_provider import write_public_env
+        write_public_env("OPUS_API_TOKEN", tok)
     except Exception:
-        pass
+        try:
+            from daemon_provider import write_env_kv
+            write_env_kv("OPUS_API_TOKEN", tok)
+        except Exception:
+            pass
     return tok
 
 

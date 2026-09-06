@@ -5,10 +5,11 @@
 import logging
 import os
 import subprocess
+import tempfile
 import threading
 from pathlib import Path
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel
 from typing import Optional
 
@@ -197,6 +198,48 @@ def stt_setup(authorization: Optional[str] = Header(None)):
         if _setup_lock.locked():
             _setup_lock.release()
         raise
+
+
+@router.post("/stt/transcribe-wav")
+async def stt_transcribe_wav(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    spot: bool = Query(False),
+    prompt: str = Query(""),
+):
+    """桌宠短窗 / 整句 wav → 文本。不走 LLM。"""
+    check_auth(authorization)
+    from workers import stt_transcribe
+    local_ok = stt_transcribe.stt_enabled() and stt_transcribe.stt_status().get("ready")
+    cloud_ok = False
+    try:
+        from workers.stt_cloud import ready as cloud_ready
+        cloud_ok = cloud_ready()
+    except Exception:
+        cloud_ok = False
+    if spot and not local_ok:
+        raise HTTPException(503, "语音唤醒还要本机 whisper · 去设置页打开")
+    if not local_ok and not cloud_ok:
+        raise HTTPException(503, "语音识别还没就绪 · 去设置页打开 whisper，或接入云端转写")
+    data = await request.body()
+    if len(data) < 44 or len(data) > 6_000_000:
+        raise HTTPException(400, "wav 太短或太大")
+    fd, path = tempfile.mkstemp(suffix=".wav")
+    os.close(fd)
+    try:
+        Path(path).write_bytes(data)
+        text = stt_transcribe.transcribe_wav(
+            path,
+            timeout=20 if spot else 45,
+            vad=not spot,
+            prompt=prompt if spot else "",
+        )
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    return {"text": text or ""}
 
 
 @router.post("/stt/remove-model")

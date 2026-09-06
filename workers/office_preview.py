@@ -1,4 +1,4 @@
-"""成品预览：PPT 翻页截图；Word/Excel 滚动 HTML。COM → OfficeCLI → 表格自渲。"""
+"""成品预览：有 HTML 就嵌 iframe（划字钉批注）；没有才 PPT 截图翻页。"""
 from __future__ import annotations
 
 import hashlib
@@ -104,6 +104,11 @@ def _prune(root: Path) -> None:
         shutil.rmtree(old, ignore_errors=True)
 
 
+def _has_html(dest: Path) -> bool:
+    html = dest / "preview.html"
+    return html.is_file() and html.stat().st_size > 0
+
+
 def _payload(kind: str, filename: str, cid: str, dest: Path, *, cached: bool, pages: int = 0) -> dict:
     open_path = open_rel(kind, filename)
     prefix = f"/shelf/preview-asset/{kind}/{cid}/"
@@ -111,15 +116,7 @@ def _payload(kind: str, filename: str, cid: str, dest: Path, *, cached: bool, pa
     html = dest / "preview.html"
     files = _pngs(dest)
     n = pages if pages > 0 else (len(files) or 1)
-    # PPT 一页一张 · 有截图就翻页。Word/Excel 连续稿，走 HTML/PDF 滚动。
-    if kind == "decks" and files:
-        return {
-            "ok": True, "kind": kind, "name": filename, "mode": "slides",
-            "cache_id": cid, "cached": cached, "pages": n,
-            "pdf_url": None, "html_url": None,
-            "assets": [{"page": i, "url": f"{prefix}{p.name}"} for i, p in enumerate(files, 1)],
-            "open_path": open_path,
-        }
+    # 截图好看但不能划字。有 HTML 一律走 iframe，批注层才能圈出成品原文。
     if html.is_file() and html.stat().st_size > 0:
         return {
             "ok": True, "kind": kind, "name": filename, "mode": "html",
@@ -222,12 +219,12 @@ def build_visual(kind: str, filename: str, *, root: Path | None = None) -> dict:
     cid = cache_id(src)
     dest = base / CACHE_REL / kind / cid
     if _cache_ready(dest):
-        html = dest / "preview.html"
-        if kind == "decks" and not _pngs(dest):
-            src_abs = src.resolve()
-            if not _try_com(kind, src_abs, dest):
-                _try_officecli_shots(src_abs, dest)
-        elif kind == "reports" and not (html.is_file() and html.stat().st_size > 0):
+        if kind == "decks" and not _has_html(dest):
+            try:
+                _try_officecli_html(src.resolve(), dest)
+            except Exception:
+                pass
+        elif kind == "reports" and not _has_html(dest):
             threading.Thread(
                 target=_try_officecli_html,
                 args=(src.resolve(), dest),
@@ -243,11 +240,11 @@ def build_visual(kind: str, filename: str, *, root: Path | None = None) -> dict:
     if kind == "sheets":
         ok = _try_sheet_html(src_abs, dest)
     elif kind == "decks":
-        ok = _try_com(kind, src_abs, dest)
+        ok = _try_officecli_html(src_abs, dest)
+        if not ok:
+            ok = _try_com(kind, src_abs, dest)
         if not ok:
             ok = _try_officecli_shots(src_abs, dest)
-        if not ok:
-            ok = _try_officecli_html(src_abs, dest)
     else:
         ok = _try_officecli_html(src_abs, dest)
         if not ok:

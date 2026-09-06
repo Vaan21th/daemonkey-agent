@@ -1,4 +1,4 @@
-"""产物货架 · 报告 / 演示稿 / 表格 清单与预览 md。"""
+"""产物货架 · 报告 / 演示稿 / 表格 / HTML 原型 清单与预览 md。"""
 from __future__ import annotations
 
 import time
@@ -27,6 +27,12 @@ _KIND_SPEC = {
         "download_prefix": "/spreadsheets/",
         "preview_prefix": "/shelf/preview/sheets/",
     },
+    "protos": {
+        "rel": Path("data") / "design",
+        "suffix": ".html",
+        "download_prefix": "/stage/file/data/design/",
+        "preview_prefix": "/stage/file/data/design/",
+    },
 }
 
 
@@ -45,7 +51,50 @@ def _safe_name(name: str, suffix: str) -> str:
     return name
 
 
+def _list_html_protos(*, root: Path | None = None) -> dict:
+    """data/design 下的 html · 含子目录 · html 本身就是源。"""
+    base = _root(root)
+    folder = base / "data" / "design"
+    folder.mkdir(parents=True, exist_ok=True)
+    items = []
+    found: list[Path] = []
+    for ext in ("*.html", "*.htm"):
+        found.extend(folder.rglob(ext))
+    for p in found:
+        if is_hidden_output(p.name):
+            continue
+        try:
+            rel = p.relative_to(folder).as_posix()
+            if ".." in rel.split("/"):
+                continue
+            stat = p.stat()
+        except (ValueError, OSError):
+            continue
+        open_path = f"data/design/{rel}"
+        items.append({
+            "name": rel,
+            "title": p.stem,
+            "kind": "protos",
+            "size_kb": round(stat.st_size / 1024, 1),
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(stat.st_mtime)),
+            "download_url": "/stage/file/" + open_path,
+            "preview_url": "/stage/file/" + open_path,
+            "has_md_source": True,
+            "open_path": open_path,
+            "pages": 0,
+        })
+    items.sort(key=lambda it: it.get("created_at") or "", reverse=True)
+    return {
+        "kind": "protos",
+        "count": len(items),
+        "items": items,
+        "directory": "data/design",
+    }
+
+
 def list_kind(kind: str, *, root: Path | None = None) -> dict:
+    if kind == "protos":
+        return _list_html_protos(root=root)
     spec = _KIND_SPEC.get(kind)
     if not spec:
         raise ValueError(f"unknown shelf kind: {kind}")
@@ -88,13 +137,14 @@ def list_shelf(*, root: Path | None = None) -> dict:
     reports = list_kind("reports", root=root)
     decks = list_kind("decks", root=root)
     sheets = list_kind("sheets", root=root)
+    protos = list_kind("protos", root=root)
     return {
         "domain": "reports",
         "label": "产物库",
         "count": reports["count"],
         "items": reports["items"],
         "directory": reports["directory"],
-        "kinds": {"reports": reports, "decks": decks, "sheets": sheets},
+        "kinds": {"reports": reports, "decks": decks, "sheets": sheets, "protos": protos},
     }
 
 
@@ -178,5 +228,6 @@ def preview_md(kind: str, filename: str, *, root: Path | None = None) -> dict:
         "note": "" if has_md else {
             "sheets": "这份表格没有 markdown 源 · 成品预览仍可看表。",
             "decks": "这份演示稿没有 markdown 源 · 请下载用本机软件打开。",
+            "protos": "HTML 本身就是源 · 中栏预览，跟我说改哪里。",
         }.get(kind, "这份报告没有 markdown 源。"),
     }

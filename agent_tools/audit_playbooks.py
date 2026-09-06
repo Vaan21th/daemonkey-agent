@@ -58,7 +58,7 @@ def _run(args: dict) -> ToolResult:
 
     names = sorted(pbs)
     if len(names) < 2:
-        return ToolResult(True, f"只有 {len(names)} 门手艺有向量 · 凑不成对 · 无需判重")
+        return ToolResult(True, f"只有 {len(names)} 份操作手册有向量 · 凑不成对 · 无需判重")
 
     centroids = {}
     for n in names:
@@ -92,14 +92,14 @@ def _run(args: dict) -> ToolResult:
     if not dup_clusters:
         return ToolResult(
             True,
-            f"{len(names)} 门手艺 · 阈值 {threshold} · 没有发现重复簇 · 手艺箱很干净",
+            f"{len(names)} 份操作手册 · 阈值 {threshold} · 没有发现重复簇 · 操作手册很干净",
         )
 
-    lines = [f"{len(names)} 门手艺 · 阈值 {threshold} · 发现 {len(dup_clusters)} 个重复簇："]
+    lines = [f"{len(names)} 份操作手册 · 阈值 {threshold} · 发现 {len(dup_clusters)} 个重复簇："]
     for idx, members in enumerate(dup_clusters, 1):
         # 建议保留字符最多的 (信息量最全) · 其余标 retired 候选
         keeper = max(members, key=lambda m: pbs[m]["chars"])
-        lines.append(f"\n簇 {idx} ({len(members)} 门) · 建议保留「{keeper}」({pbs[keeper]['chars']:,} 字符):")
+        lines.append(f"\n簇 {idx} ({len(members)} 份) · 建议保留「{keeper}」({pbs[keeper]['chars']:,} 字符):")
         for m in members:
             sims = ", ".join(f"{s:.2f}" for _, s in sorted(pair_sims[m], key=lambda x: -x[1]))
             tag = " ← 保留" if m == keeper else " ← retired 候选"
@@ -114,7 +114,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="audit_playbooks",
     description=(
-        "查 playbook/skill 是否语义重复。他说「技能有没有重复 / 整理技能箱」时调。"
+        "查操作手册是否语义重复。他说「操作手册有没有重复 / 整理操作手册」时调。"
         "只读：合并要他点名后再用文件工具折进留下的那份。"
     ),
     tier=TIER_AUTO,

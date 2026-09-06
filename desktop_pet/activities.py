@@ -85,7 +85,7 @@ TOOL_DESC_TEMPLATES: dict[str, str] = {
     "verify_claim":     "核验事实",
     "recall_memory":    "搜索记忆",
     "mirror_capability": "能力镜像",
-    "extract_playbook": "提取 playbook",
+    "extract_playbook": "提取操作手册",
     "create_app":       "建应用",
     "update_app":       "改应用",
     "create_workflow":  "建工作流",
@@ -191,12 +191,14 @@ def write_pulse_end(tool_name: str, ok: bool, summary: str = "") -> None:
     _write_pulse_event(tool_name, status, desc=desc, ok=ok)
 
 
-def write_turn_start() -> None:
-    """对话 / 一轮活儿开始 · 桌宠切执行并出气泡。"""
-    _write_pulse_event("", "start", desc="在对话")
+def write_turn_start(desc: str = "", *, face: str = "") -> None:
+    """对话开始跟 WebUI 一样先「在想」；工坊带 label 的活儿走工作态。"""
+    text = (desc or "").strip() or "在想"
+    mood = (face or "").strip() or ("working" if (desc or "").strip() else "thinking")
+    _write_pulse_event("", "start", desc=text)
     try:
         _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        _STATE_FILE.write_text("working", encoding="utf-8")
+        _STATE_FILE.write_text(mood, encoding="utf-8")
     except Exception:
         pass
 

@@ -293,7 +293,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="extract_playbook",
     description=(
-        "任务结束后把可复用步骤存成 playbook，或 import 外部 SKILL.md。actions: extract/import/search/load/list/feedback。不要任务中途打断。"
+        "任务结束后把可复用步骤存成操作手册，或 import 外部 SKILL.md。actions: extract/import/search/load/list/feedback。不要任务中途打断。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

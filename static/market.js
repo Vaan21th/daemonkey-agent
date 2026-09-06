@@ -3,7 +3,7 @@
   var TAB_KEY = "dk_plugin_hub";
   var _data = null;
   var WHY = { unpublished: "货架没有", newer: "本机更新", edited: "装完后又改过" };
-  var KIND = { skin: "皮肤", app: "工坊应用", flow: "流程", playbook: "技能文" };
+  var KIND = { skin: "皮肤", app: "工坊应用", flow: "流程", playbook: "操作手册" };
 
   function tab() {
     try { return sessionStorage.getItem(TAB_KEY) || "plugins"; } catch (e) { return "plugins"; }
@@ -131,7 +131,7 @@
     share.forEach(function (it) {
       var why = WHY[it.reason] || "";
       var btn = (it.kind === "playbook")
-        ? '<span class="mkt-hold">技能文下一刀再导出</span>'
+        ? '<span class="mkt-hold">操作手册下一刀再导出</span>'
         : '<button class="plugin-try-btn" type="button" data-kind="' + esc(it.kind) +
           '" data-id="' + esc(it.id) + '" data-name="' + esc(it.name) +
           '" data-desc="' + esc(it.description || it.name || "") + '">上架到货架</button>';

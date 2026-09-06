@@ -131,7 +131,7 @@ function scheduleIdleAction() {
    disabled=true: 功能本身不存在 · tab 不可点 */
 const SPOTS = {
   /* 母体导航第一组就是「工作室看板 + 成长档案」· 出品工坊自成一组。
-     应用 / 工作流 / 回收站 是工坊内部的三个子 tab · 不能跟工坊平铺 (用户 指出的结构错) */
+     应用 / 工作流 / 回收站 是工坊内部的三个子 tab · 不能跟工坊平铺 (BRO 指出的结构错) */
   '笔记本电脑': { bbox: [48.649, 42.212, 58.838, 53.052], icon: 'ri-macbook-line',
     label: '工作台', desc: '看板 · 出品工坊', width: 'wide',
     items: [
@@ -167,7 +167,7 @@ const SPOTS = {
   '左侧收纳': { bbox: [3.662, 60.059, 20.589, 87.085], icon: 'ri-archive-line',
     label: '成长档案', desc: '记忆与成长轨迹', width: 'wide',
     items: [{ name: '成长档案', icon: 'ri-seedling-line',
-      desc: '画像 · 日记 · 心愿 · 技能库 · 星图 · 复盘 · 沉淀位', domain: 'depot' }] },
+      desc: '画像 · 日记 · 心愿 · 操作手册 · 星图 · 复盘 · 沉淀位', domain: 'depot' }] },
   '计划任务': { bbox: [71.908, 23.877, 82.161, 43.384], icon: 'ri-calendar-todo-line',
     label: '定时任务', desc: '自动化计划', width: 'narrow',
     items: [{ name: '定时任务', icon: 'ri-time-line', desc: '计划中的自动执行', domain: 'scheduled_tasks' }] },
@@ -744,7 +744,7 @@ function closeModal() {
   document.getElementById('modal')?.classList.remove('mh-full', 'mw-settings');
 }
 
-/* 工坊里「让 Daemonkey 改这个」这类按钮走这条 · 母体是 injectChat, 陪伴接到房间对话里 */
+/* 工坊里「让 OPUS 改这个」这类按钮走这条 · 母体是 injectChat, 陪伴接到房间对话里 */
 window.injectChat = (text, opts) => {
   closeModal();
   const autosend = !(opts && opts.autosend === false);
@@ -1566,7 +1566,7 @@ function resolveReturnGreeting(stateCard, saidSleep, last) {
   const mood = _stateCardFieldVal(card, '情绪基线');
   const late = _isLateNight();
   const healthHint = health && _healthLateNightHint(health);
-  // 健康提醒优先于夜猫分支：用户 是昼伏夜出+熬夜偏多(作息+健康都含熬夜线索)时，
+  // 健康提醒优先于夜猫分支：BRO 是昼伏夜出+熬夜偏多(作息+健康都含熬夜线索)时，
   // 若夜猫分支在前会永远复读上句/夜猫文案，「今晚别熬太狠」出不来。健康提醒更该出口。
   if (healthHint && late) {
     return healthLateReminderText();
@@ -1775,6 +1775,23 @@ function getSid() { try { return localStorage.getItem(SID_KEY) || null; } catch 
 function saveSid(sid) {
   if (!sid || String(sid).startsWith('tmp-')) return;
   try { localStorage.setItem(SID_KEY, sid); } catch {}
+  try {
+    fetch('/api/companion/sid', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sid }),
+    }).catch(function () {});
+  } catch (e) {}
+}
+function hydrateCompanionSid() {
+  const local = getSid();
+  if (local) { saveSid(local); return Promise.resolve(local); }
+  return fetch('/api/companion/sid').then(function (r) { return r.json(); }).then(function (j) {
+    const sid = (j && j.session_id) || '';
+    if (!sid) return null;
+    try { localStorage.setItem(SID_KEY, sid); } catch (e) {}
+    return sid;
+  }).catch(function () { return null; });
 }
 
 /* ===== 对话发送（thinking 状态联动 + 状态条） ===== */
@@ -1873,7 +1890,7 @@ function _beginBroEdit(el) {
   editor.className = 'ckpt-edit';
   const ta = document.createElement('textarea');
   ta.value = cur;
-  ta.rows = Math.min(12, Math.max(1, String(cur).split('\n').length));
+  ta.rows = 1;
   const row = document.createElement('div');
   row.className = 'ckpt-edit-row';
   const ok = document.createElement('button');
@@ -1891,8 +1908,17 @@ function _beginBroEdit(el) {
   el.classList.add('ckpt-editing');
   el.appendChild(hold);
   el.appendChild(editor);
+  function _fitTa() {
+    ta.style.height = 'auto';
+    const cap = Math.floor(window.innerHeight * 0.7);
+    const need = ta.scrollHeight;
+    ta.style.height = Math.min(Math.max(need, 28), cap) + 'px';
+    ta.style.overflowY = need > cap ? 'auto' : 'hidden';
+  }
   function _syncGo() { ok.disabled = !String(ta.value || '').trim(); }
   _syncGo();
+  _fitTa();
+  requestAnimationFrame(_fitTa);
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
   function _quit() {
@@ -1920,7 +1946,7 @@ function _beginBroEdit(el) {
     _quit();
     _editResendFrom(el, next);
   });
-  ta.addEventListener('input', _syncGo);
+  ta.addEventListener('input', function () { _syncGo(); _fitTa(); });
   ta.addEventListener('keydown', function (ev) {
     if (ev.key === 'Escape') {
       ev.preventDefault();
@@ -2343,7 +2369,7 @@ function startActivePoll(sid) {
                 const card = renderConfirmCard({
                   ...pc,
                   turn_id: turnId,
-                  tier_reason: pc.tier_reason || '后台 turn · 用户 不在 SSE 通道 · 轮询补捞',
+                  tier_reason: pc.tier_reason || '后台 turn · BRO 不在 SSE 通道 · 轮询补捞',
                   risk_explanation: pc.risk_explanation || pc.args_preview || '',
                   mitigation: pc.mitigation || '',
                   args_summary: pc.args_summary || pc.tool_name,
@@ -3150,7 +3176,7 @@ window.addEventListener('resize', fitRoom);
 fitRoom();
 
 /* ===== 她主动开口（接母体 proactive inbox） =====
-   母体每 60min 判断该不该 CALL 用户 · 有话进 inbox。
+   母体每 60min 判断该不该 CALL BRO · 有话进 inbox。
    陪伴模式每分钟收一次 · 新消息落对话流 + 她切 surprised。 */
 const SEEN_KEY = 'companion_proactive_seen';
 function getSeen() { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '[]'); } catch { return []; } }
@@ -3229,6 +3255,15 @@ if (getSid()) applyVisibleChrome(getSid());
 // 有旧对话就接上 (会顶掉上面那句问候 —— 她本来就在聊天中间, 不该重新打招呼);
 // 历史空 / 读失败时 restore 自己兜底问候, 不再留白窗。
 restoreConversation();
+(function () {
+  const had = !!getSid();
+  hydrateCompanionSid().then(function (sid) {
+    if (sid && !had) {
+      applyVisibleChrome(sid);
+      restoreConversation();
+    }
+  });
+})();
 paintFirstSeenName();
 (function bindShelfPop() {
   const scrim = document.getElementById('shelf-pop-scrim');

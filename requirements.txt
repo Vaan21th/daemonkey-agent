@@ -11,6 +11,7 @@ psutil>=5.9.0
 
 # 卷四十六 II · wish-43f705b8 · FTS5 中文 tokenizer · 修中文 recall_memory 0 命中
 jieba>=0.42.0
+pypinyin>=0.51.0
 
 # 2026-08-21 hf2 · 记忆向量化地基 (memory_embed 嵌入/memory_map 星图/audit_playbooks 判重全要它)
 # 母体手动装了 2.4.5 一直没登记 → 全新环境星图 500 · 记忆嵌入静默断

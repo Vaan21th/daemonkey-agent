@@ -4,10 +4,10 @@ report_engine · 文档生产引擎
 工作室"内容编辑 OPUS / 信息官 OPUS"工位的核心生产工具。
 
 源流（卷二十四 BRO 关键决策）：
-  upstream/docs\\cooperation\\volcano-cmcc-haishan\\build-doc.py
-  upstream/docs\\competitive-analysis\\build-comparison-doc.py
-  upstream/docs\\competitive-analysis\\build-movieflow-doc.py
-  upstream/docs\\recruiting\\build-doc.py
+  G:\\community\\docs\\cooperation\\volcano-cmcc-haishan\\build-doc.py
+  G:\\community\\docs\\competitive-analysis\\build-comparison-doc.py
+  G:\\community\\docs\\competitive-analysis\\build-movieflow-doc.py
+  G:\\community\\docs\\recruiting\\build-doc.py
 
   BRO 已经在社区那边沉淀了 4 个同源 build-*-doc.py。本 engine 把那套渲染器
   抽象成通用 markdown → docx 引擎 · 让 OPUS 也能调。

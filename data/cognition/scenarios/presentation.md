@@ -1,6 +1,8 @@
 # presentation · PPT / 演示稿 / 生图配图
 
 > **触发**: 他说「做一份 PPT / 演示稿 / 汇报 / 课件 / 提案」；或要给报告/封面配图、调 `generate_presentation` / `generate_image`。
+> **不是这个场景**: 中栏批注 / 圈字改已有 pptx → 直接 `revise_office`。已有稿「拓展到 N 页 / 加几页 / 在这份上补充」→ `extend_office`，body 只写新增页。这两种都不要读本合同、不要 `generate_presentation` 整份重出。
+> **板式**: 六套风格（light_studio 等）只套从零新建。extend 的新页抄原稿配色/字体，抄不到才用六套兜底。用户丢进来的成品，原页板式和素材必须留下。
 >
 > **何时主动读**: 准备调这两个工具之前。schema 只留参数名，工艺合同在这里。
 > 实例手艺（「上次 B 站 412」那种）走 playbook，不写进本合同。

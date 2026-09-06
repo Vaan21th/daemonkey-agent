@@ -11,7 +11,7 @@ report_engine/themes.py
   - 引用块 / 代码块底色
   - 主要色板（封面强调色 / 列表 bullet 色等）
 
-社区原版（manju）颜色取自 upstream/docs\\cooperation\\volcano-cmcc-haishan\\build-doc.py
+社区原版（manju）颜色取自 G:\\community\\docs\\cooperation\\volcano-cmcc-haishan\\build-doc.py
 OPUS 工作室版（opus_studio）色板基于 chat.css 的 #9F7AEA 紫色生态
 """
 from __future__ import annotations
@@ -58,7 +58,7 @@ class Theme:
 
 
 # ─── 社区原版主题（深蓝） ────────────────────────────────────────
-# 取自 upstream\docs\cooperation\volcano-cmcc-haishan\build-doc.py
+# 取自 G:\community\docs\cooperation\volcano-cmcc-haishan\build-doc.py
 THEME_MANJU = Theme(
     name="manju",
     description="社区原版主题 · 深蓝标题 + 蓝头白字表 + 隔行灰底",

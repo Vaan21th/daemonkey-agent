@@ -42,7 +42,7 @@ button { font-family: inherit; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
 ::-webkit-scrollbar-track { background: transparent; }
 /* 弹窗里是长文档 · 5px 的条抓不住也看不见, 单独加粗。
-   带可见轨道是为了常驻: 只给 thumb 的话浏览器按 overlay 处理, 不动鼠标就淡掉 (用户 反馈) */
+   带可见轨道是为了常驻: 只给 thumb 的话浏览器按 overlay 处理, 不动鼠标就淡掉 (BRO 反馈) */
 #dashView { scrollbar-gutter: stable; scrollbar-width: auto; scrollbar-color: var(--sb) var(--sb-track); }
 #dashView::-webkit-scrollbar { width: 12px; }
 #dashView::-webkit-scrollbar-track { background: var(--sb-track); }
@@ -794,7 +794,7 @@ body.night {
 @media (min-width: 2000px) {
   #modal.mw-settings { width: min(76vw, 1180px); height: min(72vh, 900px); max-height: 72vh; }
 }
-/* 链路面包屑(雷达→趋势→报告)在房间里是多余的第二层导航 —— 家具本身就是导航, 用户 说看着乱。
+/* 链路面包屑(雷达→趋势→报告)在房间里是多余的第二层导航 —— 家具本身就是导航, BRO 说看着乱。
    只藏显示, 跨维度跳转能力仍在 (机会卡/深挖等入口走 syncSpotForDomain 传送到对应家具) */
 .room-set { padding: 4px 2px 12px; }
 .room-set-k { font-size: 11px; color: var(--tx3); letter-spacing: .12em; margin: 4px 0 10px; }
@@ -847,7 +847,7 @@ body.night {
 #modal-close:hover { color: var(--text); border-color: var(--gold-dim); transform: rotate(90deg); }
 /* 弹窗顶部 tab 条 · 面板内容 1:1 复用母体中间栏 (#dashView + chat.css 类)
    active tab 用 --bg 与内容区连成一体 (文件夹标签感) */
-/* tab 多了换行 · 不要横向滚动条 (用户: 那一行有个诡异的滚动条) */
+/* tab 多了换行 · 不要横向滚动条 (BRO: 那一行有个诡异的滚动条) */
 #modal-tabs {
   flex: none; display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 22px 0;
   background: var(--bg2); border-bottom: 1px solid var(--border);

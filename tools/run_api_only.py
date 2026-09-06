@@ -101,7 +101,7 @@ def _init_runtime():
     (workers/provider_configs._migrate_from_env 自动建第一条 cfg)·让多 config UI 直接可用。
     """
     from daemon_runtime import RUNTIME
-    from daemon_provider import detect_provider, setup_client, write_env_kv
+    from daemon_provider import detect_provider, setup_client, write_public_env
     from soul_loader import load_soul
     from workers.provider_configs import get_active_config, apply_config_to_env
 
@@ -128,7 +128,7 @@ def _init_runtime():
 
     RUNTIME.model = model
     RUNTIME.base_url = base_url
-    RUNTIME.persist_callback = lambda new_model: write_env_kv("OPUS_MODEL", new_model)
+    RUNTIME.persist_callback = lambda new_model: write_public_env("OPUS_MODEL", new_model)
     RUNTIME.client = client
     RUNTIME.provider = provider
     RUNTIME.system_prompt = soul.system_prompt
@@ -229,6 +229,11 @@ def main():
         pass
 
     _load_env()
+    try:
+        from workers.env_aliases import normalize_env_aliases
+        normalize_env_aliases()
+    except Exception:
+        pass
 
     # 卷四十六 III 补丁 5 · R1 · 统一 logging (RotatingFile + trace_id)
     # daemon 全生命周期前装好 · 让后续所有 logger.info 都落到 data/runtime/daemon.log

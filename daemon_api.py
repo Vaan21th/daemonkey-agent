@@ -2203,6 +2203,8 @@ def build_app():
     from api_routes import media_defaults as _routes_media
     app.include_router(_routes_media.router)
     app.include_router(_routes_notifications.router)  # wish-fb6b7427 · /notification-config
+    from api_routes import local_data as _routes_local_data
+    app.include_router(_routes_local_data.router)  # 设置页磁盘占用 + 可选清理
     app.include_router(_routes_advisor.router)  # wish-ea8922f7 · /api/advisor/status + trace
     app.include_router(_routes_plan.router)  # /api/plan/* · 对话框上方的任务计划条 (读+改)
     app.include_router(_routes_stt.router)  # wish-241e0014 · /stt/* 语音识别增强 (可选更新)

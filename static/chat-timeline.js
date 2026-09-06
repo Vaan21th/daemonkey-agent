@@ -13,9 +13,58 @@ function _tlHost() {
   return document.querySelector('.session-msgs:not([hidden])');
 }
 
-/* ═══ wish-5256d2a4 · 工具时间线 + 人话翻译层（方案 D · BRO 2026-07-27 验收 demo 拍板） ═══
-   零 token：全部前端本地正则翻译 · daemon 只传原始 tool name/summary/result
-   整轮折叠块【默认展开】（BRO 拍板"工具默认是不折叠的"）· 单步技术细节默认折叠（点人话行展开） */
+/* 工作台过程密度 · fold=现在这样（默认）· expand=改密度之前全摊开
+   只读 localStorage · 房间 companion 不读这一档 */
+function chatProcessExpanded() {
+  try { return localStorage.getItem('opus_chat_process') === 'expand'; } catch (e) { return false; }
+}
+
+function setChatProcessMode(mode) {
+  const v = mode === 'expand' ? 'expand' : 'fold';
+  try { localStorage.setItem('opus_chat_process', v); } catch (e) {}
+  applyChatProcessDensity(document);
+}
+
+function applyChatProcessDensity(root) {
+  const expand = chatProcessExpanded();
+  const scope = root || document;
+  scope.querySelectorAll('.msg.opus.reasoning').forEach((div) => {
+    const body = div.querySelector('.reasoning-body');
+    const toggle = div.querySelector('.reasoning-toggle');
+    if (!body) return;
+    body.hidden = !expand;
+    div.classList.toggle('folded', !expand);
+    if (toggle) toggle.textContent = expand ? '收起 ▴' : '展开 ▾';
+    delete div.dataset.processTouched;
+  });
+  scope.querySelectorAll('.tl-round').forEach((round) => {
+    _tlSetCollapsed({ $round: round, $head: round.querySelector('.tl-round-head') }, !expand);
+    delete round.dataset.processTouched;
+  });
+  scope.querySelectorAll('.tl-step').forEach((card) => {
+    card.classList.toggle('show-tech', expand);
+    const $r = card.querySelector('.tl-step-result');
+    if (!$r || $r.classList.contains('tl-pending')) return;
+    $r.hidden = expand ? false : !$r.classList.contains('tl-fail');
+  });
+  scope.querySelectorAll('.advisor-answer').forEach((el) => { el.hidden = !expand; });
+  scope.querySelectorAll('.adv-btn-peek').forEach((btn) => {
+    const card = btn.closest('.advisor-card');
+    const ans = card && card.querySelector('.advisor-answer');
+    const hidden = !ans || ans.hidden;
+    btn.innerHTML = hidden
+      ? '<i class="ri-article-line"></i> 看顾问结论'
+      : '<i class="ri-arrow-up-s-line"></i> 收起结论';
+  });
+  scope.querySelectorAll('.blueprint-card .blueprint-body').forEach((el) => { el.hidden = !expand; });
+  scope.querySelectorAll('.review-card.review-pass .blueprint-body').forEach((el) => { el.hidden = !expand; });
+  scope.querySelectorAll('.review-card.review-fail .blueprint-body').forEach((el) => { el.hidden = false; });
+}
+
+/* ═══ wish-5256d2a4 · 工具时间线 + 人话翻译层（方案 D） ═══
+   零 token：前端本地正则翻译 · daemon 只传原始 tool name/summary/result
+   默认档：干活时单步一行人话 · 回合结束整轮收成摘要（失败步骤钉在外面）· 点开才看参数/原文/搜索条
+   展开档：收尾不折、步骤参数/搜索条默认摊开 */
 const TL_T2C = {
   read_file:'file', write_file:'file', edit_file:'file', glob_files:'file', grep_files:'file',
   outline_file:'file', search_code:'file', lint_check:'file', read_scenario:'file', pdf_read:'file', read_dashboard:'file',
@@ -184,7 +233,14 @@ async function _loadNameMaps() {
   });
 }
 
-/* 整轮容器：一轮工具调用 = 一个可折叠块（默认展开）· 内含时间线步骤卡 */
+function _tlSetCollapsed(tl, collapsed) {
+  if (!tl || !tl.$round) return;
+  tl.$round.classList.toggle('collapsed', !!collapsed);
+  const ar = tl.$head && tl.$head.querySelector('.tl-round-arrow');
+  if (ar) ar.className = collapsed ? 'ri-arrow-down-s-line tl-round-arrow' : 'ri-arrow-up-s-line tl-round-arrow';
+}
+
+/* 整轮容器：干活时展开（单步一行）· 收尾后折成摘要 */
 function _tlEnsureRound(state) {
   if (state._tl && state._tl.$round && state._tl.$round.isConnected) return state._tl;
   const round = document.createElement('div');
@@ -197,6 +253,7 @@ function _tlEnsureRound(state) {
   body.className = 'tl-round-body';
   head.onclick = () => {
     round.classList.toggle('collapsed');
+    round.dataset.processTouched = '1';
     const ar = head.querySelector('.tl-round-arrow');
     if (ar) ar.className = round.classList.contains('collapsed') ? 'ri-arrow-down-s-line tl-round-arrow' : 'ri-arrow-up-s-line tl-round-arrow';
   };
@@ -222,19 +279,21 @@ function tlAddStep(state, name, summary, tier) {
   const h = tlHumanize(name, summary, '', 1);
   const card = document.createElement('div');
   card.className = 'tl-step';
-  card.dataset.tool = name;   // 供补名字等按工具查卡
+  card.dataset.tool = name;
   card.innerHTML =
-    `<div class="tl-step-dot" style="--tlc:${cat.color}"><i class="${cat.icon}"></i></div>` +
-    `<div class="tl-step-main">` +
-      `<div class="tl-step-head"><span class="tl-step-cat" style="color:${cat.color}">${cat.name}</span>` +
-      `<span class="tl-step-tool">${escHtml(name)}</span>` +
+    `<div class="tl-slim-row" title="点开看参数和原文">` +
+      `<i class="tl-slim-st ri-loader-4-line tl-spin"></i>` +
+      `<div class="tl-step-action">${h.action}</div>` +
       (tier ? `<span class="tl-step-tier">[${escHtml(tier)}]</span>` : '') +
-      `<span class="tl-step-dur"></span></div>` +
-      `<div class="tl-step-action" title="点我看技术细节">${h.action}</div>` +
-      `<div class="tl-step-result tl-pending"><i class="ri-loader-4-line tl-spin"></i> 进行中…</div>` +
-      `<div class="tl-step-tech"><div class="tl-tech-call">${escHtml(String(summary || '(无参数摘要)'))}</div></div>` +
+      `<span class="tl-step-dur"></span>` +
+    `</div>` +
+    `<div class="tl-step-result tl-pending" hidden></div>` +
+    `<div class="tl-step-tech">` +
+      `<div class="tl-tech-meta">${escHtml(cat.name)} · ${escHtml(name)}</div>` +
+      `<div class="tl-tech-call">${escHtml(String(summary || '(无参数摘要)'))}</div>` +
     `</div>`;
-  card.querySelector('.tl-step-action').onclick = () => card.classList.toggle('show-tech');
+  card.querySelector('.tl-slim-row').onclick = () => card.classList.toggle('show-tech');
+  if (chatProcessExpanded()) card.classList.add('show-tech');
   tl.$body.appendChild(card);
   const rec = { name, summary, $card: card, startTs: Date.now(), ok: null };
   tl.steps.push(rec);
@@ -250,38 +309,50 @@ function tlFillStep(state, name, ok, resultText, hits) {
   }
   if (!rec) rec = tlAddStep(state, name, '', null);  // 孤儿 result · 补卡
   rec.ok = !!ok;
+  rec.$card.classList.toggle('is-fail', !ok);
   const durS = Math.max(0, Math.round((Date.now() - rec.startTs) / 1000));
   const h = tlHumanize(name, rec.summary || '', resultText || '', ok);
-  const $r = rec.$card.querySelector('.tl-step-result');
-  $r.classList.remove('tl-pending');
-  $r.classList.add(ok ? 'tl-ok' : 'tl-fail');
+  const $st = rec.$card.querySelector('.tl-slim-st');
+  if ($st) $st.className = 'tl-slim-st ' + (ok ? 'ri-check-fill tl-ok' : 'ri-close-fill tl-fail');
+  const $act = rec.$card.querySelector('.tl-step-action');
+  if ($act) $act.innerHTML = h.action;
   let resultLine = String(h.result || (ok ? '完成' : '失败')).slice(0, 220);
   if (ok && Array.isArray(hits) && hits.length) {
     const eng = hits[0].engine || '';
     resultLine = `找到 ${hits.length} 条` + (eng ? ` · ${eng}` : '');
   }
-  $r.innerHTML = (ok ? '<i class="ri-check-fill"></i> ' : '<i class="ri-close-fill"></i> ') + escHtml(resultLine);
+  const $r = rec.$card.querySelector('.tl-step-result');
+  if ($r) {
+    $r.classList.remove('tl-pending');
+    $r.classList.toggle('tl-ok', !!ok);
+    $r.classList.toggle('tl-fail', !ok);
+    $r.innerHTML = (ok ? '<i class="ri-check-fill"></i> ' : '<i class="ri-close-fill"></i> ') + escHtml(resultLine);
+    $r.hidden = chatProcessExpanded() ? false : !!ok;
+  }
   const $d = rec.$card.querySelector('.tl-step-dur');
   if ($d && durS > 0) $d.textContent = tlHumanDur(durS);
   const $tech = rec.$card.querySelector('.tl-step-tech');
-  if ($tech && resultText) {
-    const rd = document.createElement('div');
-    rd.className = 'tl-tech-result';
-    rd.textContent = String(resultText).slice(0, 300);
-    $tech.appendChild(rd);
+  if ($tech) {
+    let rd = $tech.querySelector('.tl-tech-result');
+    if (!rd) {
+      rd = document.createElement('div');
+      rd.className = 'tl-tech-result';
+      $tech.appendChild(rd);
+    }
+    rd.textContent = resultLine + (resultText && resultText !== resultLine ? '\n' + String(resultText).slice(0, 300) : '');
   }
   if (ok && Array.isArray(hits) && hits.length) tlMountHits(rec.$card, hits);
   _tlUpdateHead(state);
 }
 
 function tlMountHits(card, hits) {
-  const main = card && card.querySelector('.tl-step-main');
-  if (!main) return;
+  const tech = card && card.querySelector('.tl-step-tech');
+  if (!tech) return;
   let box = card.querySelector('.dk-search-hits');
   if (!box) {
     box = document.createElement('div');
     box.className = 'dk-search-hits';
-    main.appendChild(box);
+    tech.appendChild(box);
   }
   box.innerHTML = hits.slice(0, 8).map((h) => {
     const title = escHtml(String(h.title || '').slice(0, 80));
@@ -327,7 +398,10 @@ function tlFinishRound(state) {
   if ($t) $t.innerHTML = _tlHeadSummary(tl.steps);
   const $s = tl.$head.querySelector('.tl-round-stats');
   if ($s) $s.textContent = `${n} 步 · ${tlHumanDur(totalS)}${fails ? ` · ${fails} 失败` : ''}`;
-  /* 默认保持展开（BRO 拍板"工具默认是不折叠的"）· 用户想收自己点头部 */
+  tl.$round.classList.toggle('has-fail', fails > 0);
+  if (tl.$round.dataset.processTouched !== '1') {
+    _tlSetCollapsed(tl, !chatProcessExpanded());
+  }
   state._tl = null;
 }
 
@@ -356,10 +430,10 @@ function renderToolTimeline(items, target) {
       /* 历史里丢了 result 的 · 标个中断 */
       const rec = state._tl.steps[state._tl.steps.length - 1];
       rec.ok = true;
+      const $st = rec.$card.querySelector('.tl-slim-st');
+      if ($st) $st.className = 'tl-slim-st ri-check-fill tl-ok';
       const $r = rec.$card.querySelector('.tl-step-result');
-      $r.classList.remove('tl-pending');
-      $r.classList.add('tl-ok');
-      $r.innerHTML = '<i class="ri-check-fill"></i> 已完成（历史结果未存档）';
+      if ($r) { $r.classList.remove('tl-pending'); $r.hidden = true; }
       state._tl && _tlUpdateHead(state);
     }
   }
@@ -372,6 +446,8 @@ function renderToolTimeline(items, target) {
     if ($t) $t.innerHTML = _tlHeadSummary(tl.steps);
     const $s = tl.$head.querySelector('.tl-round-stats');
     if ($s) $s.textContent = `${n} 步${fails ? ` · ${fails} 失败` : ''}`;
+    tl.$round.classList.toggle('has-fail', fails > 0);
+    _tlSetCollapsed(tl, !chatProcessExpanded());
     state._tl = null;
   }
 }

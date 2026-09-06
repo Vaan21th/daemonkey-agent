@@ -166,7 +166,7 @@ def _run(args: dict) -> ToolResult:
         f"  - 标题: {title}",
         f"  - domain: {domain}",
         f"  - daemon_rules.md 长度: {len(text)} → {len(new_text)} (+{len(insert_block)})",
-        f"  - 技能库刷新可见。不写相处账。",
+        f"  - 操作手册页刷新可见。不写相处账。",
         "",
         "重启 daemon 后，新对话才会装上这条铁律。",
         "当前这轮脑里还是旧的。",
@@ -180,7 +180,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="add_iron_rule",
     description=(
-        "加一条新铁律：只写 daemon_rules.md。技能库展示。先 list_iron_rules 取 max+1。干活纪律走本工具；产品观走 CONSTITUTION；BRO 事实走 update_bro_note。简介不许写成长文（铁律 15）。写法：read_scenario('self_evolution')。"    ),
+        "加一条新铁律：只写 daemon_rules.md。操作手册页展示。先 list_iron_rules 取 max+1。干活纪律走本工具；产品观走 CONSTITUTION；BRO 事实走 update_bro_note。简介不许写成长文（铁律 15）。写法：read_scenario('self_evolution')。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

@@ -268,6 +268,8 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     pet = RoomPet()
+    from desktop_pet.play_mode import attach_play
+    attach_play(pet)
     hwnd = force_show(pet)
     from desktop_pet.room_dock import dock as _dock
 

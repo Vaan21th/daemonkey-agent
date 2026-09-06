@@ -7,6 +7,18 @@ import random
 from PyQt6.QtCore import Qt
 
 from desktop_pet.activities import read_last_events, read_last_notify
+
+
+def pulse_action(ev: dict) -> str:
+    """贴边气泡跟脉搏：开始出示，结束改「在想」，空闲收掉。"""
+    status = (ev or {}).get("status") or ""
+    if status == "idle":
+        return "hide"
+    if status == "start" and str((ev or {}).get("desc") or "").strip():
+        return "show"
+    if status in ("end", "error"):
+        return "think"
+    return "keep"
 from desktop_pet.clip_map import (
     GUARD_CUE,
     IDLE_SIDE_MAX_S,
@@ -146,18 +158,7 @@ def _poll_while_down(pet) -> None:
                 pet._last_notify_ts = nts
     except Exception:
         pass
-    try:
-        evs = read_last_events(1)
-        if evs:
-            ev = evs[-1]
-            ts = float(ev.get("ts", 0) or 0)
-            if ts > pet._last_pulse_ts:
-                pet._last_pulse_ts = ts
-                if ev.get("status") == "start" and ev.get("desc") and not pet._bubble._sticky:
-                    pet._bubble.show_text(ev["desc"])
-                    pet._bubble.follow(pet)
-    except Exception:
-        pass
+    _apply_pulse(pet, waiting=pet._bubble._sticky)
     wake_if_working(pet)
 
 
@@ -216,18 +217,31 @@ def tick_poll(pet) -> None:
                     pet._bubble.follow(pet)
     except Exception:
         pass
-    try:
-        evs = read_last_events(1)
-        if evs:
-            ev = evs[-1]
-            ts = float(ev.get("ts", 0) or 0)
-            desc = ev.get("desc", "")
-            if ts > pet._last_pulse_ts and desc and ev.get("status") == "start":
-                pet._last_pulse_ts = ts
-                if not waiting:
-                    pet._bubble.show_text(desc)
-                    pet._bubble.follow(pet)
-    except Exception:
-        pass
+    _apply_pulse(pet, waiting)
     apply_work_face(pet)
     maybe_redock(pet)
+
+
+def _apply_pulse(pet, waiting: bool) -> None:
+    try:
+        evs = read_last_events(1)
+        if not evs:
+            return
+        ev = evs[-1]
+        ts = float(ev.get("ts", 0) or 0)
+        if ts <= pet._last_pulse_ts:
+            return
+        pet._last_pulse_ts = ts
+        if waiting:
+            return
+        act = pulse_action(ev)
+        if act == "show":
+            pet._bubble.show_text(str(ev.get("desc") or "").strip())
+            pet._bubble.follow(pet)
+        elif act == "think":
+            pet._bubble.show_text("在想")
+            pet._bubble.follow(pet)
+        elif act == "hide" and not pet._bubble._sticky:
+            pet._bubble.hide()
+    except Exception:
+        pass

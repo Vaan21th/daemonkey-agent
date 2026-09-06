@@ -145,7 +145,7 @@ def _collect_media(items: list) -> tuple[list, list]:
                         notes.append(f"[BRO 发来一段语音·转写失败·音频已存 {rel}]")
                 else:
                     # 未装/未下载 → 引导去设置页 (对话路径零下载)
-                    notes.append(f"[BRO 发来一段语音·已存 {rel}·语音识别增强未开启·去 设置→视觉→语音识别增强 开启即可转文字]")
+                    notes.append(f"[BRO 发来一段语音·已存 {rel}·本地语音识别未开启·去 设置→视觉→本地语音识别 开启即可转文字]")
             except Exception as e:
                 logger.debug("voice save failed: %s", e)
                 notes.append("[BRO 发来一段语音·我暂时还不能听]")
