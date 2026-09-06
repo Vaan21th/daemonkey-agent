@@ -37,6 +37,13 @@ def test_gate1_case_integrity(pb_home: Path):
     from workers.playbook_case import extract_action, validate_integrity
     bad = extract_action({"title": "缺问题", "steps": "1. 做", "trials": "尚无失败路径"})
     assert not bad["ok"]
+    got = extract_action({
+        "title": "Windows 换行保真",
+        "steps": "1. 复现\n2. 指定 newline",
+        "problem": "open 不指定 newline 会把 LF 吃成 CRLF",
+        "trials": "尚无失败路径",
+    })
+    assert got["ok"] and got.get("id"), got
     pb = _case("g1", "Windows 换行保真", "open 不指定 newline 会把 LF 吃成 CRLF")
     raw = (pb_home / f"{pb['slug']}.md").read_text(encoding="utf-8")
     gate = validate_integrity(raw)
@@ -116,6 +123,88 @@ def test_gate4_no_bloat_no_lost_leaves(pb_home: Path):
     new_md = (pb_home / Path(confirmed["playbook"]["path"]).name).read_text(encoding="utf-8")
     assert "data/playbooks/" in new_md
     assert a["slug"] in new_md or a["id"] in new_md
+    from workers.playbooks import delete_playbook
+    orphan = draft_cluster(
+        [a["id"], b["id"]],
+        title="缺叶子应拒绝",
+        how_now="写文件一律指定 newline，读完按原 EOL 写回，不要用正则硬切。",
+    )
+    delete_playbook(b["id"])
+    denied = confirm_draft(orphan["draft_id"])
+    assert not denied["ok"]
+    assert "叶子" in (denied.get("error") or "")
+
+
+class _Hit:
+    def __init__(self, slug: str, score: float = -5.0):
+        self.section = f"{slug}:debug"
+        self.score = score
+        self.content = slug
+
+
+def _fake_fts(monkeypatch):
+    """走 relevant_playbooks 的 FTS 分支，命中当前夹具库的 slug。"""
+    def _search(*_a, **_k):
+        from workers.playbooks import list_playbooks
+        return [_Hit(pb.get("slug") or "") for pb in list_playbooks() if pb.get("slug")]
+    monkeypatch.setattr("workers.memory_index.search", _search)
+
+
+def test_knife1_auto_writeback_through_relevant_playbooks(pb_home: Path, monkeypatch):
+    """load 之后关键工具失败，不调 feedback，真召回入口也必须看见。"""
+    from types import SimpleNamespace
+    from workers.closure_check import relevant_playbooks
+    from workers.playbook_observe import begin, note_loaded, observe_tool
+    _fake_fts(monkeypatch)
+    pb = _case("k1", "重启后立刻跑工具验证", "重启窗口会撞 self_heal")
+    q = "重启后立刻跑工具验证会撞初始化"
+    before = relevant_playbooks(q, session_id="")
+    assert pb["id"] in before
+    assert "假 result" not in before
+    begin()
+    note_loaded(pb["id"])
+    observe_tool(
+        SimpleNamespace(name="python_exec"),
+        {},
+        SimpleNamespace(ok=False, error="self_heal 假 result 丢掉了验证"),
+    )
+    after = relevant_playbooks(q, session_id="")
+    assert "假 result" in after
+    raw = (pb_home / f"{pb['slug']}.md").read_text(encoding="utf-8")
+    assert "自动 · python_exec 失败" in raw
+    observe_tool(
+        SimpleNamespace(name="python_exec"),
+        {},
+        SimpleNamespace(ok=False, error="self_heal 假 result 丢掉了验证"),
+    )
+    assert raw == (pb_home / f"{pb['slug']}.md").read_text(encoding="utf-8")
+
+
+def test_knife2_empty_experience_loses_the_slot(pb_home: Path, monkeypatch):
+    from workers.closure_check import relevant_playbooks
+    _fake_fts(monkeypatch)
+    hollow = _case("e1", "换行保真空经验册", "CRLF 吃掉 LF", "尚无失败路径")
+    real = _case("e2", "换行保真有试错册", "CRLF 吃掉 LF", "- 已试 · open 没写 newline")
+    text = relevant_playbooks("换行保真怎么处理 CRLF", limit=1, session_id="")
+    assert real["id"] in text
+    assert hollow["id"] not in text
+
+
+def test_knife3_cluster_proposes_not_confirms(pb_home: Path, monkeypatch):
+    from workers.closure_check import relevant_playbooks
+    from workers.playbook_distill import confirm_draft
+    _fake_fts(monkeypatch)
+    a = _case("p1", "换行事故甲手册", "CRLF 吃掉 LF")
+    _case("p2", "换行事故乙手册", "open 默认 text")
+    _case("p3", "换行事故丙手册", "正则切行漏 CR")
+    before = {p.name for p in pb_home.glob("*.md")}
+    text = relevant_playbooks("换行事故手册怎么写文件", session_id="")
+    assert "proposal_id=pp-" in text
+    assert "确认前不入库" in text
+    denied = confirm_draft("pp-not-a-draft")
+    assert not denied["ok"]
+    assert {p.name for p in pb_home.glob("*.md")} == before
+    assert (pb_home / f"{a['slug']}.md").exists()
 
 
 def test_refuse_loose_folder(pb_home: Path, tmp_path: Path):

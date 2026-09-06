@@ -71,9 +71,18 @@ def re_tokens(text: str) -> list[str]:
     return [m.group(0).lower() for m in _TOKEN.finditer(text or "")]
 
 
+def _bigrams(text: str) -> list[str]:
+    s = re.sub(r"\s+", "", text or "")
+    return [s[i:i + 2] for i in range(len(s) - 1)] if len(s) >= 2 else []
+
+
 def _title_overlap(query: str, title: str) -> float:
     q = set(re_tokens(query))
     t = set(re_tokens(title))
+    # 中文标题常无分隔符，整句一个 token · 二字片才能认出同簇
+    if len(q) <= 1 or len(t) <= 1:
+        q |= set(_bigrams(query))
+        t |= set(_bigrams(title))
     if not q or not t:
         return 0.0
     return len(q & t) / math.sqrt(len(q) * len(t))

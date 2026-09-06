@@ -192,6 +192,7 @@
       "workers/playbook_case.py",
       "workers/playbook_cluster.py",
       "workers/playbook_distill.py",
+      "workers/playbook_observe.py",
       "agent_tools/extract_playbook.py",
       "workers/playbook_import.py",
       "agent_tools/discover_skill.py",

@@ -18,8 +18,59 @@ def draft_dir() -> Path:
     return d
 
 
+PROPOSE_MIN = 3
+
+
 def _index_path() -> Path:
     return draft_dir() / "_index.json"
+
+
+def _proposal_path() -> Path:
+    return draft_dir() / "_proposals.json"
+
+
+def _load_proposals() -> dict:
+    p = _proposal_path()
+    if not p.exists():
+        return {"proposals": {}}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {"proposals": {}}
+
+
+def _save_proposals(data: dict) -> None:
+    _proposal_path().write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def upsert_proposal(leaf_ids: list[str], title: str = "") -> dict:
+    """同簇提议。不写 how_now，不能 confirm 入库。"""
+    ids = sorted({str(x).strip() for x in (leaf_ids or []) if str(x).strip()})
+    if len(ids) < PROPOSE_MIN:
+        return {}
+    data = _load_proposals()
+    key = "|".join(ids)
+    for rec in (data.get("proposals") or {}).values():
+        if "|".join(sorted(rec.get("leaf_ids") or [])) == key:
+            return rec
+    pid = f"pp-{uuid.uuid4().hex[:10]}"
+    rec = {
+        "id": pid,
+        "title": (title or "建议蒸馏").strip(),
+        "status": "proposed",
+        "leaf_ids": ids,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "path": "data/playbooks/_drafts/_proposals.json",
+    }
+    data.setdefault("proposals", {})[pid] = rec
+    _save_proposals(data)
+    return rec
+
+
+def get_proposal(proposal_id: str) -> dict:
+    return (_load_proposals().get("proposals") or {}).get((proposal_id or "").strip()) or {}
 
 
 def _load_drafts() -> dict:
@@ -107,6 +158,8 @@ def confirm_draft(draft_id: str) -> dict:
     from workers.playbooks import load_playbook
 
     did = (draft_id or "").strip()
+    if did.startswith("pp-"):
+        return {"ok": False, "error": "这是蒸馏提议，不是草稿。先 distill 补 how_now。"}
     index = _load_drafts()
     meta = (index.get("drafts") or {}).get(did)
     if not meta:
@@ -162,9 +215,13 @@ def distill_action(args: dict) -> dict:
     ids = args.get("playbook_ids") or []
     if isinstance(ids, str):
         ids = [x.strip() for x in ids.replace(",", " ").split() if x.strip()]
+    prop = get_proposal(str(args.get("proposal_id") or "").strip())
+    if prop and not ids:
+        ids = list(prop.get("leaf_ids") or [])
+    title = str(args.get("title") or "").strip() or (prop.get("title") if prop else "")
     res = draft_cluster(
         ids,
-        title=str(args.get("title") or "").strip(),
+        title=title,
         how_now=str(args.get("how_now") or "").strip(),
     )
     if not res.get("ok"):

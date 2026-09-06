@@ -18,6 +18,8 @@ soul/SHE-STATE.md
 soul/CONSTITUTION.md
 
 # data/ 运行时数据：只保留机制(cognition) + 占位，私人数据全部忽略
+# 手册蒸馏草稿只活在本机 · 不入库
+data/playbooks/_drafts/
 data/*
 !data/.gitkeep
 !data/cognition

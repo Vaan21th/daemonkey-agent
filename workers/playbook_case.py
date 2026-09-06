@@ -261,16 +261,15 @@ def extract_action(args: dict) -> dict:
         )
     except ValueError as e:
         return _tool(False, error=str(e))
-    return _tool(
-        True,
-        output=(
-            "playbook saved\n"
-            f"  id: {result['id']}\n"
-            f"  path: {result['path']}\n"
-            f"  title: {title}\n"
-            "  落点: data/playbooks/ · 四件套已齐\n"
-        ),
-    )
+    out = _tool(True, output=(
+        "playbook saved\n"
+        f"  id: {result['id']}\n"
+        f"  path: {result['path']}\n"
+        f"  title: {title}\n"
+        "  落点: data/playbooks/ · 四件套已齐\n"
+    ))
+    out["id"] = result["id"]
+    return out
 
 
 def feedback_action(args: dict) -> dict:

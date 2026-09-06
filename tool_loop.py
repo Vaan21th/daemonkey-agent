@@ -1867,6 +1867,12 @@ def _loop_openai(
 
             if observe and spec is not None:
                 observe(spec, args, result)
+            try:
+                from workers.playbook_observe import observe_tool as _pb_obs
+                if spec is not None:
+                    _pb_obs(spec, args, result)
+            except Exception:
+                pass
 
             tool_entry = {
                 "role": "tool",
@@ -2260,6 +2266,12 @@ def _loop_anthropic(
 
             if observe and spec is not None:
                 observe(spec, args, result)
+            try:
+                from workers.playbook_observe import observe_tool as _pb_obs
+                if spec is not None:
+                    _pb_obs(spec, args, result)
+            except Exception:
+                pass
 
             tool_results.append({
                 "type": "tool_result",

@@ -430,6 +430,9 @@ def record_playbook_result(playbook_id: str, success: bool, note: str = "") -> d
         try:
             from workers.playbook_case import append_trial
             writeback = append_trial(playbook_id, note)
+            if writeback.get("ok"):
+                from workers.playbook_observe import clear_empty_flag
+                clear_empty_flag(playbook_id)
         except Exception as e:
             writeback = {"ok": False, "error": str(e)}
     return {

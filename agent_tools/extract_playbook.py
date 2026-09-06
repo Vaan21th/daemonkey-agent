@@ -57,6 +57,12 @@ def _run(args: dict) -> ToolResult:
         if action == "extract":
             from workers.playbook_case import extract_action
             got = extract_action(args)
+            if got.get("ok") and got.get("id"):
+                try:
+                    from workers.playbook_observe import note_extract
+                    note_extract(got["id"], args.get("trials") or "")
+                except Exception:
+                    pass
             return ToolResult(ok=bool(got.get("ok")), output=got.get("output") or "", error=got.get("error") or "")
 
         if action == "distill":
@@ -140,6 +146,11 @@ def _run(args: dict) -> ToolResult:
 
             meta = result.get("meta", {})
             mark_used(result["id"])
+            try:
+                from workers.playbook_observe import note_loaded
+                note_loaded(result["id"])
+            except Exception:
+                pass
 
             # wish-599c46bd (墨言 wish-bf460f7b) · 注入→使用转化追踪: load 即记一条 ·
             # 供 closure_check.inject_stats join 算转化率
@@ -313,6 +324,10 @@ SPEC = ToolSpec(
             "draft_id": {
                 "type": "string",
                 "description": "distill_confirm: 草稿 id（pd-xxx）",
+            },
+            "proposal_id": {
+                "type": "string",
+                "description": "distill: 同簇提议 id（pp-xxx），补 how_now 才成草稿",
             },
             "prerequisites": {
                 "type": "string",

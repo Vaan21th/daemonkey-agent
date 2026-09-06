@@ -76,6 +76,11 @@ def begin_turn() -> None:
         _hp_begin()
     except Exception:
         pass
+    try:
+        from workers.playbook_observe import begin as _pb_begin
+        _pb_begin()
+    except Exception:
+        pass
 
 
 def record_tool(name: str) -> None:
@@ -622,13 +627,13 @@ def relevant_playbooks(message: str, *, limit: int = 2, session_id: str = "") ->
             except Exception:
                 pass   # 抑制查询失败不阻断注入主流程
             top.append(meta)
-            if len(top) >= limit:
+            if len(top) >= max(limit * 2, 4):
                 break
     except Exception:
         top = []
 
     if not top:
-        top = _keyword_playbooks(msg, limit)
+        top = _keyword_playbooks(msg, max(limit * 2, 4))
         # 终审 N-6 · fallback 路径也做抑制过滤 · 口径与主路径一致
         if top:
             try:
@@ -636,6 +641,11 @@ def relevant_playbooks(message: str, *, limit: int = 2, session_id: str = "") ->
                 top = [pb for pb in top if _get_supp(pb.get("id", "")) < _SUPPRESS_CUTOFF]
             except Exception:
                 pass
+    try:
+        from workers.playbook_observe import downrank_empty
+        top = downrank_empty(top)[:limit]
+    except Exception:
+        top = top[:limit]
     if not top:
         return ""
 
@@ -721,6 +731,10 @@ def relevant_playbooks(message: str, *, limit: int = 2, session_id: str = "") ->
         extra = format_injection(fresh, msg)
         if extra:
             lines.append(extra)
+        from workers.playbook_observe import propose_cluster_hint
+        hint = propose_cluster_hint(fresh, msg)
+        if hint:
+            lines.append(hint)
     except Exception:
         pass
     _log_injection(msg, "playbook", [pb.get("id", "") for pb in fresh],

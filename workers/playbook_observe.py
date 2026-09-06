@@ -1,0 +1,163 @@
+"""手册观察：load 之后的失败由 daemon 写回，不靠模型自觉。"""
+from __future__ import annotations
+
+import contextvars
+import hashlib
+import re
+from typing import Any
+
+_EMPTY = frozenset({"", "无", "暂无", "暂无记录", "尚无失败路径"})
+_SKIP_ERR = ("aborted", "用户取消", "unknown action", "必填", "not allowed")
+_ST: contextvars.ContextVar[dict | None] = contextvars.ContextVar("pb_obs", default=None)
+
+
+def begin() -> None:
+    _ST.set({"loaded": [], "wrote": set()})
+
+
+def _state() -> dict:
+    st = _ST.get()
+    if st is None:
+        st = {"loaded": [], "wrote": set()}
+        _ST.set(st)
+    return st
+
+
+def note_loaded(playbook_id: str) -> None:
+    pid = (playbook_id or "").strip()
+    if not pid:
+        return
+    loaded = _state()["loaded"]
+    if pid not in loaded:
+        loaded.append(pid)
+
+
+def last_loaded() -> str:
+    loaded = _state()["loaded"]
+    return loaded[-1] if loaded else ""
+
+
+def _err_fp(text: str) -> str:
+    t = re.sub(r"\s+", " ", (text or "").strip())[:80]
+    return hashlib.sha256(t.encode("utf-8")).hexdigest()[:12] if t else ""
+
+
+def is_empty_experience(playbook_id: str) -> bool:
+    from workers.playbook_case import case_snippets
+    trial = (case_snippets(playbook_id).get("trial") or "").strip()
+    body = trial[2:].strip() if trial.startswith("- ") else trial
+    # 时间戳 · 正文
+    if " · " in body:
+        body = body.split(" · ", 1)[-1].strip()
+    return body in _EMPTY
+
+
+def downrank_empty(candidates: list[dict]) -> list[dict]:
+    """空经验（只有占位试错过）排到后面，不占有真实试错的名额。"""
+    if not candidates:
+        return candidates
+    real, hollow = [], []
+    for pb in candidates:
+        (hollow if is_empty_experience(pb.get("id") or "") else real).append(pb)
+    return real + hollow
+
+
+def note_extract(playbook_id: str, trials: str) -> None:
+    from workers.playbooks import _INDEX_LOCK, _load_index, _save_index
+    pid = (playbook_id or "").strip()
+    if not pid:
+        return
+    hollow = (trials or "").strip() in _EMPTY
+    with _INDEX_LOCK:
+        index = _load_index()
+        meta = index.get("playbooks", {}).get(pid)
+        if not meta:
+            return
+        if hollow:
+            meta["empty_trials"] = True
+            meta["empty_streak"] = int(meta.get("empty_streak") or 0) + 1
+        else:
+            meta["empty_trials"] = False
+            meta["empty_streak"] = 0
+        _save_index(index)
+
+
+def clear_empty_flag(playbook_id: str) -> None:
+    from workers.playbooks import _INDEX_LOCK, _load_index, _save_index
+    pid = (playbook_id or "").strip()
+    if not pid:
+        return
+    with _INDEX_LOCK:
+        index = _load_index()
+        meta = index.get("playbooks", {}).get(pid)
+        if not meta:
+            return
+        meta["empty_trials"] = False
+        meta["empty_streak"] = 0
+        _save_index(index)
+
+
+def _should_skip_fail(name: str, err: str) -> bool:
+    if not name or not err:
+        return True
+    low = err.lower()
+    if any(s in err or s in low for s in _SKIP_ERR):
+        return True
+    from workers.closure_check import SIDE_EFFECT_TOOLS
+    return name not in SIDE_EFFECT_TOOLS
+
+
+def auto_writeback(tool_name: str, error: str) -> dict:
+    """本轮 load 过手册之后，关键步骤失败 → 写回最近一本。每册每轮最多一次。"""
+    pid = last_loaded()
+    if not pid or _should_skip_fail(tool_name, error):
+        return {"ok": False, "skipped": True}
+    fp = _err_fp(f"{tool_name}:{error}")
+    wrote = _state()["wrote"]
+    key = f"{pid}:{fp}"
+    if key in wrote or pid in {x.split(":", 1)[0] for x in wrote}:
+        return {"ok": False, "skipped": True, "reason": "already"}
+    from workers.playbook_case import append_trial, case_snippets
+    last = case_snippets(pid).get("trial") or ""
+    if fp and fp in last:
+        return {"ok": False, "skipped": True, "reason": "dup"}
+    compact = re.sub(r"\s+", " ", error).strip()[:160]
+    note = f"自动 · {tool_name} 失败: {compact}"
+    res = append_trial(pid, note)
+    if res.get("ok"):
+        wrote.add(key)
+        clear_empty_flag(pid)
+    return res
+
+
+def observe_tool(spec: Any, args: dict | None, result: Any) -> None:
+    name = getattr(spec, "name", "") or ""
+    args = args if isinstance(args, dict) else {}
+    ok = bool(getattr(result, "ok", False))
+    if name == "extract_playbook" and (args.get("action") or "").lower() == "load" and ok:
+        note_loaded(str(args.get("playbook_id") or ""))
+        return
+    if ok or name == "extract_playbook":
+        return
+    auto_writeback(name, str(getattr(result, "error", "") or ""))
+
+
+def propose_cluster_hint(fresh: list[dict], message: str = "") -> str:
+    """同簇 ≥3 提出蒸馏议，不入库、不写 how_now。"""
+    from workers.playbook_cluster import peers_of
+    from workers.playbook_distill import upsert_proposal
+    if len(fresh) < 1:
+        return ""
+    pb = fresh[0]
+    slug = pb.get("slug") or ""
+    peers = peers_of(slug, query=message, k=5)
+    leaf_ids = [pb.get("id") or ""]
+    leaf_ids += [p.get("id") or "" for p in peers]
+    leaf_ids = [x for x in leaf_ids if x]
+    rec = upsert_proposal(leaf_ids, title=f"建议蒸馏 · {pb.get('title') or slug}")
+    if not rec:
+        return ""
+    return (
+        f"  同簇已有 {len(rec.get('leaf_ids') or [])} 份，已提出蒸馏 "
+        f"proposal_id={rec['id']}。补 how_now 用 distill，确认前不入库。叶子未动。"
+    )
