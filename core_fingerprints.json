@@ -313,7 +313,7 @@
     "workers/playbook_cluster.py": "e410a0d911ba2cab",
     "workers/playbook_distill.py": "48802908d077c509",
     "workers/playbook_import.py": "d39c7eaf8d563f59",
-    "workers/playbook_observe.py": "fed37dace1b52cb8",
+    "workers/playbook_observe.py": "87564df1945d0338",
     "workers/playbooks.py": "f2274f82c8e9ebfd",
     "workers/pricing.py": "a7ca0456bc37faf0",
     "workers/proactive_call.py": "e7c3fc9865068c85",

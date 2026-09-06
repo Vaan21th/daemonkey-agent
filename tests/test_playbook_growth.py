@@ -166,7 +166,7 @@ def test_knife1_auto_writeback_through_relevant_playbooks(pb_home: Path, monkeyp
     observe_tool(
         SimpleNamespace(name="python_exec"),
         {},
-        SimpleNamespace(ok=False, error="self_heal 假 result 丢掉了验证"),
+        SimpleNamespace(ok=False, error="self_heal 假 result 丢掉了验证", output=""),
     )
     after = relevant_playbooks(q, session_id="")
     assert "假 result" in after
@@ -175,9 +175,23 @@ def test_knife1_auto_writeback_through_relevant_playbooks(pb_home: Path, monkeyp
     observe_tool(
         SimpleNamespace(name="python_exec"),
         {},
-        SimpleNamespace(ok=False, error="self_heal 假 result 丢掉了验证"),
+        SimpleNamespace(ok=False, error="self_heal 假 result 丢掉了验证", output=""),
     )
     assert raw == (pb_home / f"{pb['slug']}.md").read_text(encoding="utf-8")
+    begin()
+    note_loaded(pb["id"])
+    observe_tool(
+        SimpleNamespace(name="catalog_call"),
+        {"name": "python_exec", "args": {"code": "raise RuntimeError('x')"}},
+        SimpleNamespace(
+            ok=False,
+            error="exit code 1",
+            output='Traceback:\nRuntimeError: canary_fake_result_20260906\n',
+        ),
+    )
+    raw2 = (pb_home / f"{pb['slug']}.md").read_text(encoding="utf-8")
+    assert "RuntimeError: canary_fake_result_20260906" in raw2
+    assert raw2.count("exit code 1") == 0 or "RuntimeError" in raw2
 
 
 def test_knife2_empty_experience_loses_the_slot(pb_home: Path, monkeypatch):

@@ -97,6 +97,36 @@ def clear_empty_flag(playbook_id: str) -> None:
         _save_index(index)
 
 
+def _unwrap(name: str, args: dict) -> tuple[str, dict]:
+    if name != "catalog_call":
+        return name, args
+    inner = str(args.get("name") or "").strip()
+    inner_args = args.get("args")
+    if not inner or not isinstance(inner_args, dict):
+        return name, args
+    return inner, inner_args
+
+
+def _fail_blob(result: Any) -> str:
+    err = str(getattr(result, "error", "") or "").strip()
+    out = str(getattr(result, "output", "") or "").strip()
+    if out and (not err or re.match(r"(?i)exit code \d+$", err)):
+        return f"{err} {out}".strip()
+    return err or out
+
+
+def _compact_fail(text: str) -> str:
+    t = re.sub(r"\s+", " ", text or "").strip()
+    m = re.search(
+        r"((?:RuntimeError|ValueError|TypeError|OSError|FileNotFoundError|"
+        r"KeyError|Exception): .{1,120})",
+        t,
+    )
+    if m:
+        return m.group(1).strip()[:160]
+    return t[:160]
+
+
 def _should_skip_fail(name: str, err: str) -> bool:
     if not name or not err:
         return True
@@ -112,16 +142,16 @@ def auto_writeback(tool_name: str, error: str) -> dict:
     pid = last_loaded()
     if not pid or _should_skip_fail(tool_name, error):
         return {"ok": False, "skipped": True}
-    fp = _err_fp(f"{tool_name}:{error}")
+    compact = _compact_fail(error)
+    fp = _err_fp(f"{tool_name}:{compact}")
     wrote = _state()["wrote"]
     key = f"{pid}:{fp}"
     if key in wrote or pid in {x.split(":", 1)[0] for x in wrote}:
         return {"ok": False, "skipped": True, "reason": "already"}
     from workers.playbook_case import append_trial, case_snippets
     last = case_snippets(pid).get("trial") or ""
-    if fp and fp in last:
+    if compact and compact in last:
         return {"ok": False, "skipped": True, "reason": "dup"}
-    compact = re.sub(r"\s+", " ", error).strip()[:160]
     note = f"自动 · {tool_name} 失败: {compact}"
     res = append_trial(pid, note)
     if res.get("ok"):
@@ -133,13 +163,14 @@ def auto_writeback(tool_name: str, error: str) -> dict:
 def observe_tool(spec: Any, args: dict | None, result: Any) -> None:
     name = getattr(spec, "name", "") or ""
     args = args if isinstance(args, dict) else {}
+    name, args = _unwrap(name, args)
     ok = bool(getattr(result, "ok", False))
     if name == "extract_playbook" and (args.get("action") or "").lower() == "load" and ok:
         note_loaded(str(args.get("playbook_id") or ""))
         return
     if ok or name == "extract_playbook":
         return
-    auto_writeback(name, str(getattr(result, "error", "") or ""))
+    auto_writeback(name, _fail_blob(result))
 
 
 def propose_cluster_hint(fresh: list[dict], message: str = "") -> str:
