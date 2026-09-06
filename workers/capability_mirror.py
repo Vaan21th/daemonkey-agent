@@ -51,7 +51,7 @@ def _load_bro_profile(max_chars: int = 3500) -> str:
     """读 BRO-NOTEBOOK · 截前 max_chars（要点都在前面）"""
     bro_file = SOUL_DIR / "BRO-NOTEBOOK.md"
     if not bro_file.exists():
-        return "（BRO-NOTEBOOK 还没同步 · 跑 sync-soul.ps1）"
+        return "（画像笔记还没放到 soul/ 目录）"
     try:
         text = bro_file.read_text(encoding="utf-8")
     except Exception:
@@ -319,7 +319,10 @@ def generate_snapshot() -> dict:
             f"<!-- 生成于 {datetime.now(timezone.utc).isoformat()} -->\n"
             f"<!-- 模型 {RUNTIME.model} · 耗时 {elapsed_ms}ms -->\n\n"
         )
-        SNAPSHOT_PATH.write_text(header + raw_output, encoding="utf-8")
+        import os as _os  # B-② · 2026-08-27 · 快照原子写 (Grok 全量审计)
+        _tmp = SNAPSHOT_PATH.with_name(SNAPSHOT_PATH.name + ".tmp")
+        _tmp.write_text(header + raw_output, encoding="utf-8")
+        _os.replace(_tmp, SNAPSHOT_PATH)
         logger.info("capability_mirror: snapshot written to %s", SNAPSHOT_PATH)
 
     return {

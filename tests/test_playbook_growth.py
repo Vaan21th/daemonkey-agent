@@ -305,3 +305,6 @@ def test_edit_and_script_cannot_write_playbooks(pb_home: Path):
     assert not idx.ok
     assert refuse_script("print(open('data/playbooks/x.md', encoding='utf-8').read())") is None
     assert refuse_script("Path('data/playbooks/x.md').write_text('hi')")
+    assert refuse_script("shutil.copy('data/playbooks/a.md', 'b.md')")
+    assert refuse_script("os.rename('data/playbooks/a.md', 'data/playbooks/b.md')")
+    assert refuse_script("Path('foo.md').write_text('x')", cwd=pb_home)

@@ -111,21 +111,6 @@ def _run(args: dict) -> ToolResult:
     code = args.get("code") or ""
     if not code.strip():
         return ToolResult(ok=False, output="", error="empty code")
-    try:
-        from workers.playbook_guard import refuse_script
-        blocked = refuse_script(code)
-        if blocked:
-            return ToolResult(ok=False, output="", error=blocked)
-    except Exception:
-        pass
-
-    used_secrets: dict[str, str] = {}
-    try:
-        from workers import app_secrets as _app_secrets
-        if "${secret:" in code:
-            code, used_secrets = _app_secrets.resolve_placeholders(code)
-    except Exception:
-        _app_secrets = None  # type: ignore
 
     cwd_arg = args.get("cwd")
     if cwd_arg:
@@ -136,6 +121,22 @@ def _run(args: dict) -> ToolResult:
         cwd = ROOT
     if not cwd.exists() or not cwd.is_dir():
         return ToolResult(ok=False, output="", error=f"cwd not a directory: {cwd}")
+
+    try:
+        from workers.playbook_guard import check_script
+        blocked = check_script(code, cwd)
+    except Exception:
+        return ToolResult(ok=False, output="", error="操作手册闸不可用，拒绝执行。")
+    if blocked:
+        return ToolResult(ok=False, output="", error=blocked)
+
+    used_secrets: dict[str, str] = {}
+    try:
+        from workers import app_secrets as _app_secrets
+        if "${secret:" in code:
+            code, used_secrets = _app_secrets.resolve_placeholders(code)
+    except Exception:
+        _app_secrets = None  # type: ignore
 
     timeout = int(args.get("timeout") or DEFAULT_TIMEOUT_SEC)
     if timeout <= 0:

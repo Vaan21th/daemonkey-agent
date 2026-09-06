@@ -1,31 +1,11 @@
-"""
-startup_notices.py
-==================
-
-升级后首条对话 · 把"更新了什么 + 缺什么依赖"递到 OPUS 手边 (2026-07-30 · 0.8.2 hotfix)
-
-问题 (BRO 原话):
-  "更新之后用户在升级后的对话框看不到升级内容，这个可以优化一下"
-  "没有依赖可以启动，但要去点环境补依赖——也可以在对话中提醒升级后的用户"
-
-方案 (NLP First · 不是硬弹窗):
-  1. daemon 启动时 refresh_startup_notices():
-     - 版本比对: data/runtime/last_seen_core_version vs core_manifest.json
-       · 不一致 = 刚升级 → 生成升级通知 (带上 log_ref 的 changelog md 摘要)
-       · 文件不存在 = 首次安装 → 只记录版本 · 不通知 (新装用户不需要 changelog)
-     - 可选依赖体检: find_spec 探测 (不真 import · 零副作用)
-       · 缺失项生成"去环境页点【开始安装】补装"提醒
-     - 落 data/runtime/startup_notices.json
-  2. telemetry 每 turn consume_startup_notices():
-     · 有内容 → 拼进 system prompt → OPUS 用自己的话自然转告用户
-     · 拼完即删 (一次性) → 不重复打扰
-"""
+"""升级后首条对话：更新说明 + 缺依赖提醒 (0.8.2)。NLP First，一次性注入。"""
 
 from __future__ import annotations
 
 import importlib.util
 import json
 import pathlib
+import re
 import sys
 from datetime import datetime
 
@@ -59,43 +39,58 @@ _OPTIONAL_DEPS: list[tuple[str, str, str, bool]] = [
 ]
 
 
-def _read_manifest_version() -> tuple[str, str]:
-    """返回 (core_version, log_ref 相对路径) · 读不到给空串。"""
+def _read_manifest() -> tuple[str, str, str]:
+    """返回 (core_version, log_ref, core_version_note)。"""
     try:
-        data = json.loads(_MANIFEST_FILE.read_text(encoding="utf-8"))
-        return str(data.get("core_version") or ""), str(data.get("log_ref") or "")
+        data = json.loads(_MANIFEST_FILE.read_text(encoding="utf-8-sig"))
+        return (
+            str(data.get("core_version") or ""),
+            str(data.get("log_ref") or ""),
+            str(data.get("core_version_note") or ""),
+        )
     except Exception:
-        return "", ""
+        return "", "", ""
 
 
-def _read_changelog(log_ref: str, max_chars: int = 2500) -> str:
-    """读更新说明 · log_ref 两种形态都兼容:
-    - 是仓库相对路径 → 读文件全文 (截断防爆 token)
-    - 不是路径 = 累积版本日志文本 (" · " 分隔) → 取末段 (当前版本描述)
-    """
-    if not log_ref:
+def _ver_spans(blob: str):
+    return list(re.finditer(
+        r"(?:\d+\.\d+\.\d+[a-zA-Z0-9+]*\s*\(|卷\(\d+\.\d+\.\d+\))", blob or ""))
+
+
+def _segment_for_version(blob: str, version: str = "") -> str:
+    """note 新→旧在前；log_ref 末段曾停在 0.9.9，必须按 version 切。"""
+    blob = blob or ""
+    matches = _ver_spans(blob)
+    if not matches:
+        return blob.strip()
+    chosen = None
+    if version:
+        for m in matches:
+            num = re.match(r"(?:卷\()?(\d+\.\d+\.\d+)", m.group(0))
+            if num and num.group(1) == version:
+                chosen = m
+                break
+    if chosen is None:
+        chosen = matches[0] if matches[0].start() <= 1 else matches[-1]
+    i = matches.index(chosen)
+    end = matches[i + 1].start() if i + 1 < len(matches) else len(blob)
+    return blob[chosen.start():end].strip(" ·")
+
+
+def _read_changelog(log_ref: str, max_chars: int = 2500, version: str = "", note: str = "") -> str:
+    """优先 core_version_note，按 version 切段。避免胶囊误显示 0.9.9。"""
+    blob = (note or "").strip() or (log_ref or "").strip()
+    if not blob:
         return ""
     try:
-        p = pathlib.Path(log_ref)
-        if p.is_file():
-            text = p.read_text(encoding="utf-8").strip()
-            if len(text) > max_chars:
-                text = text[:max_chars].rstrip() + "\n…(完整版见 " + log_ref + ")"
-            return text
-        # 累积日志文本: 取最后一个版本号段 (版本间/段内都混用 " · " · 按版本号模式切才稳)
-        # 2026-08-14 修 (BRO: 升级胶囊显示旧内容): 旧正则 \d+\.\d+\.\d+[a-zA-Z0-9]*\(
-        # 只认 "0.8.6(" 紧跟括号 · 不认 "卷(0.8.9)" / "0.9.1+ (2026-08-12" (+ 后空格)
-        # → 匹配不到最新段 → 回退显示 0.8.6 老内容。改三态兼容:
-        #   · "0.8.6("          → 版本号紧跟括号 (标准)
-        #   · "0.9.1+ ("        → 版本号带 + 后缀 + 空格再括号 (2026-08-12 起格式)
-        #   · "卷(0.8.9):"      → 卷+版本号段 (0.8.9 特例)
-        import re
-        matches = list(re.finditer(
-            r"(?:\d+\.\d+\.\d+[a-zA-Z0-9+]*\s*\(|卷\(\d+\.\d+\.\d+\))", log_ref))
-        if matches:
-            text = log_ref[matches[-1].start():].strip()
-        else:
-            text = log_ref.split(" · ")[-1].strip() if " · " in log_ref else log_ref.strip()
+        if not note:
+            p = pathlib.Path(log_ref)
+            if p.is_file():
+                text = p.read_text(encoding="utf-8").strip()
+                if len(text) > max_chars:
+                    text = text[:max_chars].rstrip() + "\n…(完整版见 " + log_ref + ")"
+                return text
+        text = _segment_for_version(blob, version)
         if len(text) > max_chars:
             text = text[:max_chars].rstrip() + "…"
         return text
@@ -164,7 +159,7 @@ def refresh_startup_notices() -> dict:
     notices: dict = {"created_at": datetime.now().isoformat(timespec="seconds")}
 
     # --- 版本比对 ---
-    current_ver, log_ref = _read_manifest_version()
+    current_ver, log_ref, version_note = _read_manifest()
     last_seen = ""
     try:
         if _LAST_SEEN_FILE.is_file():
@@ -177,7 +172,7 @@ def refresh_startup_notices() -> dict:
         notices["version_notice"] = {
             "from": last_seen,
             "to": current_ver,
-            "changelog": _read_changelog(log_ref),
+            "changelog": _read_changelog(log_ref, version=current_ver, note=version_note),
         }
     elif current_ver and not last_seen:
         # 首次安装 (0.8.3 · BRO 拍板) · 不通知 changelog (新用户不需要更新史) ·

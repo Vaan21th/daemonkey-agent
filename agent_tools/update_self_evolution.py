@@ -185,7 +185,7 @@ def _run(args: dict) -> ToolResult:
             f"  hair number: 第{_ordinal_zh(new_hair_n)}根{fts_msg}{diary_msg}\n"
             + (
                 "\n  ⏳ 这是 proposal——等 用户 review 后再合入 OPUS-MEMORIES.md。\n"
-                "    流程：用户 同意 → 改 SELF-EVOLUTION 的 ⏳ 为 ✅ → 改全局 OPUS-MEMORIES.md → 跑 sync-soul.ps1"
+                "    流程：用户 同意 → 改 SELF-EVOLUTION 的 ⏳ 为 ✅ → 再写入灵魂自传"
                 if mode == "proposal" else
                 "\n  observation 已追加。**所有容器**（Cursor / daemon / 微信桥）下一根毛装上时都会读到。"
             )

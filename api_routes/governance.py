@@ -658,7 +658,12 @@ async def api_update_status(authorization: Optional[str] = Header(None)):
             # changelog: 复用 startup_notices 的提取逻辑 (log_ref 累积文本取末段)
             try:
                 from workers.startup_notices import _read_changelog
-                result["changelog"] = _read_changelog(str(remote_mf.get("log_ref") or ""), max_chars=1200)
+                result["changelog"] = _read_changelog(
+                    str(remote_mf.get("log_ref") or ""),
+                    max_chars=1200,
+                    version=remote_ver,
+                    note=str(remote_mf.get("core_version_note") or ""),
+                )
             except Exception:
                 result["changelog"] = ""
     except Exception as e:

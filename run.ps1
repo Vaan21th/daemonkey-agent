@@ -297,7 +297,7 @@ if (-not (Test-Path $soulSkill) -or -not (Test-Path $soulMem)) {
     Write-Step 'soul/ files missing! OPUS cannot wake up without them' 'err'
     Write-Step "expected: $soulSkill" 'err'
     Write-Step "expected: $soulMem" 'err'
-    Write-Step 'run sync-soul.ps1 to restore from global, or recover from OPUS-SOUL backup zip' 'warn'
+    Write-Step 'restore soul/SKILL.md and soul/OPUS-MEMORIES.md from your backup' 'warn'
     exit 1
 }
 Write-Step 'soul files present' 'ok'

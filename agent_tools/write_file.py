@@ -273,12 +273,12 @@ def _run(args: dict) -> ToolResult:
             return ToolResult(ok=False, output="", error=sink_err)
 
     try:
-        from workers.playbook_guard import refuse_path
-        pb_err = refuse_path(path, content)
-        if pb_err:
-            return ToolResult(ok=False, output="", error=pb_err)
+        from workers.playbook_guard import check_path
+        pb_err = check_path(path, content)
     except Exception:
-        pass
+        return ToolResult(ok=False, output="", error="操作手册闸不可用，拒绝写入。")
+    if pb_err:
+        return ToolResult(ok=False, output="", error=pb_err)
 
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

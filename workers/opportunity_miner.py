@@ -212,7 +212,7 @@ def _load_bro_profile(max_chars: int = 3500) -> str:
     """读 soul/OWNER-NOTEBOOK.md · 截前 max_chars 字符（要点都在前面）"""
     bro_file = _owner_notebook_path(ROOT / "soul")
     if not bro_file.exists():
-        return "（OWNER-NOTEBOOK 还没同步 · 跑 sync-soul.ps1）"
+        return "（画像笔记还没放到 soul/ 目录）"
     try:
         text = bro_file.read_text(encoding="utf-8")
     except Exception:

@@ -7,6 +7,21 @@
 
 ---
 
+## [1.0.2] — 2026-09-06
+
+**操作手册会记住失败；升级胶囊显示当前版本说明**
+
+### 新增 Added
+- **手册失败写回原册** —— 按手册做砸了，失败原因写回那一本，下次先看到「试错过」
+- **落点闸** —— 手册目录只许走正规入库工具，文件/脚本改手册会被拦住
+
+### 修复 Fixed
+- **升级胶囊误显示 0.9.9** —— 改按当前版本取说明。远程 `log_ref` 末段也补上 1.0.2，旧客户端同样能看到本版说明
+
+> Failed playbook runs write back to the same book. Upgrade capsule reads the current version note instead of the trailing 0.9.9 segment.
+
+---
+
 ## [1.0.1] — 2026-09-06
 
 **对外正式介绍这一版**

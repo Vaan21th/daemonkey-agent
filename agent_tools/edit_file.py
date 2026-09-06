@@ -52,12 +52,12 @@ from .write_file import _resolve, _classify, _branch_guard_warning
 
 def _refuse_playbook(path: Path, content: str = "") -> ToolResult | None:
     try:
-        from workers.playbook_guard import refuse_path
-        err = refuse_path(path, content)
-        if err:
-            return ToolResult(ok=False, output="", error=err)
+        from workers.playbook_guard import check_path
+        err = check_path(path, content)
     except Exception:
-        pass
+        return ToolResult(ok=False, output="", error="操作手册闸不可用，拒绝写入。")
+    if err:
+        return ToolResult(ok=False, output="", error=err)
     return None
 
 

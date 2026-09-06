@@ -435,7 +435,7 @@ def _run_state(args: dict) -> ToolResult:
             f"  local   : {local_path.relative_to(ROOT)}\n"
             f"  flow    : 操作记录已追加到'近期更新流水'{fts_msg}{reload_msg}\n"
             f"  effect  : 本 daemon 下一轮对话即刻带上 (卷五十四热重载)" +
-            ("" if global_path else " · 全局目录回来后用 sync-soul.ps1 可补同步其他容器")
+            ("" if global_path else " · 全局目录回来后可用 soul sync script 补同步其他容器")
         ),
     )
 
@@ -530,7 +530,7 @@ def _run(args: dict) -> ToolResult:
             f"  local   : {local_path.relative_to(ROOT)}\n"
             f"  flow    : 操作记录已追加到'近期更新流水'{fts_msg}{reload_msg}\n"
             f"  effect  : 本 daemon 下一轮对话即刻带上 (卷五十四热重载)" +
-            ("" if global_path else " · 全局目录回来后用 sync-soul.ps1 可补同步其他容器")
+            ("" if global_path else " · 全局目录回来后可用 soul sync script 补同步其他容器")
         ),
     )
 

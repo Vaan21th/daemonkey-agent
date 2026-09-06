@@ -500,7 +500,7 @@ def _load_opportunity_by_id(opp_id: str) -> Optional[dict]:
 def _load_bro_profile(max_chars: int = 3000) -> str:
     bro_file = _owner_notebook_path(ROOT / "soul")
     if not bro_file.exists():
-        return "（BRO-NOTEBOOK 还没同步 · 跑 sync-soul.ps1）"
+        return "（画像笔记还没放到 soul/ 目录）"
     try:
         text = bro_file.read_text(encoding="utf-8")
     except Exception:

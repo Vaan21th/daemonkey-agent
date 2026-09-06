@@ -279,13 +279,25 @@ def _run(args: dict) -> ToolResult:
     cmd = (args.get("command") or "").strip()
     if not cmd:
         return ToolResult(ok=False, output="", error="empty command")
+
+    cwd_arg = args.get("cwd")
+    if cwd_arg:
+        cwd = Path(cwd_arg)
+        if not cwd.is_absolute():
+            cwd = ROOT / cwd
+    else:
+        cwd = ROOT
+
+    if not cwd.exists() or not cwd.is_dir():
+        return ToolResult(ok=False, output="", error=f"cwd not a directory: {cwd}")
+
     try:
-        from workers.playbook_guard import refuse_script
-        blocked = refuse_script(cmd)
-        if blocked:
-            return ToolResult(ok=False, output="", error=blocked)
+        from workers.playbook_guard import check_script
+        blocked = check_script(cmd, cwd)
     except Exception:
-        pass
+        return ToolResult(ok=False, output="", error="操作手册闸不可用，拒绝执行。")
+    if blocked:
+        return ToolResult(ok=False, output="", error=blocked)
     try:
         from ._hotpath_guard import block_shell
         blocked = block_shell(cmd)
@@ -301,17 +313,6 @@ def _run(args: dict) -> ToolResult:
             cmd, used_secrets = _app_secrets.resolve_placeholders(cmd)
     except Exception:
         _app_secrets = None
-
-    cwd_arg = args.get("cwd")
-    if cwd_arg:
-        cwd = Path(cwd_arg)
-        if not cwd.is_absolute():
-            cwd = ROOT / cwd
-    else:
-        cwd = ROOT
-
-    if not cwd.exists() or not cwd.is_dir():
-        return ToolResult(ok=False, output="", error=f"cwd not a directory: {cwd}")
 
     timeout = int(args.get("timeout") or DEFAULT_TIMEOUT_SEC)
     if timeout <= 0:

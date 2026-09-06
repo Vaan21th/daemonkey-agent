@@ -443,7 +443,7 @@ def _load_bro_profile(*, section_excerpt_chars: int) -> dict:
         return {
             "source": "soul/BRO-NOTEBOOK.md",
             "exists": False,
-            "note": "BRO-NOTEBOOK 还没同步进来 · 跑一下 sync-soul.ps1",
+            "note": "画像笔记还没放到 soul/ 目录（OWNER-NOTEBOOK.md）",
             "sections": [],
             "state_card": {},
             "state_card_history": {},
