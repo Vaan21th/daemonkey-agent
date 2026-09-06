@@ -50,6 +50,17 @@ from ._edit_lock import (
 from .write_file import _resolve, _classify, _branch_guard_warning
 
 
+def _refuse_playbook(path: Path, content: str = "") -> ToolResult | None:
+    try:
+        from workers.playbook_guard import refuse_path
+        err = refuse_path(path, content)
+        if err:
+            return ToolResult(ok=False, output="", error=err)
+    except Exception:
+        pass
+    return None
+
+
 def _summarize(args: dict) -> str:
     p = args.get("path", "?")
     old = args.get("old_string", "") or ""
@@ -142,6 +153,10 @@ def _run_batch(args: dict, raw: str, edits: list) -> ToolResult:
 
     # 还原 EOL
     updated = _norm.replace("\n", "\r\n") if _eol == "\r\n" else _norm
+
+    _blocked = _refuse_playbook(path, updated)
+    if _blocked:
+        return _blocked
 
     # 并发软锁 (force 语义同单次)
     _owner = current_session_id()
@@ -280,6 +295,10 @@ def _run(args: dict) -> ToolResult:
             ok=False, output="",
             error="拒绝: 替换后整个文件几乎为空·疑似 old_string 吃掉了全文。检查 old_string 范围。",
         )
+
+    _blocked = _refuse_playbook(path, updated)
+    if _blocked:
+        return _blocked
 
     # 编辑并发软锁: 另一个对话 TTL 内正改这文件 / 磁盘被外部改过 → 软提示排队 (可 force 过)
     _owner = current_session_id()

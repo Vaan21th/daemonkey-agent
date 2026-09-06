@@ -280,6 +280,13 @@ def _run(args: dict) -> ToolResult:
     if not cmd:
         return ToolResult(ok=False, output="", error="empty command")
     try:
+        from workers.playbook_guard import refuse_script
+        blocked = refuse_script(cmd)
+        if blocked:
+            return ToolResult(ok=False, output="", error=blocked)
+    except Exception:
+        pass
+    try:
         from ._hotpath_guard import block_shell
         blocked = block_shell(cmd)
         if blocked:

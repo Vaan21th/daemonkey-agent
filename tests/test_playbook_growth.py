@@ -231,3 +231,77 @@ def test_refuse_loose_folder(pb_home: Path, tmp_path: Path):
     assert err and "data/playbooks" in err
     inside = pb_home / "x.md"
     assert refuse_loose_playbook(inside, "# hi")
+
+
+def test_dedup_older_trial_not_just_last(pb_home: Path):
+    from types import SimpleNamespace
+    from workers.playbook_case import append_trial
+    from workers.playbook_observe import begin, note_loaded, observe_tool
+    pb = _case("dup", "去重旧失败", "同一异常不该再记")
+    append_trial(pb["id"], "自动 · python_exec 失败: RuntimeError: old_fail_mark")
+    append_trial(pb["id"], "自动 · python_exec 失败: RuntimeError: newer_fail_mark")
+    begin()
+    note_loaded(pb["id"])
+    observe_tool(
+        SimpleNamespace(name="python_exec"),
+        {},
+        SimpleNamespace(ok=False, error="RuntimeError: old_fail_mark", output=""),
+    )
+    raw = (pb_home / f"{pb['slug']}.md").read_text(encoding="utf-8")
+    assert raw.count("old_fail_mark") == 1
+
+
+def test_writeback_picks_matching_book(pb_home: Path):
+    from types import SimpleNamespace
+    from workers.playbook_observe import begin, note_loaded, observe_tool
+    eol = _case("attr-a", "换行保真 canary_attr_eol", "open 不写 newline")
+    pub = _case("attr-b", "发布一条龙无关册", "打 tag 上传")
+    begin()
+    note_loaded(eol["id"])
+    note_loaded(pub["id"])
+    observe_tool(
+        SimpleNamespace(name="python_exec"),
+        {"code": "raise RuntimeError('canary_attr_eol')"},
+        SimpleNamespace(ok=False, error="RuntimeError: canary_attr_eol", output=""),
+    )
+    eol_raw = (pb_home / f"{eol['slug']}.md").read_text(encoding="utf-8")
+    pub_raw = (pb_home / f"{pub['slug']}.md").read_text(encoding="utf-8")
+    assert "canary_attr_eol" in eol_raw
+    assert "自动 · python_exec" not in pub_raw
+
+
+def test_writeback_skips_when_ambiguous(pb_home: Path):
+    from types import SimpleNamespace
+    from workers.playbook_observe import begin, note_loaded, observe_tool
+    a = _case("amb-a", "手册甲独立主题", "甲的问题")
+    b = _case("amb-b", "手册乙另一主题", "乙的问题")
+    begin()
+    note_loaded(a["id"])
+    note_loaded(b["id"])
+    observe_tool(
+        SimpleNamespace(name="python_exec"),
+        {},
+        SimpleNamespace(ok=False, error="RuntimeError: totally_unrelated_token_zz", output=""),
+    )
+    assert "自动 · python_exec" not in (pb_home / f"{a['slug']}.md").read_text(encoding="utf-8")
+    assert "自动 · python_exec" not in (pb_home / f"{b['slug']}.md").read_text(encoding="utf-8")
+
+
+def test_edit_and_script_cannot_write_playbooks(pb_home: Path):
+    from agent_tools.edit_file import _run as edit_run
+    from agent_tools.write_file import _run as write_run
+    from workers.playbook_guard import refuse_script
+    pb = _case("gate", "落点闸手册", "只许 extract")
+    path = pb_home / f"{pb['slug']}.md"
+    edited = edit_run({
+        "path": str(path),
+        "old_string": "尚无失败路径",
+        "new_string": "偷偷改试错过",
+    })
+    assert not edited.ok
+    assert "extract_playbook" in (edited.error or "")
+    assert "偷偷改试错过" not in path.read_text(encoding="utf-8")
+    idx = write_run({"path": str(pb_home / "_index.json"), "content": "{}"})
+    assert not idx.ok
+    assert refuse_script("print(open('data/playbooks/x.md', encoding='utf-8').read())") is None
+    assert refuse_script("Path('data/playbooks/x.md').write_text('hi')")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import contextvars
 import hashlib
+import json
 import re
 from typing import Any
 
@@ -133,9 +134,66 @@ def _unwrap(name: str, args: dict) -> tuple[str, dict]:
         return name, args
     inner = str(args.get("name") or "").strip()
     inner_args = args.get("args")
+    if isinstance(inner_args, str) and inner_args.strip():
+        try:
+            parsed = json.loads(inner_args)
+            inner_args = parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return name, args
     if not inner or not isinstance(inner_args, dict):
         return name, args
     return inner, inner_args
+
+
+def _trial_text(playbook_id: str) -> str:
+    from workers.playbook_case import split_sections
+    from workers.playbooks import load_playbook
+    loaded = load_playbook(playbook_id=playbook_id)
+    if loaded.get("error"):
+        return ""
+    return split_sections(loaded.get("content") or "").get("试错过") or ""
+
+
+def _tokens(text: str) -> set[str]:
+    return {m.group(0).lower() for m in re.finditer(r"[0-9A-Za-z]{4,}|[\u4e00-\u9fff]{2,}", text or "")}
+
+
+def _book_tokens(playbook_id: str) -> set[str]:
+    from workers.playbook_case import split_sections
+    from workers.playbooks import load_playbook
+    loaded = load_playbook(playbook_id=playbook_id)
+    meta = loaded.get("meta") or {}
+    sec = split_sections(loaded.get("content") or "")
+    blob = " ".join([
+        playbook_id, meta.get("slug") or "", loaded.get("title") or "",
+        sec.get("问题") or "",
+    ])
+    return _tokens(blob)
+
+
+def pick_writeback_id(error: str, args: dict | None = None) -> str:
+    """多册 load 过：看失败正文/参数跟哪本重合。重合不上宁可不写，别串册。"""
+    loaded = list(_state()["loaded"])
+    if not loaded:
+        return ""
+    if len(loaded) == 1:
+        return loaded[0]
+    args = args if isinstance(args, dict) else {}
+    hay = _tokens(" ".join(
+        [error] + [str(args.get(k) or "") for k in ("code", "command", "path", "cwd")]
+    ))
+    scored = [(len(hay & _book_tokens(pid)), pid) for pid in loaded]
+    best = max((n for n, _ in scored), default=0)
+    if best <= 0:
+        return ""
+    tied = [pid for n, pid in scored if n == best]
+    return tied[-1]
+
+
+def already_noted(playbook_id: str, compact: str) -> bool:
+    if not compact:
+        return False
+    return compact in _trial_text(playbook_id)
 
 
 def _fail_blob(result: Any) -> str:
@@ -168,21 +226,22 @@ def _should_skip_fail(name: str, err: str) -> bool:
     return name not in SIDE_EFFECT_TOOLS
 
 
-def auto_writeback(tool_name: str, error: str) -> dict:
-    """本轮 load 过手册之后，关键步骤失败 → 写回最近一本。每册每轮最多一次。"""
-    pid = last_loaded()
-    if not pid or _should_skip_fail(tool_name, error):
+def auto_writeback(tool_name: str, error: str, args: dict | None = None) -> dict:
+    """本轮 load 过手册之后，关键步骤失败 → 写回对得上的那本。每册每轮最多一次。"""
+    if _should_skip_fail(tool_name, error):
         return {"ok": False, "skipped": True}
+    pid = pick_writeback_id(error, args)
+    if not pid:
+        return {"ok": False, "skipped": True, "reason": "ambiguous"}
     compact = _compact_fail(error)
     fp = _err_fp(f"{tool_name}:{compact}")
     wrote = _state()["wrote"]
     key = f"{pid}:{fp}"
     if key in wrote or pid in {x.split(":", 1)[0] for x in wrote}:
         return {"ok": False, "skipped": True, "reason": "already"}
-    from workers.playbook_case import append_trial, case_snippets
-    last = case_snippets(pid).get("trial") or ""
-    if compact and compact in last:
+    if already_noted(pid, compact):
         return {"ok": False, "skipped": True, "reason": "dup"}
+    from workers.playbook_case import append_trial
     note = f"自动 · {tool_name} 失败: {compact}"
     res = append_trial(pid, note)
     if res.get("ok"):
@@ -201,7 +260,7 @@ def observe_tool(spec: Any, args: dict | None, result: Any) -> None:
         return
     if ok or name == "extract_playbook":
         return
-    auto_writeback(name, _fail_blob(result))
+    auto_writeback(name, _fail_blob(result), args)
 
 
 def propose_cluster_hint(fresh: list[dict], message: str = "") -> str:

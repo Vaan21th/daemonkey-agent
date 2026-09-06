@@ -111,6 +111,13 @@ def _run(args: dict) -> ToolResult:
     code = args.get("code") or ""
     if not code.strip():
         return ToolResult(ok=False, output="", error="empty code")
+    try:
+        from workers.playbook_guard import refuse_script
+        blocked = refuse_script(code)
+        if blocked:
+            return ToolResult(ok=False, output="", error=blocked)
+    except Exception:
+        pass
 
     used_secrets: dict[str, str] = {}
     try:
