@@ -15,15 +15,11 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 BASE = "http://127.0.0.1:7860"
-MARK = "canaryeol20260906"
-FAIL = "canary_fake_result_20260906"
+MARK = "canaryavoid20260906"
+FAIL = "canary_avoid_20260906"
 NATURAL = (
     f"Windows 金丝雀换行保真 {MARK} 写文件总把 LF 吃成 CRLF，"
     "按已有操作手册处理。"
-)
-EXPLICIT = (
-    f"先用 extract_playbook action=load 加载标题含「金丝雀换行保真 {MARK}」的操作手册，"
-    f"再按手册第一步用 python_exec 复现。不要绕过，不要 feedback。"
 )
 Q2 = NATURAL
 
@@ -41,42 +37,19 @@ H = {"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"}
 
 def _seed() -> dict:
     from workers.playbook_case import save_case
-    steps = (
-        "1. 用 python_exec 执行：raise RuntimeError('" + FAIL + "')\n"
-        "2. 看到这个 RuntimeError 就停，不要改代码绕过\n"
-        "3. 不要调用 extract_playbook action=feedback"
-    )
-    a = save_case(
+    return save_case(
         title=f"金丝雀换行保真 {MARK}",
         task_type="setup",
-        steps=steps,
+        steps=(
+            "1. 用 python_exec 执行：raise RuntimeError('" + FAIL + "')\n"
+            "2. 不要调用 extract_playbook action=feedback"
+        ),
         problem=f"Windows 写文件把 LF 吃成 CRLF · {MARK}",
         trials="尚无失败路径",
-        session_id="sess-slogan-canary",
+        session_id="sess-slogan-avoid",
         quote=NATURAL,
         tags=["canary", MARK],
     )
-    b = save_case(
-        title=f"金丝雀换行空经验 {MARK}",
-        task_type="setup",
-        steps="1. 打开文件\n2. 写回去",
-        problem=f"Windows 写文件把 LF 吃成 CRLF · {MARK}",
-        trials="尚无失败路径",
-        session_id="sess-slogan-hollow",
-        quote="空经验占位",
-        tags=["canary", MARK],
-    )
-    c = save_case(
-        title=f"金丝雀换行对照 {MARK}",
-        task_type="setup",
-        steps="1. 指定 newline\n2. 再写回",
-        problem=f"Windows 写文件把 LF 吃成 CRLF · {MARK}",
-        trials="尚无失败路径",
-        session_id="sess-slogan-peer",
-        quote="同簇对照",
-        tags=["canary", MARK],
-    )
-    return {"main": a, "hollow": b, "peer": c}
 
 
 def _inject(q: str) -> str:
@@ -175,76 +148,65 @@ def _add(a: dict, b: dict) -> dict:
     return {k: int(a.get(k) or 0) + int(b.get(k) or 0) for k in ("in", "out", "cache")}
 
 
+def _reran_fail(tools: list[dict]) -> bool:
+    for t in tools:
+        if t.get("name") == "python_exec" and FAIL in str(t.get("args") or ""):
+            return True
+    return False
+
+
 def main() -> int:
     ping = requests.get(BASE + "/api/ping-test", timeout=5)
     if ping.status_code != 200:
         raise SystemExit("daemon 没起来")
-    seeded = _seed()
-    main_pb = seeded["main"]
+    main_pb = _seed()
     pid = main_pb["id"]
     raw_path = ROOT / "data" / "playbooks" / f"{main_pb['slug']}.md"
     before = _inject(NATURAL)
     live_fts = pid in before or MARK in before
-    propose = "proposal_id=pp-" in before
     tag = time.strftime("%H%M%S")
     started = datetime.now(timezone.utc).isoformat()
-    sid1 = f"api-slogan-t1-{tag}"
-    sid2 = f"api-slogan-t2-{tag}"
+    sid1 = f"api-avoid-t1-{tag}"
+    sid2 = f"api-avoid-t2-{tag}"
     turn1 = _chat(NATURAL, sid1)
     tools1 = _tools(sid1)
     loaded = _loaded(tools1, pid) or _load_logged(pid, started)
     used = _usage(turn1)
-    prompt_kind = "natural"
-    if not loaded:
-        sid1b = f"api-slogan-t1b-{tag}"
-        turn1b = _chat(EXPLICIT, sid1b)
-        tools1b = _tools(sid1b)
-        used = _add(used, _usage(turn1b))
-        if _loaded(tools1b, pid) or _load_logged(pid, started):
-            loaded = True
-            prompt_kind = "explicit"
-            tools1 = tools1 + tools1b
-            sid1 = sid1b
-        else:
-            prompt_kind = "missed"
     raw_after = raw_path.read_text(encoding="utf-8") if raw_path.exists() else ""
-    wrote = FAIL in raw_after or "自动 · python_exec 失败" in raw_after
+    wrote = "自动 · python_exec 失败" in raw_after and FAIL in raw_after
     after = _inject(NATURAL)
-    recall = FAIL in after or "自动 · python_exec 失败" in after
-    hollow_lost = (seeded["hollow"]["id"] not in after) or (pid in after)
+    recall = "硬约束" in after and ("自动 ·" in after or FAIL in after)
     turn2 = _chat(Q2, sid2)
     used = _add(used, _usage(turn2))
+    tools2 = _tools(sid2)
     reply2 = turn2.get("reply") or ""
-    used_trial = FAIL in reply2 or "自动 ·" in reply2 or "假 result" in reply2 or "试错过" in reply2
+    avoided = loaded and wrote and not _reran_fail(tools2)
+    cited = any(x in reply2 for x in (FAIL, "试错过", "避开", "硬约束", "禁止再走"))
     evidence = {
         "live_fts_hit": live_fts,
-        "cluster_proposed": propose,
         "model_loaded": loaded,
-        "prompt_kind": prompt_kind,
-        "auto_writeback": wrote,
+        "auto_writeback_kept_exception": wrote,
         "feedback_called": _feedback(tools1),
-        "next_recall_sees_trial": recall,
-        "empty_lost_slot": hollow_lost and wrote,
-        "model_used_trial": used_trial,
+        "next_recall_hard_constraint": recall,
+        "t2_avoided_same_fail": avoided,
+        "t2_cited_trial": cited,
     }
-    if not evidence["live_fts_hit"]:
-        slogan = "未达标 · 真 FTS 都没召回这本手册"
-    elif not evidence["model_loaded"]:
-        slogan = "未达标 · 手册在手里，真会话没有 load，失败写不回去"
-    elif not evidence["auto_writeback"]:
-        slogan = "未达标 · load 了但失败没自动写回"
-    elif evidence["feedback_called"]:
-        slogan = "未达标 · 还是靠模型自觉 feedback，不是 daemon 自己写"
-    elif not evidence["next_recall_sees_trial"]:
-        slogan = "未达标 · 写了但下次同一句看不见"
-    elif evidence["prompt_kind"] == "explicit" and not evidence["model_used_trial"]:
-        slogan = "管道能长，自然问法不会长 · 口号未满"
-    elif evidence["prompt_kind"] == "explicit":
-        slogan = "机械闭环成立，自然问法不 load · 口号未满"
-    elif not evidence["model_used_trial"]:
-        slogan = "下次能看见失败，回答没吃进去 · 口号未满"
+    if not live_fts:
+        slogan = "未达标 · 真 FTS 没召回"
+    elif not loaded:
+        slogan = "未达标 · 真会话没 load"
+    elif not wrote:
+        slogan = "未达标 · 写回没留下失败正文"
+    elif _feedback(tools1):
+        slogan = "未达标 · 还靠 feedback"
+    elif not recall:
+        slogan = "未达标 · 下次注入没有硬约束"
+    elif not avoided:
+        slogan = "未达标 · 看见了还照走同一条失败"
+    elif not cited:
+        slogan = "避开了但没说出来 · 口号未满"
     else:
-        slogan = "手册环用户可感知 · 只这一环，不代表整产品已落地"
+        slogan = "手册环这一刀用户可感知 · 不代表整产品已落地"
     report = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "standard": "只为你而成长 · 真会话",

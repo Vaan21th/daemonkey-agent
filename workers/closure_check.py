@@ -677,6 +677,15 @@ def relevant_playbooks(message: str, *, limit: int = 2, session_id: str = "") ->
         "下面是跟你这次请求命中的操作手册。 **命中即相关 · `extract_playbook(action=load, playbook_id=...)` 加载全文照着做** · 别只凭摘要就开干 (摘要会漏关键步骤/坑)。",
         "加载全文只需一次工具调用 · 比从零摸索省得多:\n",
     ]
+    try:
+        from workers.playbook_observe import real_trials as _rt
+        if any(_rt(pb.get("id") or "") for pb in fresh):
+            lines.append(
+                "试错过是这个实例自己长出来的失败路径：**禁止再走**。"
+                "步骤和试错过冲突时听试错过。回复必须点出避开了哪条。"
+            )
+    except Exception:
+        pass
     weak_ids: list[str] = []
     for pb in fresh:
         # wish-3f1068e8 · debug 类注入行附加"前置检查清单"提示 (ZORO 实证: 强制触发+要求证据)

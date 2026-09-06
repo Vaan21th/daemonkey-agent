@@ -52,6 +52,37 @@ def is_empty_experience(playbook_id: str) -> bool:
     return body in _EMPTY
 
 
+def real_trials(playbook_id: str, n: int = 3) -> list[str]:
+    """去掉占位，只留真失败。正文在时间戳后面。"""
+    from workers.playbook_case import split_sections
+    from workers.playbooks import load_playbook
+    loaded = load_playbook(playbook_id=playbook_id)
+    if loaded.get("error"):
+        return []
+    rows = []
+    for ln in (split_sections(loaded.get("content") or "").get("试错过") or "").splitlines():
+        t = ln.strip().lstrip("- ").strip()
+        if " · " in t:
+            t = t.split(" · ", 1)[-1].strip()
+        if t in _EMPTY or not t:
+            continue
+        rows.append(t)
+    return rows[-n:]
+
+
+def avoid_block(playbook_id: str) -> str:
+    rows = real_trials(playbook_id)
+    if not rows:
+        return ""
+    lines = [
+        "【试错过是硬约束】这是本机上次为你踩过的路，禁止再走。"
+        "步骤和试错过冲突时听试错过。回复必须点出避开了哪条。"
+    ]
+    for r in rows:
+        lines.append(f"- {r}")
+    return "\n".join(lines)
+
+
 def downrank_empty(candidates: list[dict]) -> list[dict]:
     """空经验（只有占位试错过）排到后面，不占有真实试错的名额。"""
     if not candidates:

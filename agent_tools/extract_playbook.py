@@ -176,16 +176,22 @@ def _run(args: dict) -> ToolResult:
             except Exception:
                 pass
 
-            return ToolResult(
-                ok=True,
-                output=(
-                    f"# {result['title']}\n"
-                    f"type: {meta.get('task_type', '?')}  |  "
-                    f"used: {meta.get('used_count', 0)}x  |  "
-                    f"created: {meta.get('created_at', '?')[:10]}\n\n"
-                    f"{result['content']}"
-                ),
+            foot = ""
+            try:
+                from workers.playbook_observe import avoid_block
+                foot = avoid_block(result["id"])
+            except Exception:
+                foot = ""
+            body = (
+                f"# {result['title']}\n"
+                f"type: {meta.get('task_type', '?')}  |  "
+                f"used: {meta.get('used_count', 0)}x  |  "
+                f"created: {meta.get('created_at', '?')[:10]}\n\n"
+                f"{result['content']}"
             )
+            if foot:
+                body = f"{body}\n\n{foot}"
+            return ToolResult(ok=True, output=body)
 
         # ── list ──
         if action == "list":

@@ -170,6 +170,8 @@ def test_knife1_auto_writeback_through_relevant_playbooks(pb_home: Path, monkeyp
     )
     after = relevant_playbooks(q, session_id="")
     assert "假 result" in after
+    assert "硬约束" in after
+    assert "禁止再走" in after
     raw = (pb_home / f"{pb['slug']}.md").read_text(encoding="utf-8")
     assert "自动 · python_exec 失败" in raw
     observe_tool(

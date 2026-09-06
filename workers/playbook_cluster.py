@@ -143,9 +143,13 @@ def format_injection(fresh: list[dict], message: str = "", *, vectors: dict | No
         snip = case_snippets(pid)
         if snip.get("problem"):
             lines.append(f"  问题: {_clip(snip['problem'], 72)}")
-        trial = snip.get("trial") or ""
-        if trial and trial not in ("暂无记录", "尚无失败路径"):
-            lines.append(f"  试错过: {_clip(trial, 88)}")
+        from workers.playbook_observe import real_trials
+        trials = real_trials(pid)
+        if trials:
+            lines.append("  避坑（硬约束·禁止再走）:")
+            for t in trials:
+                lines.append(f"    · {_clip(t, 88)}")
+            lines.append("  步骤和试错过冲突时听试错过。回复点出避开了哪条。")
         peers = peers_of(pb.get("slug") or "", query=message, vectors=vectors, k=3)
         if not peers or peer_budget <= 0:
             continue
