@@ -3,7 +3,7 @@
   "algo": "sha256/lf/16",
   "algo_note": "文本: CRLF/CR 归一成 LF 后 utf-8 sha256 取前 16 位 (防 git autocrlf 误判) · 二进制: 原字节 sha256",
   "core_version": "1.0.1",
-  "generated": "2026-09-06 21:23",
+  "generated": "2026-09-06 21:34",
   "file_count": 362,
   "files": {
     "Daemonkey.exe": "04d542ab02df2de5",
@@ -254,7 +254,7 @@
     "workers/cache_usage.py": "0f2fd0d73754f286",
     "workers/care_desk.py": "c638cd38f61ab327",
     "workers/clients.py": "451136768c250a8e",
-    "workers/closure_check.py": "6774f13561a3f28a",
+    "workers/closure_check.py": "1d7d3216dd0d3e5b",
     "workers/cognition_loader.py": "93f58bafda0bc26b",
     "workers/compact_flush.py": "b48ffd58a95f2e70",
     "workers/companion_sid.py": "2dcc24576fe56442",

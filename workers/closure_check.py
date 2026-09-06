@@ -622,8 +622,10 @@ def relevant_playbooks(message: str, *, limit: int = 2, session_id: str = "") ->
             try:
                 from workers.playbooks import get_suppression as _get_supp
                 if _get_supp(meta.get("id", "")) >= _SUPPRESS_CUTOFF:
-                    logger.info("relevant_playbooks 跳过慢性干扰项 (suppression≥%.1f): %s", _SUPPRESS_CUTOFF, slug)
-                    continue
+                    # 以前注入没人 load 不该埋掉这次 FTS 强命中
+                    if _sc is None or _sc > -12.0:
+                        logger.info("relevant_playbooks 跳过慢性干扰项 (suppression≥%.1f): %s", _SUPPRESS_CUTOFF, slug)
+                        continue
             except Exception:
                 pass   # 抑制查询失败不阻断注入主流程
             top.append(meta)

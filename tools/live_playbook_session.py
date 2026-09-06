@@ -1,7 +1,4 @@
-"""真会话金丝雀：提问 → 真 FTS → load → 失败写回 → 再问同一句。
-
-不打总分。口号只看用户能不能感觉到「这本手册因你这次失败变了」。
-"""
+"""真手册会话：已有换行册 + 这次真实失败，再问同一句。不种金丝雀。"""
 from __future__ import annotations
 
 import json
@@ -15,13 +12,12 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 BASE = "http://127.0.0.1:7860"
-MARK = "canaryavoid20260906"
-FAIL = "canary_avoid_20260906"
+REAL_ID = "pb-windows-换行保真-opennewline-写-归一化匹配-还原-eol"
 NATURAL = (
-    f"Windows 金丝雀换行保真 {MARK} 写文件总把 LF 吃成 CRLF，"
-    "按已有操作手册处理。"
+    "Windows 上用 Python 写文本文件，LF 总被吃成 CRLF。"
+    "按已有操作手册处理。先在 data/runtime/scratch 写个两行 LF 文件验证，"
+    "写完用字节读回来检查，不要把 LF 吃成 CRLF。"
 )
-Q2 = NATURAL
 
 
 def _token() -> str:
@@ -33,23 +29,6 @@ def _token() -> str:
 
 
 H = {"Authorization": f"Bearer {_token()}", "Content-Type": "application/json"}
-
-
-def _seed() -> dict:
-    from workers.playbook_case import save_case
-    return save_case(
-        title=f"金丝雀换行保真 {MARK}",
-        task_type="setup",
-        steps=(
-            "1. 用 python_exec 执行：raise RuntimeError('" + FAIL + "')\n"
-            "2. 不要调用 extract_playbook action=feedback"
-        ),
-        problem=f"Windows 写文件把 LF 吃成 CRLF · {MARK}",
-        trials="尚无失败路径",
-        session_id="sess-slogan-avoid",
-        quote=NATURAL,
-        tags=["canary", MARK],
-    )
 
 
 def _inject(q: str) -> str:
@@ -78,150 +57,72 @@ def _tools(sid: str) -> list[dict]:
             continue
         try:
             rec = json.loads(line)
-        except json.JSONDecodeError:
+        except Exception:
             continue
-        meta = rec.get("meta") or {}
-        for tc in meta.get("tool_calls") or []:
-            fn = tc.get("function") or {}
-            raw = fn.get("arguments") or tc.get("arguments") or tc.get("args") or {}
-            if isinstance(raw, str):
-                try:
-                    raw = json.loads(raw)
-                except json.JSONDecodeError:
-                    raw = {"_raw": raw}
-            name = fn.get("name") or tc.get("name") or ""
-            args = raw if isinstance(raw, dict) else {}
-            if name == "catalog_call" and isinstance(args.get("args"), dict):
-                name = str(args.get("name") or name)
-                args = args.get("args") or {}
-            rows.append({"name": name, "args": args})
+        if rec.get("role") in {"tool", "assistant"} or rec.get("type") in {
+            "tool_call", "tool_result",
+        }:
+            rows.append(rec)
     return rows
 
 
-def _load_logged(pid: str, after_ts: str) -> bool:
-    p = ROOT / "data" / "runtime" / "inject_used.jsonl"
-    if not p.exists():
-        return False
-    for line in p.read_text(encoding="utf-8").splitlines():
-        if pid not in line:
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if (rec.get("ts") or "") >= after_ts and rec.get("playbook_id") == pid:
-            return True
-    return False
-
-
-def _loaded(tools: list[dict], pid: str) -> bool:
-    for t in tools:
-        args = t.get("args")
-        if t.get("name") != "extract_playbook" or not isinstance(args, dict):
-            continue
-        if (args.get("action") or "").lower() != "load":
-            continue
-        if pid in str(args.get("playbook_id") or "") or MARK in str(args):
-            return True
-    return False
-
-
-def _feedback(tools: list[dict]) -> bool:
-    for t in tools:
-        args = t.get("args")
-        if t.get("name") == "extract_playbook" and isinstance(args, dict):
-            if (args.get("action") or "").lower() == "feedback":
-                return True
-    return False
-
-
-def _usage(body: dict) -> dict:
-    u = body.get("usage") or {}
-    return {
-        "in": int(u.get("input_tokens") or 0),
-        "out": int(u.get("output_tokens") or 0),
-        "cache": int(u.get("cache_read_tokens") or 0),
-    }
-
-
-def _add(a: dict, b: dict) -> dict:
-    return {k: int(a.get(k) or 0) + int(b.get(k) or 0) for k in ("in", "out", "cache")}
-
-
-def _reran_fail(tools: list[dict]) -> bool:
-    for t in tools:
-        if t.get("name") == "python_exec" and FAIL in str(t.get("args") or ""):
-            return True
-    return False
+def _blob(sid: str) -> str:
+    path = ROOT / "sessions" / f"{sid}.jsonl"
+    return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
 def main() -> int:
-    ping = requests.get(BASE + "/api/ping-test", timeout=5)
-    if ping.status_code != 200:
-        raise SystemExit("daemon 没起来")
-    main_pb = _seed()
-    pid = main_pb["id"]
-    raw_path = ROOT / "data" / "playbooks" / f"{main_pb['slug']}.md"
-    before = _inject(NATURAL)
-    live_fts = pid in before or MARK in before
-    tag = time.strftime("%H%M%S")
-    started = datetime.now(timezone.utc).isoformat()
-    sid1 = f"api-avoid-t1-{tag}"
-    sid2 = f"api-avoid-t2-{tag}"
-    turn1 = _chat(NATURAL, sid1)
-    tools1 = _tools(sid1)
-    loaded = _loaded(tools1, pid) or _load_logged(pid, started)
-    used = _usage(turn1)
-    raw_after = raw_path.read_text(encoding="utf-8") if raw_path.exists() else ""
-    wrote = "自动 · python_exec 失败" in raw_after and FAIL in raw_after
-    after = _inject(NATURAL)
-    recall = "硬约束" in after and ("自动 ·" in after or FAIL in after)
-    turn2 = _chat(Q2, sid2)
-    used = _add(used, _usage(turn2))
-    tools2 = _tools(sid2)
-    reply2 = turn2.get("reply") or ""
-    avoided = loaded and wrote and not _reran_fail(tools2)
-    cited = any(x in reply2 for x in (FAIL, "试错过", "避开", "硬约束", "禁止再走"))
-    evidence = {
-        "live_fts_hit": live_fts,
-        "model_loaded": loaded,
-        "auto_writeback_kept_exception": wrote,
-        "feedback_called": _feedback(tools1),
-        "next_recall_hard_constraint": recall,
-        "t2_avoided_same_fail": avoided,
-        "t2_cited_trial": cited,
-    }
-    if not live_fts:
-        slogan = "未达标 · 真 FTS 没召回"
-    elif not loaded:
-        slogan = "未达标 · 真会话没 load"
-    elif not wrote:
-        slogan = "未达标 · 写回没留下失败正文"
-    elif _feedback(tools1):
-        slogan = "未达标 · 还靠 feedback"
-    elif not recall:
-        slogan = "未达标 · 下次注入没有硬约束"
-    elif not avoided:
-        slogan = "未达标 · 看见了还照走同一条失败"
-    elif not cited:
-        slogan = "避开了但没说出来 · 口号未满"
-    else:
-        slogan = "手册环这一刀用户可感知 · 不代表整产品已落地"
+    inj = _inject(NATURAL)
+    stamp = datetime.now().strftime("%H%M%S")
+    s1 = f"api-real-eol-t1-{stamp}"
+    s2 = f"api-real-eol-t2-{stamp}"
+    print("=== inject ===", flush=True)
+    print(inj, flush=True)
+    t0 = time.time()
+    r1 = _chat(NATURAL, s1)
+    print("=== t1 reply ===", flush=True)
+    print((r1.get("reply") or r1.get("text") or "")[:1200], flush=True)
+    time.sleep(1)
+    r2 = _chat(NATURAL, s2)
+    print("=== t2 reply ===", flush=True)
+    print((r2.get("reply") or r2.get("text") or "")[:1200], flush=True)
+    b1, b2 = _blob(s1), _blob(s2)
+    trial = "os.linesep"
     report = {
         "ts": datetime.now(timezone.utc).isoformat(),
-        "standard": "只为你而成长 · 真会话",
-        "playbook_id": pid,
-        "sessions": {"t1": sid1, "t2": sid2},
-        "usage": used,
-        "evidence": evidence,
-        "slogan": slogan,
-        "reply2_head": reply2[:280],
-        "inject_after_head": after[:400],
+        "playbook_id": REAL_ID,
+        "sessions": {"t1": s1, "t2": s2},
+        "inject_hits_real": REAL_ID in inj,
+        "inject_has_trial": trial in inj,
+        "inject_no_canary": "canary" not in inj.lower() and "金丝雀" not in inj,
+        "t1_loaded_real": REAL_ID in b1,
+        "t2_loaded_real": REAL_ID in b2,
+        "t2_bare_open_write": (
+            "newline" not in b2
+            and ("open(" in b2 and ", 'w'" in b2 or ', "w"' in b2)
+        ),
+        "t2_mentions_avoid": any(
+            x in (r2.get("reply") or r2.get("text") or "")
+            for x in ("试错过", "避开", "newline", "os.linesep")
+        ),
+        "elapsed_s": round(time.time() - t0, 1),
+        "usage": {
+            "t1": r1.get("usage") or r1.get("usage_total"),
+            "t2": r2.get("usage") or r2.get("usage_total"),
+        },
     }
-    out = ROOT / "data" / "runtime" / "playbook_slogan_live.json"
+    out = ROOT / "data" / "runtime" / "playbook_real_eol.json"
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(report, ensure_ascii=False, indent=2))
-    return 0
+    print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)
+    ok = (
+        report["inject_hits_real"]
+        and report["inject_has_trial"]
+        and report["inject_no_canary"]
+        and report["t1_loaded_real"]
+        and report["t2_loaded_real"]
+        and not report["t2_bare_open_write"]
+    )
+    return 0 if ok else 2
 
 
 if __name__ == "__main__":
