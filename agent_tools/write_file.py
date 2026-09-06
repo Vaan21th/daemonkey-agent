@@ -272,6 +272,15 @@ def _run(args: dict) -> ToolResult:
         if sink_err:
             return ToolResult(ok=False, output="", error=sink_err)
 
+    if path.suffix.lower() in {".md", ".markdown"}:
+        try:
+            from workers.playbook_case import refuse_loose_playbook
+            pb_err = refuse_loose_playbook(path, content)
+            if pb_err:
+                return ToolResult(ok=False, output="", error=pb_err)
+        except Exception:
+            pass
+
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except Exception as e:

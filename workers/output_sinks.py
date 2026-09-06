@@ -29,6 +29,7 @@ SCRATCH = "data/runtime/scratch"
 _HINT = (
     "报告 data/reports · PPT data/presentations · 表 data/spreadsheets · "
     "工坊产出 data/workshop/outputs · HTML 原型 data/design · "
+    "操作手册 data/playbooks（只能 extract_playbook） · "
     f"运行时/草稿 {SCRATCH}/"
 )
 

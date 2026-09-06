@@ -4,7 +4,7 @@ agent_tools/extract_playbook.py
 
 卷三十七 · Playbook 抽取工具
 
-Daemonkey 任务完成后 · 觉得「下次还能用」时 · 主动调这把操作模式
+OPUS 任务完成后 · 觉得「下次还能用」时 · 主动调这把操作模式
 抽成 data/playbooks/<slug>.md · 下次类似任务手动 search 加速。
 
 档位：CONFIRM
@@ -45,7 +45,6 @@ def _summarize(args: dict) -> str:
 
 def _run(args: dict) -> ToolResult:
     from workers.playbooks import (
-        save_playbook,
         search_playbooks,
         load_playbook,
         list_playbooks,
@@ -55,36 +54,25 @@ def _run(args: dict) -> ToolResult:
     action = (args.get("action") or "extract").lower().strip()
 
     try:
-        # ── extract ──
         if action == "extract":
-            title = (args.get("title") or "").strip()
-            task_type = (args.get("task_type") or "general").strip()
-            steps = (args.get("steps") or "").strip()
-            if not title:
-                return ToolResult(ok=False, output="", error="title 必填")
-            if not steps:
-                return ToolResult(ok=False, output="", error="steps 必填 · 至少写 2-3 步")
+            from workers.playbook_case import extract_action
+            got = extract_action(args)
+            return ToolResult(ok=bool(got.get("ok")), output=got.get("output") or "", error=got.get("error") or "")
 
-            result = save_playbook(
-                title=title,
-                task_type=task_type,
-                steps=steps,
-                prerequisites=(args.get("prerequisites") or "").strip(),
-                pitfalls=(args.get("pitfalls") or "").strip(),
-                lessons=(args.get("lessons") or "").strip(),
-                tags=args.get("tags") or [],
-            )
+        if action == "distill":
+            from workers.playbook_distill import distill_action
+            got = distill_action(args)
+            return ToolResult(ok=bool(got.get("ok")), output=got.get("output") or "", error=got.get("error") or "")
 
-            return ToolResult(
-                ok=True,
-                output=(
-                    "playbook saved\n"
-                    f"  id: {result['id']}\n"
-                    f"  path: {result['path']}\n"
-                    f"  title: {title}\n"
-                    f"  type: {task_type}\n"
-                ),
-            )
+        if action == "distill_confirm":
+            from workers.playbook_distill import confirm_action
+            got = confirm_action(args)
+            return ToolResult(ok=bool(got.get("ok")), output=got.get("output") or "", error=got.get("error") or "")
+
+        if action == "peers":
+            from workers.playbook_cluster import peers_action
+            got = peers_action(args)
+            return ToolResult(ok=bool(got.get("ok")), output=got.get("output") or "", error=got.get("error") or "")
 
         # ── import (外部 skill MD → playbook · 闭环第②环「接住」) ──
         if action == "import":
@@ -203,27 +191,9 @@ def _run(args: dict) -> ToolResult:
             return ToolResult(ok=True, output="\n".join(lines))
 
         if action == "feedback":
-            # wish-0ecdbbd8 (墨言 094 wish-b6a837da) · 执行反馈闭环:
-            #  命中即用后模型反馈结果 → 更新可信度 (success 刷新 verified_at · 失败 stale_hits+1)
-            pid = str(args.get("playbook_id") or "").strip()
-            success = bool(args.get("success"))
-            note = str(args.get("note") or "").strip()
-            if not pid:
-                return ToolResult(ok=False, output="", error="feedback 需要 playbook_id")
-            try:
-                from workers.playbooks import record_playbook_result
-                res = record_playbook_result(pid, success, note)
-                if not res:
-                    return ToolResult(ok=False, output="", error=f"playbook {pid} 不存在")
-                st = res.get("stale_state", "正常")
-                return ToolResult(
-                    ok=True,
-                    output=(f"✅ 已记录反馈 · {pid} · success={success} · 当前状态 [{st}] · "
-                            f"stale_hits={res.get('stale_hits', 0)} · use_success={res.get('use_success', 0)} · "
-                            f"use_fail={res.get('use_fail', 0)}" + (f" · note: {note}" if note else "")),
-                )
-            except Exception as e:
-                return ToolResult(ok=False, output="", error=f"feedback 失败: {type(e).__name__}: {e}")
+            from workers.playbook_case import feedback_action
+            got = feedback_action(args)
+            return ToolResult(ok=bool(got.get("ok")), output=got.get("output") or "", error=got.get("error") or "")
 
         # ── revise (墨言 094-2 · wish-2b43ffe7 · 反馈闭环内容链路 · 走通新路 → 修订原册) ──
         if action == "revise":
@@ -246,14 +216,14 @@ def _run(args: dict) -> ToolResult:
                 return ToolResult(ok=False, output="", error="tags 元素必须全是字符串")
 
             # 显式传空值 = 明确报错 · 防静默忽略让用户以为已清空 (P2-1)
-            for _k in ("title", "task_type", "steps", "prerequisites", "pitfalls", "lessons", "confidence"):
+            for _k in ("title", "task_type", "steps", "prerequisites", "pitfalls", "lessons", "confidence", "problem", "trials", "source"):
                 _v = args.get(_k)
                 if _v is not None and (isinstance(_v, str) and not _v.strip()):
                     return ToolResult(ok=False, output="", error=f"{_k} 不能传空字符串 · 不支持'清空字段'语义 · 想清空请手动编辑 .md")
 
             # 至少传一个可改字段
-            if all(args.get(k) is None for k in ("title", "task_type", "steps", "prerequisites", "pitfalls", "lessons", "tags", "confidence")):
-                return ToolResult(ok=False, output="", error="revise 至少要传一个要改的字段 (title/task_type/steps/prerequisites/pitfalls/lessons/tags/confidence)")
+            if all(args.get(k) is None for k in ("title", "task_type", "steps", "prerequisites", "pitfalls", "lessons", "tags", "confidence", "problem", "trials", "source")):
+                return ToolResult(ok=False, output="", error="revise 至少要传一个要改的字段")
 
             try:
                 from workers.playbooks import revise_playbook
@@ -267,6 +237,9 @@ def _run(args: dict) -> ToolResult:
                     lessons=args.get("lessons"),
                     tags=args.get("tags"),
                     confidence=args.get("confidence"),
+                    problem=args.get("problem"),
+                    trials=args.get("trials"),
+                    source=args.get("source"),
                 )
                 if not res:
                     return ToolResult(ok=False, output="", error=f"playbook {pid} 不存在")
@@ -283,7 +256,7 @@ def _run(args: dict) -> ToolResult:
                 return ToolResult(ok=False, output="", error=f"revise 失败: {type(e).__name__}: {e}")
 
         return ToolResult(
-            ok=False, output="", error=f"unknown action: {action}. options: extract / import / search / load / list / feedback / revise"
+            ok=False, output="", error=f"unknown action: {action}. options: extract / import / search / load / list / feedback / revise / distill / distill_confirm / peers"
         )
 
     except Exception as e:
@@ -293,7 +266,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="extract_playbook",
     description=(
-        "任务结束后把可复用步骤存成操作手册，或 import 外部 SKILL.md。actions: extract/import/search/load/list/feedback。不要任务中途打断。"
+        "任务结束后把经验存进 data/playbooks。extract 必填问题/步骤/试错过。失败用 feedback 写回原册。蒸馏先 distill 再 distill_confirm。不要写到别的文件夹。"
     ),
     tier=TIER_CONFIRM,
     input_schema={
@@ -301,8 +274,8 @@ SPEC = ToolSpec(
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["extract", "import", "revise", "search", "load", "list", "feedback"],
-                "description": "extract=save your own summary / import=absorb external skill MD / revise=update an existing playbook's content / search=find / load=read / list=all / feedback=report execution result",
+                "enum": ["extract", "import", "revise", "search", "load", "list", "feedback", "distill", "distill_confirm", "peers"],
+                "description": "extract 存个案 · import 接外部 · revise 改原册 · feedback 写回成败 · distill 出草稿 · distill_confirm 才入库",
             },
             "title": {
                 "type": "string",
@@ -314,7 +287,32 @@ SPEC = ToolSpec(
             },
             "steps": {
                 "type": "string",
-                "description": "extract: operation steps in markdown, 2-5 steps (required for extract)",
+                "description": "extract: 可照着做的步骤，2-5 步",
+            },
+            "problem": {
+                "type": "string",
+                "description": "extract: 这次在解什么问题（必填）",
+            },
+            "trials": {
+                "type": "string",
+                "description": "extract: 试过但没用的路；没有就写「尚无失败路径」",
+            },
+            "source": {
+                "type": "string",
+                "description": "extract/revise: 出处。可空，工具会补 session 和 file",
+            },
+            "playbook_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "distill: 同簇手册 id 列表，至少 2 个",
+            },
+            "how_now": {
+                "type": "string",
+                "description": "distill: 「现在怎么做」一页草稿，确认前不入库",
+            },
+            "draft_id": {
+                "type": "string",
+                "description": "distill_confirm: 草稿 id（pd-xxx）",
             },
             "prerequisites": {
                 "type": "string",

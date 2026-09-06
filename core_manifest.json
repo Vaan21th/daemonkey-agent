@@ -189,6 +189,9 @@
     ],
     "技能系统(L1·playbook 经验沉淀 + 外部 skill 接住归一·发现→接住→沉淀→召回闭环的写入侧·与记忆系统召回侧配套·官方持续维护归一prompt/字段schema/发现脚手架。用户的 playbook 内容在 data/playbooks 属L3·本清单只管机制代码不碰内容)": [
       "workers/playbooks.py",
+      "workers/playbook_case.py",
+      "workers/playbook_cluster.py",
+      "workers/playbook_distill.py",
       "agent_tools/extract_playbook.py",
       "workers/playbook_import.py",
       "agent_tools/discover_skill.py",

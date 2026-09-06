@@ -716,6 +716,13 @@ def relevant_playbooks(message: str, *, limit: int = 2, session_id: str = "") ->
         lines.append(
             f"- `{pb.get('id', '')}` · {pb.get('title', '')} (复用过 {pb.get('used_count', 0)} 次){debug_s}{weak_s}{_stale_s}"
         )
+    try:
+        from workers.playbook_cluster import format_injection
+        extra = format_injection(fresh, msg)
+        if extra:
+            lines.append(extra)
+    except Exception:
+        pass
     _log_injection(msg, "playbook", [pb.get("id", "") for pb in fresh],
                    hit_score=best_score, session_id=session_id, item_kind="id", weak=weak_ids)
     return "\n".join(lines)

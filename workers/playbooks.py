@@ -425,6 +425,13 @@ def record_playbook_result(playbook_id: str, success: bool, note: str = "") -> d
             # meta.stale_hits 已 +1 · hit=0 只读当前状态算迁移 (双计 bugfix)
             meta["stale_state"] = _stale_state_machine(meta, hit=0)
         _save_index(index)
+    writeback = None
+    if (not success) and note:
+        try:
+            from workers.playbook_case import append_trial
+            writeback = append_trial(playbook_id, note)
+        except Exception as e:
+            writeback = {"ok": False, "error": str(e)}
     return {
         "id": playbook_id,
         "stale_state": meta.get("stale_state", "正常"),
@@ -432,6 +439,7 @@ def record_playbook_result(playbook_id: str, success: bool, note: str = "") -> d
         "use_success": meta.get("use_success", 0),
         "use_fail": meta.get("use_fail", 0),
         "note": note,
+        "writeback": writeback,
     }
 
 
@@ -470,6 +478,9 @@ def revise_playbook(
     lessons: str | None = None,
     tags: list[str] | None = None,
     confidence: str | None = None,
+    problem: str | None = None,
+    trials: str | None = None,
+    source: str | None = None,
 ) -> dict:
     """修订 playbook 内容 (墨言 094-2 · wish-2b43ffe7 · 反馈闭环内容链路)。
 
@@ -502,29 +513,8 @@ def revise_playbook(
 
         # 1. 解析旧 .md 段落 · 行级锚定 (P0-1: 防段内 "## " 截断 / frontmatter 含 --- 误切)
         old = filepath.read_text(encoding="utf-8")
-        fm_end_m = re.search(r"(?m)^---\s*$", old[4:])
-        fm_end = (fm_end_m.start() + 4) if fm_end_m else -1
-        body = old[fm_end + 4:] if fm_end >= 0 else old
-
-        def _split_sections(text: str) -> dict:
-            """按已知 section 名切块 · 段内任意 "## " 子标题不参与边界 (P0-1)"""
-            sections: dict[str, str] = {}
-            cur = None
-            buf: list[str] = []
-            for line in text.splitlines():
-                m = re.match(r"^##\s+(.+?)\s*$", line)
-                if m and m.group(1).strip() in ("前置条件", "步骤", "常见坑", "经验教训"):
-                    if cur:
-                        sections[cur] = "\n".join(buf).strip()
-                    cur = m.group(1).strip()
-                    buf = []
-                elif cur is not None:
-                    buf.append(line)
-            if cur:
-                sections[cur] = "\n".join(buf).strip()
-            return sections
-
-        sections = _split_sections(body)
+        from workers.playbook_case import SECTIONS, split_sections
+        sections = split_sections(old)
         old_prereq = sections.get("前置条件", "")
         old_steps = sections.get("步骤", "")
         old_pitfalls = sections.get("常见坑", "")
@@ -549,6 +539,16 @@ def revise_playbook(
         new_prereq = prerequisites if prerequisites is not None else old_prereq
         new_pitfalls = pitfalls if pitfalls is not None else old_pitfalls
         new_lessons = lessons if lessons is not None else old_lessons
+        if problem is not None:
+            sections["问题"] = problem
+        if trials is not None:
+            sections["试错过"] = trials
+        if source is not None:
+            sections["出处"] = source
+        sections["前置条件"] = new_prereq
+        sections["步骤"] = new_steps
+        sections["常见坑"] = new_pitfalls
+        sections["经验教训"] = new_lessons
         new_tags = tags if tags is not None else meta.get("tags", [])
         new_conf = confidence if confidence is not None else meta.get("confidence", "中")
 
@@ -572,15 +572,14 @@ def revise_playbook(
             f"verified_at: {verified_at}\n"
             "---\n\n"
         )
-        content = (
-            frontmatter
-            + f"# {new_title}\n\n"
-            + f"<!-- playbook · 由 OPUS 在 {now_str} 修订 -->\n\n"
-            + f"## 前置条件\n\n{new_prereq}\n\n"
-            + f"## 步骤\n\n{new_steps}\n\n"
-            + f"## 常见坑\n\n{new_pitfalls}\n\n"
-            + f"## 经验教训\n\n{new_lessons}\n"
-        )
+        body_parts = [
+            frontmatter,
+            f"# {new_title}\n\n",
+            f"<!-- playbook · 由 OPUS 在 {now_str} 修订 -->\n\n",
+        ]
+        for name in SECTIONS:
+            body_parts.append(f"## {name}\n\n{(sections.get(name) or '暂无记录').strip()}\n\n")
+        content = "".join(body_parts)
         filepath.write_text(content, encoding="utf-8")
 
         # 3. 更新索引 · 修订 = 重新验证 → stale 复位
