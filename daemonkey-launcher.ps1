@@ -90,6 +90,7 @@ function New-BufferedPanel {
 
 # ───── 全局状态 ─────
 $script:DefaultPort = 7860
+if ($env:DK_PORT -match '^\d{2,5}$') { $script:DefaultPort = [int]$env:DK_PORT }
 $script:VenvPython  = Join-Path $script:Root '.venv\Scripts\python.exe'
 $script:VenvPythonW = Join-Path $script:Root '.venv\Scripts\pythonw.exe'
 # 版本号 · 真相源 = core_manifest.json 的 core_version (卷七十四续二十) · 读不到回退硬编码
