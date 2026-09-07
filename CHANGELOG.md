@@ -7,18 +7,71 @@
 
 ---
 
-## [1.0.2] — 2026-09-06
+## [1.0.2] — 2026-09-07
 
-**操作手册会记住失败；升级胶囊显示当前版本说明**
+**核心优化：修复旧版安装、登录、升级各类问题，升级后保留所有用户和AI记忆数据、自定义设置和个人改装内容，使用更稳定**
 
-### 新增 Added
-- **手册失败写回原册** —— 按手册做砸了，失败原因写回那一本，下次先看到「试错过」
-- **落点闸** —— 手册目录只许走正规入库工具，文件/脚本改手册会被拦住
+本次版本主要修复了 1.0.1 版本存在的安装空白、DeepSeek 地址报错、升级数据丢失等问题，产品基础介绍仍沿用 1.0.1 版本说明。
 
-### 修复 Fixed
-- **升级胶囊误显示 0.9.9** —— 改按当前版本取说明。远程 `log_ref` 末段也补上 1.0.2，旧客户端同样能看到本版说明
+### 一、新用户安装教程
+请务必按完整流程安装，避免功能缺失：
+- 下载安装包 Daemonkey-1.0.2-win.zip，解压文件后，双击打开 Daemonkey.exe 即可使用
+- ⚠️ 重要提醒：不要单独下载一百多 KB 的单独 exe 文件！该文件只是简易启动器，并非完整软件，打开后会空白无法使用
 
-> Failed playbook runs write back to the same book. Upgrade capsule reads the current version note instead of the trailing 0.9.9 segment.
+### 二、老用户升级教程
+- 直接在软件工作台顶部点击更新按钮，或在对话输入框发送指令：升级内核
+- ✅ 数据安全保障：升级不会删除你的聊天记录、个人画像、自定义设置、修改过的所有文件，所有个人数据全部保留
+- 升级完成后，请重启一次软件，确保所有新功能正常生效
+
+### 三、本次新增功能
+- **操作手册自动记录失败原因**：按照软件操作手册操作如果出错，系统会自动记录失败原因并保存到对应手册中，下次操作可直接查看过往失误，避免重复踩坑
+- **自定义改装永久保留**：你自己添加的工具、自定义页面都会保存在独立的改装层，不会覆盖官方原生文件。后续版本升级后，所有个人改装内容全部保留，无需重新设置
+- **修复 DeepSeek 地址报错问题**：新增地址自动适配功能，粘贴官网不带 /v1 的原始地址，系统会自动补全适配，彻底解决此前 404 无法连接的问题，首次配置即可成功使用
+
+### 四、本次修复优化问题
+- **升级不再丢失房间装修数据**：修复升级后房间内容错乱、丢失的问题，陪伴页立绘、背景、家具、桌宠新动作等所有装修内容，升级后全部正常保留
+- **修复安装环境识别异常**：启动器会完整检测所有必备安装包，针对之前安装一半、未完成的半成品环境，会自动补全安装，不会误判为安装完成
+- **修复装修区白屏问题**：软件缺失 user.js、user.css 文件时，会自动补充空白基础文件保证页面正常显示，同时不会改动你之前编写的自定义内容
+- **修复工作台启动卡顿**：优化看板加载逻辑，不再批量翻译插件说明内容，解决打开工作台卡顿、卡住不动的问题
+- **补全旧版本升级缺失功能**：针对从早期版本一路升级的用户，补齐造应用、数据表格、内置浏览器、录屏功能缺失的内核组件，所有功能恢复正常可用
+
+### 五、使用注意事项
+- 升级后若输入框显示「还没回来」，直接刷新页面即可恢复正常
+- 网页自动化功能为按需安装，首次使用时会自动下载安装浏览器内核，不属于软件出厂自带内容，属于正常现象
+- 当前版本暂未上线游戏页面，该功能将在后续版本更新
+
+---
+
+**What this update is for:** Fixes install, sign-in, and upgrade problems from older versions. After you upgrade, your chats, the AI's memory, your settings, and your personal customizations all stay. The app should run more steadily.
+
+This release mainly fixes what went wrong in 1.0.1: a blank install, DeepSeek address errors, and losing data on upgrade. The product introduction is still the 1.0.1 one.
+
+### 1. New users — how to install
+Please follow the full install. Skipping steps means features will be missing.
+- Download **Daemonkey-1.0.2-win.zip**, unzip it, then double-click `Daemonkey.exe`.
+- Do not download only that ~100 KB `.exe` by itself. That file is just a thin launcher, not the full app. Opening it gives you a blank window and nothing works.
+
+### 2. Existing users — how to upgrade
+- Click Update at the top of the workbench, or type this in the chat box: 升级内核
+- Your data stays. Upgrade does not delete your chats, your profile, your settings, or files you changed. Everything personal is kept.
+- When the upgrade finishes, restart the app once so the new pieces actually load.
+
+### 3. What's new
+- **The playbook remembers what went wrong.** If you follow a playbook and it fails, the reason is written back into that same book. Next time you can see the old mistake instead of hitting it again.
+- **Your customizations stay.** Tools and pages you added live on their own layer. They do not overwrite official files. After later upgrades, those customizations are still there. You do not set them up again.
+- **DeepSeek address errors are fixed.** Paste the official URL even if it has no `/v1`. The app fills that in for you. The old 404 / cannot-connect problem should be gone. First-time setup should just work.
+
+### 4. What we fixed
+- **The room no longer comes back empty after an upgrade.** Companion portraits, backgrounds, furniture, and new desktop-pet moves stay in place.
+- **Half-finished installs are no longer treated as done.** The launcher checks every required package. If the last install stopped halfway, it finishes the job instead of pretending everything is ready.
+- **The decoration area no longer goes white.** If `user.js` or `user.css` is missing, the app adds an empty starter file so the page can load. Anything you already wrote is left alone.
+- **The workbench no longer freezes on open.** The dashboard no longer translates every plugin blurb in one go, so the workbench should open instead of hanging.
+- **Older installs get the missing pieces.** If you have been upgrading from early versions, the kernel parts for making apps, spreadsheets, the built-in browser, and screen recording are included now. Those features should work again.
+
+### 5. Notes
+- After an upgrade, if the input box still says the AI is not back yet, refresh the page.
+- Web automation installs on first use. The first time you need it, the app downloads a browser engine. That is not bundled out of the box. This is expected.
+- There is no games page in this version. That comes later.
 
 ---
 
