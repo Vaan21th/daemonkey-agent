@@ -5,27 +5,32 @@
 # 触发: ① push tag v* (发版自动) ② workflow_dispatch (手动)
 # 架构: 双矩阵并行 —
 #   macos-14 = Apple Silicon (arm64 原生)
-#   macos-13 = Intel (x86_64 原生)
+#   macos-15-intel = Intel (x86_64) · macos-13 已于 2025-12 退役
 # 产物: dist/Daemonkey-<ver>-<arch>.dmg ×2 → Release 附件
 # ─────────────────────────────────────────────────────────────
 name: Build macOS Launcher
 
 on:
-  workflow_dispatch:            # 手动触发 (Actions 页点 Run workflow)
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'dmg 版本号（手动触发时必填，例如 1.0.2）'
+        required: true
+        type: string
   push:
-    tags: ['v*']                # 发版 tag (如 v0.9.5) 自动触发
+    tags: ['v*']
 
 jobs:
   build-mac:
     permissions:
-      contents: write    # 允许 Attach dmg 到 Release · 默认 read 会 403 (2026-08-17 修复)
+      contents: write
     strategy:
-      fail-fast: false          # 一个架构失败不拦另一个
+      fail-fast: false
       matrix:
         include:
-          - runner: macos-14    # Apple Silicon · arm64 原生
+          - runner: macos-14
             arch: arm64
-          - runner: macos-13    # Intel · x86_64 原生
+          - runner: macos-15-intel
             arch: x86_64
     runs-on: ${{ matrix.runner }}
     steps:
@@ -42,8 +47,9 @@ jobs:
 
       - name: Build .app + dmg
         run: |
-          VER="${GITHUB_REF_NAME#v}"
-          case "$VER" in master|main|develop|"") VER="0.9.5" ;; esac   # 手动触发 (ref=分支) → 默认版本
+          VER="${{ github.event.inputs.version }}"
+          if [ -z "$VER" ]; then VER="${GITHUB_REF_NAME#v}"; fi
+          case "$VER" in master|main|develop|"") echo "version empty"; exit 1 ;; esac
           echo "==> 打包版本: $VER · 架构: ${{ matrix.arch }}"
           bash tools/build_mac_app.sh "$VER"
 
@@ -56,8 +62,9 @@ jobs:
             dist/Daemonkey-*.dmg
           if-no-files-found: error
 
-      - name: Attach dmg to Release (发版时自动挂附件)
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Attach dmg to Release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event.inputs.version != '' && format('v{0}', github.event.inputs.version) || github.ref_name }}
           files: dist/Daemonkey-*.dmg
