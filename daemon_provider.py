@@ -241,17 +241,24 @@ def write_public_env(key: str, value: str) -> None:
 
 
 def clean_base_url(url: str) -> str:
-    """去掉用户误贴的完整端点尾巴。
+    """去掉用户误贴的完整端点尾巴，并给已知厂商补上 SDK 要的 /v1。
 
     OpenAI 兼容 SDK 只要 base(通常到 /v1)·会自己拼 /chat/completions。
     贴成 https://x/v1/chat/completions 时·SDK 会拼成 .../chat/completions/chat/completions
     → 404。这里把尾部的 /chat/completions(或 /completions)去掉。
+
+    DeepSeek 官网文档写根路径 https://api.deepseek.com 也行；本仓库探针走 SDK，
+    根路径会打到 /chat/completions（没 /v1）→ 初见页默认填「文档上对的」也会 404。
     """
     u = (url or "").strip().rstrip("/")
     for tail in ("/chat/completions", "/completions"):
         if u.endswith(tail):
             u = u[: -len(tail)].rstrip("/")
             break
+    rest = u.split("://", 1)[-1]
+    host = rest.split("/", 1)[0].split(":", 1)[0].lower()
+    if host == "api.deepseek.com" and not u.lower().endswith("/v1"):
+        u = f"{u}/v1"
     return u
 
 

@@ -56,10 +56,15 @@ internal static class DaemonkeyBoot
         string meat = Path.Combine(root, "daemonkey-launcher.ps1");
         if (!File.Exists(meat))
         {
-            MessageBox.Show("找不到 daemonkey-launcher.ps1\r\n启动器文件不完整 · 请重新解压完整包。",
+            MessageBox.Show(
+                "找不到 daemonkey-launcher.ps1\r\n\r\n" +
+                "这是启动壳，不是完整软件。\r\n" +
+                "请下载仓库或 Windows 完整 zip，把这个 exe 放进解压后的文件夹再打开。\r\n" +
+                "不要只从 Release 下载这一个 exe。",
                 "Daemonkey", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
+        UnblockScripts(root);
 
         string mutexName = "Local\\Daemonkey-" + ShortHash(root.TrimEnd('\\').ToLowerInvariant());
         bool created;
@@ -160,7 +165,7 @@ internal static class DaemonkeyBoot
 
         var psi = new ProcessStartInfo();
         psi.FileName = "powershell.exe";
-        psi.Arguments = "-NoProfile -NoLogo -NonInteractive -WindowStyle Hidden -File \"" + meat + "\"";
+        psi.Arguments = "-NoProfile -NoLogo -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"" + meat + "\"";
         psi.WorkingDirectory = root;
         psi.WindowStyle = ProcessWindowStyle.Hidden;
         psi.UseShellExecute = false;
@@ -275,6 +280,27 @@ internal static class DaemonkeyBoot
         path.AddArc(0, h - d - 1, d, d, 90, 90);
         path.CloseFigure();
         return path;
+    }
+
+    static void UnblockScripts(string root)
+    {
+        // 从网上下的 zip 会带 Zone.Identifier；默认 Restricted/RemoteSigned 会拦 .ps1。
+        // start.bat 有 -ExecutionPolicy Bypass，薄壳以前没有，双击 exe 就在这里炸。
+        try
+        {
+            UnblockDir(root, "*.ps1");
+            string tools = Path.Combine(root, "tools");
+            if (Directory.Exists(tools)) UnblockDir(tools, "*.ps1");
+        }
+        catch { }
+    }
+
+    static void UnblockDir(string dir, string pattern)
+    {
+        foreach (string f in Directory.GetFiles(dir, pattern))
+        {
+            try { File.Delete(f + ":Zone.Identifier"); } catch { }
+        }
     }
 
     static void Stamp(string root, string msg)

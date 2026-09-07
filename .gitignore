@@ -34,7 +34,7 @@ data/workshop/apps/*
 !data/workshop/apps/app-46efb986.json
 
 # Daemonkey.exe 故意【不】忽略——它进仓库让用户 clone 即开箱即用。
-# 由 tools/build-exe.ps1 编译·pre-commit 钩子在 launcher 变动时自动重编保鲜。
+# 由 tools/build-boot-exe.ps1 编薄壳（csc · DaemonkeyBoot.cs）。禁止用旧 build-exe.ps1 打肉版。
 
 # 桌宠运行时文件（pet 自己生成 · 私人状态/位置 · 不入库）
 desktop_pet/state.txt

@@ -199,7 +199,7 @@ def _run(messages: list):
             msg = (
                 "模型服务拒绝了认证 (401)。请检查 .env 里的三行配置：\n"
                 f"- base_url（当前 = {bu or '未填'}）必须是你模型服务商的官方地址"
-                f"(DeepSeek 是 https://api.deepseek.com / v1 也可)\n"
+                f"(DeepSeek 是 https://api.deepseek.com/v1)\n"
                 f"- api_key 复制完整、无前后空格、不是网页版登录 key\n"
                 f"- model（当前 = {mdl or '未填'}）必须是该服务商支持的模型名\n"
                 f"原始错误：{msg}"

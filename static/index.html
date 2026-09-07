@@ -35,18 +35,18 @@
         <li>左侧「API keys」→「创建 API key」→ 复制 <code>sk-</code> 开头那一长串（只显示一次，记得存好）。</li>
         <li>回到这里：服务商选「DeepSeek 官方」，把 key 粘进下面的「API Key」框，点保存即可。</li>
       </ol>
-      <p class="hint"><b>接口地址 base_url</b> 是服务商的 API 入口——选了预设会自动填好（DeepSeek 是 <code>https://api.deepseek.com</code>），一般不用动。换别的服务商（如 GLM 智谱）就选对应预设，或选「自定义」填它给你的地址。<b>模型 model</b> 已替你选好默认（DeepSeek 是 <code>deepseek-v4-flash</code>，轻量省钱），一般不用动。</p>
+      <p class="hint"><b>接口地址 base_url</b> 是服务商的 API 入口——选了预设会自动填好（DeepSeek 是 <code>https://api.deepseek.com/v1</code>），一般不用动。换别的服务商（如 GLM 智谱）就选对应预设，或选「自定义」填它给你的地址。<b>模型 model</b> 已替你选好默认（DeepSeek 是 <code>deepseek-v4-flash</code>，轻量省钱），一般不用动。</p>
     </div>
 
     <label class="field-label">服务商</label>
     <select id="presetSel">
-      <option value="https://api.deepseek.com">DeepSeek 官方（api.deepseek.com）</option>
+      <option value="https://api.deepseek.com/v1">DeepSeek 官方（api.deepseek.com）</option>
       <option value="https://open.bigmodel.cn/api/paas/v4">GLM 智谱官方（bigmodel.cn）</option>
       <option value="__custom__">自定义…</option>
     </select>
 
     <label class="field-label">接口地址 base_url</label>
-    <input id="baseUrlInp" type="text" value="https://api.deepseek.com" autocomplete="off" spellcheck="false">
+    <input id="baseUrlInp" type="text" value="https://api.deepseek.com/v1" autocomplete="off" spellcheck="false">
 
     <label class="field-label">API Key</label>
     <div class="key-row">

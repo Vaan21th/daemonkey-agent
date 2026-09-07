@@ -204,7 +204,7 @@ function paintMeetBrand(name) {
 
 // ── key 配置 ──
 const PRESET_MODEL = {
-  "https://api.deepseek.com": "deepseek-v4-flash",
+  "https://api.deepseek.com/v1": "deepseek-v4-flash",
   "https://open.bigmodel.cn/api/paas/v4": "glm-4.6",
 };
 $("presetSel").addEventListener("change", (e) => {
