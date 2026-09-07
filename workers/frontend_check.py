@@ -100,6 +100,9 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("mkt-star", "装过才能点星"),
         ("data-kind", "导出不靠冒号拆 id"),
         ("上架到货架", "导出并提合并申请"),
+        ("我的叠层", "插件库叠层页"),
+        ("/api/overlays", "叠层清单 API"),
+        ("paintPluginAlert", "插件库叠层红点"),
     ],
     "model-switch.js": [
         ("function initModelSwitch", "顶栏切模型入口"),
@@ -137,6 +140,8 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         (".mkt-card", "扩展市场卡片不被 flex 压扁"),
         (".mkt-star", "扩展市场打分星星"),
         (".mkt-verdict", "市集待审红绿灯"),
+        (".badge.overlay-alert", "插件库叠层红点"),
+        (".mkt-card.overlay-bad", "坏叠层卡片描边"),
         (".stage-root", "中栏舞台铺满"),
         (".stage-x", "画布关闭钮"),
         (".stage-tag", "画布类型徽章"),

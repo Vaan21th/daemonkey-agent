@@ -5,8 +5,8 @@ from . import TIER_AUTO, TIER_CONFIRM, ToolResult, ToolSpec, register_tool
 
 
 def _check(_args: dict) -> ToolResult:
-    from workers.mod_health import format_report, inspect
-    text = format_report(inspect())
+    from workers.mod_health import format_report, inspect_and_save
+    text = format_report(inspect_and_save())
     if not text:
         return ToolResult(ok=True, output="没有叠层 MOD，也没有本机工具叠层。")
     return ToolResult(ok=True, output=text)
@@ -27,6 +27,9 @@ def _set(args: dict) -> ToolResult:
         else:
             return ToolResult(ok=False, output="", error="enabled=true/false，或 action=enable/disable")
     ok, msg = enable(mid) if on else disable(mid)
+    if ok:
+        from workers.mod_health import inspect_and_save
+        inspect_and_save()
     return ToolResult(ok=ok, output=msg if ok else "", error="" if ok else msg)
 
 

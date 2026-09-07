@@ -1,9 +1,9 @@
-/* 插件库中间栏：插件 | 扩展市场。房间门复用这一页。 */
+/* 插件库中间栏：插件 | 我的叠层 | 扩展市场。房间门复用这一页。 */
 (function () {
   var TAB_KEY = "dk_plugin_hub";
   var _data = null;
   var WHY = { unpublished: "货架没有", newer: "本机更新", edited: "装完后又改过" };
-  var KIND = { skin: "皮肤", app: "工坊应用", flow: "流程", playbook: "操作手册" };
+  var KIND = { skin: "皮肤", app: "工坊应用", flow: "流程", playbook: "操作手册", mod: "MOD" };
 
   function tab() {
     try { return sessionStorage.getItem(TAB_KEY) || "plugins"; } catch (e) { return "plugins"; }
@@ -35,6 +35,8 @@
     bar.innerHTML =
       '<button class="depot-tab' + (active === "plugins" ? " active" : "") + '" type="button" data-hub="plugins">' +
       '<i class="ri-tools-line"></i><span>插件</span></button>' +
+      '<button class="depot-tab' + (active === "overlays" ? " active" : "") + '" type="button" data-hub="overlays">' +
+      '<i class="ri-stack-line"></i><span>我的叠层</span></button>' +
       '<button class="depot-tab' + (active === "market" ? " active" : "") + '" type="button" data-hub="market">' +
       '<i class="ri-store-2-line"></i><span>扩展市场</span></button>';
     bar.querySelectorAll("[data-hub]").forEach(function (b) {
@@ -126,7 +128,7 @@
     html += '<div class="plugin-cat"><div class="plugin-cat-head"><span class="cat-label">可以上架</span><span class="cat-count">' + share.length + "</span></div>";
     html += '<div class="plugin-list">';
     if (!share.length) {
-      html += '<div class="mkt-meta">现在没有。做个皮肤或工坊应用，就会出现在这里。</div>';
+      html += '<div class="mkt-meta">现在没有。做个皮肤、工坊应用或 MOD，就会出现在这里。</div>';
     }
     share.forEach(function (it) {
       var why = WHY[it.reason] || "";
@@ -267,6 +269,182 @@
       }).catch(function (e) { toast(String(e.message || e)); });
   }
 
+  function pageRows() {
+    var d = (window.Daemonkey && Daemonkey._domains) || {};
+    return Object.keys(d).map(function (k) {
+      var m = d[k] || {};
+      return { id: k, label: m.label || k, section: m.section || "" };
+    });
+  }
+
+  function paintPluginAlert(n) {
+    n = Number(n) || 0;
+    var item = document.querySelector('.nav-item[data-view="plugins"]');
+    var badge = document.getElementById("navBadge_plugins");
+    if (item) item.classList.toggle("overlay-alert", n > 0);
+    if (!badge) return;
+    if (n > 0) {
+      badge.textContent = String(n);
+      badge.className = "badge overlay-alert";
+      badge.title = n + " 个叠层要看一眼 · 插件库「我的叠层」";
+      badge.style.display = "";
+    } else if (badge.classList.contains("overlay-alert")) {
+      badge.textContent = "·";
+      badge.className = "badge";
+      badge.title = "";
+      badge.style.display = "none";
+    }
+  }
+
+  function fetchPluginAlert() {
+    fetch("/api/overlays/health", { headers: auth() })
+      .then(function (r) { return r.ok ? r.json() : { alert: 0 }; })
+      .then(function (d) { paintPluginAlert(d.alert || 0); })
+      .catch(function () {});
+  }
+
+  function wrapBadges() {
+    var orig = window.refreshNavBadges;
+    if (typeof orig !== "function" || orig._dkOverlay) return;
+    window.refreshNavBadges = function () {
+      var ret = orig.apply(this, arguments);
+      if (ret && typeof ret.then === "function") {
+        return ret.then(function (v) { fetchPluginAlert(); return v; });
+      }
+      fetchPluginAlert();
+      return ret;
+    };
+    window.refreshNavBadges._dkOverlay = true;
+  }
+
+  function ovCard(name, kind, extra, meta, bad) {
+    return '<div class="mkt-card' + (bad ? " overlay-bad" : "") + '">' +
+      '<div class="mkt-card-top">' +
+      '<span class="mkt-name">' + esc(name) + "</span>" +
+      '<span class="mkt-kind">' + esc(kind) + "</span>" + extra + "</div>" +
+      (meta ? '<div class="mkt-meta">' + meta + "</div>" : "") + "</div>";
+  }
+
+  function renderOverlays(data) {
+    var el = dash();
+    if (!el) return;
+    var health = data.health || {};
+    var mods = data.mods || [];
+    var tools = data.user_tools || [];
+    var skins = data.skins || [];
+    var dec = data.decorate || {};
+    var pages = pageRows();
+    var alert = Number(health.alert || 0);
+    var html = '<div class="dash-head"><h2><i class="ri-stack-line"></i> 我的叠层</h2>' +
+      '<span class="meta">' + (health.checked_at ? ("自检 " + esc(health.checked_at)) : "还没自检") +
+      (alert ? (" · " + alert + " 个要看") : " · 没有红的") + "</span>" +
+      '<button type="button" onclick="loadDashboard(\'plugins\')">刷新</button></div>';
+    html += '<div class="plugin-intro">官方升级不碰这些。红的只表示语法套不上，不是完整回归。' +
+      "停用之后回官方；工具/路由要重启 daemon 才摘干净。</div>";
+
+    html += '<div class="plugin-cat"><div class="plugin-cat-head"><span class="cat-label">MOD</span>' +
+      '<span class="cat-count">' + mods.length + "</span></div><div class=\"plugin-list\">";
+    if (!mods.length) {
+      html += '<div class="mkt-meta">还没有。对话说「把工具魔改收成 MOD」，或写在 data/mods/。</div>';
+    }
+    mods.forEach(function (m) {
+      var bad = m.enabled && !m.ok;
+      var extra = '<button class="plugin-try-btn" type="button" data-mod="' +
+        esc(m.id) + '" data-on="' + (m.enabled ? "0" : "1") + '">' +
+        (m.enabled ? "停用" : "启用") + "</button>";
+      var meta = "v" + esc(m.version || "?") + (m.has_ui ? " · 有前端页" : "");
+      if (m.problems && m.problems.length) meta += "<br>" + esc(m.problems.join(" · "));
+      if (m.hint) meta += "<br>" + esc(m.hint);
+      html += ovCard(m.name || m.id, m.enabled ? "开" : "关", extra, meta, bad);
+    });
+    html += "</div></div>";
+
+    html += '<div class="plugin-cat"><div class="plugin-cat-head"><span class="cat-label">本机工具</span>' +
+      '<span class="cat-count">' + tools.length + "</span></div><div class=\"plugin-list\">";
+    if (!tools.length) {
+      html += '<div class="mkt-meta">agent_tools_user/ 是空的。只给自己用的工具放这里。</div>';
+    }
+    tools.forEach(function (t) {
+      var meta = (t.problems && t.problems.length) ? esc(t.problems.join(" · ")) : "语法正常";
+      if (t.hint) meta += "<br>" + esc(t.hint);
+      html += ovCard(t.file, t.ok ? "本机" : "坏", '<span class="mkt-hold">修好或挪走</span>', meta, !t.ok);
+    });
+    html += "</div></div>";
+
+    html += '<div class="plugin-cat"><div class="plugin-cat-head"><span class="cat-label">皮肤</span>' +
+      '<span class="cat-count">' + skins.length + "</span></div><div class=\"plugin-list\">";
+    if (!skins.length) {
+      html += '<div class="mkt-meta">还没有自制皮肤。换肤仍走右上角调色板。</div>';
+    }
+    skins.forEach(function (s) {
+      html += ovCard(s.name || s.id, "皮肤", '<span class="mkt-hold">右上角换肤</span>',
+        "v" + esc(s.version || "?") + (s.hint ? "<br>" + esc(s.hint) : ""), false);
+    });
+    html += "</div></div>";
+
+    html += '<div class="plugin-cat"><div class="plugin-cat-head"><span class="cat-label">装修页</span>' +
+      '<span class="cat-count">' + pages.length + "</span></div><div class=\"plugin-list\">";
+    if (!pages.length) {
+      html += '<div class="mkt-meta">侧栏还没有 addDomain 挂上的自定义页。写在 static/user/user.js 或 MOD 的 ui/mod.js。</div>';
+    }
+    pages.forEach(function (p) {
+      html += ovCard(p.label || p.id, "侧栏页",
+        '<button class="plugin-try-btn" type="button" data-view="' + esc(p.id) + '">打开</button>',
+        (p.section ? ("分组 " + esc(p.section) + " · ") : "") + esc(p.id), false);
+    });
+    if (dec.user_js) {
+      html += ovCard("装修区 user.js", "装修", '<span class="mkt-hold">' +
+        (dec.user_js_bytes || 0) + " 字节</span>", esc(dec.hint || ""), false);
+    }
+    html += "</div></div>";
+
+    el.innerHTML = html;
+    injectTabs("overlays", true);
+    el.querySelectorAll("[data-mod]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        doToggleMod(b.getAttribute("data-mod"), b.getAttribute("data-on") === "1");
+      });
+    });
+    el.querySelectorAll("[data-view]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var v = b.getAttribute("data-view");
+        if (typeof switchView === "function") switchView(v);
+      });
+    });
+  }
+
+  function showOverlays() {
+    var el = dash();
+    if (el) el.innerHTML = '<div class="dash-empty">正在看叠层…</div>';
+    fetch("/api/overlays?refresh=1", { headers: auth() })
+      .then(function (r) {
+        if (!r.ok) throw new Error("叠层加载失败 " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        renderOverlays(data);
+        paintPluginAlert((data.health && data.health.alert) || 0);
+      })
+      .catch(function (e) {
+        if (!dash()) return;
+        dash().innerHTML = '<div class="dash-head"><h2>我的叠层</h2></div><div class="dash-empty">' +
+          esc(e.message) + " · 新路由要重启 daemon</div>";
+        injectTabs("overlays", true);
+      });
+  }
+
+  function doToggleMod(id, on) {
+    fetch("/api/mods/" + encodeURIComponent(id) + "/enabled", {
+      method: "POST",
+      headers: Object.assign({ "Content-Type": "application/json" }, auth()),
+      body: JSON.stringify({ enabled: !!on })
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (x) {
+        toast(x.ok ? (x.j.output || "已记下") : (x.j.detail || "开关失败"));
+        if (typeof loadDashboard === "function") loadDashboard("plugins");
+      }).catch(function (e) { toast(String(e.message || e)); });
+  }
+
   function showMarket() {
     var el = dash();
     if (el) el.innerHTML = '<div class="dash-empty">正在拉货架…</div>';
@@ -299,6 +477,7 @@
     function hub(data) {
       _data = data;
       if (tab() === "market") { showMarket(); return; }
+      if (tab() === "overlays") { showOverlays(); return; }
       if (typeof orig === "function" && !orig._dkMarket) {
         orig(data);
         injectTabs("plugins", true);
@@ -311,6 +490,13 @@
   }
 
   wrap();
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", wrap);
-  else wrap();
+  wrapBadges();
+  fetchPluginAlert();
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", function () {
+      wrap();
+      wrapBadges();
+      fetchPluginAlert();
+    });
+  }
 })();

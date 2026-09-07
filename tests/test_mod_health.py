@@ -49,3 +49,13 @@ def test_user_tool_syntax(tmp_path: Path):
 
 def test_quiet_when_empty(tmp_path: Path):
     assert format_report(inspect(tmp_path)) == ""
+
+
+def test_inspect_and_save_persists_alert(tmp_path: Path):
+    from workers.mod_health import inspect_and_save, load_saved
+    _mod(tmp_path, "bad_mod", tool="def broken(\n")
+    inspect_and_save(tmp_path)
+    saved = load_saved(tmp_path)
+    assert saved["alert"] == 1
+    assert saved["checked_at"]
+    assert saved["mods"][0]["id"] == "bad_mod"

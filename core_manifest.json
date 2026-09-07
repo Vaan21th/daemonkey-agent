@@ -464,6 +464,7 @@
       "workers/mod_harvest.py",
       "agent_tools/harvest_overrides.py",
       "workers/mod_health.py",
+      "workers/overlay_board.py",
       "agent_tools/mod_control.py"
     ],
     "上下文压缩(L1·长会话自动摘要·user turn 逐字保护·prune 免费减负·重启持久化·治大窗口永不压缩·tiktoken 优雅降级没装也跑)": [

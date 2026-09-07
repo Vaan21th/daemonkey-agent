@@ -24,15 +24,16 @@
   --bg2: #1f1a2c;
   --bg3: #241e34;
   --border: #352c4d;
+  --line: var(--border);
   --text: #ece8f5;
   --dim: #9a90b3;
   --dim2: #6f6685;
   /* 用户(用户)气泡 · 紫渐变(初见页同款) · 经典灰主题里会被覆盖回绿 */
   --user: #4a3a6e;
   --user-dim: #382d52;
-  /* 设置页输入框 · 深色默认半透明白；浅色主题换成实心底+实边，否则纸色上看不见框 */
+  /* 输入框跟主题边框共用 · 浅色主题只换实心底，不再另备一套线色 */
   --field-bg: rgba(255, 255, 255, 0.04);
-  --field-border: rgba(255, 255, 255, 0.1);
+  --field-border: var(--border);
   --field-hover: rgba(255, 255, 255, 0.08);
   --field-scheme: dark;
 }
@@ -68,6 +69,8 @@ html, body {
   overscroll-behavior: none;
 }
 body {
+  --line: var(--border);
+  --field-border: var(--border);
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);
@@ -1725,12 +1728,6 @@ body.day .settings-body .field textarea {
   border-width: 2px;
   box-shadow: inset 0 1px 2px rgba(67, 52, 34, 0.06);
 }
-.theme-sepia .settings-pane,
-.theme-light .settings-pane,
-.theme-pink-white .settings-pane,
-body.day .settings-pane {
-  --border: var(--field-border, #8a7048);
-}
 .theme-sepia .settings-body .llm-section,
 .theme-light .settings-body .llm-section,
 .theme-pink-white .settings-body .llm-section,
@@ -1929,14 +1926,14 @@ body.day .settings-pane .llm-section {
   display: flex; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 600; color: var(--accent, #a78bfa);
   margin: 4px 0 10px; padding-top: 10px;
-  border-top: 1px dashed rgba(255, 255, 255, .08);
+  border-top: 1px dashed var(--border);
 }
 .chan-sec-title i { font-size: 14px; }
 .chan-wizard {
   margin-top: 12px;
-  border: 1px solid rgba(255, 255, 255, .09);
+  border: 1px solid var(--border);
   border-radius: 10px;
-  background: rgba(255, 255, 255, .02);
+  background: var(--bg2);
   overflow: hidden;
 }
 .chan-wizard summary {
@@ -1950,7 +1947,7 @@ body.day .settings-pane .llm-section {
 .chan-wizard summary:hover { color: var(--text); }
 .chan-wizard summary::-webkit-details-marker { display: none; }
 .chan-wizard summary i { color: var(--accent, #a78bfa); }
-.chan-wizard[open] summary { border-bottom: 1px dashed rgba(255, 255, 255, .08); color: var(--text); }
+.chan-wizard[open] summary { border-bottom: 1px dashed var(--border); color: var(--text); }
 .wizard-steps {
   margin: 0; padding: 10px 12px 12px 30px;
   font-size: 12px; line-height: 1.9; color: var(--dim2, #94a3b8);
@@ -1962,7 +1959,7 @@ body.day .settings-pane .llm-section {
   color: #fbbf24;
 }
 .wizard-steps li a { color: var(--accent, #a78bfa); text-decoration: underline; }
-.perms-import { border-top: 1px dashed rgba(255, 255, 255, .08); padding: 10px 12px 12px; }
+.perms-import { border-top: 1px dashed var(--border); padding: 10px 12px 12px; }
 .perms-import-head {
   display: flex; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 600; color: var(--dim, #94a3b8);
@@ -1973,8 +1970,8 @@ body.day .settings-pane .llm-section {
 .perms-json {
   margin: 0 0 8px;
   padding: 10px 12px;
-  background: rgba(0, 0, 0, .25);
-  border: 1px solid rgba(255, 255, 255, .07);
+  background: var(--bg3);
+  border: 1px solid var(--border);
   border-radius: 8px;
   font-family: "Consolas", "Courier New", monospace;
   font-size: 11px;
@@ -2280,8 +2277,8 @@ body.day .settings-pane .llm-section {
 .llm-config-block select,
 .llm-config-block input {
   width: 100%;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
   color: var(--text);
   padding: 8px 10px;
   border-radius: 5px;
@@ -4471,6 +4468,23 @@ body.day .settings-pane .llm-section {
 .nav-item .badge.stub {
   background: transparent;
   color: var(--dim2);
+}
+.nav-item .badge.overlay-alert {
+  background: #e11d48;
+  color: #fff;
+  border-color: #e11d48;
+}
+.nav-item.overlay-alert .icon { position: relative; }
+.main-layout.nav-collapsed .nav-item.overlay-alert .icon::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e11d48;
+  box-shadow: 0 0 0 2px var(--bg);
 }
 
 /* ── 中 · 详情区 ───────────────────────────── */
@@ -8338,6 +8352,7 @@ details.wish-card[open] > summary.wish-card-head > .wish-why-excerpt {
   color: var(--opus);
   background: color-mix(in srgb, var(--opus) 12%, transparent);
 }
+.mkt-card.overlay-bad { border-color: #e11d48; }
 .mkt-card .plugin-try-btn,
 .mkt-card .mkt-hold { margin-left: auto; }
 .mkt-hold { font-size: 11px; color: var(--dim2); }
@@ -10312,20 +10327,20 @@ button.stage-open:hover, .stage-x:hover { color: var(--opus); border-color: var(
 
 .theme-light {
   --bg: #f5f5f5; --bg2: #ffffff; --bg3: #e8e8e8;
-  --border: #d0d0d0; --text: #1a1a1a;
+  --border: #8a8a8a; --text: #1a1a1a;
   --dim: #666; --dim2: #888;
   --opus: #6C5CE7; --opus-dim: #5A4BD1;
-  --field-bg: #ffffff; --field-border: var(--border);
+  --field-bg: #ffffff;
   --field-hover: var(--bg3); --field-scheme: light;
 }
 
 /* 日间纸色 · 跟陪伴日间同一套暖纸 · dim 加深, 灰字在纸色上才站得住 */
 .theme-sepia {
   --bg: #f4ecd8; --bg2: #faf3e0; --bg3: #e8dcc8;
-  --border: #c4b998; --text: #3a2a18;
+  --border: #8f7a52; --text: #3a2a18;
   --dim: #5c452c; --dim2: #6b5b45;
   --opus: #8a5a2e; --opus-dim: #6e4624;
-  --field-bg: #ffffff; --field-border: #8f7a52;
+  --field-bg: #ffffff;
   --field-hover: var(--bg3); --field-scheme: light;
   --sb: #cfc9bc; --sb-hover: #a9a396; --sb-track: #4a3f2a0a;
 }
@@ -10484,10 +10499,10 @@ body.theme-pink-white .detail-pane:has(.stage-frame) {
 /* 粉白 */
 .theme-pink-white {
   --bg: #fdf5f7; --bg2: #ffffff; --bg3: #f8e8ec;
-  --border: #e8cdd5; --text: #3d2028;
+  --border: #c0909c; --text: #3d2028;
   --dim: #a08090; --dim2: #7a606a;
   --opus: #e87fb8; --opus-dim: #c96b9e;
-  --field-bg: #ffffff; --field-border: var(--border);
+  --field-bg: #ffffff;
   --field-hover: var(--bg3); --field-scheme: light;
 }
 

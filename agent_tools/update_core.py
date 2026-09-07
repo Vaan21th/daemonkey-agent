@@ -231,8 +231,8 @@ def _run(args: dict) -> ToolResult:
             elif uos or skipped_take or fork_txt:
                 lines.append("  升完先把能叠的工具收成 MOD；叠不了的才「用回」或「合并」。")
             try:
-                from workers.mod_health import format_report, inspect
-                health = format_report(inspect())
+                from workers.mod_health import format_report, inspect_and_save
+                health = format_report(inspect_and_save())
                 if health:
                     lines.append("")
                     lines.append(health)

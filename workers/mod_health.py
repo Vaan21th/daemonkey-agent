@@ -1,10 +1,14 @@
 """叠层自检。只解析，不执行用户代码。"""
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 from typing import Optional
 
 from workers.mod_runtime import ROOT, _iter_py, list_mods, sanitize_id, set_enabled
+
+_HEALTH = "data/runtime/mod_health.json"
 
 
 def _syntax(path: Path) -> str:
@@ -80,6 +84,55 @@ def format_report(rep: dict) -> str:
         n = sum(1 for m in mods if m.get("enabled"))
         return f"叠层自检：{n} 个启用中的 MOD 都正常。"
     return "\n".join(lines)
+
+
+def alert_count(rep: dict) -> int:
+    n = sum(1 for m in (rep.get("mods") or [])
+            if m.get("enabled") and not m.get("ok"))
+    return n + len(rep.get("user_tools") or [])
+
+
+def snapshot(rep: dict) -> dict:
+    return {
+        "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "alert": alert_count(rep),
+        "mods": rep.get("mods") or [],
+        "user_tools": rep.get("user_tools") or [],
+    }
+
+
+def save(rep: dict, *, root: Optional[Path] = None) -> dict:
+    base = root or ROOT
+    snap = snapshot(rep)
+    path = base / _HEALTH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(snap, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8")
+    return snap
+
+
+def load_saved(root: Optional[Path] = None) -> dict:
+    path = (root or ROOT) / _HEALTH
+    empty = {"checked_at": "", "alert": 0, "mods": [], "user_tools": []}
+    if not path.is_file():
+        return empty
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return empty
+    if not isinstance(data, dict):
+        return empty
+    data.setdefault("checked_at", "")
+    data.setdefault("alert", 0)
+    data.setdefault("mods", [])
+    data.setdefault("user_tools", [])
+    return data
+
+
+def inspect_and_save(root: Optional[Path] = None) -> dict:
+    rep = inspect(root)
+    save(rep, root=root)
+    return rep
 
 
 def disable(mod_id: str, *, root: Optional[Path] = None) -> tuple[bool, str]:

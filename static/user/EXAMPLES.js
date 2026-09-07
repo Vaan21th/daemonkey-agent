@@ -118,6 +118,7 @@ Daemonkey.on('sse:event', (ev) => {
  * 目录: data/mods/token-hud/mod.json + ui/mod.js
  * 对话: 「导出 MOD token-hud」→ 得到 .dkpkg → 别人「导入 MOD <路径>」或上架市集。
  * 工具写 tools/*.py ，路由写 routes/*.py。重启 daemon 后工具/路由生效，前端刷新即可。
+ * 本机清单在插件库「我的叠层」。升完自检红了会在插件库打点，点进去看，不必每次测。
  */
 
 
