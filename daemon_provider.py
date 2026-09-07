@@ -273,9 +273,13 @@ def _friendly_provider_error(exc: Exception, base_url: str) -> str:
     msg = str(exc)
     low = f"{name} {msg}".lower()
     u = (base_url or "").rstrip("/")
+    # 缺包文本里也有 "not found"（No module named 'httpx'）· 0.9.7-hf 被误判成 URL 404。
+    if isinstance(exc, ImportError):
+        return f"运行环境缺包({exc})。去启动器『环境』页点开始安装后再保存。"
     if "model" in low and ("not" in low or "exist" in low or "invalid" in low or "不存在" in msg):
         return "模型名可能不对。换成该 provider 实际支持的模型名再试。"
-    if "notfound" in low or "404" in low or "not found" in low:
+    http404 = name.lower() == "notfounderror" or "error code: 404" in low or "status code: 404" in low
+    if http404:
         if u.endswith("/v1"):
             alt = u[: -len("/v1")].rstrip("/")
             return f"接口地址 404(路径不对)。试试去掉结尾的 /v1 → {alt}"

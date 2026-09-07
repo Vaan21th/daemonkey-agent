@@ -225,7 +225,7 @@ try {
     #   缺任一 → import 失败 → needsInstall → pip install -r (pip 自动跳过已装的 · 只补装缺的)
     # 0.9.7 · 探测清单补 numpy/pypdf (回收纯净版 0.9.6-hf3):
     #   老用户升级后探测清单不含它们 → 误判已装跳过 → 星图/PDF 缺腿裸 500
-    & $venvPython -c "import anthropic, openai, dotenv, rich, cryptography, PyQt6.QtMultimedia, numpy, pypdf" 2>&1 | Out-Null
+    & $venvPython -c "import anthropic, openai, httpx, dotenv, rich, cryptography, PyQt6.QtMultimedia, numpy, pypdf" 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         $needsInstall = $true
     }
@@ -236,9 +236,17 @@ try {
 if ($needsInstall) {
     Write-Step 'installing requirements (one-time, may take 1-2 min)...'
     & $venvPython -m pip install --quiet --upgrade pip
-    & $venvPython -m pip install --quiet -r $reqPath
-    if ($LASTEXITCODE -ne 0) {
-        Write-Step 'pip install failed. Try -i https://pypi.tuna.tsinghua.edu.cn/simple if in China' 'err'
+    $pipOk = $false
+    foreach ($idx in @(
+        'https://pypi.tuna.tsinghua.edu.cn/simple',
+        'https://pypi.org/simple'
+    )) {
+        Write-Step "pip install via $idx ..."
+        & $venvPython -m pip install --quiet -i $idx -r $reqPath
+        if ($LASTEXITCODE -eq 0) { $pipOk = $true; break }
+    }
+    if (-not $pipOk) {
+        Write-Step 'pip install failed (mirror and pypi)' 'err'
         exit 1
     }
     Write-Step 'dependencies installed' 'ok'
@@ -270,25 +278,23 @@ if (-not (Test-Path $envPath)) {
     exit 0
 }
 
+# 启动器 -NoLaunch 只负责装环境。没 key 是初见页的事，不许在这里弹记事本卡死。
+if ($NoLaunch) {
+    Write-Host ''
+    Write-Step 'environment ready. Skipping launch (-NoLaunch).' 'ok'
+    exit 0
+}
+
 # Validate .env: at least one uncommented, non-placeholder API key must exist.
 $envContent = Get-Content $envPath -Raw
 $hasAnthropicKey = $envContent -match '(?m)^\s*ANTHROPIC_API_KEY\s*=\s*sk-ant-api03-[A-Za-z0-9_-]{20,}'
-$hasOpusKey      = $envContent -match '(?m)^\s*OPUS_API_KEY\s*=\s*[A-Za-z0-9_-]{20,}'
+$hasOpusKey      = $envContent -match '(?m)^\s*(OPUS_API_KEY|DAEMONKEY_API_KEY)\s*=\s*[A-Za-z0-9_-]{20,}'
 
 if (-not $hasAnthropicKey -and -not $hasOpusKey) {
-    Write-Step '.env has no usable API key yet' 'err'
-    Write-Host ''
-    Write-Host '       Uncomment ONE of these lines in .env and fill in the real value:' -ForegroundColor Yellow
-    Write-Host '         ANTHROPIC_API_KEY=sk-ant-api03-...     (Anthropic direct)'
-    Write-Host '         OPUS_API_KEY=...                       (OpenRouter / PPIO / any proxy)'
-    Write-Host ''
-    Write-Host '       And if using a proxy, also uncomment OPUS_BASE_URL.' -ForegroundColor Yellow
-    Write-Host ''
-    notepad $envPath
-    Write-Step 'after saving .env, re-run: .\run.ps1' 'warn'
-    exit 1
+    Write-Step '.env has no usable API key yet · 启动后在相遇页填' 'warn'
+} else {
+    Write-Step '.env looks configured' 'ok'
 }
-Write-Step '.env looks configured' 'ok'
 
 # 7) Verify soul files
 $soulSkill = Join-Path $PSScriptRoot 'soul\SKILL.md'

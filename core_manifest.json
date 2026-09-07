@@ -96,6 +96,7 @@
       "daemon_api.py",
       "daemon_runtime.py",
       "daemon_session.py",
+      "workers/attach_prompt.py",
       "api_routes/__init__.py",
       "api_routes/_deps.py",
       "api_routes/core.py",

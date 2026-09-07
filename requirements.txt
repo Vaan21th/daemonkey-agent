@@ -1,5 +1,8 @@
 anthropic>=0.40.0
 openai>=1.50.0
+# probe / net_client 直接 import httpx。只靠 openai 传递不够：半成品 venv 或缺成 httpx2 时，
+# 初见保存会 ModuleNotFoundError，旧逻辑把 "not found" 误报成接口 404。
+httpx>=0.27.0
 python-dotenv>=1.0.0
 rich>=13.7.0
 fastapi>=0.115.0
