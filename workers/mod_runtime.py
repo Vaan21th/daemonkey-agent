@@ -121,6 +121,24 @@ def enabled_names(root: Optional[Path] = None) -> list[str]:
     return [m["id"] for m in list_mods(root) if m.get("enabled")]
 
 
+def set_enabled(mod_id: str, enabled: bool, *, root: Optional[Path] = None
+                ) -> tuple[bool, str]:
+    mid = sanitize_id(mod_id)
+    folder = (root or ROOT) / "data" / "mods" / mid
+    if not folder.is_dir():
+        return False, f"找不到 MOD: {mid}"
+    meta = _mod_json(folder)
+    meta["enabled"] = bool(enabled)
+    (folder / "mod.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    if enabled:
+        return True, f"已启用 MOD `{mid}`。刷新页面加载 UI；重启 daemon 后工具/路由才挂上。"
+    return True, (
+        f"已停用 MOD `{mid}`。刷新页面后 UI 不再加载；"
+        f"重启 daemon 后工具/路由不再叠，官方行为回来。"
+    )
+
+
 def _iter_py(folder: Path) -> list[Path]:
     if not folder.is_dir():
         return []

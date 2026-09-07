@@ -148,6 +148,7 @@
       "static/chat-timeline.js",
       "static/chat-rail.js",
       "static/chat-lightbox.js",
+      "static/daemonkey-bus.js",
       "static/chat.js",
       "static/depot.js",
       "static/clients.js",
@@ -461,7 +462,9 @@
       "agent_tools/mod_pack.py",
       "api_routes/mods.py",
       "workers/mod_harvest.py",
-      "agent_tools/harvest_overrides.py"
+      "agent_tools/harvest_overrides.py",
+      "workers/mod_health.py",
+      "agent_tools/mod_control.py"
     ],
     "上下文压缩(L1·长会话自动摘要·user turn 逐字保护·prune 免费减负·重启持久化·治大窗口永不压缩·tiktoken 优雅降级没装也跑)": [
       "workers/memory_compression.py",

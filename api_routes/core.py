@@ -57,6 +57,7 @@ _STATIC_WHITELIST = {
     "chat-md.js": "application/javascript; charset=utf-8",
     "chat-timeline.js": "application/javascript; charset=utf-8",
     "chat-rail.js": "application/javascript; charset=utf-8",
+    "daemonkey-bus.js": "application/javascript; charset=utf-8",
     "market.js": "application/javascript; charset=utf-8",
     # 2026-08-27 · 设置页从 chat.js 抽出 · 工作台中栏 + 陪伴家具弹窗共用 · 漏加 = 404 = 房间设置空
     "settings-pane.js": "application/javascript; charset=utf-8",

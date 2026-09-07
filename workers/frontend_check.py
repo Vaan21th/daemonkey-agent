@@ -1,20 +1,6 @@
 # -*- coding: utf-8 -*-
-"""workers/frontend_check.py · 前端 JS 语法闸 (卷五十四 · 2026-06-03)
-
-病根 (本次事故):
-  OPUS 重写沉淀位面板时·用 `python_exec` 手写字符串切片改 chat.js:
-      js = js[:start_idx] + new_sinks + "\\n" + old_end   # old_end = "function loadMoreWishes() {"
-  边界算错·把 `loadMoreWishes` 函数体 + 之后 1660 行整段吞掉·chat.js 停在
-  `function loadMoreWishes() {` → JS 语法错 (Unexpected end of input) → 浏览器一加载就整个白屏。
-  而 `verify_daemon_endpoints` 只验 Python 路由 (FastAPI TestClient)·**根本不碰前端**·
-  于是坏掉的 chat.js 顶着"82/82 全绿"被 commit + 重启·BRO 打开 WebUI 全死。
-
-这个模块补上前端那一环:
-  - node 在 → `node --check` (权威·跟浏览器同一个 V8 parser)
-  - node 缺失 (开源用户没装) → 纯 Python "尾部截断"启发式兜底·正好抓这类被砍尾巴的 case·
-    抓不全所有语法错·但绝不硬崩、绝不误拦正常文件。
-
-只扫 static/ 顶层自己维护的 JS·跳过 static/lib/ 下的三方 vendor (litegraph 等)。
+"""前端 JS 语法闸 + 功能哨兵。node --check；没 node 时用尾部截断启发式。
+只扫 static/ 顶层自己的 JS，跳过 lib/。哨兵防整文件覆盖把功能删了语法还绿。
 """
 from __future__ import annotations
 
@@ -61,6 +47,15 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("data.claimed", "认领过的对话不拽回旧家"),
         ("确认卡放在重画之后", "F5 续场确认卡不被历史重画擦掉"),
         ("state._pollBusy", "续场轮询不重叠双挂确认卡"),
+        ("Daemonkey.emit('message:render'", "气泡渲染走事件总线"),
+        ("Daemonkey.emit('sse:event'", "SSE 走事件总线"),
+        ("Daemonkey.emit('view:switch'", "切视图走事件总线"),
+    ],
+    "daemonkey-bus.js": [
+        ("DK.emit = function", "事件总线 emit"),
+        ("view:switch", "承诺 view:switch"),
+        ("message:render", "承诺 message:render"),
+        ("sse:event", "承诺 sse:event"),
     ],
     "settings-pane.js": [
         ("function renderSettingsView", "设置页外壳"),
@@ -119,6 +114,7 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("chat-md.js", "Markdown 抽出"),
         ("chat-timeline.js", "工具时间线抽出"),
         ("chat-rail.js", "提问轨道抽出"),
+        ("daemonkey-bus.js", "事件总线"),
         ("market.js", "扩展市场中间栏"),
         ("stage.js", "中栏舞台"),
         ("stage_notes.js", "画布批注"),
@@ -131,6 +127,9 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("function interruptSpeak", "点她或音量打断房间语音合成"),
         ("window.__speakNow", "房间出声走半双工"),
         ("say-cut", "气泡上能打断她"),
+        ("Daemonkey.emit('message:render'", "房间气泡走事件总线"),
+        ("Daemonkey.emit('sse:event'", "房间 SSE 走事件总线"),
+        ("Daemonkey.emit('view:switch'", "房间切门走事件总线"),
     ],
     "chat.css": [
         ("#micBtn.listening", "语音按钮聆听态样式"),

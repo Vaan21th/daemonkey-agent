@@ -661,6 +661,8 @@ function openModal(key, cfg, wantDomain) {
 }
 
 function openTab(it) {
+  var ev = { view: it && it.domain, previous: currentView, item: it };
+  if (ev.view && window.Daemonkey && Daemonkey.emit && !Daemonkey.emit('view:switch', ev)) return;
   document.querySelectorAll('.modal-tab').forEach(b => {
     b.classList.toggle('active', b.dataset.domain === (it.domain || ''));
   });
@@ -1825,6 +1827,11 @@ function fmtTime(ts) {
 }
 
 function addMsg(text, who, cls, ts, target) {
+  var ev = { phase: 'before', role: who === 'me' ? 'bro' : 'opus', text: text, who: who, className: cls, ts: ts, target: target };
+  if (window.Daemonkey && Daemonkey.emit && !Daemonkey.emit('message:render', ev)) {
+    return ev.el || null;
+  }
+  text = ev.text; who = ev.who; cls = ev.className; ts = ev.ts; target = ev.target;
   const d = document.createElement('div');
   const role = who === 'me' ? 'bro' : 'opus';
   d.className = 'msg ' + role + (cls ? ' ' + cls : '');
@@ -1835,6 +1842,9 @@ function addMsg(text, who, cls, ts, target) {
     box.scrollTop = box.scrollHeight;
   }
   if (role === 'bro') _attachCkpt(d, null, null, text || '');
+  ev.phase = 'after';
+  ev.el = d;
+  if (window.Daemonkey && Daemonkey.emit) Daemonkey.emit('message:render', ev);
   return d;
 }
 
@@ -2881,6 +2891,10 @@ async function send(opts) {
 
     const onEvent = (type, d) => {
       if (myGen !== state.streamGen) return;
+      var ev = { type: type, data: d };
+      if (window.Daemonkey && Daemonkey.emit && !Daemonkey.emit('sse:event', ev)) return;
+      type = ev.type;
+      d = ev.data;
       if (type === 'hello') {
         state.currentTurnId = d.turn_id || '';
         if (isVisible()) curTurnId = state.currentTurnId;

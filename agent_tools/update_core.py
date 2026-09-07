@@ -230,6 +230,14 @@ def _run(args: dict) -> ToolResult:
                 lines.append(guide)
             elif uos or skipped_take or fork_txt:
                 lines.append("  升完先把能叠的工具收成 MOD；叠不了的才「用回」或「合并」。")
+            try:
+                from workers.mod_health import format_report, inspect
+                health = format_report(inspect())
+                if health:
+                    lines.append("")
+                    lines.append(health)
+            except Exception:
+                pass
             lines.append("\n⚠ 内核是 daemon 代码 · 改完需要【重启 daemon】才生效。")
             lines.append("  你的应用 / 工作流 / soul 灵魂记忆一个字节都没动。")
             return ToolResult(ok=True, output="\n".join(lines))

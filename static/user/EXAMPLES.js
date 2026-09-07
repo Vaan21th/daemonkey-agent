@@ -45,6 +45,10 @@
  *   Daemonkey.refresh()                重新渲染当前维度
  *   Daemonkey.currentView()            当前在看哪个维度
  *   Daemonkey.ctx()                    当前会话的 token / 缓存命中等实时数据
+ *   Daemonkey.on / off / emit          事件总线（改气泡/看 SSE/切视图 · 不要 fork chat.js）
+ *     view:switch       {view, previous}  return false 则官方不切
+ *     message:render    {phase, role, text, el}  before 里 return false 则官方不画
+ *     sse:event         {type, data}  可改 data；return false 则官方不处理这条
  *
  * 陪伴房间同一套 API: addDomain 挂到房间右边那扇「门」上, 不进侧栏。
  * addNavGroup 在房间里是空操作 (没有导航分组可插), 从工作台抄来的代码不会炸。
@@ -93,15 +97,21 @@ Daemonkey.ready(() => {
 */
 
 
-/* ── 例 3 · 覆盖官方行为（升级易碎 · 能用 D0 就别走这条） ────────────────
- * 官方函数都在全局作用域·重新赋值就能换掉。 先存原函数·这样还能调回去。
- * 官方一改函数名这段就碎 · 这不是承诺接口。 能 addDomain / 写 MOD 就不要 monkey-patch。
+/* ── 例 3 · 事件总线（改气泡 / 看 SSE · 不要 fork chat.js） ─────────────
+ * return false 会跳过官方那一步。能叠就叠，不要整份复制 chat.js。
 
-const _origSwitchView = window.switchView;
-window.switchView = function (view) {
-  console.log('[user] 切到', view);
-  return _origSwitchView(view);
-};
+Daemonkey.on('view:switch', (ev) => {
+  console.log('[mod] 切到', ev.view, '从', ev.previous);
+});
+
+Daemonkey.on('message:render', (ev) => {
+  if (ev.phase !== 'after' || !ev.el) return;
+  if (ev.role === 'opus') ev.el.classList.add('mod-bubble');
+});
+
+Daemonkey.on('sse:event', (ev) => {
+  if (ev.type === 'usage') console.log('[mod] token', ev.data);
+});
 */
 
 /* ── 例 4 · 把魔改收成 MOD ──────────────────────────────────────────────

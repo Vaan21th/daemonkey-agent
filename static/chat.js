@@ -4163,6 +4163,11 @@ function formatTime(ts) {
 // 卷四十六续 3 · opts.forceScroll · 默认软滚 (用户 拖滚动条看历史时 LLM 输出不强行刷回底)
 //   用户发消息 / 错误 / 必须看到的卡片 → 调方显式传 { forceScroll: true }
 function addMsg(role, text, className, ts, target, opts) {
+  var ev = { phase: 'before', role: role, text: text, className: className, ts: ts, target: target, opts: opts };
+  if (window.Daemonkey && Daemonkey.emit && !Daemonkey.emit('message:render', ev)) {
+    return ev.el || null;
+  }
+  role = ev.role; text = ev.text; className = ev.className; ts = ev.ts; target = ev.target; opts = ev.opts;
   const div = document.createElement('div');
   div.className = 'msg ' + (className || role);
   const cls = className || role;
@@ -4194,6 +4199,9 @@ function addMsg(role, text, className, ts, target, opts) {
     scrollToBottom(dst, { force: !!(opts && opts.forceScroll) });
     _trimRenderedMessages(dst);
   }
+  ev.phase = 'after';
+  ev.el = div;
+  if (window.Daemonkey && Daemonkey.emit) Daemonkey.emit('message:render', ev);
   return div;
 }
 function addSys(text, target) { return addMsg('sys', text, null, null, target); }
@@ -5262,6 +5270,10 @@ async function send(opts) {
   }
 
   function handleStreamEvent(type, data) {
+    var ev = { type: type, data: data };
+    if (window.Daemonkey && Daemonkey.emit && !Daemonkey.emit('sse:event', ev)) return;
+    type = ev.type;
+    data = ev.data;
     switch (type) {
       case 'hello':
         if (data && data.turn_id) {
@@ -6264,6 +6276,9 @@ Daemonkey.ctx = () => window._ctxData || null;  // 当前会话 token / 缓存�
 function switchView(view) {
   if (!DOMAIN_META[view]) return;
   if (DOMAIN_META[view].disabled) return;
+  var ev = { view: view, previous: currentView };
+  if (window.Daemonkey && Daemonkey.emit && !Daemonkey.emit('view:switch', ev)) return;
+  view = ev.view || view;
   currentView = view;
   // sidebar active 状态同步
   document.querySelectorAll('.nav-item').forEach(b => {
@@ -9841,6 +9856,7 @@ window.switchSessionById = switchSessionById;
   if (typeof mdRender !== 'function') miss.push('chat-md.js');
   if (typeof renderToolTimeline !== 'function') miss.push('chat-timeline.js');
   if (typeof _ensureMsgRail !== 'function') miss.push('chat-rail.js');
+  if (!window.Daemonkey || typeof Daemonkey.emit !== 'function') miss.push('daemonkey-bus.js');
   if (miss.length) {
     if (typeof window.__opusShowFatal === 'function') {
       window.__opusShowFatal('界面没能加载起来', '拆出去的脚本没到位: ' + miss.join(' · '));
