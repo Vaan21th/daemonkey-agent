@@ -36,6 +36,25 @@ from workers.kernel_takeover import load as load_takeover
 MANIFEST_PATH = ROOT / "core_manifest.json"
 
 
+def _drop_user_data(files: list[str]) -> tuple[list[str], list[str]]:
+    """097 第一刀常拉不下 output_sinks · 升级代码自己不能再被它卡住。"""
+    try:
+        from workers.output_sinks import drop_user_data_paths
+        return drop_user_data_paths(files)
+    except ImportError:
+        keep, drop = [], []
+        for f in files:
+            rel = str(f or "").replace("\\", "/").strip()
+            if not rel:
+                continue
+            blocked = (
+                rel.startswith(("data/", "soul/", "sessions/", "static/user/"))
+                or rel == ".env" or rel.startswith(".env.")
+            )
+            (drop if blocked else keep).append(rel)
+        return keep, drop
+
+
 def load_manifest() -> dict:
     """读 core_manifest.json · 缺失/坏掉返空壳 (不抛)。"""
     try:
@@ -79,7 +98,6 @@ def kernel_files(manifest: Optional[dict] = None) -> list[str]:
     data/ soul/ sessions/ static/user/ .env 即使误写入白名单也不会进列表 ——
     升级物理上碰不到用户产物和灵魂。
     """
-    from workers.output_sinks import drop_user_data_paths
     m = manifest or load_manifest()
     files: list[str] = []
     for group in (m.get("kernel") or {}).values():
@@ -87,7 +105,7 @@ def kernel_files(manifest: Optional[dict] = None) -> list[str]:
             f = str(f).strip().replace("\\", "/")
             if f and f not in files:
                 files.append(f)
-    keep, _ = drop_user_data_paths(files)
+    keep, _ = _drop_user_data(files)
     return keep
 
 
@@ -466,8 +484,7 @@ def _pull_pass_locked(remote: str, branch: str, base: str, do_commit: bool) -> d
         res["skipped_takeover"] = [f for f in to_pull if f in taken]
         to_pull = [f for f in to_pull if f not in taken]
 
-    from workers.output_sinks import drop_user_data_paths
-    to_pull, blocked_data = drop_user_data_paths(to_pull)
+    to_pull, blocked_data = _drop_user_data(to_pull)
     if blocked_data:
         extra = f"拒拉用户数据 {len(blocked_data)} 个: {', '.join(blocked_data[:6])}"
         res["note"] = (res["note"] + " · " + extra).strip(" ·")
