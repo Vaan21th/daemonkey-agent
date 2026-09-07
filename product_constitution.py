@@ -64,4 +64,14 @@ def build_constitution_block(soul_dir: Path) -> str:
                 parts.append(txt)
         except Exception:
             pass
+    try:
+        from workers.overlay_policy import constitution_extra
+        extra = constitution_extra()
+        if extra:
+            parts.append("")
+            parts.append("=== 改装纪律（本实例 · 随内核下发） ===")
+            parts.append("")
+            parts.append(extra.strip())
+    except Exception:
+        pass
     return "\n".join(parts) + "\n\n"

@@ -82,6 +82,7 @@ register_tool(ToolSpec(
         "前端/worker 不要当已生效的 MOD。scope=all 才存 legacy/ 草稿。"
         "用户说「把工具魔改收成 MOD」→ apply scope=tools；"
         "「把魔改全部收成 MOD」→ apply scope=all。"
+        "上架市集前还有能剥的工具，先走这一步。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

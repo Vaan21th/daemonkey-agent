@@ -104,6 +104,7 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("/api/overlays", "叠层清单 API"),
         ("paintPluginAlert", "插件库叠层红点"),
         ("作者 ", "改装卡片作者"),
+        ("收成叠层", "上架前先剥内核叉"),
     ],
     "model-switch.js": [
         ("function initModelSwitch", "顶栏切模型入口"),

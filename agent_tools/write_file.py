@@ -443,6 +443,12 @@ def _run(args: dict) -> ToolResult:
     except Exception:
         pass
 
+    try:
+        from workers.overlay_policy import attach_write_notice
+        base_output = attach_write_notice(path, base_output)
+    except Exception:
+        pass
+
     return ToolResult(ok=True, output=base_output)
 
 

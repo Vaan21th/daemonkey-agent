@@ -36,15 +36,24 @@ def _export(args: dict) -> ToolResult:
     )
     if path is None:
         return ToolResult(ok=False, output="", error=err)
+    note = ""
+    try:
+        from workers.overlay_policy import publish_block
+        note = publish_block()
+    except Exception:
+        note = ""
     rel = path.as_posix()
     try:
         rel = str(path.relative_to(Path(__file__).resolve().parent.parent)).replace("\\", "/")
     except Exception:
         pass
-    return ToolResult(ok=True, output=(
+    out = (
         f"已打包 MOD `{mid}` → `{rel}`\n"
         "发给别人，对方说「导入 MOD <路径>」即装。市集 kind=mod。"
-    ))
+    )
+    if note:
+        out += "\n\n还不能上架市集：\n" + note
+    return ToolResult(ok=True, output=out)
 
 
 def _import(args: dict) -> ToolResult:

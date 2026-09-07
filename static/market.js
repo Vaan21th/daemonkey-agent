@@ -100,6 +100,7 @@
       " · " + items.length + " 个</span>" +
       '<button type="button" onclick="loadDashboard(\'plugins\')">刷新</button></div>';
     html += '<div class="plugin-intro"><b>上架</b>会先打本机袋子，机器闸过了再向市集仓开合并申请。' +
+      "MOD 还改着官方文件会被拦住，先收成叠层。" +
       "红灯当场挡住；仓主在下面待审里看黄灯、一批合绿灯。" +
       (snap.can_submit ? "" : " 这台电脑还没有 Gitee 令牌（.env 的 GITEE_TOKEN），现在只能导出文件。") +
       "</div>";
@@ -340,7 +341,8 @@
       (alert ? (" · " + alert + " 个要看") : " · 没有红的") + "</span>" +
       '<button type="button" onclick="loadDashboard(\'plugins\')">刷新</button></div>';
     html += '<div class="plugin-intro">这里放 MOD：自己写的，以及别人分享装进来的。' +
-      "官方升级不碰。红的只表示语法套不上。停用回官方；工具/路由要重启 daemon。</div>";
+      "官方升级不碰。红的只表示语法套不上。停用回官方；工具/路由要重启 daemon。" +
+      "上架前官方文件上的改动要先收成叠层。</div>";
 
     html += '<div class="plugin-cat"><div class="plugin-cat-head"><span class="cat-label">MOD</span>' +
       '<span class="cat-count">' + mods.length + "</span></div><div class=\"plugin-list\">";

@@ -113,6 +113,9 @@ def _review_mod(z, red: list, yellow: list, meta: dict) -> None:
         yellow.append(f"含 {len(pys)} 个 Python 叠层，需确认不改内核白名单")
     if not any(n.startswith(("tools/", "routes/", "ui/")) for n in names):
         yellow.append("没有 tools/routes/ui，空壳")
+    if any(n.startswith("legacy/") for n in names) and not any(
+            n.startswith(("tools/", "routes/", "ui/")) for n in names):
+        red.append("只有 legacy 草稿，不是能跑的叠层")
 
 
 def review_pkg(src, *, author: str = "", known_authors: list | None = None) -> dict:

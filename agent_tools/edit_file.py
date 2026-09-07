@@ -209,6 +209,11 @@ def _run_batch(args: dict, raw: str, edits: list) -> ToolResult:
             base = f"{base}\n\n{b_warn}"
     except Exception:
         pass
+    try:
+        from workers.overlay_policy import attach_write_notice
+        base = attach_write_notice(path, base)
+    except Exception:
+        pass
     return ToolResult(ok=True, output=base)
 
 
@@ -364,6 +369,12 @@ def _run(args: dict) -> ToolResult:
     try:
         from workers.stage_open import append_open_mark
         base = append_open_mark(base, path)
+    except Exception:
+        pass
+
+    try:
+        from workers.overlay_policy import attach_write_notice
+        base = attach_write_notice(path, base)
     except Exception:
         pass
 

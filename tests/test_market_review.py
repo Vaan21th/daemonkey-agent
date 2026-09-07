@@ -80,6 +80,19 @@ def test_scripted_localhost_is_red():
     assert got["verdict"] == "reject"
 
 
+def test_legacy_only_mod_is_red():
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("manifest.json", json.dumps({
+            "kind": "mod", "name": "x", "version": "1.0.0", "description": "d",
+        }))
+        z.writestr("mod.json", json.dumps({"id": "x"}))
+        z.writestr("legacy/static/clients.js", "stolen")
+    got = review_pkg(buf.getvalue(), author="bob", known_authors=["bob"])
+    assert got["verdict"] == "reject"
+    assert any("legacy" in x for x in got["red"])
+
+
 def test_index_must_add_exactly_one():
     old = [{"id": "a", "file": "https://gitee.com/o/r/raw/master/packages/a.dkpkg"}]
     new = old + [

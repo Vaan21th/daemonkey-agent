@@ -75,6 +75,11 @@ def submit(kind: str, name: str, author: str = "", version: str = "", descriptio
     name = (name or "").strip()
     if kind not in ("app", "flow", "skin", "mod") or not name:
         return {"ok": False, "error": "kind 必须是 app/flow/skin/mod，且 name 必填"}
+    if kind == "mod":
+        from workers.overlay_policy import publish_block
+        blocked = publish_block()
+        if blocked:
+            return {"ok": False, "error": blocked}
     path, exported = _export_pkg(kind, name, author, version, description)
     if path is None:
         return {"ok": False, "error": getattr(exported, "error", None) or "导出失败"}
