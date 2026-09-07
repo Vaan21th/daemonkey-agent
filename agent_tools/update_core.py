@@ -136,7 +136,8 @@ def _run(args: dict) -> ToolResult:
                 else:
                     lines.append("这些待更新的内核文件你改过 (内容跟官方版不一样):")
                     lines += [f"    ! {f}" for f in dirty_in_update]
-                lines.append("  叠层目录升级不碰。内核浅叉可说「合并我的改动」；深叉请迁到 data/mods 或对照官方副本。")
+                lines.append("  叠层目录升级不碰。覆盖前会 checkpoint + 备份，字不会丢。")
+                lines.append("  升完先把能叠的工具收成 MOD；叠不了的才「用回」或「合并」。")
                 lines.append("  整文件自己管 → 「这文件我自己管」(官方新版会落到 official_incoming/)。")
 
             # ── 整机漂移总览 ──
@@ -207,7 +208,6 @@ def _run(args: dict) -> ToolResult:
                 for uo in uos:
                     bak = uo.get("backup") or "(备份失败·但 git checkpoint 里有)"
                     lines.append(f"    ! {uo['file']}  → 备份: {bak}")
-                lines.append("  浅叉可说「合并我的改动」。深叉请迁到 data/mods，不要整文件揉 chat.js。")
             skipped_take = res.get("skipped_takeover") or []
             if skipped_take and not fork_txt:
                 lines.append("")
@@ -216,9 +216,20 @@ def _run(args: dict) -> ToolResult:
                 incoming = res.get("official_incoming") or []
                 if incoming:
                     lines.append("  官方新版在 data/runtime/official_incoming/ · 可对照摘修复")
-                lines.append("  交还官方管 → 「取消接管 <文件>」")
-            if uos or (res.get("skipped_takeover") or []) or fork_txt:
-                lines.append("  想把旧魔改收成叠层 → 说「把魔改收成 MOD」（工具能叠上，chat.js 只进草稿）。")
+            guide = ""
+            try:
+                from workers.mod_harvest import format_upgrade_guide
+                guide = format_upgrade_guide(
+                    takeover=skipped_take,
+                    incoming=res.get("official_incoming") or [],
+                )
+            except Exception:
+                guide = ""
+            if guide:
+                lines.append("")
+                lines.append(guide)
+            elif uos or skipped_take or fork_txt:
+                lines.append("  升完先把能叠的工具收成 MOD；叠不了的才「用回」或「合并」。")
             lines.append("\n⚠ 内核是 daemon 代码 · 改完需要【重启 daemon】才生效。")
             lines.append("  你的应用 / 工作流 / soul 灵魂记忆一个字节都没动。")
             return ToolResult(ok=True, output="\n".join(lines))

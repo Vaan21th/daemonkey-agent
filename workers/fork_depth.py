@@ -126,11 +126,11 @@ def format_pending(items: list[dict], *, overlays_intact: list[str] | None = Non
     d2 = [i for i in items if i["depth"] == D2]
     d3 = [i for i in items if i["depth"] == D3]
     if d2:
-        lines.append(f"浅叉 D2 ({len(d2)} 个，建议迁到 MOD，或说「合并我的改动」):")
+        lines.append(f"浅叉 D2 ({len(d2)} 个，能叠的工具先收成 MOD；叠不了的再合并):")
         for i in d2:
             lines.append(f"  ~ {i['file']}  +-{i['changed']} 行 / {i['hunks']} 段")
     if d3:
-        lines.append(f"深叉 D3 ({len(d3)} 个，整文件合并费劲；优先拆成 MOD 或对照官方副本):")
+        lines.append(f"深叉 D3 ({len(d3)} 个，不要整文件揉；工具收成 MOD，前端用回或接管):")
         for i in d3:
             extra = f"  +-{i['changed']} 行" if i.get("changed") else ""
             lines.append(f"  ! {i['file']}{extra}  · {i['reason']}")
