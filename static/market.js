@@ -1,4 +1,4 @@
-/* 插件库中间栏：插件 | 我的叠层 | 扩展市场。房间门复用这一页。 */
+/* 插件库中间栏：插件 | 我的改装 | 扩展市场。房间门复用这一页。 */
 (function () {
   var TAB_KEY = "dk_plugin_hub";
   var _data = null;
@@ -36,7 +36,7 @@
       '<button class="depot-tab' + (active === "plugins" ? " active" : "") + '" type="button" data-hub="plugins">' +
       '<i class="ri-tools-line"></i><span>插件</span></button>' +
       '<button class="depot-tab' + (active === "overlays" ? " active" : "") + '" type="button" data-hub="overlays">' +
-      '<i class="ri-stack-line"></i><span>我的叠层</span></button>' +
+      '<i class="ri-stack-line"></i><span>我的改装</span></button>' +
       '<button class="depot-tab' + (active === "market" ? " active" : "") + '" type="button" data-hub="market">' +
       '<i class="ri-store-2-line"></i><span>扩展市场</span></button>';
     bar.querySelectorAll("[data-hub]").forEach(function (b) {
@@ -286,7 +286,7 @@
     if (n > 0) {
       badge.textContent = String(n);
       badge.className = "badge overlay-alert";
-      badge.title = n + " 个叠层要看一眼 · 插件库「我的叠层」";
+      badge.title = n + " 个改装要看一眼 · 插件库「我的改装」";
       badge.style.display = "";
     } else if (badge.classList.contains("overlay-alert")) {
       badge.textContent = "·";
@@ -335,12 +335,12 @@
     var dec = data.decorate || {};
     var pages = pageRows();
     var alert = Number(health.alert || 0);
-    var html = '<div class="dash-head"><h2><i class="ri-stack-line"></i> 我的叠层</h2>' +
+    var html = '<div class="dash-head"><h2><i class="ri-stack-line"></i> 我的改装</h2>' +
       '<span class="meta">' + (health.checked_at ? ("自检 " + esc(health.checked_at)) : "还没自检") +
       (alert ? (" · " + alert + " 个要看") : " · 没有红的") + "</span>" +
       '<button type="button" onclick="loadDashboard(\'plugins\')">刷新</button></div>';
-    html += '<div class="plugin-intro">官方升级不碰这些。红的只表示语法套不上，不是完整回归。' +
-      "停用之后回官方；工具/路由要重启 daemon 才摘干净。</div>";
+    html += '<div class="plugin-intro">这里放 MOD：自己写的，以及别人分享装进来的。' +
+      "官方升级不碰。红的只表示语法套不上。停用回官方；工具/路由要重启 daemon。</div>";
 
     html += '<div class="plugin-cat"><div class="plugin-cat-head"><span class="cat-label">MOD</span>' +
       '<span class="cat-count">' + mods.length + "</span></div><div class=\"plugin-list\">";
@@ -385,14 +385,14 @@
     html += '<div class="plugin-cat"><div class="plugin-cat-head"><span class="cat-label">装修页</span>' +
       '<span class="cat-count">' + pages.length + "</span></div><div class=\"plugin-list\">";
     if (!pages.length) {
-      html += '<div class="mkt-meta">侧栏还没有 addDomain 挂上的自定义页。写在 static/user/user.js 或 MOD 的 ui/mod.js。</div>';
+      html += '<div class="mkt-meta">没有自定义侧栏页就不占位。要加抄 EXAMPLES.js，或直接说。</div>';
     }
     pages.forEach(function (p) {
       html += ovCard(p.label || p.id, "侧栏页",
         '<button class="plugin-try-btn" type="button" data-view="' + esc(p.id) + '">打开</button>',
         (p.section ? ("分组 " + esc(p.section) + " · ") : "") + esc(p.id), false);
     });
-    if (dec.user_js) {
+    if (dec.user_js && pages.length) {
       html += ovCard("装修区 user.js", "装修", '<span class="mkt-hold">' +
         (dec.user_js_bytes || 0) + " 字节</span>", esc(dec.hint || ""), false);
     }
@@ -427,7 +427,7 @@
       })
       .catch(function (e) {
         if (!dash()) return;
-        dash().innerHTML = '<div class="dash-head"><h2>我的叠层</h2></div><div class="dash-empty">' +
+        dash().innerHTML = '<div class="dash-head"><h2>我的改装</h2></div><div class="dash-empty">' +
           esc(e.message) + " · 新路由要重启 daemon</div>";
         injectTabs("overlays", true);
       });

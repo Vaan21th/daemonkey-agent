@@ -1,4 +1,4 @@
-"""插件库「我的叠层」清单。只汇编，不执行用户代码。"""
+"""插件库「我的改装」清单。只汇编，不执行用户代码。"""
 from __future__ import annotations
 
 import json
@@ -42,7 +42,7 @@ def _decorate(base: Path) -> dict:
         "user_js": ujs.is_file(),
         "user_css": ucss.is_file(),
         "user_js_bytes": ujs.stat().st_size if ujs.is_file() else 0,
-        "hint": "侧栏自定义页来自 user.js，不是一份 MOD",
+        "hint": "没有自定义页就不占侧栏",
     }
 
 

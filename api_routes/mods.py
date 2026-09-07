@@ -1,4 +1,4 @@
-"""叠层 MOD 清单 + UI 资产 + 我的叠层看板。"""
+"""叠层 MOD 清单 + UI 资产 + 我的改装看板。"""
 from __future__ import annotations
 
 from typing import Optional

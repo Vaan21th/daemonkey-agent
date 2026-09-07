@@ -100,7 +100,7 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("mkt-star", "装过才能点星"),
         ("data-kind", "导出不靠冒号拆 id"),
         ("上架到货架", "导出并提合并申请"),
-        ("我的叠层", "插件库叠层页"),
+        ("我的改装", "插件库改装页"),
         ("/api/overlays", "叠层清单 API"),
         ("paintPluginAlert", "插件库叠层红点"),
     ],

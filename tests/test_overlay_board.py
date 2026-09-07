@@ -53,7 +53,7 @@ def test_market_js_has_overlay_tab():
     text = Path(__file__).resolve().parent.parent.joinpath(
         "static", "market.js").read_text(encoding="utf-8")
     assert 'data-hub="overlays"' in text
-    assert "我的叠层" in text
+    assert "我的改装" in text
     assert 'mod: "MOD"' in text
     assert "/api/overlays?refresh=1" in text
     assert "paintPluginAlert" in text
