@@ -382,6 +382,14 @@ def main():
             print(f"[opus-api] auto_revert 也失败了: {type(re).__name__}: {re}", flush=True)
         sys.exit(1)
 
+    try:
+        from workers.mod_runtime import load_tool_overlays
+        shadowed = load_tool_overlays()
+        if shadowed:
+            print(f"[opus-api] 叠层工具已挂 · 遮蔽 {len(shadowed)} 个官方同名", flush=True)
+    except Exception as e:
+        print(f"[opus-api] WARN · 叠层工具跳过 (不阻塞启动): {type(e).__name__}: {e}", flush=True)
+
     # 卷五十四 · A 柱 · 健康存活后才前移 last-good (撑过 grace window + 自检健康 = 配当回退点)
     try:
         from workers.boot_health import schedule_last_good_advance

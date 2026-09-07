@@ -52,6 +52,18 @@ def test_guide_tools_first_then_leftover(tmp_path: Path):
     assert "不要同时合并又收割" in text
 
 
+def test_reharvest_does_not_overwrite_mod_edits(tmp_path: Path):
+    _plant(tmp_path, "agent_tools/look_at.py", "USER_TOOL\n")
+    apply("harvest_legacy", root=tmp_path)
+    dest = tmp_path / "data" / "mods" / "harvest_legacy" / "tools" / "look_at.py"
+    dest.write_text("NEWER_MOD\n", encoding="utf-8")
+    res = apply("harvest_legacy", root=tmp_path)
+    assert res["lifted"] == []
+    assert dest.read_text(encoding="utf-8") == "NEWER_MOD\n"
+    plan = preview(tmp_path)
+    assert [r["file"] for r in plan["lift"]] == []
+
+
 def test_already_lifted_drops_from_guide(tmp_path: Path):
     _plant(tmp_path, "agent_tools/look_at.py", "USER_TOOL\n")
     _plant(tmp_path, "static/chat.js", "USER_CHAT\n")

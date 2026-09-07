@@ -1,8 +1,6 @@
 """把已经叉进内核的魔改收成叠层 MOD。
-
-能叠的（改过的官方工具）写进 tools/，下次升级不再跟这份文件打架。
-叠不了的（chat.js / workers / 官方路由）进 legacy/ 当草稿，合并兜底仍在。
-不自动改接管中的内核文件，也不假装前端 fork 已经能跑。
+能叠的官方工具写进 tools/；chat.js / worker 只进 legacy/ 草稿。
+已经叠上的工具不再用备份覆盖。不改接管中的内核文件。
 """
 from __future__ import annotations
 
@@ -99,12 +97,15 @@ def preview(root: Optional[Path] = None) -> dict:
     except Exception:
         pass
     lift, draft, skip = [], [], []
+    done = already_lifted(base)
     for rel in _collect_rels(base):
         rel = rel.replace("\\", "/")
         raw = _user_bytes(rel, base)
         if raw is None:
             continue
         kind = _kind(rel)
+        if kind == "lift" and rel in done:
+            continue
         official = None
         cur = base / rel
         if cur.is_file() and (base / "data" / "runtime" / "user_overrides" / _bak_name(rel)).is_file():
@@ -158,16 +159,15 @@ def already_lifted(root: Optional[Path] = None) -> dict:
             if not p.name.startswith("_"):
                 out[f"agent_tools/{p.name}"] = f"agent_tools_user/{p.name}"
     md = base / "data" / "mods"
-    if md.is_dir():
-        for folder in sorted(md.iterdir()):
-            tools = folder / "tools"
-            if not folder.is_dir() or not tools.is_dir():
-                continue
-            for p in tools.glob("*.py"):
-                if p.name.startswith("_"):
-                    continue
-                out[f"agent_tools/{p.name}"] = (
-                    f"data/mods/{folder.name}/tools/{p.name}")
+    if not md.is_dir():
+        return out
+    for folder in sorted(md.iterdir()):
+        tools = folder / "tools"
+        if not (folder.is_dir() and tools.is_dir()):
+            continue
+        for p in tools.glob("*.py"):
+            if not p.name.startswith("_"):
+                out[f"agent_tools/{p.name}"] = f"data/mods/{folder.name}/tools/{p.name}"
     return out
 
 
@@ -191,9 +191,8 @@ def format_upgrade_guide(
     """覆盖之后唯一向导：能叠的先收，叠不了的才合并/用回。"""
     base = root or ROOT
     plan = preview(base)
-    done = already_lifted(base)
     taken = {str(x).replace("\\", "/") for x in (takeover or [])}
-    lift = [r for r in plan["lift"] if r["file"] not in done]
+    lift = plan["lift"]
     lost = [r for r in plan["draft"] if r["file"] not in taken]
     held = [r for r in plan["draft"] if r["file"] in taken]
     if not (lift or lost or held or incoming):
@@ -237,6 +236,7 @@ def apply(mod_id: str = DEFAULT_MOD_ID, *, root: Optional[Path] = None,
         return {"ok": False, "mod_id": mid, "lifted": [], "drafted": [],
                 "note": "scope 用 tools / draft / all"}
     skip = _exclude_set(exclude)
+    skip.update(already_lifted(base))
     plan = preview(base)
     want_lift = ([r for r in plan["lift"] if r["file"] not in skip]
                  if scope in ("tools", "all") else [])
@@ -277,21 +277,15 @@ def apply(mod_id: str = DEFAULT_MOD_ID, *, root: Optional[Path] = None,
     (folder / "mod.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     still = [f for f in leftover if f not in drafted]
-    lines = [
-        "# 这次收割",
-        "",
-        "tools/ 盖住内核同名工具，升级不再跟这些文件合并。",
-        "legacy/ 不会自动跑。要行为还在，用回备份或合并。",
-        "",
-        f"叠上的工具 ({len(lifted)}):",
-    ]
-    lines += [f"- {x}" for x in lifted] or ["- （无）"]
-    lines += ["", f"只进草稿 ({len(drafted)}):"]
-    lines += [f"- {x}" for x in drafted] or ["- （无）"]
+    bullets = lambda xs: [f"- {x}" for x in xs] or ["- （无）"]
+    md = ["# 这次收割", "",
+          "tools/ 盖住内核同名工具，升级不再跟这些文件合并。",
+          "legacy/ 不会自动跑。要行为还在，用回备份或合并。",
+          "", f"叠上的工具 ({len(lifted)}):"]
+    md += bullets(lifted) + ["", f"只进草稿 ({len(drafted)}):"] + bullets(drafted)
     if still:
-        lines += ["", "还没处理、叠不了:"]
-        lines += [f"- {x}" for x in still]
-    (folder / "HARVEST.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        md += ["", "还没处理、叠不了:"] + [f"- {x}" for x in still]
+    (folder / "HARVEST.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     return {
         "ok": True,
         "mod_id": mid,

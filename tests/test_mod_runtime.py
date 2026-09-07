@@ -5,6 +5,17 @@ from pathlib import Path
 from workers.mod_pack_io import export_zip, import_zip, safe_members
 from workers.mod_runtime import ensure_overlay_dirs, list_mods, sanitize_id
 
+_ROOT = Path(__file__).resolve().parent.parent
+
+
+def test_run_api_only_loads_tool_overlays():
+    text = (_ROOT / "tools" / "run_api_only.py").read_text(encoding="utf-8")
+    i_app = text.index("app = build_app()")
+    i_load = text.index("load_tool_overlays()")
+    assert i_app < i_load
+    assert text.index("try_auto_revert") < i_load
+    assert "叠层工具跳过" in text
+
 
 def test_sanitize_and_ensure(tmp_path: Path):
     assert sanitize_id("Token HUD!") == "Token_HUD"
