@@ -1,7 +1,7 @@
 """
 agent_tools/update_core.py
 ==========================
-Daemonkey 通过对话拉取"内核(L1)升级" · 卷六十四续六 · 2026-06-08
+OPUS 通过对话拉取"内核(L1)升级" · 卷六十四续六 · 2026-06-08
 
 为什么有这个工具 (BRO 2026-06-08 拍板):
   Daemonkey 开源版没法做整包官方更新——每个用户的实例会随对话长出自己的功能(L2)和
@@ -217,6 +217,8 @@ def _run(args: dict) -> ToolResult:
                 if incoming:
                     lines.append("  官方新版在 data/runtime/official_incoming/ · 可对照摘修复")
                 lines.append("  交还官方管 → 「取消接管 <文件>」")
+            if uos or (res.get("skipped_takeover") or []) or fork_txt:
+                lines.append("  想把旧魔改收成叠层 → 说「把魔改收成 MOD」（工具能叠上，chat.js 只进草稿）。")
             lines.append("\n⚠ 内核是 daemon 代码 · 改完需要【重启 daemon】才生效。")
             lines.append("  你的应用 / 工作流 / soul 灵魂记忆一个字节都没动。")
             return ToolResult(ok=True, output="\n".join(lines))

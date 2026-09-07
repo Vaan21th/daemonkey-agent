@@ -11,8 +11,8 @@ from workers.mod_runtime import ROOT, _ID_RE, _mod_json, sanitize_id
 
 
 def safe_members(z: zipfile.ZipFile) -> list[str]:
-    allow_prefix = ("tools/", "routes/", "ui/")
-    allow_exact = {"manifest.json", "mod.json", "README.md"}
+    allow_prefix = ("tools/", "routes/", "ui/", "legacy/")
+    allow_exact = {"manifest.json", "mod.json", "README.md", "HARVEST.md"}
     names = []
     for n in z.namelist():
         n = n.replace("\\", "/")
