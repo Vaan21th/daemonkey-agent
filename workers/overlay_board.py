@@ -72,6 +72,7 @@ def _mods(base: Path, health: dict) -> list:
         out.append({
             "id": m["id"],
             "name": m.get("name") or m["id"],
+            "author": str(m.get("author") or "").strip(),
             "version": m.get("version") or "1.0.0",
             "enabled": bool(m.get("enabled")),
             "ok": ok,

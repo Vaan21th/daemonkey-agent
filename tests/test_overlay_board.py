@@ -4,19 +4,19 @@ from workers.mod_health import inspect_and_save, load_saved
 from workers.overlay_board import inventory
 
 
-def _mod(root: Path, mid: str, tool: str, enabled: bool = True) -> None:
+def _mod(root: Path, mid: str, tool: str, enabled: bool = True, author: str = "") -> None:
     folder = root / "data" / "mods" / mid
     (folder / "tools").mkdir(parents=True)
     (folder / "mod.json").write_text(
-        f'{{"id":"{mid}","name":"{mid}","version":"1.0.0","enabled":{str(enabled).lower()}}}\n',
+        f'{{"id":"{mid}","name":"{mid}","author":"{author}","version":"1.0.0","enabled":{str(enabled).lower()}}}\n',
         encoding="utf-8",
     )
     (folder / "tools" / "look_at.py").write_text(tool, encoding="utf-8")
 
 
 def test_inventory_refresh_flags_and_persists(tmp_path: Path):
-    _mod(tmp_path, "ok_mod", "x = 1\n")
-    _mod(tmp_path, "bad_mod", "def broken(\n")
+    _mod(tmp_path, "ok_mod", "x = 1\n", author="我自己")
+    _mod(tmp_path, "bad_mod", "def broken(\n", author="邻座")
     skin = tmp_path / "static" / "user" / "skins" / "paper"
     skin.mkdir(parents=True)
     (skin / "skin.json").write_text('{"name":"纸色","version":"1.0.0"}', encoding="utf-8")
@@ -29,7 +29,9 @@ def test_inventory_refresh_flags_and_persists(tmp_path: Path):
     board = inventory(refresh=True, root=tmp_path)
     by_id = {m["id"]: m for m in board["mods"]}
     assert by_id["ok_mod"]["ok"] is True
+    assert by_id["ok_mod"]["author"] == "我自己"
     assert by_id["bad_mod"]["ok"] is False
+    assert by_id["bad_mod"]["author"] == "邻座"
     assert by_id["bad_mod"]["enabled"] is True
     assert board["health"]["alert"] == 1
     assert board["skins"][0]["id"] == "paper"
@@ -57,3 +59,4 @@ def test_market_js_has_overlay_tab():
     assert 'mod: "MOD"' in text
     assert "/api/overlays?refresh=1" in text
     assert "paintPluginAlert" in text
+    assert "作者 " in text

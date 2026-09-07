@@ -352,7 +352,8 @@
       var extra = '<button class="plugin-try-btn" type="button" data-mod="' +
         esc(m.id) + '" data-on="' + (m.enabled ? "0" : "1") + '">' +
         (m.enabled ? "停用" : "启用") + "</button>";
-      var meta = "v" + esc(m.version || "?") + (m.has_ui ? " · 有前端页" : "");
+      var meta = "作者 " + esc((m.author || "").trim() || "未署名") +
+        " · v" + esc(m.version || "?") + (m.has_ui ? " · 有前端页" : "");
       if (m.problems && m.problems.length) meta += "<br>" + esc(m.problems.join(" · "));
       if (m.hint) meta += "<br>" + esc(m.hint);
       html += ovCard(m.name || m.id, m.enabled ? "开" : "关", extra, meta, bad);
