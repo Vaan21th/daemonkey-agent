@@ -9,7 +9,7 @@
 
 ## [1.0.2] — 2026-09-07
 
-**核心优化：修复旧版安装、登录、升级各类问题，升级后保留所有用户和AI记忆数据、自定义设置和个人改装内容，使用更稳定**
+**核心优化：修复旧版安装、初见、升级各类问题，升级后保留所有用户和AI记忆数据、自定义设置和个人改装内容，使用更稳定**
 
 本次版本主要修复了 1.0.1 版本存在的安装空白、DeepSeek 地址报错、升级数据丢失等问题，产品基础介绍仍沿用 1.0.1 版本说明。
 
@@ -42,7 +42,7 @@
 
 ---
 
-**What this update is for:** Fixes install, sign-in, and upgrade problems from older versions. After you upgrade, your chats, the AI's memory, your settings, and your personal customizations all stay. The app should run more steadily.
+**What this update is for:** Fixes install, first-meet, and upgrade problems from older versions. After you upgrade, your chats, the AI's memory, your settings, and your personal customizations all stay. The app should run more steadily.
 
 This release mainly fixes what went wrong in 1.0.1: a blank install, DeepSeek address errors, and losing data on upgrade. The product introduction is still the 1.0.1 one.
 
