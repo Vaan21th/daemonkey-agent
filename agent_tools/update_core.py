@@ -191,6 +191,15 @@ def _run(args: dict) -> ToolResult:
             elif "core_manifest.json" in (up + add):
                 # 本地跑的是旧版 apply(无自动补轮):新清单已就位但新增文件这轮没进来
                 lines.append("  ⚠ 本次更新了内核清单本身 · 请【再执行一次升级】把新增内核文件补齐。")
+            try:
+                holes = cu.missing_whitelist_files()
+            except Exception:
+                holes = []
+            if holes:
+                lines.append(
+                    f"  ⚠ 磁盘上还缺 {len(holes)} 个白名单文件（常见是房间家具/桌宠）。"
+                    "请再执行一次升级；重启后也会自动补。"
+                )
             if res["skipped_deleted"]:
                 lines.append("  跳过(中心库已删·没动你的): " + ", ".join(res["skipped_deleted"]))
             lines.append(f"\n  落袋: {res['checkpoint']}")

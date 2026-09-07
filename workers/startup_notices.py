@@ -198,6 +198,15 @@ def refresh_startup_notices() -> dict:
     if overs:
         notices["tool_budget"] = overs[:16]
 
+    # 097 升上来第一刀常把房间/桌宠落下 · 重启用新代码再补。
+    try:
+        from workers.core_update import missing_whitelist_files, repair_missing_kernel
+        holes = missing_whitelist_files()
+        if holes:
+            notices["kernel_repair"] = repair_missing_kernel()
+    except Exception:
+        pass
+
     # --- 落盘 (有内容才写 · 没内容清掉旧文件) ---
     try:
         if len(notices) > 1:
@@ -251,6 +260,21 @@ def consume_startup_notices() -> str:
             "→ 自然提醒用户: 这些不影响主程序，但对应功能缺腿 · "
             "去【环境】页点【开始安装】补装 (~1-2 分钟) · 装完重启 Daemonkey 生效"
         )
+
+    kr = data.get("kernel_repair") or {}
+    if isinstance(kr, dict) and kr.get("missing_before"):
+        n0 = len(kr.get("missing_before") or [])
+        n1 = len(kr.get("missing_after") or [])
+        if n1:
+            parts.append(
+                f"### 内核还缺 {n1} 个文件（升上来时房间/桌宠没带全）\n\n"
+                "→ 告诉用户：连着网再执行一次升级。缺的是官方内核，不是他的数据。"
+            )
+        else:
+            parts.append(
+                f"### 刚才补齐了 {n0} 个上次没下全的内核文件\n\n"
+                "→ 用自己的话说：房间立绘和桌宠动作已经补上，刷新或重启后就能看见。"
+            )
 
     tb = data.get("tool_budget") or []
     if tb:

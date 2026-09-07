@@ -692,7 +692,7 @@ def dashboard_closure(
             gauges.append({
                 "id": "reflow", "label": "复盘批注 → 画像回流",
                 "total": final_total, "closed": max(0, final_total - pend_n), "pending": pend_n,
-                "hint": (f"{pend_n} 份 final 批注还没进 BRO-NOTEBOOK" if pend_n
+                "hint": (f"{pend_n} 份 final 批注还没进画像" if pend_n
                          else "所有批注都已回流画像"),
             })
     except Exception as e:

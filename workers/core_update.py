@@ -323,6 +323,29 @@ def apply_update(remote: str, branch: str = "master", base: str = "HEAD",
                     out["commit_sha"] = p2["commit_sha"]
                 out["note"] = "清单更新后自动补拉了一轮新增内核文件"
 
+        # 第二轮若带着转义后的中文路径 checkout，整批会失败，新增文件全缺。
+        # 清单已在磁盘上时，按缺席名单再补一刀（quotepath 已关）。
+        still = [f for f in kernel_files() if not (ROOT / f).is_file()]
+        taken_now = set(load_takeover())
+        still = [f for f in still if f not in taken_now]
+        if still:
+            ref = f"{remote}/{branch}"
+            rc3, _, err3 = _run_git(["checkout", ref, "--"] + still, timeout=60)
+            if rc3 == 0:
+                out["added"] += [f for f in still if f not in out["added"] and f not in out["updated"]]
+                if do_commit:
+                    _run_git(["add", "--"] + still, timeout=20)
+                    _run_git(
+                        ["commit", "-m", f"[update_core] 补齐缺席内核 {len(still)} 文件 from {ref}"],
+                        timeout=30,
+                    )
+                out["passes"] = max(int(out.get("passes") or 1), 3)
+                extra = f"补齐缺席内核 {len(still)} 个"
+                out["note"] = (str(out.get("note") or "") + " · " + extra).strip(" ·")
+            else:
+                tail = (err3 or "").strip()[:160]
+                out["note"] = (str(out.get("note") or "") + f" · 缺席内核未补齐: {tail}").strip(" ·")
+
         # 0.8.4 升级保护层 · 冲突 = 用户魔改 ∩ 官方实际覆盖 · 含第二轮补拉(原先只算第一轮 ·
         #   靠新清单才拉进来的文件即使被覆盖也不会提示用户)
         conflicts = [f for f in user_dirty if f in (out["updated"] + out["added"])]
@@ -474,3 +497,29 @@ def _pull_pass_locked(remote: str, branch: str, base: str, do_commit: bool) -> d
             res["note"] = f"(已覆盖工作区 · commit 跳过: {(c_err or c_out).strip()[:120]})"
     res["ok"] = True
     return res
+
+
+def missing_whitelist_files() -> list[str]:
+    """白名单在、磁盘上没有。097 升 1.0.2 第一刀常留下这一桌。"""
+    return [f for f in kernel_files() if not (ROOT / f).is_file()]
+
+
+def repair_missing_kernel(remote: str = "", branch: str = "master") -> dict:
+    """启动时补一刀。097 第一轮会报成功但房间/桌宠/新零件还在远端。"""
+    missing = missing_whitelist_files()
+    out = {"missing_before": missing, "missing_after": missing, "ok": not missing, "note": ""}
+    if not missing:
+        return out
+    if not remote:
+        rc, txt, _ = _run_git(["remote"], timeout=5)
+        names = [x.strip() for x in (txt or "").splitlines() if x.strip()]
+        remote = "gitee" if "gitee" in names else (names[0] if names else "")
+    if not remote:
+        out["note"] = "白名单缺文件，但没有升级源"
+        return out
+    res = apply_update(remote, branch)
+    after = missing_whitelist_files()
+    out["missing_after"] = after
+    out["ok"] = not after
+    out["note"] = res.get("note") or ""
+    return out

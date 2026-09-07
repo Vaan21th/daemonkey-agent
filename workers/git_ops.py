@@ -60,7 +60,9 @@ def _run_git(cmd: list[str], timeout: int = 15) -> tuple[int, str, str]:
     except Exception:
         pass
     try:
-        res = subprocess.run(["git"] + cmd, **kw)
+        # 默认 quotepath 把中文打成八进制 · 1.0.2 升级把「day-台灯.png」塞进 checkout
+        # 会让整批发白，房间家具 / 桌宠帧 / 新内核文件一颗都不落。
+        res = subprocess.run(["git", "-c", "core.quotepath=false"] + cmd, **kw)
         return res.returncode, (res.stdout or ""), (res.stderr or "")
     except Exception as e:
         return 1, "", f"{type(e).__name__}: {e}"

@@ -99,6 +99,11 @@ def owner_notebook_path(soul_dir) -> Path:
     return soul_dir / LEGACY_OWNER_NOTEBOOK_FILENAME
 
 
+def owner_notebook_missing_note() -> str:
+    """画像文件还不在时给界面/模型看的空态 · 不许点母体运维脚本名。"""
+    return "画像还没写。聊几句，我会记下来。"
+
+
 def default_domain() -> str:
     """未分组雷达项的兜底领域 (实例配置·不是代码常量)。
 

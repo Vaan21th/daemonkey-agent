@@ -385,7 +385,7 @@ function renderCognition(data) {
 
   let html = `
     <div class="dash-head">
-      <h2><i class="ri-user-heart-line"></i> 用户 画像</h2>
+      <h2><i class="ri-user-heart-line"></i> 画像</h2>
       <span class="meta">${sections.length} 节${lastUpd ? ' · 最后更新 ' + escHtml(lastUpd) : ''}</span>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('cognition')">刷新</button>
