@@ -168,10 +168,11 @@ def _get_translator():
         return None, None
 
 
-def _translate_descriptions(tasks: list[tuple[str, str]]) -> dict[str, str]:
+def _translate_descriptions(tasks: list[tuple[str, str]], *, live: bool = False) -> dict[str, str]:
     """tasks = [(tool_name, desc_en), ...] · 返回 {tool_name: desc_zh}
 
-    带 cache · 缓存命中直接走·没命中才调 LLM
+    默认只读 cache。live=True 才现场调 LLM。
+    初见进工作台会打 /dashboard/cockpit → load_plugins；现场翻译会卡住整个 event loop。
     """
     if not tasks:
         return {}
@@ -190,6 +191,8 @@ def _translate_descriptions(tasks: list[tuple[str, str]]) -> dict[str, str]:
             to_translate.append((tool_name, desc, h))
 
     if not to_translate:
+        return out
+    if not live:
         return out
 
     client, model = _get_translator()
@@ -350,7 +353,7 @@ def load_plugins() -> dict:
     # 翻译（带 cache · 第二次跑就秒回）
     if translation_tasks:
         try:
-            translations = _translate_descriptions(translation_tasks)
+            translations = _translate_descriptions(translation_tasks, live=False)
             for it in items:
                 if it["_needs_translation"]:
                     it["description_zh"] = translations.get(it["name"]) or None
