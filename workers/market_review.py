@@ -93,6 +93,28 @@ def _review_skin(z: zipfile.ZipFile, red: list, yellow: list) -> None:
             yellow.append(f"皮肤含 SVG（可能夹脚本）：{name}")
 
 
+def _review_mod(z, red: list, yellow: list, meta: dict) -> None:
+    from workers.mod_pack_io import safe_members
+    try:
+        names = safe_members(z)
+    except ValueError as e:
+        red.append(str(e))
+        return
+    if "mod.json" in z.namelist():
+        try:
+            body = json.loads(z.read("mod.json").decode("utf-8"))
+            mid = str(body.get("id") or "").strip()
+            if mid:
+                meta["id"] = mid
+        except Exception:
+            red.append("mod.json 不是 JSON")
+    pys = [n for n in names if n.endswith(".py")]
+    if pys:
+        yellow.append(f"含 {len(pys)} 个 Python 叠层，需确认不改内核白名单")
+    if not any(n.startswith(("tools/", "routes/", "ui/")) for n in names):
+        yellow.append("没有 tools/routes/ui，空壳")
+
+
 def review_pkg(src, *, author: str = "", known_authors: list | None = None) -> dict:
     """src: 路径或 bytes。返回 verdict=reject|review|pass。"""
     red: list[str] = []
@@ -123,9 +145,11 @@ def review_pkg(src, *, author: str = "", known_authors: list | None = None) -> d
     kind = str(manifest.get("kind") or "").lower()
     name = str(manifest.get("name") or "").strip()
     meta.update(kind=kind, name=name, version=str(manifest.get("version") or "1.0.0"), id=name)
-    if kind not in ("app", "flow", "skin") or not name:
+    if kind not in ("app", "flow", "skin", "mod") or not name:
         red.append(f"manifest 非法 kind={kind} name={name}")
-    if kind == "skin":
+    if kind == "mod":
+        _review_mod(z, red, yellow, meta)
+    elif kind == "skin":
         _review_skin(z, red, yellow)
     elif kind in ("app", "flow"):
         src_name = "app.json" if kind == "app" else "flow.json"

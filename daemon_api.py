@@ -2239,6 +2239,17 @@ def build_app():
     except Exception:
         pass
 
+    from api_routes import mods as _routes_mods
+    app.include_router(_routes_mods.router)
+    from workers.route_overlay import include_overlay_routers
+    include_overlay_routers(app, {
+        "core", "lifecycle", "governance", "trust", "sinks_pulse_digest",
+        "sessions", "intelligence", "workshop", "chat", "models", "providers",
+        "dashboard", "market", "knowledge", "playbooks", "clients", "vision",
+        "search_config", "notifications", "advisor", "plan", "stt", "voice",
+        "media_defaults", "local_data", "companion", "onboarding", "mods",
+    })
+
     return app
 
 
@@ -2311,7 +2322,10 @@ def start_api_in_background(
 
     try:
         from workers.user_skin import ensure_user_skin_defaults
+        from workers.mod_runtime import ensure_overlay_dirs, load_tool_overlays
         ensure_user_skin_defaults()
+        ensure_overlay_dirs()
+        load_tool_overlays()
     except Exception as e:
         print(f"[opus-api] WARN · user_skin 跳过 (不阻塞启动): {type(e).__name__}: {e}")
 

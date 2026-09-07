@@ -178,7 +178,9 @@ def preflight_health() -> tuple[bool, str]:
     返 (ok, 给日志/BRO 看的说明)。 node 缺失会降级·绝不硬崩 (见 frontend_check)。"""
     try:
         from workers.user_skin import ensure_user_skin_defaults
+        from workers.mod_runtime import ensure_overlay_dirs
         ensure_user_skin_defaults()
+        ensure_overlay_dirs()
     except Exception:
         pass
     try:

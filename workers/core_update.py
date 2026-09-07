@@ -344,6 +344,23 @@ def apply_update(remote: str, branch: str = "master", base: str = "HEAD",
                 "官方有新版 · 但全部落在你接管的文件上 · 本次没动任何文件"
                 if out["skipped_takeover"]
                 else "内核已是最新 · 没有白名单文件需要更新")
+        ref = f"{remote}/{branch}"
+        try:
+            from workers.official_incoming import drop_many
+            out["official_incoming"] = drop_many(out["skipped_takeover"], ref, already_locked=True)
+        except Exception:
+            out["official_incoming"] = []
+        try:
+            from workers.fork_depth import report_after_update
+            from workers.mod_runtime import enabled_names
+            out["fork_report"] = report_after_update(
+                conflicts=out["user_overrides"],
+                takeover=out["skipped_takeover"],
+                incoming=out.get("official_incoming") or [],
+                overlay_names=enabled_names(),
+            )
+        except Exception:
+            out["fork_report"] = ""
         out["ok"] = True
     return out
 

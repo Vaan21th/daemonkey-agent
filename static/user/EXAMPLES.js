@@ -14,15 +14,23 @@
  * ---------------------------------------------------------------------------
  * 为什么是这套机制
  *
- *   chat.js / chat.html / chat.css 在内核白名单里 —— 官方升级会覆盖它们。
- *   直接改这几个文件·迟早被盖掉。
+ *   该写哪一层（升级后还想原样留下、还能打包给别人 → 只写叠层）:
  *
- *   而 static/user/ 在 never_sync 里 —— 不管升多少版·你的 user.js / user.css
- *   一个字节都不会被动。 它们排在所有官方资源【之后】加载 → 你的改动总能盖住官方默认。
+ *     D0 叠层 · 官方升级物理不碰 · 可打成 .dkpkg (kind=mod) 上架市集
+ *       data/mods/<id>/          完整 MOD（tools / routes / ui）
+ *       agent_tools_user/        本机工具（同名盖住官方工具）
+ *       api_routes_user/         本机路由（不要占 /dashboard/{任意}）
+ *       static/user/user.js|css  装修区（本文件 EXAMPLES 会被覆盖，别改它）
  *
- *   真想直接改内核文件也行(比如整个重写 chat.js):
- *     改完对 Daemonkey 说「chat.js 我自己管」→ 接管后官方升级物理上不再碰它。
- *     代价: 官方对它的修复也不会自动进来。 后悔了说「取消接管 chat.js」。
+ *     D2 浅叉 · 内核白名单文件只改了几十行
+ *       升级会备份。可以说「合并我的改动」。更稳的是把改动迁到 D0。
+ *
+ *     D3 深叉 / 整文件接管
+ *       升级后靠 LLM 把 chat.js 揉回去会非常费劲（1.0.0 社区就是这句）。
+ *       接管后官方修复不进盘，但会落到 data/runtime/official_incoming/ 供你摘。
+ *
+ *   chat.js 已经拆出 depot / clients / panels / rail……但对话主循环仍在 chat.js。
+ *   改气泡 / SSE 请等官方钩子或先写 user.js 叠一层；不要 fork 整份内核再升级合并。
  *
  * ---------------------------------------------------------------------------
  * window.Daemonkey —— 官方承诺的接口·会随内核一起维护
@@ -82,8 +90,9 @@ Daemonkey.ready(() => {
 */
 
 
-/* ── 例 3 · 覆盖官方行为 ────────────────────────────────────────────────────
+/* ── 例 3 · 覆盖官方行为（升级易碎 · 能用 D0 就别走这条） ────────────────
  * 官方函数都在全局作用域·重新赋值就能换掉。 先存原函数·这样还能调回去。
+ * 官方一改函数名这段就碎 · 这不是承诺接口。 能 addDomain / 写 MOD 就不要 monkey-patch。
 
 const _origSwitchView = window.switchView;
 window.switchView = function (view) {
@@ -91,6 +100,12 @@ window.switchView = function (view) {
   return _origSwitchView(view);
 };
 */
+
+/* ── 例 4 · 把魔改收成 MOD ──────────────────────────────────────────────
+ * 目录: data/mods/token-hud/mod.json + ui/mod.js
+ * 对话: 「导出 MOD token-hud」→ 得到 .dkpkg → 别人「导入 MOD <路径>」或上架市集。
+ * 工具写 tools/*.py ，路由写 routes/*.py。重启 daemon 后工具/路由生效，前端刷新即可。
+ */
 
 
 /* ===========================================================================

@@ -122,12 +122,22 @@ def _run(args: dict) -> ToolResult:
             dirty_in_update = [f for f in (changed + added) if f in dirty and f not in taken]
             if dirty_in_update:
                 lines.append("")
-                # 0.9.6 起判定走基线指纹 · 所以是"跟官方版不一样"而不是"未提交改动"——
-                #   改动 commit 过也照样认得出
-                lines.append("⚠ 这些待更新的内核文件 · 你改过 (内容跟官方版不一样):")
-                lines += [f"    ! {f}" for f in dirty_in_update]
-                lines.append("  升级会先备份你的版本 + checkpoint 存档 · 覆盖后可对我说「合并我的改动」拿回来。")
-                lines.append("  不想让官方碰某个文件 → 对我说「这文件我自己管」(接管后永不被覆盖)。")
+                from workers.fork_depth import classify_pending, format_pending
+                from workers.official_incoming import show_ref
+                from workers.mod_runtime import enabled_names
+                items = classify_pending(
+                    dirty_in_update,
+                    takeover=set(taken),
+                    official_loader=lambda f: show_ref(f, f"{remote}/{branch}"),
+                )
+                depth = format_pending(items, overlays_intact=enabled_names())
+                if depth:
+                    lines.append(depth)
+                else:
+                    lines.append("这些待更新的内核文件你改过 (内容跟官方版不一样):")
+                    lines += [f"    ! {f}" for f in dirty_in_update]
+                lines.append("  叠层目录升级不碰。内核浅叉可说「合并我的改动」；深叉请迁到 data/mods 或对照官方副本。")
+                lines.append("  整文件自己管 → 「这文件我自己管」(官方新版会落到 official_incoming/)。")
 
             # ── 整机漂移总览 ──
             # 出问题时第一句要能回答:「你这台机器跟官方差多少」。 差异是排查的起点 ——
@@ -187,21 +197,26 @@ def _run(args: dict) -> ToolResult:
                 lines.append(f"  本次更新已 commit · {res['commit_sha']} (想回退: git revert {res['commit_sha']})")
             # 0.8.4 · 升级保护层 · 用户魔改备份报告
             uos = res.get("user_overrides") or []
-            if uos:
+            fork_txt = (res.get("fork_report") or "").strip()
+            if fork_txt:
                 lines.append("")
-                lines.append("⚠ 以下文件你本地改过 · 官方这版也更新了它们 · 你的版本已物理备份:")
+                lines.append(fork_txt)
+            elif uos:
+                lines.append("")
+                lines.append("以下文件你本地改过 · 官方这版也更新了它们 · 你的版本已物理备份:")
                 for uo in uos:
                     bak = uo.get("backup") or "(备份失败·但 git checkpoint 里有)"
                     lines.append(f"    ! {uo['file']}  → 备份: {bak}")
-                lines.append("  需要把你的改动合并回来 · 对我说「合并我的改动」即可。")
-                lines.append("  不想让官方以后再碰它 → 「这文件我自己管」(接管后永不被覆盖)。")
-            # 0.9.6 · 用户接管 · 官方有新版但物理没覆盖
+                lines.append("  浅叉可说「合并我的改动」。深叉请迁到 data/mods，不要整文件揉 chat.js。")
             skipped_take = res.get("skipped_takeover") or []
-            if skipped_take:
+            if skipped_take and not fork_txt:
                 lines.append("")
-                lines.append("🔒 这些文件你已接管 · 官方这版更新了它们 · 但一个字节都没覆盖:")
+                lines.append("这些文件你已接管 · 官方这版更新了它们 · 磁盘没覆盖:")
                 lines += [f"    = {f}" for f in skipped_take]
-                lines.append("  想看官方改了什么 → action=preview · 想交还官方管 → 「取消接管 <文件>」")
+                incoming = res.get("official_incoming") or []
+                if incoming:
+                    lines.append("  官方新版在 data/runtime/official_incoming/ · 可对照摘修复")
+                lines.append("  交还官方管 → 「取消接管 <文件>」")
             lines.append("\n⚠ 内核是 daemon 代码 · 改完需要【重启 daemon】才生效。")
             lines.append("  你的应用 / 工作流 / soul 灵魂记忆一个字节都没动。")
             return ToolResult(ok=True, output="\n".join(lines))

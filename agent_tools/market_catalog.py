@@ -181,7 +181,7 @@ register_tool(ToolSpec(
     input_schema={
         "type": "object",
         "properties": {
-            "kind": {"type": "string", "description": "app / flow / skin"},
+            "kind": {"type": "string", "description": "app / flow / skin / mod"},
             "name": {"type": "string", "description": "id 或名称"},
             "author": {"type": "string"},
             "version": {"type": "string"},

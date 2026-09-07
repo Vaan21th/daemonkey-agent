@@ -565,6 +565,30 @@
      文件不存在时启动会补空默认；boot-guard 忽略装修区 404，不当核心失败。 -->
 <link rel="stylesheet" href="/static/user/user.css?v=1">
 <script src="/static/user/user.js?v=1"></script>
+<script>
+(function () {
+  function loadMods() {
+    fetch("/api/mods").then(function (r) { return r.ok ? r.json() : {mods: []}; })
+      .then(function (d) {
+        (d.mods || []).forEach(function (m) {
+          if (m.css) {
+            var l = document.createElement("link");
+            l.rel = "stylesheet";
+            l.href = m.css;
+            document.head.appendChild(l);
+          }
+          if (m.js) {
+            var s = document.createElement("script");
+            s.src = m.js;
+            document.body.appendChild(s);
+          }
+        });
+      }).catch(function () {});
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", loadMods);
+  else loadMods();
+})();
+</script>
 
 </body>
 </html>

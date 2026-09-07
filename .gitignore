@@ -25,6 +25,10 @@ data/*
 !data/cognition
 data/cognition/_archive/
 
+# 本机/社区叠层（升级不碰；data/* 已挡住 data/mods）
+agent_tools_user/*.py
+api_routes_user/*.py
+
 # 自带应用「内容制作」随仓库出厂（用户开箱即用·对齐后续应用/工作流的参考样板）。
 # git 坑: 父目录被 data/* 忽略时·子文件的 ! 白名单必须逐级放行父目录才生效。
 !data/workshop

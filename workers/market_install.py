@@ -153,6 +153,12 @@ def install(item_id: str, overwrite: bool = False) -> dict:
         path = _resolve_file(item)
     except Exception as e:
         return {"ok": False, "output": "", "error": str(e)}
+    if kind == "mod":
+        from workers.mod_pack_io import import_zip
+        ok, msg = import_zip(path, overwrite=overwrite)
+        if ok:
+            mark_installed(item_id, str(item.get("version") or ""), path.stat().st_mtime)
+        return {"ok": ok, "output": msg if ok else "", "error": "" if ok else msg}
     from agent_tools.dkpkg import _import
     result = _import({"path": str(path), "overwrite": overwrite})
     if result.ok:

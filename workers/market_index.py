@@ -210,13 +210,33 @@ def _playbooks() -> list:
     return out
 
 
+def _mods() -> list:
+    from workers.mod_runtime import list_mods
+    out = []
+    for m in list_mods():
+        folder = Path(m["path"])
+        mj = folder / "mod.json"
+        out.append({
+            "id": m["id"],
+            "kind": "mod",
+            "name": str(m.get("name") or m["id"]),
+            "version": str(m.get("version") or "1.0.0"),
+            "author": str(m.get("author") or ""),
+            "description": str(m.get("description") or ""),
+            "mtime": mj.stat().st_mtime if mj.exists() else folder.stat().st_mtime,
+            "preview": "",
+            "shipped": False,
+        })
+    return out
+
+
 def list_shareable() -> list:
     """本机有、货架没有或更旧/装完后又改过 → 可以上架。出厂 shipped 且没改过的不算。"""
     shelf = catalog_by_id()
     led = (_ledger().get("items") or {})
     found = []
     # 技能文导出/安装还没接上 · 先不进「可以上架」，避免一堆近两周笔记冒充待分享
-    for asset in _skins() + _workshop("app") + _workshop("flow"):
+    for asset in _skins() + _workshop("app") + _workshop("flow") + _mods():
         cat = shelf.get(asset["id"])
         rec = led.get(asset["id"]) or {}
         if asset.get("shipped") and not rec:

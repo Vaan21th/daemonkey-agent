@@ -301,9 +301,11 @@ def main():
     try:
         from workers.boot_health import ensure_git_repo, ensure_git_hooks
         from workers.user_skin import ensure_user_skin_defaults
+        from workers.mod_runtime import ensure_overlay_dirs
         ensure_git_repo()
         ensure_git_hooks()
         ensure_user_skin_defaults()
+        ensure_overlay_dirs()
     except Exception as e:
         print(f"[opus-api] WARN · ensure_git_repo/hooks 跳过 (不阻塞启动): {type(e).__name__}: {e}")
 

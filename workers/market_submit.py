@@ -18,6 +18,20 @@ def _safe(s: str) -> str:
 
 
 def _export_pkg(kind: str, name: str, author: str, version: str, description: str):
+    if kind == "mod":
+        from workers.mod_pack_io import export_zip
+        path, err = export_zip(name, author=author, version=version, description=description)
+        if path is None:
+            class _R:
+                ok = False
+                error = err
+                output = ""
+            return None, _R()
+        class _R:
+            ok = True
+            error = ""
+            output = f"`{path.as_posix()}`"
+        return path, _R()
     from agent_tools.dkpkg import _export
     ver = version or "1.0.0"
     result = _export({
@@ -59,8 +73,8 @@ def _upsert_index(old: dict, item: dict) -> dict:
 def submit(kind: str, name: str, author: str = "", version: str = "", description: str = "") -> dict:
     kind = (kind or "").strip().lower()
     name = (name or "").strip()
-    if kind not in ("app", "flow", "skin") or not name:
-        return {"ok": False, "error": "kind 必须是 app/flow/skin，且 name 必填"}
+    if kind not in ("app", "flow", "skin", "mod") or not name:
+        return {"ok": False, "error": "kind 必须是 app/flow/skin/mod，且 name 必填"}
     path, exported = _export_pkg(kind, name, author, version, description)
     if path is None:
         return {"ok": False, "error": getattr(exported, "error", None) or "导出失败"}
