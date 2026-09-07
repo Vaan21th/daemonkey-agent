@@ -219,13 +219,20 @@ $reqPath = Join-Path $PSScriptRoot 'requirements.txt'
 $needsInstall = $false
 
 try {
-    # 0.8.3 · 依赖检查加 PyQt6.QtMultimedia (0.8.2 hotfix 口实不符补上):
-    #   老用户升级后 run.ps1 只查 5 核心包 → 直接通过 → 不触发 pip install →
-    #   新依赖 (PyQt6 系列) 不自动装 → 桌宠/音效缺腿。 加上后:
-    #   缺任一 → import 失败 → needsInstall → pip install -r (pip 自动跳过已装的 · 只补装缺的)
-    # 0.9.7 · 探测清单补 numpy/pypdf (回收纯净版 0.9.6-hf3):
-    #   老用户升级后探测清单不含它们 → 误判已装跳过 → 星图/PDF 缺腿裸 500
-    & $venvPython -c "import anthropic, openai, httpx, dotenv, rich, cryptography, PyQt6.QtMultimedia, numpy, pypdf" 2>&1 | Out-Null
+    # 缺任一 → import 失败 → needsInstall → pip install -r（已装的会跳过，只补缺的）。
+    # 1.0.2 · 开箱就要的包都进探测。只查 8 个代表包时，第一次 pip 没跑完也会报「已装好」，
+    # 初见缺 httpx、daemon 缺 fastapi。whisper 仍走设置页，不在这里。
+    $probe = @'
+import sys
+import anthropic, openai, httpx, dotenv, rich, cryptography
+import numpy, pypdf, fastapi, uvicorn, tiktoken, jieba, pypinyin
+from PIL import Image
+import docx, pptx, requests, qrcode, psutil, openpyxl, multipart, playwright
+import PyQt6.QtMultimedia
+if sys.platform == 'win32':
+    import win32com.client
+'@
+    & $venvPython -c $probe 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
         $needsInstall = $true
     }
