@@ -177,6 +177,11 @@ def preflight_health() -> tuple[bool, str]:
     """启动期轻量自检 (build_app 之前能跑的部分): 前端 JS 语法。
     返 (ok, 给日志/BRO 看的说明)。 node 缺失会降级·绝不硬崩 (见 frontend_check)。"""
     try:
+        from workers.user_skin import ensure_user_skin_defaults
+        ensure_user_skin_defaults()
+    except Exception:
+        pass
+    try:
         from workers.frontend_check import check_static_js, format_report
         fe = check_static_js()
         return fe["ok"], format_report(fe)

@@ -2309,6 +2309,12 @@ def start_api_in_background(
     except Exception as e:
         print(f"[opus-api] WARN · daemon_lifecycle init 出错 (不阻塞启动): {type(e).__name__}: {e}")
 
+    try:
+        from workers.user_skin import ensure_user_skin_defaults
+        ensure_user_skin_defaults()
+    except Exception as e:
+        print(f"[opus-api] WARN · user_skin 跳过 (不阻塞启动): {type(e).__name__}: {e}")
+
     # 卷四十六 III 补丁 3 · 自动续场 turn (start_api_in_background 路径 · 走 opus_daemon.py 入口)
     # 墨言 094 wish-db293e5f · 统一入口 maybe_schedule_resume: 有 restart_request → follow_up 续场 ·
     # 无 (手动/外部重启) → schedule_auto_boot_verify 对最近 30min 活跃飞书会话自动报平安。

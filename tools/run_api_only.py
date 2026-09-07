@@ -300,8 +300,10 @@ def main():
     # 0.5.0 · 先做首启 git init 兜底 (ZIP 解压的开源用户没 .git · 装了 git 就自动建仓库→解锁回档/升级)
     try:
         from workers.boot_health import ensure_git_repo, ensure_git_hooks
+        from workers.user_skin import ensure_user_skin_defaults
         ensure_git_repo()
         ensure_git_hooks()
+        ensure_user_skin_defaults()
     except Exception as e:
         print(f"[opus-api] WARN · ensure_git_repo/hooks 跳过 (不阻塞启动): {type(e).__name__}: {e}")
 

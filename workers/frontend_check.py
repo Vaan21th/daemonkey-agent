@@ -123,6 +123,7 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("stage.js", "中栏舞台"),
         ("stage_notes.js", "画布批注"),
         ("脚本没加载到", "拆出脚本 404 记进 boot-guard"),
+        ("/static/user/", "装修区脚本 404 不当核心失败"),
         (".docx", "文档附件 accept 类型"),
         ('id="workingDocsBar"', "本话题稿芯片条"),
     ],
