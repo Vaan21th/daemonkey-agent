@@ -60,6 +60,12 @@ _READONLY_DEFAULT = frozenset({
 _expanded_cv: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "subagent_whitelist_expanded", default=False
 )
+_NEST_CV: contextvars.ContextVar[int] = contextvars.ContextVar("subagent_nest", default=0)
+
+
+def in_subagent_loop() -> bool:
+    """在 run_app / flow / 已派出的分身里 · 主对话 tool_loop 为假。"""
+    return _NEST_CV.get() > 0
 
 
 def _auto_confirm(spec, args, *more) -> str:
@@ -185,6 +191,7 @@ def run_subagent(
     persist: bool = False,
     parent_session_id: Optional[str] = None,
     wall_clock_sec: Optional[float] = None,
+    stall_sec: Optional[float] = None,
     initial_messages: Optional[list] = None,
     meta_extra: Optional[dict] = None,
     message_check: Optional[Callable[[], list]] = None,
@@ -209,6 +216,8 @@ def run_subagent(
         inject_budget_mandate: True → 追加通用预算纪律 (dispatch 用) · False → 上层自带 (run_app 用)。
         persist: True → 落 sessions/sub-<id>.jsonl 可观测。
         parent_session_id: 派发者 session (溯源 · 落进子会话首行 meta)。
+        wall_clock_sec: 总墙钟宽兜底 (超此秒数判失败)。
+        stall_sec: 心跳判卡阈值 (心跳停超此秒数判真卡 · 长活不误杀 · 2026-09-16 心跳看门狗)。
         initial_messages: 起始 messages · None → 单条 user_msg (默认)。
             (wish-48566053 · resume 续跑: 恢复的历史消息 + 新 user 指令)
         meta_extra: 额外元数据 (goal / whitelist 等) · 落进 _meta 首行 · 血缘可追溯。
@@ -265,6 +274,7 @@ def run_subagent(
             pass
 
     _exp_tok = _expanded_cv.set(_should_strict_expand(tools_whitelist, strict_confirm))
+    _nest_tok = _NEST_CV.set(_NEST_CV.get() + 1)
     try:
         text, messages, usage = run_tool_loop(
             client=client or runtime.client,
@@ -282,6 +292,7 @@ def run_subagent(
             on_message_commit=on_commit,
             allowed_tool_names=tools_whitelist,
             wall_clock_sec=wall_clock_sec,
+            stall_sec=stall_sec,
             pending_messages=message_check,
         )
     except Exception as e:
@@ -294,6 +305,7 @@ def run_subagent(
         )
     finally:
         _expanded_cv.reset(_exp_tok)
+        _NEST_CV.reset(_nest_tok)
 
     result_usage = {
         "input_tokens": getattr(usage, "input_tokens", 0),

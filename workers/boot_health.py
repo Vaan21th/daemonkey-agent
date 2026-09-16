@@ -5,9 +5,9 @@
 A1 · last-good 语义修对
 ────────────────────────────────────────────────────────────────────
 老逻辑 (daemon_lifecycle.mark_graceful_shutdown) 在**停机那一刻**给 master HEAD 打
-opus-last-good —— 但那一刻新代码还没证明自己能跑。 结果今天 (2026-06-03) 把砍断
+last-good —— 但那一刻新代码还没证明自己能跑。 结果今天 (2026-06-03) 把砍断
 chat.js 的坏 commit 55d27cd 标成了 known-good (restart_history 实锤)。 一旦那会儿
-回档 + reset --hard opus-last-good · 会精准回到白屏的坏版本。
+回档 + reset --hard last-good · 会精准回到白屏的坏版本。
 
 改成: daemon 启动后**撑过 grace window 且自检健康** (在 master · 前端 JS 没坏) 才把
 当前 master HEAD 前移成 last-good。 语义 = "这版活着撑过了启动窗口 · 配当回退目标"。
@@ -102,7 +102,7 @@ def ensure_git_repo() -> None:
 
     为什么: 开源用户两种拿包方式——git clone (自带 .git) vs 下载 ZIP 解压 (没 .git)。
     后者回档/升级全废 (都依赖 git)。 首启自动 init + master + baseline commit + 打
-    opus-last-good tag · 让 ZIP 用户也有"出厂即版本控制"的底子。 没装 git 的: 跳过 ·
+    last-good tag · 让 ZIP 用户也有"出厂即版本控制"的底子。 没装 git 的: 跳过 ·
     维修台 (repair.bat) 不依赖 git · 照样能救崩溃。
     只动本仓库 (--local 身份) · 绝不碰用户全局 git 配置。
     """
@@ -135,8 +135,8 @@ def ensure_git_repo() -> None:
         _git(["add", "-A"], timeout=120)
         rc_c, _, cerr = _git(["commit", "-m", "baseline: auto-init version control on first boot (0.5.0)"], timeout=120)
         if rc_c == 0:
-            _git(["tag", "-f", "opus-last-good"], timeout=10)
-            print("[boot_health] ✅ 首启已建立 git 版本控制 (master + baseline + opus-last-good) · 回档/升级已解锁", flush=True)
+            _git(["tag", "-f", "last-good"], timeout=10)   # wish-3d02d762 · 与 workers/git_ops.LAST_GOOD_TAG 同名
+            print("[boot_health] ✅ 首启已建立 git 版本控制 (master + baseline + last-good) · 回档/升级已解锁", flush=True)
         else:
             print(f"[boot_health] WARN · baseline commit 未成 (不阻塞启动): {cerr.strip()[:160]}", flush=True)
     except Exception as e:
@@ -225,7 +225,7 @@ def try_auto_revert(reason: str) -> bool:
     except Exception:
         lg = None
     if not lg:
-        _log_event({"event": "auto_revert_skipped", "reason": "no opus-last-good tag", "trigger": reason})
+        _log_event({"event": "auto_revert_skipped", "reason": "no last-good tag", "trigger": reason})
         return False
 
     head = _head_sha()

@@ -28,6 +28,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+logger = logging.getLogger("opus.memory_compression")
+
 # ---------- 常量 ----------
 
 DEFAULT_KEEP_LAST_N = 8          # 保留最近 N 条不压缩（模型窗口未知时 fallback）
@@ -52,9 +54,11 @@ PRUNE_RATIO = float(os.environ.get("OPUS_COMPACT_PRUNE_RATIO") or "0.6")  # 先�
 PIN_FIRST_USER_MAX_TOKENS = 1500
 PIN_FIRST_USER_WINDOW_FRAC = 0.15
 MAX_CONSECUTIVE_COMPACTS = 2     # 连续压缩仍超阈值 → 暂停自动压缩 (防每轮重建缓存)
+EMERGENCY_BREAK_TURNS = int(os.environ.get("OPUS_COMPACT_EMERGENCY_TURNS") or "6")  # wish-a5f77893 刀A: 停手后距上次 ≥N 轮 → 紧急豁免一次 (防永久停手 · 事故 246.8k)
 _TOK_PER_CHAR_FALLBACK = 0.35    # CJK 偏多·介于 Go 0.25 与 1.0 之间
 DEFAULT_ABS_CAP_TOKENS = 256_000  # 0.8.8 · 压缩绝对线: 大窗口(1M)模型普通会话到不了 70% → 按体验拐点硬触发
 TAIL_USER_TURNS = int(os.environ.get("OPUS_TAIL_USER_TURNS") or "2")  # 最近 N 个 user 回合原文保活 (OpenCode DEFAULT_TAIL_TURNS)
+PRUNE_PROTECT_TOKENS = int(os.environ.get("OPUS_PRUNE_PROTECT_TOKENS") or "30000")  # wish-a5f77893 刀2: 最近 N tok 内不剪 (对齐 OpenCode PRUNE_PROTECT=40K 思路)
 PRUNE_HISTORY_PRESSURE = int(os.environ.get("OPUS_PRUNE_HISTORY_TOKENS") or "40000")  # 历史过这线先免费剪工具
 MIN_PRUNE_SAVED_CHARS = int(os.environ.get("OPUS_PRUNE_MIN_SAVED_CHARS") or "40000")  # 省不够就不动盘 (护缓存)
 _PREFIX_TOK_CACHE: dict = {"n": 0, "t": 0.0}
@@ -382,6 +386,25 @@ def tail_protect_index(msgs: list, user_turns: int | None = None) -> int:
     return 0
 
 
+def _token_budget_protect_index(msgs: list, budget: int | None = None) -> int:
+    """从尾往头累计 token · 达到预算处返回下标 (刀2 · wish-a5f77893)。
+
+    返回 idx: msgs[idx:] 都在“最近 budget tok”保护区内 (prune 不剪)。
+    不足 budget 就耗尽 → 0 (整段都是活尾巴)。估算走 _estimate_tokens · 单条粒度。
+    """
+    budget = PRUNE_PROTECT_TOKENS if budget is None else budget
+    if budget <= 0:
+        return len(msgs)
+    acc = 0
+    idx = len(msgs)
+    for i in range(len(msgs) - 1, -1, -1):
+        if acc >= budget:
+            break
+        acc += _estimate_tokens([msgs[i]])
+        idx = i
+    return idx
+
+
 def estimate_prefix_tokens() -> int:
     """稳定前缀 (system + tools json) token · 30s 缓存。失败返 0 不挡主路径。"""
     import time as _time
@@ -514,13 +537,62 @@ def _get_ratio() -> float:
     return DEFAULT_WINDOW_RATIO
 
 
+def _cap_override_path():
+    """WebUI「访问 & 会话 → 记忆整理线」落盘位置 (data/runtime 是既有分类 · 不新开目录)。"""
+    from pathlib import Path
+    return Path(__file__).resolve().parent.parent / "data" / "runtime" / "compact_cap.json"
+
+
+def read_cap_override() -> int:
+    """读 WebUI 存的压缩绝对线 · 没有/坏了返 0 (= 不覆盖 · 走 env/缺省)。"""
+    try:
+        p = _cap_override_path()
+        if p.exists():
+            import json
+            return int(json.loads(p.read_text(encoding="utf-8")).get("abs_cap") or 0)
+    except Exception:
+        pass
+    return 0
+
+
+def set_cap_override(v) -> int:
+    """写 WebUI 的压缩绝对线 · 返实际生效值 (钳 40K 下限)。 v<=0 = 清除覆盖 · 回落 env/缺省。
+
+    即时生效 · 不用重启 (每次 _get_abs_cap 现读)。
+    """
+    try:
+        iv = int(v or 0)
+    except (ValueError, TypeError):
+        iv = 0
+    p = _cap_override_path()
+    try:
+        if iv > 0:
+            val = max(40_000, iv)
+            p.parent.mkdir(parents=True, exist_ok=True)
+            import json
+            p.write_text(json.dumps({"abs_cap": val}, ensure_ascii=False), encoding="utf-8")
+            return val
+        if p.exists():
+            p.unlink()
+    except Exception:
+        pass
+    return 0
+
+
 def _get_abs_cap() -> int:
     """0.8.8 · 压缩绝对线 (env OPUS_AUTO_COMPACT_MAX_TOKENS · 缺省 256K)。
 
     为什么: 1M 窗口 × 0.7 = 700K · 普通会话 80-250K 永远够不到 → 永不压缩 → 全量发送慢。
     绝对线让大窗口模型按"体验拐点"触发 (不依赖窗口比例) · 小窗口模型不受影响 (min 取小)。
     下限钳制 40K · 防设太低导致每几轮就压缩+重建缓存 (热抖动)。
+
+    0.9.x · 取值顺序: WebUI 存的值 (「访问 & 会话」当场可改 · 即时生效)
+                      → env OPUS_AUTO_COMPACT_MAX_TOKENS → 缺省 256K。
+    原先只有 env 一条路 · 用户看不到也改不了 · 等于暗规则 (BRO 2026-09-14 指出)。
     """
+    ui_v = read_cap_override()
+    if ui_v > 0:
+        return max(40_000, ui_v)
     raw = (os.environ.get("OPUS_AUTO_COMPACT_MAX_TOKENS") or "").strip()
     if raw:
         try:
@@ -581,6 +653,19 @@ def token_budget_check(
         st["consecutive_compacts"] = 0
         return False
     if st["consecutive_compacts"] >= MAX_CONSECUTIVE_COMPACTS:
+        # wish-a5f77893 刀A (2026-09-16): 停手不能永久 —— 事故复盘 (daemon.log 02:24):
+        # 连续压缩仍超线后彻底停手 · 水位一路涨到 246.8k 无人拦 (静默停手是帮凶)。
+        # 改为: 距上次压缩 ≥ EMERGENCY_BREAK_TURNS 轮 → 紧急豁免一次; 否则暂缓 (带限频日志)。
+        turns_since_last = len(messages) - st["last_compression_turn"]
+        if turns_since_last >= EMERGENCY_BREAK_TURNS:
+            logger.warning(
+                "[压缩·紧急豁免] 连续 %d 次仍超线 · 距上次 %d 轮 → 突破停手 (防永久停手)",
+                st["consecutive_compacts"], turns_since_last)
+            return True
+        if turns_since_last <= 1 or turns_since_last % 10 == 0:
+            logger.warning(
+                "[压缩·停手] 连续 %d 次仍超线 · 距上次 %d 轮 · 暂缓 (水位在危险区)",
+                st["consecutive_compacts"], turns_since_last)
         return False
     turns_since_last = len(messages) - st["last_compression_turn"]
     return turns_since_last >= COOLDOWN_TURNS
@@ -692,6 +777,9 @@ def prune_stale_tool_results(messages: list[dict]) -> tuple[list[dict], dict]:
     """
     candidates: list[tuple[int, str]] = []
     protect = tail_protect_index(messages)
+    # wish-a5f77893 刀2 (2026-09-16): 叠加“最近 N tok 保护” (对齐 OpenCode PRUNE_PROTECT=40K)
+    # —— 轮次保护之外 · 最近 PRUNE_PROTECT_TOKENS tok 内的内容同样不剪 (两保护取并集)。
+    protect = min(protect, _token_budget_protect_index(messages))
     for i, m in enumerate(messages):
         if not isinstance(m, dict) or m.get("role") != "tool":
             continue
@@ -877,9 +965,11 @@ def auto_compress(
     if not force and _estimate_tokens(fold) < MIN_FOLD_TOKENS:
         return messages2
 
-    # ---- 步骤 6 · stuck guard ----
+    # ---- 步骤 6 · stuck guard (wish-a5f77893 刀A: 紧急豁免与 token_budget_check 同步) ----
     if not force and _state()["consecutive_compacts"] >= MAX_CONSECUTIVE_COMPACTS:
-        return messages2
+        if (len(messages2) - _state()["last_compression_turn"]) < EMERGENCY_BREAK_TURNS:
+            return messages2
+        # 距上次 ≥ EMERGENCY_BREAK_TURNS 轮 → 放行 (token_budget_check 侧已放行·这里不能挡)
 
     # ---- 步骤 7 · 归档原件 (必须先归档成功才允许动历史 · 数据安全红线) ----
     try:
@@ -1007,6 +1097,13 @@ def _archive_messages(kind: str, msgs: list[dict]) -> str:
         except OSError:
             pass
         raise
+    # 刀5-live (wish-a5f77893 · 2026-09-16): 归档即入索引 —— 不靠用户想起、不靠全量重建。
+    # 失败只影响“立刻可搜”; 下次 daemon 启动 refresh_stale 按 mtime 自动补 (check_stale 会检出)。
+    try:
+        from workers.memory_index import index_archive_file
+        index_archive_file(path)
+    except Exception as e:
+        logger.warning("归档入索引失败(下次启动自动补): %s", e)
     try:
         return str(path.relative_to(_SESSIONS_DIR.parent))
     except ValueError:

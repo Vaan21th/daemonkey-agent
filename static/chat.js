@@ -1150,11 +1150,81 @@ async function _planApi(method, path, body) {
 }
 
 async function refreshPlan() {
+  // 唤醒倒计时卡跟计划条同刷 —— 这些调用点本就是『这场会话状态刷新』的时机
+  refreshWakeups();
   if (!sessionId) { _renderPlan(null); return; }
   const d = await _planApi('GET', '/api/plan/active?session_id=' + encodeURIComponent(sessionId));
   if (d) _renderPlan(d);
 }
 window.refreshPlan = refreshPlan;
+
+// ── 延迟唤醒倒计时 chip（顶部标题栏） ──
+// 数据源 GET /api/wakeups?session_id= (workers/wakeups.py 的表)
+// 语义: "我 N 分钟后自己回来收结果" —— 让你看得见这事儿有人记着
+let _wakeupData = [];
+
+function _fmtEta(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  if (sec < 60) return sec + ' 秒';
+  const m = Math.floor(sec / 60), s = sec % 60;
+  if (m < 60) return m + ' 分' + (s ? ' ' + s + ' 秒' : '');
+  const h = Math.floor(m / 60);
+  return h + ' 小时 ' + (m % 60) + ' 分';
+}
+
+async function refreshWakeups() {
+  const chip = document.getElementById('wakeupChip');
+  if (!chip) return;
+  if (!sessionId) { _renderWakeups([]); return; }
+  const d = await _planApi('GET', '/api/wakeups?session_id=' + encodeURIComponent(sessionId));
+  _renderWakeups((d && d.wakeups) || []);
+}
+window.refreshWakeups = refreshWakeups;
+
+// chip 与 ticker 共用文案：最近一条倒计时（多条时 +N）
+function _wakeupText() {
+  if (!_wakeupData.length) return '';
+  const rest = _wakeupData.length - 1;
+  return _fmtEta(_wakeupData[0].remaining_sec) + (rest > 0 ? ' +' + rest : '');
+}
+
+/* chip 只放得下一个图标 + 一个倒计时，取最紧凑形态：
+   最近一条的剩余时间（多条时 +N）· 全部详情进 title（悬停即见）。
+   取消不在 chip 上做 —— 工具层有 cancel_wakeup，说一句就行。 */
+function _renderWakeups(list) {
+  _wakeupData = list || [];
+  const chip = document.getElementById('wakeupChip');
+  const box = document.getElementById('wakeupChipList');
+  if (!chip || !box) return;
+  if (!_wakeupData.length) {
+    chip.hidden = true;
+    box.textContent = '';
+    chip.removeAttribute('title');
+    return;
+  }
+  chip.hidden = false;
+  box.textContent = _wakeupText();
+  chip.setAttribute('title', _wakeupData.map(w =>
+    '· ' + (w.label || '取结果') + '（' + _fmtEta(w.remaining_sec) + '后）'
+  ).join('\n') + '\n\n（想取消 · 说一句就行）');
+}
+
+// 本地 1s 重算倒计时(不 fetch) —— 体感实时, 不增加请求
+setInterval(() => {
+  if (!_wakeupData.length || document.hidden) return;
+  const box = document.getElementById('wakeupChipList');
+  if (!box) return;
+  _wakeupData[0].remaining_sec = Math.max(0, (_wakeupData[0].remaining_sec || 0) - 1);
+  box.textContent = _wakeupText();
+}, 1000);
+
+// 5s 拉一次(页面可见时) —— 保证别处(工具 / 另一窗口)新建的唤醒能出现
+setInterval(() => {
+  if (document.hidden) return;
+  if (!document.getElementById('wakeupChip')) return;
+  refreshWakeups();
+}, 5000);
+
 
 function _renderPlan(d) {
   _planData = d;
@@ -1595,6 +1665,18 @@ function _startBgReportWatch() {
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', _startBgReportWatch, { once: true });
 } else { _startBgReportWatch(); }
+
+function _refreshHostPulse() {
+  if (window.HostPulse && typeof HostPulse.refresh === 'function') HostPulse.refresh();
+}
+function _startHostPulse() {
+  if (window.HostPulse && typeof HostPulse.mount === 'function') {
+    HostPulse.mount('hostPulse', { session: function () { return sessionId || ''; } });
+  }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _startHostPulse, { once: true });
+} else { _startHostPulse(); }
 
 // ─── wish-fb6b7427 事项C · 标签闪烁通道 · 客户端配置缓存 ───
 let _ntfCfg = null;   // null=还没拉过 · 保守不闪
@@ -3190,14 +3272,26 @@ async function toggleArchiveSession(sid) {
 async function deleteSession(sid) {
   closeSessionMenu();
   const name = aliasFor(sid);
-  const ok = await opusConfirm({
-    title: '删除会话',
-    message: { html: `确认删除 <b>「${escHtml(name)}」</b> 吗？<span class="om-hint">会真删 sessions/${escHtml(sid)}.jsonl · 不可恢复</span>` },
-    okText: '删除',
-    cancelText: '取消',
-    danger: true,
-  });
-  if (!ok) return;
+  let askedPulse = false;
+  if (window.HostPulse && HostPulse.confirmClose) {
+    const snap = await HostPulse.peek(sid);
+    if (HostPulse.hasItems(snap)) {
+      const ans = await HostPulse.confirmClose({ sid: sid, mode: 'delete', pulse: snap });
+      if (ans !== 'stop') return;
+      await HostPulse.stopSession(sid);
+      askedPulse = true;
+    }
+  }
+  if (!askedPulse) {
+    const ok = await opusConfirm({
+      title: '删除会话',
+      message: { html: `确认删除 <b>「${escHtml(name)}」</b> 吗？<span class="om-hint">会真删 sessions/${escHtml(sid)}.jsonl · 不可恢复</span>` },
+      okText: '删除',
+      cancelText: '取消',
+      danger: true,
+    });
+    if (!ok) return;
+  }
   try {
     const r = await fetch(`/sessions/${encodeURIComponent(sid)}`, {
       method: 'DELETE',
@@ -3471,6 +3565,7 @@ async function switchToSession(sid) {
     refreshPlan();                 // 计划条跟着会话换 (活跃账本是按会话记的)
     if (typeof refreshWorkingDocs === "function") refreshWorkingDocs();
     if (typeof window.syncOfficeStageHome === "function") window.syncOfficeStageHome();
+    _refreshHostPulse();
     return;
   }
 
@@ -3498,6 +3593,7 @@ async function switchToSession(sid) {
   refreshPlan();                 // 计划条跟着会话换
   if (typeof refreshWorkingDocs === "function") refreshWorkingDocs();
   if (typeof window.syncOfficeStageHome === "function") window.syncOfficeStageHome();
+  _refreshHostPulse();
 }
 
 // 卷八十三 · 切会话后: 简洁版左侧清单高亮 + 右侧产物面板跟着换会话
@@ -3674,11 +3770,16 @@ function _renderTabBar() {
 
 // 关闭一个 tab · 不删 server 历史 · 只清前端 state + DOM container
 // 跑着的不让关 (用户 应该先 ⏹ 停 · 再关)
-function _closeTabSession(sid) {
+async function _closeTabSession(sid) {
   if (!sid) return;
   const s = _sessions[sid];
   if (!s) return;
   if (s.pending) return;
+  if (window.HostPulse && HostPulse.confirmClose) {
+    const ans = await HostPulse.confirmClose({ sid: sid, mode: 'close' });
+    if (ans === 'cancel') return;
+    if (ans === 'stop') await HostPulse.stopSession(sid);
+  }
   if (s.$container) s.$container.remove();
   delete _sessions[sid];
   // 关的是 active · 切到另一个有 container 的 session · 没有就 newConversation
@@ -4044,6 +4145,130 @@ async function _checkProactiveInbox() {
   } catch (e) { /* 静默 · 收件箱失败不影响主功能 */ }
 }
 
+// ═════════════════════════════════════════════════════════════
+// 会话常驻事件流 · 后台 turn 产出即时上屏
+// 病根：bg turn（延迟唤醒/定时任务/分身通报）不写 SSE，产出只落 jsonl，
+//   前台靠 8s 轮询补 → 实测出现过 64 秒黑箱·以为出问题手动刷新。
+// 修法：页面开着就常驻一条 /api/events（通配订阅·跨会话不用重连），
+//   daemon 侧 broadcast_to_session() 推 bg_status / bg_done 过来。
+// ═════════════════════════════════════════════════════════════
+let _evtStream = null;
+let _evtRetryTimer = null;
+let _evtRetryDelay = 3000;
+let _bgBusyReason = '';
+
+function _connectSessionEvents() {
+  if (!token) return;
+  if (_evtStream) return;                    // 已连着 · 别重复开
+  if (typeof EventSource === 'undefined') return;
+  try {
+    const es = new EventSource('/api/events?token=' + encodeURIComponent(token));
+    _evtStream = es;
+
+    es.addEventListener('bg_status', (e) => {
+      try {
+        const d = JSON.parse(e.data || '{}');
+        if (d.phase === 'start') _markBgBusy(d); else _clearBgBusy();
+      } catch (err) {}
+    });
+
+    es.addEventListener('bg_done', (e) => {
+      try {
+        const d = JSON.parse(e.data || '{}');
+        _clearBgBusy();
+        if (d.session_id && d.session_id === sessionId) {
+          // 正开着这个会话 → 直接重载 · 那句话立刻冒出来（不用等轮询、更不用手刷）
+          try { _loadSessionHistory(sessionId); } catch (err) {}
+        } else if (d.session_id) {
+          const st = _sessions[d.session_id];
+          if (st) st.hasUnreadCompletion = true;
+        }
+        if (typeof _refreshSessionLists === 'function') { try { _refreshSessionLists(); } catch (err) {} }
+      } catch (err) {}
+    });
+
+    // 过程也推上来：提示条跟着「在读文件 / 在跑命令」走，秒级可见
+    es.addEventListener('bg_tool_call', (e) => {
+      try {
+        const d = JSON.parse(e.data || '{}');
+        _setBgBusyLabel('调用 ' + (d.name || '工具') + (d.summary ? ' · ' + d.summary : ''));
+      } catch (err) {}
+    });
+    es.addEventListener('bg_tool_progress', (e) => {
+      try {
+        const d = JSON.parse(e.data || '{}');
+        const lbl = ((d.step || '') + ' ' + (d.msg || '')).trim();
+        if (lbl) _setBgBusyLabel(lbl);
+      } catch (err) {}
+    });
+    es.addEventListener('bg_tool_result', (e) => {
+      try {
+        const d = JSON.parse(e.data || '{}');
+        _setBgBusyLabel((d.name || '工具') + ' 完成 · 继续推理…');
+      } catch (err) {}
+    });
+    es.addEventListener('bg_delta', (e) => {
+      try {
+        const d = JSON.parse(e.data || '{}');
+        if (d.text) _setBgBusyLabel('正在写：' + String(d.text).slice(-60));
+      } catch (err) {}
+    });
+    es.onopen = () => { _evtRetryDelay = 3000; };
+
+    es.onerror = () => {
+      // 断了就自己管重连（daemon 重启后 EventSource 原生重连会卡在旧连接上）
+      try { es.close(); } catch (err) {}
+      _evtStream = null;
+      if (_evtRetryTimer) return;
+      _evtRetryTimer = setTimeout(() => {
+        _evtRetryTimer = null;
+        _evtRetryDelay = Math.min(_evtRetryDelay * 2, 30000);
+        _connectSessionEvents();
+      }, _evtRetryDelay);
+    };
+  } catch (err) { /* 静默 · 事件流失败不影响主功能 */ }
+}
+
+function _setBgBusyLabel(txt) {
+  try {
+    const el = document.getElementById('bg-busy-hint');
+    if (!el || el.style.display === 'none') return;   // 没在忙就别凭空冒泡
+    const span = el.querySelector('span');
+    if (span) span.textContent = txt || '';
+  } catch (err) {}
+}
+
+function _markBgBusy(d) {
+  try {
+    _bgBusyReason = (d && d.reason) || '';
+    let el = document.getElementById('bg-busy-hint');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'bg-busy-hint';
+      el.style.cssText = 'align-items:center;gap:6px;padding:4px 10px;margin:0 auto 6px;'
+        + 'width:fit-content;font-size:12px;color:#7dd3fc;background:rgba(56,189,248,.08);'
+        + 'border:1px solid rgba(56,189,248,.25);border-radius:999px;';
+      el.style.display = 'none';   // hidden 属性会被显式 display 盖掉·显示/隐藏一律用 style.display
+      el.innerHTML = '<i class="ri-loader-4-line"></i><span></span>';
+      const bar = document.querySelector('.input-bar');
+      if (bar && bar.parentNode) bar.parentNode.insertBefore(el, bar);
+      else document.body.appendChild(el);
+    }
+    const span = el.querySelector('span');
+    if (span) {
+      span.textContent = '在后台处理' + (_bgBusyReason ? '：' + _bgBusyReason : '') + '…';
+    }
+    el.style.display = 'flex';
+  } catch (err) {}
+}
+
+function _clearBgBusy() {
+  try {
+    const el = document.getElementById('bg-busy-hint');
+    if (el) el.style.display = 'none';   // 同①·别用 hidden
+  } catch (err) {}
+}
+
 // 卷七十四续十七 · 微信入站对话 WebUI 自动感知 · 复用后台轮询那套(零新逻辑)
 // 微信对话固定进 api-wechat 会话 · daemon 后台 turn(_run_bg_turn)已注册 active_turn ·
 // 但前端只在"切进会话那一刻"单次探测(_maybeStartPoll) · 之后用户在手机发消息 ·
@@ -4146,6 +4371,7 @@ function newConversation() {
   }
   _refreshCompactAfterSwitch();  // 卷八十三 · 新建会话后简洁版侧栏归零
   refreshPlan();                 // 新会话没活跃账本 → 计划条自动隐藏
+  _refreshHostPulse();
 }
 
 function formatTime(ts) {
@@ -5263,6 +5489,7 @@ async function send(opts) {
     if (sessionId === newSid) {
       localStorage.setItem(STORAGE.session, newSid);
       updateCurrentLabel();
+      _refreshHostPulse();
     }
     if (typeof _refreshSessionLists === 'function') {
       try { _refreshSessionLists(); } catch {}
@@ -5445,6 +5672,7 @@ async function send(opts) {
         }
         state.streamHadToolCall = true;
         state.toolCallCount += 1;
+        if ((data.name || '').indexOf('dispatch_subagent') === 0 && window.HostPulse) HostPulse.refresh();
         // wish-5256d2a4 · 工具事件进时间线容器（整轮折叠块·默认展开）· 不再逐条平铺黑话气泡
         tlAddStep(state, data.name || '?', data.summary || _tlArgsSummary(data.args || data.arguments), data.tier);
         scrollToBottom(state.$container, { force: false });
@@ -7325,6 +7553,11 @@ async function restartDaemon() {
 
 async function shutdownDaemon() {
   if (!token) { addSys('⚠ 还没设 token · 不能关 daemon'); return; }
+  if (window.HostPulse && HostPulse.confirmClose) {
+    const ans = await HostPulse.confirmClose({ mode: 'quit', all: true });
+    if (ans === 'cancel') return;
+    if (ans === 'stop') await HostPulse.stopSession(null, true);
+  }
   const ok = await opusConfirm({
     title: '关闭 daemon 进程?',
     message: '会杀掉当前 daemon · **不**起新进程。\n之后要回来工作 · 双击 start.bat 走 GUI 启动器。\n持久化的 session 不会丢。',
@@ -9655,6 +9888,7 @@ loadCurrentModel();
 _showCoreVersion();
 _checkProactiveInbox();
 _checkWechatActivity();
+_connectSessionEvents();   // 会话常驻事件流（后台 turn 即时上屏）
 setInterval(() => {
   if (!document.hidden) {
     refreshNavBadges();

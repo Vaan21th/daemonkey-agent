@@ -280,6 +280,63 @@ def _proactive_session() -> str:
     return _PROACTIVE_SID
 
 
+def _broadcast(sid: str, event_type: str, data: dict) -> None:
+    """wish-8a9a3482 · 把事件推给该会话的常驻订阅者 (没有订阅者就静默)。
+
+    惰性 import + 全包 try/except：广播只是「锦上添花」·绝不能因为它
+    把后台 turn 本身弄崩 (防御模式⑤ 回调异常收在调度器)。
+    """
+    if not sid:
+        return
+    try:
+        from daemon_api import broadcast_to_session
+        broadcast_to_session(sid, event_type, data)
+    except Exception:
+        logger.debug("broadcast %s failed (不影响 turn)", event_type)
+
+
+_BG_FORWARD_EVENTS = {
+    "tool_call", "tool_result", "tool_progress",
+    "assistant_text", "advisor_status", "thinking",
+}
+
+
+def _make_bg_progress(sid: str):
+    """wish-8a9a3482 ③ · 把后台 turn 的过程推给常驻订阅者（“真正实时看过程”）。
+
+    尾流保护：assistant_delta 是逐 token 的 —— 原样推会把常驻流刷爆（而且它推给
+    该会话所有订阅者）。这里按 200ms 合批、只发尾部 200 字，体感有、流量小。
+    轻量事件（tool_call / tool_result / …）直接原样推，前缀加 bg_ 区隔前台事件。
+    """
+    import time as _t
+    _last = [0.0]
+    _buf = [""]
+
+    def _cb(event_type: str, data: dict) -> None:
+        try:
+            d = data if isinstance(data, dict) else {}
+            if event_type == "assistant_delta":
+                _buf[0] += str(d.get("text") or "")
+                now = _t.time()
+                if now - _last[0] < 0.2:
+                    return
+                _last[0] = now
+                chunk = _buf[0][-200:]
+                _buf[0] = ""
+                if chunk:
+                    _broadcast(sid, "bg_delta", {"text": chunk})
+                return
+            if event_type in _BG_FORWARD_EVENTS:
+                out = dict(d)
+                if event_type == "thinking" and isinstance(out.get("text"), str):
+                    out["text"] = out["text"][:300]   # 思考链只给个开头·别塞满前端
+                _broadcast(sid, "bg_" + event_type, out)
+        except Exception:
+            pass
+
+    return _cb
+
+
 def _run_bg_turn(message: str, sid: str, reason: str, max_tokens=None) -> dict:
     """后台跑一个完整 LLM turn。
 
@@ -297,19 +354,44 @@ def _run_bg_turn(message: str, sid: str, reason: str, max_tokens=None) -> dict:
     turn_id = f"proactive-{(sid[-8:] if sid else 'x')}-{int(_t.time() * 1000)}"
     cancel_event = threading.Event()
     register_turn(turn_id, sid, cancel_event)
+    # wish-8a9a3482 · 即时上屏(①)：turn 一开始就告诉前台「在处理」——
+    # 不然倒计时结束后到 turn 跑完这段(2026-09-16 实测 64 秒)前端完全静默。
+    _broadcast(sid, "bg_status", {"phase": "start", "reason": reason, "turn_id": turn_id})
+    _reply_preview = ""
     try:
         from daemon_runtime import RUNTIME as _RT
         from provider_presets import safe_max_tokens as _smt
-        return _chat_impl(
+        _res = _chat_impl(
             message=message,
             session_id=sid,
             auto_confirm=(os.environ.get("OPUS_PROACTIVE_AUTO_CONFIRM") or "confirm"),
             max_tokens=_smt(max_tokens, getattr(_RT, "model", "")),
-            progress=None,
+            progress=_make_bg_progress(sid),   # wish-8a9a3482 ③ · 过程实时上屏
             cancel_event=cancel_event,
             turn_id=turn_id,
             user_meta={"src": "proactive", "proactive_reason": reason},
+            background=True,  # wish-e679e4ec · 无人值守主动呼叫 · GUARD 不阻塞等卡片
         )
+        # wish-1b00ca00 · 完成通知：后台 turn 的产出不刷新就看不到（前台只在"切进会话"那一刻探一次
+        # active_turn，之后没人接）。这里往 ledger 补一条 kind=bg_turn，前端 /api/proactive/inbox
+        # 心跳轮询到 → 自动 _loadSessionHistory → OPUS 的话立刻冒出来，不用手刷。
+        # 【关键】刻意不写 delivered 字段 —— _calls_today / _hours_since_last_call 只认 delivered，
+        # 少了它这条就不会被算进"今天主动 CALL 了几次"，防骚扰门控一刀不碰。
+        try:
+            _reply = _res.get("reply") if isinstance(_res, dict) else ""
+            _reply_preview = (_reply or "")[:160]
+            _record({"kind": "bg_turn", "session_id": sid, "reason": reason,
+                     "reply_preview": _reply_preview})
+        except Exception:
+            logger.exception("bg_turn notify failed (不影响 turn 本身)")
+        # wish-8a9a3482 · 即时上屏(②③)：产出已落盘 → 推给该会话常驻订阅者·
+        # 前台收到 bg_done 立刻 _loadSessionHistory，不用等 8s 轮询、更不用手刷。
+        # 注意顺序：先广播再 return（finally 里才 unregister_turn）——
+        # 订阅者注销先于 turn 结束，迟到完成自然安静（防御模式④）。
+        _broadcast(sid, "bg_status", {"phase": "done", "reason": reason, "turn_id": turn_id})
+        _broadcast(sid, "bg_done", {"session_id": sid, "reason": reason,
+                                    "reply_preview": _reply_preview})
+        return _res
     finally:
         unregister_turn(turn_id)
 

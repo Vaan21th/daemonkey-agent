@@ -581,6 +581,86 @@ def _get_conn() -> sqlite3.Connection:
     return conn
 
 
+def _archive_meta(stem: str) -> tuple[str, str, str]:
+    """从归档文件名解析 (sid, kind, suffix) · rebuild 全量 与 live 钩子共用。
+
+    api-2026-09-14_164215_291f25-compact-20260916-022044
+      → ("api-2026-09-14_164215_291f25", "compact", "compact-20260916-022044")
+    """
+    sid, kind = stem, "other"
+    for k in ("compact", "prune"):
+        if f"-{k}-" in stem:
+            sid = stem.split(f"-{k}-", 1)[0]
+            kind = k
+            break
+    suffix = stem[len(sid) + 1:] if stem.startswith(sid + "-") else kind
+    return sid, kind, suffix
+
+
+def _archive_index_enabled() -> bool:
+    """归档入索引开关 (OPUS_ARCHIVE_INDEX=0 关)。"""
+    return os.environ.get("OPUS_ARCHIVE_INDEX", "1") != "0"
+
+
+def index_archive_file(path) -> int:
+    """把一个归档 jsonl 增量入索引 (wish-a5f77893 刀5-live · 2026-09-16)。
+
+    压缩/剪枝写完归档文件立刻调用 → 归档“生下来就可搜”· 不靠用户想起、
+    不靠全量重建。 幂等: 同归档 (section 前缀命中) 已在库则跳过。 返插入 chunk 数。
+    调用方包 try —— 这单失败只影响“立刻可搜”· 下次 daemon 启动 refresh_stale 按 mtime 补。
+    """
+    if not _archive_index_enabled():
+        return 0
+    p = Path(path)
+    if not p.exists():
+        return 0
+    sid, _kind, suffix = _archive_meta(p.stem)
+    prefix = f"{sid}:archive:{suffix}:"
+    conn = _get_conn()
+    try:
+        already = conn.execute(
+            "SELECT COUNT(*) FROM memory_chunks WHERE source='session_archive' AND section LIKE ?",
+            (prefix + "%",),
+        ).fetchone()[0]
+        if already:
+            return 0                      # 幂等: 同归档只进一次
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        n = 0
+        with open(p, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                content = record.get("content", "")
+                role = record.get("role", "")
+                ts = record.get("ts", "")
+                text = f"[{role}] {content}" if role else content
+                _insert_chunk_with_fts(
+                    conn,
+                    source="session_archive",
+                    section=f"{prefix}{role}",
+                    chunk_index=0,
+                    content=text,
+                    token_count=_estimate_tokens(text),
+                    updated_at=ts or now,
+                )
+                n += 1
+        conn.commit()
+        try:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")   # db mtime 前进 → check_stale 自然 False
+        except Exception:
+            pass
+        if n:
+            logger.info("归档即入索引: %s → %d chunks", p.name, n)
+        return n
+    finally:
+        conn.close()
+
+
 def rebuild() -> int:
     """全量重建索引：清空旧表 → 逐文件索引 → INSERT 实体表 → rebuild FTS。
 
@@ -722,6 +802,47 @@ def _rebuild_core(conn, now) -> int:
                         total += 1
             except Exception as e:
                 logger.warning("索引 session 文件 %s 时出错: %s", sf.name, e)
+
+    # ---- 索引 sessions/archive/ 下的 jsonl (刀5 · wish-a5f77893 · 2026-09-16) ----
+    # 压缩掉的原文归档在 sessions/archive/ (磁盘永不丢) · 但 rebuild 只 glob 一级 →
+    # 归档从不自动召回 (压缩后正文 FTS 消失)。 增扫为独立源 session_archive ·
+    # section 用 "{sid}:archive:..." 前缀 → purge_session 能按会话连归档一起清。
+    # FTS-only (不进向量·同 session) · 开关: OPUS_ARCHIVE_INDEX=0 关。
+    if _archive_index_enabled():
+        _archive_dir = SESSIONS_DIR / "archive"
+        if _archive_dir.exists():
+            _n_arch = 0
+            for sf in sorted(_archive_dir.glob("*.jsonl")):
+                try:
+                    _sid, _kind, _suffix = _archive_meta(sf.stem)
+                    with open(sf, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                record = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                            content = record.get("content", "")
+                            role = record.get("role", "")
+                            ts = record.get("ts", "")
+                            text = f"[{role}] {content}" if role else content
+                            _insert_chunk_with_fts(
+                                conn,
+                                source="session_archive",
+                                section=f"{_sid}:archive:{_suffix}:{role}",
+                                chunk_index=0,
+                                content=text,
+                                token_count=_estimate_tokens(text),
+                                updated_at=ts or now,
+                            )
+                            total += 1
+                    _n_arch += 1
+                except Exception as e:
+                    logger.warning("索引归档 session 文件 %s 时出错: %s", sf.name, e)
+            if _n_arch:
+                logger.info("rebuild · 归档入索引: %d 个文件 (session_archive)", _n_arch)
 
     # ---- 索引 sessions/ 下的 .summary.json (卷五十八续 · 接通血管) ----
     # auto_compress 早就在生成压缩摘要·只是从没流进召回。 摘要是高信号蒸馏·
@@ -926,7 +1047,7 @@ def purge_session(session_id: str) -> int:
     try:
         conn = _get_conn()
         rows = conn.execute(
-            "SELECT id FROM memory_chunks WHERE source IN ('session', 'session_summary') "
+            "SELECT id FROM memory_chunks WHERE source IN ('session', 'session_summary', 'session_archive') "
             "AND substr(section, 1, ?) = ?",
             (len(prefix), prefix),
         ).fetchall()
@@ -1067,6 +1188,14 @@ def check_stale() -> bool:
     # session 内容的索引走 index_session_turn (611 行·每轮写盘即插 FTS) + index_session_summary·
     # 不需要全量重建来索引它们。灵魂/playbook/知识库/客户档案 (低频源) 仍走全量重建。
 
+    # 刀5-live (wish-a5f77893 · 2026-09-16): 归档目录有新增 → 过期 (refresh_stale 会增量补)。
+    # 归档低频写 (只在压缩/剪枝时) · 不会像 session 那样“永远 True”; 只看目录 mtime (O(1)) ·
+    # live 钩子成功时 db mtime 已前进 → 这里自然 False。
+    _arch_dir = SESSIONS_DIR / "archive"
+    if _archive_index_enabled() and _arch_dir.exists() and _arch_dir.stat().st_mtime > db_mtime:
+        logger.info("索引过期: sessions/archive/ 有新增归档")
+        return True
+
     # 卷四十六 II · wish-1c229865 · playbooks 也参与 stale 检测
     if PLAYBOOKS_DIR.exists():
         for pb in PLAYBOOKS_DIR.glob("*.md"):
@@ -1147,6 +1276,21 @@ def refresh_stale() -> int:
         for cid, text in _client_notes():
             total += incremental_update(f"client:{cid}", text)
 
+    # 刀5-live · 归档补漏 (wish-a5f77893 · 2026-09-16): live 钩子失败/关开关期间的归档 ·
+    # 按文件 mtime 增量补 (index_archive_file 自身幂等 · 重复调用无副作用)。
+    _arch_dir = SESSIONS_DIR / "archive"
+    if _archive_index_enabled() and _arch_dir.exists():
+        _n_arch = 0
+        for _sf in sorted(_arch_dir.glob("*.jsonl")):
+            try:
+                if _sf.stat().st_mtime > base_mtime:
+                    total += index_archive_file(_sf)
+                    _n_arch += 1
+            except Exception as _e:
+                logger.warning("归档增量补漏失败 %s: %s", _sf.name, _e)
+        if _n_arch:
+            logger.info("归档增量补漏: %d 个文件", _n_arch)
+
     logger.info("分层增量刷新完成: %d chunks (未触发全量 rebuild)", total)
     return total
 
@@ -1218,7 +1362,7 @@ def search(
         scope_filter_c = "AND c.source IN ('SELF-EVOLUTION', 'OPUS-MEMORIES', 'SKILL')"
     elif scope == "sessions":
         # 卷五十八续 · 接通血管: sessions 既含原始 turn·也含蒸馏摘要
-        scope_filter_c = "AND c.source IN ('session', 'session_summary')"
+        scope_filter_c = "AND c.source IN ('session', 'session_summary', 'session_archive')"
     elif scope == "skill":
         scope_filter_c = "AND c.source = 'skill'"
     elif scope == "docs":

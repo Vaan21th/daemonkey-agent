@@ -76,7 +76,9 @@ def _pip_install_stt() -> bool:
     cmd += ["-i", "https://pypi.tuna.tsinghua.edu.cn/simple"]
     logger.info("STT 安装依赖: %s", " ".join(cmd))
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        from agent_tools._subprocess_helper import no_window_kwargs
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+                           **no_window_kwargs())
         if r.returncode != 0:
             logger.error("STT 依赖安装失败: %s", r.stderr[-500:])
             return False

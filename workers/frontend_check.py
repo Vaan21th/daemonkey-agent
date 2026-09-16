@@ -50,12 +50,24 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("Daemonkey.emit('message:render'", "气泡渲染走事件总线"),
         ("Daemonkey.emit('sse:event'", "SSE 走事件总线"),
         ("Daemonkey.emit('view:switch'", "切视图走事件总线"),
+        ("_startHostPulse", "输入框上本机脉搏"),
     ],
     "daemonkey-bus.js": [
         ("DK.emit = function", "事件总线 emit"),
         ("view:switch", "承诺 view:switch"),
         ("message:render", "承诺 message:render"),
         ("sse:event", "承诺 sse:event"),
+    ],
+    "host-pulse.js": [
+        ("g.HostPulse", "本机脉搏入口"),
+        ("/host/pulse", "脉搏 API"),
+        ("分身", "药丸叫分身"),
+        ("session_id", "脉搏跟着对话实例"),
+        ("confirmClose", "关闭时问要不要停"),
+        ("function belongsHere", "过期脉搏回包不刷当前条"),
+        ("scopedSid() !== sid", "切对话丢掉上一场的 fetch"),
+        ("function spawnSub", "分身行显示正在干什么"),
+        ("hp-act", "Cursor 款分身动作条"),
     ],
     "settings-pane.js": [
         ("function renderSettingsView", "设置页外壳"),
@@ -127,6 +139,8 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("/static/user/", "装修区脚本 404 不当核心失败"),
         (".docx", "文档附件 accept 类型"),
         ('id="workingDocsBar"', "本话题稿芯片条"),
+        ("host-pulse.js", "本机脉搏脚本"),
+        ('id="hostPulse"', "输入框上脉搏挂载点"),
     ],
     "companion/companion.js": [
         ("function interruptSpeak", "点她或音量打断房间语音合成"),
@@ -135,6 +149,8 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("Daemonkey.emit('message:render'", "房间气泡走事件总线"),
         ("Daemonkey.emit('sse:event'", "房间 SSE 走事件总线"),
         ("Daemonkey.emit('view:switch'", "房间切门走事件总线"),
+        ("HostPulse.mount", "房间输入口本机脉搏"),
+        ("hostpulse:tick", "分身药丸和房间表情闭环"),
     ],
     "chat.css": [
         ("#micBtn.listening", "语音按钮聆听态样式"),
@@ -261,6 +277,45 @@ def _tail_heuristic(text: str) -> tuple[bool, str]:
     return True, ""
 
 
+_VREF_RE = re.compile(r'(?:src|href)="(/static/[^"?]+\.(?:js|css))(\?v=[^"]*)?"')
+
+
+def check_version_placeholders(root: Path | None = None) -> list[str]:
+    """wish-0c8602ff · /static/*.js|css 引用必须带 ?v= 占位符。
+
+    why: api_routes/core.py 的 _bust_static_cache 用正则把「已存在的 ?v=旧值」换成文件
+    mtime —— 它是【替换】不是【添加】。新加一个 js 忘了写 ?v=xxx，缓存串就永远命中不
+    了，浏览器一直用旧版（2026-08-20 「简洁版/专注版」顶栏就是上古缓存·真踩过）。
+    内容不用人肉 bump，但占位符本身必须在。
+
+    只查「我们自己维护的」资源：/static/lib/ 下是三方库（几乎不变·不带占位符是对的），
+    以及 *-proto.html / taste-* 原型页（不是生产入口），一律跳过。
+    """
+    root = root or ROOT
+    problems: list[str] = []
+    for h in sorted((root / "static").rglob("*.html")):
+        if "lib" in h.parts:          # 三方库自带页面/资源
+            continue
+        name = h.name
+        if name.endswith("-proto.html") or name.startswith("taste-"):   # 原型页·非生产入口
+            continue
+        try:
+            text = h.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            continue
+        for m in _VREF_RE.finditer(text):
+            ref = m.group(1)
+            if ref.startswith("/static/lib/"):   # 三方库资源·不归我们管
+                continue
+            if not m.group(2):
+                rel = h.relative_to(root).as_posix()
+                problems.append(
+                    f"{rel}: 引用 {ref} 少了 ?v= 占位符"
+                    "（_bust_static_cache 替换不到·用户会看到缓存旧版）"
+                )
+    return problems
+
+
 def check_static_js(root: Path | None = None) -> dict:
     """前端静态资源健康检查 = 语法闸 + 功能哨兵。
 
@@ -288,6 +343,9 @@ def check_static_js(root: Path | None = None) -> dict:
 
     # 卷五十八 · 功能哨兵 (语法绿但功能被删的回归·只有这一环抓得到)
     problems += check_sentinels(root)
+
+    # wish-0c8602ff · ?v= 占位符（少了它 _bust_static_cache 替换不到 → 用户永远旧缓存）
+    problems += check_version_placeholders(root)
 
     return {
         "ok": len(problems) == 0,

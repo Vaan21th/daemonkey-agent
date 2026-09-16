@@ -26,17 +26,20 @@ CATALOG_SEARCH = "catalog_search"
 CATALOG_CALL = "catalog_call"
 
 # 闲聊和写代码都要直接伸、不能先搜的手。工坊施工不在这里。
-# 中栏批注改稿：回看 + 出稿 + 局部改是热路径。Flash 嵌套 catalog_call.args 会吐空串，这几只挂核心。
+# 2026-09-16 B1（wish-be50a93a）：7 个生成类移出 → 进延迟目录（catalog_search/catalog_call）。
+#   AB 实测：手边 37→30 命中率 69.8%→74.4%（+4.6pt，超波动 ±1.1pt）· 前缀 -2,230 tok。
+#   原本担心的「Flash 嵌套 catalog_call.args 会吐空串」实测不成立：B1 比只移 4 个还高 3.5pt。
+#   回档：把下面 7 个名字加回 CORE 即可（generate_presentation/report/image/spreadsheet +
+#   revise_office/extend_office/illustrate_office）。
 CORE = frozenset({
     "read_file", "write_file", "edit_file",
     "grep_files", "glob_files", "search_code", "outline_file",
     "shell_exec", "python_exec",
     "look_at", "web_search", "web_fetch", "inspect_office",
-    "generate_presentation", "generate_report", "generate_spreadsheet",
-    "revise_office", "extend_office", "illustrate_office",
     "recall_memory", "session_search", "read_scenario",
     "wechat_send", "read_clipboard", "write_clipboard",
     "set_emotion", "request_restart", "note_style_shift", "note_mood", "note_gallery",
+    "set_wakeup",  # wish-1b00ca00 · 延迟唤醒(计时器) · 「我 N 分钟后回来收结果」是热路径
     "mcp_list", "mcp_describe_tool", "mcp_call_tool",
     CATALOG_SEARCH, CATALOG_CALL,
 })

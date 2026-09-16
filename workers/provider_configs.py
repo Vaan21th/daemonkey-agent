@@ -215,6 +215,9 @@ def list_configs(include_keys: bool = False) -> dict:
         out.append(c2)
     return {
         "active_id": data.get("active_id"),
+        # wish-c6422f9c: 新对话默认 + 分身默认 · 设置页要读这两个渲染标记
+        "default_id": data.get("default_id") or "",
+        "subagent_id": data.get("subagent_id") or "",
         "configs": out,
     }
 
@@ -378,6 +381,72 @@ def set_active(cfg_id: str) -> dict:
 
 def toggle_pin(cfg_id: str, pinned: bool) -> dict:
     return update_config(cfg_id, {"pinned": bool(pinned)})
+
+
+def get_default_id() -> str:
+    """新对话用的默认模型 id（设置页那个「默认」）。
+
+    wish-c6422f9c: 跟 active_id 分家 ——
+      active_id  = daemon 此刻在跑哪条（对话内切模型会改它 · 这是事实·该被改）
+      default_id = 新对话该用哪条（只由用户在设置页改 · 不被任何对话污染）
+    首次访问时用当前 active 初始化，保证老数据平滑升级。
+    """
+    try:
+        data = load_configs()
+        ids = [c.get("id") for c in (data.get("configs") or [])]
+        did = str(data.get("default_id") or "").strip()
+        if did and did in ids:
+            return did
+        aid = str(data.get("active_id") or "").strip()
+        did = aid if aid in ids else (ids[0] if ids else "")
+        if did:
+            data["default_id"] = did
+            try:
+                save_configs(data)
+            except Exception:
+                pass
+        return did
+    except Exception:
+        return ""
+
+
+def set_default(cfg_id: str) -> dict:
+    """设为「新对话默认」· 不动 active_id（不改变此刻在跑的）。"""
+    data = load_configs()
+    if not any(c.get("id") == cfg_id for c in (data.get("configs") or [])):
+        raise KeyError(f"config not found: {cfg_id}")
+    data["default_id"] = cfg_id
+    save_configs(data)
+    return get_config(cfg_id, include_key=False)
+
+
+def get_subagent_id() -> str:
+    """分身（dispatch_subagent）默认用的模型 id · 空串 = 没单设。"""
+    try:
+        data = load_configs()
+        ids = [c.get("id") for c in (data.get("configs") or [])]
+        sid = str(data.get("subagent_id") or "").strip()
+        return sid if sid and sid in ids else ""
+    except Exception:
+        return ""
+
+
+def set_subagent(cfg_id: str) -> dict:
+    """设为分身默认模型 · 传空串 = 取消单设（跟随新对话默认）。"""
+    data = load_configs()
+    if cfg_id:
+        if not any(c.get("id") == cfg_id for c in (data.get("configs") or [])):
+            raise KeyError(f"config not found: {cfg_id}")
+        data["subagent_id"] = cfg_id
+    else:
+        data.pop("subagent_id", None)
+    save_configs(data)
+    return get_config(cfg_id, include_key=False) if cfg_id else {}
+
+
+def resolve_subagent_config_id() -> str:
+    """分身该用哪条配置：subagent_id → default_id（都没设才回落 active）。"""
+    return get_subagent_id() or get_default_id()
 
 
 def apply_config_to_env(cfg: dict) -> None:

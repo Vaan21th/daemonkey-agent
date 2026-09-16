@@ -262,6 +262,12 @@ def build_dynamic_telemetry(session_id: str) -> str:
     # wish-bf6a14fa · Git 脏区（上次聊到已卸 · 2026-08-29）
     git_line = _get_git_dirty_line()
     abandoned_line = _get_abandoned_outcomes_line()
+    pulse_line = ""
+    try:
+        from workers.host_pulse import prompt_line
+        pulse_line = prompt_line(session_id) or ""
+    except Exception:
+        pulse_line = ""
 
     # 0.8.2 hotfix · 启动通知 (升级内容 + 缺依赖提醒) · 一次性消费
     try:
@@ -269,6 +275,14 @@ def build_dynamic_telemetry(session_id: str) -> str:
         notices_section = consume_startup_notices()
     except Exception:
         notices_section = ""
+
+    # wish-1235e0da · 画布提示 (命中才有 · 消费即清 · 不影响别的轮)
+    canvas_line = ""
+    try:
+        from workers.canvas_nudge import pending_line
+        canvas_line = pending_line(session_id) or ""
+    except Exception:
+        canvas_line = ""
 
     return (
         "\n\n---\n\n"
@@ -279,6 +293,8 @@ def build_dynamic_telemetry(session_id: str) -> str:
         f"- 当前实际模型: {RUNTIME.model or '(未知)'}  ← 你真正在跑的模型 (provider_configs active · 不是 .env 的 OPUS_MODEL)\n"
         f"{git_line}"
         f"{abandoned_line}"
+        f"{pulse_line}"
+        f"{canvas_line}"
         "\n"
         "使用纪律:\n"
         "  · BRO 没问你时间不要主动报时 · **消化这些事实然后推理**\n"

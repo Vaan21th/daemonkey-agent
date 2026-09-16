@@ -73,14 +73,10 @@ def director_wake_prompt() -> str:
     name = (cfg.get("name") or cfg.get("model") or "顾问模型").strip()
     model = (cfg.get("model") or "").strip()
     return (
-        f"## 顾问模型 · 三唤醒点 (wish-8ffb9d65 · 当前顾问: {name})\n\n"
-        f"你(主对话)是【执行者】· 贵模型({model})是【顾问】· 它只在三个时刻通过 `replan` 进场 "
-        "(干净上下文 · 不装灵魂 · 每次召唤现场建独立 client):\n"
-        "  ① 蓝图 · 复杂工程任务开工前 → `replan(mode='blueprint', goal=...)` · 拿回【结构化施工单】"
-        "(改哪个文件/怎么改/别碰什么/验收标准) · 落 track_task 账本再动手\n"
-        "  ② 破局 · 连续失败 2 次卡住 → `replan(blocker=...)` (默认 mode=unstick) · 带回破局方案\n"
-        "  ③ 验收 · 有副作用的任务交付前 → `replan(mode='review', goal=原蓝图, blocker=交付说明+diff摘要)` · "
-        "拿 pass/fail + 理由\n"
-        "**成本纪律**: 顾问贵 · 只在三唤醒点召唤 · 别拿它闲聊/查资料/干活——执行是你(主对话)的活。 "
-        "三唤醒点之间用 track_task 账本传状态 (蓝图与结论落账 · 召唤时自动带给顾问)。\n\n"
+        f"## 顾问模型 · 三唤醒点 (当前顾问: {name} / {model})\n\n"
+        "主对话=执行者；贵模型=顾问（干净上下文·不装灵魂）。只在三处调 `replan`："
+        "① 复杂任务开工 → blueprint(goal=…) 拿施工单；"
+        "② 连败 2 次卡住 → unstick(blocker=…)；"
+        "③ 有副作用交付前 → review(goal+blocker) 拿 pass/fail。"
+        "三处之间用 track_task 账本传状态。别拿顾问闲聊/查资料。\n\n"
     )

@@ -7,6 +7,50 @@
 
 ---
 
+## [1.0.3] — 2026-09-08
+
+**输入框能看见分身和服务在干什么**
+
+本次在工作台和陪伴房间的输入框上方增加了本机脉搏：这场对话派出的分身、这场拉起的服务，会显示成「N 分身 / N 服务」。点开能看到近况，以及搜、读、改、跑这些动作。派出分身默认在后台跑，不卡住当前对话；工坊应用里的步骤仍会等齐再继续。关掉对话、删除话题或关闭软件时，如果还有分身或服务在跑，会先问要不要停掉。
+
+### 一、新用户安装教程
+请务必按完整流程安装，避免功能缺失：
+- 下载安装包 Daemonkey-1.0.3-win.zip，解压文件后，双击打开 Daemonkey.exe 即可使用
+- 不要单独下载一百多 KB 的单独 exe 文件！该文件只是简易启动器，并非完整软件，打开后会空白无法使用
+
+### 二、老用户升级教程
+- 直接在软件工作台顶部点击更新按钮，或在对话输入框发送指令：升级内核
+- 升级不会删除你的聊天记录、个人画像、自定义设置、修改过的所有文件，所有个人数据全部保留
+- 升级完成后，请重启一次软件，确保所有新功能正常生效
+
+### 三、本次新增功能
+- **输入框上方本机脉搏**：当前对话派出的分身、当前对话拉起的服务，显示在输入框上方。点开能看见分身近况和搜/读/改/跑动作
+- **分身默认后台**：主对话派出分身不再卡住这场对话；工坊或流程里嵌套派出的分身仍会等齐再继续
+- **关掉时先问要不要停**：关闭对话、删除话题、退出软件时，如果还有分身或服务在跑，会先询问
+
+### 四、使用注意事项
+- 分身默认只读，不会改你的文件，也不会打开命令行
+- 升级后若输入框显示「还没回来」，直接刷新页面即可恢复正常
+
+---
+
+**What's new:** The input box now shows this conversation's spawned agents and the services this conversation started. Open the pill to see what they are doing (search / read / edit / run). New spawns from the main chat run in the background so they do not block you. Nested steps inside a workshop app still wait. Closing a chat, deleting a topic, or quitting asks whether to stop what is still running.
+
+### 1. New users — how to install
+- Download **Daemonkey-1.0.3-win.zip**, unzip it, then double-click `Daemonkey.exe`.
+- Do not download only that ~100 KB `.exe` by itself.
+
+### 2. Existing users — how to upgrade
+- Click Update at the top of the workbench, or type: 升级内核
+- Your chats, profile, settings, and customizations stay.
+- Restart once after the upgrade.
+
+### 3. Notes
+- Spawned agents are read-only by default. They do not edit your files or open a shell.
+- If the input box still says the AI is not back yet, refresh the page.
+
+---
+
 ## [1.0.2] — 2026-09-07
 
 **核心优化：修复旧版安装、初见、升级各类问题，升级后保留所有用户和AI记忆数据、自定义设置和个人改装内容，使用更稳定**

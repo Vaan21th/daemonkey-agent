@@ -16,8 +16,29 @@ function stageIsVisible() {
 }
 
 function stageEnsureWorkbench() {
-  if (document.body.classList.contains("compact") && typeof toggleCompact === "function") {
-    toggleCompact(false);
+  // 2026-09-15 · 专注版下不再退出 compact (BRO: 看一份稿就要丢专注版布局 · 回回跳)。
+  //   22:57 定案: 画布复用「产物库面板」这套壳 (BRO: 复用产物库那套 · 别写两套) ——
+  //   把面板撑开 + #detailPane 挪进 .cl-slot · 与「查看 & 批注」同一条链。
+  //   曾走「第 6 列真分栏」: 竖条被挤到画布左边 · 点开关就崩 (BRO 图1/图2) · 已撤。
+  if (document.body.classList.contains("compact")) {
+    document.body.classList.add("dk-stage-drawer");
+    if (typeof toggleCompactLibrary === "function") {
+      // BRO 2026-09-15 22:52: 自动弹出时先闪一下 BI 看板 —— 挪槽前先垫「打开中…」，
+      //   槽里立刻是加载态，画布渲染完再替换（与「查看 & 批注」同款 · doc-shelf _docOpenForAnnotate）。
+      const _pane = document.getElementById("detailPane");
+      if (_pane && !_pane.querySelector(".stage-root")) {
+        _pane.innerHTML = '<div class="dash-empty dk-ld"><div class="dk-ld-row"><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span></div><div class="dk-ld-txt">打开中…</div></div>';
+      }
+      toggleCompactLibrary(true, { skipDomain: true });
+      // 面板壳要两层: .open(展开) + .ca-lib-open(槽视图) —— toggleCompactLibrary 只管后者，
+      // 少一层 .open 面板宽度不到位 → 槽里画布 0 宽（实测 stageRect width=0）。
+      const _wrap = document.getElementById("compactArtifacts");
+      if (_wrap && !_wrap.classList.contains("open") && typeof toggleCompactArtifacts === "function") {
+        toggleCompactArtifacts();
+      }
+    }
+    if (typeof _syncCompactStageDrawer === "function") _syncCompactStageDrawer();
+    return;
   }
 }
 
@@ -131,24 +152,51 @@ function stageMarkOpen(on) {
   window._shelfPreviewOpen = !!on;
   // 不能叫 stage-open：按钮也用这个 class，套到 body 会变成 32px 方块，整栏工作台被收没
   document.body.classList.remove("stage-open");
+  // on=false 必须摘掉 —— 原实现无条件 add · 关画布后 body 一直挂着画布态 · 中栏按抽屉浮着 = "关不掉" (BRO 2026-09-15)
   document.body.classList.toggle("dk-stage-open", !!on);
+  if (typeof _syncCompactStageDrawer === "function") _syncCompactStageDrawer();
 }
 
 function stageRemember() {
   if (!window._stageMode) {
-    _stageView = (typeof currentView !== "undefined" && currentView) ? currentView : "bi";
+    // 优先用「中栏实际在放的域」(loadDashboard 记的) · currentView 只在走导航时更新 ·
+    // 专注版产物库是直调 loadDashboard · 不经过导航 → 只看 currentView 会误判成 bi (BRO 2026-09-15)
+    _stageView = window._stageHomeHint
+      || window._dashDomain
+      || ((typeof currentView !== "undefined" && currentView) ? currentView : "");
+    window._stageHomeHint = "";
   }
 }
 
 function stageClose() {
+  stageWatchStop();
   if (typeof window.stageNotesReset === "function") window.stageNotesReset();
   window._stageMode = null;
   stageMarkOpen(false);
+  if (typeof _syncCompactStageDrawer === "function") _syncCompactStageDrawer();
   if (typeof window._syncPlanToggle === "function") window._syncPlanToggle();
-  const view = _stageView || ((typeof currentView !== "undefined" && currentView) ? currentView : "bi");
+  // 关画布一律回「产物库」(BRO 2026-09-16) · 不再按「打开前的域」回 ——
+  //   实测: 中栏停在 BI 看板时开画布 · 点 X 会被弹回 BI 看板
   _stageView = "";
-  if (typeof loadDashboard === "function") loadDashboard(view);
+  if (typeof loadDashboard === "function") loadDashboard("reports");
   else if (typeof renderDetailWelcome === "function") renderDetailWelcome();
+}
+
+// 静默清画布态 (不 loadDashboard · 不切域) —— 收起面板/收右栏槽时带着画布一起收
+//   BRO 2026-09-15: 收起后画布被 #detailPane 挪回中栏 = "关不掉" · 收的语义要含产物
+function stageClearQuiet() {
+  if (!window._stageMode && !document.body.classList.contains("dk-stage-open")) return;
+  stageWatchStop();
+  window._stageMode = null;
+  if (typeof window.stageNotesReset === "function") window.stageNotesReset();
+  stageMarkOpen(false);
+  if (typeof window._syncPlanToggle === "function") window._syncPlanToggle();
+  // 内容也别留 —— 否则退出专注版 / 切回工作台时 · 中栏会露出残留画布 = "收起没把产物收起来" (BRO 2026-09-15)
+  const pane = stagePane();
+  if (pane && pane.querySelector(":scope > .stage-root")) {
+    if (typeof renderDetailWelcome === "function") renderDetailWelcome();
+    else pane.innerHTML = "";
+  }
 }
 
 function stageEsc(s) {
@@ -217,7 +265,9 @@ function openStage(input) {
     return typeof window.openPlanOnStage === "function" && window.openPlanOnStage(!!input.refresh);
   }
   const refresh = !!(input && (input.refresh || input.silent));
-  if (input && input.auto && document.body.classList.contains("compact")) return false;
+  // 2026-09-15 · 专注版下 auto 打开不再拒 (BRO: 产物栏在需要时自己弹 · 与工作台同一出口) ·
+  //   改成先把抽屉挂好 — stageEnsureWorkbench() 在 compact 下挂 body.dk-stage-drawer · 中栏从右侧浮出。
+  if (document.body.classList.contains("compact")) stageEnsureWorkbench();
   if (!refresh) {
     stageEnsureWorkbench();
     if (!stageIsVisible() && !(input && input._waited)) {
@@ -263,7 +313,8 @@ function openStage(input) {
   }
   if (spec.mode === "md") return stageOpenMd(pane, spec);
   if (!spec.url) return false;
-  const src = stageEsc(stageWithAuth(spec.url));
+  const authUrl = stageWithAuth(spec.url);
+  const src = stageEsc(authUrl);
   const embed = {
     video: `<video class="stage-media" controls preload="metadata" src="${src}"></video>`,
     html: `<iframe class="stage-frame" title="HTML" src="${src}" sandbox="allow-same-origin allow-scripts allow-popups" loading="lazy"></iframe>`,
@@ -272,11 +323,62 @@ function openStage(input) {
   };
   if (!embed[spec.mode]) return false;
   stagePaint(pane, spec, embed[spec.mode]);
+  if (spec.mode === "html" || spec.mode === "pdf") stageWatchStart(authUrl);
   const fr = pane.querySelector("iframe.stage-frame");
   if (fr && typeof window.styleOfficePreviewFrame === "function") {
     window.styleOfficePreviewFrame(fr);
   }
   return true;
+}
+
+// ===== 画布自动刷新 (BRO 2026-09-16) =====
+//   病根: 画布 iframe 只在打开那一刻取一次内容 · 盘上文件被改 (原型/canvas 迭代中) 画布不跟 → 看到旧版
+//   做法: 打开 html/pdf 后每 3s GET 问一次 (no-cache) · 内容变了就换 src 重载 (带原 token)
+//   注: /stage/file 不支持 HEAD (405) → 用 GET + 全文比对 · 本地 ~16KB 无感 (BRO 2026-09-16)
+let _stageWatchTimer = null;
+let _stageWatchUrl = "";
+let _stageWatchStamp = "";
+
+function stageWatchStop() {
+  if (_stageWatchTimer) { clearInterval(_stageWatchTimer); _stageWatchTimer = null; }
+  _stageWatchUrl = "";
+  _stageWatchStamp = "";
+}
+
+function stageWatchStart(url) {
+  stageWatchStop();
+  if (!url) return;
+  _stageWatchUrl = url;
+  window._stageWatchTicks = 0;
+  window._stageWatchReloads = 0;
+  // 基线 = 打开这一刻盘上的内容 · 立刻取一次 (不等第一个 3s tick) ——
+  //   否则「打开画布后 3s 内改了文件」会被当成基线 · 之后永远判「没变」· 画布再不刷新
+  //   (BRO 2026-09-16 实测: ticks=3 / reloads=0 / iframe 仍是旧内容)
+  fetch(url, { cache: "no-store" }).then(function (r) { return r.ok ? r.text() : null; }).then(function (t) {
+    if (typeof t === "string" && !_stageWatchStamp) _stageWatchStamp = t;
+  }).catch(function () {});
+  _stageWatchTimer = setInterval(function () {
+    if (!_stageWatchUrl || !window._stageMode) return;
+    window._stageWatchTicks = (window._stageWatchTicks || 0) + 1;
+    fetch(_stageWatchUrl, { cache: "no-store" }).then(function (r) {
+      if (!r.ok) return null;
+      return r.text();
+    }).then(function (t) {
+      if (typeof t !== "string") return;
+      if (!_stageWatchStamp) { _stageWatchStamp = t; return; }
+      if (t === _stageWatchStamp) return;
+      _stageWatchStamp = t;
+      const fr = document.querySelector(".stage-frame");
+      if (!fr) return;
+      window._stageWatchReloads = (window._stageWatchReloads || 0) + 1;
+      const sep = _stageWatchUrl.indexOf("?") >= 0 ? "&" : "?";
+      const fresh = _stageWatchUrl + sep + "_r=" + Date.now();
+      // 换 fr.src 实测不生效 (iframe 没真重取) → 优先让 iframe 自己导航 · src 只作兜底 (BRO 2026-09-16)
+      let done = false;
+      try { if (fr.contentWindow) { fr.contentWindow.location.replace(fresh); done = true; } } catch (e) { done = false; }
+      if (!done) { try { fr.src = fresh; } catch (e2) { /* noop */ } }
+    }).catch(function () {});
+  }, 3000);
 }
 
 function openStageLast(paths) {
@@ -286,7 +388,7 @@ function openStageLast(paths) {
     if (stageCanOpen(list[i])) { picked = list[i]; break; }
   }
   if (!picked) return false;
-  if (document.body.classList.contains("compact")) return false;
+  // 2026-09-15 · 原 compact 早退已删 — 专注版也走同一出口 (右栏抽屉浮出) · 不再分叉两套。
   return openStage({ path: picked, refresh: true, auto: true });
 }
 

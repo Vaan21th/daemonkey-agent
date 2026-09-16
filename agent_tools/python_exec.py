@@ -129,6 +129,13 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(ok=False, output="", error="操作手册闸不可用，拒绝执行。")
     if blocked:
         return ToolResult(ok=False, output="", error=blocked)
+    try:
+        from workers.notebook_guard import check_script as _nb_check
+        nb_blocked = _nb_check(code, cwd)
+    except Exception:
+        return ToolResult(ok=False, output="", error="记忆落点闸不可用，拒绝执行。")
+    if nb_blocked:
+        return ToolResult(ok=False, output="", error=nb_blocked)
 
     used_secrets: dict[str, str] = {}
     try:
@@ -232,7 +239,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="python_exec",
     description=(
-        "在 .venv 跑多行 Python 源码（零 shell 转义）。检 json/ast、算数、调库用本工具。git/curl/npm 用 shell_exec。密钥用 ${secret:app:name}，输出靠 print()。"    ),
+        "在 .venv 跑多行 Python 源码（零 shell 转义）。输出靠 print()。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
@@ -248,6 +255,16 @@ SPEC = ToolSpec(
             "timeout": {
                 "type": "integer",
                 "description": f"Timeout in seconds. Default {DEFAULT_TIMEOUT_SEC}, max {MAX_TIMEOUT_SEC}.",
+            },
+            # GUARD tier 强制校验字段 (call 时作为 args 顶层 key 传 · daemon 会 pop 掉再调真 tool)
+            # 不进 schema 模型就看不见字段名 → 补不上 → GUARD 永远 reject (补丁 5 死锁根因)
+            "risk_explanation": {
+                "type": "string",
+                "description": "GUARD tier 必填·一句话说明此调用可能造成什么不可逆影响。",
+            },
+            "mitigation": {
+                "type": "string",
+                "description": "GUARD tier 必填·一句话说明如何规避该风险。",
             },
         },
         "required": ["code"],

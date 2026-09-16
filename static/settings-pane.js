@@ -300,6 +300,8 @@ function saveSettings() {
 
 let _providerConfigs = [];     // 当前 configs (掩码后)
 let _providerConfigsActiveId = null;
+let _providerConfigsDefaultId = null;   // wish-c6422f9c · 新对话默认模型
+let _providerConfigsSubagentId = null;  // wish-c6422f9c · 分身默认模型
 let _providerPresets = [];      // 预设 (来自 GET /providers)
 
 async function renderSettingsLLM() {
@@ -319,6 +321,8 @@ async function renderSettingsLLM() {
     const presetData = await presetResp.json();
     _providerConfigs = confData.configs || [];
     _providerConfigsActiveId = confData.active_id;
+    _providerConfigsDefaultId = confData.default_id || '';
+    _providerConfigsSubagentId = confData.subagent_id || '';
     _providerPresets = presetData.presets || [];
   } catch (e) {
     if (!_settingsStill('llm', gen)) return;
@@ -349,8 +353,40 @@ async function renderSettingsLLM() {
   `;
 }
 
+async function setDefaultConfig(cfgId) {
+  const token = localStorage.getItem('opus_token') || '';
+  try {
+    const r = await fetch('/provider-configs/' + encodeURIComponent(cfgId) + '/default', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || data.message || ('HTTP ' + r.status));
+    addSys(data.note || '已设为默认模型');
+    await renderSettingsLLM();
+  } catch (e) {
+    addSys('设为默认失败: ' + e.message);
+  }
+}
+
+async function setSubagentConfig(cfgId, on) {
+  const token = localStorage.getItem('opus_token') || '';
+  try {
+    const r = await fetch('/provider-configs/' + encodeURIComponent(on ? cfgId : '-') + '/subagent', {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || data.message || ('HTTP ' + r.status));
+    addSys(data.note || (on ? '已设为子代理模型' : '已取消子代理模型'));
+    await renderSettingsLLM();
+  } catch (e) {
+    addSys('设置子代理模型失败: ' + e.message);
+  }
+}
+
 function renderLlmConfigCard(c) {
   const isActive = c.id === _providerConfigsActiveId;
+  const isDefault = c.id === _providerConfigsDefaultId;
+  const isSub = c.id === _providerConfigsSubagentId;
   const presetIcon = ({
     'deepseek-official': '<i class="ri-brain-line"></i>',
     'aihubmix': '<i class="ri-apps-2-line"></i>',
@@ -360,11 +396,13 @@ function renderLlmConfigCard(c) {
     'custom': '<i class="ri-settings-3-line"></i>',
   })[c.preset_id] || '<i class="ri-cpu-line"></i>';
   return `
-    <div class="llm-config-card${isActive ? ' active' : ''}${c.director ? ' director-on' : ''}" data-cfg-id="${escHtml(c.id)}">
+    <div class="llm-config-card${isActive ? ' active' : ''}${isDefault ? ' default-on' : ''}${isSub ? ' subagent-on' : ''}${c.director ? ' director-on' : ''}" data-cfg-id="${escHtml(c.id)}">
       <div class="lc-row1">
         <span class="lc-icon">${presetIcon}</span>
         <span class="lc-name">${escHtml(c.name || c.model || c.id)}</span>
         ${isActive ? '<span class="lc-active-badge">当前</span>' : ''}
+        ${isDefault ? '<span class="lc-default-badge" title="新开的对话默认用这条"><i class="ri-home-4-fill"></i> 默认</span>' : ''}
+        ${isSub ? '<span class="lc-subagent-badge" title="分身（子代理）默认用这条"><i class="ri-share-forward-fill"></i> 子代理</span>' : ''}
         ${c.director ? '<span class="lc-director-badge" title="顾问 · 出方案、卡住、收尾时会请它把关"><i class="ri-vip-crown-fill"></i> 顾问</span>' : ''}
         <label class="lc-pin" title="勾选 = 右上角切换器显示">
           <input type="checkbox" ${c.pinned ? 'checked' : ''}
@@ -385,6 +423,8 @@ function renderLlmConfigCard(c) {
           ${isActive ? '' : `<button onclick="activateConfig('${jsStr(c.id)}')" title="切换 OPUS 用这个跑">激活</button>`}
           <button onclick="testConfig('${jsStr(c.id)}')" title="ping 一下试通不通">测试</button>
           <button class="lc-director-btn${c.director ? ' on' : ''}" onclick="toggleDirectorConfig('${jsStr(c.id)}', ${c.director ? 'false' : 'true'})" title="${c.director ? '取消这个配置的顾问身份' : '设为顾问。出方案、卡住、收尾时会请来看一眼。只能有一个。'}"><i class="ri-vip-crown-${c.director ? 'fill' : 'line'}"></i> ${c.director ? '取消顾问' : '设为顾问'}</button><i class="ri-question-line lc-director-help" onclick="showDirectorHelp()" title="顾问模型是干啥的？点我"></i>
+          <button class="lc-default-btn${isDefault ? ' on' : ''}" onclick="setDefaultConfig('${jsStr(c.id)}')" title="${isDefault ? '已经是默认了 · 新对话就是用它' : '设为默认模型 · 以后新开的对话默认用它（不影响当前对话）'}"><i class="ri-home-4-${isDefault ? 'fill' : 'line'}"></i> ${isDefault ? '已是默认' : '设为默认'}</button>
+          <button class="lc-subagent-btn${isSub ? ' on' : ''}" onclick="setSubagentConfig('${jsStr(c.id)}', ${isSub ? 'false' : 'true'})" title="${isSub ? '取消子代理模型 · 分身跟随主模型' : '设为子代理模型 · 分身(dispatch_subagent)跑任务时用它'}"><i class="ri-share-forward-${isSub ? 'fill' : 'line'}"></i> ${isSub ? '取消子代理' : '设为子代理'}</button>
           <button onclick="openLlmConfigEditForm('${jsStr(c.id)}')" title="改名称、密钥、模型">编辑</button>
           <button class="btn-danger-mini" onclick="deleteConfig('${jsStr(c.id)}')" title="删除">删除</button>
         </div>
@@ -566,6 +606,10 @@ function _showLlmEditForm({ title, submit, config, onSubmit, isEdit }) {
         <label>Model · 选预设里推荐的 / 也可自定义</label>
         <select id="llmEditModelSelect" onchange="onLlmEditModelSelectChange()"></select>
         <input id="llmEditModel" type="text" value="${escHtml(config.model || '')}" placeholder="model id" style="margin-top:6px">
+        <div style="margin-top:6px">
+          <button type="button" class="btn-ghost" id="llmEditFetchModels" onclick="fetchLocalModels()" title="从 base_url 拉模型列表 (LM Studio / Ollama 等 OpenAI 兼容端点)"><i class="ri-download-cloud-2-line"></i> 拉取本机模型</button>
+        </div>
+        <div class="field-hint" id="llmEditModelFetchHint"></div>
       </div>
       <div class="field">
         <label>API Key ${isEdit ? '(留空 = 不改)' : ''}</label>
@@ -804,6 +848,14 @@ function onLlmEditPresetChange() {
     opt.title = m.note || '';
     sel.appendChild(opt);
   });
+  // wish-cef00196 · LM Studio 本地模型：占位 key + 自动拉取本机模型
+  if (preset.id === 'lm-studio') {
+    const keyInput = document.getElementById('llmEditApiKey');
+    if (keyInput && !keyInput.value) keyInput.value = 'lm-studio';
+    const keyHint = keyInput?.parentElement?.querySelector('.field-hint');
+    if (keyHint) keyHint.textContent = '本机模型不需要真 key · 已自动填占位符 · 不用改';
+    fetchLocalModels();
+  }
 }
 
 function onLlmEditModelSelectChange() {
@@ -830,6 +882,46 @@ function onLlmEditModelSelectChange() {
     const ctx = m.context_window ? ` · 上下文上限 ${formatTokenK(m.context_window)}` : '';
     const out = m.max_output ? ` · 输出上限 ${formatTokenK(m.max_output)}` : '';
     hint.innerHTML = `单位: token · 约 token×0.7 个汉字${ctx}${out}<br>推荐 ${m.max_tokens_default || 8192} (按模型 spec 算的安全值)`;
+  }
+}
+
+// wish-cef00196 · 从 base_url 拉模型列表 (LM Studio 本地发现 · 也适用 Ollama 等 OpenAI 兼容端点)
+async function fetchLocalModels() {
+  const base = document.getElementById('llmEditBaseUrl')?.value.trim() || '';
+  const sel = document.getElementById('llmEditModelSelect');
+  const hintEl = document.getElementById('llmEditModelFetchHint');
+  if (!base) {
+    if (hintEl) hintEl.textContent = '先填 Base URL · LM Studio 默认 http://localhost:1234/v1';
+    return;
+  }
+  if (hintEl) hintEl.textContent = '正在拉取本机模型列表…';
+  try {
+    const r = await fetch('/providers/models?base_url=' + encodeURIComponent(base), {
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      if (hintEl) hintEl.innerHTML = `<span style="color:#FC8181">${escHtml(data.hint || data.error || '拉取失败')}</span>`;
+      return;
+    }
+    const models = data.models || [];
+    if (!models.length) {
+      if (hintEl) hintEl.textContent = '连上了 · 但模型列表为空 · 先在 LM Studio 里加载一个模型';
+      return;
+    }
+    sel.innerHTML = '';
+    models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.id;
+      opt.textContent = m.id;
+      sel.appendChild(opt);
+    });
+    sel.insertAdjacentHTML('afterbegin', '<option value="">— 手填 —</option>');
+    sel.value = models[0].id;
+    document.getElementById('llmEditModel').value = models[0].id;
+    if (hintEl) hintEl.innerHTML = `<i class="ri-check-fill"></i> 拉到 ${models.length} 个本机模型 · 已填第一个 · 下拉里可换`;
+  } catch (e) {
+    if (hintEl) hintEl.innerHTML = `<span style="color:#FC8181">网络出错: ${escHtml(e.message || '')}</span>`;
   }
 }
 
@@ -1704,6 +1796,14 @@ function renderSettingsAccess() {
         <div class="field-hint">只影响工作台对话栏。折叠是现在这样；展开是改密度之前那种过程全看得见。当场改，不用刷新。你点开或折上的这一轮按你点的来。</div>
       </div>
 
+      <div class="llm-section-head" style="margin-top:18px"><h3><i class="ri-brain-line"></i> 记忆整理线</h3></div>
+      <div class="field">
+        <label>长到多少就开始整理旧对话（tokens）</label>
+        <input id="accCapIn" type="number" min="40000" step="10000" placeholder="留空 = 用系统缺省">
+        <div class="field-hint">超过这条线，最久远的对话会被压成摘要。填大 = 记得久但每一轮更贵；填小 = 省钱但容易忘。系统下限 40,000。</div>
+        <div class="field-hint" id="accCapLive">读取中…</div>
+      </div>
+
       <div class="llm-section-head" style="margin-top:18px"><h3>✋ 工具确认策略</h3></div>
       <div class="field">
         <label>工具确认</label>
@@ -1758,6 +1858,8 @@ function renderSettingsAccess() {
   }
   // 异步刷一次 trusted 列表
   setTimeout(() => { try { refreshTrustedCommands(); } catch {} }, 50);
+  // 0.9.x · 读当前记忆整理线 (当场生效 · 不用重启)
+  setTimeout(() => { try { loadCompactCap(); } catch {} }, 50);
 }
 
 // wish-f563a56d · trusted commands UI helpers
@@ -1870,10 +1972,80 @@ function saveAccessSettings() {
   if (processSel && typeof setChatProcessMode === 'function') setChatProcessMode(processSel.value);
   if (typeof updateCurrentLabel === 'function') updateCurrentLabel();
   if (typeof saveSid === 'function') saveSid(sessionId);
+  const capInp = document.getElementById('accCapIn');
+  if (capInp) { try { saveCompactCap(capInp.value); } catch {} }
   document.getElementById('accSaveStatus').innerHTML = '<i class="ri-check-fill"></i> 已保存 · ' + (token ? '可以聊了' : '⚠ token 为空');
   document.getElementById('accSaveStatus').className = 'field-hint ok';
   // 同步刷新右上角模型切换器
   if (typeof loadCurrentModel === 'function') loadCurrentModel();
+}
+
+// 0.9.x · 记忆整理线 (压缩绝对线) · 「访问 & 会话」面板
+// 原先只有 env OPUS_AUTO_COMPACT_MAX_TOKENS 一条路 · 用户看不到也改不了 (BRO 2026-09-14 指出)
+async function loadCompactCap() {
+  const live = document.getElementById('accCapLive');
+  const inp = document.getElementById('accCapIn');
+  if (!live || !inp) return;
+  try {
+    const r = await fetch('/api/settings/compact-cap', {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    const d = await r.json();
+    if (d && d.ok) {
+      inp.value = d.abs_cap;
+      const src = d.source === 'webui' ? '你设的'
+        : (d.source === 'env' ? '.env 里的' : '系统缺省');
+      live.innerHTML = '<i class="ri-information-line"></i> 真实生效线 <b>'
+        + Number(d.effective != null ? d.effective : d.abs_cap).toLocaleString() + '</b> tokens'
+        + '（你设的整理线 ' + Number(d.abs_cap).toLocaleString() + ' · 来源：' + src
+        + '）· 下限 ' + Number(d.floor).toLocaleString() + compactCapNote(d);
+    }
+  } catch (e) {
+    live.textContent = '读取失败 · ' + e;
+  }
+}
+
+async function saveCompactCap(v) {
+  const live = document.getElementById('accCapLive');
+  const num = String(v == null ? '' : v).trim() === '' ? 0 : (parseInt(v, 10) || 0);
+  try {
+    const r = await fetch('/api/settings/compact-cap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+      body: JSON.stringify({ value: num }),
+    });
+    const d = await r.json();
+    if (!live) return;
+    if (d && d.ok) {
+      // 存完重拉一次：POST 只回 abs_cap，真实生效线要 GET 才算得出（窗口那道闸）
+      await loadCompactCap();
+      const el = document.getElementById('accCapIn');
+      if (el) el.value = d.abs_cap;
+    } else {
+      live.textContent = '保存失败';
+    }
+  } catch (e) {
+    if (live) live.textContent = '保存失败 · ' + e;
+  }
+}
+
+// 记忆整理线：为什么真实生效值 ≠ 你设的值（窗口×ratio 这道闸更靠前）
+function compactCapNote(d) {
+  if (!d || d.effective == null) return '';
+  if (d.bounded_by === 'window') {
+    return '<br><i class="ri-arrow-right-s-line"></i> 被上下文窗口压住：'
+      + Number(d.ctx_window).toLocaleString() + ' × ' + d.ratio + ' = '
+      + Number(d.window_line).toLocaleString()
+      + ' tokens（窗口这道闸在你的整理线之前）· 当前模型 ' + (d.model || '未知');
+  }
+  if (d.bounded_by === 'prefix') {
+    return '<br><i class="ri-arrow-right-s-line"></i> 系统提示词（'
+      + Number(d.prefix || 0).toLocaleString()
+      + ' tokens）已超窗口线 · 压历史救不了 · 改走绝对线 '
+      + Number(d.abs_cap).toLocaleString();
+  }
+  return '<br><i class="ri-arrow-right-s-line"></i> 由你的整理线决定（窗口线 '
+    + Number(d.window_line || 0).toLocaleString() + ' 还没到）· 当前模型 ' + (d.model || '未知');
 }
 
 // ─── 卷六十一 · 微信 & 主动 CALL 设置面板 ───

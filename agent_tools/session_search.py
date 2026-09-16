@@ -227,7 +227,7 @@ SPEC = ToolSpec(
             "session_id": {
                 "type": "string",
                 "description": (
-                    "get 时必填 · search 时可选 (限定单 session)。 格式: 'api-2026-05-26_014022_697694' (不带扩展名)"
+                    "get 时必填 · search 时可选。格式: 'api-2026-05-26_014022_697694'"
                 ),
             },
             "since": {
@@ -240,7 +240,7 @@ SPEC = ToolSpec(
             },
             "limit": {
                 "type": "integer",
-                "description": "list 时返多少 session (默认 30) · get 时返多少 message (默认 200)",
+                "description": "list 返多少 session（默认 30）· get 返多少 message（默认 200）",
             },
             "sort_by": {
                 "type": "string",

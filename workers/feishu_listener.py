@@ -169,6 +169,11 @@ def _make_feishu_progress(chat_id: str):
                 _show_confirm_card(chat_id, data)
             elif kind == "confirm_resolved":
                 _update_confirm_resolved(chat_id, data)
+            elif kind == "ask_request":
+                # wish-db46ff9b · 选择题卡（跟确认卡分开 · 不吃连续确认护栏）
+                _show_ask_card(chat_id, data)
+            elif kind == "ask_resolved":
+                _update_ask_resolved(data)
         except Exception:
             logger.warning("listener 消息解析失败 (L158)", exc_info=True)
     return _on_progress
@@ -355,6 +360,121 @@ def _auto_deny_confirm(tool_call_id: str, chat_id: str) -> None:
             "如果确实要继续，请重新发一条消息。", chat_id, "chat_id")
     except Exception:
         logger.warning("listener 事件分发失败 (L339)", exc_info=True)
+
+
+_ASK_CARDS: dict = {}  # tool_call_id -> feishu message_id
+
+
+def _show_ask_card(chat_id: str, data: dict) -> None:
+    """ask_request 事件 → 选择题卡（选项按钮）· wish-db46ff9b。
+
+    跟确认卡有意分开：确认卡是「批准/拒绝 + 风险/规避 + 连续确认护栏」，
+    选择题只是「你要哪个」——所以不复用进度卡形态·也不吃 confirm 那套
+    护栏（问几次都不该被当成「连环弹卡」拒掉）。
+    """
+    from workers import feishu_client
+
+    tcid = data.get("tool_call_id") or ""
+    if not tcid:
+        return
+    q = (data.get("question") or "").strip() or "（OPUS 没写问题）"
+    opts = list(data.get("options") or [])
+
+    elements = [
+        {"tag": "div", "text": {"tag": "lark_md", "content": "**❓ 想问你一件事**"}},
+        {"tag": "div", "text": {"tag": "lark_md", "content": q[:300]}},
+    ]
+    if opts:
+        actions = []
+        for i, o in enumerate(opts[:5]):
+            actions.append({
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": f"{i + 1}. {str(o)[:40]}"},
+                "type": "primary" if i == 0 else "default",
+                "value": {
+                    "action": f"act:/answer {tcid} {i}",
+                    "chat_id": chat_id,
+                    "is_group": "0",
+                },
+            })
+        elements.append({"tag": "action", "actions": actions})
+    elements.append({
+        "tag": "div",
+        "text": {"tag": "lark_md",
+                 "content": "<font color='grey'>点一下就行 · 不答也没事，她会先做别的</font>"},
+    })
+
+    card = {"config": {"wide_screen_mode": True}, "elements": elements}
+    r = feishu_client.send_card(card, chat_id, "chat_id")
+    mid = r.get("message_id") or ""
+    if mid:
+        _ASK_CARDS[tcid] = mid
+    logger.info("feishu ask_card: id=%s options=%d send_ok=%s mid=%s",
+                tcid, len(opts), r.get("ok"), mid)
+
+
+def _update_ask_resolved(data: dict) -> None:
+    """ask_resolved 事件 → 把卡改成「已回答 / 已过期」形态（不留死按钮）。"""
+    from workers import feishu_client
+
+    tcid = data.get("tool_call_id") or ""
+    mid = _ASK_CARDS.pop(tcid, "")
+    if not mid:
+        return
+    if data.get("answered"):
+        body = f"✅ 你选了：{data.get('choice') or ''}"
+    elif (data.get("reason") or "") == "timeout":
+        body = "⌛ 超时了 · OPUS 已按「你没回」继续"
+    else:
+        body = "已收"
+    card = {
+        "config": {"wide_screen_mode": True},
+        "elements": [
+            {"tag": "div", "text": {"tag": "lark_md", "content": "**❓ 问过你一件事**"}},
+            {"tag": "div", "text": {"tag": "lark_md", "content": body}},
+        ],
+    }
+    try:
+        feishu_client.update_card(mid, card)
+    except Exception as e:
+        logger.debug("feishu ask card update failed: %s", e)
+
+
+def _resolve_ask(args: str, chat_id: str) -> None:
+    """选择题卡按钮 → 写回 daemon _PENDING_CONFIRMS（对标 WebUI POST /turns/{tid}/answer）。
+
+    args 形如 "<tool_call_id> <index>"。
+    """
+    from workers import feishu_client
+
+    parts = (args or "").split()
+    if len(parts) < 2:
+        return
+    tcid = parts[0]
+    try:
+        idx = int(parts[1])
+    except (TypeError, ValueError):
+        return
+
+    from api_routes.chat import _resolve_ask_inline
+    from daemon_api import _PENDING_CONFIRMS, _PENDING_CONFIRMS_LOCK
+
+    with _PENDING_CONFIRMS_LOCK:
+        p = _PENDING_CONFIRMS.get(tcid)
+        if not p or p.get("kind") != "ask":
+            p, opts, turn_id = None, [], ""
+        else:
+            opts = list(p.get("options") or [])
+            turn_id = p.get("turn_id") or ""
+    if p is None:
+        feishu_client.send_text(_ln("这张卡已经答过了。"), chat_id, "chat_id")
+        return
+    if idx < 0 or idx >= len(opts):
+        return
+
+    res = _resolve_ask_inline(tcid, turn_id, opts[idx], idx)
+    if res.get("ok"):
+        _update_ask_resolved({"tool_call_id": tcid, "answered": True, "choice": opts[idx]})
 
 
 def _show_confirm_card(chat_id: str, data: dict) -> None:
@@ -729,6 +849,10 @@ def _handle_card_action(data) -> Optional[dict]:
             if cmd.startswith("/confirm"):
                 # 提权决议 · 直接写回 _PENDING_CONFIRMS (决议后自己 update_card 恢复进度形态)
                 _resolve_confirm(args, chat_id)
+                return None
+            if cmd.startswith("/answer"):
+                # wish-db46ff9b · 选择题卡回调 · 直接写回 _PENDING_CONFIRMS (同上·不渲染新卡)
+                _resolve_ask(args, chat_id)
                 return None
             _execute_card_cmd(cmd, args, user_key)
             # act 执行后渲染结果卡: /new → 当前会话信息 · /switch → 列表 (当前标记变化可见)

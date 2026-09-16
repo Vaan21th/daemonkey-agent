@@ -61,7 +61,27 @@ except Exception:
     def _owner_notebook_path(soul_dir):
         return Path(soul_dir) / "BRO-NOTEBOOK.md"
 
-BRO_NOTEBOOK = _owner_notebook_path(ROOT / "soul")
+def _notebook():
+    # 每次现算 · 启动时还没有 OWNER-NOTEBOOK，相遇写完也不能一直盯着 BRO-NOTEBOOK
+    return _owner_notebook_path(ROOT / "soul")
+
+
+class _NotebookProxy:
+    def exists(self):
+        return _notebook().exists()
+
+    def read_text(self, *a, **k):
+        return _notebook().read_text(*a, **k)
+
+    def stat(self):
+        return _notebook().stat()
+
+    @property
+    def name(self):
+        return _notebook().name
+
+
+BRO_NOTEBOOK = _NotebookProxy()
 OPUS_DIARY = ROOT / "data" / "cognition" / "opus-diary.md"
 
 
@@ -439,19 +459,25 @@ def delete_understanding_field(
 
 
 def _load_bro_profile(*, section_excerpt_chars: int) -> dict:
-    if not BRO_NOTEBOOK.exists():
+    nb = _notebook()
+    if not nb.exists():
+        try:
+            from identity import owner_notebook_missing_note
+            note = owner_notebook_missing_note()
+        except Exception:
+            note = "画像还没写。聊几句，我会记下来。"
         return {
-            "source": "soul/BRO-NOTEBOOK.md",
+            "source": f"soul/{nb.name}",
             "exists": False,
-            "note": "画像笔记还没放到 soul/ 目录（OWNER-NOTEBOOK.md）",
+            "note": note,
             "sections": [],
             "state_card": {},
             "state_card_history": {},
             "understanding": [],
         }
 
-    text = BRO_NOTEBOOK.read_text(encoding="utf-8")
-    stat = BRO_NOTEBOOK.stat()
+    text = nb.read_text(encoding="utf-8")
+    stat = nb.stat()
     state_card = _parse_state_card(text)
     state_card_history = _parse_state_card_history(text)
     understanding = _parse_understanding(text)
@@ -476,7 +502,7 @@ def _load_bro_profile(*, section_excerpt_chars: int) -> dict:
             })
 
     return {
-        "source": "soul/BRO-NOTEBOOK.md",
+        "source": f"soul/{nb.name}",
         "exists": True,
         "last_updated": time.strftime(
             "%Y-%m-%dT%H:%M:%S", time.localtime(stat.st_mtime)

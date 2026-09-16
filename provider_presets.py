@@ -281,6 +281,16 @@ PRESETS: list[ProviderPreset] = [
         note="国内云 · 速度快 · 不出墙",
     ),
     ProviderPreset(
+        id="lm-studio",
+        name="LM Studio (本机本地模型)",
+        base_url="http://localhost:1234/v1",
+        provider_kind="openai",
+        recommended_models=[],  # 本机模型动态发现 · UI 点「拉取本机模型」自动填 (wish-cef00196)
+        key_hint="本机模型不需要 key · 占位即可",
+        signup_url="",
+        note="用 LM Studio 跑本机模型 (Qwen 8B 等) · 零成本 · 断网可用 · 数据不出本机。先在 LM Studio Developer 页启动本地服务器 (默认 1234 端口) · 再点「拉取本机模型」自动发现已加载的模型。",
+    ),
+    ProviderPreset(
         id="custom",
         name="自定义",
         base_url="",
@@ -336,15 +346,19 @@ def recommended_max_tokens(model_id: str) -> int:
 
     用在: 1) UI 编辑表单 max_tokens 输入框默认值
          2) chat 端点 fallback (config 没设 max_tokens 时)
+
+    0.9.x: 改走 _recommended_model 统一入口 (精确 id / 别名 / org 前缀 / 最长前缀都生效)。
+    修的是两张表打架 —— 原来这里只认精确 id · deepseek-flash 落空后掉进下面 family 兜底
+    拿 32768 · 比它的规范名 deepseek-v4-flash (16384) 多一倍 · 同一个模型两个答案。
+    family 兜底保留 · 只作"认不出具体型号"时的保守值。
     """
     if not model_id:
         return 8192
+    m = _recommended_model(model_id)
+    if m:
+        return int(m.get("max_tokens_default") or 8192)
     model_lower = model_id.lower()
-    for preset in PRESETS:
-        for m in preset.recommended_models:
-            if m.get("id", "").lower() == model_lower:
-                return int(m.get("max_tokens_default") or 8192)
-    # 模糊匹配 (BRO 自己加的 custom model · 按 family 推荐)
+    # 认不出具体型号 → family 级保守兜底
     if "deepseek" in model_lower:
         return 32_768
     if "claude-opus" in model_lower or "claude-sonnet" in model_lower:
@@ -374,9 +388,10 @@ THINKING_MAX_TOKENS_FLOOR = 16384
 
 def is_thinking_model(model_id: str) -> bool:
     """是不是 reasoning/thinking 模型 (max_tokens 含 reasoning 预算·写死小值会被吃光)。"""
-    m = (model_id or "").lower()
+    m = (model_id or "").lower().strip()
     if not m:
         return False
+    m = _MODEL_ALIASES.get(m, m)   # 别名归一 · 手填的 deepseek-flash 也要认得
     if "glm-5" in m or "glm-4.7" in m or "coding-glm" in m:   # GLM 5.x / 4.7 全系带 thinking
         return True
     if "deepseek-r" in m or "reasoner" in m or "deepseek-v4" in m:  # R1/reasoner · V4 起带 thinking(V3 非)
@@ -386,6 +401,132 @@ def is_thinking_model(model_id: str) -> bool:
     if m.split("-")[0] in ("o1", "o3", "o4"):                  # OpenAI o1/o3/o4 reasoning
         return True
     return False
+
+
+# ── 关思考能力声明表 · 单一真相源 (wish-33624071 · 2026-09-14) ──────────────
+# 病根: 思考开关「关」原先只对 DeepSeek/GLM 下发 extra_body.thinking.disabled·
+#   其他厂商在 tool_loop._apply_openai_reasoning 里静默跳过 → 本地模型
+#   (LM Studio 跑 Qwen3) 点「关·直接答」仍在思考·用户以为开关坏了。
+# 实测 (2026-09-14 · LM Studio :1234 · qwen3-8b-heretic):
+#   ① 基线                     reasoning=559字 · completion_tokens=369 · 17.7s
+#   ② system 里加 /no_think     reasoning=  0字 · completion_tokens= 42 ·  2.4s
+#        → 省 88.6% · 快 7.4 倍 · content 一字不少
+#   ③ chat_template_kwargs.enable_thinking=false → 572字/379tok 完全无效 (LM Studio 不透传)
+# 结论: 真关思考按【模型家族】分三类·不按厂商穷举:
+#   api_param   有 API 开关      → 发请求参数 (DeepSeek / GLM)
+#   soft_prompt 有 prompt 软开关 → system 塞控制词 (Qwen3 系·训练时教过 /no_think)
+#   none        两者都没有      → 真关不掉·UI 如实标注
+#              (o1/o3 类·thinking 是模型定义的一部分·API 上最狠只能降 effort)
+THINK_OFF_API_PARAM = "api_param"
+THINK_OFF_SOFT_PROMPT = "soft_prompt"
+THINK_OFF_NONE = "none"
+THINK_OFF_SOFT_TOKEN = "/no_think"
+
+
+def resolve_think_off(model_id: str, base_url: str = "") -> tuple[str, str]:
+    """查「这个模型怎么真关思考」· 返 (mode, token)。
+
+    mode ∈ api_param / soft_prompt / none · token 仅 soft_prompt 时非空。
+    加新厂商 = 往下面加一行判断·不是去改 _apply_openai_reasoning 的控制流。
+    UI 的 /models 也读这个·所以它是「能不能关」的单一真相源。
+    """
+    m = (model_id or "").lower()
+    b = (base_url or "").lower()
+    if not m:
+        return THINK_OFF_NONE, ""
+    # ① 有 API 开关的 (tool_loop 里已实现的方言)
+    if "deepseek" in m:
+        return THINK_OFF_API_PARAM, ""
+    if m.startswith("glm") or "glm-" in m:
+        return THINK_OFF_API_PARAM, ""
+    if "bigmodel.cn" in b:          # 智谱官方 base_url 下的自定义模型名
+        return THINK_OFF_API_PARAM, ""
+    # ② 有 prompt 软开关的 (实测有效·见上)
+    if "qwen" in m or "qwq" in m:
+        return THINK_OFF_SOFT_PROMPT, THINK_OFF_SOFT_TOKEN
+    # ③ 显式关不掉的推理模型
+    if m.split("-")[0].split(".")[0] in ("o1", "o3", "o4"):
+        return THINK_OFF_NONE, ""
+    # 其余 (claude / gpt-5 / kimi / gemini / llama / 本机未知模型): 没有可靠通路·
+    # 如实报 none (UI 标灰 + 说明)·不假装能关。
+    return THINK_OFF_NONE, ""
+
+
+# ── 推理强度 · 标准档位 + 每模型映射 (wish-4fd607c5 · 2026-09-15 BRO 二次拍板 v2) ──
+# v1 病根: 按模型【裁剪】UI 档位 (dsflash 只摆 3 档) → 看着像专为 DeepSeek 定制·不泛用。
+# v2 设计 (BRO: "做成 OpenAI 格式的标准档位·泛用性·无非说明提一嘴"):
+#   UI 永远摆【标准档位全集】(跨厂商同一套名字) · 每模型自己的「服务端接受集合 +
+#   默认 + 人话说明(映射规则/建议)」放这张表; 发送端把选中的标准档【就近映射】成该
+#   模型真接受的档 (map_effort_level) → UI 泛用 · 又不会 400 · 也不用改前端。
+# 官方抄录 (api-docs.deepseek.com · 2026-09-15):
+#   DeepSeek reasoning_effort ∈ none/low/high/max · 默认 high
+#   别名映射: minimal→low · medium→high · xhigh→high · max→max · ultra→max
+# 纪律: 认不出的模型 → 保守 (low/medium/high) + default 空 (= 不发送·零回归);
+#   证实【忽略该参数】的家族 (GLM) 与本机端点 → 空集 (UI 整行标灰·如实说原因)。
+EFFORT_STANDARD_LEVELS: tuple[str, ...] = ("minimal", "low", "medium", "high", "max")
+EFFORT_LEVELS_CONSERVATIVE: tuple[str, ...] = ("low", "medium", "high")
+
+
+def resolve_effort_profile(model_id: str, base_url: str = "") -> tuple[tuple[str, ...], str, str]:
+    """查「这个模型服务端接受的推理强度档位」· 返 (supported, default, note)。
+
+    supported 空 = 该模型不吃这个参数 (UI 整行标灰·note 说明原因)。
+    default 空 = 默认档未知 (UI 默认项 = 不发送)。
+    note = 给用户看的一行说明 (映射规则 + 建议试哪档)。
+    加新厂商 = 加一行判断·不是去改 tool_loop 或前端。
+    """
+    m = (model_id or "").lower()
+    b = (base_url or "").lower()
+    if not m:
+        return EFFORT_LEVELS_CONSERVATIVE, "", "未实测模型 · 不选则不发送（选了按保守三档发 · 报错请改回默认）"
+    # ① DeepSeek (官方 / 硅基 / 各种中转的 deepseek 名)
+    if "deepseek" in m:
+        return (("low", "high", "max"), "high",
+                "DeepSeek 映射：最小→低 · 中→高 · 极高=最深。建议：日常用 低/中，难题试 极高")
+    # ② Kimi K3 · 始终思考 · 官方默认 max
+    if "kimi-k3" in m:
+        return (("low", "high", "max"), "max",
+                "该模型始终思考 · 默认极高。建议：想省 token 试 低")
+    # ③ 证实忽略该参数的家族 (智谱 GLM 静默忽略 reasoning_effort) → 如实标灰
+    if m.startswith("glm") or "glm-" in m or "bigmodel.cn" in b:
+        return (), "", "该模型忽略推理强度参数 · 用「思考模式」控制即可"
+    # ④ 本机端点 (LM Studio / Ollama / 自建) · 没有统一的强度参数 → 如实标灰
+    if any(h in b for h in ("127.0.0.1", "localhost", "0.0.0.0", "[::1]")):
+        return (), "", "本机模型没有统一的强度参数 · 用「思考模式」控制就好"
+    # ⑤ GPT-5 / o 系 · OpenAI 标准档 (无 max)
+    fam0 = m.split("-")[0].split(".")[0]
+    if "gpt-5" in m or fam0 in ("o1", "o3", "o4"):
+        return (("minimal", "low", "medium", "high"), "medium",
+                "OpenAI 标准档（无「极高」· 选它会就近用 高）")
+    # ⑥ xAI Grok
+    if m.startswith("grok"):
+        return (("low", "high"), "high", "Grok 支持 低/高（其它档就近映射）")
+    # ⑦ 其余未知 → 保守三档
+    return EFFORT_LEVELS_CONSERVATIVE, "", "未知模型 · 保守发送 低/中/高"
+
+
+def map_effort_level(level: str, model_id: str, base_url: str = "") -> Optional[str]:
+    """用户选的标准档 → 该模型服务端真接受的档 (就近映射·先深后浅) · None = 不发。
+
+    例: DeepSeek 上 medium → high (官方映射同向) · 最小 → low;
+        GPT-5 上 max → high (无「极高」) · Grok 上 medium → high。
+    """
+    lv = (level or "").strip().lower()
+    if not lv or lv not in EFFORT_STANDARD_LEVELS:
+        return None                       # 不认识的档 → 保守不发
+    supported, _default, _note = resolve_effort_profile(model_id, base_url)
+    if not supported:
+        return None                       # 该模型不吃这个参数
+    if lv in supported:
+        return lv
+    i = EFFORT_STANDARD_LEVELS.index(lv)
+    for j in range(i + 1, len(EFFORT_STANDARD_LEVELS)):   # 先向深找 (要更深时别缩水)
+        if EFFORT_STANDARD_LEVELS[j] in supported:
+            return EFFORT_STANDARD_LEVELS[j]
+    for j in range(i - 1, -1, -1):                        # 再向浅找
+        if EFFORT_STANDARD_LEVELS[j] in supported:
+            return EFFORT_STANDARD_LEVELS[j]
+    return None
 
 
 def safe_max_tokens(requested, model_id: str) -> int:
@@ -408,24 +549,42 @@ def safe_max_tokens(requested, model_id: str) -> int:
     return req
 
 
+# 配置里手填的别名 → 规范 id (provider_presets 表里 recommended_models.id)
+# 只做名字归一 · 不改任何匹配语义; 认不出的模型照旧返回 None (下游各自兜底)
+_MODEL_ALIASES = {
+    "deepseek-flash": "deepseek-v4-flash",
+}
+
+
 def _recommended_model(model_id: str) -> Optional[dict]:
-    """精确 id 优先 · 否则最长前缀 (flash-vision-exp → deepseek-v4-flash)。"""
-    if not model_id:
+    """精确 id 优先 · 否则最长前缀 (flash-vision-exp → deepseek-v4-flash)。
+
+    0.9.x 别名归一: 依次试 原样 → 别名映射 → 去 org 前缀的尾巴 → 尾巴的别名。
+    让手填的 `deepseek-flash` / `deepseek-ai/DeepSeek-V4-Flash` 也能查到规格,
+    同时不影响表里本就带 org 的 id (qwen/qwen3-vl-4b)。
+    """
+    raw = (model_id or "").strip().lower()
+    if not raw:
         return None
-    key = model_id.lower()
+    tail = raw.rsplit("/", 1)[-1] if "/" in raw else ""
+    keys = []
+    for k in (raw, _MODEL_ALIASES.get(raw), tail, _MODEL_ALIASES.get(tail)):
+        if k and k not in keys:
+            keys.append(k)
     best: Optional[dict] = None
     best_len = -1
-    for preset in PRESETS:
-        for m in preset.recommended_models:
-            mid = (m.get("id") or "").lower()
-            if not mid:
-                continue
-            if key == mid:
-                return m
-            if key.startswith(mid + "-") or key.startswith(mid + "."):
-                if len(mid) > best_len:
-                    best = m
-                    best_len = len(mid)
+    for key in keys:
+        for preset in PRESETS:
+            for m in preset.recommended_models:
+                mid = (m.get("id") or "").lower()
+                if not mid:
+                    continue
+                if key == mid:
+                    return m
+                if key.startswith(mid + "-") or key.startswith(mid + "."):
+                    if len(mid) > best_len:
+                        best = m
+                        best_len = len(mid)
     return best
 
 

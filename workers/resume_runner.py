@@ -107,34 +107,27 @@ def _run_background_turn(message: str, session_id: str,
     cancel_event = threading.Event()
     register_turn(turn_id, session_id, cancel_event)
     try:
-        # wish-8914f90c · 墙钟熔断: 后台续场 turn 收紧预算 — 总墙钟 300s · 单次 LLM 60s。
+        # wish-1dc8d738 · 心跳看门狗 (替代 wish-8914f90c 的 5 分钟墙钟一刀切):
+        #   总墙钟 3600s (宽兜底防无限循环) · 心跳停 120s 判"真卡" · 单次 LLM 60s。
         # daemon_api._env_float 每次调用时读 os.environ · 同进程内设置即刻生效。
-        # 治: LLM 调用挂起 25min 占 session 锁 (墨言 08-09 16:47 第三次重启卡死事故)。
-        _prev_wall = os.environ.get("_RESUME_WALL_CLOCK_SEC")
-        _prev_llm = os.environ.get("_RESUME_LLM_TIMEOUT_SEC")
-        os.environ["_RESUME_WALL_CLOCK_SEC"] = "300.0"
-        os.environ["_RESUME_LLM_TIMEOUT_SEC"] = "60.0"
-        try:
-            return _chat_impl(
-                message=message,
-                session_id=session_id,
-                auto_confirm=_DEFAULT_AUTO_CONFIRM,
-                max_tokens=_MAX_TOKENS,
-                progress=None,
-                cancel_event=cancel_event,
-                turn_id=turn_id,
-                user_meta=user_meta,
-            )
-        finally:
-            # 恢复现场 · 不污染同进程其它路径 (主对话不应被墙钟限制)
-            if _prev_wall is None:
-                os.environ.pop("_RESUME_WALL_CLOCK_SEC", None)
-            else:
-                os.environ["_RESUME_WALL_CLOCK_SEC"] = _prev_wall
-            if _prev_llm is None:
-                os.environ.pop("_RESUME_LLM_TIMEOUT_SEC", None)
-            else:
-                os.environ["_RESUME_LLM_TIMEOUT_SEC"] = _prev_llm
+        # 治: LLM 调用挂起 25min 占 session 锁 (墨言 08-09 16:47) — 心跳判定覆盖它, 正常长活不误杀。
+        # 2026-09-16 · wish-66dd231d: 预算改为「显式参数」传进 _chat_impl ·
+        #   不再写 os.environ (旧写法会让同进程其它 turn 也读到本轮的 3600/120 ·
+        #   daemon 自爆重启时还被新进程继承 → 5 分钟墙复活 · 实测两次)。
+        return _chat_impl(
+            message=message,
+            session_id=session_id,
+            auto_confirm=_DEFAULT_AUTO_CONFIRM,
+            max_tokens=_MAX_TOKENS,
+            progress=None,
+            cancel_event=cancel_event,
+            turn_id=turn_id,
+            user_meta=user_meta,
+            background=True,  # wish-e679e4ec · 无人值守续场 turn · GUARD 不阻塞等卡片
+            wall_clock_sec=3600.0,   # 宽兜底防无限循环
+            stall_sec=120.0,         # 心跳: 停 120s 判真卡
+            llm_timeout_sec=60.0,    # 单次 LLM 调用上限
+        )
     finally:
         unregister_turn(turn_id)
 

@@ -2,14 +2,14 @@
 agent_tools/draft_studio.py
 ============================
 
-OPUS 在对话里"出品"——内容制作 / 产品设计 / 产品开发 / 文档撰写 四个维度
+Daemonkey 在对话里"出品"——内容制作 / 产品设计 / 产品开发 / 文档撰写 四个维度
 共用一个工具，按 `domain` 参数路由。
 
 档位：CONFIRM
-  和 generate_report 同级别——产出一份文件，用户 应该看见"OPUS 打算给我做
-  一份《XXX》"再决定。这是 用户 在 WebUI 工作室上能看到的工坊产出。
+  和 generate_report 同级别——产出一份文件，BRO 应该看见"Daemonkey 打算给我做
+  一份《XXX》"再决定。这是 BRO 在 WebUI 工作室上能看到的工坊产出。
 
-NLP 触发场景（OPUS 自己判断 domain）：
+NLP 触发场景（Daemonkey 自己判断 domain）：
   - "给我写一个 AI 创业的选题"        → domain=content, kind=选题
   - "来一份关于 X 的口播稿"            → domain=content, kind=口播稿
   - "出个咖啡 App 的 spec"             → domain=design,  kind=spec
@@ -17,14 +17,14 @@ NLP 触发场景（OPUS 自己判断 domain）：
   - "列一下 Daemonkey 这周的 TODO"   → domain=dev,     kind=TODO
   - "做一份 Cloudflared 部署的技术调研" → domain=dev,     kind=技术调研
   - "写一条「微信桥怎么部署」的 wiki" → domain=docs,    kind=wiki
-  - "整理一份 OPUS daemon 的 FAQ"      → domain=docs,    kind=FAQ
+  - "整理一份 Daemonkey daemon 的 FAQ"      → domain=docs,    kind=FAQ
 
 落盘：
   data/<domain>/<YYYYMMDD-HHMMSS>-<safe_title>.md
   每个文件头有 yaml frontmatter (title / kind / created_at / domain)
 
 输出（给 LLM）：
-  文件路径 + 大小 + 一行 用户 提示（"用户 在 WebUI 看 <icon> <label> 维度"）
+  文件路径 + 大小 + 一行 BRO 提示（"BRO 在 WebUI 看 <icon> <label> 维度"）
 """
 from __future__ import annotations
 
@@ -57,6 +57,8 @@ def _run(args: dict) -> ToolResult:
     title = (args.get("title") or "").strip()
     body = args.get("body") or ""
     kind = (args.get("kind") or "").strip()
+    _canvas = args.get("canvas")
+    canvas = True if _canvas is None else bool(_canvas)
 
     if domain not in WORKSHOP_META:
         return ToolResult(
@@ -74,7 +76,7 @@ def _run(args: dict) -> ToolResult:
     if not body or not body.strip():
         return ToolResult(
             ok=False, output="",
-            error="body 必填 · OPUS 自己组装好的完整 markdown 正文",
+            error="body 必填 · Daemonkey 自己组装好的完整 markdown 正文",
         )
 
     try:
@@ -90,6 +92,23 @@ def _run(args: dict) -> ToolResult:
     meta = WORKSHOP_META[domain]
     size_kb = result["size_bytes"] / 1024
 
+    # 画布页：默认随 md 同产一份自包含 HTML（中栏舞台可直接打开 + 圈字批注）
+    # 渲染失败不影响 md 落盘 —— 画布是增强，不是前置条件
+    canvas_rel = ""
+    if canvas:
+        try:
+            from workers.canvas_page import render_canvas_html, write_canvas_for
+
+            canvas_rel = write_canvas_for(
+                result["path"],
+                render_canvas_html(
+                    title, body, kind=kind, domain=domain,
+                    icon=meta["icon"], label=meta["label"],
+                ),
+            )
+        except Exception as e:
+            canvas_rel = f"__ERR__{type(e).__name__}: {str(e)[:120]}"
+
     lines = [
         f"已落盘 · {result['name']}",
         f"  维度: {meta['icon']} {meta['label']}",
@@ -97,19 +116,34 @@ def _run(args: dict) -> ToolResult:
         f"  路径: {result['path']}",
         f"  大小: {size_kb:.1f} KB",
         f"  正文: {len(body)} 字符",
-        "",
-        f"用户 在 WebUI '{meta['icon']} {meta['label']}' 维度可见 · 或直接打开 {result['path']}。",
     ]
-    return ToolResult(ok=True, output="\n".join(lines))
+    if canvas_rel.startswith("__ERR__"):
+        lines.append(f"  画布: 渲染失败（md 不受影响）· {canvas_rel[7:]}")
+    elif canvas_rel:
+        lines.append(f"  画布: {canvas_rel}")
+        lines.append("        ↑ 中栏舞台可直接打开 · 能圈字批注 · 改完铺回中栏")
+    lines += [
+        "",
+        f"BRO 在 WebUI '{meta['icon']} {meta['label']}' 维度可见 · 或直接打开 {result['path']}。",
+    ]
+    out = "\n".join(lines)
+    # 画布页铺中栏：打 [[DK-OPEN]] 标记 → tool_loop 抽成 open_path → 前端 flushOpenActions 自动 openStageLast
+    if canvas_rel and not canvas_rel.startswith("__ERR__"):
+        try:
+            from workers.stage_open import append_open_mark
+
+            out = append_open_mark(out, canvas_rel)
+        except Exception:
+            pass
+    return ToolResult(ok=True, output=out)
 
 
 SPEC = ToolSpec(
     name="draft_studio",
     description=(
-        "在 OPUS 工作室出品 markdown 文档 · 落 data/<domain>/ · WebUI 工坊维度自动可见。"
-        " 适合: 选题 / 口播稿 / 视频脚本 (content) · spec / wireframe / 用户旅程 (design)"
-        " · TODO / 周报 / 技术调研 (dev) · FAQ / wiki / 操作手册 (docs)。"
-        " 想生成正式 docx 报告用 generate_report · 这个工具落 markdown · 工坊草稿用。"
+        "在 Daemonkey 工作室出品文档 · 落 data/<domain>/（markdown 档案 + 默认同产一份可上中栏画布的原型 HTML）。"
+        " 适合: 选题/口播稿 (content) · spec/用户旅程 (design) · TODO/技术调研 (dev) · FAQ/wiki (docs)。"
+        " 正式 docx 报告用 generate_report。"
     ),
     tier=TIER_CONFIRM,
     input_schema={
@@ -137,6 +171,13 @@ SPEC = ToolSpec(
                     "细分类型 · 写卡片副标题用 · 例如 content 维度的 '口播稿' / "
                     "design 维度的 'spec' / dev 维度的 'TODO' / docs 维度的 'FAQ'。"
                     "可空。"
+                ),
+            },
+            "canvas": {
+                "type": "boolean",
+                "description": (
+                    "默认 true · 是否同产一份可上中栏画布的 HTML"
+                    "（自包含零依赖 · 能圈字批注 · 讨论方案和原型走它）"
                 ),
             },
         },

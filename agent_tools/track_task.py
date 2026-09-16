@@ -62,6 +62,27 @@ def _link_wish(led: dict, wish_id: str) -> tuple[bool, str]:
     return True, f" · 已挂到 {wish_id}"
 
 
+def _align_title(led: dict, wish_id: str) -> None:
+    """账本标题对齐到它挂靠的 wish（仅在调用方没指定任务名时使用）。
+
+    wish-0c8602ff 修的真机 bug：同一会话里连续给两条 wish 列计划时，第二次没传
+    task → set_steps 的 slug 解析落到【活跃账本】（还是上一条 wish 那本）→
+    进度条标题一直显示旧任务名，BRO 看到的和实际在做的对不上。
+    """
+    try:
+        from workers import wishlist
+        w = wishlist.get_wish(wish_id)
+        if not w:
+            return
+        t = (w.get("title") or "").strip()
+        if t and led.get("title") != t:
+            from workers import task_ledger as tl
+            led["title"] = t
+            tl.save_ledger(led)
+    except Exception:
+        pass
+
+
 def _run(args: dict) -> ToolResult:
     try:
         from workers import task_ledger as tl
@@ -121,6 +142,9 @@ def _run(args: dict) -> ToolResult:
                     # 挂错了报"整条失败"会让人以为计划没列成·于是重列一遍(真机实测:
                     # AI 因此连列三次·留下一本重复账本)。 降级成提示·别把主动作拖下水。
                     wish_note = f" · ⚠ wish 没挂上: {wish_note.lstrip(' ·')}"
+                elif not task:
+                    # wish-0c8602ff · 调用方没给 task 时对齐标题，防进度条顶着上一条任务的旧名
+                    _align_title(led, wish)
             return ToolResult(
                 ok=True,
                 output=(f"已列计划《{led.get('title')}》· {len(led.get('steps') or [])} 步 ·"
@@ -167,7 +191,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="track_task",
     description=(
-        "多步任务账本。三步以上开工先 action=plan；做完一步立刻 step=done。结论用 note。新窗口先 open。action: plan/step/open/note/list。"    ),
+        "多步任务账本。三步以上开工先 action=plan；做完一步立刻 step=done。结论用 note。新窗口先 open。action: plan/step/open/note/list。别名：计划/步骤/拆解/待办/进度/分步/多步骤/长任务/一步步/todo。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

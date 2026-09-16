@@ -105,9 +105,11 @@ def test_dated_story_routes_to_events():
     assert route_write_section(
         "summary", "append", "2026-08-15 · 龙头交了审查"
     ) == "events"
+    # 2026-09-17 更新：写时闸把「日期开头」的条目一律改道 events（P0 落位治理）
+    # —— 原来是 rules 里的日期条目会被识别成规范，实际是事件流水。
     assert route_write_section(
         "rules", "append", "2026-08-10 · 社区提交只取增量"
-    ) == "rules"
+    ) == "events"
     assert route_write_section(
         "dialogue", "replace_section", "2026-08-14 · 不该改道"
     ) == "dialogue"

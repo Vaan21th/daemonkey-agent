@@ -500,11 +500,15 @@ def _load_opportunity_by_id(opp_id: str) -> Optional[dict]:
 def _load_bro_profile(max_chars: int = 3000) -> str:
     bro_file = _owner_notebook_path(ROOT / "soul")
     if not bro_file.exists():
-        return "（画像笔记还没放到 soul/ 目录）"
+        try:
+            from identity import owner_notebook_missing_note
+            return f"（{owner_notebook_missing_note()}）"
+        except Exception:
+            return "（画像还没写。聊几句，我会记下来。）"
     try:
         text = bro_file.read_text(encoding="utf-8")
     except Exception:
-        return "（BRO-NOTEBOOK 读不出来）"
+        return "（画像读不出来）"
     if len(text) <= max_chars:
         return text
     return text[:max_chars] + "\n\n…（已截断）"

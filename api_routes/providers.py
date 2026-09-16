@@ -154,6 +154,43 @@ async def switch_provider(
     }
 
 
+@router.get("/providers/models")
+async def list_provider_models(
+    base_url: str = Query(...),
+    authorization: Optional[str] = Header(None),
+):
+    """拉一个 OpenAI 兼容端点的模型列表 · LM Studio 本地模型发现用 (wish-cef00196).
+
+    GET /providers/models?base_url=http://localhost:1234/v1
+    → 服务端请求 {base_url}/models · 返回 {ok, models: [{id}]}
+    连不上不炸 · 返回 ok=False + hint (LM Studio 没开 / 端口不对)。
+    """
+    check_auth(authorization)
+    from daemon_provider import clean_base_url
+    base = clean_base_url((base_url or "").strip())
+    if not base:
+        raise HTTPException(400, "base_url is required")
+    url = base.rstrip("/") + "/models"
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as hc:
+            resp = await hc.get(url, headers={"Authorization": "Bearer lm-studio"})
+        resp.raise_for_status()
+        data = resp.json()
+        models = [
+            {"id": m.get("id"), "owned_by": m.get("owned_by") or ""}
+            for m in (data.get("data") or [])
+            if m.get("id")
+        ]
+        return {"ok": True, "base_url": base, "models": models}
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": f"{type(e).__name__}: {e}",
+            "hint": "连不上 · 确认 LM Studio 已在 Developer 页启动本地服务器 (默认端口 1234) · base_url 是否填对",
+        }
+
+
 # ─── 卷三十七 · 多 Provider 配置 CRUD (6 路由) ────────────────────────
 
 
@@ -275,6 +312,47 @@ async def activate_provider_config_ep(
         "model": RUNTIME.model,
         "provider_kind": RUNTIME.provider,
         "note": "已热切换 · session 不丢",
+    }
+
+
+@router.post("/provider-configs/{cfg_id}/default")
+async def set_default_config(
+    cfg_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """设为「新对话默认」· 不切当前（当前对话和正在跑的不受影响）。"""
+    check_auth(authorization)
+    from workers.provider_configs import set_default
+    try:
+        cfg = set_default(cfg_id)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    return {
+        "ok": True,
+        "default_id": cfg_id,
+        "config": cfg,
+        "note": "以后新开的对话默认用 " + (cfg.get("name") or cfg_id) + " · 当前对话不受影响",
+    }
+
+
+@router.post("/provider-configs/{cfg_id}/subagent")
+async def set_subagent_config(
+    cfg_id: str,
+    authorization: Optional[str] = Header(None),
+):
+    """设为「子代理（分身）默认」· cfg_id 传 '-' = 取消单设（跟随新对话默认）。"""
+    check_auth(authorization)
+    from workers.provider_configs import set_subagent
+    cid = "" if cfg_id in ("-", "__none__", "none") else cfg_id
+    try:
+        cfg = set_subagent(cid)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    return {
+        "ok": True,
+        "subagent_id": cid,
+        "config": cfg,
+        "note": ("分身将用 " + (cfg.get("name") or cid)) if cid else "已取消单设 · 分身跟随新对话默认",
     }
 
 

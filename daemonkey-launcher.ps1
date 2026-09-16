@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+﻿﻿#requires -Version 5.1
 <#
 .SYNOPSIS
   Daemonkey · 启动器 (无边框圆角一体化 · 三栏: 图标导航 / 内容 / 内嵌终端)

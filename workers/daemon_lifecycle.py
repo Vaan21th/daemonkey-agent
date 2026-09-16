@@ -448,10 +448,10 @@ def mark_graceful_shutdown(reason: str = "user_initiated") -> bool:
             "reason": reason,
         })
 
-        # 卷五十四 · ④号机制语义修正 · 不再在停机时打 opus-last-good。
+        # 卷五十四 · ④号机制语义修正 · 不再在停机时打 last-good。
         #   病根: 老逻辑这里 tag_last_good(master HEAD) —— 但停机这一刻新代码还没证明能跑起来。
         #   今天 (2026-06-03) 把砍断 chat.js 的坏 commit 55d27cd 标成了 known-good (实锤) ·
-        #   回档 reset --hard opus-last-good 会精准回到白屏坏版本。
+        #   回档 reset --hard last-good 会精准回到白屏坏版本。
         #   现在 tag 前移挪到 workers/boot_health.schedule_last_good_advance: daemon 启动后
         #   **撑过 grace window 且自检健康** 才把 master HEAD 标成 last-good = "活着跑通了"才配当回退点。
 

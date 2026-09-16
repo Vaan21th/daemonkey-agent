@@ -49,8 +49,10 @@ _MAX_ITER_CAP = 24         # 单分身迭代硬顶
 _TEXT_CLIP = 2500          # 每份分身产出汇总时截断 (防爆父上下文 · 全文在 sub-*.jsonl)
 _RESULT_FILE_THRESHOLD = 2500  # wish-48566053 · 长结果落盘阈值: 分身文本超此长度 → sessions/sub-<id>-result.md
                              #   (产物文件化 · 主上下文只带路径+摘要 · 全文可 read_file)
-_SUBAGENT_WALL_CLOCK_SEC = 600.0  # 墙钟熔断 (2026-08-11 · 墨言贡献评估 · 08-09 卡死事故同源):
-                                   # 分身 LLM 挂起时 fut.result 裸等会永久占线程 · 硬墙钟到点判超时释放
+_SUBAGENT_STALL_SEC = 120.0       # 心跳看门狗 (2026-09-16 · wish-1dc8d738 同款 · 替换总时长一刀切):
+                                  # 分身内部 LLM 流每 chunk / 迭代 / 工具边界喂跳 · 心跳停 120s 才判"真卡" · 长调研不误杀
+_SUBAGENT_WALL_CLOCK_SEC = 3600.0 # 总时长宽兜底 (原 600s · 09-16 断案: 硬墙会误伤长活 · 退居防无限循环):
+                                  # 分身 LLM 挂起时 fut.result 裸等会永久占线程 · 到时判超时释放
 
 # 永不下放给分身的工具 (递归 + 系统控制 + 破坏性 + 真实世界副作用)。 即便调用方显式点名也剔除。
 _ALWAYS_DENY = frozenset({
@@ -90,6 +92,41 @@ def _register_subagent(record: dict) -> None:
         _ACTIVE_SUBAGENTS[record["subagent_id"]] = record
 
 
+def _adopt_running(subagent_id: str, idx: int, goal: str, parent_sid: str) -> dict:
+    """pending → running：整表替换会吞掉排队时点的打断/传话。"""
+    with _ACTIVE_LOCK:
+        rec = _ACTIVE_SUBAGENTS.get(subagent_id)
+        if rec is None:
+            rec = {
+                "subagent_id": subagent_id, "idx": idx, "goal": goal,
+                "status": "running", "tool_calls": 0, "usage": {},
+                "cancel_requested": False, "pending_messages": [],
+                "started_at": time.time(),
+                "parent_session_id": parent_sid or "",
+                "doing": "", "note": "", "acts": [],
+            }
+            _ACTIVE_SUBAGENTS[subagent_id] = rec
+            return rec
+        rec["status"] = "running"
+        rec["idx"] = idx
+        if goal:
+            rec["goal"] = goal
+        rec.setdefault("pending_messages", [])
+        rec.setdefault("cancel_requested", False)
+        rec.setdefault("tool_calls", 0)
+        rec.setdefault("usage", {})
+        rec.setdefault("note", "")
+        rec.setdefault("acts", [])
+        # 预登记时 doing 是「排队」· 升 running 必须清掉，不然药丸一直写排队
+        if rec.get("doing") == "排队":
+            rec["doing"] = ""
+        else:
+            rec.setdefault("doing", "")
+        if parent_sid and not rec.get("parent_session_id"):
+            rec["parent_session_id"] = parent_sid
+        return rec
+
+
 def _update_subagent(subagent_id: str, **patch) -> None:
     with _ACTIVE_LOCK:
         rec = _ACTIVE_SUBAGENTS.get(subagent_id)
@@ -106,6 +143,93 @@ def _snapshot_subagents() -> list[dict]:
     """返回当前所有活跃分身的只读快照 (排序稳定 · 供状态工具/汇总用)。"""
     with _ACTIVE_LOCK:
         return [dict(r) for r in _ACTIVE_SUBAGENTS.values()]
+
+
+def pulse_spawns() -> list[dict]:
+    """给本机脉搏药丸用的干净分身列表（只 running/pending）。"""
+    out = []
+    for r in _snapshot_subagents():
+        if r.get("status") not in ("running", "pending"):
+            continue
+        out.append({
+            "id": r.get("subagent_id"),
+            "goal": (r.get("goal") or "")[:80],
+            "status": r.get("status"),
+            "tool_calls": int(r.get("tool_calls") or 0),
+            "started_at": r.get("started_at"),
+            "age_sec": (time.time() - r["started_at"]) if isinstance(r.get("started_at"), (int, float)) else None,
+            "parent_session_id": r.get("parent_session_id") or "",
+            "pending_n": len(r.get("pending_messages") or []),
+            "cancel_requested": bool(r.get("cancel_requested")),
+            "doing": r.get("doing") or "",
+            "note": r.get("note") or "",
+            "acts": list(r.get("acts") or []),
+        })
+    return out
+
+
+_ACT_CAP = 8
+_VERBS = (
+    (("web_search", "web_search_image"), "搜"),
+    (("web_fetch",), "打开"),
+    (("read_file", "pdf_read", "outline_file"), "读"),
+    (("grep_files", "search_code", "glob_files", "session_search"), "翻"),
+    (("look_at",), "看"),
+    (("write_file", "edit_file"), "改"),
+    (("shell_exec", "python_exec"), "跑"),
+)
+
+
+def _verb_of(name: str) -> str:
+    n = name or ""
+    for keys, v in _VERBS:
+        if n in keys:
+            return v
+    return "用"
+
+
+def _clip_target(summary: str, name: str) -> str:
+    s = (summary or "").strip().replace("\n", " ")
+    if len(s) > 48:
+        s = s[:48] + "…"
+    return s or name
+
+
+def _trace_event(subagent_id: str, event_type: str, data: Optional[dict]) -> None:
+    """工具调用 / 分身开口 → 注册表 · 药丸用来画 Cursor 那种动作条。"""
+    data = data or {}
+    with _ACTIVE_LOCK:
+        rec = _ACTIVE_SUBAGENTS.get(subagent_id)
+        if rec is None:
+            return
+        if event_type == "tool_call":
+            name = str(data.get("name") or "")
+            summary = str(data.get("summary") or "")
+            rec["tool_calls"] = int(rec.get("tool_calls") or 0) + 1
+            rec["doing"] = f"{_verb_of(name)} {_clip_target(summary, name)}".strip()
+            acts = list(rec.get("acts") or [])
+            acts.append({"v": _verb_of(name), "t": _clip_target(summary, name), "n": name})
+            rec["acts"] = acts[-_ACT_CAP:]
+        elif event_type == "assistant_text":
+            text = str(data.get("text") or "").strip()
+            if text:
+                rec["note"] = text.replace("\n", " ")[:160]
+
+
+def _want_background(args: dict) -> bool:
+    """主对话默认后台；工坊/flow 嵌套默认同步（步内要等齐再写盘）。显式值优先。"""
+    v = args.get("background")
+    if v is None:
+        try:
+            from workers.subagent_runner import in_subagent_loop
+            if in_subagent_loop():
+                return False
+        except Exception:
+            pass
+        return True
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _list_active_subagents() -> ToolResult:
@@ -142,9 +266,9 @@ def _cancel_subagent(subagent_id: str) -> ToolResult:
 
 
 def _message_subagent(subagent_id: str, message: str) -> ToolResult:
-    """工具 `dispatch_subagent_message` · 0.9.7 P0-3 · 给【运行中】的分身塞 followup 消息。
+    """工具 `dispatch_subagent_message` · 给 running/pending 分身塞 followup。
 
-    分身下一轮迭代头会看到这条消息 (tool_loop pending_messages 注入)。
+    pending 的话先入队，分身真正跑起来第一轮就能看到。
     已结束的分身 → 提示用 resume 续跑 (tasks 传 subagent_id+message)。
     """
     with _ACTIVE_LOCK:
@@ -155,7 +279,7 @@ def _message_subagent(subagent_id: str, message: str) -> ToolResult:
                 error=f"分身 {subagent_id} 不存在或已结束 (已结束的分身用 dispatch_subagent 续跑: "
                       f"tasks=[{{\"subagent_id\": \"{subagent_id}\", \"message\": \"...\"}}])",
             )
-        if rec.get("status") != "running":
+        if rec.get("status") not in ("running", "pending"):
             return ToolResult(
                 ok=False, output="",
                 error=f"分身 {subagent_id} 状态是 {rec.get('status')} · 不在跑。已结束的分身用 resume 续跑",
@@ -238,7 +362,8 @@ def _summarize(args: dict) -> str:
     goals = [str((t or {}).get("goal") or "?")[:40] for t in tasks if isinstance(t, dict)]
     n = len(goals)
     head = " / ".join(goals[:3]) + (" …" if n > 3 else "")
-    return f"派 {n} 个分身并行: {head}"
+    kind = "后台" if _want_background(args) else "同步"
+    return f"派 {n} 个分身{kind}: {head}"
 
 
 # ── 0.9.7 P0-1/P0-2 · fork_context + 上下文位图 ────────────────────────────
@@ -383,11 +508,16 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None, 
     max_iter = max(1, min(max_iter, _MAX_ITER_CAP))
 
     subagent_id = preset_id or f"{_SUBAGENT_ID_PREFIX}-{uuid.uuid4().hex[:8]}"
-    _register_subagent({
-        "subagent_id": subagent_id, "idx": idx, "goal": goal,
-        "status": "running", "tool_calls": 0, "usage": {}, "cancel_requested": False,
-        "pending_messages": [],   # 0.9.7 P0-3 · 运行中 followup 消息队列
-    })
+    rec0 = _adopt_running(subagent_id, idx, goal, parent_sid)
+    if rec0.get("cancel_requested"):
+        _update_subagent(subagent_id, status="cancelled")
+        return {
+            "idx": idx, "goal": goal, "ok": False, "text": "",
+            "iterations": 0, "usage": {}, "warning": None,
+            "error": "排队时已打断",
+            "sub_session_id": None, "subagent_id": subagent_id, "status": "cancelled",
+            "whitelist": sorted(wl), "result_file": None,
+        }
 
     system = (
         "你是主对话派出的『子执行器分身』。 只负责完成下面这一个子任务 · "
@@ -418,13 +548,8 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None, 
     _rec_cancel = {"requested": False}
 
     def _progress(event_type: str, data: dict) -> None:
-        # 只累计到注册表 (状态机可读) · 不逐个回灌主 SSE (防爆)
         try:
-            if event_type == "tool_call":
-                with _ACTIVE_LOCK:
-                    rec = _ACTIVE_SUBAGENTS.get(subagent_id)
-                    if rec is not None:
-                        rec["tool_calls"] += 1
+            _trace_event(subagent_id, event_type, data)
         except Exception:
             pass
 
@@ -447,6 +572,23 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None, 
         return msgs
 
     push_tool_progress("🧩 分身启动", f"#{idx} · {goal[:30]}")
+
+    # wish-c6422f9c · 分身用什么模型: 预设 > 设置页「子代理模型」> 运行时主模型
+    # 跨 provider 也能跑 → 现场建独立 client (照 replan 的总监范本)
+    _sub_model = (agent_cfg or {}).get("model")
+    _sub_client = None
+    if not _sub_model:
+        try:
+            from workers.provider_configs import get_subagent_id, get_config
+            from workers.director import build_director_client
+            _sid = get_subagent_id()   # 只认『单设』 · 没单设就跟主模型走 (零开销)
+            _scfg = get_config(_sid, include_key=True) if _sid else None
+            if _scfg:
+                _sub_model = (_scfg.get("model") or "").strip() or None
+                _sub_client = build_director_client(_scfg)
+        except Exception:
+            _sub_model, _sub_client = None, None
+
     r = None
     try:
         r = run_subagent(
@@ -455,13 +597,15 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None, 
             runtime=runtime,
             tools_whitelist=wl,
             max_iterations=max_iter,
-            model=(agent_cfg or {}).get("model"),   # 预设模型 · None → 继承 runtime.model
+            model=_sub_model,     # 预设 / 子代理默认 · None → 继承 runtime.model
+            client=_sub_client,   # None → runtime.client
             progress=_progress,
             persist=True,                # 落 sessions/sub-*.jsonl 可回看 (可追溯)
             parent_session_id=parent_sid,
             inject_budget_mandate=True,
             cancel_check=_cancel,
-            wall_clock_sec=_SUBAGENT_WALL_CLOCK_SEC,  # 2026-08-11 · 分身内部 LLM 挂起熔断 (外层 fut.result 兜底 · 内层真中断)
+            wall_clock_sec=_SUBAGENT_WALL_CLOCK_SEC,  # 宽兜底防无限循环 (2026-09-16 升级)
+            stall_sec=_SUBAGENT_STALL_SEC,           # 心跳: 停 120s 判真卡 (长活不误杀)
             meta_extra={"goal": goal, "whitelist": sorted(wl)},
             message_check=_message_check,
             ledger_source="dispatch",   # 0.9.7 D7 · 分身用量落第四本账
@@ -487,7 +631,7 @@ def _run_one(idx: int, task: dict, runtime, parent_sid: str, cancel_check=None, 
     push_tool_progress("✓ 分身完成", f"#{idx} · {r.iterations} 轮 · {status}")
     # wish-48566053 · 血缘落库 (谁派的 → 哪个分身 → 状态 · 不读 sub-*.jsonl 就能查全局)
     _append_lineage(subagent_id, parent_sid, goal, sorted(wl),
-                    (agent_cfg or {}).get("model") or getattr(runtime, "model", ""), status)
+                    _sub_model or getattr(runtime, "model", ""), status)
     # wish-48566053 · 产物文件化: 长结果落盘 · 汇总只带路径+摘要 (省主上下文 · 全文可 read_file)
     result_file = _write_result_file(subagent_id, r.text) if (r.text and len(r.text) > _RESULT_FILE_THRESHOLD) else None
     return {
@@ -614,16 +758,15 @@ def _resume_one(task: dict, runtime, parent_sid: str, cancel_check=None) -> dict
             "subagent_id": subagent_id, "idx": 0, "goal": goal,
             "status": "running", "tool_calls": 0, "usage": {}, "cancel_requested": False,
             "pending_messages": [],
+            "started_at": time.time(),
+            "parent_session_id": parent_sid or "",
+            "doing": "", "note": "", "acts": [],
         }
     _rec_cancel = {"requested": False}
 
     def _progress(event_type: str, data: dict) -> None:
         try:
-            if event_type == "tool_call":
-                with _ACTIVE_LOCK:
-                    rec = _ACTIVE_SUBAGENTS.get(subagent_id)
-                    if rec is not None:
-                        rec["tool_calls"] += 1
+            _trace_event(subagent_id, event_type, data)
         except Exception:
             pass
 
@@ -652,6 +795,7 @@ def _resume_one(task: dict, runtime, parent_sid: str, cancel_check=None) -> dict
             system=system, user_msg=user_msg, runtime=runtime,
             tools_whitelist=wl, max_iterations=_DEFAULT_MAX_ITER,
             wall_clock_sec=_SUBAGENT_WALL_CLOCK_SEC, model=model,
+            stall_sec=_SUBAGENT_STALL_SEC,
             progress=_progress, persist=True,
             parent_session_id=meta.get("parent_session_id"),
             sub_session_id=subagent_id.split("-", 1)[-1] if subagent_id else None,
@@ -706,7 +850,7 @@ def _run_pool(tasks, runtime, parent_sid, cancel_check=None, preset_ids=None):
             except concurrent.futures.TimeoutError:
                 fail = _pool_fail(
                     i + 1, goal,
-                    f"墙钟熔断: 子代理超过 {_SUBAGENT_WALL_CLOCK_SEC}s 未完成 (LLM 挂起?) · 已释放占位",
+                    f"超时: 子代理超过 {int(_SUBAGENT_WALL_CLOCK_SEC)}s 未完成 (心跳宽兜底到点) · 已释放占位",
                 )
             except Exception as e:
                 fail = _pool_fail(i + 1, goal, f"{type(e).__name__}: {e}")
@@ -740,6 +884,9 @@ def _dispatch_background(tasks: list, runtime, parent_sid: str) -> ToolResult:
             "subagent_id": sid, "idx": i + 1, "goal": str(t.get("goal") or ""),
             "status": "pending", "tool_calls": 0, "usage": {}, "cancel_requested": False,
             "pending_messages": [],
+            "started_at": time.time(),
+            "parent_session_id": parent_sid or "",
+            "doing": "排队", "note": "", "acts": [],
         })
 
     def _bg():
@@ -967,8 +1114,8 @@ def _run(args: dict) -> ToolResult:
     parent_sid = current_session_id()
     push_tool_progress("🧩 派发分身", f"{len(tasks)} 个 · 并发 {min(_MAX_CONCURRENCY, len(tasks))}")
 
-    # 0.9.7 P1 · 异步 spawn: background=true → 立即返回 · 分身后台跑 · 完成通报父会话
-    if args.get("background"):
+    # 主对话默认后台 · 工坊步内 / 显式 false 才同步等齐
+    if _want_background(args):
         return _dispatch_background(tasks, RUNTIME, parent_sid)
 
     # 新派发时清掉上一轮已结束的分身记录 (防注册表无限累积 · 保留最近的供 status 查)
@@ -993,7 +1140,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="dispatch_subagent",
     description=(
-        "派 1~6 个只读专员并行调研。tasks[].goal 必填。不能写文件、不能跑 shell/python、不能再派分身；要改东西回主对话。background=true 异步（仍最多 2 路并行）。CONFIRM（烧 token）。"
+        "派 1~6 个只读专员并行调研。默认后台不卡本轮；工坊步内或要这轮等齐才 background=false。不能写文件/shell/python、不能再派分身。CONFIRM。"
     ),
     tier=TIER_CONFIRM,
     input_schema={
@@ -1026,7 +1173,7 @@ SPEC = ToolSpec(
             },
             "background": {
                 "type": "boolean",
-                "description": "可选 · true=立即返回、后台最多 2 路并行 · 全部完成后通报本会话",
+                "description": "默认 true。false=这轮等齐再答。工坊步内没写则仍同步。",
             },
         },
         "required": ["tasks"],

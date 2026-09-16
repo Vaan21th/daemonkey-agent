@@ -53,6 +53,8 @@
       outboundQueue: [],
       chatMode: '',
       holdQueue: false,
+      failFrozen: false,
+      freezeReason: '',
       queueEdit: null,
     };
   }
@@ -178,6 +180,37 @@
     if (s) { s.holdQueue = false; _persist(sid); }
   }
 
+  // 2026-09-14 · 上游断（daemon 重启 / 请求失败）→ 冻住「自动续跑」· 队列原样留着等用户。
+  // 与 holdQueue 分开两把锁：holdQueue 治用户意图（手动暂停/abort）· failFrozen 治上游故障。
+  // 病根：以前「跑完一轮」和「上游断了」共用一个出口（kick），重启时队列被自动抽干。
+  function freezeQueue(sid, why) {
+    if (!sid) return false;
+    const s = getOrCreate(sid);
+    if (!s) return false;
+    const was = !!s.failFrozen;
+    s.failFrozen = true;
+    s.freezeReason = why || 'upstream';
+    _persist(sid);
+    _emitQueue(sid);
+    return !was;
+  }
+
+  function unfreezeQueue(sid) {
+    if (!sid) return false;
+    const s = get(sid);
+    if (!s || !s.failFrozen) return false;
+    s.failFrozen = false;
+    s.freezeReason = '';
+    _persist(sid);
+    _emitQueue(sid);
+    return true;
+  }
+
+  function isFrozen(sid) {
+    const s = get(sid);
+    return !!(s && s.failFrozen);
+  }
+
   function queueOf(sid) {
     if (!sid) return [];
     const s = getOrCreate(sid);
@@ -263,7 +296,7 @@
         items.splice(dest, 0, parked);
       }
     }
-    return { items: items, hold: !!s.holdQueue };
+    return { items: items, hold: !!s.holdQueue, frozen: !!s.failFrozen, reason: s.freezeReason || '' };
   }
 
   function _persist(sid) {
@@ -276,7 +309,7 @@
       return;
     }
     const snap = _snapshot(s);
-    if (!snap.items.length && !snap.hold) delete all[sid];
+    if (!snap.items.length && !snap.hold && !snap.frozen) delete all[sid];
     else all[sid] = snap;
     _saveAll(all);
   }
@@ -286,6 +319,8 @@
     const b = _loadAll()[s.sessionId];
     if (!b || typeof b !== 'object') return;
     s.holdQueue = !!b.hold;
+    s.failFrozen = !!b.frozen;
+    s.freezeReason = b.reason || '';
     s.outboundQueue = Array.isArray(b.items) ? b.items.map(_slimItem).filter(Boolean).slice(0, QUEUE_MAX) : [];
     s.queueEdit = null;
   }
@@ -481,6 +516,7 @@
     const s = get(sid);
     if (!s || s.pending) return false;
     if (s.holdQueue) return false;
+    if (s.failFrozen) return false;   // 上游断过 → 不许自动续跑
     if (!s.outboundQueue || !s.outboundQueue.length) return false;
     s.pending = true;
     const rec = s.outboundQueue.shift();
@@ -501,6 +537,8 @@
     const rec = s.outboundQueue.splice(i, 1)[0];
     _noteRemoved(s, i);
     s.holdQueue = false;
+    s.failFrozen = false;   // 用户手点 ▶ = 明确意图 · 解冻
+    s.freezeReason = '';
     const busy = !!(s.pending || s.currentAbortController || s.currentTurnId);
     if (busy) {
       s.outboundQueue.unshift(rec);
@@ -559,11 +597,18 @@
       host.innerHTML = '';
       return;
     }
-    host.innerHTML = '<div class="oq-cap">排队 · ' + items.length + '</div>'
+    const _fs = get(sid);
+    const _fz = !!(_fs && _fs.failFrozen);
+    // wish-3d02d762 · freezeReason 别只写不读：按原因出人话（以前写死「上游断过」· 传什么都没区别）
+    const _rsn = (_fs && _fs.freezeReason) || '';
+    const _WHY = { 'turn-error': '上次请求失败', 'restart': '守护进程重启过', 'upstream': '上游断过' };
+    const _why = _WHY[_rsn] || _rsn || '上游断过';
+    host.innerHTML = '<div class="oq-cap' + (_fz ? ' is-frozen' : '') + '">排队 · ' + items.length
+      + (_fz ? ' · 已暂停（' + _why + ' · 点 ▶ 手动发）' : '') + '</div>'
       + items.map(function (it, i) {
       return '<div class="oq-item" data-qid="' + it.id + '" title="点这条改，再发送回原位">'
-        + '<span class="oq-thumb" hidden></span>'
         + '<span class="oq-grip" title="拖动改顺序" aria-hidden="true"><i class="ri-draggable"></i></span>'
+        + '<span class="oq-thumb" hidden></span>'
         + '<span class="oq-n">' + (i + 1) + '</span>'
         + '<span class="oq-t"></span>'
         + '<button type="button" class="oq-now" data-qid="' + it.id + '" title="现在发">'
@@ -641,6 +686,9 @@
     abortSession: abortSession,
     holdOutbound: holdOutbound,
     releaseOutbound: releaseOutbound,
+    freezeQueue: freezeQueue,
+    unfreezeQueue: unfreezeQueue,
+    isFrozen: isFrozen,
     QUEUE_MAX: QUEUE_MAX,
     enqueue: enqueue,
     cancelQueued: cancelQueued,

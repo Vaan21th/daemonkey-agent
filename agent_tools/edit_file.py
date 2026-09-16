@@ -50,7 +50,8 @@ from ._edit_lock import (
 from .write_file import _resolve, _classify, _branch_guard_warning
 
 
-def _refuse_playbook(path: Path, content: str = "") -> ToolResult | None:
+def _refuse_write_guards(path: Path, content: str = "") -> ToolResult | None:
+    """写前双闸：playbook 落点 + 画像/成长记录落点（2026-09-16 收口）。"""
     try:
         from workers.playbook_guard import check_path
         err = check_path(path, content)
@@ -58,6 +59,13 @@ def _refuse_playbook(path: Path, content: str = "") -> ToolResult | None:
         return ToolResult(ok=False, output="", error="操作手册闸不可用，拒绝写入。")
     if err:
         return ToolResult(ok=False, output="", error=err)
+    try:
+        from workers.notebook_guard import check_path as _nb_check
+        nb_err = _nb_check(path, content)
+    except Exception:
+        return ToolResult(ok=False, output="", error="记忆落点闸不可用，拒绝写入。")
+    if nb_err:
+        return ToolResult(ok=False, output="", error=nb_err)
     return None
 
 
@@ -71,7 +79,11 @@ def _summarize(args: dict) -> str:
 
 def _rollback(path: Path, original: str) -> str:
     try:
-        path.write_text(original, encoding="utf-8")
+        # wish-0c8602ff · 必须 newline=""：Windows 上 write_text 默认行尾转换会把 CRLF
+        # 内容里的 \n 再转一次 → 写成 \r\r\n 双 CR 污染（2026-09-16 在 chat.js 上真踩过·
+        # 9632 行全变·靠 git checkout + 显式 CRLF 重做才恢复）。回滚路径同样要吃这条。
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(original)
         return " · 已回滚到改动前"
     except Exception:
         return " · 回滚也失败了 (磁盘上可能是坏的中间态·赶紧人工看)"
@@ -154,7 +166,7 @@ def _run_batch(args: dict, raw: str, edits: list) -> ToolResult:
     # 还原 EOL
     updated = _norm.replace("\n", "\r\n") if _eol == "\r\n" else _norm
 
-    _blocked = _refuse_playbook(path, updated)
+    _blocked = _refuse_write_guards(path, updated)
     if _blocked:
         return _blocked
 
@@ -301,7 +313,7 @@ def _run(args: dict) -> ToolResult:
             error="拒绝: 替换后整个文件几乎为空·疑似 old_string 吃掉了全文。检查 old_string 范围。",
         )
 
-    _blocked = _refuse_playbook(path, updated)
+    _blocked = _refuse_write_guards(path, updated)
     if _blocked:
         return _blocked
 
@@ -333,6 +345,20 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(
             ok=False, output="",
             error=f"verify roundtrip mismatch (疑似编码丢失 / 并发覆盖 / 磁盘错){_rollback(path, original)}",
+        )
+
+    # wish-0c8602ff · 行尾污染自检：裸 CR（不在 \r\n 里的 \r）就是 \r\r\n 双 CR 污染的指纹。
+    # roundtrip 校验只比"读回来的 == 写出去的"，抓不到"写出去的本身就是脏的"。
+    # 2026-09-16 在 chat.js 上真踩过（9632 行全变·靠 git checkout 恢复）。
+    _bare_cr = written.count("\r") - written.count("\r\n")
+    if _bare_cr > 0:
+        return ToolResult(
+            ok=False, output="",
+            error=(
+                f"verify 行尾污染: 写出的内容含 {_bare_cr} 个裸 CR（\\r\\r\\n 双 CR 指纹）。"
+                f"原文多半带了 Windows 路径或控制字符，或写盘路径漏了 newline=\"\"。"
+                + _rollback(path, original)
+            ),
         )
 
     # 写成功 · 把编辑锁刷新到新内容指纹(同一对话连续编辑不误报)
@@ -384,7 +410,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="edit_file",
     description=(
-        "按唯一片段替换改已有文本（大文件首选，别 write_file 整文件覆盖）。old_string 必须精确唯一命中一处；0 处就重新 read_file（不要带行号前缀）。参数尽量短（铁律 12）。"    ),
+        "按唯一片段替换改已有文本。old_string 必须精确唯一命中一处；0 处就重新 read_file（不要带行号前缀）。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
@@ -396,9 +422,7 @@ SPEC = ToolSpec(
             "old_string": {
                 "type": "string",
                 "description": (
-                    "Exact text to replace. Must uniquely identify ONE location "
-                    "(include enough surrounding context). Whitespace/indentation must match the file exactly. "
-                    "单次模式用; 批量同构修复请用 edits (原子·一次改多处)."
+                    "Exact text to replace. 必须唯一命中一处；空白/缩进要完全一致。"
                 ),
             },
             "new_string": {

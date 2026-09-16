@@ -305,7 +305,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="request_restart",
     description=(
-        "改完 daemon .py 后申请优雅重启。99% 场景必须带 follow_up_message（给重启后的自己做验证）。只改 static 不用重启。禁止 shell_exec taskkill/Stop-Process。细则：read_scenario('self_evolution') 铁律 5。"    ),
+        "改完 daemon .py 后申请优雅重启。99% 场景必须带 follow_up_message（给重启后的自己做验证）。只改 static 不用重启。细则：read_scenario('self_evolution') 铁律 5。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
@@ -317,9 +317,7 @@ SPEC = ToolSpec(
             "session_id": {
                 "type": "string",
                 "description": (
-                    "Current session id (e.g. 'api-2026-05-26_063247_e404f8'). "
-                    "Used to target the resume system-message injection. "
-                    "If you don't know it, leave empty — RUNTIME.session_id 自动 fallback。"
+                    "Current session id (e.g. 'api-2026-05-26_063247_e404f8')。不知道就留空 — RUNTIME.session_id 自动 fallback。"
                 ),
             },
             "tool_call_id": {

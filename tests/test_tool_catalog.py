@@ -22,7 +22,12 @@ def test_catalog_on_by_default():
     assert CATALOG_CALL in vis
     assert "read_file" in vis
     assert "create_app" not in vis
-    assert "generate_presentation" not in vis
+    # B1（2026-09-16）：7 个生成类移出 CORE → 进延迟目录（不再在手边）
+    for _n in ("generate_presentation", "generate_report", "generate_spreadsheet",
+               "revise_office", "extend_office", "illustrate_office"):
+        assert _n not in vis
+        assert _n in deferred_names(None)
+    assert "inspect_office" in vis
     assert len(vis) < 40
     assert len(vis) < len(REGISTRY)
 
@@ -57,6 +62,12 @@ def test_resolve_catalog_call():
     name, args = resolve_call(CATALOG_CALL, {"name": "create_app", "args": {"x": 1}})
     assert name == "create_app"
     assert args == {"x": 1}
+    name, args = resolve_call(CATALOG_CALL, {"name": "draft_studio", "args": '{"domain":"x"}'})
+    assert name == "draft_studio"
+    assert args == {"domain": "x"}
+    name, args = resolve_call(CATALOG_CALL, {"name": "run_flow", "args": "", "action": "start", "flow_id": "f1"})
+    assert name == "run_flow"
+    assert args == {"action": "start", "flow_id": "f1"}
     name, args = _rewrite_tool_use("read_file", {"path": "a"})
     assert name == "read_file"
 
@@ -69,10 +80,11 @@ def test_catalog_call_still_hits_scenario_gate():
     assert "read_scenario" in (r.error or "")
 
 
-def test_search_finds_presentation():
-    hits = search("PPT", limit=8)
-    names = [h["name"] for h in hits]
-    assert "generate_presentation" in names
+def test_search_finds_deferred_office_tools():
+    """B1（2026-09-16）后：生成类在延迟目录里 → search 应能搜到（以前它们在 core，搜不到）。"""
+    assert "generate_presentation" in [h["name"] for h in search("PPT", limit=8)]
+    assert "generate_spreadsheet" in [h["name"] for h in search("Excel 出表", limit=8)]
+    assert "create_app" in [h["name"] for h in search("create_app", limit=8)]
 
 
 def test_directory_lists_deferred_not_core():

@@ -299,6 +299,13 @@ def _run(args: dict) -> ToolResult:
     if blocked:
         return ToolResult(ok=False, output="", error=blocked)
     try:
+        from workers.notebook_guard import check_script as _nb_check
+        nb_blocked = _nb_check(cmd, cwd)
+    except Exception:
+        return ToolResult(ok=False, output="", error="记忆落点闸不可用，拒绝执行。")
+    if nb_blocked:
+        return ToolResult(ok=False, output="", error=nb_blocked)
+    try:
         from ._hotpath_guard import block_shell
         blocked = block_shell(cmd)
         if blocked:
@@ -423,7 +430,7 @@ def _normalize_for_winps51(cmd: str) -> str:
 SPEC = ToolSpec(
     name="shell_exec",
     description=(
-        "在本机跑短命令（git/curl/npm/测试）。Windows 走 PowerShell 5.1。多行 Python 改 python_exec；杀 daemon 改 request_restart；读文件改 read_file。PS：别加 2>&1、没有 heredoc、路径用正斜杠、密钥用 ${secret:app:name}。"    ),
+        "在本机跑短命令（git/curl/npm/测试）。Windows 走 PowerShell 5.1。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
@@ -439,6 +446,16 @@ SPEC = ToolSpec(
             "timeout": {
                 "type": "integer",
                 "description": f"Timeout in seconds. Default {DEFAULT_TIMEOUT_SEC}, max {MAX_TIMEOUT_SEC}.",
+            },
+            # GUARD tier 强制校验字段 (call 时作为 args 顶层 key 传 · daemon 会 pop 掉再调真 tool)
+            # 不进 schema 模型就看不见字段名 → 补不上 → GUARD 永远 reject (补丁 5 死锁根因)
+            "risk_explanation": {
+                "type": "string",
+                "description": "GUARD tier 必填·一句话说明此调用可能造成什么不可逆影响。",
+            },
+            "mitigation": {
+                "type": "string",
+                "description": "GUARD tier 必填·一句话说明如何规避该风险。",
             },
         },
         "required": ["command"],

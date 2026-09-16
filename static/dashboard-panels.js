@@ -273,6 +273,47 @@ function _kbCardHtml(d, typeIcon) {
     </div>`;
 }
 
+/* ── 知识库卡片·就地状态更新 ──────────────────────────────
+   点了「停止参考 / 恢复参考」或常驻/敏感图标，立刻把这张卡改对，不重拉整页。
+   接口回传的 doc 是权威值，照着它改 DOM，不做本地推断。 */
+function _kbCardState(card, doc) {
+  if (!card || !doc) return;
+  const off = doc.enabled === false;
+  card.classList.toggle('kb-off', off);
+  const head = card.querySelector('.rc-head');
+  const nameEl = head && head.querySelector('.rc-name');
+  const badge = head && head.querySelector('.rc-src-extract');
+  if (off && !badge && nameEl) {
+    const sp = document.createElement('span');
+    sp.className = 'rc-src-badge rc-src-extract';
+    sp.textContent = '已静音';
+    nameEl.insertAdjacentElement('afterend', sp);
+  } else if (!off && badge) {
+    badge.remove();
+  }
+  const btn = card.querySelector('.kb-toggle');
+  if (btn) {
+    btn.setAttribute('data-enabled', off ? '0' : '1');
+    btn.textContent = off ? '恢复参考' : '停止参考';
+  }
+}
+
+function _kbFlagState(btn, doc, flag) {
+  if (!btn || !doc) return;
+  const on = doc[flag] === true;
+  btn.setAttribute('data-on', on ? '1' : '0');
+  btn.classList.toggle('on', on);
+}
+
+/* 头部「X 篇 · Y 参考中 · Z 静音」就地重算（数卡片比等接口快、也不会过期） */
+function _kbHeadStats() {
+  const meta = $dashView && $dashView.querySelector('.dash-head .meta');
+  if (!meta) return;
+  const toggles = $dashView.querySelectorAll('.kb-toggle');
+  const off = $dashView.querySelectorAll('.kb-toggle[data-enabled="0"]').length;
+  meta.textContent = toggles.length + ' 篇 · ' + (toggles.length - off) + ' 参考中 · ' + off + ' 静音';
+}
+
 async function _kbPreview(docId) {
   if (!token || !docId) return;
   try {
@@ -508,7 +549,7 @@ function _showKbModal(data) {
 }
 
 function _showPreviewModal(opts) {
-  const { title, metaLine, bodyHtml, tags, raw } = opts || {};
+  const { title, metaLine, bodyHtml, tags, raw, openPath } = opts || {};
   _closeAllKbModals();  // 2026-08-14 · 单例互斥 (墨言094-2) · 开新弹框前先关旧的
   let host = document.getElementById('kbModalHost');
   if (!host) {
@@ -524,6 +565,7 @@ function _showPreviewModal(opts) {
       <div class="kb-modal-head">
         <span class="kb-modal-title">${escHtml(title || '文档')}</span>
         ${metaLine ? `<span class="kb-modal-meta">${escHtml(metaLine)}</span>` : ''}
+        ${openPath ? `<button class="kb-modal-annotate" title="打开产物库铺进画布 · 圈字批注 / 加图"><i class="ri-quill-pen-line"></i> 查看 &amp; 批注</button>` : ''}
         <button class="kb-modal-close" title="关闭 (Esc)">✕</button>
       </div>
       ${tagHtml ? `<div class="kb-modal-tags">${tagHtml}</div>` : ''}
@@ -541,6 +583,8 @@ function _showPreviewModal(opts) {
   };
   host.querySelector('.kb-modal-close').onclick = close;
   host.querySelector('.kb-modal-mask').onclick = close;
+  const _oa = host.querySelector('.kb-modal-annotate');
+  if (_oa) _oa.onclick = () => { close(); if (typeof _docOpenForAnnotate === 'function') _docOpenForAnnotate(openPath); };
 }
 
 async function _toggleFavorite(kind, refId, titleHint, domain, action = 'toggle') {
@@ -3024,17 +3068,22 @@ function renderKnowledge(data) {
   $dashView.querySelectorAll('.kb-folder-head').forEach(h => {
     h.onclick = () => h.parentElement.classList.toggle('collapsed');
   });
+  // 开关类操作就地改这张卡 —— 不整页重渲。
+  // 以前是 _kbAction 里 loadDashboard(silent) 重拉整页：慢、闪、把文件夹折叠状态冲掉，
+  // 而且那次 silent 刷新一旦被 stale 丢掉(并发另一次 loadDashboard)，按钮就卡在原样，
+  // 用户以为没生效，得手点「刷新列表」才看到。现在直接拿接口回传的 doc 改 DOM。
   $dashView.querySelectorAll('.kb-toggle').forEach(btn => {
     btn.onclick = () => _kbAction('/dashboard/knowledge/toggle', {
       doc_id: btn.getAttribute('data-id'),
       enabled: btn.getAttribute('data-enabled') !== '1',
-    });
+    }, (j) => { _kbCardState(btn.closest('.report-card'), j.doc); _kbHeadStats(); });
   });
   $dashView.querySelectorAll('.kb-flag').forEach(btn => {
     btn.onclick = () => {
+      const flag = btn.getAttribute('data-flag');
       const body = { doc_id: btn.getAttribute('data-id') };
-      body[btn.getAttribute('data-flag')] = btn.getAttribute('data-on') !== '1';
-      _kbAction('/dashboard/knowledge/flag', body);
+      body[flag] = btn.getAttribute('data-on') !== '1';
+      _kbAction('/dashboard/knowledge/flag', body, (j) => _kbFlagState(btn, j.doc, flag));
     };
   });
   $dashView.querySelectorAll('.kb-del').forEach(btn => {
@@ -3621,6 +3670,7 @@ function renderReports(data) {
             ${it.pages ? `<span class="rc-pages">${it.pages} 页</span>` : ''}
             <span class="rc-time">${escHtml(it.created_at)}</span>
             ${previewUrl ? `<button class="rc-preview-btn" data-name="${escHtml(it.name)}" data-preview-url="${escHtml(previewUrl)}"><i class="ri-eye-line"></i> 预览</button>` : ''}
+            <button class="rc-preview-btn rc-annotate" data-annotate="${escHtml(openRel)}" title="打开产物库铺进画布 · 圈字批注 / 加图"><i class="ri-quill-pen-line"></i> 查看 &amp; 批注</button>
             <button class="rc-preview-btn" data-open="${escHtml(openRel)}"><i class="ri-external-link-line"></i> 打开</button>
             ${reviseBtn}
             ${kbBtn}
@@ -3633,7 +3683,7 @@ function renderReports(data) {
   }
   $dashView.innerHTML = html;
 
-  $dashView.querySelectorAll('.rc-preview-btn:not(.rp-kb):not([data-open]):not([data-restore]):not([data-revise]), .rc-name[data-preview]').forEach(el => {
+  $dashView.querySelectorAll('.rc-preview-btn:not(.rp-kb):not([data-open]):not([data-restore]):not([data-revise]):not([data-annotate]), .rc-name[data-preview]').forEach(el => {
     el.onclick = (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
@@ -3646,6 +3696,14 @@ function renderReports(data) {
         return;
       }
       if (name) loadReportPreview(name, previewUrl || undefined);
+    };
+  });
+  $dashView.querySelectorAll('[data-annotate]').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const rel = btn.getAttribute('data-annotate');
+      if (rel && typeof _docOpenForAnnotate === 'function') _docOpenForAnnotate(rel);
     };
   });
   $dashView.querySelectorAll('[data-open]').forEach(btn => {

@@ -7,8 +7,9 @@
 <link rel="icon" type="image/png" href="/static/favicon.png?v=20260830q">
 <link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=20260830q">
 <link rel="stylesheet" href="/static/lib/remixicon/remixicon.css">
-<link rel="stylesheet" href="/static/chat.css?v=20260907ov1">
-<link rel="stylesheet" href="companion.css?v=20260901sb">
+<link rel="stylesheet" href="/static/chat.css?v=20260910askG">
+<link rel="stylesheet" href="/static/host-pulse.css?v=20260908hp6">
+<link rel="stylesheet" href="companion.css?v=20260910askG">
 <script>
 (function () {
   try {
@@ -71,18 +72,21 @@
         </label>
         <label class="mmb-row">
           <span class="mmb-label"><i class="ri-flashlight-line"></i> 推理强度</span>
+          <!-- 静态 fallback · 实际档位由 /models 动态渲染（标准档全集 + 每模型映射说明） -->
           <select id="mbEffort">
             <option value="" selected>默认</option>
+            <option value="minimal">最小 · 最快</option>
             <option value="low">低 · 快</option>
             <option value="medium">中</option>
-            <option value="high">高 · 更深</option>
+            <option value="high">高</option>
+            <option value="max">极高 · 最深</option>
           </select>
         </label>
         <label class="mmb-row">
           <span class="mmb-label"><i class="ri-text-spacing"></i> 输出上限</span>
           <input id="mbMaxTokens" type="number" min="0" step="1024" placeholder="留空 = 模型推荐">
         </label>
-        <div class="mmb-hint">思考仅 DeepSeek·GLM·Claude 生效 · 强度仅 GPT-5·o 系·grok 生效 · 其他自动忽略不报错。<br>输出上限<b>留空最稳</b>(用模型推荐值)· 填小了易提前截断(有自动续写兜底·但更慢)。</div>
+        <div class="mmb-hint">思考：能真关就真关（DeepSeek·GLM 发参数 · Qwen3 系走 /no_think 软开关）；关不掉的模型开关会标灰并说明 · 推理强度用通用标准档（最小/低/中/高/极高），各模型映射不同（如 DeepSeek 中→高 · 极高=最深），下拉会标注实际发什么。<br>输出上限<b>留空最稳</b>(用模型推荐值)· 填小了易提前截断(有自动续写兜底·但更慢)。</div>
       </div>
     </div>
   </div>
@@ -157,6 +161,7 @@
         </div>
       </div>
       <div id="listen-dock">
+        <div id="hostPulse" class="host-pulse" hidden></div>
         <div id="voice-live" hidden></div>
         <div id="attach-bar"></div>
         <div id="voicePanel" class="voice-panel" hidden>
@@ -314,7 +319,7 @@
 <script src="mode-transit.js?v=20260830b"></script>
 <script src="/static/dashboard-panels.js?v=20260906pb1"></script>
 <script src="/static/stage.js?v=20260903look"></script>
-<script src="/static/stage_notes.js?v=20260903ppt"></script>
+<script src="/static/stage_notes.js?v=20260910pin"></script>
 <script src="/static/voice-mic.js?v=20260901input"></script>
 <script src="tool-cards.js?v=20260826r1"></script>
 <script src="listen-dock.js?v=20260826r11"></script>
@@ -323,7 +328,7 @@
 <script src="/static/chat-lightbox.js?v=20260831vis"></script>
 <script src="topic-rail.js?v=20260901harden"></script>
 <script src="panels.js?v=20260903ops"></script>
-<script src="/static/model-switch.js?v=20260826b"></script>
+<script src="/static/model-switch.js?v=20260915b"></script>
 <script src="/static/settings-pane.js?v=20260906pb1"></script>
 <!-- 成长档案 hub · 母体整包复用 (依赖 panels.js 的 $dashView / token / loadDashboard) -->
 <script defer src="/static/lib/chart.umd.min.js"></script>
@@ -334,7 +339,8 @@
 <script src="/games/flip.js?v=20260830a"></script>
 <script src="/games/tictac.js?v=20260830a"></script>
 <script src="/static/daemonkey-bus.js?v=20260907bus"></script>
-<script src="companion.js?v=20260907bus"></script>
+<script src="/static/host-pulse.js?v=20260908hp5"></script>
+<script src="companion.js?v=20260910askF"></script>
 <!-- 0.9.6 装修区 · 官方永不覆盖 · 排在所有官方脚本之后 · 缺了启动补空默认 · 404 可忽略 -->
 <link rel="stylesheet" href="/static/user/user.css?v=1">
 <script src="/static/user/user.js?v=3"></script>

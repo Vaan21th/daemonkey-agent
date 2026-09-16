@@ -8,7 +8,7 @@
 #     1. 停止当前 daemon
 #     2. git stash 保留任何未提交改动 (不丢东西)
 #     3. git checkout master (回到上次良好状态)
-#     4. 重启 daemon · 起不来则自动回 opus-last-good 再试一次 (last-good 兜底)
+#     4. 重启 daemon · 起不来则自动回 last-good (旧名 opus-last-good 兼容) 再试一次
 #     5. 弹窗如实告知状态 (绝不谎报)
 #
 # de-mother: 弹窗/日志里"它"的名字运行时从 soul/IDENTITY.json 读 · 缺省 OPUS (母体行为零变化)。
@@ -102,12 +102,18 @@ if (Test-Path $rr) {
 }
 
 # Step 3.6 · 记下 known-good 恢复点 (回 master 起不来时的兜底目标)
-$lastGood = (git rev-parse --verify --short opus-last-good 2>$null)
+# wish-3d02d762 · tag 改名 last-good · 老机器上可能还是旧名 opus-last-good → 两个都认（先新后旧）
+$lastGood = (git rev-parse --verify --short last-good 2>$null)
+$lastGoodTag = "last-good"
+if ($LASTEXITCODE -ne 0 -or -not $lastGood) {
+    $lastGood = (git rev-parse --verify --short opus-last-good 2>$null)
+    $lastGoodTag = "opus-last-good"
+}
 $haveLastGood = ($LASTEXITCODE -eq 0 -and $lastGood)
 if ($haveLastGood) {
-    Log "known-good 恢复点: opus-last-good = $($lastGood.Trim())"
+    Log "known-good 恢复点: $lastGoodTag = $($lastGood.Trim())"
 } else {
-    Log "没有 opus-last-good tag (还没优雅停机过) · 仅按 master HEAD 恢复"
+    Log "没有 last-good tag (还没优雅停机过) · 仅按 master HEAD 恢复"
 }
 
 # ── 停 / 启 daemon 的可复用函数 ──
@@ -136,11 +142,11 @@ Stop-Daemon
 Log "启动 daemon (master baseline)"
 $proc = Start-Daemon
 
-# Step 5.5 · master 起不来 + 有 known-good → 自动回 opus-last-good 再试一次 (last-good 兜底)
+# Step 5.5 · master 起不来 + 有 known-good → 自动回 last-good 再试一次
 $usedLastGood = $false
 if ($proc.HasExited -and $haveLastGood) {
-    Log "master HEAD 起不来 · 自动回 known-good (git reset --hard opus-last-good) 再试"
-    git reset --hard opus-last-good 2>&1 | ForEach-Object { Log "  $_" }
+    Log "master HEAD 起不来 · 自动回 known-good (git reset --hard $lastGoodTag) 再试"
+    git reset --hard $lastGoodTag 2>&1 | ForEach-Object { Log "  $_" }
     $usedLastGood = $true
     Stop-Daemon
     $proc = Start-Daemon

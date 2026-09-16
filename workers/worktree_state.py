@@ -125,8 +125,11 @@ def working_tree_report() -> dict:
     rc, stash_raw = _git(["stash", "list"], timeout=8)
     stash_count = len([l for l in stash_raw.splitlines() if l.strip()]) if rc == 0 else 0
 
-    rc, lg = _git(["rev-parse", "--short", "opus-last-good"])
-    last_good = lg if rc == 0 and lg else None
+    # wish-3d02d762 · tag 改名 last-good · 老机器本地可能还是旧名 → 先新后旧
+    rc, lg = _git(["rev-parse", "--short", "last-good"])
+    if rc != 0 or not (lg or "").strip():
+        rc, lg = _git(["rev-parse", "--short", "opus-last-good"])
+    last_good = (lg or "").strip() if rc == 0 and (lg or "").strip() else None
 
     kind = _branch_kind(branch)
     rep = {
@@ -195,14 +198,14 @@ def format_report(rep: dict) -> str:
         if dc else " (干净)"))
     wt = rep.get("worktrees") or []
     lines.append(f"- 工作树: {len(wt)} 个" + (
-        f" · ⚠ master 被别处占用" if rep.get("master_locked_elsewhere") else ""))
+        " · ⚠ master 被别处占用" if rep.get("master_locked_elsewhere") else ""))
     for w in wt:
         tag = " ← 本仓" if _same_path(w.get("path") or "", ROOT) else ""
         lines.append(f"    · {w.get('path')} [{w.get('branch') or 'detached'}]{tag}")
     if rep.get("stash_count"):
         lines.append(f"- 遗留 stash: {rep['stash_count']} 个")
     if rep.get("last_good"):
-        lines.append(f"- opus-last-good: `{rep['last_good']}` (回退目标)")
+        lines.append(f"- last-good: `{rep['last_good']}` (回退目标)")
     lines.append("")
     lines.append("### 该怎么处理")
     for a in rep.get("advice") or []:

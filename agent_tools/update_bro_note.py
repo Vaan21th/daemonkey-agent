@@ -435,7 +435,7 @@ def _run_state(args: dict) -> ToolResult:
             f"  local   : {local_path.relative_to(ROOT)}\n"
             f"  flow    : 操作记录已追加到'近期更新流水'{fts_msg}{reload_msg}\n"
             f"  effect  : 本 daemon 下一轮对话即刻带上 (卷五十四热重载)" +
-            ("" if global_path else " · 全局目录回来后可用 soul sync script 补同步其他容器")
+            ("" if global_path else " · 全局目录回来后用 soul sync script 可补同步其他容器")
         ),
     )
 
@@ -455,6 +455,9 @@ def _run(args: dict) -> ToolResult:
     if not content:
         return ToolResult(ok=False, output="", error="empty content; nothing to write")
 
+    # P0 写时闸 (wish-31fd335e) · force=true 跳过分类/预算闸 (BRO 明确要求时用)
+    force = bool(args.get("force"))
+
     operation = (args.get("operation") or "append").strip().lower()
     if operation not in ("append", "replace_section"):
         return ToolResult(
@@ -463,7 +466,16 @@ def _run(args: dict) -> ToolResult:
         )
 
     from workers.notebook_tiers import route_write_section
+    _requested_key = section_key
     section_key = route_write_section(section_key, operation, content)
+    _rerouted = section_key != _requested_key
+
+    # 落位校验（wish-0c8602ff）：过期毒 / 超长文档 → 拒收（force 可跳·与 P0 闸一致）
+    if not force:
+        from workers.notebook_tiers import validate_entry
+        _v_err = validate_entry(section_key, content, operation)
+        if _v_err:
+            return ToolResult(ok=False, output="", error=_v_err)
 
     try:
         notebook_fn, text = _read_notebook()
@@ -486,6 +498,23 @@ def _run(args: dict) -> ToolResult:
         new_section_body = section_body.rstrip() + f"\n\n{content}\n\n"
 
     new_text = text[:sec_start] + new_section_body + text[sec_end:]
+
+    # P0 预算闸 (wish-31fd335e)：会进每轮前缀的核心层总量预算 · 超 → 拒 (force 可跳)
+    _budget_used, _budget_cap = 0, 0
+    if not force:
+        try:
+            from workers.notebook_tiers import core_budget_estimate
+            _budget_used, _budget_cap = core_budget_estimate(new_text)
+            if _budget_used > _budget_cap:
+                return ToolResult(
+                    ok=False, output="",
+                    error=(f"prefix budget exceeded: 核心层 ≈{_budget_used} tok > 预算 {_budget_cap} tok。"
+                           f"先把核心层(了解层/本体约束/出声纪律)里过期条目清理或改道 events，"
+                           f"确要强写加 force=true。本次未写入。"),
+                )
+        except Exception:
+            _budget_used, _budget_cap = 0, 0
+
     new_text = _append_to_flow(new_text, section_key, operation, _flow_preview(content))
 
     try:
@@ -519,6 +548,12 @@ def _run(args: dict) -> ToolResult:
     else:
         global_line = "  global  : (全局 opus-soul 目录缺失·已跳过·本地 soul/ 即真理源)\n"
 
+    _in_prefix = section_key in ("profile", "rules")   # P0：进每轮前缀的两格
+    _pfx_line = ("✓ 进前缀 (每轮注入)" if _in_prefix else "✗ 不进前缀 (仅召回/追溯可查)")
+    if _rerouted:
+        _pfx_line += f"  [已从 {_requested_key} 改道 → {section_key}]"
+    _budget_line = (f"核心层 ≈{_budget_used}/{_budget_cap} tok" if (not force and _budget_cap)
+                    else "(force 或未启用跳过)")
     return ToolResult(
         ok=True,
         output=(
@@ -526,11 +561,13 @@ def _run(args: dict) -> ToolResult:
             f"  section : {section_key}  ({section_header})\n"
             f"  op      : {operation}\n"
             f"  added   : {len(content)} chars\n"
+            f"  prefix  : {_pfx_line}\n"
+            f"  budget  : {_budget_line}\n"
             f"{global_line}"
             f"  local   : {local_path.relative_to(ROOT)}\n"
             f"  flow    : 操作记录已追加到'近期更新流水'{fts_msg}{reload_msg}\n"
             f"  effect  : 本 daemon 下一轮对话即刻带上 (卷五十四热重载)" +
-            ("" if global_path else " · 全局目录回来后可用 soul sync script 补同步其他容器")
+            ("" if global_path else " · 全局目录回来后用 soul sync script 可补同步其他容器")
         ),
     )
 
@@ -594,6 +631,13 @@ SPEC = ToolSpec(
                 "description": (
                     "append (default): add to existing section. "
                     "replace_section: replace whole section content (use sparingly)."
+                ),
+            },
+            "force": {
+                "type": "boolean",
+                "description": (
+                    "Skip write-time gates (dated-content reroute + prefix budget). "
+                    "Only when explicitly told to force-write."
                 ),
             },
         },

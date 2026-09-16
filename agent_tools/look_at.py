@@ -418,11 +418,11 @@ SPEC = ToolSpec(
             },
             "question": {
                 "type": "string",
-                "description": "想问这张图片什么。默认'请描述这张图片的内容'。提示：'这张截图里有什么错误信息'/'图中文字是什么'/'识别图片中的物体'"
+                "description": "想问这张图片什么。默认'请描述这张图片的内容'"
             },
             "no_cache": {
                 "type": "boolean",
-                "description": "可选。true = 跳过磁盘缓存强制重新识别（默认 false 同图同问命中缓存零调用）。"
+                "description": "可选。true = 跳过磁盘缓存强制重新识别。"
             },
         },
         "required": ["path"],

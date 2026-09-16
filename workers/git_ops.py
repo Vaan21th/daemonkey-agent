@@ -27,7 +27,10 @@ from pathlib import Path
 from typing import Optional
 
 ROOT = Path(__file__).resolve().parents[1]
-LAST_GOOD_TAG = "opus-last-good"
+LAST_GOOD_TAG = "last-good"
+# wish-3d02d762 · 兼容：老版本 daemon 在用户机本地打的是旧名 opus-last-good ——
+# 升级后读要两个都认（先新后旧），写只写新名。
+LAST_GOOD_TAG_LEGACY = "opus-last-good"
 
 
 def _has_git() -> bool:
@@ -545,7 +548,7 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
 
 
 def tag_last_good(require_master: bool = True) -> dict:
-    """④号机制: 把当前 HEAD 标成 opus-last-good (回退/安全模式的恢复目标)。
+    """④号机制: 把当前 HEAD 标成 known-good (回退/安全模式的恢复目标)。
 
     默认只在 master 上打 · 因为回退是回主干。 优雅停机时调 = "这版跑到主动停为止没崩"。
     返 {tagged: bool, sha, note}
@@ -563,6 +566,9 @@ def tag_last_good(require_master: bool = True) -> dict:
         if t_rc != 0:
             out["note"] = f"打 tag 失败 · {t_err.strip()[:160]}"
             return out
+        # wish-3d02d762 · 迁移：老用户机本地可能还留着旧名 tag → 打过新名就清掉，
+        # 免得两个 known-good 并存、回退时认错一个。（不存在时删除失败，无害）
+        _run_git(["tag", "-d", LAST_GOOD_TAG_LEGACY], timeout=5)
         s_rc, s_out, _ = _run_git(["rev-parse", "--short", LAST_GOOD_TAG], timeout=5)
         out["tagged"] = True
         out["sha"] = s_out.strip() if s_rc == 0 else None
@@ -571,12 +577,19 @@ def tag_last_good(require_master: bool = True) -> dict:
 
 
 def last_good_ref() -> Optional[str]:
-    """返 opus-last-good 指向的短 sha · 没有返 None"""
+    """返 known-good tag 指向的短 sha · 没有返 None。
+
+    wish-3d02d762 · 兼容老用户机：先认新名 last-good，再回退旧名 opus-last-good
+    （老版本 daemon 打的 tag 还在本地，升级后不能当它不存在）。
+    """
     if not _has_git():
         return None
     with _lock("git_ops:last_good_ref"):
-        rc, out, _ = _run_git(["rev-parse", "--verify", "--short", LAST_GOOD_TAG], timeout=5)
-    return out.strip() if rc == 0 else None
+        for tag in (LAST_GOOD_TAG, LAST_GOOD_TAG_LEGACY):
+            rc, out, _ = _run_git(["rev-parse", "--verify", "--short", tag], timeout=5)
+            if rc == 0 and out.strip():
+                return out.strip()
+    return None
 
 
 def audit_wishes_merge_state(wishes: list[dict]) -> dict:

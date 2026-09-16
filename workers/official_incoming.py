@@ -50,9 +50,11 @@ def drop_from_ref(rel: str, ref: str, *, already_locked: bool = False) -> Option
         if suffix in BINARY:
             import subprocess
             try:
+                from agent_tools._subprocess_helper import no_window_kwargs
                 res = subprocess.run(
                     ["git", "show", f"{ref}:{rel}"],
                     cwd=str(ROOT), capture_output=True, timeout=20,
+                    **no_window_kwargs(),
                 )
             except Exception:
                 return None

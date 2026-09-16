@@ -191,9 +191,10 @@ function notesPinViewport(it, layer) {
     if (root) {
       const frBox = fr.getBoundingClientRect();
       const rr = root.getBoundingClientRect();
+      const base = notesRootBase(doc, root, rr);
       return {
-        left: frBox.left + rr.left - root.scrollLeft + it.x * Math.max(root.scrollWidth, rr.width, 1),
-        top: frBox.top + rr.top - root.scrollTop + it.y * Math.max(root.scrollHeight, rr.height, 1),
+        left: frBox.left + base.left - root.scrollLeft + it.x * Math.max(root.scrollWidth, rr.width, 1),
+        top: frBox.top + base.top - root.scrollTop + it.y * Math.max(root.scrollHeight, rr.height, 1),
       };
     }
   }
@@ -530,8 +531,9 @@ function notesDropAt(clientX, clientY, ev, forcedSel) {
     const root = notesScrollRoot(inner);
     const frBox = fr.getBoundingClientRect();
     const rr = root.getBoundingClientRect();
-    x = (clientX - (frBox.left + rr.left) + root.scrollLeft) / Math.max(root.scrollWidth, rr.width, 1);
-    y = (clientY - (frBox.top + rr.top) + root.scrollTop) / Math.max(root.scrollHeight, rr.height, 1);
+    const base = notesRootBase(inner, root, rr);
+    x = (clientX - (frBox.left + base.left) + root.scrollLeft) / Math.max(root.scrollWidth, rr.width, 1);
+    y = (clientY - (frBox.top + base.top) + root.scrollTop) / Math.max(root.scrollHeight, rr.height, 1);
     rel = "content";
   } else {
     const img = notesSlideImg();
@@ -610,6 +612,14 @@ function notesScrollRoot(doc) {
   const main = doc.querySelector(".main");
   if (main && main.scrollHeight > main.clientHeight + 8) return main;
   return doc.scrollingElement || doc.documentElement || doc.body;
+}
+
+function notesRootBase(doc, root, rr) {
+  // 整页滚动(documentElement / scrollingElement / body)的 rect 已被滚动推移(top = -scrollTop)·
+  // 再叠一次 root.scrollTop 就把滚动量算了两遍 → 批注钉整体偏一个滚动量(滚越远偏越多)。
+  // 这里统一取「静态基准」：整页滚动归零·内部滚动容器(.main)维持原值·行为不变。
+  const page = (root === doc.documentElement || root === doc.scrollingElement || root === doc.body);
+  return page ? { left: 0, top: 0 } : { left: rr.left, top: rr.top };
 }
 
 function notesMountContentPin(doc, it, label) {

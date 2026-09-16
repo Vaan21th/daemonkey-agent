@@ -25,7 +25,10 @@ workers/task_ledger.py
 from __future__ import annotations
 
 import json
+import os
 import re
+import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -33,6 +36,11 @@ from typing import Any, Optional
 _ROOT = Path(__file__).resolve().parent.parent
 _LEDGER_DIR = _ROOT / "data" / "ledgers"
 _ACTIVE_PATH = _ROOT / "data" / "runtime" / "ledger_active.json"
+
+# wish-0c8602ff · 账本 RMW 保护（对齐工程既有 wish-a1c5f147 复合操作锁惯用法）
+# 病根: _write_json 原用固定 tmp 名 → 一轮内并发写者挤同一个 .tmp·先完成 rename
+# 的把它收走 → 另一个 FileNotFoundError。锁 + 唯一 tmp 双保险。
+_LEDGER_LOCK = threading.RLock()
 
 _KINDS = ("verified", "ruledout", "pending", "decision", "note")
 
@@ -89,15 +97,29 @@ def _read_json(path: Path, default: Any) -> Any:
 
 
 def _write_json(path: Path, data: Any) -> None:
+    """原子写 · 唯一 tmp 名（对齐 safe_write.atomic_write_text 的做法）。
+
+    wish-0c8602ff · 原实现用固定 tmp 名（path + '.tmp'）—— 一轮内并发调本模块
+    （如同时勾多个 step）时两个写者挤同一个 tmp: 先完成的 rename 把 tmp 收走·
+    另一个就 FileNotFoundError。mkstemp 保证每个写者一个独占 tmp·replace 依旧原子。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    # 社区 7/31 · Bug #7 · Windows Defender 瞬态句柄锁 → replace 失败 · 带重试
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
     try:
-        from workers.safe_write import robust_replace
-        robust_replace(tmp, path)
-    except ImportError:
-        tmp.replace(path)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, ensure_ascii=False, indent=2))
+        # 社区 7/31 · Bug #7 · Windows Defender 瞬态句柄锁 → replace 失败 · 带重试
+        try:
+            from workers.safe_write import robust_replace
+            robust_replace(tmp_name, path)
+        except ImportError:
+            os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 # ---------- 活跃指针 ----------
@@ -128,27 +150,35 @@ def get_ledger(slug: str) -> Optional[dict]:
 
 
 def save_ledger(led: dict) -> None:
-    """整本落盘 · 给 task_plan(步骤层)复用同一份原子写 + 同一个真源文件。"""
+    """整本落盘 · 给 task_plan(步骤层)复用同一份原子写 + 同一个真源文件。
+
+    wish-0c8602ff · 持锁（RLock 可重入·add_entry/open_ledger 内部调它不会死锁）。
+    """
     if not led or not led.get("slug"):
         return
-    led["updated"] = _now()
-    _write_json(_ledger_path(led["slug"]), led)
+    with _LEDGER_LOCK:
+        led["updated"] = _now()
+        _write_json(_ledger_path(led["slug"]), led)
 
 
 def open_ledger(slug_or_title: str, session_id: str = "", title: Optional[str] = None) -> dict:
-    """按 slug 打开(不存在则新建)· 设为该会话活跃账本 · 返回账本 dict。"""
+    """按 slug 打开(不存在则新建)· 设为该会话活跃账本 · 返回账本 dict。
+
+    wish-0c8602ff · 整段持锁（并发首建同 slug 时只落一次盘）。
+    """
     raw = (slug_or_title or "").strip()
     slug = _slugify(raw)
-    led = get_ledger(slug)
-    if led is None:
-        led = {
+    with _LEDGER_LOCK:
+        led = get_ledger(slug)
+        if led is None:
+            led = {
             "slug": slug,
             "title": (title or raw or slug).strip(),
-            "created": _now(),
-            "updated": _now(),
-            "entries": [],
-        }
-        _write_json(_ledger_path(slug), led)
+                "created": _now(),
+                "updated": _now(),
+                "entries": [],
+            }
+            _write_json(_ledger_path(slug), led)
     if session_id:
         set_active(session_id, slug)
     return led
@@ -173,30 +203,34 @@ def add_entry(
     slug: Optional[str] = None,
     title: Optional[str] = None,
 ) -> Optional[dict]:
-    """往(活跃或指定)账本追加一条。返回更新后的账本;无活跃账本且没给 slug → None。"""
+    """往(活跃或指定)账本追加一条。返回更新后的账本;无活跃账本且没给 slug → None。
+
+    wish-0c8602ff · 整段读-改-写持锁（并发追加不再互相覆盖）。
+    """
     text = (text or "").strip()
     if not text:
         return None
-    target = (slug or "").strip().lower() or active_slug(session_id)
-    if not target:
-        return None
-    led = get_ledger(target)
-    if led is None:
-        led = open_ledger(target, session_id, title=title)
-    led.setdefault("entries", []).append({
-        "kind": resolve_kind(kind),
-        "text": text[:_TEXT_CAP],
-        "ts": _now(),
-        "session": session_id or "",
-    })
-    led["entries"] = _trim_entries(led["entries"])
-    led["updated"] = _now()
-    if title:
-        led["title"] = title.strip()
-    _write_json(_ledger_path(led["slug"]), led)
-    if session_id:
-        set_active(session_id, led["slug"])
-    return led
+    with _LEDGER_LOCK:
+        target = (slug or "").strip().lower() or active_slug(session_id)
+        if not target:
+            return None
+        led = get_ledger(target)
+        if led is None:
+            led = open_ledger(target, session_id, title=title)
+        led.setdefault("entries", []).append({
+            "kind": resolve_kind(kind),
+            "text": text[:_TEXT_CAP],
+            "ts": _now(),
+            "session": session_id or "",
+        })
+        led["entries"] = _trim_entries(led["entries"])
+        led["updated"] = _now()
+        if title:
+            led["title"] = title.strip()
+        _write_json(_ledger_path(led["slug"]), led)
+        if session_id:
+            set_active(session_id, led["slug"])
+        return led
 
 
 # ---------- 回灌 / 检索 ----------

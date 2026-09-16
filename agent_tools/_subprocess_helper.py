@@ -102,14 +102,23 @@ def detached_kwargs() -> dict:
       - lifecycle.py / request_restart.py spawn 新 daemon
       - service_runner 起 web service / app runtime
 
-    Windows: DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW + SW_HIDE startupinfo
+    Windows: CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW + SW_HIDE startupinfo
     POSIX:   start_new_session=True (跟 setsid 等效)
+
+    ⚠️ 不要加 DETACHED_PROCESS (2026-09-15 实测 · wish 弹窗修复):
+      它的语义是"新进程不继承父的 console" —— 但对 console 子系统程序
+       (cmd.exe / python.exe / git.exe …), Windows 的应对是"那就给它新建一个",
+       于是**反而强制弹出黑框**, 并把同行的 CREATE_NO_WINDOW 压住。
+       实测(父进程无 console, 模拟 daemon):
+         DETACHED + NO_WINDOW → ❌ 弹窗   仅 NO_WINDOW → ✅ 静默
+      而"父死后子继续"在 Windows 上本来就不依赖它(无孤儿进程概念),
+       真正管用的是 CREATE_NEW_PROCESS_GROUP(独立信号组, 不随父的
+       Ctrl+C / console 关闭事件一起死)。
     """
     if _IS_WINDOWS:
         return {
             "creationflags": (
-                0x00000008  # DETACHED_PROCESS · 子进程不附父 console
-                | 0x00000200  # CREATE_NEW_PROCESS_GROUP · 独立信号组
+                0x00000200  # CREATE_NEW_PROCESS_GROUP · 独立信号组 · 父死子继续
                 | subprocess.CREATE_NO_WINDOW  # 不显示 console
             ),
             "startupinfo": _make_startupinfo_hidden(),

@@ -262,7 +262,9 @@ async def proactive_inbox_endpoint(
         from workers.proactive_call import _read_ledger
         items = []
         for e in _read_ledger():
-            if not e.get("delivered"):
+            # wish-1b00ca00 · kind=bg_turn(后台 turn 完成通知)也要放行 —— 它刻意不带 delivered
+            # 字段(免得被算进主动呼叫计数)，所以不能只认 delivered。
+            if not e.get("delivered") and e.get("kind") != "bg_turn":
                 continue
             e_dt = _parse(e.get("ts", ""))
             if e_dt is None or e_dt <= since_dt:

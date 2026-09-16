@@ -29,6 +29,8 @@ from pathlib import Path
 
 import httpx
 
+from agent_tools._subprocess_helper import no_window_kwargs
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 CDP_HOST = "127.0.0.1"
@@ -74,6 +76,7 @@ def _kill_stale_browser() -> int:
              "name='msedge.exe' or name='chrome.exe'",
              "get", "ProcessId,CommandLine"],
             text=True, errors="replace", timeout=10,
+            **no_window_kwargs(),
         )
     except Exception:
         out = ""
@@ -83,13 +86,14 @@ def _kill_stale_browser() -> int:
             m = re.search(r"(\d+)\s*$", line.strip())
             if m:
                 subprocess.run(["taskkill", "/F", "/T", "/PID", m.group(1)],
-                               capture_output=True)
+                               capture_output=True, **no_window_kwargs())
                 killed += 1
     # 兜底: wmic 没查到但 pid 档案在 → 直接按 pid 杀
     if killed == 0 and BROWSER_PID_FILE.exists():
         pid = BROWSER_PID_FILE.read_text().split()[0]
         if pid.isdigit() and _pid_alive(int(pid)):
-            subprocess.run(["taskkill", "/F", "/T", "/PID", pid], capture_output=True)
+            subprocess.run(["taskkill", "/F", "/T", "/PID", pid], capture_output=True,
+                           **no_window_kwargs())
             killed += 1
         else:
             try:
@@ -122,6 +126,7 @@ def _kill_stale_posix() -> int:
         r = subprocess.run(
             ["pkill", "-f", needle],
             capture_output=True, timeout=5,
+            **no_window_kwargs(),
         )
         if r.returncode == 0:
             killed += 1
@@ -212,6 +217,10 @@ def _ensure_cdp_locked(launch: bool = True, wait_secs: int = 25) -> bool:
         f"--user-data-dir={EDGE_PROFILE}",
         "--no-first-run",
         "--no-default-browser-check",
+        # 2026-09-15 · 后台干活不抢 BRO 焦点：daemon 拉起的专属 Edge 一律最小化
+        # 起（偶尔需要看时任务栏点回来即可）。CDP 是独立通道，最小化不影响任何
+        # browser_act / browser_fetch 能力。
+        "--start-minimized",
     ]
     popen_kw: dict = {"close_fds": True}
     if os.name == "nt":

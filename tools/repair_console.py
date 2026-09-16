@@ -232,7 +232,11 @@ def _gather_context() -> str:
         parts.append("### git status\n" + (_sh("git status --short --branch") or "(干净)"))
         parts.append("\n### 工作树 / 跨 agent 自检\n" + _worktree_check())
         parts.append("\n### 最近 6 条 commit\n" + _sh("git log --oneline -6"))
-        parts.append("\n### opus-last-good 指向\n" + _sh('git log -1 --format="%h %s" opus-last-good'))
+        # 兼容旧名: 先试 last-good · git 报 fatal 再试 opus-last-good（别用 PS 语法 · _sh 走 cmd）
+        lg = _sh('git log -1 --format="%h %s" last-good')
+        if not lg or "fatal" in lg.lower():
+            lg = _sh('git log -1 --format="%h %s" opus-last-good') or "(无 last-good tag)"
+        parts.append("\n### last-good 指向\n" + lg)
     else:
         parts.append("### git\n(本机未检测到 git · 无版本信息 · 修复只能直接改文件、不能 git 回退)")
     parts.append("\n### restart_history 末 8 条\n" + _tail("data/runtime/restart_history.jsonl", 8))
@@ -252,7 +256,7 @@ def _system_prompt(ai: str, owner: str, has_git: bool) -> str:
   1. 先看现场 (下面已附 git/restart_history/daemon.err) · 定位是哪个文件、什么错
   2. read_file 看坏的文件 · run_shell `python -m py_compile <file>` 或 `node --check static/<x>.js` 看具体报错
   3. write_file 修 · 再 py_compile / node --check 验证语法
-  4. 拿不准就 `git diff` / 对比 opus-last-good · 实在修不动可 `git reset --hard opus-last-good` 回到已知好版本
+  4. 拿不准就 `git diff` / 对比 last-good · 实在修不动可 `git reset --hard last-good` 回到已知好版本（老机器上 tag 可能还是旧名 opus-last-good）
   5. 修好后 run_shell 重启 daemon (python tools/run_api_only.py 后台 · 或让 {owner} 双击 start.bat) · 确认起来了{git_note}
 
 纪律: 改完 .py / static 一定先验证语法再说"修好了";不确定先问 {owner};每步说清你在干嘛、为什么。

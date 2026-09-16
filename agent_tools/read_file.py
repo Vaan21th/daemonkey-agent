@@ -262,7 +262,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="read_file",
     description=(
-        "读项目或本机文本，带行号。大文件用 start_line/end_line。误判 binary 看 hexdump 再 force。禁止 shell_exec Get-Content。默认 UTF-8。"    ),
+        "读项目或本机文本，带行号。大文件用 start_line/end_line。默认 UTF-8。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",
@@ -290,8 +290,7 @@ SPEC = ToolSpec(
             "encoding": {
                 "type": "string",
                 "description": (
-                    "Explicit encoding (e.g. 'gb18030' / 'utf-16' / 'latin-1'). "
-                    "Overrides default UTF-8 strict. Use when BRO said the file is legacy CJK."
+                    "Explicit encoding (e.g. 'gb18030' / 'utf-16'). Overrides default UTF-8."
                 ),
             },
         },

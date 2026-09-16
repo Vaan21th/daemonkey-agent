@@ -52,11 +52,44 @@ _SUBSECTION_RE = re.compile(r"(?m)^(?=### )")
 _HEAD_FACT_CAP = 80
 
 
+# 落位校验（wish-0c8602ff · 2026-09-16）：只对进每轮前缀的 core 格（profile/rules）生效。
+# 判据全部可判定：① 待办/约定开头（会过期·过期即误导）② 超长（画像条目不是文档）。
+_TODO_LEAD_RE = re.compile(r"^(?:已定|他拍板|约定|待办|待落地|下一步先|回头再|最后一起)[：:，,]")
+_ENTRY_CHAR_CAP = 420
+
+
+def validate_entry(section_key: str, content: str, operation: str = "append") -> str | None:
+    """写前落位校验 · 拒收返回原因，放行返回 None（force 由调用方负责跳过）。"""
+    if (operation or "append").strip().lower() != "append":
+        return None      # replace_section 是整节重写·长度天然大·不收口
+    key = (section_key or "").strip().lower()
+    if key not in ("profile", "rules"):      # events/history 是历史仓·不收口
+        return None
+    text = (content or "").strip()
+    if _TODO_LEAD_RE.match(text):
+        return (
+            "拒收：这条像【带期限的待办/约定】（\"已定/约定/待办\"开头）——画像每轮注入，"
+            "过期条目会误导按旧状态办事。请写成无期限的偏好/原则（去掉开头标记词），"
+            "或去 track_task / wish 记账。确要强写：force=true。"
+        )
+    if len(text) > _ENTRY_CHAR_CAP:
+        return (
+            f"拒收：单条 {len(text)} 字 · 超过画像条目上限 {_ENTRY_CHAR_CAP} 字。"
+            "画像条目要短 · 长内容请落 data/dev 设计档或 SELF-EVOLUTION。确要强写：force=true。"
+        )
+    return None
+
+
 def route_write_section(section_key: str, operation: str, content: str) -> str:
-    """日期故事默认进 events。改判断的短条仍由调用方写 rules。"""
+    """日期故事默认进 events。改判断的短条仍由调用方写 rules。
+
+    P0 写时闸 (wish-31fd335e · 2026-09-16): rules 也收进日期闸 ——
+    '2026-09-16 ...' 这类日志型条目一律改道 events (不进每轮前缀);
+    确要留 rules 的判断条请去掉日期前缀。
+    """
     op = (operation or "append").strip().lower()
     key = (section_key or "").strip().lower()
-    if op == "append" and key in _STORY_WRITE_SECTIONS:
+    if op == "append" and (key in _STORY_WRITE_SECTIONS or key == "rules"):
         if _DATE_LEAD_RE.match((content or "").lstrip()):
             return "events"
     return key
@@ -132,3 +165,24 @@ def render_tiered(text: str) -> str:
         + "\n\n取回方式：`recall_memory`（画像全文在记忆索引）"
         "或 `read_file` 画像文件对应维度段。\n"
     )
+
+
+# ── P0 写时闸 (wish-31fd335e · 2026-09-16) ─────────────────────────────
+# 核心层 (会进每轮前缀的段) 总量预算。BRO 标准模式前缀目标 15-20K tok，
+# 核心层是其中最大一块。超 → 写入拒绝并提示先清理 (force=true 可跳过)。
+PREFIX_CORE_BUDGET_TOK = 5000
+
+
+def _estimate_tok(s: str) -> int:
+    """tiktoken 真算 · 不可用时按中文实测 ≈1.2 字符/token 退算。"""
+    try:
+        import tiktoken
+        return len(tiktoken.get_encoding("cl100k_base").encode(s))
+    except Exception:
+        return int(len(s) / 1.2)
+
+
+def core_budget_estimate(text: str) -> tuple[int, int]:
+    """估核心层 token (与 split_tiers 同一把尺) · 返回 (used, cap)。"""
+    core, _archived = split_tiers(text or "")
+    return _estimate_tok(core), PREFIX_CORE_BUDGET_TOK

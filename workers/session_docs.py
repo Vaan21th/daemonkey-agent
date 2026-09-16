@@ -110,7 +110,12 @@ def extract_paths(text: str) -> list[str]:
 
 
 def home_of(rel: str) -> str | None:
-    """最早挂上这份路径的 session。这场已经认领过就别用它拽走。"""
+    """这份稿的【产出者】场 —— 唯一权威，别的场不参与竞争。
+
+    wish-1518b97f.2 · 语义钉死: 旧实现取「最早挂上它的场」· 把「谁碰过」
+    当成「谁产出」→ 一份稿被几场碰过就有几个妈。现在只认 origin 字段。
+    兼容老记录 (无 origin): 退回最早 bound_at · 且只当兜底不当依据。
+    """
     rel = _canon_rel(rel)
     if not rel:
         return None
@@ -124,13 +129,17 @@ def home_of(rel: str) -> str | None:
                 continue
             if _canon_rel(d.get("path") or "") != rel:
                 continue
+            org = str(d.get("origin") or "").strip()
+            if org:
+                return org              # 有 origin → 直接信它 · 不比较
             ts = str(d.get("bound_at") or meta.get("updated_at") or "9999")
             if best is None or ts < best[0]:
                 best = (ts, sid)
     return best[1] if best else None
 
 
-def bind(sid: str, rel: str, *, root: Path | None = None, claim: bool = False) -> dict | None:
+def bind(sid: str, rel: str, *, root: Path | None = None, claim: bool = False,
+         via: str = "manual") -> dict | None:
     path = resolve_rel(rel, root=root)
     if not path or not sid:
         return None
@@ -139,12 +148,24 @@ def bind(sid: str, rel: str, *, root: Path | None = None, claim: bool = False) -
     cur = [d for d in (get_session_meta(sid).get("working_docs") or []) if isinstance(d, dict)]
     prev = next((d for d in cur if _canon_rel(d.get("path") or "") == rel), None)
     owner = home_of(rel)
-    if owner and owner != sid and not claim and not prev:
-        return {"path": rel, "name": path.name, "home_sid": owner}
+    # wish-1518b97f.2 · 产物归属铁律 (BRO 2026-09-14 拍板):
+    #   一份稿只属于产出/带入它的那一场 · 别的场【压根不记录】这条绑定
+    #   (不是显示层过滤 · 是数据层不写)。
+    # 立新家的两条合法路 (都要 claim=True · 由调用方声明):
+    #   ① via='generated' 本场真调生成工具产出
+    #   ② via='uploaded'  用户主动上传 / 手动挂进本场
+    # 除此之外 (via='mentioned' 等) 一律不写。
+    if not claim and not prev:
+        return {"path": rel, "name": path.name, "home_sid": owner or ""}
+    if owner and owner != sid and not prev:
+        # 已有产出者 (且不是本场) → 拒绝抢 · 只回只读描述
+        return {"path": rel, "name": path.name, "home_sid": owner, "readonly": True}
     rec = {
         "path": rel,
         "name": path.name,
         "home_sid": sid,
+        "origin": sid,
+        "via": str((prev or {}).get("via") or via or "manual"),
         "bound_at": (prev or {}).get("bound_at") or datetime.now().isoformat(timespec="seconds"),
     }
     docs = [d for d in cur if _canon_rel(d.get("path") or "") != rel]
@@ -157,6 +178,26 @@ def list_bound(sid: str) -> list[dict]:
     from daemon_session import get_session_meta
     docs = get_session_meta(sid).get("working_docs") or []
     return [d for d in docs if isinstance(d, dict) and d.get("path")]
+
+
+def unbind(sid: str, rel: str, *, root: Path | None = None) -> bool:
+    """把一份办公稿从本场摘掉 (wish-1518b97f · 挂错了要能手动纠正)。
+
+    只摘本场的记录 · 不动文件 · 也不动别的场。摘掉后 home_of 可能落到另一场
+    (别场也挂着的话) —— 那正常 · 说明它本来就是别场的稿。
+    """
+    if not sid:
+        return False
+    rel = _canon_rel(rel, root=root)
+    if not rel:
+        return False
+    from daemon_session import get_session_meta, set_session_meta
+    cur = [d for d in (get_session_meta(sid).get("working_docs") or []) if isinstance(d, dict)]
+    keep = [d for d in cur if _canon_rel(d.get("path") or "") != rel]
+    if len(keep) == len(cur):
+        return False                       # 本场本来就没挂它
+    set_session_meta(sid, working_docs=keep)
+    return True
 
 
 def digest(rel: str, *, root: Path | None = None, limit: int = _DIGEST) -> str:
@@ -205,20 +246,48 @@ def system_note(sid: str, *, root: Path | None = None) -> str:
 
 
 def bind_from_text(sid: str, text: str, *, root: Path | None = None) -> list[dict]:
-    out = []
-    for rel in extract_paths(text):
-        rec = bind(sid, rel, root=root)
-        if rec:
-            out.append(rec)
-    return out
+    """已停用 · wish-1518b97f.2 (BRO 2026-09-14 拍板)。
+
+    旧行为: 消息文本里出现某个路径 → 那条路径就挂进本场。后果:
+      ① A 场产出的稿 · 只因 B 场聊到它的名字 · 就被 B 场冒认
+      ② 同一份稿多场各自 home_sid = 自己 (一份稿几个妈)
+      ③ 越扯越乱: 一份稿到底属于谁无从判定
+
+    现在: 产物/附件【只认产出者与主动带入】· 聊到名字不算数。
+    保留函数名与签名 (调用点仍调它) · 但不再写任何绑定 · 恒返空。
+    """
+    return []
 
 
-def bind_runtime(rel: str) -> dict | None:
+def _resolve_current_sid() -> str:
+    """当前对话身份 —— 产物 origin 只能信它。
+
+    wish-c6422f9c: 原来直接用 RUNTIME.session_id（进程级全局单例），多对话并发时
+    它停在「最后设过的那一场」，导致 A 场产出的稿记到 B 场名下（21:00 实测：新场
+    7c472f 产出的 pptx·origin 被记到上一场 291f25）。 全仓其余需要「当前对话身份」
+    的地方（track_task / edit_file / write_file / dispatch_subagent / turn_checkpoint）
+    都已改用 agent_tools.current_session_id() 会话级 ContextVar，这里跟上。
+    """
     try:
+        from agent_tools import current_session_id
+        sid = str(current_session_id() or "").strip()
+        # 拿不到时会退化成 t<线程id> · 那不是真 session id · 不能用
+        if sid and not (sid.startswith("t") and sid[1:].isdigit()):
+            return sid
+    except Exception:
+        pass
+    try:                                    # 兜底：终端 REPL / 无上下文的后台路径
         from daemon_runtime import RUNTIME
-        sid = getattr(RUNTIME, "session_id", None)
+        return str(getattr(RUNTIME, "session_id", "") or "").strip()
+    except Exception:
+        return ""
+
+
+def bind_runtime(rel: str, *, session_id: str | None = None) -> dict | None:
+    try:
+        sid = (session_id or "").strip() or _resolve_current_sid()
         if sid:
-            return bind(sid, rel)
+            return bind(sid, rel, claim=True, via="generated")   # wish-1518b97f.2 · 工具真产出
     except Exception:
         return None
     return None
@@ -244,7 +313,7 @@ def ingest_file(sid: str, src: Path, name: str, *, root: Path | None = None) -> 
     rel = rel_of(dest, root=base)
     if not rel:
         return None
-    return bind(sid, rel, root=base, claim=True)
+    return bind(sid, rel, root=base, claim=True, via="uploaded")
 
 
 def accept_upload(sid: str, raw: str, *, root: Path | None = None):
@@ -259,7 +328,7 @@ def accept_upload(sid: str, raw: str, *, root: Path | None = None):
         path = resolve_rel((rec or {}).get("path") or "", root=root) if rec else None
         return (path, "") if path else (None, "办公稿入库失败")
     if sid:
-        bind(sid, rel_of(path, root=root) or rel, root=root, claim=True)
+        bind(sid, rel_of(path, root=root) or rel, root=root, claim=True, via="uploaded")
     return path, ""
 
 

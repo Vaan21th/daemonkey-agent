@@ -95,10 +95,11 @@
   setTimeout(check, 12000);   // 绝对兜底 · 防 load 因脚本卡住迟迟不触发
 })();
 </script>
-<link rel="stylesheet" href="/static/chat.css?v=20260907ov1">
+<link rel="stylesheet" href="/static/chat.css?v=20260917wk1">
 <link rel="stylesheet" href="/static/lib/litegraph.core.css">
 <link rel="stylesheet" href="/static/workshop.css?v=20260826c">
 <link rel="stylesheet" href="/static/lib/remixicon/remixicon.css">
+<link rel="stylesheet" href="/static/host-pulse.css?v=20260908hp6">
 <script>
 (function () {
   try {
@@ -264,6 +265,10 @@
       <button class="chat-history-btn" onclick="openDrawer()" title="话题列表"><i class="ri-menu-line"></i></button>
       <button class="chat-docs-btn" id="chatDocsBtn" onclick="toggleDocsView()" title="本话题产物"><i class="ri-file-list-3-fill"></i></button>
       <span class="chat-session-name" id="currentSessionLabel">新话题</span>
+      <!-- 延迟唤醒倒计时（"在等"是这场对话自己的状态 · 跟会话名同排） -->
+      <span class="wakeup-chip" id="wakeupChip" hidden title="">
+        <i class="ri-timer-line"></i><span id="wakeupChipList"></span>
+      </span>
       <button class="chat-pane-new" onclick="newConversation()" title="新话题">+</button>
     </div>
     <div class="compact-row">
@@ -384,6 +389,7 @@
       </div>
     </div>
     <div class="input-bar">
+      <div id="hostPulse" class="host-pulse" hidden></div>
       <div id="workingDocsBar" class="working-docs-bar" hidden></div>
       <div id="attachmentPreviews" class="attachment-previews" hidden></div>
       <div id="outboundQueue" class="outbound-queue" hidden></div>
@@ -557,7 +563,8 @@
 <script src="/static/chat-timeline.js?v=20260906proc"></script>
 <script src="/static/chat-rail.js?v=20260831split"></script>
 <script src="/static/daemonkey-bus.js?v=20260907bus"></script>
-<script src="/static/chat.js?v=20260907bus"></script>
+<script src="/static/host-pulse.js?v=20260908hp5"></script>
+<script src="/static/chat.js?v=20260917wk1"></script>
 <script src="/static/market.js?v=20260907ov4"></script>
 
 <!-- 用户装修区 (0.9.6) · static/user/ 在 never_sync 里 —— 官方升级永远不会覆盖这两个文件。

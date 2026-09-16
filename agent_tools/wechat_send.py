@@ -167,16 +167,13 @@ SPEC = ToolSpec(
             "text": {
                 "type": "string",
                 "description": (
-                    "Message text to send to BRO (1-8000 chars). "
-                    "When media_path is set, this is an optional caption sent before the media."
+                    "Message text to send (1-8000 chars)。media_path 存在时作为 caption。"
                 ),
             },
             "media_path": {
                 "type": "string",
                 "description": (
-                    "Optional local file path to send as media. Routed by file type: "
-                    "image/* → 图片, video/* → 视频, otherwise → 文件附件 (≤25 MB). "
-                    "Requires iLink configured and the 24h window open."
+                    "Optional local file path to send as media. Requires iLink configured and the 24h window open."
                 ),
             },
         },

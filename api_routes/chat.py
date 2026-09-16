@@ -53,6 +53,7 @@ async def chat(
     _reasoning_effort = payload.get("reasoning_effort") or None
     _advisor_coop = bool(payload.get("advisor_coop"))      # wish-0e749752 · 顾问协同模式
     _mode = str(payload.get("mode") or "standard")         # 2026-08-26 · companion=陪伴房间
+    _tool_profile = str(payload.get("tool_profile") or "")  # wish-16fa5930 · 新对话首轮选的档
 
     # 卷四十六 III 补丁 5 · Y7 · audit log
     _audit_start = time.monotonic()
@@ -72,6 +73,7 @@ async def chat(
             reasoning_effort=_reasoning_effort,
             advisor_coop=_advisor_coop,
             mode=_mode,
+            tool_profile=_tool_profile,
         )
         _audit_result_sid = result.get("session_id", "") if isinstance(result, dict) else ""
     except ValueError as e:
@@ -127,6 +129,7 @@ async def chat_stream(
     _reasoning_effort = payload.get("reasoning_effort") or None
     _advisor_coop = bool(payload.get("advisor_coop"))      # wish-0e749752 · 顾问协同模式
     _mode = str(payload.get("mode") or "standard")         # 2026-08-26 · companion=陪伴房间
+    _tool_profile = str(payload.get("tool_profile") or "")  # wish-16fa5930 · 新对话首轮选的档
 
     if not message or not message.strip():
         raise HTTPException(400, "message is required and cannot be empty")
@@ -137,10 +140,14 @@ async def chat_stream(
     except ValueError as e:
         raise HTTPException(400, str(e))
 
-    # 会话记住模型 · 记下这一笔用的 active config · 切标签时恢复 (BRO 诉求)
+    # 会话记住模型 · 每轮以本对话记的 cfg 为准 (wish-1518b97f)
+    # 以前是「只记这一笔用了谁」+ 只在切标签时恢复 → 切回正在跑的对话会拒绝切 →
+    # 全局留着上一场的模型 · 下一轮跑的是别人的。现在反过来: 请求一进来先对齐。
     try:
+        from daemon_api import ensure_session_model as _esm
         from workers.provider_configs import list_configs as _lpc
         from daemon_session import get_session_meta as _gsm, set_session_meta as _ssm
+        _esm(sid)                                    # 全局 → 本对话的 cfg (不同才切)
         _aid = (_lpc(include_keys=False) or {}).get("active_id")
         if _aid and (_gsm(sid) or {}).get("last_model_cfg") != _aid:  # 没变就不写盘
             _ssm(sid, last_model_cfg=_aid)
@@ -172,6 +179,7 @@ async def chat_stream(
                 reasoning_effort=_reasoning_effort,
                 advisor_coop=_advisor_coop,
                 mode=_mode,
+                tool_profile=_tool_profile,
             )
             push_event("done", result)
         except ValueError as e:
@@ -220,15 +228,59 @@ async def chat_stream(
     )
 
 
+def _abort_trace(turn_id: str, request: Request, evt) -> None:
+    """2026-09-16 · 断链排查(wish-a717b4e9) · 记录「谁发的停止请求」。
+
+    双通道: loguru WARNING + data/runtime/abort_trace.jsonl
+    (后者不依赖日志配置 · 用于排除『日志通道吞了』的情况)。
+    只读观测 · 不改任何行为。
+    """
+    from pathlib import Path as _Path
+    rec = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "turn": turn_id,
+        "hit": evt is not None,
+        "sid": "",
+        "ip": (request.client.host if request.client else "") or "-",
+        "ua": (request.headers.get("user-agent") or "-")[:160],
+        "ref": (request.headers.get("referer") or "-")[:120],
+    }
+    try:
+        from daemon_api import _TURN_TO_SID
+        rec["sid"] = _TURN_TO_SID.get(turn_id, "") or ""
+    except Exception:
+        pass
+    try:
+        from loguru import logger as _lg
+        _lg.warning("[abort] " + " ".join(f"{k}={v}" for k, v in rec.items() if k != "ts"))
+    except Exception:
+        pass
+    try:
+        _p = _Path(__file__).resolve().parent.parent / "data" / "runtime" / "abort_trace.jsonl"
+        _p.parent.mkdir(parents=True, exist_ok=True)
+        with _p.open("a", encoding="utf-8") as _f:
+            _f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception as _e:
+        # 兼底通道自身失败也要留痕 (review 20260916: 两通道同时哑 = 排查者会误判"没收到请求")
+        try:
+            import sys as _sys
+            print(f"[abort_trace] write failed: {_e}", file=_sys.stderr)
+        except Exception:
+            pass
+
+
 @router.post("/turns/{turn_id}/abort")
 async def abort_turn(
     turn_id: str,
+    request: Request,
     authorization: Optional[str] = Header(None),
 ):
     """卷三十六 · BRO 点停止按钮 · 中断正在跑的 turn"""
     check_auth(authorization)
     from daemon_api import get_turn_cancel
     evt = get_turn_cancel(turn_id)
+    # 2026-09-16 · 断链排查(wish-a717b4e9) · 记录「谁发的停止请求」· 双通道见 _abort_trace。
+    _abort_trace(turn_id, request, evt)
     if evt is None:
         raise HTTPException(404, f"turn not found or already done: {turn_id}")
     evt.set()
@@ -339,6 +391,57 @@ def _resolve_confirm_inline(
     }
 
 
+def _resolve_ask_inline(
+    tool_call_id: str,
+    turn_id: str,
+    choice: str,
+    choice_index: int = -1,
+) -> dict:
+    """wish-db46ff9b · 选择题卡的答案回写（进程内可调·WebUI 和以后的通道 UI 共用）。
+
+    与 _resolve_confirm_inline 的分工：
+      confirm → decision（approve_once / trust_* / deny）+ 可写 trusted_commands
+      ask     → choice（选项原文）+ choice_index · **不碰信任机制**
+    """
+    from daemon_api import _PENDING_CONFIRMS, _PENDING_CONFIRMS_LOCK
+
+    tool_call_id = (tool_call_id or "").strip()
+    choice = (choice or "").strip()[:200]
+    idx = int(choice_index if choice_index is not None else -1)
+
+    if not tool_call_id:
+        return {"ok": False, "detail": "tool_call_id is required"}
+    if not choice:
+        return {"ok": False, "detail": "choice is required（空答案请用跳过·别拿空白当回答）"}
+
+    with _PENDING_CONFIRMS_LOCK:
+        pending = _PENDING_CONFIRMS.get(tool_call_id)
+        if pending is None:
+            return {"ok": False, "detail": f"no pending ask for tool_call_id={tool_call_id}"}
+        if pending.get("kind") != "ask":
+            return {
+                "ok": False,
+                "detail": "这不是提问·是审批卡片 · 走 POST /turns/{turn_id}/confirm",
+            }
+        if pending["event"].is_set():
+            return {
+                "ok": False,
+                "detail": "already answered",
+                "previous_choice": pending.get("choice"),
+            }
+        if pending.get("turn_id") and turn_id and pending["turn_id"] != turn_id:
+            return {
+                "ok": False,
+                "detail": f"turn_id mismatch · pending belongs to {pending['turn_id']!r} · got {turn_id!r}",
+            }
+        pending["choice"] = choice
+        pending["choice_index"] = idx
+        ev = pending["event"]
+
+    ev.set()
+    return {"ok": True, "tool_call_id": tool_call_id, "choice": choice, "choice_index": idx}
+
+
 @router.post("/turns/{turn_id}/confirm")
 async def confirm_tool_call(
     turn_id: str,
@@ -373,6 +476,37 @@ async def confirm_tool_call(
         "tool_call_id": result.get("tool_call_id"),
         "decision": result.get("decision"),
         "applied_trust": result.get("applied_trust"),
+    }
+
+
+@router.post("/turns/{turn_id}/answer")
+async def answer_tool_call(
+    turn_id: str,
+    payload: dict = Body(...),
+    authorization: Optional[str] = Header(None),
+):
+    """wish-db46ff9b · BRO 在对话里点了一个选项 · 把答案回写给还在等的 OPUS"""
+    check_auth(authorization)
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "request body must be a JSON object")
+
+    result = _resolve_ask_inline(
+        str(payload.get("tool_call_id") or ""),
+        turn_id,
+        str(payload.get("choice") or ""),
+        payload.get("choice_index", -1),
+    )
+    if not result.get("ok"):
+        detail = result.get("detail") or "resolve failed"
+        if "no pending ask" in detail or "already answered" in detail:
+            raise HTTPException(404, detail)
+        raise HTTPException(400, detail)
+
+    return {
+        "ok": True,
+        "tool_call_id": result.get("tool_call_id"),
+        "choice": result.get("choice"),
+        "choice_index": result.get("choice_index"),
     }
 
 
@@ -504,19 +638,57 @@ async def get_context_usage(
             _ctx_soul_cache["sp"] = soul.system_prompt or ""
             _ctx_soul_cache["ts"] = _now
         sp = _ctx_soul_cache["sp"]
-        # 各段锚点: 按 loader 里的 header 标记切
-        def _seg(marker: str) -> int:
-            idx = sp.find(marker)
-            return len(sp[idx:idx + 60000]) // 3 if idx >= 0 else 0
+        # wish-31fd335e (2026-09-16) · 修三处口径:
+        #   ① 段区间 — 原 _seg 是"从标记往后取 6 万字符"·铁律标记后不足 6 万字 → 实际取到全文尾
+        #      (后果: Rules 行 == 整个 system·和 System prompt 行同数)
+        #   ② token 真计数 — 原 len//3 (注释"中文保守取/3")·中文实测 ≈0.67 字符/token → 面板偏低约一半
+        #   ③ 锚点 — 原 '=== BRO 的活人画像' 在 system 里不存在 (真锚点 '=== 画像 ===') → 该行是错拼的
+        def _tok(s: str) -> int:
+            """真 token 计数 (tiktoken) · 不可用时按中文实测系数 0.67 字符/token 退算。"""
+            if not s:
+                return 0
+            try:
+                import tiktoken
+                return len(tiktoken.get_encoding("cl100k_base").encode(s))
+            except Exception:
+                return int(len(s) / 0.67)
+
+        # 有序锚点 = soul_loader.load_soul 的拼装顺序 · 每段 = 本锚点 → 下一锚点
+        _ANCHORS = [
+            "=== DAEMON 工程铁律",
+            "=== 产品宪法",
+            "=== SKILL.md",
+            "=== OPUS-MEMORIES.md",
+            "=== Runtime context",
+            "=== 画像 ===",
+            "=== SELF-EVOLUTION",
+            "## 更多工具（不在本轮 tools[]）",
+        ]
+
+        def _seg(i: int) -> int:
+            idx = sp.find(_ANCHORS[i])
+            if idx < 0:
+                return 0
+            end = len(sp)
+            for _nxt in _ANCHORS[i + 1:]:
+                _j = sp.find(_nxt, idx + 1)
+                if _j >= 0:
+                    end = _j
+                    break
+            return _tok(sp[idx:end])
+
         # soul 总 = 全量 (铁律+宪法+SKILL+自传+画像+演化都含在 system_prompt 里)
         blocks.append({"key": "soul", "label": "System prompt", "icon": "ri-file-settings-fill",
-                       "color": "#B794F4", "tokens": len(sp) // 3, "sub": "灵魂层: 铁律+宪法+SKILL+自传+画像+演化 (全量)"})
+                       "color": "#B794F4", "tokens": _tok(sp), "sub": "灵魂层: 铁律+宪法+SKILL+自传+画像+演化 (全量)"})
         blocks.append({"key": "rules", "label": "Rules", "icon": "ri-shield-check-fill",
-                       "color": "#F6AD55", "tokens": _seg("=== DAEMON 工程铁律"), "sub": "daemon_rules 铁律"})
+                       "color": "#F6AD55", "tokens": _seg(0), "sub": "daemon_rules 铁律"})
         blocks.append({"key": "skills", "label": "Skills", "icon": "ri-book-open-fill",
-                       "color": "#4FD1C5", "tokens": _seg("=== SKILL.md"), "sub": "SKILL.md + 场景索引"})
+                       "color": "#4FD1C5", "tokens": _seg(2), "sub": "SKILL.md + 场景索引"})
         blocks.append({"key": "profile", "label": "画像 & 记忆注入", "icon": "ri-user-heart-fill",
-                       "color": "#FC8181", "tokens": _seg("=== BRO 的活人画像") + _seg("=== SELF-EVOLUTION") + _seg("=== 相关 playbook"), "sub": "画像 + 演化日记 + 每轮检索注入 (易变 · 不进缓存)"})
+                       "color": "#FC8181", "tokens": _seg(5) + _seg(6), "sub": "画像 + 演化日记 (易变 · 不进缓存)"})
+        # 延迟工具目录 (wish-31fd335e · 单列 · 原被算进 profile 行) · 详情走 catalog_search
+        blocks.append({"key": "catalog", "label": "延迟工具目录", "icon": "ri-apps-2-fill",
+                       "color": "#68D391", "tokens": _seg(7), "sub": "名字+简介各一行 · 详情走 catalog_search"})
     except Exception:
         # 兜底锚点 (实测值 · soul_loader 加载失败时)
         blocks.append({"key": "soul", "label": "System prompt", "icon": "ri-file-settings-fill",
@@ -525,12 +697,56 @@ async def get_context_usage(
                        "color": "#FC8181", "tokens": 6000, "sub": "画像 + 演化日记 + 每轮检索注入"})
 
     # tools: REGISTRY 序列化实测 (单条 · 去重)
+    # wish-16fa5930 · 跟会话档位联动：闲聊档只摊 12 件 · 面板数字必须跟着变（否则误导 BRO）
     try:
         from agent_tools import REGISTRY
-        tool_chars = sum(len(s.name) + len(s.description) for s in REGISTRY.values())
+        _tnames, _tpid = None, ""
+        if session_id:
+            try:
+                from daemon_session import get_session_meta as _gsm2
+                from workers.tool_profiles import resolve_profile as _rpf2
+                _tpid, _tnames = _rpf2((_gsm2(session_id) or {}).get("last_tool_profile") or "")
+            except Exception:
+                _tnames = None
+        _allowed = set(_tnames) if _tnames else None
+        try:
+            # wish-31fd335e · 修正：默认只算“手边”(CORE)工具 — 原来算 REGISTRY 全量 138 个，
+            # 而真正进 tools[] 的是 visible_names(CORE≈36) · 面板因此偏高
+            from agent_tools._tool_catalog import visible_specs as _vspecs
+            _specs = _vspecs(_allowed)
+        except Exception:
+            _specs = [s for s in REGISTRY.values() if not _tnames or s.name in _tnames]
+        # wish-31fd335e · 名字+描述走 tiktoken · 参数 schema 以英文/符号为主按 4 字符/token
+        # (原来只算 name+description → 面板 tools 块比真实 schema 小 ~1/3)
+        import json as _json
+
+        def _tool_tokens(s) -> int:
+            base = _tok(s.name + s.description)
+            try:
+                _sch = _json.dumps(getattr(s, "parameters", None) or getattr(s, "input_schema", {}) or {}, ensure_ascii=False)
+            except Exception:
+                _sch = ""
+            return base + (_tok(_sch) if _sch else 0)
+
+        _tt = sum(_tool_tokens(s) for s in _specs)
+        _tsub = f"{len(_specs)} 个工具 · 名字+描述+参数 schema"
+        if _tnames:
+            _tsub += f" · 本档 {_tpid}"
         blocks.append({"key": "tools", "label": "Tool definitions", "icon": "ri-tools-fill",
-                       "color": "#63B3ED", "tokens": tool_chars // 3,
-                       "sub": f"{len(REGISTRY)} 个工具 · 描述+schema"})
+                       "color": "#63B3ED", "tokens": _tt,
+                       "sub": _tsub})
+
+        # 每轮后缀 (wish-31fd335e · 字符数由 daemon_api 拼接 _sys_tail 时写进 RUNTIME)
+        # telemetry+口吻+检索提示等·每轮变→缓存外·面板原来完全看不到它
+        try:
+            from daemon_runtime import RUNTIME as _RT2
+            _sfx_chars = int(getattr(_RT2, "last_suffix_chars", 0) or 0)
+        except Exception:
+            _sfx_chars = 0
+        if _sfx_chars:
+            blocks.append({"key": "suffix", "label": "每轮后缀", "icon": "ri-timer-flash-fill",
+                           "color": "#D6BCFA", "tokens": max(1, int(_sfx_chars / 2.5)),
+                           "sub": "telemetry+口吻+检索提示 (每轮变 · 缓存外 · 按字符估)"})
     except Exception:
         blocks.append({"key": "tools", "label": "Tool definitions", "icon": "ri-tools-fill",
                        "color": "#63B3ED", "tokens": 22604, "sub": "97 个工具 (实测锚点)"})
@@ -629,9 +845,12 @@ async def get_context_usage(
         pass
 
     # ── 主进度只算会话部分 (对齐 token_budget_check 压缩口径 · 固定块不进圆圈) ──
-    total = sum(b["tokens"] for b in blocks)          # 全量 (面板展示用)
-    fixed_tokens = total - next((b["tokens"] for b in blocks if b["key"] == "history"), 0)  # 固定块 (灵魂+工具+规则+技能+画像)
+    # wish-31fd335e · 修重复计数: soul 块 = 灵魂层全量 (已含 rules/skills/profile/catalog 明细)
+    #   → 总量只加"顶层块": soul + tools + suffix + history; 明细块仅供拆解展示·不再重复计入
+    _TOP_KEYS = {"soul", "tools", "suffix", "history"}
+    total = sum(b["tokens"] for b in blocks if b["key"] in _TOP_KEYS)   # 真实固定前缀 + 会话
     history_tok = next((b["tokens"] for b in blocks if b["key"] == "history"), 0)
+    fixed_tokens = total - history_tok
     used_pct = round(history_tok / max_tokens * 100, 1) if max_tokens else 0
     model = "unknown"
     try:

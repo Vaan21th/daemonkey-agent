@@ -11592,3 +11592,35 @@ html.dk-transit-hold body > :not(#dkTransit) { visibility: hidden; }
   100% { transform: scale(1.2); opacity: 0; }
 }
 
+/* ── wish-1b00ca00 · 延迟唤醒倒计时 chip（顶部标题栏） ──
+   跟档位标同排：两者都是"这场对话的运行时状态"。
+   形态取最紧凑：一个图标 + 最近一条的倒计时（多条时 +N）· 全部详情走 title。 */
+.wakeup-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  background: rgba(56, 178, 172, 0.14);
+  border: 1px solid rgba(56, 178, 172, 0.34);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: #9fe8e2;
+  cursor: default;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.wakeup-chip i { font-size: 12px; color: #6fd7cf; }
+/* 必须显式写这条：display:inline-flex 会盖掉 [hidden] 的默认 display:none，
+   否则"没有唤醒"时 chip 会留一个空壳胶囊挂在标题栏上。 */
+.wakeup-chip[hidden] { display: none; }
+.wakeup-chip:hover { background: rgba(56, 178, 172, 0.24); }
+
+/* 会话列表行 · 在等延迟唤醒的标记（比 sp-run 静：它不是"正在跑"，是"到点会回来"） */
+.sp-wake {
+  color: #6fd7cf;
+  font-size: 11px;
+  margin-right: 2px;
+  opacity: 0.85;
+}
+.sp-wake i { font-size: 12px; }

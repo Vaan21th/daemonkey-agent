@@ -1101,7 +1101,8 @@ let _previewModalKeyBound = false;
 // 用户心智: "打开新弹框 = 旧的先关掉" · 不再静默覆盖。
 
 
-async function _kbAction(url, body) {
+/* onOk 回调：知识库开关类操作拿接口回传的 doc 就地改卡片，不整页重拉。 */
+async function _kbAction(url, body, onOk) {
   if (!token && !(await _ensureLoopbackToken())) return;
   try {
     const r = await fetch(url, {
@@ -1110,6 +1111,8 @@ async function _kbAction(url, body) {
       body: JSON.stringify(body),
     });
     if (!r.ok) { alert('操作失败 [' + r.status + ']'); return; }
+    const j = await r.json().catch(() => ({}));
+    if (typeof onOk === 'function') { onOk(j); return; }
     loadDashboard('knowledge', { silent: true });
   } catch (e) { alert('网络出错: ' + e.message); }
 }
@@ -1314,7 +1317,7 @@ let radarDomainFilter = localStorage.getItem('radar_domain_filter') || 'all';
 const DOMAIN_META = {
   // 工作室看板 · 起始屏 BI · 独立分组最上 (BRO 2026-08-06 拍板 · 它不是市场信息)
   bi:            { icon: '<i class="ri-dashboard-fill"></i>', label: '工作室看板', section: 'home', stub: false },
-  // 市场信息 · 外部信号 · Daemonkey 看世界的眼睛 · 不含它自己的观察
+  // 市场信息 · 外部信号 · Daemonkey 看世界的眼睛 · 不含 OPUS 自己的观察
   radar:         { icon: '<i class="ri-radar-fill"></i>', label: '信息雷达', section: 'market', stub: false },
   trends:        { icon: '<i class="ri-line-chart-fill"></i>', label: '今日趋势', section: 'market', stub: false },
   reports:       { icon: '<i class="ri-archive-2-fill"></i>', label: '产物库',   section: 'market', stub: false },

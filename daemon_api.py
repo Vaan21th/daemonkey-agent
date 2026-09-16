@@ -77,6 +77,32 @@ from tool_loop import run_tool_loop
 from fastapi import HTTPException
 
 
+def _purge_legacy_env(name: str, value: float, default: float) -> bool:
+    """返回值是否被判定为「跨代污染」并已剔除。"""
+    bad = _LEGACY_ENV_POISON.get(name)
+    if not bad or value is None or value not in bad:
+        return False
+    os.environ.pop(name, None)
+    if name not in _PURGED_ENV:
+        _PURGED_ENV.add(name)
+        try:
+            import sys as _sys
+            print(f"[env] 剔除继承来的旧默认值 {name}={value} → 用代码默认 {default}"
+                  " (真配置请写 .env · 2026-09-16 断案)", file=_sys.stderr)
+        except Exception:
+            pass
+    return True
+
+
+def _env_float_default(name: str, default: float) -> float:
+    """读环境变量转 float · 未设/非法 → default。与 _env_float 的区别: 显式 0 不被吞掉
+    (review 20260916: `or` 会把显式配置的 0 静默换成默认值 · 想关熔断的人关不掉)。"""
+    v = _env_float(name)
+    if v is not None and _purge_legacy_env(name, v, default):
+        return default
+    return default if v is None else v
+
+
 def _env_float(name: str) -> Optional[float]:
     """读环境变量转 float · 不存在/非法返回 None (wish-8914f90c 墙钟熔断用)。"""
     v = os.environ.get(name)
@@ -284,6 +310,78 @@ def get_turn_progress(turn_id: str) -> Optional[dict]:
             "elapsed_s": int(now - slot.get("started_at", now)),
             "stale_s": int(now - slot.get("updated_at", now)),
         }
+
+
+# ── 会话常驻事件订阅 (SSE 广播) ──────────────────
+# 病根: 前台 SSE 的 queue 是「每个连接一个」·没有广播注册表 → 后台 turn
+#   (延迟唤醒/定时任务/分身通报) 有产出时不知道该推给谁·只能落 jsonl 等前台轮询补·
+#   turn 跑着的几十秒前端完全静默 (2026-09-16 实测 64 秒黑箱)。
+# 修法: 建一张 sid → {sink_id: push_fn} 表。常驻事件流端点登记自己 ·
+#   _run_bg_turn 产出时 broadcast_to_session() 推给该会话所有订阅者。
+#
+# 防御模式对照 (docs/dev/defensive-patterns.md):
+#   ④ Dispose 到静默 —— 订阅者注销先于 turn 结束 · 迟到完成保持安静
+#   ⑤ 回调异常收在调度器 —— 一个坏订阅者绝不弄崩核心生命周期
+_SESSION_SUBS: dict[str, dict] = {}
+_SUBS_LOCK = threading.Lock()
+
+
+def register_session_sink(sid: str, sink_id: str, push_fn) -> None:
+    """登记一个会话事件订阅者 (常驻事件流) · 生命周期与 turn 解耦。"""
+    if not sid or not sink_id or push_fn is None:
+        return
+    with _SUBS_LOCK:
+        _SESSION_SUBS.setdefault(sid, {})[sink_id] = push_fn
+
+
+def unregister_session_sink(sid: str, sink_id: str) -> None:
+    """订阅者断开 · 务必放在 finally 里 (防御模式④)。"""
+    if not sid or not sink_id:
+        return
+    with _SUBS_LOCK:
+        m = _SESSION_SUBS.get(sid)
+        if not m:
+            return
+        m.pop(sink_id, None)
+        if not m:
+            _SESSION_SUBS.pop(sid, None)
+
+
+def broadcast_to_session(sid: str, event_type: str, data: dict) -> int:
+    """把事件推给该会话所有常驻订阅者 · 返回推成功的条数。
+
+    单个订阅者抛异常只记日志、不中断其余 (防御模式⑤)。
+    """
+    if not sid:
+        return 0
+    with _SUBS_LOCK:
+        # "*" = 通配订阅者(不绑会话的常驻页) · 跟本会话订阅者一起收
+        sinks = list((_SESSION_SUBS.get(sid) or {}).items())
+        sinks += list((_SESSION_SUBS.get("*") or {}).items())
+    if not sinks:
+        return 0
+    ok = 0
+    for sink_id, fn in sinks:
+        try:
+            fn(event_type, data)
+            ok += 1
+        except Exception as e:
+            try:
+                from loguru import logger as _lg
+                _lg.warning(
+                    f"session sink {sink_id} 推送失败 (sid={sid}·{event_type}): {type(e).__name__}: {e}"
+                )
+            except Exception:
+                pass
+    return ok
+
+
+def session_sink_count(sid: str) -> int:
+    """有几个常驻订阅者 · 给自测/诊断用。"""
+    if not sid:
+        return 0
+    with _SUBS_LOCK:
+        return len(_SESSION_SUBS.get(sid) or {})
 
 
 def _make_progress_recorder(turn_id: str, inner: Optional[Callable[[str, dict], None]]):
@@ -859,6 +957,126 @@ def _make_remote_confirm(
     return _confirm
 
 
+def cleanup_pending_ask(tool_call_id: str) -> None:
+    """答题完毕 / 超时 → 清 pending。
+
+    转发 cleanup_pending_confirm：它除了 pop 还会处理桌宠侧——还有别的 pending
+    就重写 confirm.txt，没有就 clear_confirm 摘掉那个粘性气泡。
+    （ask 也走 confirm 那条通知路径 · 不转发的话气泡会一直粘着不走）
+    """
+    try:
+        cleanup_pending_confirm(tool_call_id)
+    except Exception:
+        with _PENDING_CONFIRMS_LOCK:
+            _PENDING_CONFIRMS.pop(tool_call_id, None)
+
+
+def make_ask_channel(
+    session_id: str,
+    turn_id: str,
+    push_event: Optional[Callable[[str, dict], None]] = None,
+    cancel_event=None,
+    has_foreground: bool = True,
+):
+    """造一条提问通道。返回 fn(question, options, timeout) -> dict，或 None。
+
+    返回 None 的唯一情形：has_foreground=False —— 没有前台 SSE
+    （后台续场 / 定时任务），推出去也没人看得见。
+
+    微信 / 飞书**不再**返回 None（2026-09-10 刀四）：
+      微信 = 文字列选项当按钮（_notify_ask_request + _maybe_resolve_ask）
+      飞书 = 选择题卡片（_show_ask_card + act:/answer 回调）
+    判据用 has_foreground 而不是 push_event is None：
+    _make_progress_recorder 包完之后永远是 callable · 拿不到 None 了。
+    """
+    if not has_foreground:
+        return None
+    def _ask(question: str, options: list, timeout: int = 0) -> dict:
+        import uuid
+
+        tcid = "ask-" + uuid.uuid4().hex[:12]
+        ev = threading.Event()
+        pending_data = {
+            "kind": "ask",
+            "event": ev,
+            "turn_id": turn_id,
+            "tool_name": "ask_user",  # cleanup_pending_confirm 的残余提示用得上
+            "question": question,
+            "options": list(options),
+            "choice": None,
+            "choice_index": -1,
+            "reason": "",
+            "created_at": time.time(),
+        }
+        with _PENDING_CONFIRMS_LOCK:
+            _PENDING_CONFIRMS[tcid] = pending_data
+
+        wait_sec = int(timeout or 0) or _ASK_TIMEOUT_SEC
+        try:
+            push_event("ask_request", {
+                "turn_id": turn_id,
+                "session_id": session_id,
+                "tool_call_id": tcid,
+                "question": question,
+                "options": list(options),
+                "timeout_sec": wait_sec,
+            })
+        except Exception:
+            pass  # push 失败不阻止流程 · 直接走超时返回"没回答"
+
+        # BRO 2026-09-10 · 弹卡时桌宠还显示"在干活" · 用户不知道要回来答。
+        # 跟 confirm_request 同款两层通知（见 _make_remote_confirm）· 复用不新造：
+        #   桌宠 notify(confirm) → 粘性气泡「等你回话」+ curious 表情
+        #   Windows toast → 不看屏幕也能收到
+        try:
+            from desktop_pet.activities import write_notify as _pet_notify
+
+            _pet_notify("confirm", f"等你回话 · {str(question)[:24]}")
+        except Exception:
+            pass
+        try:
+            from workers.windows_toast import send_toast as _send_toast
+
+            _send_toast("OPUS 等你回话", str(question)[:40])
+        except Exception:
+            pass
+
+        deadline = time.time() + wait_sec
+        while True:
+            if cancel_event is not None and cancel_event.is_set():
+                cleanup_pending_ask(tcid)
+                from workers.ask_bus import AskAborted
+
+                raise AskAborted("BRO 在等答案的时候点了停止")
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                cleanup_pending_ask(tcid)
+                try:
+                    push_event("ask_resolved", {
+                        "tool_call_id": tcid,
+                        "answered": False,
+                        "reason": "timeout",
+                    })
+                except Exception:
+                    pass
+                return {"answered": False, "choice": "", "choice_index": -1, "reason": "timeout"}
+            if ev.wait(timeout=min(1.0, remaining)):
+                break
+
+        with _PENDING_CONFIRMS_LOCK:
+            choice = pending_data.get("choice")
+            idx = pending_data.get("choice_index", -1)
+        cleanup_pending_ask(tcid)
+        return {
+            "answered": True,
+            "choice": str(choice or ""),
+            "choice_index": int(idx if idx is not None else -1),
+            "reason": "",
+        }
+
+    return _ask
+
+
 def _short_json_preview(obj: Any, max_chars: int = 400) -> str:
     """args 的 JSON 字符串预览 · 超长截断 · 给 confirm UI 显示用"""
     try:
@@ -936,6 +1154,43 @@ def _activate_provider_config(cfg_id: str) -> None:
         # 激活配置时把该配置的 vision 标注同步进全局 override (L2 兼容层 ·
         # 按模型精确判断在 model_aliases.supports_vision L1 · 这里是双保险)
         RUNTIME.vision_override = cfg.get("vision")
+
+
+def ensure_session_model(sid: str) -> dict:
+    """把 RUNTIME 切到该会话记住的模型 (wish-1518b97f · 每轮以本对话 cfg 为准)。
+
+    为什么需要: 模型是进程级单例 · 以前只在【切标签】时切 → 切回正在跑的对话
+    会拒绝切 · 全局留着上一场的模型 · 下一轮跑的就是别人的。改成每轮请求进来
+    先对齐 → 两个并行对话各跑各的 · 也不再需要前端抢切。
+
+    返回 {"switched": bool, "cfg_id": str}。任何异常都吞掉 —— 绝不因切模型
+    失败挡住对话 (宁可跑旧模型也不能让消息发不出去)。
+    """
+    out = {"switched": False, "cfg_id": ""}
+    if not sid:
+        return out
+    try:
+        from workers.provider_configs import list_configs, get_config
+        from daemon_session import get_session_meta
+        want = (get_session_meta(sid) or {}).get("last_model_cfg") or ""
+        if not want:
+            # 新对话没有记忆 → 用「默认模型」(设置页那个) · 而不是继承上一个对话切过的
+            # active (wish-c6422f9c · 21:00 实测: 新对话继承了上场留的 8B → 8B 看不懂
+            #「生成图片」去做了份 PPT)
+            from workers.provider_configs import get_default_id
+            want = get_default_id()
+        cur = (list_configs(include_keys=False) or {}).get("active_id") or ""
+        out["cfg_id"] = want or cur
+        if not want or want == cur:
+            return out
+        if get_config(want, include_key=False) is None:
+            return out                      # 配置已被删 → 保持现状 · 不抛
+        _activate_provider_config(want)     # 走同一条锁 + setup_client 路
+        out["switched"] = True
+        out["cfg_id"] = want
+    except Exception:
+        pass
+    return out
 
 
 async def _test_provider_inner(
@@ -2208,6 +2463,10 @@ def build_app():
     app.include_router(_routes_advisor.router)  # wish-ea8922f7 · /api/advisor/status + trace
     app.include_router(_routes_plan.router)  # /api/plan/* · 对话框上方的任务计划条 (读+改)
     app.include_router(_routes_stt.router)  # wish-241e0014 · /stt/* 语音识别增强 (可选更新)
+    from api_routes import wakeups as _routes_wakeups   # 会话内延迟唤醒(计时器)
+    app.include_router(_routes_wakeups.router)          # /api/wakeups · 标题栏倒计时 chip
+    from api_routes import events as _routes_events     # 会话常驻事件流(后台 turn 即时上屏)
+    app.include_router(_routes_events.router)           # /api/events · SSE
     from api_routes import companion as _routes_companion
     app.include_router(_routes_companion.router)  # DAIMON 陪伴模式 · /companion/* 目录级静态服务
 

@@ -18,10 +18,12 @@ def export(src: Path, dest: Path, *, fmt: str = "html") -> bool:
         return False
     dest.mkdir(parents=True, exist_ok=True)
     try:
+        from agent_tools._subprocess_helper import no_window_kwargs
         r = subprocess.run(
             [exe, "--headless", "--norestore", "--convert-to", fmt,
              "--outdir", str(dest), str(src)],
             capture_output=True, timeout=120,
+            **no_window_kwargs(),
         )
     except Exception:
         return False

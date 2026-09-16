@@ -177,9 +177,11 @@ def ffmpeg_grab_args(outfile: str, duration: int, region: str = "desktop") -> li
 
 def ensure_playwright_chromium(py: str, timeout: int = 600) -> bool:
     try:
+        from agent_tools._subprocess_helper import no_window_kwargs
         r = subprocess.run(
             [py, "-m", "playwright", "install", "chromium"],
             capture_output=True, timeout=timeout,
+            **no_window_kwargs(),
         )
         return r.returncode == 0
     except Exception:

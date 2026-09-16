@@ -393,6 +393,13 @@ def _task_loop(first_delay_sec: int) -> None:
 def start_task_scheduler_in_background(first_delay_sec: Optional[int] = None) -> Optional[threading.Thread]:
     """启动定时任务调度后台线程 · daemon=True。 OPUS_SCHEDULED_TASKS=0 可禁用。"""
     global _TASK_THREAD
+    # wish-1b00ca00 · 会话内延迟唤醒(计时器) 的 1s tick 线程随调度器一并拉起(幂等·
+    # 不受 OPUS_SCHEDULED_TASKS 开关影响 —— 两者是独立能力)
+    try:
+        from workers import wakeups as _wakeups
+        _wakeups.start_wakeup_scheduler_in_background()
+    except Exception:
+        logger.exception("start wakeup scheduler failed")
     if _TASK_THREAD is not None and _TASK_THREAD.is_alive():
         return _TASK_THREAD
     if (os.environ.get("OPUS_SCHEDULED_TASKS") or "1").strip().lower() in ("0", "false", "off", "no"):

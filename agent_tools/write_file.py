@@ -281,6 +281,14 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(ok=False, output="", error=pb_err)
 
     try:
+        from workers.notebook_guard import check_path as _nb_check
+        nb_err = _nb_check(path, content)
+    except Exception:
+        return ToolResult(ok=False, output="", error="记忆落点闸不可用，拒绝写入。")
+    if nb_err:
+        return ToolResult(ok=False, output="", error=nb_err)
+
+    try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except Exception as e:
         return ToolResult(ok=False, output="", error=f"mkdir parent failed: {e}")
@@ -455,7 +463,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="write_file",
     description=(
-        "创建/覆盖/追加文本文件。大文件改动用 edit_file。精排 docx 用 generate_report。HTML 原型写 data/design/ 或 data/workshop/outputs/，写完中栏能看。长内容可只传 path。.env/soul/.git 是 GUARD。"    ),
+        "创建/覆盖/追加文本文件。精排 docx 用 generate_report。HTML 原型写 data/design/ 或 data/workshop/outputs/，写完中栏能看。长内容可只传 path。.env/soul/.git 是 GUARD。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
@@ -466,7 +474,7 @@ SPEC = ToolSpec(
             },
             "content": {
                 "type": "string",
-                "description": "要写入的全文。不传则抓本条回复正文。长文可先写在回复里再只给 path。",
+                "description": "要写入的全文。不传则抓本条回复正文。",
             },
             "mode": {
                 "type": "string",
@@ -477,8 +485,7 @@ SPEC = ToolSpec(
                 "type": "boolean",
                 "description": (
                     "Bypass the shrink-guard. Only set true when you INTENTIONALLY shrink a large file "
-                    ">40% (e.g. deleting a big dead-code block). For normal edits to big files, "
-                    "use edit_file (str_replace) instead — never overwrite."
+                    ">40% (e.g. deleting a big dead-code block). "
                 ),
             },
             "force": {

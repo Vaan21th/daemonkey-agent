@@ -149,7 +149,7 @@ SPEC = ToolSpec(
     name="glob_files",
     description=(
         "Find files by NAME / glob pattern (complements grep_files which searches file CONTENT). "
-        "Use for 'all *.py', '**/test_*.js', 'chat.*', 'where is the file called outline_file'. "
+        "Use for 'all *.py', '**/test_*.js', 'chat.*'. "
         "Bare patterns without a slash search the whole tree recursively. Results sorted newest-first. "
         "Skips .git/.venv/node_modules/__pycache__. Read-only."
     ),

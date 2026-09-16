@@ -27,6 +27,9 @@ _KILL_PY_RE = re.compile(
     re.IGNORECASE,
 )
 _SHELL_READ_RE = re.compile(r"^(?:Get-Content|gc|cat|type)\b", re.IGNORECASE)
+# wish-0c8602ff · 混合 && + || —— PowerShell 5.1 不支持 &&，混着写两头都断。
+# 原先只在 system prompt hot path 里用散文提醒，现在改成闸（这是"文字变闸"的又一条）。
+_MIXED_COMPOUND_RE = re.compile(r"(\&\&.*\|\||\|\|.*\&\&)")
 _CHALLENGE_RE = re.compile(
     r"(?:验证码|请登录|异常访问|安全验证|请求异常|captcha|access denied)",
     re.IGNORECASE,
@@ -82,6 +85,11 @@ def block_shell(cmd: str) -> str | None:
             "blocked: python -c belongs in python_exec(code=...). "
             "PowerShell will mangle multiline scripts."
         )
+    if _MIXED_COMPOUND_RE.search(s):
+        return (
+            "blocked: 混用了 && 和 || —— PowerShell 5.1 不支持 &&，两头都断。"
+            "拆成两条命令分别调（或统一用 ; 串联）。"
+        )
     if _is_shell_file_dump(s):
         return (
             "blocked: read files with read_file, not shell Get-Content/type/cat."
@@ -99,10 +107,16 @@ def _is_shell_file_dump(cmd: str) -> bool:
 
 
 def block_clipboard_write() -> str | None:
-    if _channel.get() == "wechat":
+    ch = _channel.get()
+    if ch == "wechat":
         return (
             "blocked: this turn is WeChat. Send the real file with "
             "wechat_send(media_path=...), not write_clipboard, and do not reply with a C:\\ path."
+        )
+    if ch == "feishu":
+        return (
+            "blocked: this turn is Feishu. Send the real file with "
+            "feishu_send(media_path=...), not write_clipboard, and do not reply with a C:\\ path."
         )
     return None
 

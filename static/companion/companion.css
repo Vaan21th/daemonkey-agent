@@ -1,7 +1,7 @@
 /* DAIMON 陪伴模式 · 日夜双主题 */
 :root, body.day {
   --bg0: #f3ecdd; --bg1: #faf5ea; --bg2: #fffdf6; --bg3: #f0e7d3;
-  --line: #e6dcc4; --line-soft: #4a3f2a14;
+  --line: #8a7048; --line-soft: #4a3f2a14;
   --gold: #8a6410; --gold-dim: #8a641055; --orange: #d9702f;
   --tx: #453b26; --tx2: #857552; --tx3: #b3a482;
   --green: #4e9e5f; --blue: #4a7ec2;
@@ -526,7 +526,7 @@ body.night #ip-shadow { opacity: .3; }
   --user: #dfa944; --user-dim: #e9c26a; --opus: var(--gold);
 }
 body.day {
-  --field-bg: #fffdf6; --field-border: #8a7048;
+  --field-bg: #fffdf6; --field-border: var(--line);
   --field-hover: var(--bg3); --field-scheme: light;
 }
 body.night {
@@ -1566,3 +1566,55 @@ body.night #chat.rail::before { background: linear-gradient(180deg, #e08a4a, #8a
 .j-bubble .j-more i { font-size: 15px; }
 .j-foot { padding: 10px 16px 14px 22px; font-size: 11.5px; color: var(--tx3); border-top: 1px solid var(--line); line-height: 1.5; }
 #chat.rail #chat-status { padding: 0 16px 0 22px; }
+
+/* ── 她这轮铺到工作室的原型 · 房间里的入口（不抢屏 · 只在说话下面留一条） ──
+   用半透明灰做底：日间/夜间主题都自适应，不额外引变量 */
+.msg.proto-notice{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  margin:8px 0 4px; padding:8px 12px;
+  background:rgba(128,128,128,.07);
+  border:1px dashed rgba(128,128,128,.30);
+  border-radius:12px; font-size:13px; opacity:.94;
+}
+.msg.proto-notice > i{opacity:.65; font-size:15px}
+.msg.proto-notice > span{flex:1 1 auto; line-height:1.5}
+.msg.proto-notice .proto-open{
+  display:inline-flex; align-items:center; gap:4px;
+  font-size:12.5px; padding:3px 11px; border-radius:999px; cursor:pointer;
+  border:1px solid rgba(128,128,128,.38); background:transparent; color:inherit;
+  transition:background .15s ease;
+}
+.msg.proto-notice .proto-open:hover{background:rgba(128,128,128,.14)}
+
+/* ── wish-db46ff9b · 选择题卡（陪伴模式 · C 版极简）────────────────────
+   她停下来问一句 —— 不套卡片容器，只留一条左侧强调线。
+   这张卡只活在 WebUI：微信走文字编号、飞书走飞书自己的卡片。 */
+.msg.ask-card {
+  /* 底色中性半透明灰: 日间/夜间两套主题都自适应 · 跟 chat 侧同一套做法 */
+  background: rgba(128, 128, 128, .07);
+  border: none;
+  border-left: 3px solid rgba(196, 120, 74, .8);
+  border-radius: 0 8px 8px 0;
+  width: 100%;
+  max-width: none;          /* .msg 默认宽度限制 · 不铺满会"短一块" */
+  box-sizing: border-box;
+  padding: 9px 13px 9px 14px;
+  margin: 9px 0;
+}
+.msg.ask-card .ask-head { font-size: 12.5px; opacity: .6; margin-bottom: 5px; }
+.msg.ask-card .ask-question { font-size: 14.5px; line-height: 1.6; margin-bottom: 11px; white-space: pre-wrap; }
+.msg.ask-card .ask-options { display: block; }
+.msg.ask-card .ask-option {
+  display: block; width: 100%; text-align: left;
+  background: none; border: none; border-radius: 0;
+  padding: 6px 0 6px 22px; text-indent: -22px;  /* 悬挂缩进 · 折行对齐到文字列 */
+  line-height: 1.5;
+  color: var(--tx2); cursor: pointer; font: inherit; font-size: 14px;
+  transition: color .15s ease, padding-left .15s ease;
+}
+.msg.ask-card .ask-option b { display: inline-block; min-width: 14px; margin-right: 8px; color: var(--tx3); font-weight: 400; }
+.msg.ask-card .ask-option:hover:not(:disabled) { color: var(--tx); padding-left: 26px; }
+.msg.ask-card .ask-option:disabled { opacity: .45; cursor: default; }
+.msg.ask-card .ask-hint { font-size: 12px; opacity: .55; margin-top: 9px; }
+.msg.ask-card.ask-card-done { opacity: .75; }
+.msg.ask-card.ask-card-done .ask-options { display: none; }

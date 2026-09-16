@@ -31,6 +31,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 import uuid
 import hashlib
 from datetime import datetime
@@ -109,6 +110,8 @@ def set_session_meta(
     pinned: Optional[bool] = None,
     archived: Optional[bool] = None,
     last_model_cfg: Optional[str] = None,
+    last_think_cfg: Optional[dict] = None,
+    last_tool_profile: Optional[str] = None,
     working_docs: Optional[list] = None,
 ) -> dict:
     """更新一个 session 的 metadata · None 表示不改
@@ -145,6 +148,22 @@ def set_session_meta(
                 cur["last_model_cfg"] = s
             else:
                 cur.pop("last_model_cfg", None)
+
+        # wish-00490c86 · 思考开关跟对话实例走（以前存 localStorage 全局键 · B 关思考会串到 A）
+        if last_think_cfg is not None:
+            cfg = {k: v for k, v in (last_think_cfg or {}).items() if v not in (None, "")}
+            if cfg:
+                cur["last_think_cfg"] = cfg
+            else:
+                cur.pop("last_think_cfg", None)
+
+        # wish-16fa5930 · 档位跟对话实例走（一场一种厚度 · 开跑即锁）
+        if last_tool_profile is not None:
+            s = (last_tool_profile or "").strip()
+            if s:
+                cur["last_tool_profile"] = s
+            else:
+                cur.pop("last_tool_profile", None)
 
         if working_docs is not None:
             cur["working_docs"] = list(working_docs)
@@ -606,6 +625,79 @@ def list_sessions() -> list[tuple[str, datetime, int]]:
     return result
 
 
+# 2026-09-15 · turns 数行缓存。列表页每次都要 turns，500+ 个 jsonl 全量重扫代价太大
+#   key=sid · value=(mtime, turns) · 文件 mtime 没变就直接命中
+#   进程内缓存（重启清空）· 不碰持久化 meta 格式 · 已删 session 留几条死键无妨
+#   并发下 dict get/set 在 CPython 是原子的，最坏重算一次，不加锁
+_TURNS_CACHE: dict[str, tuple[float, int]] = {}
+# 2026-09-16 · wish-3bc2fdaf 续 · 缓存落盘（开机冷盘解药）
+#   开机后第一次点「话题列表」要把 553 个 jsonl / 58MB 全读一遍数行 ·
+#   热盘 0.43s · 冷盘 + 杀软扫描下冲到 10s+（BRO 报的「一直加载中」）
+#   落盘后冷启动只读一个 ~16KB 的 json · 只有 mtime 变过的会话才重算
+_TURNS_CACHE_PATH = ROOT / "data" / "runtime" / "session_turns_cache.json"
+_TURNS_STATE: dict = {"loaded": False, "dirty": False, "last_save": 0.0}
+_TURNS_SAVE_LOCK = threading.Lock()
+_TURNS_SAVE_INTERVAL = 30.0  # 秒 · 写盘节流
+
+
+def _load_turns_cache() -> None:
+    """进程内首次用到时从磁盘捞缓存 · 坏文件静默忽略（最坏重算一遍）。"""
+    if _TURNS_STATE["loaded"]:
+        return
+    _TURNS_STATE["loaded"] = True
+    try:
+        raw = json.loads(_TURNS_CACHE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(raw, dict):
+        return
+    for sid, v in raw.items():
+        try:
+            if isinstance(v, list) and len(v) == 2:
+                _TURNS_CACHE[str(sid)] = (float(v[0]), int(v[1]))
+        except (TypeError, ValueError):
+            continue
+
+
+def _save_turns_cache(force: bool = False) -> None:
+    """节流落盘（默认 30s 最多一次）· 原子替换 · 任何失败静默不影响列表。"""
+    if not force and not _TURNS_STATE["dirty"]:
+        return
+    now = time.monotonic()
+    _last = _TURNS_STATE["last_save"]
+    if not force and _last and (now - _last) < _TURNS_SAVE_INTERVAL:
+        return   # 只跟「上次真写过」的时刻比 · 0 = 本进程还没写过 → 放行（否则开机 <30s 时首写会被误跳过）
+    if not _TURNS_SAVE_LOCK.acquire(blocking=False):
+        return   # 另一线程在写 → 跳过这轮（缓存只是加速器·丢一次无害）
+    try:
+        _TURNS_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _TURNS_CACHE_PATH.with_suffix(".json.tmp")
+        snap = {k: [v[0], v[1]] for k, v in list(_TURNS_CACHE.items())}
+        tmp.write_text(json.dumps(snap), encoding="utf-8")
+        os.replace(tmp, _TURNS_CACHE_PATH)
+        _TURNS_STATE["dirty"] = False
+        _TURNS_STATE["last_save"] = now
+    except Exception:   # 写缓存失败永不影响列表（并发迭代 / 磁盘满 / 权限）
+        pass
+    finally:
+        _TURNS_SAVE_LOCK.release()
+
+
+def _count_turns(p, mtime_ts: float) -> int:
+    """数一个 session jsonl 的行数 · 带 mtime 缓存（调用方已 stat 过）。"""
+    hit = _TURNS_CACHE.get(p.stem)
+    if hit is not None and hit[0] == mtime_ts:
+        return hit[1]
+    try:
+        with p.open("r", encoding="utf-8") as f:
+            turns = sum(1 for _ in f)
+    except OSError:
+        turns = 0
+    _TURNS_CACHE[p.stem] = (mtime_ts, turns)
+    _TURNS_STATE["dirty"] = True
+    return turns
+
+
 def list_sessions_with_meta() -> list[dict]:
     """卷三十四补丁 · 返回带 metadata 的 session 列表
 
@@ -615,15 +707,16 @@ def list_sessions_with_meta() -> list[dict]:
     排序：pinned 在前（按 pinned_at desc）·非 pinned 按 mtime desc。
     """
     idx = _load_meta_index()
+    _load_turns_cache()   # 冷启动从磁盘捞 turns 缓存 · 不再 553 个文件全量重读
     rows: list[dict] = []
     for p in SESSIONS_DIR.glob("*.jsonl"):
         sid = p.stem
-        mtime = datetime.fromtimestamp(p.stat().st_mtime)
         try:
-            with p.open("r", encoding="utf-8") as f:
-                turns = sum(1 for _ in f)
+            mtime_ts = p.stat().st_mtime   # 只 stat 一次（原来同一文件 stat 两次）
         except OSError:
-            turns = 0
+            continue
+        mtime = datetime.fromtimestamp(mtime_ts)
+        turns = _count_turns(p, mtime_ts)
         meta = idx.get(sid, {}) or {}
         rows.append({
             "session_id": sid,
@@ -633,6 +726,8 @@ def list_sessions_with_meta() -> list[dict]:
             "pinned_at": meta.get("pinned_at"),
             "archived_at": meta.get("archived_at"),
             "last_model_cfg": meta.get("last_model_cfg"),
+            "last_think_cfg": meta.get("last_think_cfg") or {},   # wish-00490c86 · 思考开关跟对话实例走（行组装在源头加 · sessions.py 那层拿的是本函数产物）
+            "last_tool_profile": meta.get("last_tool_profile"),   # wish-16fa5930 · 档位跟对话实例走
         })
 
     def _sort_key(r):
@@ -650,4 +745,5 @@ def list_sessions_with_meta() -> list[dict]:
     unpinned = [r for r in rows if not r["pinned_at"]]
     pinned.sort(key=lambda r: r["pinned_at"], reverse=True)
     unpinned.sort(key=lambda r: r["mtime"], reverse=True)
+    _save_turns_cache()   # 新算出来的 turns 落盘 · 下次冷启动直接命中
     return pinned + unpinned

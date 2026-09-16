@@ -874,6 +874,7 @@ function applyVisibleChrome(sid) {
   if (sid) startActivePoll(sid);
   else stopActivePoll();
   if (window.TopicRail && TopicRail.paintStamps) TopicRail.paintStamps();
+  if (window.HostPulse) HostPulse.refresh();
 }
 
 /* 换话题 = 换记忆段落, 不是换一个她。 切完直接跳回对话区, 免得他还要自己点回来。
@@ -946,6 +947,7 @@ function startNewTopic() {
   applyVisibleChrome(null);
   if (window.TopicRail && TopicRail.draftNew) TopicRail.draftNew();
   else if (window.TopicRail) TopicRail.refresh();
+  if (window.HostPulse) HostPulse.refresh();
 }
 
 /* 话题卡 ⋯ 菜单 · 对齐工作台 deleteSession / renameSession, 陪伴只留重命名+删除 */
@@ -1034,10 +1036,22 @@ async function deleteTopic(sid) {
   closeTopicMenu();
   const row = _topicRowOf(sid);
   const name = (row && row.dataset.label) || '这个话题';
-  const ok = typeof opusConfirm === 'function'
-    ? await opusConfirm({ message: '确认删除「' + name + '」吗？删除后不可恢复。' })
-    : window.confirm('确认删除「' + name + '」吗？删除后不可恢复。');
-  if (!ok) return;
+  let askedPulse = false;
+  if (window.HostPulse && HostPulse.confirmClose) {
+    const snap = await HostPulse.peek(sid);
+    if (HostPulse.hasItems(snap)) {
+      const ans = await HostPulse.confirmClose({ sid: sid, mode: 'delete', pulse: snap });
+      if (ans !== 'stop') return;
+      await HostPulse.stopSession(sid);
+      askedPulse = true;
+    }
+  }
+  if (!askedPulse) {
+    const ok = typeof opusConfirm === 'function'
+      ? await opusConfirm({ message: '确认删除「' + name + '」吗？删除后不可恢复。' })
+      : window.confirm('确认删除「' + name + '」吗？删除后不可恢复。');
+    if (!ok) return;
+  }
   try {
     const r = await fetch('/sessions/' + encodeURIComponent(sid), {
       method: 'DELETE',
@@ -2649,6 +2663,96 @@ async function triggerStop() {
 /* 高危工具确认卡 · 内联进对话流, 不做遮罩
    (母体卷七十四钉死: 遮罩在 daemon 重启/turn 中断时收不到 confirm_resolved 会锁死整页)
    样式白送 —— index.html 已经引了母体 chat.css 的 .confirm-* 全套 */
+/* 她这轮铺了原型到工作室 · 房间里不自动开舞台（抢屏）· 只在说话下面留一条入口 */
+function renderProtoNotice(box, paths) {
+  const seen = new Set();
+  const list = [];
+  (paths || []).forEach(function (p) {
+    const q = String(p || '').replace(/\\/g, '/');
+    if (q && !seen.has(q)) { seen.add(q); list.push(q); }
+  });
+  if (!list.length || !box) return;
+  const row = document.createElement('div');
+  row.className = 'msg proto-notice';
+  const icon = document.createElement('i');
+  icon.className = 'ri-layout-column-line';
+  row.appendChild(icon);
+  const span = document.createElement('span');
+  span.textContent = list.length > 1
+    ? ('她做了 ' + list.length + ' 份原型，摆在工作室里')
+    : '她做了份原型，摆在工作室里';
+  row.appendChild(span);
+  list.forEach(function (p) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-ghost proto-open';
+    btn.innerHTML = '<i class="ri-eye-line"></i> 点开看看';
+    btn.title = p;
+    btn.onclick = function () { if (typeof openStage === 'function') openStage({ path: p }); };
+    row.appendChild(btn);
+  });
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+}
+
+/* wish-db46ff9b · 选择题卡 —— 她停下来问你选一个。
+   跟审批卡有意分开：审批是「要不要让她做」（带回显·带信任），
+   这张只是「你要哪个」——没有风险块、没有信任按钮、也不写 trusted_commands。 */
+function renderAskCard(d) {
+  if (!d || !d.tool_call_id) return null;
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ask-card';
+  wrap.dataset.askId = d.tool_call_id;
+  wrap.dataset.turnId = d.turn_id || '';
+  const opts = (d.options || []).slice(0, 5);
+  wrap.innerHTML = `
+    <div class="ask-head">❯ 她想问你一件事</div>
+    <div class="ask-question">${esc(d.question || '')}</div>
+    <div class="ask-options">${opts.map((o, i) =>
+      `<button type="button" class="ask-option" data-idx="${i}"><b>${i + 1}</b>${esc(o)}</button>`).join('')}</div>
+    <div class="ask-hint">不答也行 · 她不会一直卡在这儿</div>`;
+  wrap.querySelectorAll('.ask-option').forEach(b => {
+    b.addEventListener('click', () => {
+      const i = parseInt(b.dataset.idx, 10) || 0;
+      postAskAnswer(wrap, d, opts[i] || '', i);
+    });
+  });
+  const host = document.getElementById('room-confirm') || paneChat;
+  if (host) host.appendChild(wrap);
+  return wrap;
+}
+
+async function postAskAnswer(card, d, choice, index) {
+  const status = card.querySelector('.ask-hint');
+  if (status) status.textContent = '提交中…';
+  card.querySelectorAll('button').forEach(b => (b.disabled = true));
+  try {
+    const turnId = d.turn_id || curTurnId;
+    if (!turnId) throw new Error('missing turn_id');
+    const r = await fetch('/turns/' + encodeURIComponent(turnId) + '/answer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tool_call_id: d.tool_call_id, choice: choice, choice_index: index }),
+    });
+    if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + await r.text());
+    collapseAsk(card, 'answered', choice);
+  } catch (e) {
+    if (status) status.textContent = '提交失败: ' + (e && e.message || e);
+    card.querySelectorAll('button').forEach(b => (b.disabled = false));
+  }
+}
+
+function collapseAsk(card, why, choice) {
+  if (!card || card.classList.contains('ask-card-done')) return;
+  card.classList.add('ask-card-done');
+  card.querySelector('.ask-options')?.remove();
+  const status = card.querySelector('.ask-hint');
+  if (!status) return;
+  if (why === 'answered') status.innerHTML = `<i class="ri-check-fill"></i> 你选了「${esc(choice || '')}」`;
+  else if (why === 'timeout') status.textContent = '没回答（超时）· 她已经往下走了';
+  else status.textContent = '已收：' + why;
+}
+
 function renderConfirmCard(d) {
   if (!d || !d.tool_call_id) return null;
   const wrap = document.createElement('div');
@@ -2924,6 +3028,19 @@ async function send(opts) {
           collapseConfirm(card, d.decision || 'deny', d.reason || '');
         }
         _confirmCards.delete(d.tool_call_id);
+      } else if (type === 'ask_request') {
+        /* wish-db46ff9b · 她停下来问你选一个 (跟审批卡分开·这是「你要哪个」不是「要不要」) */
+        if (!isVisible()) return;
+        window._askCards = window._askCards || new Map();
+        const askCard = renderAskCard(d);
+        if (askCard) window._askCards.set(d.tool_call_id, askCard);
+      } else if (type === 'ask_resolved') {
+        window._askCards = window._askCards || new Map();
+        const askCard = window._askCards.get(d.tool_call_id);
+        if (askCard) {
+          collapseAsk(askCard, d.answered ? 'answered' : (d.reason || 'timeout'), d.choice || '');
+        }
+        window._askCards.delete(d.tool_call_id);
       } else if (type === 'assistant_delta') {
         /* 逐字流式 · 陪伴模式最该有的一个事件: 一个字一个字冒出来才像"她在说话",
            整段啪地砸出来像"她在交付文件"。 之前这个 case 缺着, 走的是 assistant_text 整段。*/
@@ -2971,7 +3088,10 @@ async function send(opts) {
         if (d.name === 'note_style_shift' || d.name === 'note_mood' || d.name === 'note_gallery') {
           /* 回执走下面 tool_result 灰字，不画做事气泡 */
         } else {
-        if ((d.name || '').includes('dispatch_subagent')) sawSpawn = true;
+        if ((d.name || '').includes('dispatch_subagent')) {
+        sawSpawn = true;
+        if (window.HostPulse) HostPulse.refresh();
+      }
         addTlStep(d.name || '', d.summary || '', state.$container);
         paintRoom(() => {
           if (curState !== 'spawn') setState('working');
@@ -3004,7 +3124,9 @@ async function send(opts) {
             loadWeather().then(() => paintWeatherCard());
           }
         } else {
-        fillTlStep(d.name || '', !/^(error:|exit code [1-9]|failed:)/i.test(String(d.preview || '')), state.$container);
+        // 用结构化的 d.ok 判定 (跟 chat.js 实时时间线一致) · 不再拿正则猜文本 ——
+        // 旧正则漏了 '[TOOL ERROR] ' 前缀 · 工具失败会被画成成功
+        fillTlStep(d.name || '', !!d.ok, state.$container);
         /* 同步分身: 结果已在主回复里 · 异步(后台跑)才需要信箱看守 */
         if ((d.name || '').includes('dispatch_subagent') && String(d.preview || '').includes('后台跑')) {
           spawnAsync = true;
@@ -3012,6 +3134,11 @@ async function send(opts) {
         if (d.ok && d.name === 'commit_taste') {
           state.chatMode = '';
           refreshHangoutDoor();
+        }
+        /* 本轮铺到工作室的 HTML 原型：房间里不自动开舞台（抢屏）· 攒到 turn 末给一个入口 */
+        if (d.ok && d.open_path && /\.html?$/i.test(String(d.open_path))) {
+          state._pendingProtos = state._pendingProtos || [];
+          state._pendingProtos.push(String(d.open_path).replace(/\\/g, '/'));
         }
         }
       } else if (type === 'tool_progress') {
@@ -3044,6 +3171,11 @@ async function send(opts) {
     replyText = stripFace(replyText);
     if (replyText) renderAiBubble(bubble, replyText);
     else bubble.innerHTML = `（${stopped ? '她停下了' : '她没说话'}）<div class="t">${new Date().toTimeString().slice(0, 5)}</div>`;
+    if (state._pendingProtos && state._pendingProtos.length) {
+      const protoBox = state.$container || chatBox();
+      if (protoBox) renderProtoNotice(protoBox, state._pendingProtos);
+      state._pendingProtos = [];
+    }
     if (isVisible()) {
       if (stopped) {
         setStatus(null);
@@ -3053,6 +3185,7 @@ async function send(opts) {
         setStatus('分身在外面跑…');
         setState('spawn');
         startSubWatch(state.sessionId || getSid());
+        if (window.HostPulse) HostPulse.refresh();
       } else {
         setStatus(null);
         hideToolBubble();
@@ -3062,6 +3195,7 @@ async function send(opts) {
       if (!stopped) speak(replyText);
     } else if (sawSpawn && spawnAsync) {
       startSubWatch(state.sessionId || getSid());
+      if (window.HostPulse) HostPulse.refresh();
     }
   } catch (e) {
     /* 1.5s 兜底硬切 reader 时走这里 · 优雅停止(daemon 自己收尾)则走正常 done 分支 */
@@ -3452,3 +3586,15 @@ if (typeof initVoice === 'function') {
     try { __voice.start(); } catch (e) {}
   }
 })();
+
+if (window.HostPulse) HostPulse.mount('hostPulse', { session: function () { return (typeof getSid === 'function' && getSid()) || ''; } });
+if (window.Daemonkey && typeof Daemonkey.on === 'function') {
+  Daemonkey.on('hostpulse:tick', function (d) {
+    const n = ((d && d.spawns) || []).length;
+    if (n === 0 && typeof curState !== 'undefined' && curState === 'spawn') {
+      if (typeof setState === 'function') setState(typeof autoBaseState === 'function' ? autoBaseState() : 'stand');
+      if (typeof setStatus === 'function') setStatus(null);
+      if (typeof hideToolBubble === 'function') hideToolBubble();
+    }
+  });
+}

@@ -79,11 +79,13 @@ def _gitee_token() -> str:
         for line in env.read_text(encoding="utf-8").splitlines():
             if line.startswith("GITEE_TOKEN=") or line.startswith("DAEMONKEY_GITEE_TOKEN="):
                 return line.split("=", 1)[1].strip().strip('"').strip("'")
+    from agent_tools._subprocess_helper import no_window_kwargs
     p = subprocess.run(
         ["git", "credential", "fill"],
         input="protocol=https\nhost=gitee.com\n\n",
         text=True,
         capture_output=True,
+        **no_window_kwargs(),
     )
     for line in p.stdout.splitlines():
         if line.startswith("password="):

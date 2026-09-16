@@ -2,21 +2,23 @@
 workers/service_runner.py
 ==========================
 
-卷四十四 K stage 2c++ · wish-8d6b76a6 — OPUS 启长跑服务的正确姿势
+卷四十四 K stage 2c++ · wish-8d6b76a6 — 启长跑服务的正确姿势
 
 **为什么有这个**:
-  shell_exec 设计来跑短任务 (默认 30s · 最长 300s)。 OPUS 起 GPT-SoVITS api.py /
+  shell_exec 设计来跑短任务 (默认 30s · 最长 300s)。 起 GPT-SoVITS api.py /
   Stable Diffusion / 自己造的 API 服务这种典型长跑后台 · shell_exec 等 subprocess exit
   → timeout 后子进程成孤儿 (Windows PID 17720 真实事故)。
 
-  这个 module 做"detach 启动 + 持久化 + healthcheck + 状态查询"四件套 · 让 OPUS 起服务
+  这个 module 做"detach 启动 + 持久化 + healthcheck + 状态查询"四件套 · 让「起服务」
   成为一个清晰的工具语义 · 跟 shell_exec (短任务) 彻底分开。
 
 **核心思路**:
-  - spawn 用 platform-specific detach (Win: DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP)
+  - spawn 用 platform-specific detach (Win: CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
     + (Unix: start_new_session) · daemon 死了子进程也能继续跑
+    ⚠️ 别加 DETACHED_PROCESS · 它对 console 子系统程序反而强制新建黑框窗口
+       (2026-09-15 实测 · _subprocess_helper.detached_kwargs 已去掉 · 详见那里的 docstring)
   - 状态落 `data/runtime/services.json` (atomic write) · daemon 重启后仍能 list/stop
-  - log 落 `data/runtime/service_logs/<name>.log` · BRO 排错时 OPUS 调 read_file 看
+  - log 落 `data/runtime/service_logs/<name>.log` · 排错时直接 read_file 看
   - PID 是否活的 · 用 psutil (已是 daemon 依赖)
 
 **安全约束** (在工具层 + module 层共同保证):
@@ -24,7 +26,7 @@ workers/service_runner.py
   - 一个 name 一个 service · 重复要先 stop
   - working_dir 必须存在且是目录
   - env 是 dict · merge 进 os.environ (不是替换)
-  - shell=True 是有意保留 (OPUS 经常需要 conda activate / set 环境变量后再跑)
+  - shell=True 是有意保留 (经常需要 conda activate / set 环境变量后再跑)
   - 但工具层是 TIER_CONFIRM · BRO 看摘要 ✓ 才跑
 
 **跟铁律的协同** (工具描述里强调):
@@ -151,14 +153,14 @@ def _spawn_detached(
         log_f = None
         stdout_target = subprocess.DEVNULL
 
-    # 卷四十六续 IV · detached_kwargs() 统一: Win 用 DETACHED|GROUP|NO_WINDOW · POSIX 用 start_new_session
+    # 卷四十六续 IV · detached_kwargs() 统一: Win 用 GROUP|NO_WINDOW|SW_HIDE · POSIX 用 start_new_session
     kwargs: dict[str, Any] = dict(
         cwd=str(working_dir),
         env=full_env,
         stdin=subprocess.DEVNULL,
         stdout=stdout_target,
         stderr=subprocess.STDOUT,
-        shell=True,  # 让 OPUS 能用 conda activate / && / 管道
+        shell=True,  # 让服务能用 conda activate / && / 管道
         **detached_kwargs(),
     )
     if platform.system() != "Windows":
@@ -217,6 +219,7 @@ def list_services() -> list[dict]:
             "working_dir": info.get("working_dir"),
             "log_path": info.get("log_path"),
             "healthcheck_url": info.get("healthcheck_url"),
+            "session_id": info.get("session_id") or "",
             "meta": meta,
         })
     return out
@@ -246,6 +249,7 @@ def start_service(
     port: Optional[int] = None,
     healthcheck_url: Optional[str] = None,
     healthcheck_after_sec: float = 5.0,
+    session_id: Optional[str] = None,
 ) -> dict:
     """
     启动服务 · 返 {ok, pid, status, healthcheck_status, log_path, message}
@@ -298,6 +302,7 @@ def start_service(
         "log_path": str(log_path.relative_to(ROOT).as_posix()),
         "healthcheck_url": healthcheck_url,
         "stopped": False,
+        "session_id": (session_id or "").strip(),
     }
     services[name] = info
     _save_services(services)
@@ -305,6 +310,9 @@ def start_service(
     # spawn 后 quick check · 子进程是不是立刻就崩了
     time.sleep(0.5)
     if not _is_alive(pid):
+        # B-② · 2026-08-27 · spawn 即崩 → 从注册表摘掉 · 不留僵尸条目 (Grok 全量审计)
+        services.pop(name, None)
+        _save_services(services)
         return {
             "ok": False,
             "pid": pid,
@@ -476,7 +484,9 @@ def stop_service(name: str, timeout_sec: float = 5.0) -> dict:
         "ok": False,
         "message": (
             f"service `{name}` (pid={pid}) 杀了 {n_killed} 个进程但还有人活着/listen "
-            f"· 可能要 BRO 手动处理 (netstat -ano | findstr :{port}{') (port: ' + str(port) if port else ''})"
+            f"· 可能要 BRO 手动处理 (netstat -ano | findstr :{port}"
+            + (f" · port={port}" if port else "")
+            + ")"
         ),
     }
 
@@ -493,3 +503,45 @@ def remove_service(name: str) -> dict:
     services.pop(name, None)
     _save_services(services)
     return {"ok": True, "message": f"service `{name}` 已从记录里移除 (log 保留)"}
+
+
+# 名字白名单 · 跟 service_start 的命名规则一致 · 顺带堵住路径穿越 (../ 之类)
+_LOG_NAME_RE = re.compile(r"[A-Za-z0-9_.\-]{1,64}")
+
+
+def read_service_log(name: str, tail_lines: int = 60, max_bytes: int = 262144) -> dict:
+    """读一条服务的日志尾巴 —— 给「服务药丸」面板看 (替代以前弹出来的那个黑框)。
+
+    · 只认 [A-Za-z0-9_.-] 的服务名 (防路径穿越)
+    · 只从 LOG_DIR 里读 · 只读尾部 max_bytes 字节 (大日志不炸内存)
+    · 返回 {ok, name, lines, path, size, exists, truncated}
+    """
+    nm = (name or "").strip()
+    if not nm or not _LOG_NAME_RE.fullmatch(nm):
+        return {"ok": False, "name": nm, "lines": [], "message": f"非法服务名: {name!r}"}
+    p = LOG_DIR / f"{nm}.log"
+    try:
+        rel = str(p.relative_to(ROOT)).replace("\\", "/")
+    except ValueError:
+        rel = str(p)
+    if not p.exists():
+        return {
+            "ok": True, "name": nm, "lines": [], "path": rel, "size": 0,
+            "exists": False, "message": "还没有日志（服务可能刚起 · 或这条服务没走 log 重定向）",
+        }
+    try:
+        size = p.stat().st_size
+        with open(p, "rb") as f:
+            if size > max_bytes:
+                f.seek(size - max_bytes)
+                f.readline()  # 丢掉可能被切成半截的那一行
+            raw = f.read()
+        text = raw.decode("utf-8", errors="replace")
+        n = max(1, min(int(tail_lines or 60), 2000))
+        lines = text.splitlines()[-n:]
+        return {
+            "ok": True, "name": nm, "lines": lines, "path": rel, "size": size,
+            "exists": True, "truncated": size > max_bytes,
+        }
+    except Exception as e:
+        return {"ok": False, "name": nm, "lines": [], "message": f"{type(e).__name__}: {e}"}

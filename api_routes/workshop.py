@@ -60,6 +60,9 @@ from daemon_runtime import RUNTIME
 
 ROOT = Path(__file__).resolve().parent.parent
 _WORKSHOP_DOMAINS = {"content", "design", "dev", "docs", "reports"}
+# 下载 / reveal 用的更宽集合: presentations / spreadsheets 是成品稿目录
+#   (卷八十一只给 md 预览开了白名单域 · BRO 2026-09-15: 另存为 data/presentations/*.pptx 报 400 invalid workshop domain)
+_WORKSHOP_FILE_DOMAINS = _WORKSHOP_DOMAINS | {"presentations", "spreadsheets"}
 
 
 router = APIRouter()
@@ -141,7 +144,7 @@ def _resolve_workshop_file(domain: str, filename: str) -> "Path":
         if not full.exists() or not full.is_file():
             raise HTTPException(404, f"workshop output not found: {filename}")
         return full
-    if domain not in _WORKSHOP_DOMAINS:
+    if domain not in _WORKSHOP_FILE_DOMAINS:
         raise HTTPException(400, f"invalid workshop domain: {domain}")
     suffix = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
     if f".{suffix}" not in _WORKSHOP_FILE_EXTS:

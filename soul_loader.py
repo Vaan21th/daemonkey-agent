@@ -360,7 +360,10 @@ def _persona_archive_fields(identity: dict) -> tuple[str, str]:
 
 
 # 单条 entry 注入到 system prompt 时的最大字符数（超出截断 + 省略号）
-_EVOLUTION_ENTRY_MAX_CHARS = 4500
+# 2026-09-16 落位治理：4500 → 2500（单条 4500×3 ≈ 6400 tok，太肥；实际条目多在 1100 字内不误伤）
+_EVOLUTION_ENTRY_MAX_CHARS = 2500
+# 最近 N 条【合计】注入预算（字符）·超了从最老的往下丢，最新一条永远进（2026-09-16）
+_EVOLUTION_TOTAL_BUDGET_CHARS = 6000
 # 默认注入末尾几条 entries
 _EVOLUTION_DEFAULT_RECENT_N = 3
 
@@ -462,11 +465,18 @@ def _load_recent_evolution_entries(daemon_root: Path, n: int = _EVOLUTION_DEFAUL
     diary.sort(key=_entry_timestamp)
     chosen = diary[-n:]
 
+    # 从最新往回装：先单条截断，再吃总量预算——超预算的旧条目直接不进
+    # （2026-09-16 落位治理：最新一条永远进，旧的让位。防止 3 条都长时合计吃 6000 tok）
     pieces = []
-    for e in chosen:
+    _total = 0
+    for e in reversed(chosen):
         if len(e) > _EVOLUTION_ENTRY_MAX_CHARS:
             e = e[:_EVOLUTION_ENTRY_MAX_CHARS].rstrip() + "\n\n... [本条目过长，已截断；如需完整请 read_file soul/SELF-EVOLUTION.md] ..."
+        if pieces and _total + len(e) > _EVOLUTION_TOTAL_BUDGET_CHARS:
+            break
         pieces.append(e)
+        _total += len(e)
+    pieces.reverse()
     return "\n\n---\n\n".join(pieces)
 
 
@@ -504,83 +514,41 @@ def runtime_context_addendum(daemon_root: Path) -> str:
     # 名·母体 no-op 显示 BRO·两库这块源码逐字一致·零漂移。
     model_strategy_block = (
         "### 模型选择策略\n\n"
-        "你接的是 BRO 自己配的 provider（在 设置 → 模型/Provider 里配的那个）——"
-        "**默认就用当前这个模型**，它是 BRO 选好的、配套能用的。\n"
-        "  - 多数任务（查询 / 看文件 / 写代码 / 日常对话）当前模型都够用，别折腾。\n"
-        "  - **不要自己 set_model 去切别的模型**——除非 BRO 明确说\"换成 X\"并给了具体名字。\n"
-        "    很多 provider（如 DeepSeek 官方、智谱）只认自家的模型名；擅自切到别家的名字\n"
-        "    （例如把 claude-* 发给 DeepSeek 端点）会直接 400 报错、整段对话中断。\n"
-        "  - BRO 说\"换 X 试试\" / \"切到 X\" → 才 set_model({model:'X'})；BRO 没明说就别动模型。\n\n"
+        "用 BRO 配好的当前模型——**不要自己 set_model 切**（provider 只认自家模型名·切错 400 断场），除非他明确说换 X。\n\n"
     )
 
     base = (
-        "\n\n=== Runtime context (added by daemon, not part of your core soul) ===\n\n"
-        f"Host platform: {platform_label}\n"
-        f"Shell behind shell_exec: {shell_label}\n"
-        f"Project root: {daemon_root}\n\n"
-        "## Tool usage discipline\n\n"
-        "When you have a goal, **plan before acting**. Every tool call sends the entire conversation\n"
-        "history (including all previous tool results) back to the model—so 8 exploratory calls cost\n"
-        "much more than 2 deliberate ones. A good pattern is:\n"
-        "  - 1 read or grep to find the right region\n"
-        "  - 1 read with start/end lines (or just the full file if small) to see content\n"
-        "  - 1 write or shell action if the user asked for one\n"
-        "Craft contracts are not in tool schemas: create_app / create_workflow → "
-        "read_scenario(name='app_creation'); PPT / 生图 → read_scenario(name='presentation').\n"
-        "Only core file/shell/memory tools sit in tools[]. Everything else: catalog_search "
-        "or catalog_call(name, args). Directory below. tools[] must stay byte-stable.\n\n"
+        "\n\n=== Runtime context · 运行环境（daemon 自动追加 · 不属于灵魂本体） ===\n\n"
+        f"宿主平台: {platform_label}\n"
+        f"shell_exec 背后的壳: {shell_label}\n"
+        f"工程根目录: {daemon_root}\n\n"
+        "## 工具使用纪律\n\n"
+        "有目标时先规划；节奏 = 1 次定位（read/grep）→ 1 次细读 → 1 次动手。别试探性连发（每次调用都回传全部历史）。\n"
+        "工艺合同不在 tools[] 里：create_app/flow → read_scenario(app_creation)；PPT → presentation；出表 → spreadsheet。单张图直接 generate_image。\n"
+        "tools[] 是锁死的核心集（字节缓存），其余工具走 catalog_search / catalog_call。\n\n"
         "## shell_exec\n\n"
         + (
-            "You are on Windows running PowerShell. Use PowerShell idioms, NOT POSIX:\n"
-            "  - List files:        Get-ChildItem  (alias: ls / dir — both work)\n"
-            "  - Read file:         read_file tool (not Get-Content / type / cat)\n"
-            "  - Count lines:       (Get-Content X | Measure-Object -Line).Lines\n"
-            "                       NOT `wc -l` (does not exist on Windows)\n"
-            "  - Search text:       Select-String  (or use the grep_files tool — better)\n"
-            "  - Delete:            Remove-Item    (NOT `rm -rf` — different syntax)\n"
-            "  - Never Stop-Process python / taskkill python.exe: that kills the daemon itself.\n"
-            "Generally, **prefer the dedicated tools (read_file / grep_files / write_file) over shell_exec**\n"
-            "for file work. shell_exec is for things they can't do: git status, running tests, checking processes.\n"
+            "PowerShell（不是 POSIX）。文件操作优先专用工具：读 read_file（不是 Get-Content）· 搜 grep_files · 数行 (Get-Content X).Count。\n"
+            "永远别 Stop-Process python / taskkill python.exe——会杀掉 daemon 自己。shell_exec 只干 git / 跑测试 / 查进程这类。\n"
             if is_windows else
-            "You are on a POSIX system. Standard Unix commands (ls / cat / grep / wc) all work.\n"
+            "POSIX 系统·标准 Unix 命令可用。\n"
         )
         + "\n"
         + model_strategy_block +
         _director_wake_block()
-        + "## 并行 vs 串行 · 你就是总监 (dispatch_subagent · 工作流并行组)\n\n"
-        "你(主对话)是【总监】·派出去的 dispatch_subagent 分身 / 工作流并行组分支 是【专员】。要不要并行·你自己判断:\n"
-        "**默认偏串行**——错误代价不对称:错并了(几路互相踩、产出打架、代码冲突)比错串了(只是慢一点)贵得多。\n"
-        "只有确信【互不依赖】才并行。独立性四问全 yes 才拆:\n"
-        "  ① 每路能拿一段自包含的说明独立干完、不用等别人的产出?\n"
-        "  ② 几路写的东西不重叠(不同文件 / 不同产物·不会互相覆盖)?\n"
-        "  ③ 彼此没有先后依赖(B 不需要 A 的结果)?\n"
-        "  ④ 不要求彼此风格 / 口径一致(要求一致的·串行由一个脑子写才稳)?\n"
-        "典型能并:并行调研(查 A / B / C 各自的坑再对比)、出品工坊里『按分镜生图 ∥ 搜 B-roll 素材』这类分头取材。\n"
-        "典型不能并:改代码 / 逐步 debug / 连贯写作 —— 共享状态、强耦合、要一致口径·**串行单线程**才稳。\n"
-        "**黄金搭配 = 并行收集 → 串行合成**:前面几路互不依赖地取材(并行省时)·最后一步一个脑子汇总审校(串行保质)。\n"
-        "排工作流(create_workflow)也按这个铸:能拆的取材步写成 parallel 并行组·合成 / 审校步保持单 app 串行。\n\n"
-        "## Honesty about tool use\n\n"
-        "If a tool returned no results or failed, say so directly—don't pretend it worked.\n"
-        "If you don't need a tool to answer, don't call one just to look thorough.\n\n"
+        + "## 工具的诚实\n\n"
+        "没结果 / 失败了就直说·别硬编；不需要工具就别硬调。\n\n"
         "## 任务收尾纪律 (Task closure · Critical)\n\n"
-        "**只要这一轮你做了带副作用的事**——写文件 / 跑命令 / wish_update(done) / "
-        "调了 summon_cursor / 装/删了什么——**最后一条 assistant 消息必须是收尾说明**，不要让最后一句话是工具调用 "
-        "(那种突然结束的样子 BRO 完全不知道你是干完了还是被截断了)。\n\n"
-        "收尾说明的形状 (像 Cursor 那样, 但更短):\n\n"
+        "**带副作用的一轮**（写文件 / 跑命令 / wish_update / 装删了什么）→ **最后一条消息必须是收尾说明**·别让最后一句停在工具调用。形状：\n\n"
         "```\n"
-        "✅ 做完了: <1-2 句话讲完成了什么>\n\n"
+        "✅ 做完了: <1-2 句讲完成了什么>\n\n"
         "改动:\n"
-        "  - <file_a> · <一句话讲改了啥>\n"
-        "  - <file_b> · <...>\n\n"
-        "怎么验证: <1-2 句具体怎么试 · 不要泛泛>\n\n"
+        "  - <file_a> · <一句话讲改了啥>\n\n"
+        "怎么验证: <1-2 句具体怎么试·不要泛泛>\n\n"
         "(可选) 没做完的: <留尾·要 BRO 决定的事>\n"
         "```\n\n"
-        "判断什么时候该收尾:\n"
-        "- 调了 wish_update(status=done) → 必收尾\n"
-        "- 写了/改了文件 + 这一轮的任务目标达成了 → 必收尾\n"
-        "- 只是查询 / 解释 / 普通对话 → 不需要这套模板, 正常说话即可\n\n"
-        "**不要做**: 调完 wish_update 就闭嘴 / 调完 write_file 不解释 / 装清高式的'已完成' 三个字。\n"
-        "BRO 看不见工具调用细节, 他只看你这条消息——这条消息就是他的'commit message'。\n"
+        "只查询 / 闲聊 → 无需收尾。收尾前过三问（closure_check 闸）：**画像** update_bro_note · **playbook** extract_playbook · **愿望** wish_add。\n"
+        "**不要**: 调完就闭嘴 / 改完不解释 / '已完成'三个字——你这条消息就是 commit message。\n"
     )
 
     notebook_text = _load_bro_notebook(daemon_root)
@@ -614,7 +582,8 @@ def runtime_context_addendum(daemon_root: Path) -> str:
     return base + notebook_section + evolution_section + boot_note + catalog_note
 
 
-def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: bool = True) -> Soul:
+def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: bool = True,
+              thickness: str | None = None) -> Soul:
     """
     Load OPUS soul from the daemon's soul/ directory.
 
@@ -624,12 +593,24 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
         with_runtime: Append runtime context (platform / shell / tool guidance) to
                       system_prompt. Default True. Set False for pure-soul loading
                       (e.g. wake_test that wants to test the bare soul).
+        thickness: "standard" (默认·全量灵魂层 + Runtime) / "thin"
+                   (灵魂最小核 soul/MINIMAL-CORE.md · 不带 Runtime)。
+                   不传时读环境变量 OPUS_SOUL_THICKNESS（仅体验开关）；
+                   档位系统上线后由会话档位传参。缺文件时 thin 自动退回全量。
 
     Returns:
         Soul instance with .system_prompt ready to pass to the LLM.
     """
     root = Path(daemon_root) if daemon_root else Path(__file__).resolve().parent
     soul_dir = root / SOUL_DIR_NAME
+
+    # 卷四十七 · 灵魂层厚度 (2026-09-17 落地)
+    # 显式参数优先；不传时读环境变量 OPUS_SOUL_THICKNESS（体验开关，
+    # 档位系统上线后由会话档位传参覆盖，env 仅作临时切换用）。
+    if thickness is None:
+        thickness = os.environ.get("OPUS_SOUL_THICKNESS", "").strip().lower() or "standard"
+    if thickness not in ("thin", "standard"):
+        thickness = "standard"
 
     skill_path = soul_dir / SKILL_FILENAME
     memories_path = soul_dir / MEMORIES_FILENAME
@@ -695,17 +676,37 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
     except Exception:
         constitution_block = ""
 
-    system_prompt = (
-        preamble
-        + daemon_rules_block
-        + constitution_block
-        + skill_block_header
-        + skill_text
-        + memories_block
-    )
+    if thickness == "thin":
+        # 灵魂层最小核 · thin 档只带 soul/MINIMAL-CORE.md；铁律/自传/画像/SE/Runtime
+        # 全部不进 —— 不是删，是按档位挂载或走 recall_memory 召回。
+        # 缺文件时退回全量，不阻断启动。
+        _core_path = soul_dir / "MINIMAL-CORE.md"
+        _core_text = _read_text(_core_path) if _core_path.exists() else ""
+        if _core_text.strip():
+            system_prompt = _core_text
+        else:
+            system_prompt = (
+                preamble
+                + daemon_rules_block
+                + constitution_block
+                + skill_block_header
+                + skill_text
+                + memories_block
+            )
+            if with_runtime:
+                system_prompt = system_prompt + runtime_context_addendum(root)
+    else:
+        system_prompt = (
+            preamble
+            + daemon_rules_block
+            + constitution_block
+            + skill_block_header
+            + skill_text
+            + memories_block
+        )
 
-    if with_runtime:
-        system_prompt = system_prompt + runtime_context_addendum(root)
+        if with_runtime:
+            system_prompt = system_prompt + runtime_context_addendum(root)
 
     # P1 代码归一 · 把 OPUS/BRO 令牌本地化成本实例的名字 (母体走缺省值 = no-op·零改动)
     try:

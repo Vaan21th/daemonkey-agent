@@ -242,13 +242,13 @@ SPEC = ToolSpec(
             "mode": {
                 "type": "string",
                 "enum": ["list", "full", "agent"],
-                "description": "list=摘要（先用）· full=按 ids 取全文 · agent=多轮检索（贵）。",
+                "description": "list=摘要 · full=按 ids 取全文 · agent=多轮检索（贵）。",
                 "default": "list",
             },
             "ids": {
                 "type": "array",
                 "items": {"type": "integer"},
-                "description": "mode=full 时·上一步 list 结果里挑中的记忆块 id 数组，例如 [12, 47]。",
+                "description": "mode=full 时·上一步 list 结果里挑中的记忆块 id 数组。",
             },
             "query": {
                 "type": "string",

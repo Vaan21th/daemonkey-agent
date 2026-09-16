@@ -138,7 +138,7 @@ def run_background_process(command, name: str, *, timeout: Optional[float] = Non
                 import sys
                 if sys.platform == "win32":
                     subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
-                                   capture_output=True, timeout=10)
+                                   capture_output=True, timeout=10, **kw)
                 else:
                     proc.kill()
             except Exception:

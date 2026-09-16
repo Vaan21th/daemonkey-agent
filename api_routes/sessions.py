@@ -43,7 +43,11 @@ _ARTIFACTS_CACHE: dict[str, list] = {}
 
 
 @router.get("/sessions")
-async def sessions(
+# 2026-09-15 · 同步路由（不是 async def）· 体内全是 jsonl 扫描等同步 IO。
+#   写成 async def 会在事件循环里直接跑 → 阻塞全站（实测首屏风暴下 2KB 轻接口被拖到 3.99s）。
+#   普通 def 由 FastAPI 丢进线程池 · 并发不再互堵。
+#   注意: 往这个函数里加 await 之前先想清楚 —— 若真要 await · 改回 async def。
+def sessions(
     authorization: Optional[str] = Header(None),
     limit: int = 50,
     offset: int = 0,
@@ -102,6 +106,8 @@ async def sessions(
             "pinned_at": row.get("pinned_at"),
             "archived_at": row.get("archived_at"),
             "last_model_cfg": row.get("last_model_cfg"),
+            "last_think_cfg": row.get("last_think_cfg") or {},   # wish-00490c86 · 思考开关跟对话实例走
+            "last_tool_profile": row.get("last_tool_profile"),   # wish-16fa5930 · 档位跟对话实例走
             "active": sid in _active_sids,   # wish-xxx · 会话是否正在被 daemon 跑 (历史列表运行状态点)
         })
         if len(out) >= limit:
@@ -149,9 +155,34 @@ async def get_session_meta_endpoint(
             "pinned_at": meta.get("pinned_at"),
             "archived_at": meta.get("archived_at"),
             "last_model_cfg": meta.get("last_model_cfg"),
+            "last_think_cfg": meta.get("last_think_cfg") or {},
+            "last_tool_profile": meta.get("last_tool_profile"),   # wish-16fa5930 · 档位跟对话实例走
             "working_docs": meta.get("working_docs") or [],
         },
     }
+
+
+@router.get("/sessions/{sid}/tools")
+async def session_tools_endpoint(
+    sid: str,
+    authorization: Optional[str] = Header(None),
+):
+    """本会话档位下「手边有哪些工具」（wish-16fa5930 · 原型缺口④：档位不该是黑盒）
+
+    返回: { session_id, profile, count, tools: [工具名...] }
+    老会话无档位记录 → 按默认档（standard）算。
+    """
+    check_auth(authorization)
+
+    if not session_path(sid).exists():
+        raise HTTPException(404, f"session not found: {sid}")
+
+    from agent_tools._tool_catalog import CORE
+    from workers.tool_profiles import resolve_profile
+    meta = get_session_meta(sid)
+    pid, names = resolve_profile(meta.get("last_tool_profile") or "")
+    lst = sorted(names) if names else sorted(CORE)
+    return {"session_id": sid, "profile": pid, "count": len(lst), "tools": lst}
 
 
 @router.post("/sessions/{sid}/meta")
@@ -185,8 +216,16 @@ async def update_session_meta_endpoint(
     if "last_model_cfg" in body:
         v = body.get("last_model_cfg")
         kwargs["last_model_cfg"] = v if v is None else str(v)
+    if "last_think_cfg" in body:   # wish-00490c86 · thinking/effort/max_tokens 跟对话实例走
+        v = body.get("last_think_cfg")
+        kwargs["last_think_cfg"] = v if isinstance(v, dict) else None
+    if "last_tool_profile" in body:   # wish-16fa5930 · 档位跟对话实例走（一场一种厚度 · 开跑即锁）
+        v = body.get("last_tool_profile")
+        # null / 空串 = 清掉档位记录 → 回默认档（与 label 的语义对齐）
+        # 注意：不能写 None —— set_session_meta 里 None 是「不更新」语义，会静默不生效（2026-09-16 实测踩到）
+        kwargs["last_tool_profile"] = "" if v is None else str(v)
     if not kwargs:
-        raise HTTPException(400, "body 至少要包含 label / pinned / archived / last_model_cfg 之一")
+        raise HTTPException(400, "body 至少要包含 label / pinned / archived / last_model_cfg / last_think_cfg 之一")
 
     meta = set_session_meta(sid, **kwargs)
     return {"session_id": sid, "meta": meta}
@@ -204,11 +243,33 @@ async def bind_working_doc(
         raise HTTPException(404, f"session not found: {sid}")
     from workers.session_docs import bind, home_of, list_bound
     path = str((body or {}).get("path") or "")
-    rec = bind(sid, path)
+    # wish-1518b97f.2 · 用户主动挂 (点芯片 / 中栏打开) → via='manual'。
+    # BRO 拍板: 你主动带进来的 · 本场就是它现在的家 (上传的文档也专属于那场)。
+    # 但若它已有别场的产出者 → bind 拒抢 · 只回只读描述。
+    rec = bind(sid, path, claim=True, via="manual")
     if not rec:
         raise HTTPException(400, "path 不是本机上的 pptx/docx/xlsx")
+    if rec.get("readonly"):
+        raise HTTPException(409, f"这份稿属于另一个对话 · 切回那边改: {rec.get('home_sid')}")
     home = rec.get("home_sid") or home_of(path) or sid
     return {"ok": True, "doc": rec, "home_sid": home, "working_docs": list_bound(sid)}
+
+
+@router.delete("/sessions/{sid}/working-docs")
+async def unbind_working_doc(
+    sid: str,
+    path: str = "",
+    authorization: Optional[str] = Header(None),
+):
+    """把一份办公稿从本场摘掉 (wish-1518b97f · 挂错了要能手动纠正)。"""
+    check_auth(authorization)
+    if not session_path(sid).exists():
+        raise HTTPException(404, f"session not found: {sid}")
+    if not path:
+        raise HTTPException(400, "path is required")
+    from workers.session_docs import unbind, list_bound
+    ok = unbind(sid, path)
+    return {"ok": ok, "working_docs": list_bound(sid)}
 
 
 @router.get("/sessions/working-docs/home")
@@ -368,6 +429,13 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
     )
     # 占位符/示例过滤: X.md / xxx.docx / x.png / xxx.md 等
     RE_PLACEHOLDER = re.compile(r"(^|/)(x|xxx|test|tmp|sample|example|placeholder|demo)(\.|/|$)", re.IGNORECASE)
+    # 「会产出文件的工具」—— 只有它们的调用参数算本场产出；读类工具 (read_file /
+    # grep_files / inspect_office ...) 只是“看过”不算。
+    _WRITE_TOOL = re.compile(
+        r"^(?:generate_|revise_|illustrate_|extend_|write_|create_|export_|render_|draft_|save_)"
+        r"|run_app|run_flow|comfyui",
+        re.I,
+    )
     _FAKE = {"x", "xxx", "test", "tmp", "sample", "example", "placeholder", "demo"}
 
     def _is_fake(p: str) -> bool:
@@ -379,8 +447,8 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
 
     ROOT = Path(__file__).resolve().parent.parent
 
-    def _exists_on_disk(p: str) -> bool:
-        # 归一化到绝对路径验证真实存在
+    def _cands(p: str) -> list:
+        # 归一化到绝对路径候选 (可能存在多种 url 写法)
         cands = []
         if p.startswith("data/"):
             cands.append(ROOT / p)
@@ -406,13 +474,26 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
             cands.append(ROOT / p)
         elif p.startswith("/attachments/"):
             cands.append(ROOT / "data" / "runtime" / "attachments" / p[len("/attachments/"):])
-        for c in cands:
+        return cands
+
+    def _exists_on_disk(p: str) -> bool:
+        for c in _cands(p):
             try:
                 if c.resolve().is_file():
                     return True
             except Exception:
                 pass
         return False
+
+    def _mtime_of(p: str) -> float:
+        # 文件最后修改时间 · 判“无主产物是不是本场写出来的”用
+        for c in _cands(p):
+            try:
+                if c.is_file():
+                    return c.stat().st_mtime
+            except Exception:
+                pass
+        return 0.0
 
     def _norm_url(p: str) -> str:
         if p.startswith("data/docs/"): return "/workshop/preview/docs/" + p[len("data/docs/"):]
@@ -424,6 +505,9 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
         return p
 
     seen: set[str] = set()
+    src_of: dict[str, str] = {}   # url → 最强来源 (mention < result < upload < write)
+    _SRC_RANK = {"mention": 0, "result": 1, "upload": 2, "write": 3}
+    _start_ts = ""                # 本场会话时间窗起点 (判无主文件归属用)
     artifacts: list[dict] = []
     # 粗筛关键词 (卷八十一续二 · BRO 反馈产物首次 6s 慢 · 根因是 RE_DOCPATH 在超长 HTML/代码上
     # 灾难性回溯 · 每段 10K+ 字符的文本跑正则要 0.06-0.28s。先用零回溯的 in 判断跳过
@@ -437,35 +521,50 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
             msg = json.loads(line)
         except Exception:
             continue
-        texts: list[str] = []
+        # (文本, 来源) · 2026-09-15 产物归属收紧: 来源判「这条路径跟本场什么关系」——
+        #   write   = 会产出文件的工具的参数 (generate_* / revise_office / write_file ...)
+        #   upload  = 用户传进本场的附件
+        #   result  = 工具结果里出现过 (可能只是 read_file 内容 / 脚本 stdout)
+        #   mention = 只是正文里聊到 (BRO 铁律: 聊到 ≠ 本场产物 · 不算)
+        _ts = str(msg.get("ts") or "")
+        if _ts and (not _start_ts or _ts < _start_ts):
+            _start_ts = _ts
+        _role = str(msg.get("role") or "")
+        _m_src = "result" if _role == "tool" else "mention"
+        texts: list[tuple[str, str]] = []
         c = msg.get("content")
         if isinstance(c, str):
-            texts.append(c)
+            texts.append((c, _m_src))
         elif isinstance(c, list):
             for it in c:
                 if isinstance(it, dict) and it.get("text"):
-                    texts.append(it["text"])
+                    texts.append((it["text"], _m_src))
         meta = msg.get("meta") or {}
         for att in (meta.get("attachments") or []):
             if isinstance(att, dict) and att.get("path"):
-                texts.append(str(att["path"]))
+                texts.append((str(att["path"]), "upload"))
         tc = msg.get("tool_calls")
         if tc:
             for x in tc:
                 a = None
+                _fn = ""
                 if isinstance(x, dict):
+                    _fun = x.get("function") if isinstance(x.get("function"), dict) else {}
+                    _fn = str(_fun.get("name") or x.get("name") or "")
                     if "arguments" in x:
                         a = x.get("arguments")
                     elif isinstance(x.get("function"), dict):
                         a = x["function"].get("arguments")
+                # 只有「会产出文件的工具」的参数才算本场产出 —— 读类工具只是“看过”
+                _tsrc = "write" if _WRITE_TOOL.search(_fn) else "mention"
                 if isinstance(a, str):
-                    texts.append(a)
+                    texts.append((a, _tsrc))
                 elif a:
                     try:
-                        texts.append(json.dumps(a, ensure_ascii=False))
+                        texts.append((json.dumps(a, ensure_ascii=False), _tsrc))
                     except Exception:
                         pass
-        for txt in texts:
+        for txt, src in texts:
             if not txt:
                 continue
             if not any(h in txt for h in _DOC_HINTS):
@@ -475,6 +574,9 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
                 if _is_fake(raw):
                     continue
                 url = _norm_url(raw)
+                _prev = src_of.get(url)
+                if _SRC_RANK.get(src, 0) > _SRC_RANK.get(_prev or "", -1):
+                    src_of[url] = src
                 if url in seen:
                     continue
                 seen.add(url)
@@ -482,11 +584,101 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
                     continue
                 ext = PurePosixPath(url.split("?")[0]).suffix.lower().lstrip(".")
                 name = PurePosixPath(url.split("?")[0]).name
-                artifacts.append({"name": name, "url": url, "ext": ext})
+                artifacts.append({"name": name, "url": url, "ext": ext,
+                                  "_mtime": _mtime_of(raw)})
+
+    # ── 产物归属收紧 (BRO 2026-09-15 铁律: 产物必须跟着话题走) ─────────────
+    #   旧口径 = 「本会话 jsonl 里出现过的路径」→ 别场产出的稿只要被聊到就混进来
+    #   (实例: 本场 48 条里混了 5 条别场 pptx + AI_AGENT 系列)。
+    #   新口径:
+    #     ① 有主(home)且不是本场 → 隐藏 · 别场的稿不在本场面板出现
+    #     ② 无主 → 只有本场「真动过」(tool/upload · 或附件名自带本场 sid) 才算产物
+    #     ③ 有主且就是本场 → 留 (后面 merge working_docs 会兜住)
+    try:
+        from daemon_session import _load_meta_index
+        from workers.session_docs import _canon_rel as _cr
+        _home: dict[str, str] = {}
+        for _s, _m in (_load_meta_index() or {}).items():
+            if not isinstance(_m, dict):
+                continue
+            for _d in (_m.get("working_docs") or []):
+                if not isinstance(_d, dict):
+                    continue
+                _rel = _cr(_d.get("path") or "")
+                if not _rel:
+                    continue
+                _org = str(_d.get("origin") or "").strip()
+                if _org:
+                    _home[_rel] = _org        # 有 origin → 直接信它
+                else:
+                    _home.setdefault(_rel, _s)
+        # 孤儿稿归属表: 产出它的会话已被删/清理 · 归属不能跟着丢 ——
+        # 否则孤儿稿会漂流到「最近聊到它」的那个对话面板 (实例: 自愿成年_NSFW.pptx)
+        try:
+            _orph = json.loads((ROOT / "data" / "runtime" / "doc_orphans.json")
+                               .read_text(encoding="utf-8"))
+        except Exception:
+            _orph = {}
+        for _k, _v in (_orph or {}).items():
+            if not str(_k).startswith("data/"):
+                continue
+            _home.setdefault(_cr(_k), str(_v))
+    except Exception:
+        _home = {}
+
+    from urllib.parse import unquote as _unq
+
+    def _url_to_rel(u: str) -> str:
+        u = _unq(str(u or "").split("?")[0])
+        if u.startswith("/workshop/outputs/"):
+            return "data/workshop/outputs/" + u[len("/workshop/outputs/"):]
+        if u.startswith("/workshop/preview/"):
+            return "data/" + u[len("/workshop/preview/"):]
+        if u.startswith("/workshop/file/"):
+            return "data/" + u[len("/workshop/file/"):]
+        if u.startswith("/attachments/"):
+            return "data/runtime/attachments/" + u[len("/attachments/"):]
+        if u.startswith("/"):
+            return "data" + u
+        return u
+
+    try:
+        from datetime import datetime as _dt
+        _start_epoch = _dt.fromisoformat(_start_ts).timestamp() if _start_ts else 0.0
+    except Exception:
+        _start_epoch = 0.0
+
+    _kept: list[dict] = []
+    for a in artifacts:
+        _rel = _cr(_url_to_rel(a.get("url") or ""))
+        _src = src_of.get(a.get("url") or "", "mention")
+        _h = _home.get(_rel)
+        if _h and _h != sid:
+            continue                                # ① 别场的稿 (含孤儿表钉死的历史归属)
+        if not _h:
+            # ② 无主 —— 要证明是「本场产出的」才留:
+            #    write  写类工具真写过它
+            #    upload 用户传进来的
+            #    result 还要过「文件 mtime 落在本场时间窗内」这关
+            #           (脚本 stdout / read_file 内容里扫到的旧文件不算)
+            #    附件名自带本场 sid 也算
+            _ok = _src in ("write", "upload")
+            if not _ok and _src == "result":
+                _ok = float(a.get("_mtime") or 0) >= _start_epoch
+            if not _ok and sid in PurePosixPath(_rel).name:
+                _ok = True
+            if not _ok:
+                continue
+        a.pop("_mtime", None)
+        a["home"] = _h or sid
+        _kept.append(a)
+    artifacts = _kept
 
     try:
         from workers.session_docs import merge_into_artifacts
         artifacts = merge_into_artifacts(artifacts, sid)
+        for _a in artifacts:              # merge 进来的是本场绑定 → 补 home 让字段齐
+            _a.setdefault("home", sid)
     except Exception:
         pass
 

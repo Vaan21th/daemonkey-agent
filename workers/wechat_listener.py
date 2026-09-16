@@ -323,6 +323,71 @@ def _drain_queue() -> None:
             # 单条失败不阻塞队列 · 继续下一条
 
 
+def _notify_ask_request(frm: str, ctx: str, ev_data: dict) -> None:
+    """ask_request SSE 事件 → 给 BRO 发一条带编号选项的消息 (wish-db46ff9b)。
+
+    微信通道没有选择题卡 UI · 用文字把选项列出来当按钮:
+      BRO 回复数字 → _maybe_resolve_ask 拦下直接 resolve · 不喂 LLM。
+    发送失败静默 (不影响主链路 · WebUI 那张卡照常推)。
+    """
+    try:
+        from workers import ilink_client
+
+        q = (ev_data or {}).get("question") or "（OPUS 没写问题）"
+        opts = list((ev_data or {}).get("options") or [])
+        lines = ["❓ 想问你一件事：", q, "", "回复数字就行："]
+        for i, o in enumerate(opts, 1):
+            lines.append(f"  {i}. {o}")
+        if not opts:
+            lines.append("  （这次没给选项 · 直接回你想说的）")
+        ilink_client.send_text("\n".join(lines), to_user_id=frm, context_token=ctx)
+        logger.info("wechat ask_request sent · options=%d", len(opts))
+    except Exception as e:
+        logger.debug("wechat ask notify failed: %s", e)
+
+
+def _maybe_resolve_ask(text: str, frm: str) -> Optional[dict]:
+    """BRO 微信回数字 → 找到该会话最近的 pending ask → resolve。
+
+    匹配规则（比 confirm 更严 · 数字太容易误伤）:
+      - 只看 ≤6 字
+      - 纯数字 1~5 · 或「选1」「第2个」「1吧」
+      - **必须存在 pending ask 才拦** —— 没在问的时候·"2" 就是句普通对话·放它走 LLM
+    返回 None = 不是回答 (正常走 LLM) · dict = 已处理。
+    """
+    import re as _re
+
+    t = (text or "").strip()
+    if not t or len(t) > 6:
+        return None
+
+    m = _re.match(r"^(?:选|第)?\s*([1-9])\s*(?:个|项|吧|!|！|。|\.)?$", t)
+    if not m:
+        return None
+    idx = int(m.group(1)) - 1
+
+    try:
+        from api_routes.chat import _resolve_ask_inline
+        from daemon_api import _PENDING_CONFIRMS, _PENDING_CONFIRMS_LOCK
+
+        with _PENDING_CONFIRMS_LOCK:
+            candidates = [
+                (k, p)
+                for k, p in _PENDING_CONFIRMS.items()
+                if p.get("kind") == "ask" and str(p.get("turn_id") or "").startswith("wechat-")
+            ]
+        if not candidates:
+            return None  # 当前没在问 · 这就是句普通回复
+        tcid, latest = max(candidates, key=lambda kv: kv[1].get("created_at") or 0)
+        opts = list(latest.get("options") or [])
+        if idx >= len(opts):
+            return {"ok": False, "detail": f"只有 {len(opts)} 个选项"}
+        return _resolve_ask_inline(tcid, latest.get("turn_id") or "", opts[idx], idx)
+    except Exception as e:
+        logger.debug("ask resolve check failed: %s", e)
+        return None
+
+
 def _notify_confirm_request(frm: str, ctx: str, ev_data: dict) -> None:
     """confirm_request SSE 事件 → 给 BRO 发一条确认消息 (wish-2f0c731a)。
 
@@ -444,6 +509,9 @@ def _process_one(item: dict) -> None:
         try:
             if ev_type == "confirm_request":
                 _notify_confirm_request(frm, ctx, ev_data)
+            elif ev_type == "ask_request":
+                # wish-db46ff9b · 选择题卡同样没有 UI · 文字列选项当按钮
+                _notify_ask_request(frm, ctx, ev_data)
                 return
             narrator.on_progress(ev_type, ev_data)
         except Exception:
@@ -563,6 +631,26 @@ def _handle(msg: dict) -> None:
             return
     except Exception as _e:
         logger.debug("confirm resolve check failed: %s", _e)
+
+    # wish-db46ff9b · 选择题回复拦截: BRO 回「2」/「选2」/「第2个」
+    # 且当前会话确实有 pending ask → 直接 resolve · 不喂 LLM。
+    # 没在问的时候不拦 —— 那时候 "2" 就是句普通对话。
+    try:
+        resolved = _maybe_resolve_ask(text, frm)
+        if resolved is not None:
+            if resolved.get("ok"):
+                ilink_client.send_text(
+                    f"收到：{resolved.get('choice', '')}。继续。",
+                    to_user_id=frm, context_token=ctx,
+                )
+            else:
+                ilink_client.send_text(
+                    f"收到。{resolved.get('detail', '')}",
+                    to_user_id=frm, context_token=ctx,
+                )
+            return
+    except Exception as _e:
+        logger.debug("ask resolve check failed: %s", _e)
 
     if ilink_client.is_silent():
         logger.debug("wechat silent · dropping %r", text[:40])

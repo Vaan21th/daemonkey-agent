@@ -18,6 +18,17 @@ from daemon_runtime import RUNTIME
 router = APIRouter()
 
 
+@router.get("/tool-profiles")
+async def list_tool_profiles(authorization: Optional[str] = Header(None)):
+    """wish-16fa5930 · 会话能力档位清单（给选档卡 / 顶栏 chip / 管理页用）"""
+    check_auth(authorization)
+    try:
+        from workers.tool_profiles import profile_list, suggest_profile
+        return {"ok": True, "profiles": profile_list(), "suggested": suggest_profile()}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}", "profiles": []}
+
+
 @router.get("/models")
 async def list_models(authorization: Optional[str] = Header(None)):
     """卷二十九 · 给 WebUI 模型切换器用 · 返当前模型 + 可切换列表
@@ -29,6 +40,8 @@ async def list_models(authorization: Optional[str] = Header(None)):
     try:
         from workers.provider_configs import list_configs
         from model_aliases import family_of, supports_anthropic_cache
+        from provider_presets import resolve_think_off  # wish-33624071 · 关思考能力声明表
+        from provider_presets import EFFORT_STANDARD_LEVELS, resolve_effort_profile  # wish-4fd607c5
 
         data = list_configs(include_keys=False)
         active_id = data.get("active_id")
@@ -37,17 +50,27 @@ async def list_models(authorization: Optional[str] = Header(None)):
             if not c.get("pinned"):
                 continue
             real = c.get("model", "")
+            _to_mode, _to_token = resolve_think_off(real, c.get("base_url") or "")
             options.append({
                 "alias": c["id"],
                 "real_id": real,
                 "name": c.get("name") or real,
                 "family": family_of(real),
                 "cache": supports_anthropic_cache(real),
+                "think_off": _to_mode,        # wish-33624071 · api_param / soft_prompt / none
+                "think_off_token": _to_token,  # 仅 soft_prompt 非空 (如 /no_think)
                 "note": f"{c.get('provider_kind')} · {c.get('base_url') or '(SDK 默认)'}",
                 "current": c["id"] == active_id,
                 "config_id": c["id"],
             })
         current_real = RUNTIME.model or ""
+        _cur_th_mode, _cur_th_token = resolve_think_off(current_real, RUNTIME.base_url or "")
+        # wish-4fd607c5 v2 · UI 永远摆通用标准档 (泛用) · 每模型的接受集合/默认/说明来自这张表
+        _cur_eff_supported, _cur_eff_default, _cur_eff_note = resolve_effort_profile(
+            current_real, RUNTIME.base_url or "")
+        from provider_presets import map_effort_level
+        _cur_eff_map = {lv: map_effort_level(lv, current_real, RUNTIME.base_url or "")
+                        for lv in EFFORT_STANDARD_LEVELS}
         # BRO 2026-07-28 · 前端协同 toggle 禁用判断用: 当前模型=总监模型时协同无意义
         director_info = None
         try:
@@ -68,6 +91,15 @@ async def list_models(authorization: Optional[str] = Header(None)):
                 "base_url": RUNTIME.base_url,
                 "cache": supports_anthropic_cache(current_real) if current_real else False,
                 "config_id": active_id,
+                # wish-33624071 · 当前模型能不能真关思考·UI 据此标灰开关
+                "think_off": _cur_th_mode,
+                "think_off_token": _cur_th_token,
+                # wish-4fd607c5 v2 · 标准档全集 + 每档实际发什么 (UI 标注「→高」)
+                "effort_levels": list(EFFORT_STANDARD_LEVELS),
+                "effort_default": _cur_eff_default,
+                "effort_note": _cur_eff_note,
+                "effort_map": _cur_eff_map,
+                "effort_supported": list(_cur_eff_supported),
             },
             "director": director_info,
             "options": options,
