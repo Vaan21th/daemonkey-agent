@@ -11624,3 +11624,5 @@ html.dk-transit-hold body > :not(#dkTransit) { visibility: hidden; }
   opacity: 0.85;
 }
 .sp-wake i { font-size: 12px; }
+
+.ctx-block-file { font-size: 10px; color: #68D391; margin-top: 2px; font-family: ui-monospace, Consolas, monospace; opacity: 0.85; }

@@ -653,42 +653,58 @@ async def get_context_usage(
             except Exception:
                 return int(len(s) / 0.67)
 
-        # 有序锚点 = soul_loader.load_soul 的拼装顺序 · 每段 = 本锚点 → 下一锚点
-        _ANCHORS = [
-            "=== DAEMON 工程铁律",
-            "=== 产品宪法",
-            "=== SKILL.md",
-            "=== OPUS-MEMORIES.md",
-            "=== Runtime context",
-            "=== 画像 ===",
-            "=== SELF-EVOLUTION",
-            "## 更多工具（不在本轮 tools[]）",
-        ]
+        # 有序锚点 = soul_loader.SECTION_MARKS（**单一真相源** · wish-811eb5f5 第6步）
+        # why: 原来这里手抄了一份硬编码锚点 → SKILL.md 改名后找不到就默默显示 0。
+        # 现在从 soul_loader 拿：**改段头只改 soul_loader 一处，面板自动跟上**。
+        _MARKS = []
+        try:
+            from soul_loader import SECTION_MARKS as _SM
+            _MARKS = [_SM[_k] for _k in (
+                "structure", "identity", "rules", "const_common", "const_local",
+                "runtime", "catalog", "memories", "notebook", "evolution",
+            )]
+        except Exception:
+            _MARKS = []
 
-        def _seg(i: int) -> int:
-            idx = sp.find(_ANCHORS[i])
+        def _seg_by_mark(mark: str) -> int:
+            """本段 = 本锚点 → 下一个出现的锚点（按 _MARKS 顺序找最近的）"""
+            idx = sp.find(mark)
             if idx < 0:
                 return 0
             end = len(sp)
-            for _nxt in _ANCHORS[i + 1:]:
-                _j = sp.find(_nxt, idx + 1)
-                if _j >= 0:
+            for _other in _MARKS:
+                if _other == mark:
+                    continue
+                _j = sp.find(_other, idx + 1)
+                if 0 <= _j < end:
                     end = _j
-                    break
             return _tok(sp[idx:end])
 
-        # soul 总 = 全量 (铁律+宪法+SKILL+自传+画像+演化都含在 system_prompt 里)
+        # 每块都带 `file`（来源文件）—— 看着数字就知道是谁贡献的
+        _BLOCK_DEFS = [
+            ("structure", "沉淀位地图", "ri-map-2-fill", "#9F7AEA", "data/cognition/STRUCTURE.md"),
+            ("identity", "身份层", "ri-book-open-fill", "#4FD1C5", "soul/IDENTITY.md（摘录）"),
+            ("rules", "规则层 · 工程铁律", "ri-shield-check-fill", "#F6AD55", "data/cognition/daemon_rules.md"),
+            ("const_common", "规则层 · 宪法通用三条", "ri-scales-3-fill", "#ED8936", "内核 product_constitution.py"),
+            ("const_local", "规则层 · 宪法本实例", "ri-scales-3-fill", "#DD6B20", "soul/CONSTITUTION.md"),
+            ("runtime", "规则层 · Runtime", "ri-settings-3-fill", "#FBD38D", "soul_loader 代码生成"),
+            ("catalog", "工具层 · 延迟目录", "ri-apps-2-fill", "#68D391", "agent_tools/_tool_catalog.py（实时渲染）"),
+            ("memories", "灵魂层 · 自传", "ri-history-fill", "#B794F4", "soul/OPUS-MEMORIES.md"),
+            ("notebook", "灵魂层 · 画像", "ri-user-heart-fill", "#FC8181", "soul/BRO-NOTEBOOK.md（截节）"),
+            ("evolution", "灵魂层 · 成长", "ri-seedling-fill", "#F687B3", "soul/SELF-EVOLUTION.md（最近 3 条）"),
+        ]
+
+        # soul 总块 = 整份 system prompt（明细块仅供拆解展示 · 总量不重复计入）
         blocks.append({"key": "soul", "label": "System prompt", "icon": "ri-file-settings-fill",
-                       "color": "#B794F4", "tokens": _tok(sp), "sub": "灵魂层: 铁律+宪法+SKILL+自传+画像+演化 (全量)"})
-        blocks.append({"key": "rules", "label": "Rules", "icon": "ri-shield-check-fill",
-                       "color": "#F6AD55", "tokens": _seg(0), "sub": "daemon_rules 铁律"})
-        blocks.append({"key": "skills", "label": "Skills", "icon": "ri-book-open-fill",
-                       "color": "#4FD1C5", "tokens": _seg(2), "sub": "SKILL.md + 场景索引"})
-        blocks.append({"key": "profile", "label": "画像 & 记忆注入", "icon": "ri-user-heart-fill",
-                       "color": "#FC8181", "tokens": _seg(5) + _seg(6), "sub": "画像 + 演化日记 (易变 · 不进缓存)"})
-        # 延迟工具目录 (wish-31fd335e · 单列 · 原被算进 profile 行) · 详情走 catalog_search
-        blocks.append({"key": "catalog", "label": "延迟工具目录", "icon": "ri-apps-2-fill",
-                       "color": "#68D391", "tokens": _seg(7), "sub": "名字+简介各一行 · 详情走 catalog_search"})
+                       "color": "#B794F4", "tokens": _tok(sp),
+                       "sub": "固定前缀 · 下列 10 块之和（与每轮后缀无关）"})
+        for _i, (_k, _label, _icon, _color, _file) in enumerate(_BLOCK_DEFS):
+            _mark = _MARKS[_i] if _i < len(_MARKS) else ""
+            blocks.append({
+                "key": _k, "label": _label, "icon": _icon, "color": _color,
+                "tokens": _seg_by_mark(_mark) if _mark else 0,
+                "sub": _file, "file": _file,
+            })
     except Exception:
         # 兜底锚点 (实测值 · soul_loader 加载失败时)
         blocks.append({"key": "soul", "label": "System prompt", "icon": "ri-file-settings-fill",
@@ -718,6 +734,9 @@ async def get_context_usage(
             _specs = [s for s in REGISTRY.values() if not _tnames or s.name in _tnames]
         # wish-31fd335e · 名字+描述走 tiktoken · 参数 schema 以英文/符号为主按 4 字符/token
         # (原来只算 name+description → 面板 tools 块比真实 schema 小 ~1/3)
+        # 优先：按**真实发出去的 API 序列化**计数 (与 tool_loop.to_openai_tools 逐字一致)
+        # wish-811eb5f5 · 修精度缺口：旧算法只加 name+description+schema，
+        #   漏了 JSON 包装壳 {"type":"function","function":{...}} → 每件少计 ~23 tok，30 件合计少 703
         import json as _json
 
         def _tool_tokens(s) -> int:
@@ -728,13 +747,22 @@ async def get_context_usage(
                 _sch = ""
             return base + (_tok(_sch) if _sch else 0)
 
-        _tt = sum(_tool_tokens(s) for s in _specs)
+        try:
+            from tool_loop import to_openai_tools as _to_api_tools
+            _tt = _tok(_json.dumps(_to_api_tools(_specs), ensure_ascii=False))
+            _exact = True
+        except Exception:
+            _tt = sum(_tool_tokens(s) for s in _specs)   # 退回逐件估算（偏低 ~23/件）
+            _exact = False
         _tsub = f"{len(_specs)} 个工具 · 名字+描述+参数 schema"
+        if not _exact:
+            _tsub += "（估算口径·偏低）"
         if _tnames:
             _tsub += f" · 本档 {_tpid}"
         blocks.append({"key": "tools", "label": "Tool definitions", "icon": "ri-tools-fill",
                        "color": "#63B3ED", "tokens": _tt,
-                       "sub": _tsub})
+                       "sub": _tsub,
+                       "file": "agent_tools/_tool_catalog.py（tools[] 按真实 API 序列化计数）"})
 
         # 每轮后缀 (wish-31fd335e · 字符数由 daemon_api 拼接 _sys_tail 时写进 RUNTIME)
         # telemetry+口吻+检索提示等·每轮变→缓存外·面板原来完全看不到它

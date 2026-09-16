@@ -6249,7 +6249,8 @@ function renderCtxCard() {
     return `<div class="ctx-block">
       <div class="ctx-block-row"><span class="lbl"><i class="${b.icon || 'ri-stack-fill'}" style="color:${b.color};margin-right:4px"></i>${escHtml(b.label || b.key || '')}</span><span class="val">${_fmtTok(b.tokens||0)} tok · ${w}%</span></div>
       <div class="ctx-block-bar"><div class="ctx-block-fill" style="width:${w}%;background:${b.color}"></div></div>
-      ${b.sub ? `<div class="ctx-block-sub">${escHtml(b.sub)}</div>` : ''}
+      ${b.file ? `<div class="ctx-block-file"><i class="ri-archive-line"></i> ${escHtml(b.file)}</div>` : ''}
+      ${b.sub && b.sub !== b.file ? `<div class="ctx-block-sub">${escHtml(b.sub)}</div>` : ''}
     </div>`;
   }).join('');
   const cache = document.getElementById('ctxCardCache');

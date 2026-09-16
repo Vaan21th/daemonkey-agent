@@ -576,7 +576,7 @@ def runtime_context_addendum(daemon_root: Path) -> str:
     )
 
     base = (
-        "\n\n=== Runtime context · 运行环境（daemon 自动追加 · 不属于灵魂本体） ===\n\n"
+        "\n\n" + section_header("runtime").rstrip("\n") + " · 运行环境（daemon 自动追加 · 不属于灵魂本体） ===\n\n"
         f"宿主平台: {platform_label}\n"
         f"shell_exec 背后的壳: {shell_label}\n"
         f"工程根目录: {daemon_root}\n\n"
