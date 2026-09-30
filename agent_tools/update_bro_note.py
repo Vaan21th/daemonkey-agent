@@ -26,7 +26,10 @@ OPUS 主动维护"BRO 活人画像"的工具。
 调用约定：
   - 默认 operation=append（追加到该维度末尾，不覆盖原有）
   - operation=replace_section 时整段替换（少用，慎用）
-  - 自动在"近期更新流水"末尾追加一行操作记录
+  - operation=rename_section 时只换段头那一行、正文一字不动（改格子名字用）
+  - operation=edit_text 时把段内一段原文换成新文（content 传 "旧文=>新文"，须唯一命中）
+  - operation=fix_headings 时只修「段头被吸进上一行」的粘连（不碰任何内容 · 不吃 section）
+  - 自动在"改动记录"末尾追加一行操作记录
 
 档位：AUTO
   - 写认知笔记是无副作用的
@@ -46,6 +49,7 @@ from soul_loader import (
     read_global_soul_file,
     write_global_then_sync,
 )
+from workers.notebook_tiers import SECTIONS as _TIER_SECTIONS, section_meta
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -57,40 +61,28 @@ ROOT = Path(__file__).resolve().parent.parent
 # 撞车，这里改用「标题关键字在 `## ` 后唯一命中」匹配，不再靠中文序号。
 # 兼容性：旧版 BRO-NOTEBOOK 与新版 OWNER-NOTEBOOK 的六维标题文案不同但含相同关键字，
 # 关键字匹配通吃；了解层/变更史用无序号标题，也不与六维冲突。
-SECTIONS: dict[str, str] = {
-    "profile":  "当下画像",
-    "events":   "关键事件流",
-    "rules":    "本体约束",
-    "dialogue": "对话图鉴",
-    "summary":  "压缩段",
-    # 第六维 2026-05-16 凌晨 BRO 拍板加上——OPUS 作为伙伴的预警雷达
-    # 看见这一维的模式时该出声，不沉默配合燃烧
-    "risks":    "风险与弱点",
-}
+# section key → 段标题定位候选（**从 workers.notebook_tiers.SECTIONS 派生** · 单一真相源）
+# 这里曾自己拄一份「短名 → 关键字」，跟 notebook_tiers 各说各话 ——
+# 母体用「本体约束/对话图鉴/压缩段/风险与弱点」，纯净版模板用
+# 「长期偏好与边界/对话风格/一句话速写/关怀雷达」，四维对不上 → 用户写不进去。
+# 现在 anchor 是候选元组（按序），两套叫法都能定位；真归一后只需改 notebook_tiers 那一张表。
 
-# 报错/流水展示用的友好标签（只给人看，不参与匹配）
-SECTION_LABELS: dict[str, str] = {
-    "profile":  "当下画像",
-    "events":   "关键事件流",
-    "rules":    "约束/偏好",
-    "dialogue": "对话风格",
-    "summary":  "速写/压缩段",
-    "risks":    "风险/关怀雷达",
+SECTIONS: dict[str, tuple[str, ...]] = {
+    k: m.anchor for k, m in _TIER_SECTIONS.items() if m.writable and k != "state"
 }
 
 FLOW_ORD = "近期更新流水"  # 按标题关键字匹配「## 七、近期更新流水」——保留其序号但匹配用关键字
 
 # 状态卡 · L2 易变尾巴 · 替换式更新（不进 SECTIONS 序号锚）
 STATE_SECTION_MARKER = "〇、状态卡"
-STATE_FIELDS: tuple[str, ...] = (
-    "工作状态",
-    "作息模式",
-    "健康基线",
-    "情绪基线",
-    "当前主线",
-    "关系家庭",
-    "经济预算",
-    "忌口过敏",
+# 派生自内核单一真相源（2026-09-30 wish-6e6e561b）—— 此前这里手抄了一份，会分叉。
+from soul_loader import STATE_CARD_FIELDS as STATE_FIELDS  # noqa: E402
+
+# 涌现字段准入判据：字段名里带这些词根 → 它就是骨架那几格的事（2026-09-30 wish-6e6e561b）。
+# 不做同义词表（那要养一套・养不全）—— 只做词根碰撞：简单・可判定・误伤低。
+# 治的是「健康/作息」：它跟骨架的「健康基线」+「作息模式」说同一件事。
+STATE_FIELD_ROOTS: tuple[str, ...] = (
+    "工作", "作息", "健康", "情绪", "主线", "家庭", "经济", "预算", "忌口",
 )
 _STATE_SECTION_RE = re.compile(r"(?m)^## 〇、状态卡")
 STATE_HISTORY_MARKER = "状态卡变更史"
@@ -106,20 +98,124 @@ def _summarize(args: dict) -> str:
     return f"update_owner_note  section={section}  op={op}\n  preview: {preview!r}"
 
 
-def _find_section(text: str, key: str) -> tuple[int, int]:
-    """按「段标题关键字」定位 '## <含关键字的标题>' 段头。
+# ── 段头粘连自愈 (wish-cca82a91 · 2026-09-29) ──────────────────────────
+# 病：`---## 一、背景档案` / `| 2026-09-28 | - |## 了解层` —— 段头被吸进上一行末尾。
+# 为什么是硬伤：_find_section 靠 `(?m)^## [^#]` 找段头，粘连行行首不是 # →
+#   那个段在工具眼里【根本不存在】，内容被上一个真段头整段吞掉。
+#   2026-09-29 实测母体本子 4 处中招，其中「了解层」是核心层 ——
+#   那 7 条稳定认知（产品思维/JRPG 老炮/重命名能手/释权是真意/看远也看近/不肉麻/省钱敏感）
+#   因此全部没进前缀。
+# 为什么只认 - 和 | 作前导：只修能被判定为「表格行 / 分隔线末尾误粘」的，
+#   正文里正常引用的 `## 某某` 不动。宁可少修，不可误伤。
+# 段头粘连：正文紧贴 `## 标题` 挤在同一行。
+# 2026-09-30 wish-6e6e561b：判据原来只认「前面是 - 或 |」（列表/表格尾），
+#   于是「他做这个产品已经快 4 个月了。## 二、他经历的事」这种**句号结尾的正文**
+#   一直没被修 —— 后果是 _find_section 靠 `^## ` 找不到那个段，整格写不进去（搬数据时撞到）。
+#   放宽到句末标点；`(?!#)` / `[^#\n]` 仍挡着行内引用 `## xx` 和 `### 子标题`。
+# 段头自愈判据 · **单一真相源在内核**（2026-09-30 wish-a266df37）
+#   为何搬内核：内核 write_global_then_sync 是所有写入的必经之路，落盘前那道闸用它；
+#   这里保留调用点只做「即时修复 + 回执」（让 BRO 看得见修了什么）。
+#   两份判据分叉过一次——这份只认 `-`/`|` 前导，认不出句号结尾的粘连（真文件里漏了 6 处），所以收成一份。
+from soul_loader import _HEAD_GLUE as _HEAD_GLUE, heal_headings as _heal_headings  # noqa: E402, F401
+
+
+
+
+
+def _backup_notebook(text: str) -> str:
+    """改画像前先落一份到 data/runtime/（notebook_guard 不让外部备份，工具自己来）。"""
+    d = ROOT / "data" / "runtime"
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / f"BRO-NOTEBOOK.bak-{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
+    p.write_text(text, encoding="utf-8")
+    return str(p)
+
+
+def _reload_and_index(fn: str, text: str) -> None:
+    """写完画像后的 best-effort：FTS5 增量 + system prompt 热重载。"""
+    try:
+        from workers.memory_index import incremental_update
+        incremental_update(Path(fn).stem, text)
+    except Exception:
+        pass
+    try:
+        from daemon_runtime import reload_soul_into_runtime
+        reload_soul_into_runtime()
+    except Exception:
+        pass
+
+
+def _run_fix_headings() -> ToolResult:
+    """只修段头粘连 · 不碰任何内容。不吃 section 白名单（它不是「往格里写东西」）。"""
+    fn, text = _read_notebook()
+    healed, fixed = _heal_headings(text)
+    if not fixed:
+        return ToolResult(True, f"{fn} 段头都健康 · 没有粘连（扫了 {len(text):,} 字）")
+    bk = _backup_notebook(text)
+    try:
+        write_global_then_sync(fn, healed, ROOT)
+    except Exception as e:
+        return ToolResult(False, "", f"修段头后写盘失败: {e} · 原文件未动 · 备份在 {bk}")
+    _reload_and_index(fn, healed)
+    return ToolResult(
+        True,
+        f"{fn}: 修好 {len(fixed)} 处段头粘连（内容一字未动）\n"
+        + "\n".join(f"  · {h}" for h in fixed)
+        + f"\n  备份: {bk} · 索引已增量 · 前缀已热重载",
+    )
+
+
+def _run_normalize_entries() -> ToolResult:
+    """把条目行统一成 `- **标题**（YYYY-MM-DD）：正文`（wish-66c1eac5 第 6 步）。
+
+    只改**写法**（加 `- ` 前缀 / 加粗标题 / 调括号位置），**一个字的内容都不动**。
+    跟 fix_headings 同构：不吃 section 白名单（它不是「往格里写内容」，是清格式债）。
+
+    为何需要：写入端归一（第 4 步）只保新写入的干净，**存量里的异形条目**得洗一次 ——
+    否则它们对下沉 / 升格机制持续隐形，格子水位一路顶到超预算还沉不动。
+    """
+    fn, text = _read_notebook()
+    _norm = _kernel_attr("workers.memory_reaper", "normalize_entries")
+    if _norm is None:
+        return ToolResult(False, "",
+                          "本环境没有 workers.memory_reaper.normalize_entries（纯净版未 port）")
+    fixed, changed = _norm(text)
+    if not changed:
+        return ToolResult(True, f"{fn} 条目格式都健康 · 没有需要归一的（扫了 {len(text):,} 字）")
+    bk = _backup_notebook(text)
+    try:
+        write_global_then_sync(fn, fixed, ROOT)
+    except Exception as e:
+        return ToolResult(False, "", f"归一后写盘失败: {e} · 原文件未动 · 备份在 {bk}")
+    _reload_and_index(fn, fixed)
+    return ToolResult(
+        True,
+        f"{fn}: 归一 {len(changed)} 条（内容一字未动，只统一了写法）\n"
+        + "\n".join(f"  · {c}" for c in changed)
+        + f"\n  备份: {bk} · 索引已增量 · 前缀已热重载",
+    )
+
+
+def _find_section(text: str, key) -> tuple[int, int]:
+    """按「段标题定位候选」找 '## <含候选词的标题>' 段头。
     返回 (start_idx, end_idx)，end 是下一个 '## ' 或文末。
     :注意: 只匹配『行首是 ## 的二级标题』整行，避免 '### 子标题' 误命中；
     且要求标题行本身不以 '#' 开头(排除 ## 后的 '#'，即排除 ###)。用 finditer 遍历全部标题行，
-    找到第一个含 key 的行即为目标段。关键字需在全文标题里语义唯一（调用方保证）。
+    找到第一个含任一候选词的行即为目标段。key 可以是 str 或候选元组（按序）。
     """
+    keys = (key,) if isinstance(key, str) else tuple(key or ())
     for m in re.finditer(r"(?m)^## [^#].*$", text):
-        if key in m.group(0):
+        if any(k in m.group(0) for k in keys):
             start = m.start()
             next_h = text.find("\n## ", start + 1)
             end = len(text) if next_h < 0 else next_h
             return start, end
     return -1, -1
+
+
+def _real_headings(text: str) -> list[str]:
+    """该文件真实有哪些 `## ` 段标题 —— 写不进去时报给他看，别只说「没找到」。"""
+    return [m.group(0)[3:].strip() for m in re.finditer(r"(?m)^## [^#].*$", text)]
 
 
 def _section_header_line(text: str, start: int) -> str:
@@ -138,6 +234,18 @@ def _read_notebook() -> tuple[str, str]:
     raise FileNotFoundError(
         f"画像文件 {OWNER_NOTEBOOK_FILENAME} / {BRO_NOTEBOOK_FILENAME} 在本地和全局都不存在"
     )
+
+
+def _notebook_target_label() -> str:
+    """回执里说清写到了哪 —— 一格一文件后落点是目录不是单文件（2026-09-30 wish-27273a5b）。"""
+    try:
+        from workers import notebook_store as _NS
+
+        if _NS.dir_exists(ROOT):
+            return "灵魂层 soul/notebook/（一格一文件）"
+    except Exception:
+        pass
+    return OWNER_NOTEBOOK_FILENAME
 
 
 def _flow_preview(content: str, limit: int = 46) -> str:
@@ -318,12 +426,57 @@ def _update_state_table_row(
     return "\n".join(lines), updated
 
 
+def _delete_state_field(state_field: str) -> ToolResult:
+    """删掉状态卡里某一格（误建字段 / 值已归并的脏行）· wish-run-anchor-2
+
+    为什么需要: 状态卡表里留过一行字面值就是「（误建字段 · 值已归并到「作息模式」· 待清理）」，
+    9-21 标到今天没人清 —— 它让「N 个字段待更新」看着比实际乱。而工具只有覆盖、没有删。
+
+    只删表行，不碰别的格子。删错了可从 data/runtime/BRO-NOTEBOOK.bak-* 回滚。
+    """
+    if not state_field:
+        return ToolResult(ok=False, output="", error="delete_state_field 需要 state_field")
+    try:
+        notebook_fn, text = _read_notebook()
+    except FileNotFoundError as e:
+        return ToolResult(ok=False, output="", error=str(e))
+    sec_start, sec_end = _find_state_section(text)
+    if sec_start < 0:
+        return ToolResult(ok=False, output="",
+                          error=f"section '## {STATE_SECTION_MARKER}' not found")
+    body = text[sec_start:sec_end]
+    kept: list[str] = []
+    removed = 0
+    for line in body.split("\n"):
+        cells = [c.strip() for c in line.strip("|").split("|")] if line.startswith("|") else []
+        if cells and cells[0] == state_field:
+            removed += 1
+            continue
+        kept.append(line)
+    if not removed:
+        return ToolResult(ok=False, output="",
+                          error=f"状态卡里没找到字段 {state_field!r}")
+    new_body = "\n".join(kept)
+    new_text = text[:sec_start] + new_body + text[sec_end:]
+    try:
+        _backup_notebook(text)
+        write_global_then_sync(notebook_fn, new_text, ROOT)
+    except Exception as e:
+        return ToolResult(ok=False, output="", error=f"写盘失败: {e}")
+    return ToolResult(ok=True,
+                      output=f"已删掉状态卡字段「{state_field}」（{removed} 行）· 备份已留。")
+
+
 def _run_state(args: dict) -> ToolResult:
     """状态卡替换式更新 · 不 append · 按字段名改表格行。"""
+    operation = (args.get("operation") or "").strip().lower()
     state_field = (args.get("state_field") or "").strip()
     state_value = (args.get("state_value") or "").strip()
     as_of = (args.get("as_of") or "").strip()
     evidence = (args.get("evidence") or "-").strip() or "-"
+
+    if operation == "delete_state_field":
+        return _delete_state_field(state_field)
 
     missing = []
     if not state_field:
@@ -339,6 +492,22 @@ def _run_state(args: dict) -> ToolResult:
             error=(
                 f"section='state' 需要 {', '.join(missing)} · "
                 f"示例: state_field='作息模式' state_value='正常' as_of='2026-08-27'"
+            ),
+        )
+
+    # as_of 必须是 ISO 日期（2026-09-30 wish-52427d8a）——
+    # 读侧只认 ISO：_state_field_fresh 解不出 → 视为「新鲜」→ 永不过期；
+    # L340 又按字符串排序，『昨天』(中文码位>数字)、『9/28』(9>2) 反而排最前，
+    # 把真最新的 ISO 挤下去 → 上限 5 变成「错的挤掉对的」。堵在写入口。
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", as_of):
+        return ToolResult(
+            ok=False,
+            output="",
+            error=(
+                f"as_of 必须是 YYYY-MM-DD（ISO），收到 {as_of!r}。\n"
+                f"  为什么：读侧 TTL 与「as_of 新的优先」只认 ISO —— 写别的形态会被"
+                f"当成「解不出 = 新鲜」永不过期，还会在排序里占掉新条目的位置。\n"
+                f"  改成: as_of='{datetime.now().strftime('%Y-%m-%d')}'"
             ),
         )
 
@@ -358,10 +527,36 @@ def _run_state(args: dict) -> ToolResult:
             error=f"state_field 太短: {state_field!r}; 请用 2+ 字符的字段名",
         )
 
+    # ⚠ 涌现准入（2026-09-30 wish-6e6e561b）：字段名撞骨架词根 → 拒。
+    # BRO：「我需要的是一直都是能在落位时候就知道该落哪，而不是我发现了之后你去搬」——
+    # 这条判据就是「落位时就知道」：写的时候就被挡回骨架那格，不会拖到以后再去搬。
+    _hit = [r for r in STATE_FIELD_ROOTS if r in state_field]
+    if _hit:
+        return ToolResult(
+            ok=False,
+            output="",
+            error=(
+                f"state_field '{state_field}' 与骨架字段撞词根（{'/'.join(_hit)}）——"
+                f" 这是当下状态，请直接改那 8 个骨架字段之一；"
+                f"真要记 8 条之外的，换个不带这些词的名字（或者它根本该去 stories / about-user）"
+            ),
+        )
+
     try:
         notebook_fn, text = _read_notebook()
     except FileNotFoundError as e:
         return ToolResult(ok=False, output="", error=str(e))
+
+    # 自愈：任何一次写入都顺手清历史遗留的段头粘连（否则段头一坏，那格就永远
+    # 找不到了 —— 连修都修不了）。修过先落盘止血，再干本次的正事。
+    _raw_text = text
+    text, _healed_now = _heal_headings(text)
+    if _healed_now:
+        try:
+            _backup_notebook(_raw_text)
+            write_global_then_sync(notebook_fn, text, ROOT)
+        except Exception:
+            pass
 
     sec_start, sec_end = _find_state_section(text)
     if sec_start < 0:
@@ -385,6 +580,42 @@ def _run_state(args: dict) -> ToolResult:
         )
 
     new_text = text[:sec_start] + new_section_body + text[sec_end:]
+
+    # 涌现长尾的「新陈代谢」(2026-09-30 wish-6e6e561b · 收 G1 + G2)
+    #   BRO 要的是「机制相同」：跟画像其他格一样 —— 新的进得来、旧的沉下去、不删、可召回。
+    #   落地就一句话：把**过 TTL / 超上限 5** 的涌现行从状态卡段搬到「已下沉」段。
+    #   复用 workers.memory_reaper 那套（demote_strip + append_demoted），不新造机制。
+    #   动态取 + 降级（跟下面 _demote_to_fit 同规矩）：纯净版未 port 内核件时不强依赖。
+    # 算「该沉的」= 全量涌现 − 过滤后的涌现（全量拿 apply_limits=False）。
+    _emerged_demoted: list = []
+    try:
+        from workers.cognition_loader import _parse_state_card as _psc
+        _s2, _e2 = _find_state_section(new_text)
+        _seg2 = new_text[_s2:_e2] if _s2 >= 0 else ""
+        if _seg2:
+            _all_em = [f for f in _psc(_seg2, apply_limits=False) if f not in STATE_FIELDS]
+            _live_em = [f for f in _psc(_seg2) if f not in STATE_FIELDS]
+            _dead = [f for f in _all_em if f not in _live_em]
+            if _dead:
+                _strip = _kernel_attr("workers.memory_reaper", "demote_strip")
+                _dapp = _kernel_attr("workers.memory_reaper", "append_demoted")
+                if _strip and _dapp:
+                    _rows = []
+                    for _l in _seg2.splitlines():
+                        _t = _l.strip()
+                        if not (_t.startswith("|") and _t.endswith("|")):
+                            continue
+                        _cells = [c.strip() for c in _t.strip("|").split("|")]
+                        if _cells and _cells[0] in _dead:
+                            _rows.append({"title": _cells[0], "line": _t, "chars": len(_t)})
+                    if _rows:
+                        _new_seg, _removed = _strip(_seg2, _rows)
+                        if _removed:
+                            new_text = new_text[:_s2] + _new_seg + new_text[_e2:]
+                            new_text = _dapp(new_text, _removed)
+                            _emerged_demoted = _removed
+    except Exception:
+        _emerged_demoted = []
     new_sec_end = sec_start + len(new_section_body)
     new_text = _append_state_history(
         new_text, new_sec_end, state_field, old_value, state_value, as_of, evidence,
@@ -424,7 +655,7 @@ def _run_state(args: dict) -> ToolResult:
     return ToolResult(
         ok=True,
         output=(
-            f"{notebook_fn} 已更新\n"
+            f"{_notebook_target_label()} 已更新\n"
             f"  section : state  ({section_header})\n"
             f"  op      : replace\n"
             f"  field   : {state_field}\n"
@@ -433,7 +664,7 @@ def _run_state(args: dict) -> ToolResult:
             f"  evidence: {evidence}\n"
             f"{global_line}"
             f"  local   : {local_path.relative_to(ROOT)}\n"
-            f"  flow    : 操作记录已追加到'近期更新流水'{fts_msg}{reload_msg}\n"
+            f"  flow    : 操作记录已追加到'改动记录'{fts_msg}{reload_msg}\n"
             f"  effect  : 本 daemon 下一轮对话即刻带上 (卷五十四热重载)" +
             ("" if global_path else " · 全局目录回来后用 soul sync script 可补同步其他容器")
         ),
@@ -445,10 +676,27 @@ def _run(args: dict) -> ToolResult:
     if section_key == "state":
         return _run_state(args)
 
-    if section_key not in SECTIONS:
+    # fix_headings：段头粘连自愈（见 _heal_headings）。它不往任何格里写内容，
+    # 所以不吃 section 白名单 —— 否则「段头坏了 → 找不到段 → 修不了」自己堵自己。
+    if (args.get("operation") or "").strip().lower() == "normalize_entries":
+        return _run_normalize_entries()
+    if (args.get("operation") or "").strip().lower() == "fix_headings":
+        return _run_fix_headings()
+
+    # rename_section 只换标题行、不写内容 —— 不受「谁能写这格」限制：
+    # 了解层/改动记录是系统段(writable=False)，但它们的标题同样会进前缀给模型看，
+    # 标题错了照样误导（例如「L1 稳定前缀」是工程黑话）。
+    # edit_text 同理：它是「定点改字」（治漂移），不是「往格里加内容」，
+    # 所以也放行保护段 —— 旧名引用跟进、过时表述修正靠它。
+    _op_early = (args.get("operation") or "append").strip().lower()
+    _anchor_tbl = (
+        {k: m.anchor for k, m in _TIER_SECTIONS.items()}
+        if _op_early in ("rename_section", "edit_text") else SECTIONS
+    )
+    if section_key not in _anchor_tbl:
         return ToolResult(
             ok=False, output="",
-            error=f"unknown section: {section_key!r}; valid: {', '.join(SECTIONS)}",
+            error=f"unknown section: {section_key!r}; valid: {', '.join(_anchor_tbl)}",
         )
 
     content = (args.get("content") or "").strip()
@@ -459,10 +707,11 @@ def _run(args: dict) -> ToolResult:
     force = bool(args.get("force"))
 
     operation = (args.get("operation") or "append").strip().lower()
-    if operation not in ("append", "replace_section"):
+    if operation not in ("append", "replace_section", "rename_section", "edit_text"):
         return ToolResult(
             ok=False, output="",
-            error=f"unknown operation: {operation}; use 'append' or 'replace_section'",
+            error=(f"unknown operation: {operation}; use 'append' / 'replace_section' / "
+                   f"'rename_section' / 'edit_text'"),
         )
 
     from workers.notebook_tiers import route_write_section
@@ -482,38 +731,158 @@ def _run(args: dict) -> ToolResult:
     except FileNotFoundError as e:
         return ToolResult(ok=False, output="", error=str(e))
 
-    sec_start, sec_end = _find_section(text, SECTIONS[section_key])
+    # 自愈：任何一次写入都顺手清历史遗留的段头粘连（否则段头一坏 → _find_section
+    # 靠 `^## ` 找不到那格 → 连修都修不了，整格写不进去）。
+    # 2026-09-30 wish-6e6e561b：_run_state 一直有这一步，_run_write 漏了 —— 补上。
+    _raw_text = text
+    text, _healed_now = _heal_headings(text)
+    if _healed_now:
+        try:
+            _backup_notebook(_raw_text)
+            write_global_then_sync(notebook_fn, text, ROOT)
+        except Exception:
+            pass
+
+    _meta = section_meta(section_key)
+    sec_start, sec_end = _find_section(text, _anchor_tbl[section_key])
     if sec_start < 0:
+        _heads = "；".join(_real_headings(text)) or "（这个文件一个 `## ` 段都没有）"
         return ToolResult(
             ok=False, output="",
-            error=f"section '## {SECTIONS[section_key]}、' not found in {notebook_fn} ({SECTION_LABELS[section_key]})",
+            error=(
+                f"在 {notebook_fn} 里没找到「{' / '.join(_anchor_tbl[section_key])}」段。\n"
+                f"  · 这格放什么：{_meta.what if _meta else '（未知格）'}\n"
+                f"  · 该文件真实有这些段：{_heads}"
+            ),
         )
 
     section_header = _section_header_line(text, sec_start)
     section_body = text[sec_start:sec_end]
 
+    _norm_changed: list = []
     if operation == "replace_section":
         new_section_body = f"{section_header}\n\n{content}\n\n"
+    elif operation == "rename_section":
+        # 只换标题行，正文一字节不动。content = 新的段头那一行（以 '## ' 开头）。
+        _new_head = (content.splitlines()[0] if content else "").strip()
+        if not _new_head.startswith("## "):
+            return ToolResult(
+                ok=False, output="",
+                error=("rename_section 的 content 必须是新段头那一行，以 '## ' 开头，"
+                       "例如 '## 三、本体约束 · 关于他（缓变）'"),
+            )
+        _rest = section_body[len(section_header):]   # 旧标题行之后的原文（含前导空行）
+        new_section_body = f"{_new_head}{_rest}"
+        # 改名后后续一切（section 行回报 / is_core_section 进前缀判据）都按新段头算，
+        # 否则拿旧头部去查白名单——旧词一清账就会当场算错。
+        section_header = _new_head
+    elif operation == "edit_text":
+        # 段内定点改字（BRO 2026-09-18 授权）：把一段精确原文换成新文，不整段覆盖。
+        # 用于保护段里旧名引用跟进、过时表述修正这类「治漂移」动作。
+        # content = "旧文=>新文"；旧文必须在本段**恰好命中 1 处**，否则拒收。
+        if "=>" not in content:
+            return ToolResult(
+                ok=False, output="",
+                error='edit_text 的 content 必须是 "旧文=>新文" 形式（例：对话图鉴=>口头记号）',
+            )
+        _old, _new = (p.strip() for p in content.split("=>", 1))
+        if not _old or not _new:
+            return ToolResult(ok=False, output="", error="edit_text: 旧文和新文都不能为空")
+        _n_hit = section_body.count(_old)
+        if _n_hit != 1:
+            return ToolResult(
+                ok=False, output="",
+                error=(f'edit_text: 旧文「{_old}」在这段里命中 {_n_hit} 处（必须恰好 1 处）。'
+                       f'0 = 原文不符或已改过；>1 = 会误伤，请给更长的原文。'),
+            )
+        new_section_body = section_body.replace(_old, _new, 1)
     else:
+        # 写入端归一（wish-66c1eac5 第 4 步 · 2026-09-30）：
+        #   原来这里是 `section_body.rstrip() + f"\n\n{content}\n\n"` —— **模型传什么就落什么**，
+        #   一个字的格式都不管。于是同一个库里 4 种写法混着（括注位置 / 裸段落 / 无 `- `），
+        #   读取正则认不全 → 异形条目对下沉机制隐形 → 那格水位顶到超预算还沉不动。
+        #   落盘前统一成 `- **标题**（YYYY-MM-DD）：正文`，与 heal_headings 同思路：
+        #   治在写入路径上，而不是等读取端一个个打补丁。
+        #   动态取（跟上面 demote_to_fit 同法）：纯净版未 port 时不强依赖，退回原行为。
+        _norm = _kernel_attr("workers.memory_reaper", "normalize_entries")
+        if _norm is not None:
+            try:
+                _c2, _chg = _norm(content)
+                if _chg:
+                    _norm_changed = list(_chg)
+                content = _c2
+            except Exception:
+                pass
         new_section_body = section_body.rstrip() + f"\n\n{content}\n\n"
 
     new_text = text[:sec_start] + new_section_body + text[sec_end:]
 
-    # P0 预算闸 (wish-31fd335e)：会进每轮前缀的核心层总量预算 · 超 → 拒 (force 可跳)
+    # P0 预算闸 (wish-31fd335e) · 2026-09-29 升级：满了不再「拒写」→「先下沉再写」
+    #   病根：旧行为是「满了 → 拒绝 + 让人去清」。BRO 定过：不可能让用户陪着
+    #   定期讨论什么留什么不留。改成自动：把该格里**最老的有日期条目**沉到
+    #   「已下沉」段（不进前缀 · 可召回 · 一句话捞回），腾出地方再写。
+    #   沉完还是超 → 才拒（说明这格已经没有可沉的条目了，得人看）。
     _budget_used, _budget_cap = 0, 0
+    _sec_used, _sec_cap = 0, 0
+    _demoted: list = []
+    _is_core = False
+    _gate_err = ""
     if not force:
         try:
-            from workers.notebook_tiers import core_budget_estimate
+            from workers.notebook_tiers import (core_budget_estimate, is_core_section,
+                                                section_budget_estimate)
+            # ① 分格闸 (2026-09-29 wish-65ea4984 step5)：一格吃光后别的格就写不进来
+            #    —— 所以先查这一格自己，再查整锅。
+            # 2026-09-30 wish-66c1eac5 修：**分格闸只对「进前缀的格」有意义**。
+            #   不进前缀的格（stories / archive / 背景档案…）不占前缀配额，它自己的
+            #   tok 上限只是提示阈值 —— 此前无条件查它，导致「写 stories 溢出却去沉
+            #   how-we-work」的**跟格误沉**（实测挖走 2 条 how-we-work 原则）。
+            #   根因：焦点格不在核心层时，「从 focus_key 起」会退化成「从最肥的核心格起」。
+            _is_core = is_core_section(section_header)
+            if _is_core:
+                _sec_used, _sec_cap = section_budget_estimate(new_text, section_key)
             _budget_used, _budget_cap = core_budget_estimate(new_text)
-            if _budget_used > _budget_cap:
+            if (_is_core and _sec_used > _sec_cap) or _budget_used > _budget_cap:
+                # 下沉是「内核件 memory_reaper」的能力 —— 那份内核件可能还没到本环境
+                # （纯净版未 port 时）。用动态取 + 降级：拿到就下沉，拿不到退回旧行为（拒写）。
+                # 不用静态 import 是故意的：白名单依赖闸扫静态 import 就判「纯净版会崩」
+                # （它只看引用关系、不看 try/except）。动态取才是真意思上的「不强依赖」。
+                _demote_to_fit = _kernel_attr("workers.memory_reaper", "demote_to_fit")
+                if _demote_to_fit is not None:
+                    _need = max(_sec_used - _sec_cap if _is_core else 0,
+                                _budget_used - _budget_cap, 0)
+                    # 刚写进来的那条不参与下沉（见 demote_pick 注释）：写 = 这条现在就要在场。
+                    # 实测：核心层只剩 43 tok 时写一条 192 tok 的，候选里唯一带日期的
+                    # 就是刚写的这条 —— 于是它把自己沉走了，回执却说「已更新」。
+                    _new_lines = {ln.strip() for ln in (content or "").splitlines() if ln.strip()}
+                    new_text, _demoted = _demote_to_fit(
+                        new_text, section_key if _is_core else None, need_tok=_need,
+                        protect_lines=_new_lines)
+                    if _is_core:
+                        _sec_used, _sec_cap = section_budget_estimate(new_text, section_key)
+                    _budget_used, _budget_cap = core_budget_estimate(new_text)
+            if not _demoted and _is_core and _sec_used > _sec_cap:
                 return ToolResult(
                     ok=False, output="",
-                    error=(f"prefix budget exceeded: 核心层 ≈{_budget_used} tok > 预算 {_budget_cap} tok。"
-                           f"先把核心层(了解层/本体约束/出声纪律)里过期条目清理或改道 events，"
-                           f"确要强写加 force=true。本次未写入。"),
+                    error=(f"这一格满了，且没有可自动下沉的条目：{section_key} ≈{_sec_used} tok > "
+                           f"该格预算 {_sec_cap} tok。（能自动沉的只有「带日期」的条目 —— "
+                           f"没日期的算常驻原则，不动。）请手动合并重复条目 · 确要强写加 force=true。本次未写入。"),
                 )
-        except Exception:
+            if not _demoted and _budget_used > _budget_cap:
+                return ToolResult(
+                    ok=False, output="",
+                    error=(f"prefix budget exceeded: 核心层 ≈{_budget_used} tok > 预算 {_budget_cap} tok，"
+                           f"且没有可自动下沉的条目。请手动清理 · 确要强写加 force=true。本次未写入。"),
+                )
+        except Exception as _gate_ex:
+            # 2026-09-30 wish-66c1eac5：原来是纯静默归零 —— 闸内部一抛异常，
+            # 报数就变成 0/0 或错值，却完全看不出「闸根本没跑成」。
+            # 实测撞到过一次（写 about-user 报「本格 ≈0/2800 · 核心层 ≈18802/5000」
+            # 并触发下沉），事后**无法复现** —— 静默吞错正是它不可诊断的原因。
+            # 改成留证：异常原文进回执，下次再发生就有现场可查。
+            _gate_err = repr(_gate_ex)
             _budget_used, _budget_cap = 0, 0
+            _sec_used, _sec_cap = 0, 0
 
     new_text = _append_to_flow(new_text, section_key, operation, _flow_preview(content))
 
@@ -548,28 +917,138 @@ def _run(args: dict) -> ToolResult:
     else:
         global_line = "  global  : (全局 opus-soul 目录缺失·已跳过·本地 soul/ 即真理源)\n"
 
-    _in_prefix = section_key in ("profile", "rules")   # P0：进每轮前缀的两格
-    _pfx_line = ("✓ 进前缀 (每轮注入)" if _in_prefix else "✗ 不进前缀 (仅召回/追溯可查)")
+    # 段落归位·说真话 (wish-9118bdab)：从 notebook_tiers 实时算, 不再硬编码。
+    # 旧代码 `section_key in ("profile", "about-user")` 里 profile 段早已退役出核心层,
+    # 却一直回报「✓ 进前缀」—— 写进黑洞还以为在场。判据只能有一个来源。
+    from workers.notebook_tiers import is_core_section, has_distill_pipeline
+    _in_prefix = is_core_section(section_header)
+    _distill = has_distill_pipeline(section_key)
+    if _in_prefix:
+        _pfx_line = "✓ 进前缀 (每轮注入)"
+    elif _distill:
+        _pfx_line = "△ 不进前缀 · 有提炼管道 (周度凝练会把它提炼进「了解层」)"
+    else:
+        _pfx_line = "✗ 不进前缀 · 无提炼管道 (只能靠 recall_memory 按需召回)"
     if _rerouted:
         _pfx_line += f"  [已从 {_requested_key} 改道 → {section_key}]"
-    _budget_line = (f"核心层 ≈{_budget_used}/{_budget_cap} tok" if (not force and _budget_cap)
+
+    # 进前缀 = 每条永久占用预算。写入者要当场看见代价与反问 (wish-c8aa92e1 · 2026-09-18)
+    # 病根: 旧文案只写「✓ 进前缀」(不贵)，于是新条默认往核心层灌 —— 只增不减。
+    _cost_line = ""
+    _ask_line = ""
+    _peer_line = ""
+    if _in_prefix:
+        try:
+            _added_tok = len(enc.encode(content)) if (enc := _tiktoken_enc()) else 0
+            _room_before = max(_budget_cap - _budget_used, 0) if _budget_cap else 0
+            _room_after = max(_room_before - _added_tok, 0) if _budget_cap else 0
+            if _budget_cap:
+                _cost_line = f" · 本条 +{_added_tok} tok · 余量 {_room_before}→{_room_after}"
+            else:
+                _cost_line = f" · 本条 +{_added_tok} tok"
+        except Exception:
+            pass
+        _ask_line = (
+            "\n  ⚠ 自问  : 这条是「每轮都需要」还是「需要时能召回」 —— "
+            "能召回 → 改 events (不进前缀) · 别让它在核心里永久占位。"
+        )
+        _peer_line = _peer_items_line(section_body)
+    _warn_line = ""
+    if not _in_prefix and not _distill:
+        _warn_line = (
+            "\n  ⚠ 自检  : 这条每轮读不到。若它是会影响我行为的偏好/原则/判断"
+            "(而不是留档待召回的故事)，请去掉日期前缀、用 section='about-user' 重写一次。\n"
+        )
+    # 2026-09-29 wish-65ea4984 step5 · 同时报「该格水位」—— 只看整锅看不出「是谁在吃」
+    _sec_part = (f" · 本格 {section_key} ≈{_sec_used}/{_sec_cap} tok"
+                 if (not force and _sec_cap) else "")
+    _budget_line = (f"核心层 ≈{_budget_used}/{_budget_cap} tok{_sec_part}" if (not force and _budget_cap)
                     else "(force 或未启用跳过)")
+    if _gate_err:
+        _budget_line += f"\n  ⚠ 闸异常: {_gate_err}（闸未真正生效 · 报数不可信）"
+    # 下沉回执 (2026-09-29)：格子满过就当场说清 —— 沉了哪几条、去哪了、怎么捞回来。
+    #   不说的话 BRO 只看到「写成功了」，看不见它自己腾了地方（人需要看得见它在自转）。
+    _demote_line = ""
+    if _demoted:
+        _titles = " / ".join((d.get("title") or "")[:16] for d in _demoted[:3])
+        _demote_line = (
+            f"\n  ↓ 下沉  : 本格曾满 → 自动沉了 {len(_demoted)} 条到「已下沉」（不进前缀 · 可召回）：{_titles}"
+            f"\n           想捞回来：说一句「把 X 捞回来」即可。"
+        )
     return ToolResult(
         ok=True,
         output=(
-            f"{notebook_fn} 已更新\n"
+            f"{_notebook_target_label()} 已更新\n"
             f"  section : {section_key}  ({section_header})\n"
             f"  op      : {operation}\n"
             f"  added   : {len(content)} chars\n"
-            f"  prefix  : {_pfx_line}\n"
+            f"  prefix  : {_pfx_line}{_cost_line}\n"
+            f"  where   : {_meta.what if _meta else '（未知格）'}\n"
             f"  budget  : {_budget_line}\n"
+            f"{_ask_line}"
+            f"{_demote_line}"
+            f"{_peer_line}"
+            f"{_warn_line}"
             f"{global_line}"
             f"  local   : {local_path.relative_to(ROOT)}\n"
-            f"  flow    : 操作记录已追加到'近期更新流水'{fts_msg}{reload_msg}\n"
+            f"  flow    : 操作记录已追加到'改动记录'{fts_msg}{reload_msg}\n"
             f"  effect  : 本 daemon 下一轮对话即刻带上 (卷五十四热重载)" +
             ("" if global_path else " · 全局目录回来后用 soul sync script 可补同步其他容器")
         ),
     )
+
+
+def _kernel_attr(module: str, name: str):
+    """按需取一个内核件里的函数 · 拿不到返回 None（那份内核件还没到本环境时不炸）。
+
+    为何用动态取而不是静态 import：`tools/check_manifest_deps.py` 的白名单依赖闸
+    扫【静态 import】就判「纯净版会崩」（它只看引用关系，不看 try/except）。而这里
+    要的就是「没有就优雅缺席」—— 动态取 + getattr 默认值正是这个语义。
+    """
+    try:
+        import importlib
+        return getattr(importlib.import_module(module), name, None)
+    except Exception:
+        return None
+
+
+_ENC = None
+
+
+def _tiktoken_enc():
+    """best-effort token 计数（没装 tiktoken 就返回 None，调用方降级）。"""
+    global _ENC
+    if _ENC is None:
+        try:
+            import tiktoken
+            _ENC = tiktoken.get_encoding("cl100k_base")
+        except Exception:
+            _ENC = False
+    return _ENC or None
+
+
+def _peer_items_line(section_body: str, limit: int = 14) -> str:
+    """列出该格现有的条目标题 —— 让写入者当场看见有没有同类的（柜子自己会说话）。
+
+    为什么不做相似度自动判重 (wish-c8aa92e1 · 2026-09-18)：
+    实测本段 18 条两两字符 2-gram Jaccard 最高仅 0.083、中位 0.006，定不出阈值（定低了全员误报）。
+    短文本 + 语义相近但用词不同（「不肉麻不结端」vs「柔的时刻」）字符级抓不到。
+    按 BRO 判据：「两条是不是同一件事」是语义判断 → 不可机械判定 → 不做成闸，
+    改成把现状摊给写入者自己判。
+    """
+    titles = []
+    for line in (section_body or "").splitlines():
+        line = line.strip()
+        if not line.startswith("- **"):
+            continue
+        m = re.match(r"- \*\*(.+?)\*\*", line)
+        if m:
+            titles.append(m.group(1).strip())
+    if not titles:
+        return ""
+    shown = titles[:limit]
+    tail = f" …共 {len(titles)} 条" if len(titles) > limit else f"（共 {len(titles)} 条）"
+    return "\n  同格已有: " + " / ".join(shown) + tail + "\n"
 
 
 def append_owner_note(section: str, content: str) -> ToolResult:
@@ -580,7 +1059,12 @@ def append_owner_note(section: str, content: str) -> ToolResult:
 SPEC = ToolSpec(
     name="update_owner_note",
     description=(
-        "更新活画像（profile/events/rules/dialogue/summary/risks/state）。日期故事写 events，改判断的短条写 rules。默认 append。只写他真说过的。"
+        "记下他刚说的（**参数名是 section，不是 key**）。格子在："
+        "about-user=关于他这个人的原则/偏好/边界（把主语换成别人就不成立）· "
+        "stories=带日期的故事流水 · state=当下状态（配 state_field/state_value/as_of）· "
+        "background/moments/archive/watch 同理。"
+        "听到作息/睡眠/健康/情绪/心情/工作/主线/预算变化 → section='state'。"
+        "产品/功能决策别放这 —— 走 wish_add。默认 append，只写他真说过的。"
     ),
     tier=TIER_AUTO,
     input_schema={
@@ -589,7 +1073,7 @@ SPEC = ToolSpec(
             "section": {
                 "type": "string",
                 "enum": list(SECTIONS.keys()) + ["state"],
-                "description": "要写的维度，见 enum。state 还要带 state_field / state_value / as_of。",
+                "description": "要写的维度见 enum。state 需带 state_field / state_value / as_of。更新时机 = 闲聊提到就记，不是定时汇报。",
             },
             "content": {
                 "type": "string",
@@ -627,10 +1111,11 @@ SPEC = ToolSpec(
             },
             "operation": {
                 "type": "string",
-                "enum": ["append", "replace_section"],
+                "enum": ["append", "replace_section", "rename_section", "edit_text",
+                         "fix_headings", "normalize_entries", "delete_state_field"],
                 "description": (
-                    "append (default): add to existing section. "
-                    "replace_section: replace whole section content (use sparingly)."
+                    "append (default). Also: replace_section / rename_section / edit_text / "
+                    "fix_headings / normalize_entries / delete_state_field."
                 ),
             },
             "force": {

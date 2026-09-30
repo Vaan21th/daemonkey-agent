@@ -19,62 +19,157 @@ OPUS 灵魂加载器 + 运行环境上下文。
 from __future__ import annotations
 
 import os
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+# 宪法段头从内核模块取 —— 单一真相源（2026-09-19 wish-50e6d578）。
+# why 敢直接 import 不写兜底：product_constitution 是白名单内核文件、只依赖 pathlib，
+#   且本文件末尾本来就 import 它（build_constitution_block）——它缺了 daemon 根本起不来；
+#   在这里再抄一份兜底字符串，只会让「两张皮」重新长回来（那是本次要杀的病）。
+from product_constitution import MARK_CONST_COMMON as _CONST_COMMON_MARK
+from product_constitution import MARK_CONST_LOCAL as _CONST_LOCAL_MARK
+
 
 SOUL_DIR_NAME = "soul"
-SKILL_FILENAME = "SKILL.md"
+# 身份入口文档（原 SKILL.md）。2026-09-17 改名 —— 原因：「SKILL」让人误以为是「一项技能」，
+# 实际它是「角色入口」（第一轮就让模型装上「我是谁」），与 SKILL 生态撞名。
+# 新名优先 · 旧名兜底（照 OWNER-NOTEBOOK 双名做法）· 老用户 soul/ 不被覆盖仍走旧名。
+IDENTITY_DOC_FILENAME = "IDENTITY.md"
+SKILL_FILENAME = IDENTITY_DOC_FILENAME      # 新名（保留旧变量名供外部引用）
+LEGACY_SKILL_FILENAME = "SKILL.md"          # 旧名 · 兜底
 MEMORIES_FILENAME = "OPUS-MEMORIES.md"
+
+# 自传是否进前缀（2026-09-18 · wish-0307c26f）：
+#   False = 任何档位都不挂，改为按需召回（recall_memory / read_file 取原文）。
+#   依据：B-007 实测 移出+召回 30/33=91% ≥ 在前缀 27/33=82%，省 3,440 tok。
+#   两个注入点（thin / standard）共用 memories_text —— 改这里两档同时生效，不会漏。
+INJECT_MEMORIES = False
+# 成长档案（SELF-EVOLUTION）→ 移出前缀（2026-09-19 wish-3ba1c0e2）。
+#   为什么：它跟自传同类（都是「我的历史」）—— 自传已按「可召回就不进前缀」移出，
+#   它没理由留着。且它的内容跟 playbook 边界不可判定（实际写进去的多是「可照做的
+#   工程经验」，该走 extract_playbook）—— 与其加检测判断「这条算不算成长」，
+#   不如让它不进前缀：写错了也不伤前缀。
+#   全文继续留着：可见 / 可 recall_memory 召回 / 可 read_global_soul_file。
+#   省 1,681 tok（原注入 = 最后 3 条 · 单条≤2,500 字 · 合计≤6,000 字）。
+INJECT_EVOLUTION = False
 # 画像 + 自我演化日记（升到全局灵魂层 → soul/ 有 sync 副本）。
 # OWNER-NOTEBOOK 是代码归一后的新名；BRO-NOTEBOOK 旧名向后兼容（母体 soul/ 仍是它）。
 OWNER_NOTEBOOK_FILENAME = "OWNER-NOTEBOOK.md"
 BRO_NOTEBOOK_FILENAME = "BRO-NOTEBOOK.md"   # 旧名 · 向后兼容
 SELF_EVOLUTION_FILENAME = "SELF-EVOLUTION.md"
 # 相遇初始化写下的身份（名字 / 口吻）→ 注入 system prompt 顶部"# 你是谁"
-IDENTITY_FILENAME = "IDENTITY.json"
-# 沉淀位结构改造（2026-09-17 · 与母体同构）：
-#   新名优先 / 旧名回退 —— 老用户的 soul/ 里仍是旧名，读不到就"失忆"，
-#   所以两者都必须能读。真正改名（磁盘文件）是发版决策，随发版一起做。
-LEGACY_SKILL_FILENAME = "SKILL.md"          # 旧名 · 发版后新名 IDENTITY.md 优先
-SKILL_NEW_FILENAME = "IDENTITY.md"          # 新名 · 不存在则回退 SKILL.md
-LEGACY_IDENTITY_FILENAME = "IDENTITY.json"  # 旧名 · 发版后新名 meta.json 优先
-IDENTITY_NEW_FILENAME = "meta.json"         # 新名 · 不存在则回退 IDENTITY.json
+# 2026-09-17 改名 IDENTITY.json → meta.json（同名文件里还装 persona_style/narration_pack，
+# 不止「identity」）。新名优先 · 旧名兜底。
+IDENTITY_FILENAME = "meta.json"            # 新名
+LEGACY_IDENTITY_FILENAME = "IDENTITY.json"  # 旧名 · 兜底
 
 
-# ============================================================================
-# 段头常量表 · 单一真相源 (SINGLE SOURCE OF TRUTH)
-# ----------------------------------------------------------------------------
-# why (2026-09-17)：段头字符串以前硬编码在 7 处拼装里，改名要靠人肉同步 ——
-#   实际发生过"段头改名 → 面板锚点找不到 → 显示 0"的漂移事故。
-# 现在：拼装侧与消费侧（面板 /context-usage / 检索）都从这里取，
-#   **以后改段头只改这一处**。
-# 层名 (`layer`) 只有五个：身份 / 灵魂 / 规则 / 工具 / 工艺。
-# ============================================================================
+# ── 段头常量表（单一真相源 · 2026-09-17 wish-811eb5f5 第6步）────────────────
+# why: 段头以前散在本文件各处硬编码，而 api_routes/chat.py 的 /context-usage
+#     面板另抄了一份——两边一旦漂移，面板就默默显示 0（SKILL 改名后就这么坏过）。
+#     现在拼装与面板共用这张表：**改段头只改这里一处**。
+# 面板用它做切块锚点：`_SECTION_MARKS` 按 **出现顺序** 排。
+# 状态卡骨架 8 字段 · **单一真相源**（2026-09-30 wish-6e6e561b）
+# 为何放内核：PLACEMENT_TABLE（本文件）要拿它列 state_field 枚举，而内核不许依赖 workers/。
+# 此前这个枚举被拄了三份（update_bro_note / onboarding.proto_tools / cognition_loader）—— 分叉风险。
+STATE_CARD_FIELDS: tuple[str, ...] = (
+    "工作状态", "作息模式", "健康基线", "情绪基线",
+    "当前主线", "关系家庭", "经济预算", "忌口过敏",
+)
 
-SECTION_MARKS: dict[str, str] = {
-    "structure":   "=== 沉淀位地图 ===",
-    "identity":    "=== 身份层 · SKILL.md ===",
-    "rules":       "=== 规则层 · DAEMON 工程铁律 ===",
-    "const_common":"=== 规则层 · 产品宪法（通用三条） ===",
-    "const_local": "=== 规则层 · 产品宪法（本实例补充） ===",
-    "runtime":     "=== 规则层 · Runtime context ===",
-    "catalog":     "=== 工具层 · 延迟工具目录 ===",
-    "memories":    "=== 灵魂层 · OPUS-MEMORIES.md ===",
-    "notebook":    "=== 灵魂层 · 画像 ===",
-    "evolution":   "=== 灵魂层 · SELF-EVOLUTION.md ===",
+# 落位速查表 · 模型每轮在「沉淀位地图」段里看到的就是它 (2026-09-19 wish-a1580b98)
+# 为什么要有：实测发现模型**只响应提示词里明确写了的信号** ——
+#   工具简介能治「落哪格」(wish 0→12 到 3、rule 0→4 到 2)，但治不了「该不该记」
+#   (about-user/stories 组 8/10 压根没调工具)。这张表是给「该记了」装信号。
+# 为何定义在内核而不是 workers/：文档侧（workers/prefix_docs.py）要引用它，
+#   而内核 import 的 worker 得在白名单里 —— 定义在内核、worker 反向 import 最省事。
+PLACEMENT_TABLE = (
+    "\n听到这些就记 —— 但先自问：**把主语换成别人，这条还成立吗？**\n"
+    "· 他这个人的原则/偏好/边界（换别人不成立）→ update_owner_note(section='about-user')\n"
+    "· 怎么跟他干活（授权风格/验收标准/沟通纪律）→ update_owner_note(section='how-we-work')\n"
+    "· 带日期的故事/流水 → update_owner_note(section='stories')\n"
+    "· 他**当下状态**变化（**只这 8 个**：" + "/".join(STATE_CARD_FIELDS) + "）"
+    "→ update_owner_note(section='state', state_field=<8 个之一>, state_value=…, as_of=今天)\n"
+    "  ⚠ **8 个之外的不进 state**：项目进展/交付细节 → section='stories'（带日期）· 理解他这个人 → section='about-user' · 想做的功能 → wish_add\n"
+    "  （例外：8 条之外**也能进 state**，那就是「涌现长尾」——只收相处中长出的、**不撞这 8 个词根**的了解（口味/倒物/健身）。"
+    "有限位：30 天没人碰过就不冉注入，最多 5 格；撞骨架词根的会被直接拒）\n"
+    "· 想做的功能/界面/产品改进 → wish_add(title=…, why=…)\n"
+    "· 干活硬规矩（「以后一律」「不许」）→ add_iron_rule\n"
+    "· 工艺要求/血泪教训（「下次先」「记住了」）→ extract_playbook\n"
+    "· 决定不做/否掉的方向（「以后再说」「算了」「不划算」）→ wish_add 落一条 + wish_update(status='rejected', reflection=为什么不做)\n"
+    "· 闲聊/一次性请求/纯执行指令 → **不记**（别硬记）\n"
+    "\n"
+    "**写入格式（任何格 · 一个标准）**：`- **标题**（YYYY-MM-DD）：正文`\n"
+    "  · 日期 ISO 写法（`2026-09-30`），只指这条**内容本身的日期**；"
+    "引用别人日期（「依据：8/23」）不算\n"
+    "  · 常驻原则（不过期、不参与升降）**不写日期** · 要沉的才写日期\n"
+    "  · 别写成裸段落（没有 `- ` 开头）· 解析器认不出 = 那条等于不存在\n"
+)
+
+SECTION_MARKS = {
+    "structure": "=== 沉淀位地图 · 每份文件属于哪层 ===",
+    "identity":  "=== 身份层 · IDENTITY.md（我是谁） ===",
+    "rules":     "=== 规则层 · DAEMON 工程铁律 (daemon_rules.md · 优先级最高) ===",
+    "const_common": _CONST_COMMON_MARK,
+    "const_local":  _CONST_LOCAL_MARK,
+    "runtime":   "=== 规则层 · Runtime context（运行环境 + 工具纪律 + 收尾） ===",
+    "catalog":   "=== 工具层 · 延迟工具目录（不在本轮 tools[] 里的） ===",
+    "memories":  "=== 灵魂层 · OPUS-MEMORIES.md（我们的历史） ===",
+    "notebook":  "=== 灵魂层 · 画像（关于 BRO · 每轮在场） ===",
+    "evolution": "=== 灵魂层 · SELF-EVOLUTION（我的成长） ===",
+}
+
+
+# ── 每段「该不该进前缀」的判据（单一真相源 · 2026-09-19 wish-3ba1c0e2）──────
+# why: 前缀里这些块跨了 8 个月长出来，按的都是早期口径（「这个重要→每轮都送」）。
+#      「可召回就不进前缀」这条判据是 2026-09-18 才钉死的，旧结构没人回灌 ——
+#      结果就是「发现一个、修一个」，依赖人想起来，总会漏。
+#      现在把判据跟段头放在一起：**加新段必须在这里登记**（verify_soul 断言守着）。
+# 判据（BRO 2026-09-18 拍定）：**能召回的就不进前缀；前缀只留「每轮都可能影响
+#      输出且召不回来」的**。
+SECTION_META = {
+    # key: (层, 该不该进前缀, 为什么)
+    "structure":    ("规则层", True,  "路标 · 东西该往哪写 · 每轮定位用 · 不可召回"),
+    "identity":     ("身份层", True,  "我是谁 · 每轮在场"),
+    "rules":        ("规则层", True,  "约束靠「不必意识到」生效 · 召回是概率性的 · 漏纪律不可接受"),
+    "const_common": ("规则层", True,  "产品内核地基（纯净版注入 · 母体有实例宪法则去重）"),
+    "const_local":  ("规则层", True,  "本实例产品观（母体六条）"),
+    "runtime":      ("规则层", True,  "运行环境 · 每轮都要知道"),
+    "catalog":      ("工具层", True,  "不在手边的工具目录 · 不知道就不会用"),
+    "memories":     ("灵魂层", False, "可 FTS5 召回 → 移出（AB 实测 91% ≥ 82% · 省 3,440 tok）"),
+    "notebook":     ("灵魂层", True,  "对他当下的认知 · 每轮都会影响输出"),
+    "evolution":    ("灵魂层", False, "可 FTS5 召回 → 移出（与自传同类 · 省 1,681 tok）"),
 }
 
 
 def section_header(key: str) -> str:
-    """取某段的完整段头（带尾随空行）。键不存在返回空串。
+    """拿段头字面量（含尾部换行）· 给拼装用。"""
+    return SECTION_MARKS[key] + "\n\n"
 
-    用途：拼装 system prompt 时统一走这里，别手写段头字符串。
+
+def skill_doc_path(soul_dir) -> Path:
+    """身份入口文档路径 · 双读（照 identity.owner_notebook_path 的命门写法）。
+
+    新名 soul/IDENTITY.md 优先，缺了回退旧名 soul/SKILL.md。
+    老用户 / 母体历史副本没改名 → 永远走旧名，行为逐字不变。
     """
-    m = SECTION_MARKS.get(key, "")
-    return f"{m}\n\n" if m else ""
+    soul_dir = Path(soul_dir)
+    new = soul_dir / IDENTITY_DOC_FILENAME
+    if new.exists():
+        return new
+    return soul_dir / LEGACY_SKILL_FILENAME
+
+
+def identity_data_path(soul_dir) -> Path:
+    """身份数据文件路径 · 双读。新名 meta.json 优先，缺了回退旧名 IDENTITY.json。"""
+    soul_dir = Path(soul_dir)
+    new = soul_dir / IDENTITY_FILENAME
+    if new.exists():
+        return new
+    return soul_dir / LEGACY_IDENTITY_FILENAME
 
 
 def get_global_soul_dir() -> Optional[Path]:
@@ -88,6 +183,34 @@ def get_global_soul_dir() -> Optional[Path]:
     return Path(v) if v else None
 
 
+# 段头粘连自愈 · **落盘前的最后一道闸**（2026-09-30 wish-a266df37）
+#
+# 病：画像/成长文件里某个段头被吸进上一行末尾（`| 情绪基线 | … | - |## 了解层（…）`、
+#     `---## 一、背景档案`）→ 靠 `^## ` 找段头的代码（_find_section / split_tiers /
+#     _parse_state_card 的段提取）**看不见那个段** → 内容整段隐形（实测 understanding 解析成 0 条）。
+#     且在粘连态下 `find("\n## ")` 找不到下一段头 → 段边界吞掉后面的段（雪崩）。
+#
+# 为何放这：所有写入者（update_bro_note / update_self_evolution / cognition_loader 的凝练与删条目）
+#     都必经 write_global_then_sync —— 卡这一步 = 粘连根本不会落盘（铁律 15：根本不会发生 > 事后拦截），
+#     不用再靠事后 fix_headings 补。
+#
+# 判据窄：只有「前面是句末标点/ `-` / `|` 且 `## xxx` 正好到行尾」才动手；行内引用
+#     （`` `## 标题` ``）不匹配。**只加换行，内容一字不动。**
+_HEAD_GLUE = re.compile(r"(?m)(?<=[。！？；\-|])(#{2,3} [^#\n][^\n]*?)[ \t]*$")
+
+
+def heal_headings(text: str) -> tuple[str, list[str]]:
+    """把粘连的段头修回行首。返回 (新文本, 被修好的段头列表)。"""
+    fixed: list[str] = []
+
+    def _rep(m: "re.Match") -> str:
+        head = m.group(1).strip()
+        fixed.append(head)
+        return "\n\n" + head
+
+    return _HEAD_GLUE.sub(_rep, text), fixed
+
+
 def write_global_then_sync(filename: str, new_text: str, daemon_root: Path) -> tuple[Optional[Path], Path]:
     """灵魂层写入：本地 soul/ 是 daemon 真正注入的副本，所以**总是写本地**；
     全局 opus-soul 目录存在时再顺带写一份（多容器共享真理源）。
@@ -99,6 +222,20 @@ def write_global_then_sync(filename: str, new_text: str, daemon_root: Path) -> t
 
     Returns: (global_path 或 None, local_path)
     """
+    new_text, _glued_fixed = heal_headings(new_text)   # 落盘前最后一道闸（见 heal_headings）
+
+    # ★ 多格模式（wish-27273a5b）：画像拆成 soul/notebook/ 后，写回各格。
+    #   只写内容真变了的格 —— 别人的格一个字节不碰（跨格写入没有代码路径）。
+    if filename in (OWNER_NOTEBOOK_FILENAME, BRO_NOTEBOOK_FILENAME):
+        try:
+            from workers import notebook_store as NS
+
+            if NS.dir_exists(daemon_root):
+                NS.write_full(daemon_root, new_text)
+                return None, daemon_root / SOUL_DIR_NAME / NS.NOTEBOOK_DIR
+        except Exception:
+            pass   # 回退老路径：写入不能因为新机制挂了而丢
+
     local_path = daemon_root / SOUL_DIR_NAME / filename
     local_path.parent.mkdir(parents=True, exist_ok=True)
     local_path.write_text(new_text, encoding="utf-8")
@@ -120,7 +257,18 @@ def read_global_soul_file(filename: str, daemon_root: Path) -> str:
 
     本地副本不存在时尝试从全局读（首次启动场景）。
     都没有 → 抛异常。
+    ★ 多格模式（wish-27273a5b）：画像已拆成 soul/notebook/ 多格，此时合成
+    「逻辑单文件」返回，写入者沿用原有找段/改段逻辑，一行不用改。
     """
+    if filename in (OWNER_NOTEBOOK_FILENAME, BRO_NOTEBOOK_FILENAME):
+        try:
+            from workers import notebook_store as NS
+
+            if NS.dir_exists(daemon_root):
+                return NS.read_full(daemon_root)
+        except Exception:
+            pass   # 回退老路径
+
     local_path = daemon_root / SOUL_DIR_NAME / filename
     if local_path.exists():
         return local_path.read_text(encoding="utf-8")
@@ -285,6 +433,29 @@ def _load_bro_notebook(daemon_root: Path) -> str:
     分层逻辑在 workers/notebook_tiers.py（why 见该模块 docstring）；
     分层模块异常时退回全量——画像缺失比体量超支严重。
     """
+    # ★ 新路径优先：soul/notebook/ 格子目录（一格一文件 · wish-27273a5b）
+    #   文件边界即格边界 → 跨格写入没有代码路径。
+    try:
+        from workers import notebook_store as NS
+
+        NS.ensure_seeded(daemon_root)   # 纯净版首启先落骨架（幂等·不碰有内容的格）
+        if NS.has_facts(daemon_root):
+            body = NS.inject_text(daemon_root)
+            labels = NS.archive_labels(daemon_root)
+            if not labels:
+                return body
+            lines = "\n".join("  - 「%s」" % t for t in labels)
+            return (
+                body.rstrip()
+                + "\n\n---\n\n## 已归档的历史层（每轮不注入 · 按需取回）\n\n"
+                + "以下维度是历史流水，已从每轮注入折叠，**全文一字未删**：\n"
+                + lines
+                + "\n\n取回方式：`recall_memory`（画像全文在记忆索引）"
+                "或 `read_file` 画像文件对应维度段。\n"
+            )
+    except Exception:
+        pass   # 回退老路径：画像缺失比体量超支严重
+
     for fn in (OWNER_NOTEBOOK_FILENAME, BRO_NOTEBOOK_FILENAME):
         p = daemon_root / SOUL_DIR_NAME / fn
         if p.exists():
@@ -303,32 +474,14 @@ def _load_bro_notebook(daemon_root: Path) -> str:
     return ""
 
 
-def _resolve_soul_file(soul_dir: Path, new_name: str, legacy_name: str) -> Path:
-    """双名兜底：新名优先 / 旧名回退（2026-09-17 与母体同构）。
-
-    why：老用户的 soul/ 里仍是旧名（SKILL.md / IDENTITY.json），
-    直接改用新名会读不到 → agent 失忆。两者都能读，改名才能安全分批。
-    两个都不在 → 返回新名路径（让调用方的 missing 路径报错指向新名，不静默）。
-    """
-    p_new = soul_dir / new_name
-    if p_new.exists():
-        return p_new
-    p_old = soul_dir / legacy_name
-    if p_old.exists():
-        return p_old
-    # 两个都不在 → 返回新名路径，让 _read_text 的报错指向新名（不静默）
-    return p_new
-
-
 def _load_identity(daemon_root: Path) -> dict:
-    """读 soul/meta.json（相遇初始化写的名字/口吻）。双名兜底：meta.json 优先，回退 IDENTITY.json。
-    不存在返回 {}（= 母体）。"""
-    p = _resolve_soul_file(daemon_root / SOUL_DIR_NAME, IDENTITY_NEW_FILENAME, LEGACY_IDENTITY_FILENAME)
+    """读 soul/meta.json（新名）或 soul/IDENTITY.json（旧名·兜底）。不存在返回 {}（= 母体）。"""
+    p = identity_data_path(daemon_root / SOUL_DIR_NAME)
     if not p.exists():
         return {}
     try:
         import json
-        # utf-8-sig: 容忍手动编辑时编辑器加的 BOM（Windows 老雷）
+        # utf-8-sig: 容忍手动编辑 IDENTITY.json 时编辑器加的 BOM（Windows 老雷）
         return json.loads(p.read_text(encoding="utf-8-sig")) or {}
     except Exception:
         return {}
@@ -353,7 +506,7 @@ def _persona_style_block(name: str, style: str, origin: str = "", quirk: str = "
     if not name or not style:
         return ""
     parts = [
-        "\n\n=== 口吻 ===\n\n",
+        "\n\n=== 身份层 · 口吻 ===\n\n",
         f"口吻：{style}\n",
         "自传是你是谁。怎么说话听这副口吻，跟自传里的默认嘴冲突时听口吻。\n",
         "味道只调这副口吻的温度，不能把你说回另一张嘴。写在句子里，不要旁白。\n",
@@ -418,15 +571,13 @@ def _persona_archive_fields(identity: dict) -> tuple[str, str]:
 
 
 # 单条 entry 注入到 system prompt 时的最大字符数（超出截断 + 省略号）
-# 2026-09-16 落位治理：4500 → 2500（单条 4500×3 ≈ 6400 tok，太肥；实际条目多在 1100 字内不误伤）
+# 2026-09-16 落位治理：4500 → 2500（单条 4500×3 ≈ 6400 tok，太肥；今天实际条目均在 1100 字内不误伤）
 _EVOLUTION_ENTRY_MAX_CHARS = 2500
 # 最近 N 条【合计】注入预算（字符）·超了从最老的往下丢，最新一条永远进（2026-09-16）
 _EVOLUTION_TOTAL_BUDGET_CHARS = 6000
 # 默认注入末尾几条 entries
 _EVOLUTION_DEFAULT_RECENT_N = 3
 
-
-import re
 
 _TS_RE = re.compile(r"### (\d{4}-\d{2}-\d{2} \d{2}:\d{2})")
 
@@ -550,7 +701,7 @@ def _director_wake_block() -> str:
         return ""
 
 
-def runtime_context_addendum(daemon_root: Path) -> str:
+def runtime_context_addendum(daemon_root: Path, *, parts: bool = False, catalog_exclude=None) -> str | dict:
     """
     返回拼到 system prompt 末尾的"运行环境 + 工具使用纪律 + BRO 活人画像"段。
 
@@ -576,8 +727,8 @@ def runtime_context_addendum(daemon_root: Path) -> str:
     )
 
     base = (
-        "\n\n" + section_header("runtime").rstrip("\n") + " · 运行环境（daemon 自动追加 · 不属于灵魂本体） ===\n\n"
-        f"宿主平台: {platform_label}\n"
+        "\n\n" + section_header("runtime")
+        + f"宿主平台: {platform_label}\n"
         f"shell_exec 背后的壳: {shell_label}\n"
         f"工程根目录: {daemon_root}\n\n"
         "## 工具使用纪律\n\n"
@@ -613,15 +764,16 @@ def runtime_context_addendum(daemon_root: Path) -> str:
     notebook_section = ""
     if _notebook_has_facts(notebook_text):
         notebook_section = (
-            "\n\n" + section_header("notebook").rstrip("\n") + "\n\n"
-            f"{notebook_text}\n"
+            "\n\n" + section_header("notebook")
+            + f"{notebook_text}\n"
             "画像在心里，别每轮复述，别拿来催他。\n"
         )
 
     evolution_section = ""
-    recent_evo = _load_recent_evolution_entries(daemon_root)
-    if recent_evo:
-        evolution_section = "\n\n" + section_header("evolution").rstrip("\n") + f"\n\n{recent_evo}\n"
+    if INJECT_EVOLUTION:          # 2026-09-19 wish-3ba1c0e2 · 移出前缀（why 见常量处）
+        recent_evo = _load_recent_evolution_entries(daemon_root)
+        if recent_evo:
+            evolution_section = f"\n\n{section_header('evolution')}{recent_evo}\n"
 
     boot_note = ""
     try:
@@ -633,21 +785,32 @@ def runtime_context_addendum(daemon_root: Path) -> str:
     catalog_note = ""
     try:
         from agent_tools._tool_catalog import directory_block
-        _cat = directory_block()
-        # 段头收口（2026-09-17 与母体同构）：以前是裸贴在队尾、无段头 →
-        # 面板锚点找不到 → 显示 0。现在走常量表。
-        catalog_note = ("\n\n" + section_header("catalog").rstrip("\n") + "\n\n" + _cat) if _cat else ""
+        catalog_note = directory_block(exclude=catalog_exclude)
     except Exception:
         catalog_note = ""
 
-    # 拼装顺序 = 变化频率序（与母体同构）：
-    #   工具层（兜底目录）在灵魂层之前 → 画像/成长这两个高频变的排在最后，
-    #   变了只断尾部，前面照旧命中前缀缓存。
-    return base + catalog_note + notebook_section + evolution_section + boot_note
+    # 按内容层分段返回 (2026-09-17 · wish-811eb5f5)：
+    #   rules = Runtime（环境 + 工具纪律 + 收尾）
+    #   tools = 延迟工具目录 + 启动提示
+    #   soul  = 成长 + 画像（都会变 —— 2026-09-19 按“谁变得勤”重排）
+    #
+    # 缓存友好重排 (2026-09-19 · 前绞分层原则)：缓存按前缀逐字节匹配，
+    # 第一个不同处之后全失效 —— 所以“谁会变”决定“谁该靠后”。
+    # 画像（update_owner_note 写）比成长（update_self_evolution 写）变得勤得多，
+    # 所以画像挪到最末：改一句关于他，只失效它自己那一段，不再秧及成长档案。
+    # ⓘ 状态卡不在这里 —— 它那一格 prefix=()，走独立通道注入（见 notebook_tiers.SECTIONS）。
+    if parts:
+        # wish-e1178ade · 层配置：soul 拆成 evolution / notebook 两个分键（soul 键保留兼容）
+        return {"rules": base, "tools": catalog_note + boot_note,
+                "evolution": evolution_section, "notebook": notebook_section,
+                "soul": evolution_section + notebook_section}
+    return base + catalog_note + boot_note + evolution_section + notebook_section
 
 
 def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: bool = True,
-              thickness: str | None = None) -> Soul:
+              thickness: str | None = None,
+              layers: list[str] | None = None,
+              catalog_exclude: set | None = None) -> Soul:
     """
     Load OPUS soul from the daemon's soul/ directory.
 
@@ -658,9 +821,15 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
                       system_prompt. Default True. Set False for pure-soul loading
                       (e.g. wake_test that wants to test the bare soul).
         thickness: "standard" (默认·全量灵魂层 + Runtime) / "thin"
-                   (灵魂最小核 soul/MINIMAL-CORE.md · 不带 Runtime)。
+                   (灵魂最小核 soul/MINIMAL-CORE.md ≈566 tok · 不带 Runtime
+                    · 2026-09-17 落地 · 实测 22 题三轨 74.1% vs 全量 42-54%)。
                    不传时读环境变量 OPUS_SOUL_THICKNESS（仅体验开关）；
                    档位系统上线后由会话档位传参。缺文件时 thin 自动退回全量。
+        layers: 层配置（wish-e1178ade）—— 装哪几段（SECTION_MARKS 键的子集）。
+                None = 全装（**逐字节现状 · 零回归路径**）；只作用于 standard 拼装
+                （thin 自成一档 · 忽略 layers）。预设（档位）的「装哪几段」从这里进来。
+        catalog_exclude: 已全量进 tools[] 的工具集合（wish-9de9bce3 · 精准磨）——
+                延迟目录里不再重复列出它们；None = 原样（逐字节现状）。
 
     Returns:
         Soul instance with .system_prompt ready to pass to the LLM.
@@ -676,15 +845,15 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
     if thickness not in ("thin", "standard"):
         thickness = "standard"
 
-    # 双名兜底（2026-09-17 与母体同构）：新名优先 / 旧名回退。
-    # why：老用户 soul/ 里仍是 SKILL.md，直接换新名会读不到 → agent 失忆。
-    skill_path = _resolve_soul_file(soul_dir, SKILL_NEW_FILENAME, LEGACY_SKILL_FILENAME)
+    skill_path = skill_doc_path(soul_dir)
     memories_path = soul_dir / MEMORIES_FILENAME
 
     skill_text = _skill_identity_excerpt(_read_text(skill_path))
     memories_raw = _read_text(memories_path)
     memories_file_chars = len(memories_raw)
-    if not _memories_has_facts(memories_raw):
+    if not INJECT_MEMORIES:
+        memories_text = ""          # 全量存档·靠召回（recall_memory / read_file）
+    elif not _memories_has_facts(memories_raw):
         memories_text = ""
     else:
         try:
@@ -721,15 +890,39 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
         )
 
     daemon_rules_block = (
-        section_header("rules")
+        "\n\n" + section_header("rules")
         + daemon_rules_text
         + "\n\n"
     ) if daemon_rules_text else ""
 
+    # 沉淀位地图 (2026-09-17 · wish-811eb5f5)：告诉模型每份文件属于哪层、何时在场。
+    # 与 data/cognition/STRUCTURE.md 同源 —— 那份是 BRO 与所有模型的共同语言单一真相源。
+    # 只进 standard 档（thin 是最小核，不加元信息，保住 746 tok）。
+    # 落位速查表见模块级 PLACEMENT_TABLE（内核自持 · worker 反向 import）
+    structure_note = (
+        "\n\n" + section_header("structure")
+        + "身份层  soul/IDENTITY.md —— 我是谁（每轮在场）\n"
+        "灵魂层  soul/notebook/ —— 一格一文件 · ★= 进每轮前缀\n"
+        "          ★ understanding · about-user · how-we-work · speech-discipline\n"
+        "          其余 10 格不进前缀（state/background/stories/moments/archive/watch/\n"
+        "          changelog/next-mate/state-history/demoted）· 可 recall_memory 召回\n"
+        "        soul/OPUS-MEMORIES.md —— 我们的历史（全量存档·可 recall_memory 召回）\n"
+        "        soul/SELF-EVOLUTION.md —— 我的成长（全量存档·可 recall_memory 召回）\n"
+        "规则层  data/cognition/daemon_rules.md —— 干活的规矩与红线（每轮在场）\n"
+        "工具层  手边 tools[]（完整 schema·每轮）+ 延迟目录（名字+简介·catalog_search 拿详情）\n"
+        "工艺层  data/cognition/scenarios/（read_scenario 按需）· data/playbooks/（自动命中）\n"
+        "完整定义：data/cognition/STRUCTURE.md\n"
+        "逐字全文：data/cognition/PREFIX.md（想看我到底读了什么·直接读它）\n"
+        # 落位速查 · 与 workers/prefix_surface.PLACEMENT_TABLE 同源（一份定义·两处用）
+        # 2026-09-19 wish-a1580b98：实测模型只响应提示词里写了的信号，加这张表给它装"该记了"的信号
+        + (PLACEMENT_TABLE if PLACEMENT_TABLE else "")
+        + "\n"
+    )
+
     skill_block_header = section_header("identity")
 
     memories_block = (
-        "\n\n" + section_header("memories").rstrip("\n") + "\n\n" + memories_text
+        "\n\n" + section_header("memories") + memories_text
         if memories_text else ""
     )
 
@@ -738,14 +931,21 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
     constitution_block = ""
     try:
         from product_constitution import build_constitution_block
-        constitution_block = build_constitution_block(soul_dir)
+        if layers is None or thickness == "thin":
+            constitution_block = build_constitution_block(soul_dir)
+        else:
+            constitution_block = build_constitution_block(
+                soul_dir,
+                include_common=("const_common" in layers),
+                include_local=("const_local" in layers),
+            )
     except Exception:
         constitution_block = ""
 
     if thickness == "thin":
-        # 灵魂层最小核 · thin 档只带 soul/MINIMAL-CORE.md；铁律/自传/画像/SE/Runtime
-        # 全部不进 —— 不是删，是按档位挂载或走 recall_memory 召回。
-        # 缺文件时退回全量，不阻断启动。
+        # 灵魂层最小核 (2026-09-17 落地 · wish 三轨实测 74.1% vs 全量 42-54%)。
+        # thin 档只带 soul/MINIMAL-CORE.md；铁律/自传/画像/SE/Runtime 全部不进 ——
+        # 不是删，是按档位挂载或走 recall_memory 召回。缺文件时退回全量，不阻断启动。
         _core_path = soul_dir / "MINIMAL-CORE.md"
         _core_text = _read_text(_core_path) if _core_path.exists() else ""
         if _core_text.strip():
@@ -760,28 +960,36 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
                 + memories_block
             )
             if with_runtime:
-                system_prompt = system_prompt + runtime_context_addendum(root)
+                system_prompt = system_prompt + runtime_context_addendum(root, catalog_exclude=catalog_exclude)
     else:
-        # 沉淀位地图（2026-09-17 与母体同构）· 告诉每个未来的模型：
-        # “什么内容该写到哪里 / 每轮进不进前缀”。内容以 data/cognition/STRUCTURE.md 为准。
-        _structure_map = (
-            section_header("structure")
-            + "> **每份文件属于哪层、什么时机进前缀** —— 完整定义见 `data/cognition/STRUCTURE.md`。\n"
-            "> 层只有五个：身份 / 灵魂 / 规则 / 工具 / 工艺。**能召回的就不进前缀**；\n"
-            "> 前缀只留「每轮都可能影响输出 且 召不回来」的东西。\n\n"
-        )
-        system_prompt = (
-            preamble
-            + _structure_map
-            + skill_block_header
-            + skill_text
-            + daemon_rules_block
-            + constitution_block
-            + memories_block
-        )
-
+        # 按内容层拼装 (2026-09-17 · wish-811eb5f5)：身份 → 规则 → 工具 → 灵魂。
+        # 缓存友好：变化频率低的在前（身份/规则几乎不动；画像/SE 天天变）。
+        # 完整层定义：data/cognition/STRUCTURE.md
+        _rt_parts: dict = {"rules": "", "tools": "", "soul": ""}
         if with_runtime:
-            system_prompt = system_prompt + runtime_context_addendum(root)
+            try:
+                _rt_parts = runtime_context_addendum(root, parts=True, catalog_exclude=catalog_exclude)
+            except TypeError:      # 旧签名兼容（不该发生，保底）
+                _rt_parts["soul"] = runtime_context_addendum(root)
+        # 保底：老 parts 只有 soul 键时，evolution/notebook 分键缺位 → 整包归 notebook（内容不丢）
+        if _rt_parts.get("evolution") is None and _rt_parts.get("notebook") is None:
+            _rt_parts["evolution"], _rt_parts["notebook"] = "", _rt_parts.get("soul", "")
+
+        # wish-e1178ade · 层配置（预设可选装哪几段）：layers=None → 逐字现状（零回归）；
+        # 否则按段过滤 —— 全开时拼接顺序与旧版逐字节一致（缓存前缀稳定）。
+        _seg_on = (lambda _k: layers is None or _k in layers)
+        system_prompt = (
+            (preamble if _seg_on("identity") else "")                            # 身份层
+            + (structure_note if _seg_on("structure") else "")                   # 元信息 · 沉淀位地图
+            + ((skill_block_header + skill_text) if _seg_on("identity") else "")  # 身份层
+            + (daemon_rules_block if _seg_on("rules") else "")                   # 规则层
+            + (constitution_block if (_seg_on("const_common") or _seg_on("const_local")) else "")
+            + (_rt_parts.get("rules", "") if _seg_on("runtime") else "")         # 规则层 · Runtime
+            + (_rt_parts.get("tools", "") if _seg_on("catalog") else "")         # 工具层 · 延迟目录
+            + (memories_block if _seg_on("memories") else "")                    # 灵魂层 · 自传
+            + ((_rt_parts.get("evolution") or "") if _seg_on("evolution") else "")  # 灵魂层 · 成长
+            + ((_rt_parts.get("notebook") or "") if _seg_on("notebook") else "")    # 灵魂层 · 画像
+        )
 
     # P1 代码归一 · 把 OPUS/BRO 令牌本地化成本实例的名字 (母体走缺省值 = no-op·零改动)
     try:

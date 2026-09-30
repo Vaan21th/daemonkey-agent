@@ -61,6 +61,9 @@ def check_auth(authorization: Optional[str]) -> None:
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
+# 本机标识缓存（loopback + 主机名 + 各网卡 IP）· 网卡不会中途变，算一次就够
+_LOCAL_NAMES: set | None = None
+
 
 def _loopback_trust_enabled() -> bool:
     """读 env OPUS_LOOPBACK_TRUST · 默认 true (本机访问免 token).
@@ -77,6 +80,80 @@ def _is_loopback(request: "Request") -> bool:
         return False
     host = (request.client.host or "").strip().lower()
     return host in _LOOPBACK_HOSTS
+
+
+def _local_machine_names() -> set:
+    """这台机器自己的所有写法：loopback + 主机名 + 各网卡 IP
+
+    拿不全也不报错，退了只剩 loopback —— 判据宁可严一点，不要误把远端的框弹在空桌子上。
+    """
+    global _LOCAL_NAMES
+    if _LOCAL_NAMES is not None:
+        return _LOCAL_NAMES
+    names = set(_LOOPBACK_HOSTS)
+    try:
+        import socket as _s
+        hn = (_s.gethostname() or "").strip().lower()
+        if hn:
+            names.add(hn)
+        try:
+            for info in _s.getaddrinfo(hn or None, None):
+                names.add(str(info[4][0]).strip().lower())
+        except Exception:
+            pass
+        try:
+            sk = _s.socket(_s.AF_INET, _s.SOCK_DGRAM)
+            try:
+                sk.connect(("8.8.8.8", 80))      # 不真发包 · 只为问出本机出口 IP
+                names.add(sk.getsockname()[0].strip().lower())
+            finally:
+                sk.close()
+        except Exception:
+            pass
+    except Exception:
+        pass
+    _LOCAL_NAMES = names
+    return names
+
+
+def _client_is_local_machine(request: "Request") -> bool:
+    """请求是不是「坐在这台机器前的人」发的 —— 决定能不能给他弹本机对话框
+
+    为什么不直接用 _is_loopback：只认 127.0.0.1 会漏掉很常见的一种
+    —— BRO 用局域网地址 / 主机名访问本机 WebUI（http://192.168.x.x:7860 ·
+    http://<主机名>:7860）。连接确实来自本机，只是 client.host 是网卡 IP。
+    （2026-09-20 踩过：目录选择器被判成远程、直接降级成手输框）
+
+    为什么两道都查：
+      · peer —— 来源 IP 必须是本机（loopback / 网卡 IP / 主机名）
+      · host —— Host 头也得指向本机。隧道（cloudflared/frp）转发进来的流量
+                 client.host 恒为 127.0.0.1，但 Host 头是公网域名 —— 那种情况
+                 弹窗会开在一张没人看的桌子上，用户干等 4 分钟。
+    """
+    if not request:
+        return False
+    try:
+        peer = (request.client.host or "").strip().lower() if request.client else ""
+    except Exception:
+        peer = ""
+    names = _local_machine_names()
+    if not peer or peer not in names:
+        return False
+    h = ""
+    try:
+        for k, v in (request.scope.get("headers") or []):
+            if k.lower() == b"host":
+                h = v.decode("latin-1", "replace").strip().lower()
+                break
+    except Exception:
+        h = ""
+    if not h:
+        return False
+    if h.startswith("["):            # IPv6 形如 [::1]:7860
+        h = h.split("]", 1)[0].lstrip("[")
+    elif ":" in h:                   # IPv4 / 域名带端口
+        h = h.rsplit(":", 1)[0]
+    return h in names
 
 
 def _ensure_local_token() -> str:

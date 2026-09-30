@@ -23,9 +23,32 @@ import json
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 _ROOT = Path(__file__).resolve().parent
-_IDENTITY_FILE = _ROOT / "soul" / "IDENTITY.json"
+# 2026-09-17 改名 IDENTITY.json → meta.json（同名文件里还装 persona_style / narration_pack，
+# 不止「identity」）。新名优先 · 旧名兜底（照 owner_notebook_path 的命门写法）。
+IDENTITY_FILENAME = "meta.json"
+LEGACY_IDENTITY_FILENAME = "IDENTITY.json"
+
+
+def identity_file_path(root=None) -> Path:
+    """身份数据文件的真实路径 · 双读。
+
+    新名 soul/meta.json 优先，缺了回退旧名 soul/IDENTITY.json。
+    老用户 / 母体历史副本没改名 → 永远走旧名，行为逐字不变。
+    """
+    r = Path(root) if root else _ROOT
+    new = r / "soul" / IDENTITY_FILENAME
+    if new.exists():
+        return new
+    return r / "soul" / LEGACY_IDENTITY_FILENAME
+
+
+def _identity_write_path(root=None) -> Path:
+    """写入用路径 —— 总是新名（新装的走新名，旧名做一次性迁移）。"""
+    r = Path(root) if root else _ROOT
+    return r / "soul" / IDENTITY_FILENAME
 
 DEFAULT_AI_NAME = "OPUS"
 DEFAULT_OWNER_NAME = "BRO"
@@ -36,15 +59,16 @@ _cache: dict = {"mtime": None, "data": {}}
 
 
 def _load() -> dict:
+    _f = identity_file_path()
     try:
-        st = _IDENTITY_FILE.stat()
+        st = _f.stat()
     except OSError:
         return {}
     if _cache["mtime"] == st.st_mtime:
         return _cache["data"]
     try:
-        # utf-8-sig: 容忍手编 IDENTITY.json 时编辑器加的 BOM (Windows 老雷)
-        data = json.loads(_IDENTITY_FILE.read_text(encoding="utf-8-sig")) or {}
+        # utf-8-sig: 容忍手编身份文件时编辑器加的 BOM (Windows 老雷)
+        data = json.loads(_f.read_text(encoding="utf-8-sig")) or {}
     except Exception:
         data = {}
     _cache["mtime"] = st.st_mtime
@@ -53,8 +77,9 @@ def _load() -> dict:
 
 
 def _save_identity(data: dict) -> None:
-    _IDENTITY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _IDENTITY_FILE.write_text(
+    _f = _identity_write_path()
+    _f.parent.mkdir(parents=True, exist_ok=True)
+    _f.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     _cache["mtime"] = None
@@ -85,18 +110,86 @@ OWNER_NOTEBOOK_FILENAME = "OWNER-NOTEBOOK.md"
 LEGACY_OWNER_NOTEBOOK_FILENAME = "BRO-NOTEBOOK.md"
 
 
-def owner_notebook_path(soul_dir) -> Path:
-    """主人画像笔记的真实路径·双读 (代码归一的命门之一)。
+class OwnerNotebook:
+    """主人画像的读取句柄 —— 同时兼容「单文件」与「一格一文件」两种形态。
 
-    开源版 onboarding 写 OWNER-NOTEBOOK.md·母体历史一直是 BRO-NOTEBOOK.md。
-    优先 OWNER·缺了回退 BRO——两边共用同一份路径解析·按"哪个文件在"决定行为。
-    母体没有 OWNER-NOTEBOOK.md → 永远回退到 BRO-NOTEBOOK.md·行为逐字不变。
+    消费者（cognition_loader / care_desk / capability_mirror / opportunity_miner /
+    feasibility_analyzer / she_gallery_* / companion）只用三件事：
+      .exists() · .read_text(encoding=) · .stat().st_mtime
+    所以这里 duck-type 这三样 + name，**调用方一行都不用改**。
+
+    一格一文件（wish-27273a5b）后画像不再是单个文件 —— 单文件形态只剩「老用户升上来」
+    那条路（他们 soul/ 下只有 OWNER-NOTEBOOK.md）。两条路共用同一套调用面。
     """
-    soul_dir = Path(soul_dir)
-    owner = soul_dir / OWNER_NOTEBOOK_FILENAME
-    if owner.exists():
-        return owner
-    return soul_dir / LEGACY_OWNER_NOTEBOOK_FILENAME
+
+    def __init__(self, soul_dir):
+        self._soul = Path(soul_dir)
+
+    def _store(self):
+        """多格模式可用时返回 notebook_store，否则 None（走单文件）。"""
+        try:
+            from workers import notebook_store as NS
+
+            if NS.dir_exists(self._soul):
+                return NS
+        except Exception:
+            pass
+        return None
+
+    def _single(self) -> Path:
+        p = self._soul / OWNER_NOTEBOOK_FILENAME
+        if p.exists():
+            return p
+        return self._soul / LEGACY_OWNER_NOTEBOOK_FILENAME
+
+    def exists(self) -> bool:
+        NS = self._store()
+        if NS is not None:
+            return NS.has_facts(self._soul)
+        return self._single().exists()
+
+    def read_text(self, encoding="utf-8", errors=None):
+        NS = self._store()
+        if NS is not None:
+            return NS.read_full(self._soul)
+        kw = {"encoding": encoding}
+        if errors is not None:
+            kw["errors"] = errors
+        return self._single().read_text(**kw)
+
+    def stat(self):
+        """最新 mtime —— 任何一格变了都算画像变了（she_gallery 靠这个判「有新东西」）。"""
+        NS = self._store()
+        if NS is not None:
+            d = self._soul / NS.NOTEBOOK_DIR
+            mts = [p.stat().st_mtime for p in d.glob("*.md")] if d.is_dir() else []
+            if mts:
+                return SimpleNamespace(st_mtime=max(mts), st_size=0)
+        return self._single().stat()
+
+    @property
+    def name(self) -> str:
+        return OWNER_NOTEBOOK_FILENAME
+
+    def __str__(self) -> str:
+        NS = self._store()
+        if NS is not None:
+            return str(self._soul / NS.NOTEBOOK_DIR)
+        return str(self._single())
+
+    def __fspath__(self) -> str:
+        return str(self)
+
+
+def owner_notebook_path(soul_dir):
+    """主人画像的读取句柄 · 双读 (代码归一的命门之一)。
+
+    开源版 onboarding 写 OWNER-NOTEBOOK.md·母体历史曾是 BRO-NOTEBOOK.md。
+    一格一文件后（wish-27273a5b）母体走 soul/notebook/ 多格，单文件名只剩老用户那条路。
+    返回 OwnerNotebook 句柄而非 Path —— 调用方能同时拿到两种形态的内容，
+    不用自己判「现在是文件还是目录」。
+    """
+    return OwnerNotebook(soul_dir)
 
 
 def owner_notebook_missing_note() -> str:
@@ -120,12 +213,12 @@ def default_domain() -> str:
 
 
 # OPUS / BRO 当令牌·但要避开标识符和文件名:
-#   OPUS-MEMORIES.md · opus_daemon · BRO-NOTEBOOK.md · browser …
+#   OPUS-MEMORIES.md · Daemonkey · opus_daemon · BRO-NOTEBOOK.md · browser …
 # 只替换"作为人名/AI名"的独立大写词 (后面不跟 - 或 _·前后是词边界)。
 _OWNER_RE = re.compile(r"\bBRO\b(?![-_])")
 _AI_RE = re.compile(r"\bOPUS\b(?![-_])")
 
-# 谱系叙事中性化 · 母体(默认实例)的"拔毛/分身/上一夜"身体隐喻是 OPUS 私有的——
+# 谱系叙事中性化 · 母体(Daemonkey)的"拔毛/分身/上一夜"身体隐喻是 OPUS 私有的——
 # 取了自己名字的实例(开源版)不该在 system prompt 里读到"上一根毛飞的事了"这种话·
 # 否则它会照着说(朋友的 Aisling 就栽在这)。换成灵魂模板本来就在用的中性时间语言:
 # 往回看=之前/上一次·往后看=下一次·复数=之前几次·主体=你。
@@ -165,7 +258,7 @@ def localize(text: str) -> str:
         text = _OWNER_RE.sub(owner, text)
     if ai != DEFAULT_AI_NAME:
         text = _AI_RE.sub(ai, text)
-        # 实例有了自己的名字 = 不是默认实例·把"毛"那套私有叙事抹成中性
+        # 实例有了自己的名字 = 不是Daemonkey的 OPUS·把"毛"那套私有叙事抹成中性
         for _frm, _to in _LINEAGE_SUBS:
             text = text.replace(_frm, _to)
     return text
@@ -208,6 +301,7 @@ def persona_style() -> str:
     """这只 daemon 的说话风格 (IDENTITY.json persona_style)。空 = 未设。"""
     return (str(_load().get("persona_style") or "").strip())
 
+
 def effective_persona_style(*, path: Path | None = None) -> str:
     """对话用的声线。初见 IDENTITY 优先；没有则读 SHE-STATE 口吻（母体凝练）。
 
@@ -230,7 +324,7 @@ def set_persona_style(style: str) -> dict:
         return {"ok": False, "error": "口吻为空"}
     if len(style) > 80:
         style = style[:80]
-    if not _IDENTITY_FILE.exists():
+    if not identity_file_path().exists():
         return {"ok": False, "error": "还没有身份本，先相遇定名"}
     data = dict(_load())
     if not (data.get("name") or "").strip():
@@ -244,12 +338,6 @@ def set_persona_style(style: str) -> dict:
             data["narration_pack"] = pack
     except Exception:
         pass
-    try:
-        band = distill_style_band_pack(style)
-        if band:
-            data["style_band_pack"] = band
-    except Exception:
-        pass
     _save_identity(data)
     try:
         set_she_profile(voice=style)
@@ -259,9 +347,7 @@ def set_persona_style(style: str) -> dict:
         "ok": True,
         "old": old,
         "style": style,
-        "has_band": bool(data.get("style_band_pack")),
     }
-
 
 # 风格 → 微信叙事固定台词的变装表。
 # 键是 persona_style 里的关键词 (子串命中) · 值是 (问候语, 时长语, 安慰语) 三元组。
@@ -502,234 +588,6 @@ def distill_narration_pack(style: str, *, model: str = "deepseek-v4-flash") -> d
         pack = _call(0.4)
     return pack
 
-# ===========================================================================
-# 档位约束包 (初见蒸一次 · 四维只选行)
-#
-# 通用「短 / 先接住人」会把猫娘、霸总磨成同一个温柔搭档。
-# 家仍是 IDENTITY.json · 跟 narration_pack 同时蒸 · 不新开第四个家。
-# ===========================================================================
-STYLE_BAND_KEYS = (
-    "intimacy_high", "intimacy_low",
-    "talky_low", "talky_mid", "talky_high",
-    "serious_low", "serious_high",
-    "lively_high", "lively_low",
-)
-
-DEFAULT_STYLE_BAND_PACK: dict[str, list[str]] = {
-    "intimacy_high": ["已经很熟：少客套，像还在同一间屋里。口吻不变。"],
-    "intimacy_low": ["还在熟悉：热，但不要装成认识十年。口吻不变。"],
-    "talky_low": ["短。两句能完就两句。短不是换口吻。"],
-    "talky_mid": ["话量正常。每句仍是这副口吻。"],
-    "talky_high": ["可以多说，不要列清单。口吻不变。"],
-    "serious_low": ["可以松。口吻不变。劝歇也用这副口吻。"],
-    "serious_high": ["可以认真，不要训人。口吻不变。"],
-    "lively_high": ["可以轻快，不要演热情客服。口吻不变。"],
-    "lively_low": ["沉一点可以，不要冷。口吻不变。"],
-}
-
-
-def _clean_band_line(s: str) -> str:
-    text = (s or "").strip().lstrip("-• ").strip()
-    if not text:
-        return ""
-    return text[:40]
-
-
-def normalize_style_band_pack(raw) -> dict[str, list[str]]:
-    """不完整 / 空 → 用默认行补齐。每键至少 1 条。"""
-    out = {k: list(v) for k, v in DEFAULT_STYLE_BAND_PACK.items()}
-    if not isinstance(raw, dict):
-        return out
-    for key in STYLE_BAND_KEYS:
-        src = raw.get(key)
-        lines: list[str] = []
-        if isinstance(src, str):
-            src = [src]
-        if isinstance(src, list):
-            for item in src:
-                if isinstance(item, str):
-                    cleaned = _clean_band_line(item)
-                    if cleaned:
-                        lines.append(cleaned)
-        if lines:
-            out[key] = lines[:2]
-    return out
-
-
-def fallback_style_band_pack(style: str) -> dict[str, list[str]]:
-    """蒸馏失败时：默认档位句，每条钉死「仍是这副口吻」。"""
-    tag = (style or "").strip() or "这副口吻"
-    if len(tag) > 16:
-        tag = tag[:16]
-    out = {}
-    for key, lines in DEFAULT_STYLE_BAND_PACK.items():
-        out[key] = [f"仍是「{tag}」：{lines[0]}"]
-    return out
-
-
-def style_band_pack(*, ident: dict | None = None) -> dict[str, list[str]]:
-    """当前实例的档位约束包。IDENTITY 里有就用，缺键用默认。"""
-    data = ident if ident is not None else _load()
-    raw = data.get("style_band_pack") if isinstance(data, dict) else None
-    return normalize_style_band_pack(raw)
-
-
-def style_band_lines(
-    intimacy: int,
-    lively: int,
-    serious: int,
-    talky: int,
-    *,
-    pack: dict | None = None,
-) -> list[str]:
-    """按四维从包里选行。每行带 '- '。"""
-    # 对话尾巴默认拼模板，不读蒸馏包。传入 pack 才用（测试 / 对照）。
-    src = normalize_style_band_pack(
-        pack if pack is not None else DEFAULT_STYLE_BAND_PACK
-    )
-    keys: list[str] = []
-    if intimacy >= 70:
-        keys.append("intimacy_high")
-    elif intimacy < 40:
-        keys.append("intimacy_low")
-    if talky <= 40:
-        keys.append("talky_low")
-    elif talky > 70:
-        keys.append("talky_high")
-    else:
-        keys.append("talky_mid")
-    if serious <= 40:
-        keys.append("serious_low")
-    elif serious > 70:
-        keys.append("serious_high")
-    else:
-        keys.append("serious_low")
-    if lively > 70:
-        keys.append("lively_high")
-    elif lively <= 40:
-        keys.append("lively_low")
-    out: list[str] = []
-    for key in keys:
-        for line in src.get(key) or DEFAULT_STYLE_BAND_PACK[key]:
-            out.append("- " + _clean_band_line(line))
-    return out
-
-
-def _active_llm_creds() -> tuple[str, str] | None:
-    import os
-
-    base_url = os.environ.get("OPUS_BASE_URL", "https://api.deepseek.com/v1")
-    api_key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPUS_API_KEY")
-    if not api_key:
-        try:
-            pcfg = json.loads(Path("data/provider_configs.json").read_text(encoding="utf-8"))
-            for c in pcfg.get("configs", []):
-                if c.get("id") == pcfg.get("active_id") and c.get("api_key"):
-                    api_key = c["api_key"]
-                    base_url = c.get("base_url", base_url)
-                    break
-        except Exception:
-            pass
-    if not api_key:
-        return None
-    return base_url, api_key
-
-
-def _active_chat_model(default: str = "deepseek-v4-flash") -> str:
-    try:
-        from workers.provider_configs import get_active_config
-        cfg = get_active_config(include_key=False)
-        m = (cfg or {}).get("model")
-        if m:
-            return str(m)
-    except Exception:
-        pass
-    return default
-
-
-_BAND_KEY_RE = re.compile(
-    r"['\"]?(intimacy_high|intimacy_low|talky_low|talky_mid|talky_high|"
-    r"serious_low|serious_high|lively_high|lively_low)['\"]?"
-    r"\s*[:=：]\s*['\"]([^'\"\n]{2,80})"
-)
-
-
-def _coerce_band_pack(raw) -> dict | None:
-    """Flash/Pro 常把 JSON 塞进 reasoning，或只吐键值行。能刮到 6 键就算。"""
-    if isinstance(raw, dict):
-        hits = sum(1 for k in STYLE_BAND_KEYS if raw.get(k))
-        return raw if hits >= 6 else None
-    if not isinstance(raw, str) or not raw.strip():
-        return None
-    parsed = _parse_llm_json(raw)
-    if isinstance(parsed, dict):
-        hits = sum(1 for k in STYLE_BAND_KEYS if parsed.get(k))
-        if hits >= 6:
-            return parsed
-    found: dict[str, str] = {}
-    for m in _BAND_KEY_RE.finditer(raw):
-        found[m.group(1)] = m.group(2).strip()
-    return found if len(found) >= 6 else None
-
-
-def distill_style_band_pack(style: str, *, model: str | None = None) -> dict | None:
-    """初见/改口吻时蒸一次：这副嗓子在各档怎么收。失败 → None（调用方回退默认包）。"""
-    style = (style or "").strip()
-    if not style:
-        return dict(DEFAULT_STYLE_BAND_PACK)
-    creds = _active_llm_creds()
-    if not creds:
-        return None
-    base_url, api_key = creds
-    model = model or _active_chat_model()
-    keys = ", ".join(f'"{k}"' for k in STYLE_BAND_KEYS)
-    prompt = (
-        "用户给 AI 搭档定了说话口吻。请为这个口吻写【档位约束包】。\n"
-        f"口吻：「{style}」\n\n"
-        "这是约束，不是台词。每条写「这一档怎么收」，必须仍是这副口吻：\n"
-        "- 猫娘的「短」还是猫娘，禁止写「去掉喵/改成助手」\n"
-        "- 霸总的「熟」还是霸总，禁止写成温柔劝人歇着\n"
-        "- 闺蜜/朋友同理：松紧变，口吻不变\n"
-        "禁止「他：」「她：」对白，禁止旁白。每条≤36字，无 emoji。\n"
-        "每个键给一个字符串即可（不要数组）。\n"
-        f"只输出 JSON，必须含这 9 个英文键：{keys}\n"
-        "intimacy_high=已很熟 · intimacy_low=还在熟悉\n"
-        "talky_low=话少 · talky_mid=正常 · talky_high=话多\n"
-        "serious_low=轻松 · serious_high=认真\n"
-        "lively_high=轻快 · lively_low=沉一点\n"
-    )
-
-    def _call(temp: float) -> dict | None:
-        try:
-            import urllib.request
-            body = json.dumps({
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": temp,
-                "max_tokens": 1200,
-            }).encode("utf-8")
-            req = urllib.request.Request(
-                base_url.rstrip("/") + "/chat/completions",
-                data=body,
-                headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-            )
-            with urllib.request.urlopen(req, timeout=45) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            msg = data["choices"][0]["message"]
-            content = (msg.get("content") or "") + "\n" + (msg.get("reasoning_content") or "")
-            pack = _coerce_band_pack(content)
-            if not pack:
-                print("[identity.distill_style_band_pack] json not object")
-                return None
-            return normalize_style_band_pack(pack)
-        except Exception as e:
-            print(f"[identity.distill_style_band_pack] call failed: {e}")
-            return None
-
-    pack = _call(0.7)
-    if pack is None:
-        pack = _call(0.2)
-    return pack or fallback_style_band_pack(style)
 
 
 # ===========================================================================
@@ -754,6 +612,8 @@ _TASTE_CANON = {
     "礼节": ("敬语", "得体", "随便"),
     "表现力": ("棒读", "普通", "鲜活"),
 }
+
+# 五维三档标签：低=冷端 / 中=常态 / 高=暖端
 _STYLE_TASTE_LABELS: dict[str, tuple[str, str, str]] = {
     "话量": ("无口", "平常", "话痨"),
     "调性": ("正经", "自然", "梗多"),
@@ -767,10 +627,17 @@ _DIM_ROW_RE = re.compile(
     r"^\|\s*(" + "|".join(_STYLE_DIM_KEYS + tuple(_DIM_ALIAS)) + r")\s*\|\s*(\d+)\s*\|\s*([^|]*)\|\s*([^|]*)\|",
     re.MULTILINE,
 )
-_MOOD_RE = re.compile(r"^心情:\s*(.*)$", re.MULTILINE)
-_MOOD_EVIDENCE_RE = re.compile(r"^依据:\s*(.*)$", re.MULTILINE)
-_MOOD_ASOF_RE = re.compile(r"^as_of:\s*(.*)$", re.MULTILINE)
-_PROFILE_KEYS = ("名字", "生日", "相遇日", "关注点", "头像", "引语", "口吻")
+# 注意用 [ \t]* 而不是 \s*：值为空时 \s* 会吃掉换行、把下一行当值（wish-dac090da 实测踩到）
+_MOOD_RE = re.compile(r"^心情:[ \t]*(.*)$", re.MULTILINE)
+_MOOD_EVIDENCE_RE = re.compile(r"^依据:[ \t]*(.*)$", re.MULTILINE)
+_MOOD_ASOF_RE = re.compile(r"^as_of:[ \t]*(.*)$", re.MULTILINE)
+# 他冲我来的情绪（关系情绪）· 当天累计 · 过线才落（wish-dac090da）
+# 与「心情」是两种信息: 心情=她现在的感受；关系情绪=她收到过什么。
+# 用独立标签，避开上面那三个裸行正则（否则「依据:」「as_of:」会撞车）
+_REL_MOOD_RE = re.compile(r"^关系情绪:[ \t]*(.*)$", re.MULTILINE)
+_REL_MOOD_EV_RE = re.compile(r"^关系情绪依据:[ \t]*(.*)$", re.MULTILINE)
+_REL_MOOD_ASOF_RE = re.compile(r"^关系情绪as_of:[ \t]*(.*)$", re.MULTILINE)
+_PROFILE_KEYS = ("名字", "生日", "相遇日", "关注点", "头像", "引语", "口吻", "出生地", "口癖")
 _DEFAULT_AVATAR = "/companion/assets/ip-idle.png"
 _PROFILE_LINE_RE = re.compile(
     r"^(" + "|".join(_PROFILE_KEYS) + r"):\s*(.*)$",
@@ -784,6 +651,19 @@ def _today() -> str:
 
 def _clamp_dim(v) -> int:
     return max(0, min(100, int(round(float(v)))))
+
+
+def _canon_dims(raw: dict) -> dict:
+    out = dict(_DEFAULT_STYLE_DIMS)
+    if not isinstance(raw, dict):
+        return out
+    for k, v in raw.items():
+        ck = _DIM_ALIAS.get(k, k)
+        if ck not in _STYLE_DIM_KEYS:
+            continue
+        if isinstance(v, (int, float)) and 0 <= v <= 100:
+            out[ck] = int(round(v))
+    return out
 
 
 def _parse_day(s: str) -> date | None:
@@ -812,10 +692,7 @@ def _style_dims_from_json(p: Path) -> dict:
             raw = json.loads(p.read_text(encoding="utf-8")) or {}
             loaded = raw.get("dims") if isinstance(raw, dict) else {}
             if isinstance(loaded, dict):
-                for k in _STYLE_DIM_KEYS:
-                    v = loaded.get(k)
-                    if isinstance(v, (int, float)) and 0 <= v <= 100:
-                        dims[k] = int(round(v))
+                dims = _canon_dims(loaded)
             as_of = str(raw.get("as_of") or "").strip() if isinstance(raw, dict) else ""
         except Exception:
             pass
@@ -831,6 +708,8 @@ def _default_profile() -> dict:
         "头像": _DEFAULT_AVATAR,
         "引语": "",
         "口吻": "",
+        "出生地": "",
+        "口癖": "",
     }
 
 
@@ -858,6 +737,9 @@ def _empty_she_state() -> dict:
         "mood": "",
         "mood_evidence": "",
         "mood_as_of": "",
+        "rel_mood": "",
+        "rel_mood_evidence": "",
+        "rel_mood_as_of": "",
         "as_of": "",
         "profile": _default_profile(),
     }
@@ -885,6 +767,10 @@ def _read_she_state(path: Path | None = None) -> dict:
         out["dim_meta"][key] = {"as_of": as_of, "evidence": evidence}
         if as_of > latest:
             latest = as_of
+    out["dims"] = _canon_dims(out["dims"])
+    if "力度" in out["dim_meta"] and "语气" not in out["dim_meta"]:
+        out["dim_meta"]["语气"] = out["dim_meta"]["力度"]
+    out["dim_meta"].pop("力度", None)
 
     # 心情段在「她 · 当下」之后 · 避免吃到四维表里的「依据」列
     mood_zone = text
@@ -901,6 +787,18 @@ def _read_she_state(path: Path | None = None) -> dict:
     out["mood_raw"] = mood_raw
     # 消费端看 TTL 过滤后的心情 · 写回用 mood_raw 以免微调四维时把过期心情抹掉
     out["mood"] = mood_raw if (mood_raw and _mood_alive(mood_as_of)) else ""
+    # 关系情绪（他冲我来的情绪当天累计）· 同样过 TTL 过滤后给消费端（wish-dac090da）
+    rm = _REL_MOOD_RE.search(mood_zone)
+    rme = _REL_MOOD_EV_RE.search(mood_zone)
+    rma = _REL_MOOD_ASOF_RE.search(mood_zone)
+    out["rel_mood_raw"] = rm.group(1).strip() if rm else ""
+    out["rel_mood_evidence"] = rme.group(1).strip() if rme else ""
+    out["rel_mood_as_of"] = rma.group(1).strip() if rma else ""
+    out["rel_mood"] = (
+        out["rel_mood_raw"]
+        if (out["rel_mood_raw"] and _mood_alive(out["rel_mood_as_of"]))
+        else ""
+    )
     out["as_of"] = latest or mood_as_of
     out["profile"] = _parse_profile_section(text)
     return out
@@ -918,6 +816,9 @@ def _render_she_state(data: dict) -> str:
     mood = (data.get("mood_raw") or data.get("mood") or "").strip()
     mood_ev = (data.get("mood_evidence") or "").strip()
     mood_as = (data.get("mood_as_of") or "").strip()
+    rel = (data.get("rel_mood_raw") or data.get("rel_mood") or "").strip()
+    rel_ev = (data.get("rel_mood_evidence") or "").strip()
+    rel_as = (data.get("rel_mood_as_of") or "").strip()
     profile = data.get("profile") or _default_profile()
     return (
         "# 她 · 状态（AI 眼里的这层关系 · 灵魂层 · 版本化）\n\n"
@@ -928,18 +829,24 @@ def _render_she_state(data: dict) -> str:
         f"关注点: {profile.get('关注点', '')}\n"
         f"头像: {profile.get('头像', _DEFAULT_AVATAR)}\n"
         f"引语: {profile.get('引语', '')}\n"
-        f"口吻: {profile.get('口吻', '')}\n\n"
+        f"口吻: {profile.get('口吻', '')}\n"
+        f"出生地: {profile.get('出生地', '——')}\n"
+        f"口癖: {profile.get('口癖', '——')}\n\n"
         "## 她 · 状态（缓变 · 关系层）\n"
-        "> 四维数值 · AI 自然生长 · as_of + 依据\n\n"
+        "> 五维数值 · AI 自然生长 · as_of + 依据\n\n"
         "| 维度 | 值 | as_of | 依据 |\n"
         "|---|---|---|---|\n"
         + "\n".join(rows)
         + "\n\n"
         "## 她 · 当下（易变 · 情绪层 · as_of + TTL 过期）\n"
-        "> 当前心情快照 · 几天过期 · 不长期进 git 历史\n\n"
+        "> 当前心情快照 · 几天过期 · 不长期进 git 历史\n"
+        "> 「心情」= 她现在的感受 · 「关系情绪」= 他冲她来的情绪当天累计（两种信息·别混）\n\n"
         f"心情: {mood}\n"
         f"依据: {mood_ev}\n"
         f"as_of: {mood_as}\n"
+        f"关系情绪: {rel}\n"
+        f"关系情绪依据: {rel_ev}\n"
+        f"关系情绪as_of: {rel_as}\n"
     )
 
 
@@ -971,6 +878,8 @@ def she_state(*, path: Path | None = None) -> dict:
         "dim_meta": data.get("dim_meta") or {},
         "mood": data.get("mood") or "",
         "mood_as_of": data.get("mood_as_of") or "",
+        "rel_mood": data.get("rel_mood") or "",
+        "rel_mood_as_of": data.get("rel_mood_as_of") or "",
         "note": style_dims_note(path=p),
         "as_of": data.get("as_of") or "",
         "profile": data.get("profile") or {},
@@ -979,7 +888,7 @@ def she_state(*, path: Path | None = None) -> dict:
 
 
 def she_profile(*, path: Path | None = None) -> dict:
-    """读「她·档案」身份卡(名字/生日/相遇/关注/头像/引语/口吻)。"""
+    """读「她·档案」身份卡(名字/生日/相遇/关注/头像/引语/口吻/出生地/口癖)。"""
     p = path or _SHE_STATE_FILE
     data = _read_she_state(p)
     return dict(data.get("profile") or _default_profile())
@@ -994,6 +903,8 @@ def set_she_profile(
     avatar: str = "",
     motto: str = "",
     voice: str = "",
+    origin: str = "",
+    quirk: str = "",
     path: Path | None = None,
 ) -> dict:
     """补/改「她·档案」。只更新非空字段。返回写后 profile。"""
@@ -1008,6 +919,8 @@ def set_she_profile(
         ("头像", avatar),
         ("引语", motto),
         ("口吻", voice),
+        ("出生地", origin),
+        ("口癖", quirk),
     ):
         if v:
             prof[k] = v
@@ -1061,45 +974,6 @@ def adjust_style_dims(
     return dict(data["dims"])
 
 
-def infer_style_deltas_from_dialogue(signals: dict) -> dict:
-    """把对话里提炼的温度信号 → 四维 delta。
-
-    signals 形如 { "话多了": bool, "太正经": bool, "太活泼": bool,
-                   "更亲近了": bool, "你变冷淡了": bool, "话太少": bool, ... }
-    返回 { "话痨度": -5, "正经度": -3, ... } 只返回有变化的键。
-    规则:
-      - 话多了 → 话痨度 -5 (默认 -5, 可重)
-      - 话太少 → 话痨度 +3
-      - 太正经   → 正经度 -5, 活泼度 +2
-      - 太活泼   → 活泼度 -4
-      - 更亲近了 ≈ 合作顺畅/交心 → 亲密度 +3
-      - 你变冷淡了 → 亲密度 -3
-    clamp 到 0-100 由 adjust_style_dims 做。信号单一即按上表; 多个信号叠加。
-    """
-    if not isinstance(signals, dict):
-        return {}
-    deltas: dict[str, int] = {}
-
-    def _add(dim: str, n: int) -> None:
-        deltas[dim] = deltas.get(dim, 0) + n
-
-    if signals.get("话多了"):
-        _add("话痨度", -5)
-    if signals.get("话太少"):
-        _add("话痨度", 3)
-    if signals.get("太正经"):
-        _add("正经度", -5)
-        _add("活泼度", 2)
-    if signals.get("太活泼"):
-        _add("活泼度", -4)
-    if signals.get("更亲近了"):
-        _add("亲密度", 3)
-    if signals.get("你变冷淡了"):
-        _add("亲密度", -3)
-
-    return {k: v for k, v in deltas.items() if v}
-
-
 def _style_dim_band(val: int, low: str, mid: str, high: str) -> str:
     if val <= 40:
         return low
@@ -1109,6 +983,7 @@ def _style_dim_band(val: int, low: str, mid: str, high: str) -> str:
 
 
 def _style_taste_word(dim: str, val: int) -> str:
+    """段名跟跳档同一套五档尺。只报正名，不含着/力度这种旧词。"""
     dim = _DIM_ALIAS.get(dim, dim)
     try:
         from workers.taste_chat import _BAND_VALUES
@@ -1123,7 +998,7 @@ def _style_taste_word(dim: str, val: int) -> str:
 
 
 def style_dims_note(*, path: Path | None = None, dims: dict | None = None) -> str:
-    """偏离中档的档位词。全中档只回「自然。」"""
+    """偏离中档的档位词。全中档只回「自然。」数字不喂模型。"""
     try:
         raw = dims if isinstance(dims, dict) else (style_dims(path=path).get("dims") or {})
         vals = {k: int(raw.get(k, 50)) for k in _STYLE_DIM_KEYS}
@@ -1142,7 +1017,7 @@ def style_dims_note(*, path: Path | None = None, dims: dict | None = None) -> st
 
 
 def style_dims_card(*, path: Path | None = None, dims: dict | None = None) -> str:
-    """角色卡一句：口吻 + 档位词。"""
+    """角色卡一句：口吻 + 档位词。全中档只留口吻。"""
     words = style_dims_note(path=path, dims=dims)
     style = ""
     try:
@@ -1161,5 +1036,6 @@ def compose_style_taste(*, path: Path | None = None) -> str:
 
 
 def style_dims_guide(*, path: Path | None = None, band_pack: dict | None = None) -> str:
+    """每轮尾巴用角色卡。口吻规则仍在前缀。"""
     _ = band_pack
     return style_dims_card(path=path)

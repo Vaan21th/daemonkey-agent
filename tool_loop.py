@@ -812,7 +812,8 @@ def _inject_pending_images(msgs: list) -> list:
     (image_url blocks + text) · 让多模态模型"直接看到图"而不是看 look_at 的文字转述。
 
     安全约束:
-      - pending.sid 必须等于当前 RUNTIME.session_id (防 background turn 串台)
+      - pending.sid 必须等于**本轮**的会话身份（current_session_id · ContextVar·每 turn 独立）
+        —— 不能用 RUNTIME.session_id（进程全局·两个会话并发时会被对方覆盖→校验失效）
       - supports_vision(当前模型) 必须为 True (模型切回纯文本就不再注入)
       - 只改返回的副本 · 原 messages 数组绝不动 (tool 循环每轮重复注入同一组图)
       - 任何异常都吞掉返回原 msgs (注入失败不该把主对话搞崩)
@@ -822,7 +823,13 @@ def _inject_pending_images(msgs: list) -> list:
         pend = getattr(RUNTIME, "pending_images", None)
         if not pend or not pend.get("images"):
             return msgs
-        if pend.get("sid") != getattr(RUNTIME, "session_id", ""):
+        # 2026-09-23 修跨会话串台 (wish-7fa81bd0): 基准改用**本轮**身份。
+        # 病根: 原来比的是 RUNTIME.session_id —— 进程全局 · daemon_api 每个 turn 进来都覆盖它。
+        # 两个会话同时跑时，后到的 turn 把全局盖成对方的 sid → 校验从「不等于」变「等于」
+        # → A 会话上传的图直接注进 B 会话的输入。current_session_id() 是 ContextVar
+        # (set_session_context 在 /chat 入口设) · 每 turn 独立 · 并发也不会互相污染。
+        from agent_tools import current_session_id
+        if pend.get("sid") != current_session_id():
             return msgs
         from model_aliases import supports_vision
         if not supports_vision(RUNTIME.model or ""):

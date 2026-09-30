@@ -65,3 +65,7 @@ __pycache__/
 desktop_pet/confirm.txt
 
 desktop_pet/bubble.txt
+
+# 旧图归档与临时备份（不入库）
+docs/img/_old/
+core_manifest.json.bak-opus
