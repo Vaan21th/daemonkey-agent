@@ -247,7 +247,9 @@ async def save_key(request: Request, payload: dict = Body(...)):
     if not api_key or not base_url:
         raise HTTPException(400, "api_key 和 base_url 不能为空")
 
-    from daemon_provider import probe_openai, write_env_kv, setup_client, clean_base_url
+    from daemon_provider import (
+        probe_openai, write_env_kv, write_public_env, setup_client, clean_base_url,
+    )
 
     # base_url 去尾:用户常把完整端点(.../v1/chat/completions)整段贴进来·
     # OpenAI SDK 还会再拼 /chat/completions → 404。先归一成 base(通常到 /v1)。
@@ -263,20 +265,22 @@ async def save_key(request: Request, payload: dict = Body(...)):
         raise HTTPException(400, err)
 
     # 1. 写 .env + os.environ（让运行中 daemon 立刻拿到 · 不必重启）
-    write_env_kv("OPUS_PROVIDER", "openai")
-    write_env_kv("OPUS_BASE_URL", base_url)
-    write_env_kv("OPUS_API_KEY", api_key)
+    # 走 write_public_env：母体 PUBLIC_ENV_PREFIX="OPUS_" 逐字不变，
+    # 开源版 ="DAEMONKEY_" → 新用户 .env 里落 DAEMONKEY_API_KEY（不露母体词）。
+    write_public_env("OPUS_PROVIDER", "openai")
+    write_public_env("OPUS_BASE_URL", base_url)
+    write_public_env("OPUS_API_KEY", api_key)
     os.environ["OPUS_PROVIDER"] = "openai"
     os.environ["OPUS_BASE_URL"] = base_url
     os.environ["OPUS_API_KEY"] = api_key
     if model:
-        write_env_kv("OPUS_MODEL", model)
+        write_public_env("OPUS_MODEL", model)
         os.environ["OPUS_MODEL"] = model
 
     # 2. 确保有 API token（loopback 中间件 + chat 鉴权要它在 os.environ）
     if not (os.environ.get("OPUS_API_TOKEN") or "").strip():
         tok = secrets.token_urlsafe(32)
-        write_env_kv("OPUS_API_TOKEN", tok)
+        write_public_env("OPUS_API_TOKEN", tok)
         os.environ["OPUS_API_TOKEN"] = tok
 
     # 3. 同步成一条 provider_config（让 chat 设置页 LLM 模型栏能看到这把 key · 修图6）

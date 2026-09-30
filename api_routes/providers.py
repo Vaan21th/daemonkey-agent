@@ -112,16 +112,16 @@ async def switch_provider(
     if provider_kind not in ("openai", "anthropic"):
         raise HTTPException(400, f"unknown provider_kind: {provider_kind}")
 
-    from daemon_provider import write_env_kv, setup_client, clean_base_url
+    from daemon_provider import write_env_kv, write_public_env, setup_client, clean_base_url
     # base_url 去尾(.../v1/chat/completions → .../v1)·避免 SDK 重复拼接 404
     base_url = clean_base_url(base_url)
-    write_env_kv("OPUS_PROVIDER", provider_kind)
-    write_env_kv("OPUS_BASE_URL", base_url)
-    write_env_kv("OPUS_MODEL", model)
+    write_public_env("OPUS_PROVIDER", provider_kind)
+    write_public_env("OPUS_BASE_URL", base_url)
+    write_public_env("OPUS_MODEL", model)
     if provider_kind == "anthropic":
         write_env_kv("ANTHROPIC_API_KEY", api_key)
     else:
-        write_env_kv("OPUS_API_KEY", api_key)
+        write_public_env("OPUS_API_KEY", api_key)
 
     os.environ["OPUS_PROVIDER"] = provider_kind
     os.environ["OPUS_BASE_URL"] = base_url
