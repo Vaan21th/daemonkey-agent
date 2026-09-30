@@ -481,10 +481,10 @@ function renderCognition(data) {
     html += `</div>`;
   }
 
-  // 六维画像 · 2 列卡片网格(过滤"使用说明/维护流水/当下状态/了解层"这类已在顶部独立板块显示的冗余段·纯净版兜底显示全部)
+  // 多维画像 · 2 列卡片网格(过滤"使用说明/维护流水/当下状态/了解层"这类已在顶部独立板块显示的冗余段·纯净版兜底显示全部)
   // 状态卡(〇) / 了解层(二) 已在上方独立板块展示 · 从网格剔除避免重复·Profile(一)保留作背景明细维
   // 顶部独立板块已展示：状态卡(〇) / 了解层(无序号) / 状态卡变更史(无序号) / 近期更新流水
-  // 这些是"顶部 Hero 或独立区块"，不是六维画像网格的维度——从网格剔除避免重复(纯净版兜底显示全部)
+  // 这些是"顶部 Hero 或独立区块"，不是多维画像网格的维度——从网格剔除避免重复(纯净版兜底显示全部)
   // 2026-09-30 补两类漏网（用户 圈出网格里有两张不是维度的卡）：
   //   ① 「改动记录（机器写的操作流水）」—— 名单原来只挡了「变更记录」，挡不住「改动记录/操作流水」
   //   ② 「日期开头的段」（如 `## 2026-09-20 · 全站二级页顶部统一（交付）`）—— 那是错位段，
@@ -499,7 +499,7 @@ function renderCognition(data) {
   let cards = sections.filter(s => !skip.test(s.heading || ''));
   if (cards.length < 2) cards = sections;
 
-  html += `<div class="cog-sec-title"><i class="ri-layout-grid-line"></i> 六维画像 <span class="cog-sec-hint">${cards.length} 维 · 点"展开全部"看整维</span></div><div class="cog-grid">`;
+  html += `<div class="cog-sec-title"><i class="ri-layout-grid-line"></i> 多维画像 <span class="cog-sec-hint">${cards.length} 维 · 点"展开全部"看整维</span></div><div class="cog-grid">`;
   _cogDims = [];
   cards.forEach((sec) => {
     const icon = _cogDimIcon(sec.heading);

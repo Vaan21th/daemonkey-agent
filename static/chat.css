@@ -3745,6 +3745,17 @@ body.day .settings-body .field textarea {
   overflow-y: auto;
 }
 .onboarding-head { text-align: center; margin-bottom: 10px; }   /* 2026-09-18：24→14→10 · 09-21：→07；09-21 晚：去框后 7→10 呼吸 */
+/* 见面面板 LOGO（钥匙孔猴子 mark + Daemonkey 字标）· 2026-10-01 */
+.onboarding-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.onboarding-logo img:first-child { height: 58px; width: auto; }
+.onboarding-logo img:last-child { height: 26px; width: auto; }
+
 .onboarding-title {
   font-size: 17px;
   line-height: 1.35;
