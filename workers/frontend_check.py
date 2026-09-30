@@ -92,6 +92,12 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ("_showLightbox", "点图看大图"),
         (".bro-attach-img", "用户气泡图可点"),
     ],
+    "viewer.js": [
+        ("window.OpusViewer", "浮层对外 API"),
+        ("HOST_ID = 'opusViewer'", "全局唯一宿主"),
+        ("function kindOf", "按类型分渲 (图/视频/音频/PDF)"),
+        ("ov-mask", "点遮罩关"),
+    ],
     "chat-md.js": [
         ("function mdRender", "对话 Markdown 渲染"),
         ("window.opusMdRender", "给工坊复用的 md 入口"),
@@ -127,6 +133,7 @@ _FEATURE_SENTINELS: dict[str, list[tuple[str, str]]] = {
         ('id="micBtn"', "语音输入按钮"),
         ("model-switch.js", "顶栏切模型共用脚本"),
         ("settings-pane.js", "设置页共用脚本"),
+        ("viewer.js", "通用浮层查看器 (图片/视频/音频/PDF)"),
         ("chat-lightbox.js", "历史图灯箱"),
         ("chat-md.js", "Markdown 抽出"),
         ("chat-timeline.js", "工具时间线抽出"),

@@ -22,7 +22,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 _SCOPE_LABELS = {
-    "BRO-NOTEBOOK": "📖 BRO 画像",
+    "OWNER-NOTEBOOK": "📖 人物画像",
+    "BRO-NOTEBOOK": "📖 BRO 画像",       # 旧名 · 母体历史 / 老用户那条路
+    "notebook": "📖 人物画像",
     "SELF-EVOLUTION": "📝 Daemonkey 演化档案",
     "Daemonkey-MEMORIES": "🧬 Daemonkey 自传",
     "SKILL": "⚙️ 灵魂入口",

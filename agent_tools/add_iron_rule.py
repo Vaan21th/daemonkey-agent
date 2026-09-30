@@ -27,11 +27,11 @@ tier:
 
 from __future__ import annotations
 
-import re
 import threading
 from pathlib import Path
 
 from . import TIER_CONFIRM, ToolResult, ToolSpec, register_tool
+from .list_iron_rules import BUDGET_TOK, parse_rules, read_rules_text
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -57,16 +57,23 @@ def _summarize(args: dict) -> str:
 
 
 def _existing_rule_numbers() -> list[int]:
+    """wish-631ff85b · 改用 parse_rules（list / update 共用一份判据）。"""
     if not DAEMON_RULES_PATH.exists():
         return []
-    text = DAEMON_RULES_PATH.read_text(encoding="utf-8")
-    nums = []
-    for m in re.finditer(r"^## 铁律 (\d+)\s+·", text, re.MULTILINE):
-        try:
-            nums.append(int(m.group(1)))
-        except ValueError:
-            pass
-    return sorted(nums)
+    return [r["n"] for r in parse_rules(read_rules_text(DAEMON_RULES_PATH))]
+
+
+def _peer_lines(n: int, title: str) -> list[str]:
+    """同类清单 —— 加之前先让 LLM 看见『已经有哪些条』，替它做查重。
+
+    不做字符相似度（不可靠）：直接列现有全部小标题，长一眼就能认出撞车。
+    """
+    if not DAEMON_RULES_PATH.exists():
+        return []
+    rules = parse_rules(read_rules_text(DAEMON_RULES_PATH))
+    if not rules:
+        return []
+    return [f"  · {r['n']}. {r['title']}" for r in rules]
 
 
 def _run(args: dict) -> ToolResult:
@@ -99,21 +106,15 @@ def _run(args: dict) -> ToolResult:
         ))
     # diary_summary 仍收（旧调用方会传），不再落日记
 
-    # rule_number 不能跟现有冲突 · 锁内重读最大号再原子写
+    # rule_number 不能跟现有冲突。
+    # wish-631ff85b 解死锁：原先还强制「必须 = max+1」，导致删掉中间某条后**永远加不了**。
+    # 改成「不重复即可」—— 连续性对 LLM 手写才有意义，有了 update 通道就不需要了。
     with _WRITE_LOCK:
         existing = _existing_rule_numbers()
         if existing and rule_number in existing:
             return ToolResult(
                 ok=False, output="",
                 error=f"rule_number={rule_number} 已存在 · 现有铁律: {existing} · 取下一个: {max(existing) + 1}",
-            )
-        if existing and rule_number != max(existing) + 1:
-            return ToolResult(
-                ok=False, output="",
-                error=(
-                    f"rule_number={rule_number} 不连续 · 现有最大: {max(existing)} · "
-                    f"应该传 {max(existing) + 1} (铁律编号必须连续 · 防漏编)"
-                ),
             )
 
         expected_header = f"## 铁律 {rule_number} ·"
@@ -127,22 +128,35 @@ def _run(args: dict) -> ToolResult:
 
         if not DAEMON_RULES_PATH.exists():
             DAEMON_RULES_PATH.parent.mkdir(parents=True, exist_ok=True)
-            DAEMON_RULES_PATH.write_text(_FILE_HEADER, encoding="utf-8")
+            DAEMON_RULES_PATH.write_text(_FILE_HEADER, encoding="utf-8", newline="")
 
-        text = DAEMON_RULES_PATH.read_text(encoding="utf-8")
+        text = read_rules_text(DAEMON_RULES_PATH)
         anchor_idx = text.find(ANCHOR_LINE)
         daemon_md_stripped = daemon_md.rstrip()
-        domain_comment = f"\n\n<!-- domain: {domain} -->"
+        # wish-631ff85b · 统一格式：domain 注释写在**标题之前**（parse_rules 按此往前找）。
+        # 旧版把 domain 附在正文末尾 —— 与文件里已有条目的写法不一致，导致解析错位。
         if daemon_md_stripped.endswith("---"):
-            daemon_md_with_domain = daemon_md_stripped[:-3].rstrip() + domain_comment + "\n\n---"
-        else:
-            daemon_md_with_domain = daemon_md_stripped + domain_comment
+            daemon_md_stripped = daemon_md_stripped[:-3].rstrip()
+        _lines = daemon_md_stripped.split("\n")
+        _head = _lines[0].strip()
+        _rest = "\n".join(_lines[1:]).strip()
+        daemon_md_with_domain = (
+            f"<!-- domain: {domain} -->\n\n{_head}\n\n{_rest}\n\n---"
+        )
         insert_block = daemon_md_with_domain.rstrip() + "\n\n"
         new_text = (
             text[:anchor_idx] + insert_block + text[anchor_idx:]
             if anchor_idx != -1
             else text.rstrip() + "\n\n" + insert_block
         )
+        # 落盘前自愈段头粘连（wish-66c1eac5 第 4 步 · 2026-09-30）：
+        #   画像侧靠 write_global_then_sync 里的 heal_headings，铁律侧原来**绕过了**这道闸。
+        #   铁律段头（`## 10 · UI`）一样会粘到上一行末尾，粘了就再没人找得到它。
+        try:
+            from soul_loader import heal_headings as _hh
+            new_text, _fixed_heads = _hh(new_text)
+        except Exception:
+            _fixed_heads = []
         import tempfile
         import os
         fd, tmp_name = tempfile.mkstemp(
@@ -151,7 +165,7 @@ def _run(args: dict) -> ToolResult:
             suffix=".tmp",
         )
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
                 f.write(new_text)
             os.replace(tmp_name, DAEMON_RULES_PATH)
         except Exception as e:
@@ -166,7 +180,27 @@ def _run(args: dict) -> ToolResult:
         f"  - 标题: {title}",
         f"  - domain: {domain}",
         f"  - daemon_rules.md 长度: {len(text)} → {len(new_text)} (+{len(insert_block)})",
-        f"  - 操作手册页刷新可见。不写相处账。",
+        "  - 操作手册页刷新可见。不写相处账。",
+    ]
+    # wish-631ff85b · 预算镜子 + 同类查重（写入前替 LLM 看一眼）
+    try:
+        import tiktoken
+
+        tok_after = len(tiktoken.get_encoding("cl100k_base").encode(new_text))
+    except Exception:
+        tok_after = max(1, int(len(new_text) / 1.6))
+    left = BUDGET_TOK - tok_after
+    lines.append(f"  - 预算 {BUDGET_TOK} tok · 现在 {tok_after} tok · 余量 {left} tok")
+    peers = _peer_lines(rule_number, title)
+    if peers:
+        lines += ["", "同册已有（先看一眼有没有撞车 / 该合并）:"] + peers
+    if left < 0:
+        lines += [
+            "",
+            f"⚠️ 自问: 铁律层已超预算 {abs(left)} tok。加之前先想 —— 是不是该合并几条，"
+            "或者有些已经能用代码闸拦的该删掉（update_iron_rule operation='delete'）？",
+        ]
+    lines += [
         "",
         "重启 daemon 后，新对话才会装上这条铁律。",
         "当前这轮脑里还是旧的。",
@@ -180,7 +214,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="add_iron_rule",
     description=(
-        "加一条新铁律：只写 daemon_rules.md。操作手册页展示。先 list_iron_rules 取 max+1。干活纪律走本工具；产品观走 CONSTITUTION；BRO 事实走 update_bro_note。简介不许写成长文（铁律 15）。写法：read_scenario('self_evolution')。"    ),
+        "BRO 定下干活纪律 / 硬规矩（「以后一律…」/「不许…」/「必须…」）→ 加一条铁律：只写 daemon_rules.md。先 list_iron_rules 取 max+1。产品观走 CONSTITUTION；BRO 事实走 update_owner_note。简介不许写成长文（铁律 15）。细读：read_scenario('self_evolution')。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

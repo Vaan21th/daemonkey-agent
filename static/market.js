@@ -31,7 +31,9 @@
     var el = dash();
     if (!el) return;
     var bar = document.createElement("div");
-    bar.className = "depot-tabs";
+    bar.className = "depot-tabs plugin-tabs";
+    // 去重：统一收口（_unifyDashHead）也会搬 .depot-tabs，两边都插会叠两条
+    Array.prototype.forEach.call(el.querySelectorAll(".depot-tabs.plugin-tabs"), function (x) { x.remove(); });
     bar.innerHTML =
       '<button class="depot-tab' + (active === "plugins" ? " active" : "") + '" type="button" data-hub="plugins">' +
       '<i class="ri-tools-line"></i><span>插件</span></button>' +
@@ -45,8 +47,15 @@
         if (typeof loadDashboard === "function") loadDashboard("plugins");
       });
     });
+    // ⚠ 2026-09-20：这里原来是插在 .dash-head 【之后】→ 二级导航落在标题下面，
+    //   点「我的改装」就会看见它又“跳回去”（BRO 截图：图层里那排又跑到标题下）。
+    //   同一天我只改了 depot.js（画像那条路），漏了这里 —— 手册点名的那条：
+    //   「只改被点的那一个页面，别的页还是老样子」。
+    //   现在统一改成插在页头【前面】（和 depot.js / _unifyDashHead 一个位置）。
     var head = el.querySelector(".dash-head");
-    if (afterHead && head && head.nextSibling) el.insertBefore(bar, head.nextSibling);
+    var blk = head && head.closest ? head.closest(".page-head-block") : null;
+    if (blk && blk.parentElement) blk.parentElement.insertBefore(bar, blk);
+    else if (head) el.insertBefore(bar, head);
     else el.insertBefore(bar, el.firstChild);
   }
 
@@ -96,13 +105,11 @@
     var items = snap.items || [];
     var share = snap.shareable || [];
     var html = '<div class="dash-head"><h2><i class="ri-store-2-line"></i> 扩展市场</h2>' +
-      '<span class="meta">' + (snap.source === "local" ? "本机清单" : "远程货架") +
-      " · " + items.length + " 个</span>" +
+      '<div class="dh-chips"><div class="dh-chip" title="' + (snap.source === "local" ? "本机清单" : "远程货架") + '">' +
+      '<b>' + items.length + "</b><span>个</span></div></div>" +
       '<button type="button" onclick="loadDashboard(\'plugins\')">刷新</button></div>';
-    html += '<div class="plugin-intro"><b>上架</b>会先打本机袋子，机器闸过了再向市集仓开合并申请。' +
-      "MOD 还改着官方文件会被拦住，先收成叠层。" +
-      "红灯当场挡住；仓主在下面待审里看黄灯、一批合绿灯。" +
-      (snap.can_submit ? "" : " 这台电脑还没有 Gitee 令牌（.env 的 GITEE_TOKEN），现在只能导出文件。") +
+    html += '<div class="dash-note">市集货架 · 机器闸先过一遍才放行 · 改着官方文件的先收成叠层' +
+      (snap.can_submit ? "" : " · 本机没配 Gitee 令牌（.env 的 GITEE_TOKEN），现在只能导出文件") +
       "</div>";
     if (snap.is_owner) {
       html += '<div id="mktInbox" class="plugin-cat"><div class="plugin-cat-head">' +
@@ -146,6 +153,11 @@
     html += "</div></div>";
     el.innerHTML = html;
     injectTabs("market", true);
+    // 2026-09-20 · 顶部统一：fetch 完成后主动收口一次（慢网下延迟收口会空跑 · 防页头块缺失）
+    if (typeof _unifyDashHead === "function") {
+      _unifyDashHead(null, "plugins");
+      setTimeout(function () { _unifyDashHead(null, "plugins"); }, 350);
+    }
     el.querySelectorAll("[data-install]").forEach(function (b) {
       b.addEventListener("click", function () { doInstall(b.getAttribute("data-install")); });
     });
@@ -337,12 +349,12 @@
     var pages = pageRows();
     var alert = Number(health.alert || 0);
     var html = '<div class="dash-head"><h2><i class="ri-stack-line"></i> 我的改装</h2>' +
-      '<span class="meta">' + (health.checked_at ? ("自检 " + esc(health.checked_at)) : "还没自检") +
-      (alert ? (" · " + alert + " 个要看") : " · 没有红的") + "</span>" +
+      '<div class="dh-chips"><div class="dh-chip" title="' +
+      (health.checked_at ? ("自检 " + esc(health.checked_at) + (alert ? "" : " · 没有红的")) : "还没自检") + '">' +
+      (health.checked_at ? '<b>' + alert + "</b><span>个要看</span>" : '<b>—</b><span>还没自检</span>') +
+      "</div></div>" +
       '<button type="button" onclick="loadDashboard(\'plugins\')">刷新</button></div>';
-    html += '<div class="plugin-intro">这里放 MOD：自己写的，以及别人分享装进来的。' +
-      "官方升级不碰。红的只表示语法套不上。停用回官方；工具/路由要重启 daemon。" +
-      "上架前官方文件上的改动要先收成叠层。</div>";
+    html += '<div class="dash-note">本机 MOD 叠层 · 停用即回官方 · 上架前先收成叠层</div>';
 
     html += '<div class="plugin-cat"><div class="plugin-cat-head"><span class="cat-label">MOD</span>' +
       '<span class="cat-count">' + mods.length + "</span></div><div class=\"plugin-list\">";
@@ -403,6 +415,11 @@
 
     el.innerHTML = html;
     injectTabs("overlays", true);
+    // 2026-09-20 · 顶部统一：fetch 完成后主动收口一次（慢网下延迟收口会空跑 · 防页头块缺失）
+    if (typeof _unifyDashHead === "function") {
+      _unifyDashHead(null, "plugins");
+      setTimeout(function () { _unifyDashHead(null, "plugins"); }, 350);
+    }
     el.querySelectorAll("[data-mod]").forEach(function (b) {
       b.addEventListener("click", function () {
         doToggleMod(b.getAttribute("data-mod"), b.getAttribute("data-on") === "1");
@@ -470,7 +487,7 @@
     if (!el) return;
     el.innerHTML = '<div class="dash-head"><h2><i class="ri-puzzle-fill"></i> 插件库</h2>' +
       '<span class="meta">完整清单在工作台左侧「插件库」</span></div>' +
-      '<div class="plugin-intro">房间这扇门主要走扩展市场。要看本机已装工具，去工作台。</div>';
+      '<div class="dash-note">房间的门主要走扩展市场 · 本机工具去工作台看</div>';
     injectTabs("plugins", true);
   }
 

@@ -275,7 +275,74 @@ def _run_with_timeout(argv: list[str], cwd: str, timeout: int) -> "subprocess.Co
         raise
 
 
+# 落盘侦测的「一眼预判」：命令里看着像要写文件，才去扫目录
+_WRITE_HINT = re.compile(
+    r"(Copy-Item|Move-Item|New-Item|Out-File|Set-Content|Add-Content|robocopy|xcopy"
+    r"|\bcp\b|\bmv\b|\bmkdir\b|\btee\b|\btouch\b|>>?[^&|\s])",
+    re.I,
+)
+
+
+def _project_cwd() -> str:
+    """app 工作区 > 会话挂的外部项目 > 空串（调用方退回工程根）。
+
+    【第一层 · app 运行上下文】（2026-09-28 · wish-3586b504）
+        默认 cwd = 该 app 的工作区 data/workshop/work/<app_id>/ ——
+        依赖 / 中间帧 / 构建缓存都往这儿写，随时可删；只有最终成品才写 outputs/。
+        app 因此不必在 prompt 里写工作路径，工程层给（同「操作系统给进程 cwd」）。
+    【第二层】见 _session_project_cwd()
+    """
+    try:
+        from agent_tools import current_app_work_dir
+        _aw = current_app_work_dir().strip()
+        if _aw and Path(_aw).is_dir():
+            return _aw
+    except Exception:
+        pass
+    return _session_project_cwd()
+
+
+def _session_project_cwd() -> str:
+    """当前会话挂在外部项目下 → 返回它的目录；否则空串。
+
+    BRO 2026-09-26：「也不知道要在这个文件夹进行后续的项目开发或者服务启动」。
+    只在【会话确实挂了项目、且目录真在】时才生效 —— 其余一律空串，
+    调用方退回工程根，对现有所有用法零影响。
+    拿会话用 agent_tools.current_session_id()（会话级 ContextVar ·
+    不是 RUNTIME.session_id 那个进程级单例 —— 多对话并发时会串场）。
+    """
+    try:
+        from agent_tools import current_session_id
+        sid = str(current_session_id() or "").strip()
+        if not sid:
+            return ""
+        from daemon_session import get_session_meta
+        pid = str((get_session_meta(sid) or {}).get("project_id") or "").strip()
+        if not pid:
+            return ""
+        from workers.projects import get_project
+        p = str((get_project(pid) or {}).get("path") or "").strip()
+        return p if p and Path(p).is_dir() else ""
+    except Exception:
+        return ""
+
+
 def _run(args: dict) -> ToolResult:
+    """落盘侦测包一层（第3刀 · 2026-09-20）。同 python_exec：绕过工具写的文件，
+    靠「执行前后扫目录取差集」捞回来，照样铺中栏 + 出声。"""
+    from workers.stage_open import attach_detected
+
+    snap = None
+    if _WRITE_HINT.search(args.get("command") or ""):
+        try:
+            from workers.stage_open import snapshot_stage_dirs
+            snap = snapshot_stage_dirs()
+        except Exception:
+            snap = None
+    return attach_detected(_run_code(args), snap)
+
+
+def _run_code(args: dict) -> ToolResult:
     cmd = (args.get("command") or "").strip()
     if not cmd:
         return ToolResult(ok=False, output="", error="empty command")
@@ -286,7 +353,8 @@ def _run(args: dict) -> ToolResult:
         if not cwd.is_absolute():
             cwd = ROOT / cwd
     else:
-        cwd = ROOT
+        # wish-8f9e4f05 · 会话挂在外部项目下时默认在它目录里干活；没挂 → 工程根（零变化）
+        cwd = Path(_project_cwd() or ROOT)
 
     if not cwd.exists() or not cwd.is_dir():
         return ToolResult(ok=False, output="", error=f"cwd not a directory: {cwd}")

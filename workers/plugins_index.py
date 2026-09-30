@@ -429,12 +429,15 @@ def _categorize(name: str, spec) -> str:
 
 
 CATEGORY_META = {
-    "os":       {"label": "系统层",     "icon": "💻", "order": 1},
-    "file":     {"label": "文件层",     "icon": "📁", "order": 2},
-    "web":      {"label": "外网层",     "icon": "🌐", "order": 3},
-    "studio":   {"label": "工作室层",   "icon": "🎬", "order": 4},
-    "soul":     {"label": "灵魂层",     "icon": "🧠", "order": 5},
-    "external": {"label": "外联层",     "icon": "🔗", "order": 6},
-    "misc":     {"label": "其他",       "icon": "·",  "order": 99},
-    "future":   {"label": "未来扩展",   "icon": "✨", "order": 100},
+    # icon 存的是 remixicon 的 class 名（不是 emoji）。
+    # 2026-10-01 BRO:「插件库还有 EMOJI，把他们换成 remixICON」—— emoji 在 Windows/Mac/移动端
+    # 字体渲染不一致，且违反工程铁律 10（UI 只用 remixicon）。新增分类请沿用 class 名，别再回 emoji。
+    "os":       {"label": "系统层",   "icon": "ri-computer-line",   "order": 1},
+    "file":     {"label": "文件层",   "icon": "ri-folder-3-line",   "order": 2},
+    "web":      {"label": "外网层",   "icon": "ri-global-line",     "order": 3},
+    "studio":   {"label": "工作室层", "icon": "ri-film-line",       "order": 4},
+    "soul":     {"label": "灵魂层",   "icon": "ri-brain-line",      "order": 5},
+    "external": {"label": "外联层",   "icon": "ri-links-line",      "order": 6},
+    "misc":     {"label": "其他",     "icon": "ri-more-line",       "order": 99},
+    "future":   {"label": "未来扩展", "icon": "ri-sparkling-line",  "order": 100},
 }

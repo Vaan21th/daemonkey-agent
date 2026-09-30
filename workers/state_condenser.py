@@ -26,12 +26,25 @@ DEFAULT_STYLE_DIMS = ROOT / "soul" / "SHE-STATE.md"
 _OLD_STYLE_DIMS_JSON = ROOT / "data" / "runtime" / "style_dims.json"
 
 
-def _resolve_notebook() -> tuple[str, Path]:
-    for name in ("OWNER-NOTEBOOK.md", "BRO-NOTEBOOK.md"):
-        p = ROOT / "soul" / name
-        if p.exists():
-            return name, p
-    return "BRO-NOTEBOOK.md", ROOT / "soul" / "BRO-NOTEBOOK.md"
+def _resolve_notebook() -> tuple[str, object]:
+    """主人画像句柄 · 单文件 / 一格一文件两种形态都由它自己判。
+
+    2026-09-30 wish-27273a5b（画像拆成一格一文件）后的回归：
+      原来这里硬找 `soul/OWNER-NOTEBOOK.md` / `soul/BRO-NOTEBOOK.md` ——
+      拆格后**两个都不存在** → 回退值仍指老路径 → `condense_state_card`
+      每 6h tick 直接返「notebook not found」→ 周度凝练静默停摆
+      （daemon.log 20:01:28 有原话）。
+    改走 identity.OwnerNotebook：本模块只用 .exists() / .read_text()，
+    duck-type 刚好兼容，**下游一行不用改**。
+    """
+    try:
+        from identity import owner_notebook_path
+
+        nb = owner_notebook_path(ROOT / "soul")
+        return getattr(nb, "name", "OWNER-NOTEBOOK.md"), nb
+    except Exception:
+        p = ROOT / "soul" / "OWNER-NOTEBOOK.md"
+        return "OWNER-NOTEBOOK.md", p
 
 
 NOTEBOOK_FILENAME, DEFAULT_NOTEBOOK = _resolve_notebook()
@@ -40,7 +53,7 @@ STYLE_DIM_KEYS = ("话量", "调性", "语气", "礼节", "表现力")
 
 UNDERSTANDING_HEADING_KEY = "了解层"
 HISTORY_HEADING_KEY = "状态卡变更史"
-EVENTS_HEADING_KEY = "关键事件流"
+EVENTS_HEADING_KEY = ("他经历的事", "关键事件流")  # 新名在前 · 旧名兜底（历史文件）
 STATE_CARD_HEADING_KEY = "〇、状态卡"  # 用「〇、」前缀唯一锁定状态卡段, 避免误命中「状态卡变更史」
 CONDENSE_DAYS = 7
 HISTORY_DELTA_THRESHOLD = 30
@@ -83,18 +96,20 @@ def _save_runtime_state(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def _find_section(text: str, heading_key: str) -> tuple[int, int]:
+def _find_section(text: str, heading_key) -> tuple[int, int]:
     """按段标题关键字定位。返回 (start_idx, end_idx)。
+    heading_key 可传 str 或候选元组（改过名的段用元组：新名在前、旧名兜底）。
     :注意: 不再限死只认二级标题(##) —— 了解层是无序号独立块，且它后面会紧跟着
     一级标题 `# BRO · 活人画像`。若只用 `## ` 切分，会把 `# BRO` 标题整段吞进了解层 body 一起替换。
     改为同时认 `# ` 与 `## `：任何以 '#' 开头的标题行都是切分点，一级标题不会再被误吞。
     """
+    keys = (heading_key,) if isinstance(heading_key, str) else tuple(heading_key or ())
     parts = re.split(r"^(#+ .+)$", text, flags=re.MULTILINE)
     if len(parts) < 3:
         return -1, -1
     for i in range(1, len(parts), 2):
         heading = parts[i].strip().lstrip("# ").strip()
-        if heading_key in heading:
+        if any(k in heading for k in keys):
             start = text.find(parts[i])
             body = parts[i + 1] if i + 1 < len(parts) else ""
             end = start + len(parts[i]) + len(body)
@@ -404,7 +419,7 @@ def _replace_understanding_section(text: str, new_body: str) -> str:
         # 纯净版/空文件可能还没有了解层段 —— 不能静默丢弃凝练结果。
         # 在「状态卡」段结束之后插入「## 了解层」段（用 sc_end 避免状态卡在文首时插到最前）。
         # 若没有状态卡段则插到文件开头（此时文件通常很空/全新）。
-        intro = f"## 了解层（L1 稳定前缀 · 周度凝练 · 只有凝练/用户显式能写）\n\n{new_body.rstrip()}\n\n"
+        intro = f"## 了解层（稳定下来的 · 只有凝练或他明说才写）\n\n{new_body.rstrip()}\n\n"
         sc_start, sc_end = _find_section(text, STATE_CARD_HEADING_KEY)
         if sc_start >= 0:
             return text[:sc_end] + intro + text[sc_end:]
@@ -424,20 +439,15 @@ def _replace_understanding_section(text: str, new_body: str) -> str:
 
 
 def _write_notebook(text: str, notebook_path: Path) -> None:
-    from soul_loader import write_global_then_sync
-
-    write_global_then_sync(NOTEBOOK_FILENAME, text, ROOT)
-    try:
-        from workers.memory_index import incremental_update
-        incremental_update(Path(NOTEBOOK_FILENAME).stem, text)
-    except Exception:
-        pass
-    if notebook_path.resolve() == DEFAULT_NOTEBOOK.resolve():
-        try:
-            from daemon_runtime import reload_soul_into_runtime
-            reload_soul_into_runtime()
-        except Exception:
-            pass
+    """⚠ 已停用 (2026-09-29 wish-65ea4984 step6) —— 这是绕过 update_owner_note 直投画像的
+    后门：它不经过预算闸 / 落位路由 / 改动回执，会静默把内容塞进每轮前缀。
+    调用方 0 个（当时已是死代码），保留函数体是为了将来若真需要，必须先接回同一条路由。
+    路径归口硬约束：**能往前缀里加东西的入口只有 update_owner_note 一个。**
+    """
+    raise RuntimeError(
+        "state_condenser._write_notebook 已停用：画像写入必须走 update_owner_note"
+        "（预算闸 + 落位路由 + 回执）。真要在凝练里落笔，调 append_owner_note()。"
+    )
 
 
 def condense_state_card(
@@ -459,15 +469,13 @@ def condense_state_card(
         runtime = _load_runtime_state(rt_path)
         history_count = _count_history_rows(text)
 
-        # 了解层已抽过。自动跑不再让模型改写；force 只落提案，不覆盖本子。
-        if not force:
-            return {
-                "skipped": True,
-                "reason": "了解层冻结 · 只追加不重写",
-                "frozen": True,
-                "history_count": history_count,
-            }
-
+        # 2026-09-29 (wish-fa1699c1 后续 · 第 2 步) · 拆掉静默早退。
+        # 原来这里是 `if not force: return skipped` —— 自动跑永远到不了 LLM，
+        # 145 次 tick 全是「了解层冻结」静默跳过，从外面看跟「今天恰好没东西可凝练」
+        # 一模一样。现在语义: 自动跑照常凝练，但产物**不进前缀** ——
+        #   · 落 understanding_proposal.md (给人看)
+        #   · 落「已下沉」段 (给机器召回 · 被用到够多次才由 promote_by_hits 捞回了解层)
+        # 节流仍由 _should_condense 管 (>= CONDENSE_DAYS 或 history delta 够)。
         ok, reason = _should_condense(
             force=force, runtime=runtime, history_count=history_count,
         )
@@ -527,6 +535,27 @@ def condense_state_card(
             encoding="utf-8",
         )
 
+        # 落「已下沉」段 —— 不进每轮前缀，但照常进 FTS5 索引 (可召回 + 可计数)。
+        # 这条不违反「能往前缀里加东西的入口只有 update_owner_note」: 「已下沉」段
+        # 根本不在 CORE_SECTION_KEYS 里，它进不了前缀 —— 走的正是「先缓冲、被用
+        # 到才升格」这条路。
+        _staged = 0
+        try:
+            from workers import memory_reaper as _mr
+            _lines = [
+                f"- **{e.get('field', '')}**：{e.get('content', '')}"
+                f"（依据：{e.get('evidence', '-')}）"
+                for e in (new_entries or [])
+                if (e.get("field") or "").strip()
+            ]
+            if _lines:
+                _nb_new = _mr.append_demoted(text, [{"line": _ln} for _ln in _lines])
+                if _nb_new != text:
+                    nb_path.write_text(_nb_new, encoding="utf-8")
+                    _staged = len(_lines)
+        except Exception as _e:
+            logger.warning("凝练产物落「已下沉」段失败 (%s) · 提案仍在", _e)
+
         now_iso = datetime.now(timezone.utc).isoformat()
         runtime.update({
             "last_proposal_at": now_iso,
@@ -539,6 +568,7 @@ def condense_state_card(
             "skipped": False,
             "applied": False,
             "proposal": str(proposal),
+            "staged": _staged,
             "condensed": len(new_entries),
             "entries": new_entries,
             "total_entries": len(merged),

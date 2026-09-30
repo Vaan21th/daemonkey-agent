@@ -13,7 +13,7 @@ OPUS 自我演化心愿单 · 卷三十五
   1. OPUS 在 self-evolve domain 看到同类工程的好东西 → wish_add 写进 心愿单
   2. BRO 在 WebUI 心愿单维度看到 → 批准 / 驳回 / 推给 DAEMON / 推给 Cursor
   3. 实现路径：
-     - daemon 路径：本工程自己改自己代码 (高风险 · 卷三十六做)
+     - daemon 路径：Daemonkey 自己改自己代码 (高风险 · 卷三十六做)
      - cursor 路径：BRO 在 Cursor 里手动让 Claude 改 (当下用)
   4. 完成后 mark done + BRO 写 reflection notes
 
@@ -164,6 +164,101 @@ def _new_wish_id() -> str:
     return "wish-" + uuid.uuid4().hex[:8]
 
 
+WISH_SOURCE_PREFIX = "wish:"
+
+
+def _reindex(wish_id: str, w: Optional[dict] = None) -> None:
+    """心愿送进 FTS5(source=wish:<id>) —— 照 workers/clients.py 同款做法。
+
+    w=None → 现查；查不到(= 已删) → 撤索引(incremental_update 传空串)。
+    为什么：心愿单是「我们做过什么 / 否掉过什么」的账本，原来只活在 UI 和 read_file 里，
+    recall_memory 哪个 scope 都搜不到 —— 跨会话问「我以前否掉过什么」答不上来。
+    rejected 的条目额外前置「决定不做」四个字，让这类问法能直接命中。
+    """
+    try:
+        from workers.memory_index import incremental_update
+    except Exception:
+        return
+    if w is None:
+        w = get_wish(wish_id)
+    if not w:
+        try:
+            incremental_update(f"{WISH_SOURCE_PREFIX}{wish_id}", "")
+        except Exception:
+            pass
+        return
+    st = (w.get("status") or "").strip()
+    parts: list = []
+    if st == "rejected":
+        parts.append("⚠ 决定不做 · 否掉的方向")
+    parts.append(f"心愿 · {w.get('title') or ''}")
+    if (w.get("why") or "").strip():
+        parts.append(f"为什么要: {w['why']}")
+    if (w.get("design_sketch") or "").strip():
+        parts.append(f"设计草图: {w['design_sketch']}")
+    if (w.get("reflection") or "").strip():
+        parts.append(f"反思·留痕: {w['reflection']}")
+    parts.append(f"状态: {st}")
+    body = "\n".join(p for p in parts if p and str(p).strip())
+    try:
+        incremental_update(f"{WISH_SOURCE_PREFIX}{wish_id}", body)
+    except Exception:
+        pass
+
+
+def reindex_all() -> int:
+    """全量重建心愿索引（首次接入 / 索引丢了 / 换库时用·幂等）。返回条数。
+
+    实测 273 条约 100s（逐条增量更新含事务开销）—— 一次性运维动作·不在请求路径上。
+    """
+    ws = load_wishlist().get("wishes", [])
+    for w in ws:
+        _reindex(w.get("id", ""), w)
+    return len(ws)
+
+
+def branch_wish_id(branch: str) -> Optional[str]:
+    """从分支名反推心愿编号 —— 分支名是唯一不会漂移的真相源。
+
+    约定: `wish-<id>/<slug>`（如 `wish-cf51665e/branch-isolation`）→ `wish-cf51665e`。
+    不是 wish 分支（master / inst-alpha / feature/…）→ None。
+
+    用途（2026-09-18 BRO 拍板「不猜，看分支名」）:
+      · 合回主干时: 反推这是哪条心愿 → 自动标 live（人不用再记一次手账）
+      · 判「这条分支是谁的」: 不用在各处手写 split("/")[0]
+    """
+    b = (branch or "").strip()
+    if not b.startswith("wish-") or "/" not in b:
+        return None
+    head = b.split("/", 1)[0]
+    # wish-<8位hex> —— 太短的当误命中断掉
+    return head if len(head) >= 10 else None
+
+
+def mark_wish_live_for_branch(branch: str) -> tuple:
+    """分支名 → 心愿编号 → 标 live（2026-09-18 BRO 拍板：合了母体，心愿自己就该完成）。
+
+    只在 active / review 上标 —— pending（还没开工）和 rejected 不该被「合分支」带成 live。
+    返回 (标了的 wish_id 或 None, 给人看的一句话)。
+
+    调用时机：把分支合回 master **之后**（那时 git 里已经真的进了主干 ——
+    而 update_wish 的 live 校验正是「有 dev_branch 却没合就不许标」，两边判据一致）。
+    """
+    wid = branch_wish_id(branch)
+    if not wid:
+        return None, ""
+    w = get_wish(wid)
+    if not w:
+        return None, f" · 分支名里的心愿 `{wid}` 不在账本里（没记账？）"
+    st = str(w.get("status") or "").lower()
+    if st == "live":
+        return None, f" · 心愿 `{wid}` 本就是 live"
+    if st not in ("active", "review"):
+        return None, f" · 心愿 `{wid}` 是 {st} · 没动它"
+    update_wish(wid, status="live")
+    return wid, f" · 心愿 `{wid}` 已标 live（{st} → live）"
+
+
 def add_wish(
     *,
     title: str,
@@ -226,6 +321,7 @@ def add_wish(
     data = load_wishlist()
     data["wishes"].append(wish)
     save_wishlist(data)
+    _reindex(wish.get("id", ""), wish)  # 送进 FTS5 · 失败不回滚已建档
     return wish
 
 
@@ -325,6 +421,7 @@ def update_wish(wish_id: str, **patch) -> Optional[dict]:
         target["diff_summary"] = patch["diff_summary"].strip() or None
 
     save_wishlist(data)
+    _reindex(wish_id, target)  # 状态/反思变了 → 索引跟着更新
     return target
 
 
@@ -335,6 +432,7 @@ def delete_wish(wish_id: str) -> bool:
     data["wishes"] = [w for w in data.get("wishes", []) if w.get("id") != wish_id]
     if len(data["wishes"]) != before:
         save_wishlist(data)
+        _reindex(wish_id, None)  # 撤索引(已查不到 → 传空串)
         return True
     return False
 
@@ -367,7 +465,13 @@ def list_wishes(
             resolved_sort = "priority"
 
     if resolved_sort == "priority":
-        wishes.sort(key=lambda w: (w.get("priority") or 0, w.get("created_at") or ""), reverse=True)
+        # 手写/脚本写进来的 priority 可能是 'high' 这种字符串 · 混排会 TypeError 打穿整个端点
+        def _prio(w: dict) -> int:
+            try:
+                return int(w.get("priority") or 0)
+            except (TypeError, ValueError):
+                return 0
+        wishes.sort(key=lambda w: (_prio(w), w.get("created_at") or ""), reverse=True)
     elif resolved_sort == "created_at":
         wishes.sort(key=lambda w: w.get("created_at") or "", reverse=True)
     elif resolved_sort == "updated":

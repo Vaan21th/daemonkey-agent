@@ -113,6 +113,7 @@ def set_session_meta(
     last_think_cfg: Optional[dict] = None,
     last_tool_profile: Optional[str] = None,
     working_docs: Optional[list] = None,
+    project_id: Optional[str] = None,
 ) -> dict:
     """更新一个 session 的 metadata · None 表示不改
 
@@ -167,6 +168,16 @@ def set_session_meta(
 
         if working_docs is not None:
             cur["working_docs"] = list(working_docs)
+
+        # wish-acc37841 · 这个会话挂在哪个外部项目（"我的项目"的外键）
+        # ⚠ 语义跟 label / last_tool_profile 一致：None = 不改 · 空串 = 摘掉项目归属
+        #   （不能写 None —— None 在这条通道里是"不更新"，会静默不生效 · 2026-09-16 踩过）
+        if project_id is not None:
+            s = (project_id or "").strip()
+            if s:
+                cur["project_id"] = s
+            else:
+                cur.pop("project_id", None)
 
         cur["updated_at"] = now
         idx[session_id] = cur
@@ -311,6 +322,12 @@ def rewrite_session(session_id: str, messages: list[dict]) -> None:
             "role": role,
             "content": content,
         }
+        # v3 (wish-273d3d3f) · 被折叠进摘要的原话标记。
+        # 磁盘留全量(可回溯/UI 显示), load_session 跳过(不回放给 LLM),
+        # load_session_for_ui 带回给前端渲染「已折叠」提示。
+        # 注: 内容未变 → (role, content) 仍能匹配到旧 ts · 时间线不塌。
+        if m.get("compacted"):
+            rec["compacted"] = True
         meta: dict = {}
         if role == "user":
             mm = m.get("meta") if isinstance(m.get("meta"), dict) else {}
@@ -344,7 +361,8 @@ def rewrite_session(session_id: str, messages: list[dict]) -> None:
                 rec["content"] = content
         elif role == "assistant":
             if m.get("tool_calls"):
-                meta["tool_calls"] = m["tool_calls"]
+                # 2026-09-19 · 写盘闸: jsonl 里永远只落标准形态 (type + function 包装)
+                meta["tool_calls"] = _normalize_tool_calls(m["tool_calls"])
             if m.get("reasoning_content"):
                 meta["reasoning_content"] = m["reasoning_content"]
         elif role == "tool":
@@ -451,8 +469,11 @@ def resolve_session_id(arg: str) -> str:
     raise FileNotFoundError(f"session not found: {arg}")
 
 
-def load_session(session_id: str) -> list[dict]:
+def load_session(session_id: str, *, include_compacted: bool = False) -> list[dict]:
     """把磁盘 jsonl 重放成 messages 数组.
+
+    include_compacted=True = 【存储形态】(连折叠原话一起回放) · 只给"要写回 jsonl"
+    的调用方用 (见 load_session_for_storage)。默认 False = 发给 LLM 的折叠版。
 
     卷三十六 · 关键升级：
     - 保留 assistant 的 tool_calls (在 meta 里) → 拼进 OpenAI 格式
@@ -465,41 +486,130 @@ def load_session(session_id: str) -> list[dict]:
         raise FileNotFoundError(f"session not found: {session_id}")
     msgs: list[dict] = []
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            rec = json.loads(line)
-            role = rec.get("role")
-            content = rec.get("content", "")
-            meta = rec.get("meta") or {}
-            if role == "user":
-                from workers.attach_prompt import for_llm
-                msgs.append({"role": "user", "content": for_llm(content, meta)})
-            elif role == "assistant":
-                tcs = meta.get("tool_calls") or []
-                if not (content or "").strip() and not tcs:
-                    # 卷八十四 · 空 content 且无 tool_calls 的 assistant → Kimi/OpenAI 都 400
-                    # (must not be empty) · 剔除。无 tool_calls 即无配对 tool 消息 · 不会 dangling
-                    continue
-                entry: dict = {"role": "assistant", "content": content}
-                if tcs:
-                    entry["tool_calls"] = tcs
-                    if not (content or "").strip():
-                        # 卷八十四 · DeepSeek 存的 "" 空串 → null (2026-07-28 跨模型切换 500 根治:
-                        # Kimi 严格校验只认 null · "" 报 400 must not be empty · 换模型续旧 session 必炸)
-                        entry["content"] = None
-                # DeepSeek thinking mode · 多轮里 reasoning_content 要回传
-                reasoning = meta.get("reasoning_content")
-                if reasoning and tcs:
-                    entry["reasoning_content"] = reasoning
-                msgs.append(entry)
-            elif role == "tool":
-                tool_call_id = meta.get("tool_call_id") or ""
-                msgs.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call_id,
-                    "content": content,
-                })
-            # 忽略 system 角色 (走 RUNTIME · 不存 jsonl)
+        _recs = [json.loads(_l) for _l in f if _l.strip()]
+    # v3 (wish-273d3d3f) · 磁盘行里标了 compacted 的原话不回放给 LLM (摘要那条仍在
+    # messages 里 · 语义完整), 但必须【成组跳过】: assistant(tool_calls) 被折叠时,
+    # 配对的 tool 结果要一起跳 —— 否则 tool_call_id 悬空 → OpenAI/DeepSeek 400
+    # → 会话直接打不开。
+    _dropped_tc: set[str] = set()
+    for _r in _recs:
+        if _r.get("compacted"):
+            for _tc in ((_r.get("meta") or {}).get("tool_calls") or []):
+                if isinstance(_tc, dict) and _tc.get("id"):
+                    _dropped_tc.add(_tc["id"])
+    # v3 · 反方向: 被折叠的 tool 记录 → 要摘掉 assistant 那边对应的 tool_call。
+    # 否则 assistant 带着 tool_calls 却没有配对 tool 回放 → 同样 400。
+    _dropped_result_ids: set[str] = set()
+    for _r in _recs:
+        if _r.get("compacted") and _r.get("role") == "tool":
+            _tid = (_r.get("meta") or {}).get("tool_call_id")
+            if _tid:
+                _dropped_result_ids.add(_tid)
+    _skip_folded = not include_compacted
+    for rec in _recs:
+        if _skip_folded and rec.get("compacted"):
+            continue
+        if _skip_folded and rec.get("role") == "tool" and (rec.get("meta") or {}).get("tool_call_id") in _dropped_tc:
+            continue
+        role = rec.get("role")
+        content = rec.get("content", "")
+        meta = rec.get("meta") or {}
+        if role == "user":
+            from workers.attach_prompt import for_llm
+            _uentry: dict = {"role": "user", "content": for_llm(content, meta)}
+            if include_compacted:
+                # wish-e3c3e379 · 存储形态(写盘专用)必须带回 compacted 标记。
+                # 写盘路径(_assemble_full_from_disk / _prune_full_from_disk)靠它判
+                # 「哪些原话已折走」; 丢了它 → 全量被折叠版顶掉 → 历史被抹。
+                _uentry["compacted"] = bool(rec.get("compacted"))
+            msgs.append(_uentry)
+        elif role == "assistant":
+            tcs = meta.get("tool_calls") or []
+            # v3 · 反向成组: 配对的 tool 结果若已被折叠(它自己 compacted),
+            # 这条 assistant 的对应 tool_call 也要摘掉 — 否则 tool_calls 悬空。
+            if _skip_folded and tcs and _dropped_result_ids:
+                tcs = [t for t in tcs
+                       if not isinstance(t, dict) or t.get("id") not in _dropped_result_ids]
+            # 2026-09-19 · 回放闸: 老 jsonl / 被 UI 形态写坏的行里 tool_calls 是短形态
+            # {id, name, arguments} → 直接发 API 报 422 missing field `type`。统一补全。
+            if tcs:
+                tcs = _normalize_tool_calls(tcs)
+            if not (content or "").strip() and not tcs:
+                # 卷八十四 · 空 content 且无 tool_calls 的 assistant → Kimi/OpenAI 都 400
+                # (must not be empty) · 剔除。无 tool_calls 即无配对 tool 消息 · 不会 dangling
+                continue
+            entry: dict = {"role": "assistant", "content": content}
+            if tcs:
+                entry["tool_calls"] = tcs
+                if not (content or "").strip():
+                    # 卷八十四 · DeepSeek 存的 "" 空串 → null (2026-07-28 跨模型切换 500 根治:
+                    # Kimi 严格校验只认 null · "" 报 400 must not be empty · 换模型续旧 session 必炸)
+                    entry["content"] = None
+            # DeepSeek thinking mode · 多轮里 reasoning_content 要回传
+            reasoning = meta.get("reasoning_content")
+            if reasoning and tcs:
+                entry["reasoning_content"] = reasoning
+            if include_compacted:
+                entry["compacted"] = bool(rec.get("compacted"))
+            msgs.append(entry)
+        elif role == "tool":
+            tool_call_id = meta.get("tool_call_id") or ""
+            _tentry: dict = {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "content": content,
+            }
+            if include_compacted:
+                _tentry["compacted"] = bool(rec.get("compacted"))
+            msgs.append(_tentry)
+        # 忽略 system 角色 (走 RUNTIME · 不存 jsonl)
     return msgs
+
+
+def _normalize_tool_calls(tcs: list) -> list[dict]:
+    """把 tool_calls 归一到 OpenAI 标准形态 {id, type:"function", function:{name, arguments}}。
+
+    为什么需要这道闸 (2026-09-19 事故):
+      磁盘 jsonl 里存在历史短形态 {id, name, arguments}(缺 type/function 包装) —— 来源是
+      压缩/剪枝落盘时误用了 load_session_for_ui() 的输出(给前端渲染的压扁形态)。
+      这种行回放给 DeepSeek 官方 API → 422 "missing field `type`" → 整个会话打不开。
+
+    解法 = 读写两侧各一道: 读侧(load_session)保证喂给 LLM 的永远标准形态,
+    写侧(rewrite_session)保证写进 jsonl 的永远标准形态。存量文件无需批量改写。
+
+    幂等: 已是标准形态的 tc 走同一路径重建 · 值不变。
+    """
+    out: list[dict] = []
+    for tc in tcs or []:
+        if not isinstance(tc, dict):
+            continue
+        fn = tc.get("function")
+        fn = fn if isinstance(fn, dict) else {}
+        name = fn.get("name") or tc.get("name") or ""
+        args = fn.get("arguments")
+        if args is None:
+            args = tc.get("arguments")
+        if args is None:
+            args = ""
+        out.append({
+            "id": tc.get("id") or "",
+            "type": "function",
+            "function": {"name": name, "arguments": args},
+        })
+    return out
+
+
+def load_session_for_storage(session_id: str) -> list[dict]:
+    """【存储形态】读盘 —— 写盘专用 (磁盘全量版)。
+
+    跟 load_session 的区别: 不跳过 compacted 行 (磁盘要留全量)。
+    跟 load_session_for_ui 的区别: 不截断 content/reasoning · 不做 for_ui 转换 ·
+      tool_calls 保持标准形态 —— 输出的是"能安全写回 jsonl 的形态"。
+
+    ⚠ 任何【要写盘】的取数必须走本函数 · 禁止拿 load_session_for_ui
+      (那个是给前端渲染的有损形态: tool_calls 被压扁 / content 会截断 / meta 不全)。
+    """
+    return load_session(session_id, include_compacted=True)
 
 
 # 卷四十四 I · UI 历史 turn 截断阈值 · 默认 50K 覆盖 99% 真实对话
@@ -555,6 +665,9 @@ def load_session_for_ui(session_id: str) -> list[dict]:
                 "truncated": truncated,
                 "line": i,
             }
+            # v3 (wish-273d3d3f) · 原话已被折叠进摘要 (UI 仍完整显示 · 只是标一下)
+            if rec.get("compacted"):
+                turn["compacted"] = True
             meta = rec.get("meta") or {}
             # 卷三十六 · assistant 的工具调用结构化展开 · 不只是名字
             tcs = meta.get("tool_calls") or []
@@ -728,6 +841,7 @@ def list_sessions_with_meta() -> list[dict]:
             "last_model_cfg": meta.get("last_model_cfg"),
             "last_think_cfg": meta.get("last_think_cfg") or {},   # wish-00490c86 · 思考开关跟对话实例走（行组装在源头加 · sessions.py 那层拿的是本函数产物）
             "last_tool_profile": meta.get("last_tool_profile"),   # wish-16fa5930 · 档位跟对话实例走
+            "project_id": meta.get("project_id"),                # wish-acc37841 · 挂在哪个外部项目
         })
 
     def _sort_key(r):

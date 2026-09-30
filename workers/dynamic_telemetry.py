@@ -34,9 +34,6 @@ import json
 import pathlib
 import re
 
-from agent_tools._subprocess_helper import no_window_kwargs
-from agent_tools._git_lock import daemon_git_lock
-import subprocess
 import time
 from datetime import datetime
 from typing import Optional
@@ -59,15 +56,38 @@ def _classify_hour(h: int) -> str:
 
 
 def _format_gap(sec: Optional[float]) -> str:
+    """人话化时间差 · 粗粒度（telemetry 粗化）。
+
+    为什么粗：秒级精度对「该不该关心」没有增量信息，却让这段文字每分钟都在变
+    （每轮产生新字节）。粗到「刚才 / 几分钟前」这一档后·同一段时间内的多轮文本
+    逐字相同 —— 这是「将来能沉进缓存」的前提。
+    """
     if sec is None:
         return "首次对话"
-    if sec < 60:
-        return f"{int(sec)} 秒前"
-    if sec < 3600:
-        return f"{int(sec / 60)} 分钟前"
+    if sec < 30:
+        return "就在刚刚"
+    if sec < 300:
+        return "刚才"
+    if sec < 1800:
+        return "几分钟前"
+    if sec < 7200:
+        return "一小时内"
     if sec < 86400:
-        return f"{sec / 3600:.1f} 小时前"
+        return f"{sec / 3600:.0f} 小时前"
     return f"{int(sec / 86400)} 天前"
+
+
+def _uptime_label(sec: float) -> str:
+    """daemon 运行时长 · 粗粒度（<5 分钟 = 刚起 · 之后按整小时）。
+
+    原来用 _format_gap 输出「0 秒前」，每轮都变；改成「刚起 / 已运行 N 小时」
+    后一小时内的多轮逐字相同。信息没丢（「刚起」这层语义反而更清楚）。
+    """
+    if sec < 300:
+        return "刚起"
+    if sec < 3600:
+        return "不到一小时"
+    return f"已运行 {int(sec / 3600)} 小时"
 
 
 def _session_label(stem: str) -> str:
@@ -175,37 +195,52 @@ def _get_last_summary(current_session_id: str) -> str:
         return ""
 
 
+# 2026-09-17 · 欠账行的 30s TTL 缓存（telemetry 每轮都调 · 避免重复跑 git 子进程）
+_DEBT_LINE_CACHE_TTL = 30.0
+_DEBT_LINE_CACHE: dict = {"ts": 0.0, "val": None}
+
+
 def _get_git_dirty_line() -> str:
-    """跑 git status --porcelain · 有未提交返回提醒行 · 干净返回空。
+    """git 欠账行 · 有欠账返回人话提醒 · 干净返回空。
 
-    分支名从 git branch --show-current 取。 开销 ~0.05s（两个 git 子进程）。
+    2026-09-17 改口径（BRO 拍板 · wish-欠账胶囊说人话）:
+      此前自己跑 `git status --porcelain` 只数文件数 —— 既不知道「相对 master
+      领先/落后几个 commit」，也没走豁免过滤（demo-/临时文件）。结果 BRO 看到
+      「2 文件未提交」就以为工作丢了（2026-07-29 / 2026-09-17 两次虚惊）。
+      改成复用 closure_check._git_debt（与亮灯 / 面板 / 收尾对账同一事实源）——
+      ahead>0 才是真欠账，dirty 只是工作区状态，且自动获得豁免过滤与人话分类。
+
+    30s TTL 缓存: 同一分钟内多轮 chat 不重复跑 git 子进程。
     """
+    now = time.time()
+    if (
+        _DEBT_LINE_CACHE["val"] is not None
+        and now - _DEBT_LINE_CACHE["ts"] < _DEBT_LINE_CACHE_TTL
+    ):
+        return _DEBT_LINE_CACHE["val"]
+
+    val = ""
     try:
-        with daemon_git_lock("telemetry:git"):
-            branch = subprocess.run(
-                ["git", "branch", "--show-current"],
-                capture_output=True, text=True, timeout=5,
-                **no_window_kwargs(),
-                ).stdout.strip()
-            if not branch:
-                return ""
-
-            porcelain = subprocess.run(
-                ["git", "status", "--porcelain"],
-                capture_output=True, text=True, timeout=5,
-                **no_window_kwargs(),
-            ).stdout.strip()
-        if not porcelain:
-            return ""
-
-        count = len([l for l in porcelain.split("\n") if l.strip()])
-        if count == 0:
-            return ""
-
-        return f"- Git: 当前分支 {branch} · {count} 文件未提交\n"
-
+        from workers.closure_check import _debt_text, _git_debt  # 惰性 import 防循环
+        debt = _git_debt()
+        if debt:
+            txt = _debt_text(debt)
+            if txt:
+                if debt.get("ahead"):
+                    # 有未合 commit = 真欠账
+                    val = f"- Git: {txt}\n"
+                else:
+                    # 只有工作区改动 = 无未合提交 · 明确说清不是欠账
+                    # 不在 master 上时补分支名（BRO 关心「我现在在哪条线上」）
+                    br = str(debt.get("branch") or "")
+                    loc = f"分支 {br} · " if br and br != "master" else ""
+                    val = f"- Git: {loc}{txt}（无未合 commit · 多半是运行时数据）\n"
     except Exception:
-        return ""
+        val = ""
+
+    _DEBT_LINE_CACHE["ts"] = now
+    _DEBT_LINE_CACHE["val"] = val
+    return val
 
 
 def _get_abandoned_outcomes_line() -> str:
@@ -235,6 +270,20 @@ def _get_abandoned_outcomes_line() -> str:
         return f"- BRO 已放弃方向 (别再推荐·除非有新理由): {' · '.join(parts)}{more}\n"
     except Exception:
         return ""
+
+
+# ── 恒定段拆出（wish-fed4c043）─────────────────────────
+# 为什么不在函数里了：这 109 tok 一个字都不变，但原来跟着 telemetry 走易变尾巴 ——
+#   位置在历史之后 + 不持久化 → 每轮按 miss 全价付。
+#   改由 daemon_api 的 _build_stable_consts 挂进稳定前缀（一个 session 内字节不变）
+#   → 从全价变命中价（约 1/10）。
+TELEMETRY_DISCIPLINE = (
+    "\n使用纪律:\n"
+    "  · BRO 没问你时间不要主动报时 · **消化这些事实然后推理**\n"
+    "  · 凌晨 / BRO 长时间没消息后突然回来 / daemon 刚起 → 可以**自然带一句关心或问候**\n"
+    "    但不要每次都带 · 不要机械化\n"
+    "  · 跟 BRO 当前问题无关时 · 这段就当没看见\n"
+)
 
 
 def build_dynamic_telemetry(session_id: str) -> str:
@@ -287,19 +336,14 @@ def build_dynamic_telemetry(session_id: str) -> str:
     return (
         "\n\n---\n\n"
         "## 此刻的运行时 telemetry (daemon 自动注入 · 不要复述这一段 · 消化后自然推理)\n\n"
-        f"- 现在: {now:%Y-%m-%d %H:%M %A}  ({_classify_hour(now.hour)})\n"
+        f"- 现在: {now:%m-%d}  ({_classify_hour(now.hour)})\n"
         f"- BRO 上一条消息: {_format_gap(gap_sec)}\n"
-        f"- daemon 起来: {_format_gap(uptime_sec)}\n"
+        f"- daemon 起来: {_uptime_label(uptime_sec)}\n"
         f"- 当前实际模型: {RUNTIME.model or '(未知)'}  ← 你真正在跑的模型 (provider_configs active · 不是 .env 的 OPUS_MODEL)\n"
         f"{git_line}"
         f"{abandoned_line}"
         f"{pulse_line}"
         f"{canvas_line}"
         "\n"
-        "使用纪律:\n"
-        "  · BRO 没问你时间不要主动报时 · **消化这些事实然后推理**\n"
-        "  · 凌晨 / BRO 长时间没消息后突然回来 / daemon 刚起 → 可以**自然带一句关心或问候**\n"
-        "    但不要每次都带 · 不要机械化\n"
-        "  · 跟 BRO 当前问题无关时 · 这段就当没看见\n"
         f"{notices_section}"
     )

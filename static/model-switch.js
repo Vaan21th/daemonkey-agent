@@ -124,7 +124,9 @@ function applyThinkOffUi(cur) {
     $think.disabled = false;
     $think.title = mode === 'soft_prompt'
       ? '关掉会走 prompt 软开关 (Qwen3 系 /no_think) · 实测省 ~88% token'
-      : '';
+      : (mode === 'chat_template_kwargs'
+          ? '关掉会走 chat template 开关 (enable_thinking=false) · 实测省 ~95% token'
+          : '');
     if (hint) hint.remove();
   }
 }
@@ -323,7 +325,7 @@ function initModelSwitch(opts) {
       const r = await fetch('/models/switch', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: alias }),
+        body: JSON.stringify({ model: alias, session_id: (typeof getSid === 'function' ? getSid() : '') }),
       });
       if (!r.ok) {
         const t = await r.text();

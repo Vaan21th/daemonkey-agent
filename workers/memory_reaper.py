@@ -26,9 +26,12 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger("opus.memory_reaper")
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -64,6 +67,123 @@ _IMPORTANCE_KEEP = {"critical": 0.0, "high": 0.3, "medium": 0.7, "low": 1.0}
 # bullet 条目：`- **标题**：正文`（了解层 / 本体约束 / 怎么跟他干活 都是这个形状）
 _BULLET_RE = re.compile(r"^\s*[-*]\s+(?:\*\*(?P<title>[^*]{1,60})\*\*|(?P<title2>[^：:]{1,60}))[：:]\s*(?P<body>.*)$")
 
+# 第二通道（2026-09-30 wish-66c1eac5）—— 上面那条只认「**标题**：」/「标题：」，
+#   **漏掉两类真条目**（实测 how-we-work 4/4、archive 3/3 一条都收不进来）：
+#     (a) `- **标题**（2026-09-29）：正文`  ← 括注日期把冒号推后，`[：:]` 匹配不上；
+#     (b) `- **标题** —— 正文` / `- 从「A」到「B」——正文`  ← 破折号分隔，没有冒号。
+#   后果：那两格对下沉机制**完全隐形** → 永远报「没有可自动下沉的条目」→ 满了卡死循环。
+#   只加通道、不动老正则（老行为零影响）。
+#   ⚠ 括注日期单独成一个组，**直接从正则取**，不靠「正文任意搜日期」——
+#     那会把 `（依据：8/23）` 当条目日期（已被修掉的误判源，见 parse_entries 那段注释）。
+_BULLET_RE2 = re.compile(
+    r"^\s*[-*]\s+"
+    r"(?:\*\*(?P<title>[^*]{1,80})\*\*|(?P<title2>[^：:—*]{1,80}))"
+    r"\s*(?:[（(]\s*(?P<date>\d{4}-\d{2}-\d{2})[^）)]{0,30}[）)])?"
+    r"\s*(?:[：:]|——|—)\s*"
+    r"(?P<body>.*)$"
+)
+
+
+# 第三通道（2026-09-30 wish-66c1eac5 第二刀）—— **裸段落条目**。
+#   实测 how-we-work 实装 9 条，只有 4 条写成 `- ` bullet，另 5 条是裸段落：
+#     `**验收标准（2026-09-29 他明确）**：长任务收尾 = …`
+#     `对外交付的边界（2026-09-29）：Daemonkey 是开源项目…`
+#   它们**全带日期**，但对下沉机制完全隐形 → 那格水位一路顶到超预算还沉不动。
+#   判据刻意收紧：**必须带 `（YYYY-MM-DD）` 括注** —— 这样续段（`推论：…`）、
+#   段头（`## …`）、引用块（`> …`）都不会被误收。
+#   不含日期的裸段落仍不收（那是常驻原则 / 说明文字，本就不参与升降）。
+_PARA_RE = re.compile(
+    r"^(?:\*\*(?P<title>[^*]{1,80})\*\*|(?P<title2>[^：:—*（(>#|]{1,80}))"
+    r"\s*[（(]\s*(?P<date>\d{4}-\d{2}-\d{2})[^）)]{0,30}[）)]"
+    r"\s*[：:—]\s*(?P<body>.*)$"
+)
+
+
+# ── 格式归一（2026-09-30 wish-66c1eac5 第三刀）──────────────────────────
+# 唯一标准（写出来的东西只能长这样）：
+#     - **标题**（YYYY-MM-DD）：正文
+# 为什么需要：写入端原来是 `section_body.rstrip() + content` —— **模型传什么就落什么**，
+#   一个字的格式都不管。于是同一个库里 4 种写法混着（括注位置不同 / 裸段落 / 无 `- `），
+#   而读取端正则认不全 → 异形条目对下沉机制隐形 → 那格水位顶到超预算还沉不动。
+#   （2026-09-30 实测：how-we-work 实装 9 条，机制只看得见 4 条。）
+# 设计原则：**只规范「带日期的条目行」，其余一字不动** ——
+#   常驻原则 / 说明文字 / 引用块 / 表格行 / 缩进子项全部原样放过。
+#   认不出 → 原样保留（宁可留，不要改坏）。
+_ENTRY_HEAD_RE = re.compile(
+    r"^(?:[-*]\s+)?(?:\*\*(?P<t1>[^*]{1,80})\*\*|(?P<t2>[^：:—*（(【>#|]{1,80}))"
+    r"\s*(?P<datepart>[（(【]\s*\d{4}-\d{2}-\d{2}\s*[^）)】]{0,40}[）)】])"
+    r"\s*(?:[：:]|——|—)\s*(?P<body>.*)$"
+)
+# 已达标的标准形：`- **标题**（YYYY-MM-DD）：正文`（含括注里带补充说明的写法）# 形态 B：日期写在粗体**里面** —— `- **验收标准（2026-09-29 他明确）**：正文`
+#   实测 how-we-work 里真在用，必须拆出来（否则整条隐形）。
+_BOLD_DATE_RE = re.compile(
+    r"^(?P<lead>[-*]\s+)?\*\*(?P<t>[^*]{1,80}?)\s*"
+    r"[（(]\s*(?P<d>\d{4}-\d{2}-\d{2})(?P<xtra>[^）)]{0,40})[）)]\*\*"
+    r"\s*[：:]\s*(?P<body>.*)$"
+)
+# 形态 C：方括号标题 + 裸日期 —— `【排版偏好 · 标题断行】2026-09-29 正文`
+_BRACKET_DATE_RE = re.compile(
+    r"^(?P<lead>[-*]\s+)?【(?P<t>[^】]{1,60})】\s*(?P<d>\d{4}-\d{2}-\d{2})\s*(?P<body>.*)$"
+)
+
+
+_STD_ENTRY_RE = re.compile(
+    r"^- \*\*[^*]{1,80}\*\*（\d{4}-\d{2}-\d{2}(?:[·:：][^）)]{0,30})?）[：:]\s*.*$"
+)
+
+
+def normalize_entries(text: str) -> tuple[str, list[str]]:
+    """把条目行统一成 `- **标题**（YYYY-MM-DD）：正文`。返回 (新文本, 改动描述)。
+
+    只动「带 `（YYYY-MM-DD）` 括注的条目行」；其余行一字不改。
+    认不出的原样保留 —— 宁可留着，也不要改坏用户内容。
+    """
+    out_lines: list[str] = []
+    changed: list[str] = []
+    for raw in (text or "").split("\n"):
+        body_line = raw.rstrip()
+        strip = body_line.strip()
+        if not strip or _STD_ENTRY_RE.match(strip):
+            out_lines.append(body_line)
+            continue
+        # 形态 B / C 先拆（判据比通用形宽，先跑免得被误判）
+        _hit_bc = False
+        for _re in (_BOLD_DATE_RE, _BRACKET_DATE_RE):
+            mb = _re.match(strip)
+            if not mb:
+                continue
+            _t = mb.group("t").strip()
+            _x = (mb.groupdict().get("xtra") or "").strip("·:： ·")
+            _extra = (" · " + _x) if _x else ""
+            newline = f"- **{_t}**（{mb.group('d')}{_extra}）：{mb.group('body').strip()}"
+            if newline != strip:
+                changed.append(_t)
+            out_lines.append(newline)
+            _hit_bc = True
+            break
+        if _hit_bc:
+            continue
+        m = _ENTRY_HEAD_RE.match(strip)
+        if not m:
+            out_lines.append(body_line)
+            continue
+        title = (m.group("t1") or m.group("t2") or "").strip()
+        if not title or title.startswith("**"):
+            out_lines.append(body_line)
+            continue
+        dm = re.search(r"\d{4}-\d{2}-\d{2}", m.group("datepart"))
+        if not dm:
+            out_lines.append(body_line)
+            continue
+        tail = m.group("datepart")
+        tm = re.search(r"[·:：]\s*([^）)】]+)", tail) or re.search(r"[（(【]\s*\d{4}-\d{2}-\d{2}\s+([^）)】]+)[）)】]", tail)
+        extra = (" · " + tm.group(1).strip()) if tm else ""
+        newline = f"- **{title}**（{dm.group(0)}{extra}）：{m.group('body').strip()}"
+        if newline != strip:
+            changed.append(title)
+        out_lines.append(newline)
+    return "\n".join(out_lines), changed
+
 
 def _parse_date(text: str) -> datetime | None:
     s = text or ""
@@ -92,6 +212,16 @@ def _parse_date(text: str) -> datetime | None:
     return None
 
 
+def _looks_like_date_cell(c: str) -> bool:
+    """这一列是不是「基本就是个日期」（状态卡的 as_of 列）。
+
+    不用长度阀值 —— 长度会误伤：`2026-05-16 02:49` 是 16 字符，是正常日期格。
+    改判「挖掉日期后剩下什么」：剩中文 = 那是正文（如 `自由身@2026-09-18`），不是日期列。
+    """
+    left = _DATE_RE.sub("", c or "").strip(" ·-—/[]()、")
+    return len(left) <= 8 and not re.search(r"[\u4e00-\u9fff]", left)
+
+
 def parse_entries(section_text: str) -> list[dict]:
     """把一段画像正文拆成 [{title, body, line, date}] · 只认 bullet 形状的条目。
 
@@ -108,23 +238,69 @@ def parse_entries(section_text: str) -> list[dict]:
                 cur = d
             continue
         # 表格行（stories 段是 `| 时间 | 事件 | 重要度 |`）—— 日期在第一列。
-        #   只收「第一列能解出日期」的行，表头/分隔行自然被挡在外。
+        #   只收「能解出日期」的行，表头/分隔行自然被挡在外。
+        # 2026-09-30 wish-6e6e561b：以前只认第一列 —— 于是**状态卡的涌现行**
+        #   （`| 字段 | 当前值 | as_of | 依据 |`，日期在第三列）一条都解不出来
+        #   → SECTION_POLICY['state'] 的 ttl_days=30 形同虚设（设计意图早就在，路没通）。
+        #   改为**掃前几列**，但只认「短得像日期」的格（日期列不会长）—— 别把正文里的日期当事。
         if s.startswith("|") and s.endswith("|"):
             cells = [c.strip() for c in s.strip("|").split("|")]
-            d = _parse_date(cells[0]) if cells else None
-            if d and len(cells) >= 2:
-                out.append({"title": (cells[1] or cells[0])[:60],
-                            "body": " ".join(cells), "line": s, "date": d})
+            if len(cells) >= 2:
+                d = _parse_date(cells[0]) if cells else None     # 老行为：第一列（stories 形状）
+                if d is None:
+                    for c in cells[:5]:                          # 新：找个「基本就是个日期」的列
+                        if c and _looks_like_date_cell(c):
+                            d = _parse_date(c)
+                            if d:
+                                break
+                if d:
+                    # title 取「第一个不是日期的列」—— 不能写死 cells[1]：
+                    #   stories = `| 时间 | 事件 | 重要度 |` → cells[1] 对
+                    #   状态卡 = `| 字段 | 当前值 | as_of | 依据 |` → cells[1] 是「当前值」（错！
+                    #     拿着「v」「-」当标题，下方 _protect 保护名单就永远匹配不上）。
+                    _others = [c for c in cells if c and _parse_date(c) is None]
+                    _title = (_others[0] if _others else cells[0])[:60]
+                    out.append({"title": _title,
+                                "body": " ".join(cells), "line": s, "date": d})
             continue
         m = _BULLET_RE.match(raw)
-        if not m:
-            continue
-        title = (m.group("title") or m.group("title2") or "").strip()
-        if not title or title.startswith("**"):     # 排除「**日期**」这种纯标题行
-            continue
-        body = (m.group("body") or "").strip()
-        out.append({"title": title, "body": body, "line": s,
-                    "date": _parse_date(body) or cur})
+        if m:
+            title = (m.group("title") or m.group("title2") or "").strip()
+            if title and not title.startswith("**"):
+                out.append({"title": title,
+                            "body": (m.group("body") or "").strip(),
+                            "line": s,
+                            "date": _parse_date(title) or cur})
+                continue
+        # 第二通道（见 _BULLET_RE2 注释）。走到这里有两种情况：
+        #   · 老正则压根没中（真正的新写法）
+        #   · 老正则中了、但产出的是 `**…**（2026-09-29）` 这种「假标题」——
+        #     包注日期把冒号推后时，老正则的 title2 分支会把整个 `**标题**（日期）` 吃进 title，
+        #     再被 `startswith("**")` 排除。**不补这一条，第二通道永远轮不到**（本次踩到）。
+        m2 = _BULLET_RE2.match(raw)
+        if m2:
+            _t2 = (m2.group("title") or m2.group("title2") or "").strip()
+            if _t2 and not _t2.startswith("**"):
+                _d2 = m2.group("date")
+                out.append({"title": _t2,
+                            "body": (m2.group("body") or "").strip(),
+                            "line": s,
+                            "date": _parse_date(_d2) if _d2 else cur})
+                continue
+        # 第三通道（裸段落条目 · 见 _PARA_RE）：不带 `- ` 前缀、但带 `（日期）` 的真条目。
+        #   判据刻意要求必须有括注日期 —— 续段（`推论：…`）与说明文字自然落空。
+        m3 = _PARA_RE.match(s)
+        if m3:
+            _t3 = (m3.group("title") or m3.group("title2") or "").strip()
+            if _t3 and not _t3.startswith("**"):
+                _d3 = m3.group("date")
+                out.append({"title": _t3,
+                            "body": (m3.group("body") or "").strip(),
+                            "line": s,
+                            "date": _parse_date(_d3) if _d3 else cur})
+                continue
+        # （原「兜底」分支已删 —— 它是 `if not m2: continue` 之后的不可达代码，
+        #   2026-09-30 改控制流后暴露成 NPE；语义已被上面三条通道完全覆盖。）
     return out
 
 
@@ -245,20 +421,44 @@ DEMOTE_MAX_N = 3          # 一次最多沉几条 · 限速：宁可分几次沉
 
 def demote_pick(section_text: str, section_key: str, *,
                 need_tok: int = 0, now: datetime | None = None,
-                max_n: int = DEMOTE_MAX_N) -> list[dict]:
+                max_n: int = DEMOTE_MAX_N,
+                protect_lines: "set[str] | None" = None) -> list[dict]:
     """格子满了 → 挑该沉下去的条目（**只挑不删**）。返回 [{title, line, chars, age_days}]。"""
     if SECTION_POLICY.get(section_key, {}).get("kind") == "skip":
         return []
     now = now or datetime.now(timezone.utc)
+    # 状态卡骨架 8 格永不参与下沉（2026-09-30 wish-6e6e561b）——
+    #   它们是「当下状态」的骨架：as_of 旧 = 「该更新了」，不是「该走了」。
+    #   不排除的话：parse_entries 现在能认出第三列日期了 → 骨架格会跟涌现行一起进候选，
+    #   而「健康基线」这种 as_of 停在 08-27 的会排最老 → 反被最先沉掉（写的时候实测踩到）。
+    _protect: set[str] = set()
+    if section_key == "state":
+        try:
+            from workers.cognition_loader import STATE_CARD_FIELDS
+            _protect = set(STATE_CARD_FIELDS)
+        except Exception:
+            _protect = set()
     cands: list[dict] = []
     for e in parse_entries(section_text):
         line = (e.get("line") or "").strip()
         if not line:
             continue
+        if _protect and (e.get("title") or "").strip() in _protect:
+            continue                                  # 骨架格 · 永不沉
+        if protect_lines and line in protect_lines:
+            # 刚写进来的那条（2026-09-30 wish-66c1eac5）：
+            #   写 = 「这条现在就要在场」。它若当场被自己触发的下沉挑走，
+            #   等于写了白写，而回执还说「已更新」—— 实测撞到两次
+            #   （核心层只剩几十 tok 时，候选里带日期的旧条目往往一条都没有，
+            #   唯一候选就是刚写的这条）。
+            continue
         m = _IMPORTANCE_RE.search(line)
         if m and _IMPORTANCE_KEEP.get(m.group(1).lower(), 1.0) <= 0.0:
             continue                                  # critical · 永不参与
-        dt = e.get("date") or _parse_date(e.get("body", "")) or _parse_date(line)
+        # 2026-09-30 wish-a266df37：**不再从 body / 整行兜底搜日期**。
+        #   那条兜底把「（依据：8/23 深夜闲聊）」当成了条目日期 —— 一段常驻原则因此变成
+        #   「过期流水」被自动沉走了。本函数上面那句「无日期 = 常驻原则 · 不动」才是对的。
+        dt = e.get("date")
         if dt is None:
             continue                                  # 无日期 = 常驻原则 · 不动
         cands.append({"title": e["title"], "line": line, "chars": len(line),
@@ -314,7 +514,8 @@ def append_demoted(notebook_text: str, removed: list[dict]) -> str:
 
 def demote_to_fit(notebook_text: str, focus_key: str | None = None, *,
                   need_tok: int = 0, max_n: int = DEMOTE_MAX_N,
-                  now: datetime | None = None) -> tuple[str, list[dict]]:
+                  now: datetime | None = None,
+                  protect_lines: "set[str] | None" = None) -> tuple[str, list[dict]]:
     """格子/整锅满了 → 从 focus_key 起（其次从最肥的核心格）沉最该沉的条目。
 
     只动**核心层**的段（`is_core_section`）—— 不进前缀的段本来就不占配额。
@@ -344,7 +545,8 @@ def demote_to_fit(notebook_text: str, focus_key: str | None = None, *,
         if len(removed_all) >= max_n:
             break
         picked = demote_pick(chunks[i], key, need_tok=max(int(need_tok - got / 1.2), 0),
-                             now=now, max_n=max_n - len(removed_all))
+                             now=now, max_n=max_n - len(removed_all),
+                             protect_lines=protect_lines)
         if not picked:
             continue
         chunks[i], removed = demote_strip(chunks[i], picked)
@@ -382,14 +584,21 @@ def _match_key(line: str, n: int = 36) -> str:
     return s[:n]
 
 
-def _chunk_hits(lines: list[str], source: str = "BRO-NOTEBOOK") -> dict[str, int]:
-    """查这些条目行在 memory_index 里各自的 hit_count (查不到 = 0)。"""
+def _chunk_hits(lines: list[str], source: str | None = None) -> dict[str, int]:
+    """查这些条目行在 memory_index 里各自的 hit_count (查不到 = 0)。
+
+    2026-09-30 wish-27273a5b · 拆格后画像索引的 source 统一叫 OWNER-NOTEBOOK，
+    但这里原写死 source="BRO-NOTEBOOK" → 下沉条目的命中数**永远读到 0**（上浮断链）。
+    改成不传 source 时两个都查（旧索引残留 + 新身都认）。
+    """
     import sqlite3
     from workers.memory_index import DB_PATH
 
     out: dict[str, int] = {}
     if not lines or not DB_PATH.exists():
         return out
+    srcs = (source,) if source else ("OWNER-NOTEBOOK", "BRO-NOTEBOOK")
+    ph = ",".join("?" * len(srcs))
     try:
         conn = sqlite3.connect(str(DB_PATH))
         conn.execute("PRAGMA busy_timeout=30000")
@@ -399,9 +608,9 @@ def _chunk_hits(lines: list[str], source: str = "BRO-NOTEBOOK") -> dict[str, int
                 continue
             esc = key.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             row = conn.execute(
-                "SELECT MAX(COALESCE(hit_count, 0)) FROM memory_chunks "
-                "WHERE source = ? AND content LIKE ? ESCAPE '\\'",
-                (source, f"%{esc}%"),
+                f"SELECT MAX(COALESCE(hit_count, 0)) FROM memory_chunks "
+                f"WHERE source IN ({ph}) AND content LIKE ? ESCAPE '\\'",
+                (*srcs, f"%{esc}%"),
             ).fetchone()
             out[ln] = int((row[0] if row else 0) or 0)
         conn.close()
@@ -447,20 +656,48 @@ def promote_by_hits(notebook_text: str, *, min_hits: int = PROMOTE_MIN_HITS,
     picked.sort(key=lambda e: -hits.get(e["line"], 0))
     picked = picked[:max_n]
 
-    seg_left, removed = demote_strip(seg, [{"line": p["line"]} for p in picked])
+    # chars 必须带上 —— 下面算「腾多少空间」要用它。
+    # 2026-09-30 · 原来只传 line，于是 r["chars"] 抛 KeyError 被 except 吞掉
+    # = 静默不捞（老 bug，从没被触发过因为从没真满过）。
+    seg_left, removed = demote_strip(
+        seg, [{"line": p["line"], "chars": len(p["line"])} for p in picked])
     if not removed:
         return notebook_text, []
 
     new_text = notebook_text[:idx + len(PROMOTE_SECTION_HEAD)] + seg_left + tail
 
-    # 了解层自己也满了 → 这轮先别捞 (让它的下沉先跑 · 免得两个动作打架)
+    # 了解层自己也满了 → **自己腾空间**再捞（2026-09-30 修死锁）
+    #
+    # 原写法是「满了就这轮先不捞，让它的下沉先跑」—— 但下沉只由**写入**触发
+    # （update_bro_note 里那条），而 understanding 是「只有凝练或他明说才写」的格，
+    # 一年也写不了几次。于是：格满 → 没人写 → 下沉不跑 → 上浮永远失败 → **死锁**。
+    # BRO 原话：「那他还怎么上浮？？？这不就闹着玩了吗」
+    #
+    # 现在改成按需腾：上浮需要多少空间就沉多少（沉最老/最长的，**保护刚捞的**）。
+    # 用「召回频次」换「年龄」—— 被用到的留下，没人碰的让位。
+    # 用**引擎同一把尺**（_estimate_tok = tiktoken 真算），不要自己 /1.2 估算 ——
+    # 两把尺不一致时预算判断永远偏乐观（实测：98 字符真算 121 tok，/1.2 只算 82）。
+    from workers.notebook_tiers import _estimate_tok
+    need_tok = _estimate_tok("\n".join(r["line"] for r in removed))
     try:
         from workers.notebook_tiers import section_budget_estimate
         used, cap = section_budget_estimate(new_text, "understanding")
-        if cap and used + sum(r["chars"] for r in removed) / 1.2 > cap:
-            return notebook_text, []
-    except Exception:
-        pass
+        if cap and used + need_tok > cap:
+            new_text, _dem = demote_to_fit(
+                new_text, focus_key="understanding", need_tok=need_tok,
+                protect_lines={p["line"] for p in picked})
+            if not _dem:
+                logger.info("升格: 了解层满了且一条都沉不动（条目全无日期？）· 本轮不捞")
+                return notebook_text, []
+            # 去掉了就捞 —— **不要求腾得严丝合缝**。
+            # BRO 2026-09-30：「1799/1800 都可以写入，写入后超过了 1800 那也是不能写的…
+            #   写入之后超过 1800 也可以，你懂我意思吗？谁都不会差那几百 TOKEN，
+            #   但是怕的是写入没有标准，比如写了个 5000 TOKEN 的东西。」
+            # 即：限额是**触发清理的阈值**，不是硬顶。去掉一条即可腾出量级空间，
+            # 略超一点无所谓；真正要防的是「一条就把配额吃光」那种无标准写入。
+    except Exception as _e_bud:
+        logger.warning("升格腾空间失败·本输不捞(保守向): %s", _e_bud)
+        return notebook_text, []
 
     block = "\n".join(r["line"] for r in removed)
     new_text = _append_to_section(new_text, "了解层", block)

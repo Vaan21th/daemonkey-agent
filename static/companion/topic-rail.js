@@ -398,6 +398,9 @@ function _jText(t) {
     .replace(/<detail>([\s\S]*?)<\/detail>/gi, '$1').trim();
 }
 function _jHtml(s) { return esc(s).replace(/\n/g, '<br>'); }
+// wish-e72cc18a · _isCompactionSummary 由 companion.js 单点提供
+// (本页 index.html: 本文件先加载, companion.js 后加载; 两边曾各定义一份 → 审查判为维护隐患)
+
 function _bubbleHtml(t, i) {
   const me = t.role === 'user';
   const text = _jText(t);
@@ -420,6 +423,7 @@ async function fillJournal(sid) {
   if (meta) meta.textContent = (row ? _whenOf(row) + ' · ' + (row.turns || 0) + ' 轮' : '');
   const msg = await fetch('/sessions/' + encodeURIComponent(sid) + '/messages').then(r => r.json()).catch(() => ({}));
   const turns = (msg.turns || []).filter(t =>
+    !_isCompactionSummary(t) &&   // wish-e72cc18a · 摘要不进话题轨
     (t.role === 'user' || t.role === 'assistant') && String(t.content || '').trim()
   );
   if (log) {

@@ -110,7 +110,20 @@ function buildSessionRow(s) {
   const _pbi = (typeof window.tpBadgeInfo === 'function') ? window.tpBadgeInfo(_prof) : null;
   // BRO 2026-09-16 · 每行都标（含标准档 · 标准做淡 dim）· 显示短名
   const profBadge = _pbi ? '<span class="sp-prof ' + _pbi.cls + (_pbi.dim ? ' dim' : '') + '" title="' + escHtml(_pbi.title) + '">' + escHtml(_pbi.short) + '</span>' : '';
-  name.innerHTML = pinIcon + archIcon + runIcon + wkIcon + '<span class="sp-label">' + escHtml(aliasFor(s.session_id)) + '</span>' + profBadge;
+  // wish-acc37841 · 项目药丸：这条对话挂在哪个外部项目下
+  // （没挂就不显示 —— 不给存量对话添一个灰标，那是噪音）
+  const _proj = s.project_id || (sessionMetaCache[s.session_id] || {}).project_id || '';
+  const projBadge = _proj ? '<span class="sp-project" data-pjproj="' + escHtml(_proj) + '" title="' + escHtml('挂在项目「' + _proj + '」下 · 点一下看详情') + '"><i class="ri-folder-3-fill"></i>' + escHtml(_proj) + '</span>' : '';
+  name.innerHTML = pinIcon + archIcon + runIcon + wkIcon + '<span class="sp-label">' + escHtml(aliasFor(s.session_id)) + '</span>' + profBadge + projBadge;
+  // 药丸得自己拦一下：外层 div.onclick 是「切到这场会话」，不拦的话点药丸也把人切走了
+  const _pjEl = name.querySelector('[data-pjproj]');
+  if (_pjEl) {
+    _pjEl.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      if (typeof window.pjOpenSheet === 'function') window.pjOpenSheet(_pjEl.getAttribute('data-pjproj'));
+    });
+  }
 
   const meta = document.createElement('div');
   meta.className = 'session-meta';
@@ -275,4 +288,34 @@ function _refreshSessionLists() {
   if (typeof renderCompactSessions === 'function' && !document.getElementById('compactSessionList')?.hidden) {
     renderCompactSessions(true);     // 专注版重拉 (无缓存 · 直接拿最新排序)
   }
+}
+
+// ══ [6] 专注版增量补行 ══
+// wish-e5043955 · BRO 2026-09-28:「专注模式对话之后，不会出现新的对话卡」
+//
+// 病根：新话题的 sid 要等**第一句话发出**才在服务端建（点新话题只是本地 tmp-cid）。
+//   tmp-cid 阶段列表里当然没它（不是 bug）· 但换成真 sid 后，列表也不一定补 ——
+//   因为「重拉列表」只在 开抽屉 / 改名·归档·删除 / 后台消息 这几个时机，
+//   而专注模式（body.compact）没有抽屉 → 新卡一直不出现，要等切模式才冒出来。
+//
+// 修法：不动整表（历史决策：整表重载会闪空白）—— 只**补当前这一行**。
+//   已在列表里 → 什么都不做；服务端还没这条 → 静静走开（下一回再补）。
+async function _insertCompactRow() {
+  const list = document.getElementById('compactSessionList');
+  if (!list || !token || !sessionId || String(sessionId).startsWith('tmp-')) return;
+  // 已在列表里 → 不重复插
+  const sel = (window.CSS && CSS.escape) ? CSS.escape(sessionId) : sessionId;
+  if (list.querySelector('.session-item[data-sid="' + sel + '"]')) return;
+  try {
+    const r = await fetch('/sessions?api_only=true&limit=1', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) return;
+    const data = await r.json();
+    const s = (data.sessions || []).find(x => x.session_id === sessionId);
+    if (!s) return;   // 服务端还没这条（第一句话还没落盘）→ 不硬插
+    // 插到「今天」组的第一位 · 没有今天就插最前（新会话本来就是最新）
+    const hdr = [].slice.call(list.children).find(
+      c => c.classList && c.classList.contains('session-group-header') && c.textContent.trim() === '今天');
+    const row = buildSessionRow(s);
+    if (hdr) hdr.after(row); else list.prepend(row);
+  } catch (e) { /* 静默 · 补行失败绝不影响对话本身 */ }
 }

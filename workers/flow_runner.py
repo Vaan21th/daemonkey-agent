@@ -93,15 +93,24 @@ def list_runs(*, max_items: int = 10) -> list[dict]:
             "current_step": s.get("current_step"),
             "total_steps": s.get("total_steps"),
             "updated_at": s.get("updated_at"),
+            "session_id": s.get("session_id") or "",
+            "origin": s.get("origin") or "",
         })
         if len(out) >= max_items:
             break
     return out
 
 
-def active_runs() -> list[dict]:
-    """状态 = running 的 runs (workshop_context 每轮注入用)"""
-    return [r for r in list_runs(max_items=20) if r.get("status") == "running"]
+def active_runs(*, session_id: str = "") -> list[dict]:
+    """状态 = running 的 runs (workshop_context 每轮注入用)
+
+    session_id 非空 → 只出这一场发起的（wish-run-anchor）。
+    没有 session_id 的老 run 一律不归给任何对话。
+    """
+    out = [r for r in list_runs(max_items=20) if r.get("status") == "running"]
+    if session_id:
+        out = [r for r in out if (r.get("session_id") or "") == session_id]
+    return out
 
 
 def _resolve_app(ref: str) -> Optional[dict]:
@@ -179,7 +188,19 @@ def _trim_outputs(outputs: dict) -> dict:
     return out
 
 
-def _init_state(flow: dict, *, from_step: int = 1) -> tuple[dict, list[dict]]:
+def _runtime_session_id(runtime: Any) -> str:
+    """从 daemon 运行时装取当前对话 sid · 取不到 = 空（定时任务 / 脚本发的 run）
+
+    wish-run-anchor: run 落盘要记「谁发起的」· 否则注入时只能全库广播。
+    """
+    try:
+        return str(getattr(runtime, "session_id", "") or "")
+    except Exception:
+        return ""
+
+
+def _init_state(flow: dict, *, from_step: int = 1, session_id: str = "",
+                origin: str = "") -> tuple[dict, list[dict]]:
     """同步建初始 state + 落盘 · 返 (state, steps)
     
     拆出来给 sync start_run 和 async start_run_async 共用 (DRY)。
@@ -201,6 +222,10 @@ def _init_state(flow: dict, *, from_step: int = 1) -> tuple[dict, list[dict]]:
         # 谁在跑这条 —— run 的执行线程活在进程内存里·status 却是落盘的。
         # 记下 pid·下次 daemon 起来才分得清「真在跑」和「上个进程死掉留下的残骸」。
         "owner_pid": os.getpid(),
+        # wish-run-anchor · 谁发起的。空 session_id = 不是任何对话发起（定时任务/脚本）。
+        # 注入层靠它做「对话锚定」· 之前没这字段 · 只能全库广播（白给日更串场）。
+        "session_id": session_id,
+        "origin": origin or ("chat" if session_id else "scheduled"),
         "steps": [_init_entry(st, from_step) for st in steps],
     }
     _save_state(state)
@@ -262,7 +287,7 @@ def start_run(
     
     给老路径 / 测试用 · LLM 工具入口走 `start_run_async` (P0 后)。
     """
-    state, steps = _init_state(flow, from_step=from_step)
+    state, steps = _init_state(flow, from_step=from_step, session_id=_runtime_session_id(runtime))
     return _execute(state, steps, runtime=runtime, progress=progress, cancel_check=cancel_check)
 
 
@@ -284,7 +309,7 @@ def start_run_async(
             内部 CONFIRM tier 工具自动放行 (GUARD 仍要 BRO 拍)。 ContextVar 不跨
             线程·必须传 id 到 worker 内自己 set。
     """
-    state, steps = _init_state(flow, from_step=from_step)
+    state, steps = _init_state(flow, from_step=from_step, session_id=_runtime_session_id(runtime))
     run_id = state["run_id"]
 
     def worker() -> None:
@@ -705,7 +730,11 @@ def _execute_body(
     # 沉淀闭环 v2 刀④ · 收口提示 (跑完一条 flow · 下轮主对话提示"要不要固化")
     try:
         from .workshop_run_closure import note_flow_done
-        note_flow_done(state.get("flow_id") or "", state.get("run_id") or "")
+        note_flow_done(
+            state.get("flow_id") or "",
+            state.get("run_id") or "",
+            state.get("session_id") or "",  # wish-run-anchor · 收口提示只提示本场
+        )
     except Exception:
         pass
 

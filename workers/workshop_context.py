@@ -54,10 +54,13 @@ def _name_hits(msg: str, name: str) -> int:
     return score
 
 
-def _active_runs_block() -> str:
+def _active_runs_block(session_id: str = "") -> str:
+    # 没有对话 = 没地方报（铁律15）
+    if not session_id:
+        return ""
     try:
         from .flow_runner import active_runs
-        runs = active_runs()
+        runs = active_runs(session_id=session_id)
     except Exception:
         return ""
     if not runs:
@@ -103,14 +106,18 @@ def _run_has_valid_apps(run_id: str) -> bool:
         return True
 
 
-def _last_run_sticky_block() -> str:
+def _last_run_sticky_block(session_id: str = "") -> str:
     """卷七十二 v4 · 0.2.0 · last_flow_run sticky hint (BRO 痛点: 跑完后对话能锁定环节)
 
     最近一条 done/failed 的 run · 跟 active_runs 互补:
       - active_runs: 还在跑的 · 提醒"别忘了它"
       - last_run:    刚跑完的 · 锁定"BRO 说'重做第 N 步' / '优化 step N 的 app' 时知道指谁"
 
-    实现: 直接从 list_runs(max_items=5) 拿第一条 status in (done, failed) 的 · 跨 session 也能用。
+    wish-run-anchor (2026-09-29) · 只认本对话发起的 run:
+      - 旧版拿全库最近一条 · 注释还写着「跨 session 也能用」—— 把病当特性。
+        后果: 定时任务跑的「白给日更」被播报给我没跑过的对话。
+      - 没有 session_id 的旧 run 一律不归给任何对话（不猜、不回填）。
+      - origin=scheduled 的定时任务 run 直接跳过（它不属于任何对话）。
     """
     try:
         from .flow_runner import list_runs, load_run
@@ -118,9 +125,17 @@ def _last_run_sticky_block() -> str:
         recent = list_runs(max_items=5)
     except Exception:
         return ""
+    # 没有对话 = 没有锚定对象（铁律15: 根本不会发生 > 事后拦截）
+    if not session_id:
+        return ""
     last = None
     for r in recent:
         if (r.get("status") or "") not in ("done", "failed"):
+            continue
+        # wish-run-anchor · 只认本场发起的 · 定时任务的直接跳过
+        if session_id and (r.get("session_id") or "") != session_id:
+            continue
+        if (r.get("origin") or "") == "scheduled":
             continue
         # 0.8.8 · 假 run 过滤 (占位符 app_id 不进注入 · wish-e3db429f)
         if not _run_has_valid_apps(r.get("run_id") or ""):
@@ -220,33 +235,38 @@ def _capability_block(msg: str) -> str:
     return "\n".join(lines)
 
 
-def _closure_block() -> str:
+def _closure_block(session_id: str = "") -> str:
     try:
         from .workshop_run_closure import build_closure_hint
-        return build_closure_hint()
+        return build_closure_hint(session_id)
     except Exception:
         return ""
 
 
-def workshop_hint(message: str) -> str:
+def workshop_hint(message: str, session_id: str = "") -> str:
     """主对话每轮调用 · 拼进 system prompt 末尾 (跟 closure_check.relevant_playbooks 并列)
 
     空串 = 没命中任何工坊上下文 · 静默 (不污染 system prompt)。
 
-    三块拼装顺序:
-    1. 活跃 run 提示 (永远报告 · 哪怕 BRO 聊别的)
-    2. 命中候选 (按消息名字命中)
-    3. 沉淀提示 (打磨型场景触发 · 30 分钟跑同 app ≥3 次 / flow 跑完)
+    wish-run-anchor (2026-09-29): 加 session_id —— 活跃 run / 最近跑完的 run
+    都只报本对话发起的。之前没这参数 · 全库广播（定时任务的「白给日更」串到所有对话）。
+
+    四块拼装顺序:
+    1. 活跃 run 提示 (本场有才报)
+    2. 最近跑完的 run (本场发起才报)
+    3. 命中候选 (按消息名字命中)
+    4. 沉淀提示 (打磨型场景触发 · 30 分钟跑同 app ≥3 次 / flow 跑完)
     """
     msg = (message or "").strip()
     if not msg:
         return ""
+    sid = str(session_id or "")
     try:
         return (
-            _active_runs_block()
-            + _last_run_sticky_block()  # 卷七十二 v4 · 0.2.0 · 锁定最近跑完的 run
+            _active_runs_block(sid)
+            + _last_run_sticky_block(sid)  # 卷七十二 v4 · 锁定最近跑完的 run
             + _capability_block(msg)
-            + _closure_block()
+            + _closure_block(sid)
         )
     except Exception:
         return ""  # 任何一处炸了都不影响主对话

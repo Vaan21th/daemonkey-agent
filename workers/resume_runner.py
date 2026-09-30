@@ -136,27 +136,19 @@ def schedule_resume_turn(restart_req: Optional[dict]) -> bool:
     """如果 restart_req 有 follow_up_message + session_id · 启动 background thread
 
     返 True = 已 schedule · False = 没 follow_up / 没 session_id / restart_req 是 None
+
+    卷九十一 (2026-09-17 BRO 拍板 · 修"留空也续场"的鬼话):
+      删掉 卷八十四 的「从 session 历史倒刮最后一条 user 消息」兜底。
+      病根: WebUI 🔄 按钮 UI 明写「留空 = 只重启 · 不自动续场」· 但兜底照样下场刮历史 ·
+        刮到的是【附件包装文本 / 渲染层元指令 / 早已答完的旧任务】——全不是 BRO 说的话 ·
+        于是新毛把"每张都给了已存路径·别自己编路径"当任务干。
+      语义收口: follow_up_message 空 = 不续场 · 要续就显式写。
     """
     if not restart_req:
         return False
     follow_up = (restart_req.get("follow_up_message") or "").strip()
     sid = (restart_req.get("session_id") or "").strip()
-    # 卷八十四 · 防呆 (2026-07-28): DeepSeek 调 request_restart 时常不传 follow_up_message
-    # (null/空串) · BRO 只能手动戳。 从 session 历史自动摘最后一条 user 消息续场。
-    if not follow_up and sid:
-        try:
-            from daemon_session import load_session
-            msgs = load_session(sid) or []
-            for m in reversed(msgs):
-                if m.get("role") == "user" and m.get("content") and m["content"].strip():
-                    last_user = m["content"].strip()
-                    follow_up = f"(自动续场) BRO 上次说: {last_user[:120]}"
-                    break
-        except Exception:
-            pass
-    if not follow_up:
-        return False
-    if not sid:
+    if not follow_up or not sid:
         return False
 
     # 卷五十六 · 关键: 一确定要续写就同步置 "scheduled" (在 spawn 线程 + _wait_runtime_ready 之前)。

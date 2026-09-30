@@ -27,7 +27,7 @@ function stageEnsureWorkbench() {
       //   槽里立刻是加载态，画布渲染完再替换（与「查看 & 批注」同款 · doc-shelf _docOpenForAnnotate）。
       const _pane = document.getElementById("detailPane");
       if (_pane && !_pane.querySelector(".stage-root")) {
-        _pane.innerHTML = '<div class="dash-empty dk-ld"><div class="dk-ld-row"><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span></div><div class="dk-ld-txt">打开中…</div></div>';
+        _pane.innerHTML = '<div class="dash-empty dk-ld dk-ld-sm"><div class="dk-ld-mark"><img src="/static/img/logo-mark.png" alt=""><i></i><i></i></div><div class="dk-ld-txt">打开中…</div></div>';
       }
       toggleCompactLibrary(true, { skipDomain: true });
       // 面板壳要两层: .open(展开) + .ca-lib-open(槽视图) —— toggleCompactLibrary 只管后者，
@@ -203,30 +203,101 @@ function stageEsc(s) {
   return (typeof escHtml === "function") ? escHtml(s) : String(s || "");
 }
 
+// ── ⭐ 画布收藏 (wish-e6620e35) ──
+// 复用 doc-shelf.js 那套（wish-e16b1f52）：数据层就是那份 favorites.json (kind=output)，
+//   ref_id 跟产物库 open_path 同源 —— 画布里点星 = 产物库点星，同一条收藏，不会变两条。
+//   BRO 原话：「最好不要分叉，直接看能不能复用前面的代码」
+function stageFavRel(path) {
+  const p = String(path || "");
+  if (!p) return "";
+  if (p.startsWith("data/")) return p.split("?")[0];
+  if (typeof _docRelFromUrl === "function") return _docRelFromUrl(p, "", "") || "";
+  return "";
+}
+
+function stageFavPaint(btn, on) {
+  if (!btn) return;
+  btn.classList.toggle("on", !!on);
+  btn.innerHTML = `<i class="ri-star-${on ? "fill" : "line"}"></i>`;
+  btn.title = on
+    ? "已收藏 · 再点取消（收藏夹里按分类找得到）"
+    : "收藏这份 · 之后能在「收藏夹 → 我的产物」里按分类找回来";
+}
+
+function stageFavBind(btn, spec) {
+  const rel = stageFavRel(spec.path);
+  // 归不出工程内相对路径 → 不给星（照 _docCardHtml 的做法 · 不假装能收）
+  if (!rel || typeof _loadDocFavSet !== "function" || typeof _docToggleFav !== "function") {
+    btn.remove();
+    return;
+  }
+  btn.dataset.rel = rel;
+  let painted = false;
+  const show = (set) => {
+    painted = true;
+    if (btn.isConnected) stageFavPaint(btn, !!(set && set.has(rel)));
+  };
+  _loadDocFavSet().then(show).catch(() => {});
+  // 已缓存时上面是同步进微任务的 · 不闪；未缓存则等网络回来再纠正一次
+  setTimeout(() => { if (!painted && btn.isConnected) stageFavPaint(btn, false); }, 0);
+  btn.onclick = () => _docToggleFav(rel, spec.name || rel, btn);
+}
+
 function stagePaint(pane, spec, inner, paper) {
   stageRemember();
   window._stageMode = spec.mode;
   stageMarkOpen(true);
-  const tag = spec.tag || stageTag(spec.mode, spec.kind);
+  // wish-6350cced · 装配台 ≠ 产物预览（BRO：不能和产物预览混在一起 · 要独立）——
+  //   换自己的身份（tag=装配台 · title=工具装配台）· 藏掉文件向按钮（用软件打开 / 收藏）·
+  //   不挂画布批注（那是给稿子划字的）· 只留「保存预设」+ 关闭。
+  const _isAsm = /前缀全貌（实时）\.html$/.test(spec.path || "");
+  const tag = _isAsm ? "装配台" : (spec.tag || stageTag(spec.mode, spec.kind));
   pane.innerHTML = `
     <div class="stage-root${paper ? " is-paper" : ""}">
       <div class="stage-bar">
         <span class="stage-tag">${stageEsc(tag)}</span>
-        <h2 class="stage-title">${stageEsc(spec.name || "画布")}</h2>
+        <h2 class="stage-title">${stageEsc(_isAsm ? "工具装配台" : (spec.name || "画布"))}</h2>
+        ${_isAsm ? `<span class="stage-asm-stats" id="stageAsmStats" title="装配台实时账"></span>` : ""}
         ${spec.meta ? `<span class="stage-meta">${stageEsc(spec.meta)}</span>` : ""}
-        ${spec.path ? `<button type="button" class="stage-open" id="stageRevealBtn" title="用软件打开"><i class="ri-external-link-line"></i></button>` : ""}
+        ${(spec.path && !_isAsm) ? `<button type="button" class="stage-open" id="stageRevealBtn" title="用软件打开"><i class="ri-external-link-line"></i></button>` : ""}
+        ${(spec.path && !_isAsm) ? `<button type="button" class="stage-open" id="stageFavBtn" title="收藏这份"><i class="ri-star-line"></i></button>` : ""}
+        ${_isAsm ? `<button type="button" class="stage-asm-save" id="stageAsmSave2" title="把当前勾选保存到所选的档 / 预设（BRO 2026-09-21：从底部挪来）"><i class="ri-save-3-line"></i>保存</button>` : ""}
+        ${_isAsm ? `<button type="button" class="stage-asm-save stage-asm-reset" id="stageAsmReset" title="还原到出厂 / 初始"><i class="ri-arrow-go-back-line"></i>还原</button>` : ""}
+        ${_isAsm ? `<button type="button" class="stage-asm-save" id="stageAsmSave" title="保存为预设…（存完新对话的选档卡里就能选它）"><i class="ri-bookmark-3-line"></i>保存预设</button>` : ""}
         <button type="button" class="stage-x" id="stageCloseBtn" title="关掉画布"><i class="ri-close-line"></i></button>
       </div>
       <div class="stage-body${paper ? " stage-paper" : ""}" id="stageBody">${inner || ""}</div>
     </div>`;
   const x = pane.querySelector("#stageCloseBtn");
   if (x) x.onclick = stageClose;
+  // wish-6350cced · 装配台专属标题栏（BRO：保存这些放到标题栏位置）
+  //   BRO 2026-09-21：底部「保存修改 / 回到初始」也挪上来 → 三按钮统一走 asmFire 直连 iframe（同源）
+  const asmFire = (fnName) => {
+    const tryFire = () => {
+      const fr = pane.querySelector("iframe.stage-frame");
+      try {
+        if (fr && fr.contentWindow && typeof fr.contentWindow[fnName] === "function") { fr.contentWindow[fnName](); return true; }
+      } catch (e) { /* 还没就绪 */ }
+      return false;
+    };
+    // BRO 实测：刚铺开就点 → iframe 还差一拍（lazy）→ 等 600ms 再试一次
+    if (tryFire()) return;
+    setTimeout(() => { if (!tryFire()) alert("装配台还没加载好，稍等一秒再点"); }, 600);
+  };
+  const asmSave2 = pane.querySelector("#stageAsmSave2");
+  if (asmSave2) asmSave2.onclick = () => asmFire("pedSave");
+  const asmReset = pane.querySelector("#stageAsmReset");
+  if (asmReset) asmReset.onclick = () => asmFire("pedReset");
+  const asmSave = pane.querySelector("#stageAsmSave");
+  if (asmSave) asmSave.onclick = () => asmFire("svOpen");
   const reveal = pane.querySelector("#stageRevealBtn");
   if (reveal && spec.path && typeof revealFile === "function") {
     reveal.onclick = () => revealFile(spec.path, reveal);
   }
+  const favBtn = pane.querySelector("#stageFavBtn");
+  if (favBtn && spec.path) stageFavBind(favBtn, spec);
   if (typeof window._syncPlanToggle === "function") window._syncPlanToggle();
-  if (typeof window.stageNotesBind === "function") window.stageNotesBind(spec);
+  if (!_isAsm && typeof window.stageNotesBind === "function") window.stageNotesBind(spec);
 }
 
 function stageOpenMd(pane, spec) {
@@ -286,14 +357,21 @@ function openStage(input) {
   const pane = stagePane();
   if (!spec || !pane) return false;
   const histFile = /^_hist_/i.test(spec.name || "") || /(?:^|\/)_hist_/i.test(spec.path || "");
-  if (spec.mode === "office" && !histFile && !(input && input._homed) && typeof window.goOfficeHome === "function") {
-    window.goOfficeHome(spec.path).then(function () {
-      openStage(Object.assign({}, input || {}, { path: spec.path, _homed: true, refresh: true }));
-    });
-    return true;
-  }
+  // BRO 2026-09-20:「所有的产物点开都只需要在中栏显示就行了」
+  //   → 去掉「打开 office 文档就自动跳到它归属的那场对话」。goOfficeHome 会切会话,
+  //     看着就像「点产物把对话切走了」。要跳对话请用分组头的「进入话题」。
+  //   (老逻辑: goOfficeHome(spec.path).then(… _homed:true …); return true;)
   if (spec.mode === "office") {
-    if (typeof window.bindWorkingDoc === "function") window.bindWorkingDoc(spec.path);
+    // 2026-09-29 · 只有明确「要改它」才挂进对话 (input.bind === true)。
+    //   原来这里无条件调 bindWorkingDoc —— 后果：在产物库点「预览」看一眼，
+    //   这份稿就被挂进当前对话（via='manual'）。BRO 2026-09-29 原话：
+    //   「当我点开这个历史的预览时候，他就会被挂载到对话窗口！」
+    //   他查了好几轮，一直以为是自己误触 —— 实际是这个默认值。
+    //   合法挂载入口（显式传 bind:true）：[data-annotate](查看&批注) /
+    //   [data-revise](让我改) / 点对话里的附件。
+    if (input && input.bind === true && typeof window.bindWorkingDoc === "function") {
+      window.bindWorkingDoc(spec.path);
+    }
     stageRemember();
     window._stageMode = "office";
     stageMarkOpen(true);

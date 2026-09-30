@@ -37,10 +37,26 @@ def _tl():
     return tl
 
 
+def _wish_title(wid: str) -> str:
+    """给面板一个能念的心愿名。
+
+    2026-09-20 BRO：「为什么我们总是输出 wish-23960fcb 我也不知道是哪个」——
+    显示层不许再出现裸 hash。数据侧本来就有 title，这里只负责取出来。
+    """
+    if not wid:
+        return ""
+    try:
+        from workers.wishlist import get_wish
+        return ((get_wish(wid) or {}).get("title") or "").strip()
+    except Exception:
+        return ""
+
+
 def _shape(led: Optional[dict]) -> dict:
     """统一出参形状 · 前端只认这一种(空计划也给同样的键·省掉前端判空分支)。"""
     if not led:
-        return {"active": False, "slug": "", "title": "", "steps": [], "progress": {}}
+        return {"active": False, "slug": "", "title": "", "steps": [], "progress": {},
+                "wish_id": "", "wish_title": ""}
     tp = _tp()
     return {
         "active": bool(led.get("steps")),
@@ -49,6 +65,7 @@ def _shape(led: Optional[dict]) -> dict:
         "steps": led.get("steps") or [],
         "progress": tp.progress(led),
         "wish_id": led.get("wish_id") or "",
+        "wish_title": _wish_title(led.get("wish_id") or ""),
         "updated": led.get("updated") or "",
         # 结论条数 —— 面板上标一下"这任务还攒了 N 条结论"·让人知道账本不只有清单
         "entry_count": len(led.get("entries") or []),

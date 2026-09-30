@@ -20,7 +20,6 @@ Daemon 进程级单例。
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
@@ -97,6 +96,41 @@ def bg_max_tokens(default: Optional[int] = None) -> int:
     return safe_max_tokens(req, model)
 
 
+# ── wish-e1178ade · 层配置：按档位的 system prompt（进程级缓存 · 同档字节稳定）──
+_SP_CACHE: dict = {}
+
+
+def sp_for_profile(pid) -> str:
+    """按会话档位的「层配置 + 工具名单」返回 system prompt。
+
+    - 档没配 layers 且名单没有可磨项（standard / 不设限）→ RUNTIME.system_prompt（零改动路径）；
+    - 配了 layers 或名单里有已全量提上的 → load_soul(...)，按 pid 缓存（同 pid 同文本 → 前缀缓存稳）；
+    - wish-9de9bce3 · 精准磨：catalog_exclude = 该档「全量进 tools[]」的那批（visible_names 口径）
+      → 延迟目录里不再重复列出已到手的工具（标准档恒无差 · 零字节变化）。
+    - reload_soul_into_runtime 清缓存（画像更新后按新灵魂重装）。
+    """
+    try:
+        from workers.tool_profiles import profile_soul_layers, resolve_profile
+        lay = profile_soul_layers(pid or "")
+        _pid, toolset = resolve_profile(pid or "")
+        excl = set()
+        if toolset:
+            from agent_tools._tool_catalog import visible_names
+            excl = set(visible_names(toolset))
+        if lay is None and not excl:
+            return RUNTIME.system_prompt or ""
+        key = str(pid or "")
+        hit = _SP_CACHE.get(key)
+        if hit is not None:
+            return hit
+        from soul_loader import load_soul
+        sp = load_soul(layers=lay, catalog_exclude=excl or None).system_prompt
+        _SP_CACHE[key] = sp
+        return sp
+    except Exception:
+        return RUNTIME.system_prompt or ""
+
+
 def reload_soul_into_runtime() -> Optional[int]:
     """卷五十四 · 同会话热重载灵魂 (Hermes '建立对你的深度模型' 那一环)。
 
@@ -111,6 +145,10 @@ def reload_soul_into_runtime() -> Optional[int]:
         from soul_loader import load_soul
         soul = load_soul()
         RUNTIME.system_prompt = soul.system_prompt
+        try:
+            _SP_CACHE.clear()   # wish-e1178ade · 灵魂更新 → 各档位层配置 sp 也重装
+        except Exception:
+            pass
         return len(RUNTIME.system_prompt)
     except Exception:
         return None

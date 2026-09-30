@@ -57,6 +57,23 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
 RADAR_FILE = DATA_DIR / "radar.json"
+
+
+def _translate_enabled() -> bool:
+    """翻译总开关 · 设置页「掘金雷达」tab 控制（data/radar_config.json）。
+
+    2026-09-28 · 原来只有 env OPUS_RADAR_TRANSLATE（要改 .env + 重启），
+    现在接进设置页热读 —— 这是整条雷达链唯一花 token 的一步，BRO 要能单独关。
+    env 设成 "0" 仍然一票否决（老用户行为一个字不变）。
+    """
+    if os.environ.get("OPUS_RADAR_TRANSLATE", "1") == "0":
+        return False
+    try:
+        from workers.radar_config import load_radar_config
+
+        return bool(load_radar_config().get("translate", True))
+    except Exception:
+        return True
 SOURCES_FILE = DATA_DIR / "radar_sources.json"
 DOMAINS_EXTRA_FILE = DATA_DIR / "domains_extra.json"  # 卷三十二 · BRO 自定义新 domain
 DOMAINS_REMOVED_FILE = DATA_DIR / "domains_removed.json"  # 卷三十五补丁3 · 被删的 starter 持久化
@@ -1147,7 +1164,7 @@ def refresh_radar(progress=None, translate: bool = True) -> dict:
     items_dicts = [asdict(i) for i in all_items]
     _p("🌐 翻译 + 整理条目…", f"{len(all_items)} 条")
     translation_meta: dict = {"attempted": False, "translated": 0, "skipped": 0}
-    if translate and os.environ.get("OPUS_RADAR_TRANSLATE", "1") != "0":
+    if translate and _translate_enabled():
         try:
             from workers.translator import cache_stats, translate_items
             before_cache = cache_stats().get("total_cached", 0)

@@ -119,12 +119,14 @@ def save_playbook(
         # 给 LLM 调 recall_memory(scope='skill') 时 · 头部 metadata 帮助判断相关性
         # B-③ · 2026-08-27 · title 含换行/冒号会坏 YAML frontmatter · 单行化 + 引号包裹 (Grok 全量审计)
         _safe_title = str(title).strip().replace(chr(10), " ").replace(chr(13), " ").replace('"', '\\"')
+        # 2026-09-29 wish-65ea4984 · 不再写 used_count —— md 里的值从创建那刻起就不更新，
+        #   LLM 读 scope='skill' 头部 metadata 时会被那个 0 骗（"这条没用过"）。
+        #   单一真相源 = 索引 _index.json（mark_used 写它）。
         frontmatter = (
             "---\n"
             f'title: "{_safe_title}"\n'
             f"task_type: {task_type}\n"
             f"created_at: {now.isoformat()}\n"
-            f"used_count: 0\n"
             f"agentskills_version: 1\n"
             f"{tags_yaml}"
             "---\n\n"
@@ -205,7 +207,7 @@ def load_playbook(playbook_id: str | None = None, slug: str | None = None) -> di
     return {"id": playbook_id, "title": meta.get("title", ""), "content": content, "meta": meta}
 
 
-def search_playbooks(query: str | None = None, task_type: str | None = None, tag: str | None = None, limit: int = 10) -> list[dict]:
+def search_playbooks(query: str | None = None, task_type: str | None = None, tag: str | None = None, limit: int | None = 10) -> list[dict]:
     """
     搜索 playbook · 按 query（标题/标签模糊）或 task_type 或 tag 过滤。
 
@@ -247,16 +249,28 @@ def search_playbooks(query: str | None = None, task_type: str | None = None, tag
         })
 
     results.sort(key=lambda r: r.get("created_at", ""), reverse=True)
-    return results[:limit]
+    return results[:limit] if limit else results
 
 
 def list_playbooks() -> list[dict]:
-    """列出所有 playbook（全量）"""
-    return search_playbooks(limit=200)
+    """列出所有 playbook（全量）。
+
+    2026-09-29 wish-65ea4984 · 原来是 search_playbooks(limit=200) 硬编上限，
+    而实网 md 311 份 / 索引 312 条 → **112 份在任何盘点里都看不见**
+    （“哪条从没被用过”直接漏三分之一）。改成 limit=None 走全量。
+    """
+    return search_playbooks(limit=None)
 
 
 def mark_used(playbook_id: str) -> bool:
-    """标记 playbook 被使用（used_count += 1）"""
+    """标记 playbook 被使用（used_count += 1）· 写【索引】_index.json。
+
+    2026-09-29 wish-65ea4984 · 把判据钉在代码里（之前只在人脑里，每次盘点都要重想）：
+      · **只有显式 load 算「用过」** → 进 used_count（这里）
+      · **FTS5 自动召回不算** → 只进 inject_log.jsonl（「给了它看」≠「真用过」）
+    两者分工是有意的：把自动召回也计进去，used_count 就废了（几乎每条都会被
+    召回一次，0 与非 0 分不出来），而「哪条从没被用过」正是靠它判的。
+    """
     with _INDEX_LOCK:  # wish-a1c5f147 · 复合操作锁
         index = _load_index()
         playbooks = index.get("playbooks", {})
@@ -568,7 +582,6 @@ def revise_playbook(
             f"title: {new_title}\n"
             f"task_type: {new_task_type}\n"
             f"created_at: {meta.get('created_at', now.isoformat())}\n"
-            f"used_count: {_sint(meta.get('used_count'))}\n"
             f"agentskills_version: {version}\n"
             f"{tags_yaml}"
             f"confidence: {new_conf}\n"

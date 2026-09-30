@@ -7,9 +7,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Daemonkey</title>
-<link rel="icon" type="image/png" href="/static/favicon.png?v=20260830q">
-<link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=20260830q">
-<link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico?v=20260830q">
+<link rel="icon" type="image/png" href="/static/favicon.png?v=20260930a">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=20260930a">
+<link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico?v=20260930a">
 <!-- 卷五十五 · 2026-06-03 · P1 前端错误边界 (boot-guard)。
      必须内联在 <head> · 先于所有 body 脚本执行 —— 否则 chat.js 自身 parse 失败时白屏,
      它内部的 window.onerror 根本注册不上。 捕获两类灾难: ① 任何脚本 parse/运行抛错
@@ -95,11 +95,11 @@
   setTimeout(check, 12000);   // 绝对兜底 · 防 load 因脚本卡住迟迟不触发
 })();
 </script>
-<link rel="stylesheet" href="/static/chat.css?v=20260917ctx1">
+<link rel="stylesheet" href="/static/chat.css?v=20260930setup1">
+<link rel="stylesheet" href="/static/host-pulse.css?v=20260908hp6">
 <link rel="stylesheet" href="/static/lib/litegraph.core.css">
 <link rel="stylesheet" href="/static/workshop.css?v=20260826c">
 <link rel="stylesheet" href="/static/lib/remixicon/remixicon.css">
-<link rel="stylesheet" href="/static/host-pulse.css?v=20260908hp6">
 <script>
 (function () {
   try {
@@ -125,7 +125,7 @@
 </div>
 
 <header>
-  <span class="header-logo"><i class="ri-diamond-fill"></i> <span style="color:var(--opus)">Daemonkey</span> · 工作室</span>
+  <span class="header-logo"><img src="/static/img/logo-word-orange.png" alt="Daemonkey" class="header-logo-img hli-dark"><img src="/static/img/logo-word-brown.png" alt="Daemonkey" class="header-logo-img hli-light"> <span style="color:var(--opus)">Daemonkey</span> · 工作室</span>
     <span class="pulse-indicator" id="pulseIndicator" title="最近活动" onclick="togglePulsePanel()">
     <span class="pulse-dot" id="pulseDot">●</span>
   </span>
@@ -197,30 +197,41 @@
       <div id="modelMenuList">
         <div class="model-menu-empty">加载中…</div>
       </div>
-      <div class="mm-behavior">
+      <div class="mm-behavior" id="mbBehaviorWrap">
         <div class="model-menu-head">模型行为 <span class="mb-tag">本机记住 · 每次对话生效</span></div>
         <label class="mmb-row">
-          <span class="mmb-label"><i class="ri-brain-line"></i> 思考模式</span>
-          <select id="mbThinking">
-            <option value="auto" selected>自动(推荐)</option>
-            <option value="on">开 · 强制深度思考</option>
-            <option value="off">关 · 直接答(更快)</option>
-          </select>
-        </label>
-        <label class="mmb-row">
-          <span class="mmb-label"><i class="ri-flashlight-line"></i> 推理强度</span>
-          <select id="mbEffort">
-            <option value="" selected>默认</option>
-            <option value="low">低 · 快</option>
-            <option value="medium">中</option>
-            <option value="high">高 · 更深</option>
-          </select>
-        </label>
-        <label class="mmb-row">
           <span class="mmb-label"><i class="ri-text-spacing"></i> 输出上限</span>
-          <input id="mbMaxTokens" type="number" min="0" step="1024" placeholder="留空 = 模型推荐">
+          <input id="mbMaxTokens" type="number" min="0" step="1024" placeholder="留空 = 跟随设置">
         </label>
-        <div class="mmb-hint">思考只对部分模型有效，其他会自动忽略。输出上限留空最稳；填小了可能写到一半停，会接着写，但更慢。</div>
+        <!-- 2026-09-15 · 思考 / 强度的【宿主控件】· 视觉隐藏(hidden) · 必须留在 DOM！
+             搬走的是「界面」，不是「控件」：model-switch.js 的 initModelBehavior /
+             fillThinkUi / applyThinkOffUi / applyEffortLevels / 本会话 meta 落盘
+             全靠这两个 select 读写值。删掉它们 = chip 菜单只剩「自动」一项 +
+             改档存不下来 —— 这是今天实测踩过的坑，别再删。
+             保留 .mmb-row 外壳是因为 applyThinkOffUi / _effortHint 用
+             closest('.mmb-row') 找插入位置（找不到也不会报错，但行为会不完整）。 -->
+        <div hidden>
+          <label class="mmb-row">
+            <span class="mmb-label">思考模式（界面在输入条）</span>
+            <select id="mbThinking">
+              <option value="auto" selected>自动(推荐)</option>
+              <option value="on">开 · 强制深度思考</option>
+              <option value="off">关 · 直接答(更快)</option>
+            </select>
+          </label>
+          <label class="mmb-row">
+            <span class="mmb-label">推理强度（界面在输入条）</span>
+            <select id="mbEffort">
+              <option value="" selected>默认</option>
+              <option value="minimal">最小 · 最快</option>
+              <option value="low">低 · 快</option>
+              <option value="medium">中</option>
+              <option value="high">高</option>
+              <option value="max">极高 · 最深</option>
+            </select>
+          </label>
+        </div>
+        <div class="mmb-hint">思考 与 强度 已搬到输入框下方功能条（跟顾问协同并排·闲聊时直接点）· 这里只管模型级的输出上限。输出上限默认跟随模型配置（设置 → 模型配置里的输出长度），本对话需要更长时才在这里显式覆盖。</div>
       </div>
     </div>
   </div>
@@ -265,7 +276,10 @@
       <button class="chat-history-btn" onclick="openDrawer()" title="话题列表"><i class="ri-menu-line"></i></button>
       <button class="chat-docs-btn" id="chatDocsBtn" onclick="toggleDocsView()" title="本话题产物"><i class="ri-file-list-3-fill"></i></button>
       <span class="chat-session-name" id="currentSessionLabel">新话题</span>
-      <!-- 延迟唤醒倒计时（"在等"是这场对话自己的状态 · 跟会话名同排） -->
+      <!-- wish-16fa5930 · 档位显示（用户 2026-09-16：跟对话走 · 纯显示不点击 · 换档=开新对话） -->
+      <span class="sp-prof std dim" id="tpTitleBadge" hidden></span>
+      <!-- wish-1b00ca00 · 延迟唤醒倒计时（用户 2026-09-16：从输入栏上方挪上来 —— 那儿已挤了计划条+工作流条；
+           而且“在等”是这场对话自己的状态，该跟档位标同排） -->
       <span class="wakeup-chip" id="wakeupChip" hidden title="">
         <i class="ri-timer-line"></i><span id="wakeupChipList"></span>
       </span>
@@ -295,6 +309,7 @@
       </div>
       <div id="planDetail" class="plan-detail" hidden></div>
     </div>
+    <!-- wish-1b00ca00 · 延迟唤醒卡 2026-09-16 已搛到顶部标题栏（#wakeupChip）—— 输入栏上方只留计划条/工作流条 -->
     <!-- 卷七十二 v3 · 工作流跑时进度 banner (用户 图2 诉求) · 轮询 /workshop/runs 实时显示 active flows -->
     <!-- v5 (2026-06-10): 🚀 emoji → ri-rocket-fill · 用户 铁律: 这个项目里 Daemonkey 写的图标必须 remix -->
     <div id="flowRunsBanner" class="flow-runs-banner" hidden>
@@ -315,9 +330,17 @@
         <div class="onboarding-sub onboarding-slogan">an AI that doesn't say goodbye.</div>
       </div>
       <div class="onboarding-cards">
+        <!-- wish-acc37841 · 开发一个项目（外部真工程）
+             注意：属性是 data-view 不是 data-template —— 所以不走 chat.js 的「填模板」通道，
+             由 static/projects.js 自己接管（chat.js 零改动） -->
+        <button class="onboarding-card" data-view="projects" type="button">
+          <div class="onboarding-card-icon"><i class="ri-folder-open-fill"></i></div>
+          <div class="onboarding-card-title">开发一个项目</div>
+          <div class="onboarding-card-hint">接着已有的干 · 或者添加一个新项目</div>
+        </button>
         <button class="onboarding-card" data-template="create_app" type="button">
           <div class="onboarding-card-icon"><i class="ri-puzzle-fill"></i></div>
-          <div class="onboarding-card-title">创建一个应用</div>
+          <div class="onboarding-card-title">创建一个内置应用</div>
           <div class="onboarding-card-hint">"我想造一个应用 · 用来 [描述用途]"</div>
         </button>
         <button class="onboarding-card" data-template="create_flow" type="button">
@@ -330,11 +353,6 @@
           <div class="onboarding-card-title">聊聊日常 · 认识 Daemonkey</div>
           <div class="onboarding-card-hint">"你是谁 · 能做啥 · 跟其他 AI 啥不一样"</div>
         </button>
-        <button class="onboarding-card" data-template="list_capability" type="button">
-          <div class="onboarding-card-icon"><i class="ri-book-shelf-fill"></i></div>
-          <div class="onboarding-card-title">看看我能做什么</div>
-          <div class="onboarding-card-hint">"列工坊里所有应用和工作流给我看"</div>
-        </button>
         <button class="onboarding-card" data-template="schedule_task" type="button">
           <div class="onboarding-card-icon"><i class="ri-timer-2-fill"></i></div>
           <div class="onboarding-card-title">定时任务</div>
@@ -345,6 +363,24 @@
           <div class="onboarding-card-title">找新能力升级自己</div>
           <div class="onboarding-card-hint">"去 GitHub 找能升级我的 SKILL / 开源项目"</div>
         </button>
+      </div>
+      <!-- wish-16fa5930 · 新对话选档（四卡展柜 · wish-0571fd96 撤场景：自制预设可覆盖同类需求）
+           选了跟这场对话走（meta.last_tool_profile）· 开跑后只升不降 · 不选 = 默认标准 · 右上小钉=设默认 -->
+      <div class="tp-onboard" id="tpOnboard">
+        <div class="tp-onboard-label">这个对话用什么档位？</div>
+        <div class="tp-gal" id="tpOnboardGal">
+          <div class="tp-gcard" data-p="chat" title="纯聊 · 出图 · 轻量工具"><div class="tp-gr1"><span class="ic gg">◉</span>闲聊<span class="n">—</span></div><div class="tp-gd">纯聊 · 出图 · 轻量工具<br>轻得像吹口气</div></div>
+          <div class="tp-gcard on" data-p="standard" title="默认档 · 全能兜底 · 什么都能干"><div class="tp-gr1"><span class="ic gp">◉</span>标准<span class="n">—</span></div><div class="tp-gd">日常全能 · 常驻工具全开<br>要更多的可以现搜</div></div>
+          <div class="tp-gcard" data-p="work" title="报告 · 表格 · 演示稿 · 读 PDF · 查资料"><div class="tp-gr1"><span class="ic gy">◉</span>工作<span class="n">—</span></div><div class="tp-gd">报告 · 表格 · 演示稿<br>读 PDF · 查资料</div></div>
+           <div class="tp-gcard" data-p="code" title="读写代码 · 跑命令 · 测试 · 审查 · 提交"><div class="tp-gr1"><span class="ic gc">◉</span>编程<span class="n">—</span></div><div class="tp-gd">读写代码 · 跑命令<br>测试 · 审查 · 提交</div></div>
+        </div>
+        <!-- wish-0571fd96 · 场景行已撤（2026-09-21）· dev3d/image/writing 三档数据保留 -->
+        <div class="tp-hint" id="tpOnboardHint" hidden></div>
+        <!-- wish-6350cced · 我的预设（装配台存下）· tpPaintMine 填充 · 空则整个隐藏 -->
+        <div class="tp-mine" id="tpMine" hidden>
+          <div class="tp-onboard-label">我的预设</div>
+          <div class="tp-gal" id="tpMineGal"></div>
+        </div>
       </div>
       <div class="hangout-door" id="hangoutDoor">
         <button type="button" class="hangout-door-btn" id="hangoutDoorBtn">
@@ -389,9 +425,9 @@
       </div>
     </div>
     <div class="input-bar">
-      <div id="hostPulse" class="host-pulse" hidden></div>
       <div id="workingDocsBar" class="working-docs-bar" hidden></div>
       <div id="attachmentPreviews" class="attachment-previews" hidden></div>
+      <div id="hostPulse" class="host-pulse" hidden></div>
       <div id="outboundQueue" class="outbound-queue" hidden></div>
       <div class="input-row">
         <textarea id="input" rows="1"
@@ -418,6 +454,18 @@
           </div>
         </div>
         <span class="toolbar-divider"></span>
+        <!-- 用户 2026-09-15 · 本轮旋钮条: 只留 思考 / 强度 两个 ——
+             「输出上限」搬回顶栏模型菜单(那本来就是模型级设置·放这里两边重复)；
+             两个 chip 用颜色区分(蓝=思考·紫=强度)，窄屏只留图标。
+             真正的 select 仍用旧 id(在模型菜单里) · 现有逻辑零改动。 -->
+        <div class="turn-knobs" id="turnKnobs">
+          <button type="button" class="turn-knob tk-think" id="turnThinkBtn"
+                  title="这一轮要不要思考"><i class="ri-brain-line"></i><span class="tk-label" id="turnThinkLabel">思考</span></button>
+          <button type="button" class="turn-knob tk-effort" id="turnEffortBtn"
+                  title="这一轮想多深"><i class="ri-flashlight-line"></i><span class="tk-label" id="turnEffortLabel">强度</span></button>
+        </div>
+        <!-- wish-16fa5930 · 档位 chip 已撤（用户 2026-09-16：底部只留本轮旋钮 · 档位显示搬去标题栏 · 换档=开新对话） -->
+        <span class="toolbar-divider"></span>
         <button id="advisorCoopToggle" class="advisor-coop-toggle" type="button" aria-pressed="false"
                 title="先让顾问出计划，再按计划做">
           <span class="sw"></span><i class="ri-compass-discover-line"></i><span class="act-label">顾问协同</span>
@@ -443,6 +491,8 @@
             <div id="ctxCardBars"></div>
             <div class="ctx-card-cache" id="ctxCardCache"></div>
             <div class="ctx-card-foot" id="ctxCardFoot"></div>
+            <!-- wish-740b2d2c · 前缀全貌查看器入口（铺中栏） -->
+            <div id="ctxCardPfx" style="padding-top:8px"></div>
           </div>
         </div>
         <button id="send" type="button" title="Enter 发送 · Shift+Enter 换行">发送</button>
@@ -450,17 +500,42 @@
       <input type="file" id="attachFile" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,.pdf,.txt,.md,.docx,.pptx,.json,.csv,.zip,.rar,.7z,.xlsx,.xls,.xlsm,.tar,.gz,.diff,.patch" multiple hidden>
     </div>
     </div>
-    <div class="compact-art-toggle" id="compactArtToggle" hidden onclick="toggleCompactArtifacts()" title="产物列表 · 点击向左展开">
-      <i class="ri-arrow-left-s-line"></i>
-      <span class="cat-label">产物列表</span>
+    <div class="compact-art-toggle" id="compactArtToggle" hidden>
+      <div class="cat-seg cat-lib" onclick="openCompactLibrary()" title="产物库 · 点击向左展开">
+        <i class="ri-archive-2-line"></i>
+        <span class="cat-label">产物库</span>
+      </div>
+      <div class="cat-seg cat-art" onclick="toggleCompactArtifacts()" title="当前产物 · 点击向左展开">
+        <i class="ri-arrow-left-s-line"></i>
+        <span class="cat-label">当前产物</span>
+      </div>
+      <!-- 用户 2026-09-21 · 第三个抽屉: 我的项目 (与产物库同链同壳 · 只换域) -->
+      <div class="cat-seg cat-proj" onclick="openCompactProjects()" title="我的项目 · 点击向左展开">
+        <i class="ri-folders-fill"></i>
+        <span class="cat-label">我的项目</span>
+      </div>
     </div>
     <div class="compact-artifacts" id="compactArtifacts" hidden>
+      <!-- ④ 宽度拖拽手柄 (用户: 拿不准就给用户自己调 · 双击复位自适应) -->
+      <div class="ca-resize" id="compactArtResize" title="拖动调节宽度 · 双击复位"></div>
       <div class="compact-art-head">
-        <span class="cah-title"><i class="ri-archive-fill"></i> 本话题产物</span>
+        <span class="cah-title" id="compactArtTitle"><i class="ri-archive-fill"></i> 当前产物</span>
         <span class="cah-sub" id="compactArtSub"></span>
         <span class="cah-close" onclick="toggleCompactArtifacts()" title="收起"><i class="ri-close-line"></i></span>
       </div>
+      <div class="ca-tabs" id="compactArtTabs">
+        <button class="ca-tab is-on" data-caview="art" onclick="compactArtTab('art')" title="只放本对话产出的东西"><i class="ri-stack-line"></i>当前产物</button>
+        <button class="ca-tab" data-caview="lib" onclick="compactArtTab('lib')" title="全部成品层 · 可预览批注"><i class="ri-archive-2-line"></i>产物库</button>
+      </div>
       <div class="compact-art-body" id="compactArtBody"></div>
+      <!-- 产物库 (下) · 与工作台中栏同一套 (点开=把中栏容器整个挪进来 · 零分叉) -->
+      <div class="compact-lib" id="compactLib">
+        <button class="cl-open" id="compactLibOpen" type="button" onclick="toggleCompactLibrary()">
+          <i class="ri-archive-2-line"></i><span class="cl-label">产物库</span>
+          <i class="ri-arrow-right-s-line cl-caret"></i>
+        </button>
+        <div class="cl-slot" id="compactLibSlot" hidden></div>
+      </div>
     </div>
     </div>
   </section>
@@ -472,9 +547,9 @@
     <h2>设置 · 第一次需要填 token</h2>
     <div class="field">
       <label>API Token (Bearer)</label>
-      <input id="tokenInput" type="password" placeholder="DAEMONKEY_API_TOKEN 的值（在 .env 文件里）">
+      <input id="tokenInput" type="password" placeholder="OPUS_API_TOKEN 的值（在 .env 文件里）">
       <div class="field-hint">这是打开这个页面用的密码，不是模型的 Key。模型 Key 在「模型」里配。</div>
-      <div class="field-hint">在这个软件目录的 <code>.env</code> 文件里找 <code>DAEMONKEY_API_TOKEN</code> 那一行，把等号后面复制进来。本机 127.0.0.1 一般不用填。</div>
+      <div class="field-hint">在这个软件目录的 <code>.env</code> 文件里找 <code>OPUS_API_TOKEN</code> 那一行，把等号后面复制进来。本机一般不用填。</div>
     </div>
     <div class="field">
       <label>当前对话编号</label>
@@ -547,25 +622,34 @@
 <script defer src="/static/lib/three/OrbitControls.js"></script>
 <script src="/static/lib/litegraph.core.js"></script>
 <script src="/companion/mode-transit.js?v=20260830b"></script>
-<script src="/static/dashboard-panels.js?v=20260906pb1"></script>
-<script src="/static/stage.js?v=20260903look"></script>
-<script src="/static/stage_notes.js?v=20260903ppt"></script>
+<script src="/static/viewer.js?v=20260919b"></script>
+<script src="/static/dashboard-panels.js?v=20260930logo"></script>
+<script src="/static/stage.js?v=20260930logo"></script>
+<script src="/static/stage_notes.js?v=20260928quote8"></script>
 <script src="/static/voice-mic.js?v=20260901input"></script>
-<script src="/static/model-switch.js?v=20260826b"></script>
-<script src="/static/settings-pane.js?v=20260906pb1"></script>
+<script src="/static/turn-knobs.js?v=20260915c"></script>
+<script src="/static/tool-profile.js?v=20260921tp5"></script>
+<script src="/static/model-switch.js?v=20260915b"></script>
+<script src="/static/settings-pane.js?v=20260930setup1"></script>
 <script src="/static/workshop.js?v=20260903ops"></script>
-<script src="/static/depot.js?v=20260906pb1"></script>
+<script src="/static/depot.js?v=20260930pbpage"></script>
 <script src="/static/clients.js?v=20260903ops"></script>
 <script src="/static/session-runtime.js?v=20260831sendnow"></script>
 <script src="/static/ckpt-restore.js?v=20260831roomckpt"></script>
 <script src="/static/chat-lightbox.js?v=20260831vis"></script>
-<script src="/static/chat-md.js?v=20260831split"></script>
-<script src="/static/chat-timeline.js?v=20260906proc"></script>
+<script src="/static/chat-md.js?v=20260928fileref"></script>
+<script src="/static/chat-timeline.js?v=20260910fold23"></script>
 <script src="/static/chat-rail.js?v=20260831split"></script>
 <script src="/static/daemonkey-bus.js?v=20260907bus"></script>
 <script src="/static/host-pulse.js?v=20260908hp5"></script>
-<script src="/static/chat.js?v=20260917ctx1"></script>
-<script src="/static/market.js?v=20260907ov4"></script>
+<script src="/static/chat.js?v=20260930nav1"></script>
+<!-- 会话列表独立模块 (wish-16fa5930 第 5 步) · 必须在 chat.js 【之后】加载 — 函数体内解析 chat.js 的 let/const -->
+<script src="/static/session-list.js?v=20260928docsort"></script>
+<!-- 外部项目管理（wish-acc37841）· 同样必须在 chat.js 【之后】—— 它调 Daemonkey.addDomain 注册导航+中栏渲染 -->
+<script src="/static/projects.js?v=20260921pj12"></script>
+<!-- 产物面板独立模块 (wish-54d21d68) · 必须在 chat.js 【之后】加载 — 函数体内解析 chat.js 的 let/const -->
+<script src="/static/doc-shelf.js?v=20260930logo"></script>
+<script src="/static/market.js?v=20260920ov5"></script>
 
 <!-- 用户装修区 (0.9.6) · static/user/ 在 never_sync 里 —— 官方升级永远不会覆盖这两个文件。
      样式写 user.css / 行为写 user.js (用 window.Daemonkey API)·刷新页面即生效。

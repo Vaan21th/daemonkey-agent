@@ -184,13 +184,8 @@ def _run(args: dict) -> ToolResult:
         lines.append("  封面: 无（纯正文 docx）")
     lines.append("")
     lines.append("产物库可见 · 或点结果里的「用对应软件打开」直接进 Word/WPS。")
-    # 可打开产物 marker → 前端渲"用本机软件打开"按钮 (tool_loop 抽走·不进 LLM 内容)
-    try:
-        lines.append(f"[[DK-OPEN]]{final_path.relative_to(_ROOT).as_posix()}")
-    except ValueError:
-        lines.append(f"[[DK-OPEN]]{final_path.as_posix()}")
-
-    return ToolResult(ok=True, output="\n".join(lines))
+    # 铺中栏：声明 stage_path（打标记 / 说人话由 tool_loop 出口统一兑现 · 第2刀）
+    return ToolResult(ok=True, output="\n".join(lines), stage_path=final_path)
 
 
 SPEC = ToolSpec(

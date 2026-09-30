@@ -17,6 +17,181 @@
 //
 // 安全：所有用户/LLM 内容先 escapeHtml · 再做 markdown 转换 · 防 XSS
 // ──────────────────────────────────────────────────────────────
+/* ═══ 2026-09-20 · 正文里的 wish-xxxxxxxx 鼠标移上去看标题 ═══
+   BRO 拍板：「我能接受你再对话里面显示 wish-xxxxx，鼠标移过去显示标题也行啊」。
+   原则：**宁可保留 hash，也不让信息丢** —— 表没加载好就照常显示原 id，只少了 hover 提示；
+   任何时候不把正文换成无意义的占位。只有多行代码块 <pre> 里原样不动。 */
+const _WISH_TITLES = {};
+// 接口每页硬上限 50 条（实测：传 500 也只回 50）· 心愿单已有近 300 条 → 一页页拉全
+const _WISH_API = '/dashboard/wishlist';
+const _WISH_PAGE_SIZE = 50;
+const _WISH_MAX_PAGES = 40;    // 防爆上限（≈2000 条）；超了只意味着老 id 的 hover 缺标题
+const _WISH_RETRY_MS = 30000;  // 拉失败后 30s 冷却再试（别把瞬时失败变成永久没表）
+const _WL_ID_STYLE = 'font-size:11px;color:var(--dim2);border-bottom:1px dotted var(--dim2);cursor:help';
+try { window._WL_ID_STYLE = _WL_ID_STYLE; } catch (eW) {}
+let _wishTitlesRetryAt = 0;
+let _wishTitlesLoaded = false;
+
+function _uiTokenForWish() {
+  // 只用 daemon 自己的 token（localStorage 里那个可能是脏值 → 带了反而被拒）
+  try { if (typeof token === 'string' && token && token !== '__loopback__') return token; } catch (e) {}
+  return '';
+}
+
+function _fillWishRefs() {
+  document.querySelectorAll('.wl-ref[data-wish]').forEach((el) => {
+    const t = _WISH_TITLES[el.dataset.wish];
+    if (t) { el.title = t; el.classList.add('wl-ok'); }   // 只补 hover 标题，不动文字
+  });
+}
+
+function _ensureWishTitles() {
+  if (_wishTitlesLoaded) return;                  // 已拉全 → 不再重复请求
+  const _now = Date.now();
+  if (_now < _wishTitlesRetryAt) return;          // 冷却中（失败过就 30s 后再试）
+  _wishTitlesRetryAt = _now + _WISH_RETRY_MS;
+  const _tk = _uiTokenForWish();
+  const _pull = (page, useAuth) => {
+    const url = _WISH_API + '?page=' + page + '&page_size=' + _WISH_PAGE_SIZE;
+    const h = {};
+    if (useAuth && _tk) h['Authorization'] = 'Bearer ' + _tk;
+    return fetch(url, { headers: h }).then((r) => {
+      // 默认不带 auth（loopback 不校验）；401/403 才带真 token 重试
+      if ((r.status === 401 || r.status === 403) && !useAuth && _tk) return _pull(page, true);
+      return r.ok ? r.json() : null;
+    });
+  };
+  const _retryLater = () => {
+    if (_wishTitlesLoaded) return;
+    try { setTimeout(_ensureWishTitles, _WISH_RETRY_MS); } catch (e) {}   // 自驱动重试（不回头依赖渲染路径）
+  };
+  const _loop = (page) => _pull(page, false).then((d) => {
+    if (!d) { _retryLater(); return; }            // 拿不到 → 30s 后自己再来
+    ((d.wishes || d.items) || []).forEach((w) => { if (w && w.id) _WISH_TITLES[w.id] = w.title || ''; });
+    _fillWishRefs();                              // 每拉到一页就先回填一次
+    if (d.has_more && page < _WISH_MAX_PAGES) return _loop(page + 1);
+    _wishTitlesLoaded = true;
+  });
+  try { _loop(1).catch(_retryLater); } catch (e) { _retryLater(); }
+}
+
+/* 渲染路径保持纯的：表在页面初始化时拉一次，渲染时只读表（不在 mdRender 里发请求）。 */
+try {
+  const _bootWishTitles = () => { try { setTimeout(_ensureWishTitles, 0); } catch (e) {} };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _bootWishTitles, { once: true });
+  } else {
+    _bootWishTitles();
+  }
+} catch (eBoot) {}
+
+/** 只在「文本节点」上跑替换 —— 标签本身和属性值一律不碰（渲染出口专用）。
+    <pre> 整块挖掉保护（那是看日志/源码的地方）。 */
+function _eachTextNode(html, fn) {
+  const s = String(html == null ? '' : html);
+  const guards = [];
+  let out = s.replace(/<pre[\s\S]*?<\/pre>/g, (m) => {
+    guards.push(m);
+    return '\u0000PRE' + (guards.length - 1) + '\u0000';
+  });
+  out = out.split(/(<[^>]*>)/g)
+    .map((seg, i) => (i % 2 ? seg : fn(seg)))
+    .join('');
+  return out.replace(/\u0000PRE(\d+)\u0000/g, (m, n) => guards[+n] || '');
+}
+try { window._eachTextNode = _eachTextNode; } catch (eTN) {}
+
+function _escapeAttr(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function _wishSpan(id) {
+  const t = _WISH_TITLES[id];
+  const sid = _escapeAttr(id);
+  return '<span class="wl-ref' + (t ? ' wl-ok' : '') + '" data-wish="' + sid + '"'
+       + ' title="' + _escapeAttr(t || '心愿单里的这条') + '" style="' + _WL_ID_STYLE + '">'
+       + sid + '</span>';   // 文字保留原 id —— 信息不丢
+}
+
+/** 渲染出口：给正文里的 wish-xxxxxxxx 挂上 hover 标题。失败一律返回原样。
+    两条铁律：
+    ① 只改「文本节点」——标签属性里的 id（href/data-*）绝不碰，否则会把 span 注进属性里破结构；
+    ② 不在这里发网络请求（渲染路径保持纯的）→ 请求推到渲染之后的 setTimeout。
+    多行代码块 <pre> 整块挖掉保护。 */
+function wishRefsToTitles(html) {
+  const s = String(html == null ? '' : html);
+  if (s.indexOf('wish-') < 0) return s;
+  try {
+    return _eachTextNode(s, (seg) => seg.replace(/\bwish-[0-9a-f]{6,}\b/g, _wishSpan));
+  } catch (e) {
+    return s;   // 渲染出口宁可不改，也不能让正文挂掉
+  }
+}
+try { window.wishRefsToTitles = wishRefsToTitles; } catch (eWT) {}
+
+/* 项目内相对路径 → 可点、点了铺中栏 (BRO 2026-09-28 · wish-6b0dcf4d)
+   「现在对话里出现的文件名，是不是可以点击之后直接在中栏显示？」
+   判据故意收窄: 必须以【已知顶层目录】开头 + 已知扩展名 + 至少两级。
+   收窄的代价是少数真路径没变按钮（照样能读），
+   放宽的代价是普通代码片段被当成链接 —— 后者更烦人，所以宁窄不宽。 */
+const _MD_PATH_ROOT = /^(data|static|workers|agent_tools|api_routes|tools|docs|soul|sessions|vendor|scripts|tests)\//;
+const _MD_PATH_EXT = /\.(md|markdown|html?|py|js|mjs|css|json|txt|csv|log|ya?ml|toml|ini|docx?|xlsx?|pptx?|pdf|png|jpe?g|gif|webp|svg|mp4|db)$/i;
+
+function _looksLikeProjectPath(s) {
+  const t = String(s || "").trim().replace(/^\.\//, "");
+  if (!t || t.length > 320) return false;
+  if (/[\s<>"'|*?\n\\]/.test(t)) return false;              // 空白/引号/反斜杠 → 不像路径
+  if (/^[a-z][a-z0-9+.\-]*:\/\//i.test(t)) return false;   // URL 走媒体/文档卡那条路
+  if (t.indexOf("/") < 0) return false;                     // 至少两级
+  if (!_MD_PATH_ROOT.test(t)) return false;                 // 必须以已知顶层目录开头
+  if (!_MD_PATH_EXT.test(t)) return false;                  // 必须以已知扩展名结尾
+  return true;
+}
+
+function _mdEsc(x) {
+  return String(x).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function _fileRefHtml(p) {
+  const name = p.split("/").pop() || p;
+  const icon = /\.(md|markdown)$/i.test(p) ? "ri-file-text-line"
+    : /\.(html?)$/i.test(p) ? "ri-window-line"
+    : /\.(docx?|rtf)$/i.test(p) ? "ri-file-word-line"
+    : /\.(xlsx?|csv)$/i.test(p) ? "ri-file-excel-line"
+    : /\.(pptx?)$/i.test(p) ? "ri-file-ppt-line"
+    : /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(p) ? "ri-image-line"
+    : /\.(mp4|webm|mov)$/i.test(p) ? "ri-film-line"
+    : /\.(py|js|mjs|css|json|ya?ml|toml)$/i.test(p) ? "ri-code-line"
+    : "ri-file-line";
+  return '<button type="button" class="md-file-ref" data-path="' + _mdEsc(p) + '"'
+    + ' title="' + _mdEsc(p) + ' · 点开铺到中栏"'
+    + ' onclick="event.stopPropagation();return window._mdOpenPath(this)">'
+    + '<i class="' + icon + '"></i><span>' + _mdEsc(name) + '</span></button>';
+}
+
+// 点了铺中栏。打不开就给一句人话（手册: 用户触发的操作失败别静默 return）
+window._mdOpenPath = function (el) {
+  const p = (el && el.getAttribute && el.getAttribute("data-path")) || "";
+  if (!p) return false;
+  let ok = false;
+  try { ok = !!(typeof openStage === "function" && openStage({ path: p })); } catch (e) { ok = false; }
+  if (ok) return false;
+  const span = el && el.querySelector ? el.querySelector("span") : null;
+  if (el && el.classList) {
+    const old = span ? span.textContent : "";
+    el.classList.add("is-fail");
+    if (span) span.textContent = "打不开这个路径";
+    setTimeout(function () {
+      if (el.classList) el.classList.remove("is-fail");
+      if (span) span.textContent = old;
+    }, 1600);
+  }
+  return false;
+};
+
 function mdRender(text, opts) {
   if (text == null) return '';
   if (typeof text !== 'string') text = String(text);
@@ -341,8 +516,10 @@ function mdRender(text, opts) {
   let html = out.join('');
 
   // 还原 inline code
+  // 还原 inline code —— 项目内相对路径渲成可点按钮（点了铺中栏），其余原样
   html = html.replace(/\x00INLINE(\d+)\x00/g, (m, i) => {
     const code = inlineCodes[+i];
+    if (_looksLikeProjectPath(code)) return _fileRefHtml(String(code).trim());
     return `<code>${code
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
@@ -363,7 +540,7 @@ function mdRender(text, opts) {
   // 卷六十四续九 · 还原媒体占位符 (原始 <video>/<audio> 标签 + 裸 URL 自动链接的产物)
   html = html.replace(/\x00MEDIA(\d+)\x00/g, (m, i) => mediaTags[+i] || '');
 
-  return html;
+  return wishRefsToTitles(html);
 }
 // 卷四十六续 11 补丁 · 暴露给 workshop.js 等其他 module 复用 (e.g. opus app 系统提示词渲染)
 try { window.opusMdRender = mdRender; } catch (e) { /* 顶层环境异常 · 跳过 */ }

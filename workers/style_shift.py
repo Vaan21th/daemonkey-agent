@@ -36,6 +36,24 @@ _HUMAN = {
     ("表现力", "up"): "放开一点",
 }
 
+# 前端通知用的人话（wish-f2b11caf · 2026-09-18 BRO 拍板）
+# 旧文案「OPUS这场先少说」：「这场」是内部术语、「先」字泄气，而「这场先/以后」
+# 的分野（临时覆盖 vs 写进本子）对用户毫无意义 —— 他只知道「你改了」。
+# 现在：临时档不带前缀，永久档才加「以后」。
+# 另开映射而**不动 _HUMAN** —— _HUMAN 的值同时回传给前端，改它会波及别处。
+_NOTICE_PHRASE = {
+    "少说": "说话会少一些",
+    "多说": "说话会多一些",
+    "正经一点": "说话会正经一点",
+    "可以贫一点": "可以贫一点了",
+    "损一点": "说话会损一点",
+    "温柔一点": "会温柔一点",
+    "客套一点": "会客套一点",
+    "随便一点": "会随便一点",
+    "普通一点": "会收着一点",
+    "放开一点": "会放开一点",
+}
+
 
 def _today() -> str:
     return date.today().isoformat()
@@ -143,8 +161,9 @@ def count_hits(dim: str, direction: str, *, now: datetime | None = None) -> int:
 def notice_line(*, quote: str, human: str, permanent: bool) -> str:
     owner, ai = _names()
     q = (quote or "").strip().replace("「", "").replace("」", "")
-    when = "以后" if permanent else "这场先"
-    return f"因为{owner}说「{q}」，{ai}{when}{human}。"
+    when = "以后" if permanent else ""
+    phrase = _NOTICE_PHRASE.get(human) or human
+    return f"因为{owner}说「{q}」，{ai}{when}{phrase}。"
 
 
 def apply_shift(dim: str, direction: str, quote: str) -> dict:

@@ -1060,11 +1060,12 @@ SPEC = ToolSpec(
     name="update_owner_note",
     description=(
         "记下他刚说的（**参数名是 section，不是 key**）。格子在："
-        "about-user=关于他这个人的原则/偏好/边界（把主语换成别人就不成立）· "
-        "stories=带日期的故事流水 · state=当下状态（配 state_field/state_value/as_of）· "
-        "background/moments/archive/watch 同理。"
-        "听到作息/睡眠/健康/情绪/心情/工作/主线/预算变化 → section='state'。"
-        "产品/功能决策别放这 —— 走 wish_add。默认 append，只写他真说过的。"
+        "about-user=他这个人的原则/偏好/边界 · how-we-work=怎么跟他干活 · "
+        "speech-discipline=出门纪律 · stories=带日期的故事 · "
+        "state=当下状态（配 state_field/state_value/as_of）。"
+        "听到作息/健康/情绪/工作/主线/预算变化 → section='state'。"
+        "产品决策走 wish_add。默认 append，只写他真说过的。"
+        "**写法**：`- **标题**（日期）：一句话`——见落位表·一句一条别写小作文。"
     ),
     tier=TIER_AUTO,
     input_schema={

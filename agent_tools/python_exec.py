@@ -107,7 +107,35 @@ def _summarize(args: dict) -> str:
     return f"python_exec  lines={n_lines}  timeout={timeout}s\n  >>> {first_line}"
 
 
+# 落盘侦测的「一眼预判」：代码里看着像要写文件，才去扫目录
+#   （扫一遍约 0.6s · 纯 print / 读文件的调用不该付这个钱）
+_WRITE_HINT = re.compile(
+    r"(write_text\(|\.write\(|open\s*\([^)]*['\"][wax+]|shutil\.(copy|move|copytree)"
+    r"|\.save\(|savefig\(|to_excel|to_csv|to_json|mkdir|makedirs|os\.rename|os\.replace"
+    r"|copyfile|mkdtemp|NamedTemporaryFile)"
+)
+
+
 def _run(args: dict) -> ToolResult:
+    """落盘侦测包一层（第3刀 · 2026-09-20）。
+
+    这条通道能绕过工具直接写文件 —— 没有「声明」这一步，于是产出既不铺中栏、
+    也不出声（BRO 那边看着就是「什么都没发生」）。改成纯工程：执行前后各扫一遍
+    「能给 BRO 看」的目录，差集就是产物。判据全在 workers.stage_open，不另写白名单。
+    """
+    from workers.stage_open import attach_detected
+
+    snap = None
+    if _WRITE_HINT.search(args.get("code") or ""):
+        try:
+            from workers.stage_open import snapshot_stage_dirs
+            snap = snapshot_stage_dirs()
+        except Exception:
+            snap = None
+    return attach_detected(_run_code(args), snap)
+
+
+def _run_code(args: dict) -> ToolResult:
     code = args.get("code") or ""
     if not code.strip():
         return ToolResult(ok=False, output="", error="empty code")
@@ -118,7 +146,14 @@ def _run(args: dict) -> ToolResult:
         if not cwd.is_absolute():
             cwd = ROOT / cwd
     else:
-        cwd = ROOT
+        # 2026-09-28 · wish-3586b504: app 运行上下文里默认进它的工作区（跟 shell_exec 一致）。
+        # 其余情况仍旧 ROOT —— 不动既有用法。
+        try:
+            from agent_tools import current_app_work_dir
+            _aw = current_app_work_dir().strip()
+            cwd = Path(_aw) if (_aw and Path(_aw).is_dir()) else ROOT
+        except Exception:
+            cwd = ROOT
     if not cwd.exists() or not cwd.is_dir():
         return ToolResult(ok=False, output="", error=f"cwd not a directory: {cwd}")
 

@@ -67,6 +67,49 @@ def _live_vectors() -> dict[str, list[float]]:
         return {}
 
 
+def clusters(threshold: float = COSINE_TH) -> list[list[str]]:
+    """把手册按质心 cosine ≥ threshold 聚簇（并查集）· 只返回成员 ≥2 的簇。
+
+    与星图连边同口径。audit_playbooks 与 playbook_curator 都调它 ——
+    判重只能有一份实现（两边各写一份 = 迟早分叉，建议打架比没建议更糟）。
+    """
+    vecs = _live_vectors()
+    names = sorted(vecs)
+    if len(names) < 2:
+        return []
+
+    # 2026-09-29: 原来是纯 Python 双循环 + 每条重算 _norm → 300 份要 32s。
+    # 改成一次矩阵乘法（先整体归一化 · 再 S = M @ M.T）→ 毫秒级。
+    import numpy as np
+
+    M = np.asarray([vecs[n] for n in names], dtype=np.float32)
+    _nrm = np.linalg.norm(M, axis=1, keepdims=True)
+    _nrm[_nrm == 0] = 1e-9
+    M = M / _nrm
+    S = M @ M.T
+
+    parent = {n: n for n in names}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    total = len(names)
+    for i in range(total):
+        for jj in np.nonzero(S[i, i + 1:] >= threshold)[0]:
+            j = i + 1 + int(jj)
+            parent[find(names[i])] = find(names[j])
+
+    bucket: dict[str, list[str]] = {}
+    for n in names:
+        bucket.setdefault(find(n), []).append(n)
+    out = [sorted(v) for v in bucket.values() if len(v) > 1]
+    out.sort(key=len, reverse=True)
+    return out
+
+
 def re_tokens(text: str) -> list[str]:
     return [m.group(0).lower() for m in _TOKEN.finditer(text or "")]
 

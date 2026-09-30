@@ -97,13 +97,14 @@ async function loadDashboard(domain, opts = {}) {
   }
   if (domain === 'care') { loadCareDesk(); return; }
   if (!token) await _ensureLoopbackToken();
-  if (!opts.silent) $dashView.innerHTML = dashLoadingHTML();
+  if (!opts.silent && domain !== 'memory_map') $dashView.innerHTML = dashLoadingHTML();
 
   // 成长档案三个子页端点不在 /dashboard/* 下 (母体 chat.js:11827-11874 同款)
   const ALT_URL = { sinks: '/sinks', reviews: '/reviews', diary: '/dashboard/cognition' };
   if (ALT_URL[domain] || domain === 'memory_map') {
     if (domain === 'memory_map' && typeof memoryMapLoadingHTML === 'function') {
       $dashView.innerHTML = memoryMapLoadingHTML();   // 后端现算 PCA · 1-3s
+      _depotTabs('memory_map');   // 加载态也带二级导航 (与工作台 chat.js 一致 · 否则导航要等渲染完才 inject · 闪一下)
     }
     try {
       const r = await fetch(ALT_URL[domain] || '/dashboard/memory_map', {
@@ -546,10 +547,10 @@ function _splitMissing(name) {
 //   纯文字"加载中…"在秒级等待里太单薄。 星尘是星图专属 · 这里用克制的三点。
 //   text 参数给慢 tab 配专属文案 · 颜色全走 CSS 变量 · 深浅肤自适应)
 
-// ── 母体 chat.js:11768-11777 · dashLoadingHTML ──
+// ── 母体 chat.js · dashLoadingHTML（2026-09-30 同步：三点 → 品牌钥匙孔双环）──
 function dashLoadingHTML(text) {
   return `<div class="dash-empty dk-ld">
-  <div class="dk-ld-row"><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span></div>
+  <div class="dk-ld-mark"><img src="/static/img/logo-mark.png" alt=""><i></i><i></i></div>
   <div class="dk-ld-txt">${text || '加载中'}</div>
 </div>`;
 }

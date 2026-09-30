@@ -253,7 +253,7 @@ def _build_injection(trigger: dict) -> str:
         mood = live_mood()
         if mood:
             lines.append(
-                f"她这场先{mood}。{live_mood_line()} "
+                f"她现在{mood}。{live_mood_line()} "
                 "开口跟这场走，别装没事、别写成安定日常。"
             )
     except Exception:

@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import shutil
+import threading
 import time
 from pathlib import Path
 
@@ -34,15 +36,105 @@ def current_name(family: str, suffix: str) -> str:
     return f"{family}{suffix}"
 
 
+# ── pptx 页数缓存 (2026-09-28 · wish-eed32401) ──────────────────────────
+# 产物库列 44 个 pptx 要逐个打开读幻灯片数 —— 实测 list_kind("decks") 1152ms 里的大头。
+# 文件基本不变，没必要每次重开。按 (mtime_ns, size) 判同一份。
+# 内存 + 落盘两手：内存管进程内重复，落盘管 daemon 重启后第一次扫。
+# 写盘节流 3 秒（算 44 个时不会写 44 次 —— HDD 上那是 400ms 的浪费）。
+_PAGES_MEM: dict[str, list] = {}
+_PAGES_LOADED = False
+_PAGES_LOCK = threading.Lock()
+_PAGES_DIRTY = False
+_PAGES_LAST_SAVE = 0.0
+_PAGES_SAVE_TIMER = None
+
+
+def _pages_cache_path() -> Path:
+    return Path(__file__).resolve().parent.parent / "data" / "runtime" / "deck_pages_cache.json"
+
+
+def _load_pages_cache() -> None:
+    """懒加载一次。没有 / 坏了都当空 —— 现算一遍就是了，别让它挡路。"""
+    global _PAGES_LOADED
+    if _PAGES_LOADED:
+        return
+    _PAGES_LOADED = True
+    try:
+        raw = json.loads(_pages_cache_path().read_text(encoding="utf-8"))
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                if isinstance(v, list) and len(v) == 3:
+                    _PAGES_MEM[str(k)] = v
+    except Exception:
+        pass
+
+
+def _flush_pages_cache() -> None:
+    """真写盘。只写 dirty 的；写的是 _PAGES_MEM 全量（所以攒批不会丢后半截）。"""
+    global _PAGES_DIRTY, _PAGES_LAST_SAVE, _PAGES_SAVE_TIMER
+    _PAGES_SAVE_TIMER = None
+    if not _PAGES_DIRTY:
+        return
+    _PAGES_DIRTY = False
+    _PAGES_LAST_SAVE = time.time()
+    try:
+        p = _pages_cache_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(_PAGES_MEM, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(p)
+    except Exception:
+        pass
+
+
+def _maybe_save_pages_cache() -> None:
+    """写盘节流：3 秒内最多落一次盘。
+
+    ⚠ 不能只靠时间判断 —— 扫 44 个 pptx 时只有第 1 个会触发写盘，
+      后 43 条就永远留在内存里，下次重启等于白缓存。所以窗口内要挂个
+      Timer 兜底：窗口一过就把累积的全量写下去（Timer 是 daemon 线程·不拦退出）。
+    """
+    global _PAGES_DIRTY, _PAGES_LAST_SAVE, _PAGES_SAVE_TIMER
+    _PAGES_DIRTY = True
+    now = time.time()
+    if now - _PAGES_LAST_SAVE >= 3.0:
+        _flush_pages_cache()
+        return
+    if _PAGES_SAVE_TIMER is None:
+        t = threading.Timer(3.0 - (now - _PAGES_LAST_SAVE), _flush_pages_cache)
+        t.daemon = True
+        _PAGES_SAVE_TIMER = t
+        t.start()
+
+
 def deck_pages(path: Path) -> int:
-    """pptx 真页数。假文件 / 坏文件返 0。"""
+    """pptx 真页数。假文件 / 坏文件返 0。
+
+    2026-09-28 · 加缓存（wish-eed32401）：44 个 pptx 每次全量重开一遍是 1.1s，
+      而文件本身基本不动。按 (mtime_ns, size) 命中就用上次的页数。
+    """
     if path.suffix.lower() not in {".pptx", ".ppt"}:
         return 0
+    key = str(path)
+    try:
+        st = path.stat()
+    except OSError:
+        return 0
+    with _PAGES_LOCK:
+        _load_pages_cache()
+        hit = _PAGES_MEM.get(key)
+        if hit and hit[0] == st.st_mtime_ns and hit[1] == st.st_size and isinstance(hit[2], int):
+            return hit[2]
     try:
         from pptx import Presentation
-        return len(Presentation(str(path)).slides)
+
+        n = len(Presentation(str(path)).slides)
     except Exception:
-        return 0
+        n = 0
+    with _PAGES_LOCK:
+        _PAGES_MEM[key] = [st.st_mtime_ns, st.st_size, n]
+        _maybe_save_pages_cache()
+    return n
 
 
 def is_hidden_output(name: str) -> bool:

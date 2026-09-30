@@ -15,7 +15,6 @@ playbook 的主入口仍是 NLP(extract_playbook 沉淀 / 召回时自动取用)
 from __future__ import annotations
 
 import logging
-import re
 from pathlib import Path
 from typing import Optional
 
@@ -29,29 +28,33 @@ router = APIRouter()
 
 _ROOT = Path(__file__).resolve().parent.parent
 _DAEMON_RULES = _ROOT / "data" / "cognition" / "daemon_rules.md"
-_IRON_HEAD = re.compile(r"^## 铁律 (\d+)\s+·\s+(.+)$", re.MULTILINE)
-_IRON_DOMAIN = re.compile(r"<!--\s*domain:\s*(\w+)\s*-->")
+# 注：解析铁律不在这里做 —— 统一走 agent_tools/list_iron_rules.parse_rules（单一真相源）。
 
 
 def _iron_rules() -> list[dict]:
-    """技能库铁律读 daemon_rules.md，不再从日记抽。"""
+    """技能库铁律读 daemon_rules.md（不再从日记抽）。
+
+    wish-631ff85b · 判据归一 + 可看见重量：
+    原来这里**手抄了一份正则**（只认 `## 铁律 N`），跟 agent_tools/list_iron_rules.parse_rules
+    是两份判据 —— 那边改了边界规则这边不会跟。而且 hot path / 场景索引表本来就不属于「铁律」，
+    所以「铁律一共多重、每条多重」这种数根本算不准。现在直接用权威那份，并给每条带上 tokens。
+    """
     try:
         if not _DAEMON_RULES.exists():
             return []
-        text = _DAEMON_RULES.read_text(encoding="utf-8")
-        matches = list(_IRON_HEAD.finditer(text))
+        from agent_tools.list_iron_rules import count_tokens, parse_rules, read_rules_text
+        text = read_rules_text(_DAEMON_RULES)
         rules = []
-        for idx, m in enumerate(matches):
-            body_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
-            body = text[m.end():body_end].strip()
-            domain_m = _IRON_DOMAIN.search(body)
+        for r in parse_rules(text):
+            seg = text[r["block_start"]:r["end"]]
             rules.append({
                 "date": "",
-                "title": f"铁律 {m.group(1)} · {m.group(2).strip()}",
-                "domain": (domain_m.group(1).strip().lower() if domain_m else "global"),
-                "body": body[:800],
+                "title": f"铁律 {r['n']} · {r['title']}",
+                "domain": r["domain"],
+                "body": r["body"][:800],
+                "tokens": count_tokens(seg),
             })
-        rules.sort(key=lambda r: r["title"], reverse=True)
+        rules.sort(key=lambda x: x["title"], reverse=True)
         return rules
     except Exception as e:
         logger.warning("iron_rules load failed: %s", e)
@@ -67,10 +70,22 @@ def dashboard_playbooks(authorization: Optional[str] = Header(None)):
         items = pb.list_playbooks()
         used = sum(1 for it in items if it.get("used_count"))
         iron = _iron_rules()
+        stats = {"total": len(items), "used": used, "iron": len(iron)}
+        # wish-631ff85b · 重量可见：铁律加起来多重 / 预算多少 / 整个文件多重
+        # 文件比铁律之和重得多 —— hot path + 场景索引表也在里面，它们才是大头。
+        try:
+            from agent_tools.list_iron_rules import BUDGET_TOK, count_tokens, read_rules_text
+            stats["iron_tokens"] = sum(r.get("tokens") or 0 for r in iron)
+            stats["iron_budget"] = int(BUDGET_TOK)
+            # ⚠ 必须 read_rules_text（newline=""）· 裸 read_text 会在 Windows 上把 CRLF 隐式转成 LF，
+            #   数字比原文件少一截（实测差 14 tok）—— 那就跟每条铁律用的原文偏移不是一把尺子了。
+            stats["iron_file_tokens"] = count_tokens(read_rules_text(_DAEMON_RULES))
+        except Exception:
+            pass
         return {
             "items": items,
             "iron_rules": iron,
-            "stats": {"total": len(items), "used": used, "iron": len(iron)},
+            "stats": stats,
         }
     except Exception as e:
         logger.warning("playbooks endpoint failed: %s", e)

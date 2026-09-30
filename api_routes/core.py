@@ -48,6 +48,13 @@ _STATIC_WHITELIST = {
     "voice-mic.js": "application/javascript; charset=utf-8",
     # 2026-08-26 · 顶栏切模型从 chat.js 抽出 · 工作台/陪伴共用 · 漏加 = 404 = 顶栏模型死
     "model-switch.js": "application/javascript; charset=utf-8",
+    # 2026-09-15 · 本轮旋钮条(思考/强度)从顶栏模型菜单搬到输入条 · 漏加 = 404 = chip 点了没反应(静默)
+    "turn-knobs.js": "application/javascript; charset=utf-8",
+    "tool-profile.js": "application/javascript; charset=utf-8",
+    # wish-16fa5930 · 会话列表（chat.js 拆分 · 行渲染/分组/分页/档位徽标）· 漏加 = 404 = 列表空
+    "session-list.js": "application/javascript; charset=utf-8",
+    # 2026-09-15 · 产物面板从 chat.js 整块搬出 (wish-54d21d68) · 工作台/专注版/陪伴共用 · 漏加 = 404 = 产物列表与预览整块死
+    "doc-shelf.js": "application/javascript; charset=utf-8",
     # 2026-08-28 · 多会话并行内核从 chat.js 抽出 · 工作台/陪伴共用 · 漏加 = 404 = chat.js 中途 throw = 顶栏模型/整页一起死
     "session-runtime.js": "application/javascript; charset=utf-8",
     # 2026-08-31 · 对话内检查点网络层 · 工作台/陪伴共用 · 漏加 = 404 = 房间回到这句/改字重发死
@@ -97,28 +104,30 @@ _STATIC_WHITELIST = {
 _BINARY_MIMES = {"font/woff2", "font/woff", "font/ttf", "font/otf", "image/png", "image/jpeg", "image/gif", "image/webp", "image/x-icon"}
 
 
-def _ai_name() -> str:
-    """读用户在『相遇』里给这只 Daemonkey 起的名字 (soul/IDENTITY.json)。没有就空。"""
+def _identity_json() -> dict:
+    """读 soul/meta.json（新名）或 soul/IDENTITY.json（旧名·兜底）。没有就 {}。
+
+    2026-09-17：路径解析统一走 identity.identity_file_path（双名命门）·不写死旧名。
+    """
     try:
         import json
-        p = ROOT / "soul" / "IDENTITY.json"
+        from identity import identity_file_path
+        p = identity_file_path(ROOT)
         if p.exists():
-            return (json.loads(p.read_text(encoding="utf-8-sig")).get("name") or "").strip()
+            return json.loads(p.read_text(encoding="utf-8-sig")) or {}
     except Exception:
         pass
-    return ""
+    return {}
+
+
+def _ai_name() -> str:
+    """读用户在『相遇』里给这只 Daemonkey 起的名字。没有就空。"""
+    return (_identity_json().get("name") or "").strip()
 
 
 def _owner_name() -> str:
-    """读用户在『相遇』里给的称呼 (soul/IDENTITY.json owner_name)。没有/还没问到就空。"""
-    try:
-        import json
-        p = ROOT / "soul" / "IDENTITY.json"
-        if p.exists():
-            return (json.loads(p.read_text(encoding="utf-8-sig")).get("owner_name") or "").strip()
-    except Exception:
-        pass
-    return ""
+    """读用户在『相遇』里给的称呼（owner_name）。没有/还没问到就空。"""
+    return (_identity_json().get("owner_name") or "").strip()
 
 
 def _inject_ai_name(html: str) -> str:
@@ -271,17 +280,57 @@ async def web_ui():
     )
 
 
+_PASSTHROUGH_EXT = {
+    ".js": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+}
+
+# 品牌图片素材扩展名 (只给 img/ 目录用 · 根目录放行图片没意义还多开面)
+_IMG_EXT = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".ico": "image/x-icon",
+}
+
+
+def _static_media(path: str) -> Optional[str]:
+    """这个 static 路径放不放行 · 放行返 mime，不放返 None。
+
+    为什么根目录的 .js/.css 走「目录即白名单」(BRO 2026-09-19):
+      _STATIC_WHITELIST 是张手抄表，历史上同一类事故踩了 8 次 —— chat.js 每拆出一个
+      新文件，忘了回来加一行就是 404，而 404 是**静默**的: 页面不报错，只是那个
+      能力永远不生效 (刚踩的: viewer.js 漏加 → 浮层永远回退到中栏，用户实测才发现)。
+      BRO:「我真的只是希望他尽可能不被放错，机制不要太复杂。可能越简单越有效」。
+      加文件不该需要「记得回来改表」这一步 —— 把这一步删掉，病根就没了。
+    子目录 (lib/ user/ companion/ …) 仍走显式白名单: 那里是第三方大件和另一个入口页，
+      放行要经过一次决定。
+    """
+    if path in _STATIC_WHITELIST:
+        return _STATIC_WHITELIST[path]
+    # 品牌图片目录 img/ (logo / favicon 素材) · 跟根目录 .js/.css 同一条「目录即白名单」——
+    # 2026-09-30 换 LOGO 时又踩了一次「忘了回来改表 → 白名单拒了 = 静默 404」·
+    # 跟 09-19 根目录那次同一条病根 · 于是把 img/ 也整目录放行 · 只认直接子图片·不递归。
+    if path.startswith("img/") and "/" not in path[4:] and "\\" not in path[4:]:
+        return _IMG_EXT.get(Path(path).suffix.lower())
+    if "/" not in path and "\\" not in path:
+        return _PASSTHROUGH_EXT.get(Path(path).suffix.lower())
+    return None
+
+
 @router.get("/static/{path:path}")
 async def serve_static(path: str):
-    if path not in _STATIC_WHITELIST:
-        raise HTTPException(404, f"static asset not allowed: {path}")
     if ".." in path or path.startswith("/") or path.startswith("\\"):
         raise HTTPException(400, "invalid path")
+    media = _static_media(path)
+    if not media:
+        raise HTTPException(404, f"static asset not allowed: {path}")
     full = ROOT / "static" / path
     if not full.exists():
         raise HTTPException(404, f"static asset not found: {path}")
 
-    media = _STATIC_WHITELIST[path]
     if media in _BINARY_MIMES:
         # 字体 / 图片等二进制 · 走 FileResponse · 不 read_text 防 UTF-8 decode 崩
         # 字体加长 cache · 内容固定不变 (文件名含版本)
@@ -505,8 +554,9 @@ async def screen_record(
 
     t0 = _time.time()
     try:
+        from agent_tools._subprocess_helper import no_window_kwargs
         result = subprocess.run(ffmpeg_args, capture_output=True, text=True,
-            timeout=duration + 30)
+            timeout=duration + 30, **no_window_kwargs())
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "FFmpeg timed out"}
 
@@ -538,6 +588,7 @@ _REVEAL_DIRS = [
     ROOT / "data" / "workshop",
     ROOT / "data" / "knowledge",
     ROOT / "data" / "reviews",
+    ROOT / "data" / "code_reviews",
 ]
 
 
@@ -590,3 +641,91 @@ async def reveal_file(
         return {"ok": False, "path": rel,
                 "error": f"{type(e).__name__}: {e}",
                 "hint": "daemon 与你不在同一台机器时无法本机打开 · 可改用下载"}
+
+
+# ────────────────────────────────────────────────────────────────
+# 0.9.x · 记忆整理线 (压缩绝对线) · 「访问 & 会话」面板当场可改
+# BRO 2026-09-14: 这值原先只有 env OPUS_AUTO_COMPACT_MAX_TOKENS 一条路 · 用户看不到也改不了。
+# ────────────────────────────────────────────────────────────────
+@router.get("/api/settings/compact-cap")
+async def get_compact_cap(
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+):
+    """读记忆整理线 · abs_cap=你设的值 · effective=真实开火线（min(窗×ratio, 前缀+cap)）。"""
+    if token and not authorization:
+        authorization = f"Bearer {token}"
+    check_auth(authorization)
+    import os as _os
+    from workers.memory_compression import (
+        DEFAULT_ABS_CAP_TOKENS, _compact_threshold, _get_abs_cap,
+        _get_context_window, _get_ratio, estimate_prefix_tokens, read_cap_override,
+    )
+    ui_v = read_cap_override()
+    env_v = (_os.environ.get("OPUS_AUTO_COMPACT_MAX_TOKENS") or "").strip()
+    abs_cap = _get_abs_cap()
+    # 2026-09-14 · BRO: 面板要显示「真数」—— 用户设的 CAP 之上还有「窗口×ratio」这道闸，
+    # 只显示 abs_cap 会让人以为 512K 生效了，真实开火线是 min(窗×ratio, 前缀+CAP)。
+    try:
+        from daemon_runtime import RUNTIME as _RT
+        _model = getattr(_RT, "model", "") or ""
+    except Exception:
+        _model = ""
+    if not _model:
+        try:
+            from workers.provider_configs import get_active_config as _gac
+            _model = (_gac(include_key=False) or {}).get("model") or ""
+        except Exception:
+            _model = ""
+    ctx_window = _get_context_window(_model)
+    prefix = estimate_prefix_tokens()
+    ratio = _get_ratio()
+    window_line = int(ctx_window * ratio) if ctx_window > 0 else 0
+    cap_line = prefix + abs_cap
+    effective = _compact_threshold(ctx_window, prefix)
+    if ctx_window <= 0:
+        bounded_by = "cap"        # 认不出窗户 → 只走绝对线
+    elif prefix >= window_line:
+        bounded_by = "prefix"     # 前缀已超窗口线 → 压历史救不了 · 走绝对线
+    elif window_line < cap_line:
+        bounded_by = "window"     # 窗口那道闸更靠前
+    else:
+        bounded_by = "cap"
+    return {
+        "ok": True,
+        "abs_cap": abs_cap,
+        "source": "webui" if ui_v > 0 else ("env" if env_v else "default"),
+        "default": DEFAULT_ABS_CAP_TOKENS,
+        "floor": 40000,
+        "effective": effective,
+        "window_line": window_line,
+        "cap_line": cap_line,
+        "ctx_window": ctx_window,
+        "prefix": prefix,
+        "ratio": ratio,
+        "model": _model,
+        "bounded_by": bounded_by,
+    }
+
+
+@router.post("/api/settings/compact-cap")
+async def set_compact_cap(
+    request: Request,
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+):
+    """写记忆整理线 · body {value: 整数} · value<=0 = 清除覆盖回落 env/缺省。即时生效不重启。"""
+    if token and not authorization:
+        authorization = f"Bearer {token}"
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not authorization and body.get("token"):
+        authorization = f"Bearer {body['token']}"
+    check_auth(authorization)
+
+    from workers.memory_compression import _get_abs_cap, set_cap_override
+    saved = set_cap_override(body.get("value"))
+    # v3 · saved=-1 = 被拒绝(非数字) · 盘上原值未动 → ok 必须跟着走, 别误报成功
+    return {"ok": saved >= 0, "saved": max(0, saved), "abs_cap": _get_abs_cap()}

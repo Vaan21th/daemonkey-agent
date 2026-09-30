@@ -174,8 +174,9 @@ def _maybe_start_api(console: Console) -> None:
 def _maybe_start_scheduler(console: Console) -> None:
     """卷二十二 Day 3 · 工作室信息雷达后台调度
 
-    默认每 30 分钟跑一次 refresh_radar。
-    OPUS_RADAR_INTERVAL_MIN=0 禁用。
+    间隔/开关由设置页「掘金雷达」tab 控制（data/radar_config.json）·
+    线程每 10s 热读一次 · 改完不用重启。
+    .env OPUS_RADAR_INTERVAL_MIN 只在配置文件从没写过时当兜底（0 = 默认暂停）。
     """
     try:
         from workers.scheduler import start_radar_scheduler_in_background
@@ -188,8 +189,14 @@ def _maybe_start_scheduler(console: Console) -> None:
         console.print(f"  [yellow]scheduler start failed: {e}[/]")
         return
     if thread is not None and thread.is_alive():
-        interval = (os.environ.get("OPUS_RADAR_INTERVAL_MIN") or "30").strip()
-        console.print(f"  [dim]radar scheduler: every {interval} min (set OPUS_RADAR_INTERVAL_MIN=0 to disable)[/]\n")
+        from workers.radar_config import load_radar_config
+
+        _cfg = load_radar_config()
+        _state = f"every {_cfg.get('interval_min')} min" if _cfg.get("enabled") else "paused"
+        console.print(
+            f"  [dim]radar scheduler: {_state} · 设置页「掘金雷达」可改"
+            " （.env OPUS_RADAR_INTERVAL_MIN 仅作兜底）[/]\n"
+        )
 
 
 def _maybe_start_capability_mirror(console: Console) -> None:

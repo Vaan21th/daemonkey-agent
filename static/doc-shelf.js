@@ -37,6 +37,7 @@ async function renderCompactArtifacts() {
   body.innerHTML = '<div class="docs-view-loading">扫描产物…</div>';
   try {
     const docs = await collectSessionDocs();
+    await _loadDocFavSet();          // ⭐ 同上 · 右侧产物面板也看收藏态
     if (sub) sub.textContent = docs.length ? `${docs.length} 项` : '';
     if (!docs.length) {
       body.innerHTML = `<div class="docs-view-empty">
@@ -45,9 +46,9 @@ async function renderCompactArtifacts() {
       </div>`;
       return;
     }
-    let html = '';
+    let html = _docSortBar();
     for (const cat of _DOC_CATS) {
-      const group = docs.filter(d => _docCategory(d.ext).key === cat.key);
+      const group = _docSortApply(docs.filter(d => _docCategory(d.ext).key === cat.key));
       if (!group.length) continue;
       html += `<div class="docs-sec-title"><i class="${cat.icon}"></i> ${cat.label} <span style="opacity:.6;font-weight:400">(${group.length})</span></div>`;
       html += group.map(d => _docCardHtml(d)).join('');
@@ -75,6 +76,7 @@ function toggleCompactArtifacts() {
 //   stage 画布 / 批注 / HTML 原型) 原样在右栏工作 · 一行都不用改 (元素对象与监听器不变).
 //   关 = 挪回原位。一份代码两个挂载点 · 不分叉。
 let _compactLibHome = null;   // { parent, next } 记住中栏原来的位置
+let _compactSlotDomain = '';  // 槽里当前是哪个域: 'reports' 产物库 / 'projects' 我的项目 (BRO 2026-09-21)
 
 function toggleCompactLibrary(force, opts) {
   const wrap = document.getElementById('compactArtifacts');
@@ -84,7 +86,16 @@ function toggleCompactLibrary(force, opts) {
   if (!wrap || !slot || !pane) return false;
   const was = wrap.classList.contains('ca-lib-open');
   const open = (typeof force === 'boolean') ? force : !was;
-  if (open === was) return open;
+  if (open === was) {
+    // 已在开态：如果只是【域】要换（产物库 ↔ 我的项目），允许换域刷新，不算重复操作
+    if (open && opts && opts.domain && opts.domain !== _compactSlotDomain) {
+      try { loadDashboard(opts.domain); } catch (e) { console.warn('compact lib swap:', e); }
+      _compactSlotDomain = opts.domain;
+      wrap.dataset.slotDomain = _compactSlotDomain;
+      _syncCompactArtTabs();
+    }
+    return open;
+  }
 
   if (open) {
     if (!_compactLibHome) _compactLibHome = { parent: pane.parentNode, next: pane.nextSibling };
@@ -98,10 +109,14 @@ function toggleCompactLibrary(force, opts) {
     //              (画布/货架预览态下直接 return) · 会静默什么都不做。
     // 用户主动点开 = 明确意图 · 走非 silent 正常切域 + 渲染。
     if (!(opts && opts.skipDomain)) {
-      try { loadDashboard('reports'); } catch (e) { console.warn('compact lib:', e); }
+      try { loadDashboard((opts && opts.domain) || 'reports'); } catch (e) { console.warn('compact lib:', e); }
     }
+    _compactSlotDomain = (opts && opts.domain) || 'reports';
+    wrap.dataset.slotDomain = _compactSlotDomain;   // 给 CSS 用: 哪个 seg 该转 180°
   } else {
     wrap.classList.remove('ca-lib-open');
+    _compactSlotDomain = '';
+    wrap.dataset.slotDomain = '';
     if (btn) btn.classList.remove('on');
     // BRO 2026-09-15: 收槽 = 带着画布一起收。不清的话 #detailPane 会带着画布挪回中栏 = "收起没把产物收起来"
     if (typeof stageClearQuiet === 'function') stageClearQuiet();
@@ -131,7 +146,7 @@ function compactArtTab(view) {
   const a = document.getElementById('compactArtifacts');
   if (!a) return;
   if (view === 'lib') {
-    toggleCompactLibrary(true);
+    toggleCompactLibrary(true, { domain: 'reports' });
     if (!a.classList.contains('open')) toggleCompactArtifacts();
   } else {
     toggleCompactLibrary(false);
@@ -144,25 +159,48 @@ function _syncCompactArtTabs() {
   if (!a) return;
   const lib = a.classList.contains('ca-lib-open');
   const open = a.classList.contains('open');
+  const proj = lib && _compactSlotDomain === 'projects';   // 槽里是「我的项目」不是产物库
   document.querySelectorAll('#compactArtTabs .ca-tab').forEach(function (t) {
-    t.classList.toggle('is-on', (t.dataset.caview === 'lib') === lib);
+    t.classList.toggle('is-on', (t.dataset.caview === 'lib') === (lib && !proj));
   });
   const title = document.getElementById('compactArtTitle');
-  if (title) title.innerHTML = lib
-    ? '<i class="ri-archive-2-line"></i> 产物库'
-    : '<i class="ri-archive-fill"></i> 当前产物';
+  if (title) title.innerHTML = proj
+    ? '<i class="ri-folders-fill"></i> 我的项目'
+    : (lib
+      ? '<i class="ri-archive-2-line"></i> 产物库'
+      : '<i class="ri-archive-fill"></i> 当前产物');
   const segLib = document.querySelector('#compactArtToggle .cat-lib');
   const segArt = document.querySelector('#compactArtToggle .cat-art');
-  if (segLib) segLib.classList.toggle('is-on', lib);
+  const segProj = document.querySelector('#compactArtToggle .cat-proj');
+  if (segLib) segLib.classList.toggle('is-on', lib && !proj);
   if (segArt) segArt.classList.toggle('is-on', open && !lib);
+  if (segProj) segProj.classList.toggle('is-on', proj);
 }
 
 // 竖条上的「产物库」图标 (用户: 产物库入口放那个竖条上 · 不要藏在产物列表底下没人看得到)
 // 开关同键: 第二次点 = 收起整个右栏 (用户 2026-09-15: 以前是跳回「当前产物」· 别扭)
 function openCompactLibrary() {
   const a = document.getElementById('compactArtifacts');
-  if (a && a.classList.contains('ca-lib-open')) { toggleCompactArtifacts(); return; }
+  if (a && a.classList.contains('ca-lib-open') && _compactSlotDomain !== 'projects') { toggleCompactArtifacts(); return; }
   compactArtTab('lib');
+}
+
+// ── ③ 我的项目抽屉 (BRO 2026-09-21 「做第三个拉开抽屉的按钮」) ──
+//   和产物库【同一条链同一样壳】：都是把 #detailPane 整个挪进 .cl-slot，
+//   唯一区别是落位后切的域 (reports ↔ projects)。
+//   ⚠ 不在竖条另起分栏/浮层 —— 那两套都被实测废弃过 (#6列分栏点开关即崩 / absolute
+//     浮层 <1900 宽屏盖对话栏) · 此为 playbook 硬约束。
+function openCompactProjects() {
+  const a = document.getElementById('compactArtifacts');
+  if (!a) return;
+  // 开关同键: 已经开着项目槽 → 第二次点 = 收起整个右栏 (跟产物库同手感)
+  if (a.classList.contains('ca-lib-open') && _compactSlotDomain === 'projects') {
+    toggleCompactArtifacts();
+    return;
+  }
+  if (!a.classList.contains('open')) toggleCompactArtifacts();   // 面板没撑开先撑开
+  toggleCompactLibrary(true, { domain: 'projects' });
+  _syncCompactArtTabs();
 }
 
 // ── ④ 产物库宽度拖拽 (用户: 拿不准就给用户 · 左缘一拖 · 双击复位自适应) ──
@@ -325,7 +363,7 @@ async function collectSessionDocs() {
           if (_idx === undefined) {
             _keyMap.set(_k, docs.length);
             seen.add(a.url);
-            docs.push({ name: a.name || '产物', url: a.url, ext: a.ext || '', kind: 'workshop', _sc });
+            docs.push({ name: a.name || '产物', url: a.url, ext: a.ext || '', kind: 'workshop', _sc, mtime: a.mtime || 0 });
           } else if (_sc > (docs[_idx]._sc || 0)) {
             docs[_idx].url = a.url; docs[_idx]._sc = _sc;   // 高分 url 顶替 (治预览按钮传空)
           }
@@ -386,6 +424,46 @@ const _DOC_CATS = [
   { key:'audio',  label:'音频',       icon:'ri-music-2-fill',     exts:['mp3','wav'] },
   { key:'video',  label:'视频',       icon:'ri-movie-fill',       exts:['mp4','webm'] },
 ];
+// ── 排序 (BRO 2026-09-28「本话题产物要有排序功能」) ─────────────────────
+//   排序状态放全局 · 「本话题产物」整页 (renderDocsView) 和专注版右栏面板
+//   (renderCompactArtifacts) 共用同一个值 —— 一处切、两处一致（同一套代码）。
+//   分类仍按 _DOC_CATS 分组展示 · 排序管的是**组内**顺序。
+let _docSort = 'new';   // new(默认·新→旧) | old(旧→新) | name(名称)
+const _DOC_SORTS = [
+  { key: 'new',  label: '最新在前' },
+  { key: 'old',  label: '最早在前' },
+  { key: 'name', label: '按名称' },
+];
+
+function _docSortApply(list) {
+  const arr = list.slice();
+  if (_docSort === 'name') {
+    arr.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'zh'));
+  } else if (_docSort === 'old') {
+    arr.sort((a, b) => (a.mtime || 0) - (b.mtime || 0));
+  } else {
+    arr.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
+  }
+  return arr;
+}
+
+// 排序控件 (两处渲染共用同一份 HTML · 不各写一套)
+function _docSortBar() {
+  const cur = _DOC_SORTS.find(s => s.key === _docSort) || _DOC_SORTS[0];
+  return `<button class="doc-sort-btn" onclick="_docSortNext(event)" title="切换排序 · 现在：${cur.label}">`
+       + `<i class="ri-sort-desc"></i> ${cur.label}</button>`;
+}
+
+// 循环切换 (一颗按钮转一圈 · 不占地方)
+function _docSortNext(ev) {
+  if (ev) { ev.stopPropagation(); ev.preventDefault(); }
+  const i = _DOC_SORTS.findIndex(s => s.key === _docSort);
+  _docSort = _DOC_SORTS[(i + 1) % _DOC_SORTS.length].key;
+  // 两个视图谁开着刷谁 —— 都轻量 · 同时开也各自刷一次
+  if (document.getElementById('docsViewBody')) { try { renderDocsView(); } catch (e) {} }
+  if (document.getElementById('compactArtBody')) { try { renderCompactArtifacts(); } catch (e) {} }
+}
+
 function _docCategory(ext) {
   for (const c of _DOC_CATS) if (c.exts.includes(ext)) return c;
   return _DOC_CATS[1]; // 兜底进文本组
@@ -398,11 +476,13 @@ async function renderDocsView() {
     <div class="docs-view-head">
       <span class="docs-view-title"><i class="ri-file-list-3-fill"></i> 本话题产物</span>
       <span class="docs-view-sub" id="docsViewSub">收集…</span>
+      ${_docSortBar()}
       <button class="docs-view-close" onclick="closeDocsView()" title="返回对话"><i class="ri-arrow-left-line"></i> 返回对话</button>
     </div>
     <div class="docs-view-body" id="docsViewBody"><div class="docs-view-loading">扫描会话中的文档…</div></div>
   `;
   const docs = await collectSessionDocs();
+  await _loadDocFavSet();          // ⭐ 先拿收藏集合 · 卡片才能一次渲对 (免得先渲未收藏再刷)
   const body = document.getElementById('docsViewBody');
   const sub = document.getElementById('docsViewSub');
   if (sub) sub.textContent = `${docs.length} 个文档`;
@@ -414,10 +494,10 @@ async function renderDocsView() {
     </div>`;
     return;
   }
-  // 按类型分类: 办公文档 / 文本·报告 / 图片 / 音频 / 视频
+  // 按类型分类: 办公文档 / 文本·报告 / 图片 / 音频 / 视频 · 组内按当前排序
   let html = '';
   for (const cat of _DOC_CATS) {
-    const group = docs.filter(d => _docCategory(d.ext).key === cat.key);
+    const group = _docSortApply(docs.filter(d => _docCategory(d.ext).key === cat.key));
     if (!group.length) continue;
     html += `<div class="docs-sec-title"><i class="${cat.icon}"></i> ${cat.label} <span style="opacity:.6;font-weight:400">(${group.length})</span></div>`;
     html += group.map(d => _docCardHtml(d)).join('');
@@ -435,6 +515,57 @@ function _safeDecode(s) {
   try { return decodeURIComponent(s); } catch (e) { return s; }
 }
 
+// ── ⭐ 收藏 (wish-e16b1f52 · BRO 2026-09-18) ──
+// 本话题产物 / 右侧产物面板 跟【产物库】共用一套收藏：
+//   ref_id = _docRelFromUrl() 算出来的 data/<domain>/<file> —— 跟产物库的 open_path 同源。
+//   同一份稿在两处点星 = 同一条收藏，不会变成两条。数据层还是那个 favorites.json。
+let _docFavSet = null;   // Set<rel> · 只装 kind=output
+
+async function _loadDocFavSet(force) {
+  if (_docFavSet && !force) return _docFavSet;
+  try {
+    const r = await fetch('/dashboard/favorites', {
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    if (r.ok) {
+      const data = await r.json();
+      _docFavSet = new Set(
+        (data.items || []).filter(i => i.kind === 'output').map(i => i.ref_id)
+      );
+    }
+  } catch (e) { console.warn('doc fav set:', e); }
+  if (!_docFavSet) _docFavSet = new Set();
+  return _docFavSet;
+}
+
+async function _docToggleFav(rel, name, btn) {
+  if (!rel) return;
+  const r = await _toggleFavorite('output', rel, name || '', '', 'toggle');
+  if (!r) { if (typeof addSys === 'function') addSys('⚠ 收藏没存上 · 检查一下 token'); return; }
+  const on = !!r.now_starred;
+  _docFavSet = _docFavSet || new Set();
+  if (on) _docFavSet.add(rel); else _docFavSet.delete(rel);
+  if (btn) {
+    btn.classList.toggle('on', on);
+    btn.innerHTML = `<i class="ri-star-${on ? 'fill' : 'line'}"></i>`;
+    btn.title = on
+      ? '已收藏 · 再点取消（收藏夹里按分类找得到）'
+      : '收藏这份 · 之后能在「收藏夹 → 我的产物」里按分类找回来';
+  }
+  // ⚠ 不写 addSys: 收藏是原地操作 · 星变色就够了。
+  //   这条原是「怕你没看到反馈」加的 · 实际是刷屏 (BRO 2026-09-18 拍板去掉)
+  // ── wish-1dc9c39d (2026-09-19): 但「列表不刷新」是另一码事 ──
+  // BRO 原话:「这个很好很重要的文档,我关掉后又要很麻烦的去找」。实测: 点星当场
+  // 变色、收藏夹页却还挂着旧列表 —— 因为这里只改了内存 set 与按钮, 没人通知那页。
+  // 收口: 收藏夹页正开着 → 立刻重拉; 否则下次打开本来就会重新拉, 不用动。
+  try {
+    const dv = (typeof $dashView !== 'undefined') ? $dashView : document.getElementById('dashView');
+    if (dv && dv.querySelector('.zone-seg') && typeof loadDashboard === 'function') {
+      loadDashboard('favorites');
+    }
+  } catch (e) {}
+}
+
 function _docCardHtml(d) {
   const safeUrl = String(d.url || '#').replace(/"/g, '%22');
   // 从 URL 解析 domain/filename (给 preview/reveal 端点用)
@@ -450,10 +581,18 @@ function _docCardHtml(d) {
     filename = m ? m[2] : '';
   }
   const rel = _docRelFromUrl(safeUrl, domain, filename);
+  // ⭐ 收藏开关 · 只在能归一出相对路径时给 (归不出就不给星 · 不假装能收)
+  const _isFav = !!(rel && _docFavSet && _docFavSet.has(rel));
+  const favBtn = rel
+    ? `<button class="dvi-btn dvi-fav${_isFav ? ' on' : ''}" onclick="event.stopPropagation();_docToggleFav('${jsStr(rel)}','${jsStr(d.name)}',this)" title="${_isFav ? '已收藏 · 再点取消（收藏夹里按分类找得到）' : '收藏这份 · 之后能在「收藏夹 → 我的产物」里按分类找回来'}"><i class="ri-star-${_isFav ? 'fill' : 'line'}"></i></button>`
+    : '';
   const isPreviewable = ['md','txt','png','jpg','jpeg','gif','webp','mp3','wav','mp4','webm','pdf','html','htm','pptx','ppt','xlsx','xls','docx','doc'].includes(d.ext);
   // 能进画布批注的: 去掉音频 (画布不吃) · BRO 2026-09-15 拍板卡片加「查看 & 批注」
   const isAnnotatable = ['md','txt','png','jpg','jpeg','gif','webp','mp4','webm','pdf','html','htm','pptx','ppt','xlsx','xls','docx','doc'].includes(d.ext);
   const btn = (ic, label, fn, cls) => `<button class="dvi-btn ${cls}" onclick="event.stopPropagation();${fn}('${jsStr(domain)}','${jsStr(filename)}','${jsStr(d.ext)}','${jsStr(rel)}')" title="${escHtml(label)}"><i class="${ic}"></i><span>${label}</span></button>`;
+  // 低频按钮 · 只留图标 (BRO 2026-09-18: 6 个带文字的按钮把标题挤没了)
+  //   —— 「预览 / 查看&批注」是高频 · 留文字；其余三个收起来，title 悬停可看
+  const icoBtn = (ic, label, fn) => btn(ic, label, fn, 'dvi-ico');
   return `<div class="docs-view-item" data-ext="${d.ext}" data-url="${safeUrl}" data-domain="${domain}" data-filename="${filename}">
     <span class="dvi-ic">${_docIcon(d.ext)}</span>
     <span class="dvi-body">
@@ -461,11 +600,12 @@ function _docCardHtml(d) {
       <span class="dvi-meta">${String(d.ext).toUpperCase()} · ${_docCategory(d.ext).label}</span>
     </span>
     <span class="dvi-actions">
+      ${favBtn}
       ${isPreviewable ? btn('ri-eye-line','预览','_docOpenInBrowser') : ''}
       ${isAnnotatable ? btn('ri-quill-pen-line','查看 & 批注','_docAnnotateFromCard') : ''}
-      ${btn('ri-mac-line','应用打开','_docOpenLocal')}
-      ${btn('ri-save-3-line','另存为','_docSaveAs')}
-      ${btn('ri-link-unlink','不挂本话题','_docUnbind')}
+      ${icoBtn('ri-mac-line','应用打开','_docOpenLocal')}
+      ${icoBtn('ri-save-3-line','另存为','_docSaveAs')}
+      ${icoBtn('ri-link-unlink','不挂本话题','_docUnbind')}
     </span>
   </div>`;
 }
@@ -586,14 +726,14 @@ function _docOpenForAnnotate(rel) {
     // BRO 2026-09-15: 先垫「打开中」。不垫的话右栏/中栏会先露出旧域(常是 BI 看板) · 等 goOfficeHome
     //   一次 fetch 往返回来才换成预览 = "先跳 dashboard 再才产物栏"
     const pane0 = document.getElementById('detailPane');
-    if (pane0) pane0.innerHTML = '<div class="dash-empty dk-ld"><div class="dk-ld-row"><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span></div><div class="dk-ld-txt">打开中…</div></div>';
+    if (pane0) pane0.innerHTML = '<div class="dash-empty dk-ld dk-ld-sm"><div class="dk-ld-mark"><img src="/static/img/logo-mark.png" alt=""><i></i><i></i></div><div class="dk-ld-txt">打开中…</div></div>';
     // BRO 2026-09-15: ✕ 关画布 → 回产物库列表 (点批注的语境永远是"在挑稿")
     window._stageHomeHint = 'reports';
     if (document.body.classList.contains('compact') && typeof toggleCompactLibrary === 'function') {
       // skipDomain: 只把中栏挪进右栏槽 · 不切「产物库」域 —— 否则 loadDashboard('reports') 回来会盖掉刚铺好的画布
       toggleCompactLibrary(true, { skipDomain: true });
     }
-    if (rel && typeof openStage === 'function') openStage({ path: rel });
+    if (rel && typeof openStage === 'function') openStage({ path: rel, bind: true });
   } catch (e) { console.warn('annotate:', e); }
 }
 

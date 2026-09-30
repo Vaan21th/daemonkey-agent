@@ -54,11 +54,13 @@ def sessions(
     api_only: bool = False,
     include_archived: bool = False,
     archived_only: bool = False,
+    show_probe: bool = False,
 ):
     """列 session · 带 label / pinned / archived 元数据 (卷三十四补丁)
 
     Query:
       api_only=true       · 只返 api- 前缀 (WebUI 默认 · 避免污染终端 session)
+      show_probe=true     · 是否包含探针会话 (api-probe-*) · 默认隐藏 (wish-3d445806)
       include_archived    · 是否包含已归档 · 默认不包含
       archived_only       · 只列已归档 (做"已归档"切换视图用)
       offset              · 分页偏移 · 配合 limit 做"加载更多" (卷八十一 · BRO: 老会话被 50 条挤掉)
@@ -84,6 +86,10 @@ def sessions(
         is_api = sid.startswith("api-")
         if api_only and not is_api:
             continue
+        # wish-3d445806 · api-probe-* 是测试脚本发的探针会话 —— 对 BRO 与所有 UI 都是噪音。
+        # 与上面的 api_only 同构的「类别过滤」· 默认隐藏·要排查测试时 ?show_probe=true 取回。
+        if not show_probe and sid.startswith("api-probe-"):
+            continue
         is_archived = bool(row.get("archived_at"))
         if is_archived:
             archived_count += 1
@@ -108,6 +114,8 @@ def sessions(
             "last_model_cfg": row.get("last_model_cfg"),
             "last_think_cfg": row.get("last_think_cfg") or {},   # wish-00490c86 · 思考开关跟对话实例走
             "last_tool_profile": row.get("last_tool_profile"),   # wish-16fa5930 · 档位跟对话实例走
+            "project_id": row.get("project_id"),                 # wish-acc37841 · 挂在哪个外部项目
+                                                                  # （漏给前端 → 话题列表的紫药丸永远不会出现）
             "active": sid in _active_sids,   # wish-xxx · 会话是否正在被 daemon 跑 (历史列表运行状态点)
         })
         if len(out) >= limit:
@@ -128,7 +136,9 @@ async def get_session_meta_endpoint(
 ):
     """取单个 session 的 metadata (spawnTask 配套 · 前端切 session 时即时拉标题)
 
-    返回: { session_id, meta: { label, pinned_at, archived_at } } · label 可能为 null
+    返回: { session_id, meta: { label, pinned_at, archived_at, ... } } · label 可能为 null
+    ⚠ 改字段时记得同步查前端 session-list.js 的 sessionMetaCache —— 这儿是白名单，
+      漏一个字段不会报错，只会让前端那个分支静默拿不到值（2026-09-20 project_id 漏过一次）。
     """
     check_auth(authorization)
 
@@ -157,6 +167,7 @@ async def get_session_meta_endpoint(
             "last_model_cfg": meta.get("last_model_cfg"),
             "last_think_cfg": meta.get("last_think_cfg") or {},
             "last_tool_profile": meta.get("last_tool_profile"),   # wish-16fa5930 · 档位跟对话实例走
+            "project_id": meta.get("project_id"),                 # wish-acc37841 · 挂在哪个外部项目
             "working_docs": meta.get("working_docs") or [],
         },
     }
@@ -219,6 +230,10 @@ async def update_session_meta_endpoint(
     if "last_think_cfg" in body:   # wish-00490c86 · thinking/effort/max_tokens 跟对话实例走
         v = body.get("last_think_cfg")
         kwargs["last_think_cfg"] = v if isinstance(v, dict) else None
+    if "project_id" in body:   # wish-acc37841 · 这个会话挂在哪个外部项目（"我的项目"外键）
+        v = body.get("project_id")
+        # null / 空串 = 摘掉项目归属（跟 last_tool_profile 同语义）
+        kwargs["project_id"] = "" if v is None else str(v)
     if "last_tool_profile" in body:   # wish-16fa5930 · 档位跟对话实例走（一场一种厚度 · 开跑即锁）
         v = body.get("last_tool_profile")
         # null / 空串 = 清掉档位记录 → 回默认档（与 label 的语义对齐）
@@ -669,7 +684,9 @@ async def session_artifacts(sid: str, authorization: Optional[str] = Header(None
                 _ok = True
             if not _ok:
                 continue
-        a.pop("_mtime", None)
+        # _mtime 在本场过滤时当过证据 · 但对前端也有用（本话题产物排序）——
+        # 改名 mtime 留着，别丢（BRO 2026-09-28「本话题产物要有排序」）
+        a["mtime"] = a.pop("_mtime", 0) or 0
         a["home"] = _h or sid
         _kept.append(a)
     artifacts = _kept

@@ -95,8 +95,8 @@ def _run(args: dict) -> ToolResult:
             f"第{info['page']}页加了配图 · {out.name} · V{ver}",
             f"  路径: {rel}",
             f"  位置约 {info['x']:.0%} / {info['y']:.0%}，其余页没动",
-            f"[[DK-OPEN]]{rel}",
         ]),
+        stage_path=rel,
     )
 
 

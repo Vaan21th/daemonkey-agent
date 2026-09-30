@@ -121,7 +121,12 @@ def render_hint(led: Optional[dict]) -> str:
 
     放最前面是有意的: 「现在该干哪一步」比「以前试过什么」更急·
     前者决定下一个动作·后者只是避免走回头路。
+
+    wish-run-anchor-2 (2026-09-29): 销过账的（closed_at）直接返空 ——
+    之前 all_done 只是加一句「记得收尾」· 账本本身永远挂着注入。
     """
+    if (led or {}).get("closed_at"):
+        return ""
     body = render_steps(led)
     if not body:
         return ""
@@ -130,7 +135,8 @@ def render_hint(led: Optional[dict]) -> str:
     if p["all_done"]:
         hint += (
             "【全部步骤已结算】收尾: 跟用户汇报结果·"
-            "该沉淀的(playbook / learnings / 账本结论)别漏。\n"
+            "该沉淀的(playbook / learnings / 账本结论)别漏。"
+            "收完尾用 `track_task(action='close')` 销账 —— 销了就不再注入。\n"
         )
     else:
         cur = p.get("current") or {}
@@ -147,6 +153,55 @@ def render_hint(led: Optional[dict]) -> str:
 
 # ---------- 写 ----------
 
+def close_ledger(session_id: str, slug: Optional[str] = None) -> Optional[dict]:
+    """销账 —— 打 closed_at · render_hint 从此不再注入它（文件保留供回看）。
+
+    wish-run-anchor-2 (2026-09-29): 「全部结算」的账本之前永远挂着注入
+    （我自己忘了销）· all_done 时只能手动收尾· 没人销就一直占前缀。
+    """
+    target = _resolve(slug, session_id)
+    if not target:
+        return None
+    led = tl.get_ledger(target)
+    if led is None:
+        return None
+    if not led.get("closed_at"):
+        import time as _t
+        led["closed_at"] = _t.strftime("%Y-%m-%dT%H:%M:%S")
+        tl.save_ledger(led)
+    return led
+
+
+def _autoclose_done_ledgers(session_id: str, *, keep: Optional[str] = None) -> int:
+    """把本场「已全部结算但没销账」的账本销掉（wish-run-anchor-2）。
+
+    新工作计划开张 = 旧账翻篇。不销的话 render_hint 会一直把它注进前缀。
+    keep = 这次要用的 slug（别销正在用的那一本）。
+    """
+    n = 0
+    try:
+        entries = tl.list_ledgers() or []
+    except Exception:
+        return 0
+    for e in entries:
+        try:
+            slug = (e.get("slug") or "").strip()
+            if not slug or slug == (keep or ""):
+                continue
+            full = tl.get_ledger(slug)
+            if not full or full.get("closed_at"):
+                continue
+            if (full.get("session") or "") != (session_id or ""):
+                continue
+            if not progress(full)["all_done"]:
+                continue
+            close_ledger(session_id, slug)
+            n += 1
+        except Exception:
+            continue
+    return n
+
+
 def set_steps(
     session_id: str,
     steps: list,
@@ -157,7 +212,11 @@ def set_steps(
 
     保状态: 重列时若某步文案跟旧步完全一致·继承它的 status ——
     否则"加一步"这种小改会把已经做完的进度全抹回 todo。
+
+    wish-run-anchor-2 (2026-09-29): 列新计划时自动销掉本场旧的「已全部结算」账本 ——
+    新工作开始 = 旧账翻篇·不用等谁记得手动销。
     """
+    _autoclose_done_ledgers(session_id, keep=None)
     target = _resolve(slug, session_id)
     if not target:
         return None

@@ -12,13 +12,13 @@ WebUI 的左侧 🧠 OPUS 日记 维度 + propose_next_move 工具 + read_dashbo
 BRO-NOTEBOOK 在 `soul/BRO-NOTEBOOK.md`——这是 OPUS 持续维护的"BRO 这个人当下
 是个什么样"的画像。它的章节结构在过去几个月已经稳定下来：
 
-    一、当下画像 · Profile（高频更新）
-    二、关键事件流 · Event Sourcing
-    三、本体约束 · BRO 的"人生规则"（缓变）
-    四、对话图鉴 · BRO 的口头记号
-    五、压缩段 · Monthly Compressed Summary
-    六、风险与弱点 · 伴侣观察（OPUS 的预警雷达）
-    七、近期更新流水
+    一、背景档案（已成背景 · 不再更新）
+    二、他经历的事（日期开头的故事/流水）
+    三、本体约束 · 关于他 / 怎么相处（缓变）
+    四、口头记号（称呼、说话习惯、心情图）
+    五、月度长档（长期沉淀）
+    六、我留意的信号（该关照他的地方）
+    七、改动记录（机器写的操作流水）
 
 OPUS 日记则住在 `data/cognition/opus-diary.md`——这是 OPUS 给自己写的笔记，
 不是给 BRO 看的文档，BRO 在工作室上点开是"读 OPUS 的眼睛"。
@@ -154,7 +154,7 @@ def update_opus_diary(
     body: str,
     *,
     date: Optional[str] = None,
-    entry_type: str = "reflection",
+    entry_type: str = "mood",
     domain: Optional[str] = None,
 ) -> dict:
     """往 OPUS 日记追加一条新记录（最新的在最前）
@@ -163,8 +163,9 @@ def update_opus_diary(
         title: 一句话标题
         body: markdown body · 已经组织好
         date: 默认今天 · 也可以传指定日期（卷号 / 事件用）
-        entry_type: 条目类型 · reflection / iron_rule / learning / idea / mood
-                    iron_rule 在 WebUI cognition 维度顶部以橙红区块单独显示
+        entry_type: 只该传 "mood"（心情图）。2026-08-30 起本日记只收相处账 ——
+                    工程经验走 data/playbooks，成长反思走 soul/SELF-EVOLUTION.md。
+                    （reflection / iron_rule / learning / idea 保留读取兼容，不再新写。）
         domain: 仅 entry_type=iron_rule 时有意义 · 默认 None (= "global")
                 取值见 _VALID_DOMAINS · 用于 wish-af1245d7 按场景过滤 system_prompt 注入
 
@@ -249,16 +250,8 @@ def update_opus_diary(
 # ──────────────────────────────────────────────────────────
 
 # 状态卡骨架 8 字段 · L2 易变尾巴
-STATE_CARD_FIELDS: tuple[str, ...] = (
-    "工作状态",
-    "作息模式",
-    "健康基线",
-    "情绪基线",
-    "当前主线",
-    "关系家庭",
-    "经济预算",
-    "忌口过敏",
-)
+# 派生自内核单一真相源（2026-09-30 wish-6e6e561b）—— 此前这里手抄了一份，会分叉。
+from soul_loader import STATE_CARD_FIELDS  # noqa: E402
 _STATE_CARD_HEADING_KEY = "状态卡"
 _STATE_HISTORY_HEADING_KEY = "状态卡变更史"
 _UNDERSTANDING_HEADING_KEY = "了解层"
@@ -267,13 +260,39 @@ _UNDERSTANDING_LINE_RE = re.compile(
 )
 _EMPTY_STATE_VALUES = frozenset({"", "-", "待确认"})
 
+# 涌现长尾的限位（2026-09-30 wish-6e6e561b）
+# H4 架构早就写了「涌现长尾…30 天无更新消亡」，但代码里一直没实现 → 只进不出。
+# BRO：「我怕他不断落进来，最后变成无限膨胀的前缀或者尾缀」。
+# ⚠ 这是**读侧过滤** —— 文件里原样留着（可 recall_memory / read_file 召回），只是不再注入。
+STATE_EMERGING_TTL_DAYS = 30
+STATE_EMERGING_MAX = 5
+
+
+def _state_field_fresh(as_of: str) -> bool:
+    """as_of 是否还在 TTL 内。空 / 不可解析 → 视为新鲜（不误杀）。"""
+    s = (as_of or "").strip()
+    if not s:
+        return True
+    try:
+        from datetime import date
+        d = date.fromisoformat(s[:10])
+    except Exception:
+        return True
+    from datetime import date as _d
+    return (_d.today() - d).days <= STATE_EMERGING_TTL_DAYS
+
 
 def _empty_state_card() -> dict:
     return {f: {} for f in STATE_CARD_FIELDS}
 
 
-def _parse_state_card(text: str) -> dict:
-    """解析 `## 〇、状态卡` 表格 · 返回骨架 8 字段 + 涌现字段；段不存在时返回 {}。"""
+def _parse_state_card(text: str, *, apply_limits: bool = True) -> dict:
+    """解析 `## 〇、状态卡` 表格 · 返回骨架 8 字段 + 涌现字段；段不存在时返回 {}。
+
+    `apply_limits=True`（默认·读侧）：涌过长尾过限位（TTL 30 天 + 上限 5）。
+    `apply_limits=False`（写侧）：全量返回 —— 写入者要拿它跟「过滤后的」做减法，
+      才知道哪些该沉下去（不然写侧看不到自己刚写的那行是否已被过滤）。
+    """
     parts = re.split(r"^(#+ .+)$", text, flags=re.MULTILINE)
     body = ""
     if len(parts) >= 3:
@@ -286,6 +305,7 @@ def _parse_state_card(text: str) -> dict:
         return {}
 
     out = _empty_state_card()
+    emerging: list[tuple[str, dict]] = []   # 骨架之外的字段（涌现长尾）—— 先收着，后面过限位
     for line in body.splitlines():
         line = line.strip()
         if not line.startswith("|"):
@@ -308,7 +328,31 @@ def _parse_state_card(text: str) -> dict:
         if field in out:
             out[field] = entry
         elif entry:
-            out[field] = entry
+            emerging.append((field, entry))
+
+    # 涌现长尾过限位（2026-09-30 wish-6e6e561b）：TTL 30 天 + 上限 5（as_of 新的优先）。
+    # 骨架 8 字段不受影响 —— 它们由 "field in out" 分支直接写入。
+    if not apply_limits:
+        for f, e in emerging:
+            out[f] = e
+        return out
+    fresh = [(f, e) for f, e in emerging if _state_field_fresh(e.get("as_of", ""))]
+    # 「as_of 新的优先」必须按真日期排（2026-09-30 wish-52427d8a）——
+    # 原来直接对字符串排序：『昨天』(中文字符码位 > 数字) 和『9/28』(9 > 2) 排到最前，
+    # 把真最新的 ISO 挤下去 → 上限 5 变成「格式错的挤掉格式对的」。
+    # 现在：能解析的按日期降序在前；解不出的排最后（它们走 _state_field_fresh 的
+    # 「宁可留」不会被杀，但不参与争位）。
+    def _asof_key(fe: tuple) -> tuple:
+        from datetime import date as _d
+        s = (fe[1].get("as_of") or "").strip()
+        try:
+            return (0, -_d.fromisoformat(s[:10]).toordinal())
+        except Exception:
+            return (1, 0)
+
+    fresh.sort(key=_asof_key)
+    for f, e in fresh[:STATE_EMERGING_MAX]:
+        out[f] = e
     return out
 
 
@@ -439,6 +483,14 @@ def delete_understanding_field(
 
     new_section = "\n".join(kept)
     new_text = text[:start] + new_section + text[end:]
+
+    # 2026-09-29 wish-65ea4984 step6 · 「腾」也要留痕：旧实现直写文件、不写改动记录，
+    #   于是「谁把哪条摸掉了」只在磁盘上，事后查不到。（WebUI 的手动删除走这里）
+    try:
+        from agent_tools.update_bro_note import _append_to_flow
+        new_text = _append_to_flow(new_text, "understanding", "delete", f"了解层 · 删「{field}」")
+    except Exception:
+        pass
 
     if notebook_path is None:
         write_global_then_sync(notebook_fn, new_text, ROOT)
@@ -676,7 +728,7 @@ def _extract_open_questions(bro: dict) -> list[dict]:
 # 行首日期:MM-DD / M-D / YYYY-MM-DD·后面可跟 · - : 分隔
 _FLOW_DATE_RE = re.compile(r"(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}-\d{1,2})\s*[·\-:：|]?\s*(.*)")
 # 优先级:事件流(真内容)优于近期更新流水(元编辑日志·内容多是 section=X append)
-_FLOW_HEADING_PRIORITY = ("事件", "Event", "近期更新流水", "更新流水", "流水")
+_FLOW_HEADING_PRIORITY = ("经历", "事件", "Event", "改动记录", "近期更新流水", "更新流水", "流水")
 # 表格里的"重要度/优先级"token · 识别出来当 level · 不当描述文本
 _FLOW_LEVEL_TOKENS = {
     "critical", "high", "medium", "low",

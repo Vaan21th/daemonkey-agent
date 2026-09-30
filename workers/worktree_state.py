@@ -93,6 +93,21 @@ def _same_path(a: str, b: Path) -> bool:
         return str(a).replace("\\", "/").rstrip("/") == str(b).replace("\\", "/").rstrip("/")
 
 
+def _instance_id() -> str:
+    """本实例标识（多实例共树 · wish-cf51665e）。
+
+    判据复用 `workers/daemon_lifecycle.instance_id()`（**单一真相源** · 读 $OPUS_INSTANCE，
+    没设 = 'root'）—— 报告里必须写明「这是谁的报告」，否则多实例共树时
+    分不清手里这份是母体还是副实例（正是「A 抹 B」的土壤）。
+    本模块要能在 daemon 崩了时独立跑 → import 失败退回 'root'，绝不抛。
+    """
+    try:
+        from workers.daemon_lifecycle import instance_id
+        return instance_id()
+    except Exception:
+        return "root"
+
+
 def working_tree_report() -> dict:
     """采集工作区 + 跨 agent git 真相 · 返结构化 dict (含 summary markdown + verdicts + advice)。
 
@@ -104,7 +119,7 @@ def working_tree_report() -> dict:
     _, branch = _git(["rev-parse", "--abbrev-ref", "HEAD"])
     _, head = _git(["rev-parse", "--short", "HEAD"])
     _, dirty_raw = _git(["status", "--porcelain"], timeout=10)
-    dirty_files = [l for l in dirty_raw.splitlines() if l.strip()]
+    dirty_files = [ln for ln in dirty_raw.splitlines() if ln.strip()]
 
     behind = ahead = 0
     rc, lr = _git(["rev-list", "--left-right", "--count", "master...HEAD"])
@@ -123,7 +138,7 @@ def working_tree_report() -> dict:
         not _same_path(w.get("path") or "", ROOT) for w in master_holders)
 
     rc, stash_raw = _git(["stash", "list"], timeout=8)
-    stash_count = len([l for l in stash_raw.splitlines() if l.strip()]) if rc == 0 else 0
+    stash_count = len([ln for ln in stash_raw.splitlines() if ln.strip()]) if rc == 0 else 0
 
     # wish-3d02d762 · tag 改名 last-good · 老机器本地可能还是旧名 → 先新后旧
     rc, lg = _git(["rev-parse", "--short", "last-good"])
@@ -134,6 +149,8 @@ def working_tree_report() -> dict:
     kind = _branch_kind(branch)
     rep = {
         "git": True,
+        "instance": _instance_id(),
+        "worktree_path": str(ROOT),
         "branch": branch,
         "branch_kind": kind,
         "head": head,
@@ -190,8 +207,11 @@ def format_report(rep: dict) -> str:
     if not rep.get("git"):
         return rep.get("summary") or "(非 git 仓库)"
     lines = ["## 工作区状态自检 (git 真相)", ""]
-    lines.append(f"- 当前分支: `{rep['branch']}` ({rep['branch_kind']}) · HEAD `{rep['head']}`")
-    lines.append(f"- 相对 master: 领先 {rep['ahead_of_master']} · 落后 {rep['behind_master']}")
+    lines.append(
+        f"- 本实例: `{rep.get('instance') or 'root'}` · 工作树 "
+        f"`{rep.get('worktree_path') or str(ROOT)}` · 分支 `{rep['branch']}` ({rep['branch_kind']})")
+    lines.append(
+        f"- HEAD `{rep['head']}` · 相对 master: 领先 {rep['ahead_of_master']} · 落后 {rep['behind_master']}")
     dc = rep["dirty_count"]
     lines.append(f"- 未提交改动: {dc} 个" + (
         " · " + ", ".join(f.strip()[:40] for f in rep["dirty_files"][:6]) + (" …" if dc > 6 else "")

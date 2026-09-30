@@ -77,6 +77,31 @@ RESTART_HISTORY_FILE = RUNTIME_DIR / "restart_history.jsonl"
 CRASH_MARKER_FILE = RUNTIME_DIR / "crash_marker.json"
 QUARANTINE_FILE = RUNTIME_DIR / "restart_request.quarantined.json"
 
+
+def instance_id() -> str:
+    """本实例标识（多实例共树 · wish-cf51665e · 2026-09-18）。
+
+    单一真相源: 环境变量 OPUS_INSTANCE —— 建副实例时由启动脚本写入。
+    没设 = 母体主实例 → 'root'（沿用老路径·零迁移成本）。
+
+    用途: restart_request 按实例分文件（A 的重启请求不被 B 消费）·
+          worktree_state 报告「本实例是哪个」。
+    """
+    return (os.environ.get("OPUS_INSTANCE") or "root").strip() or "root"
+
+
+def _restart_request_file(inst: Optional[str] = None) -> Path:
+    """本实例的重启请求文件。
+
+    root 沿用老路径 restart_request.json（兼容·不破坏现有习惯），
+    副实例各用各的 restart_request.<inst>.json —— 共树多实例时 data/ 共享，
+    不分开就会出现「A 请求重启·B 启动时把它消费掉」· B 凭空冒出续场提示。
+    """
+    i = inst or instance_id()
+    if i == "root":
+        return RESTART_REQUEST_FILE
+    return RUNTIME_DIR / f"restart_request.{i}.json"
+
 # ── 崩溃循环熔断 (卷四十七 · 2026-06-01 灾难复盘) ──────────────────────
 # BRO 原话: 续场是 DAEMON 写完代码重启的命脉·不能砍·但灾难级 (反复崩) 时
 #   至少要保证他能正确启动。 而且要自动——开源后用户没有 Cursor 兜底。
@@ -465,16 +490,22 @@ def mark_graceful_shutdown(reason: str = "user_initiated") -> bool:
 
 
 def consume_restart_request() -> Optional[dict]:
-    """启动时读 restart_request.json · 如果有 · 返字典并删文件"""
-    req = _read_json(RESTART_REQUEST_FILE)
+    """启动时读【本实例】的 restart_request · 如果有 · 返字典并删文件
+
+    多实例共树 (wish-cf51665e): 只读自己那份 —— 不是自己的请求文件一个字不动。
+    副实例的文件由副实例自己消费。
+    """
+    req_file = _restart_request_file()
+    req = _read_json(req_file)
     if not req:
         return None
     try:
-        RESTART_REQUEST_FILE.unlink()
+        req_file.unlink()
     except Exception:
         pass
     _append_history({
         "event": "restart_request_consumed",
+        "instance": instance_id(),
         "request": req,
     })
     return req
@@ -502,6 +533,7 @@ def write_restart_request(reason: str, session_id: Optional[str] = None,
     OPUS 跑完结果落档到 session jsonl · BRO 不用手动发消息触发。
     """
     _ensure_dir()
+    inst = instance_id()
     req = {
         "requested_at": _now_iso(),
         "reason": reason,
@@ -509,8 +541,9 @@ def write_restart_request(reason: str, session_id: Optional[str] = None,
         "tool_call_id": tool_call_id,
         "follow_up_message": follow_up_message,
         "requesting_pid": os.getpid(),
+        "instance": inst,
     }
-    _write_json(RESTART_REQUEST_FILE, req)
+    _write_json(_restart_request_file(inst), req)
     return req
 
 

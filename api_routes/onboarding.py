@@ -18,6 +18,7 @@ api_routes/onboarding.py · 相遇 onboarding 路由（形态 Z 分家整合）
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import secrets
@@ -256,7 +257,8 @@ async def save_key(request: Request, payload: dict = Body(...)):
     #    save-key 原来不校验直接返回 ok → keyCard 消失 → /open 才真失败 →
     #    用户没处改·重载又因 has_key=true 直奔 /open 再失败 → 只能手改 .env。
     #    现在把失败原因(含 base_url 的 /v1 纠偏提示)抛回前端·keyCard 保留·当场改。
-    ok, err = probe_openai(api_key, base_url, model)
+    # 2026-09-17 · 探测出 loop: 试连是可阻塞的网络活(可达数十秒)·别堵 event loop (同 /chat 修复)
+    ok, err = await asyncio.to_thread(probe_openai, api_key, base_url, model)
     if not ok:
         raise HTTPException(400, err)
 

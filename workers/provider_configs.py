@@ -368,15 +368,58 @@ def delete_config(cfg_id: str) -> dict:
     return {"deleted": cfg_id, "new_active": data.get("active_id")}
 
 
-def set_active(cfg_id: str) -> dict:
-    """切换 active config · 不重建 RUNTIME (那是 daemon_api 的事)."""
+def set_active(cfg_id: str, *, source: str = "auto") -> dict:
+    """切换 active config · 不重建 RUNTIME (那是 daemon_api 的事).
+
+    source 分开记「谁切的」(2026-09-23 · 治「切了模型却被打回」):
+      "user" = 用户在 UI 上手动切的 (顶栏/设置页) → 这是全局意图·
+               新会话该继承它·且要同步写当前会话记忆
+      "auto" = 对话内自动恢复 / 别的代码连带切的 → 不该污染新对话
+        (wish-c6422f9c 的原始顾虑: 上个对话切过的 8B 被新对话继承)
+    """
     data = load_configs()
     found = any(c.get("id") == cfg_id for c in (data.get("configs") or []))
     if not found:
         raise KeyError(f"config not found: {cfg_id}")
     data["active_id"] = cfg_id
+    data["active_source"] = "user" if str(source).strip().lower() == "user" else "auto"
     save_configs(data)
     return get_config(cfg_id, include_key=False)
+
+
+def get_active_source() -> str:
+    """当前 active 是用户手动切的 ("user") 还是自动恢复的 ("auto")。
+
+    老数据没有这个字段 → 一律按 "auto" (安全侧: 不继承·回落到默认档)。
+    """
+    try:
+        return str((load_configs() or {}).get("active_source") or "auto")
+    except Exception:
+        return "auto"
+
+
+def find_id_by_model(model: str, base_url: str = "") -> str:
+    """按 model 名 (可选 base_url) 反查 cfg id · 找不到返回 ""。
+
+    用途: /providers/switch 那条不走 cfg 表的老路径热切完之后,
+    要能回头把 cfg 表里的 active 对上 · 否则 UI 显示与实际在跑的模型会长期分叉。
+    """
+    key = (model or "").strip().lower()
+    if not key:
+        return ""
+    try:
+        data = load_configs()
+    except Exception:
+        return ""
+    base = (base_url or "").strip().lower().rstrip("/")
+    hit = ""
+    for c in data.get("configs") or []:
+        if (c.get("model") or "").strip().lower() != key:
+            continue
+        if base and (c.get("base_url") or "").strip().lower().rstrip("/") == base:
+            return c.get("id") or ""
+        hit = hit or (c.get("id") or "")
+    return hit
 
 
 def toggle_pin(cfg_id: str, pinned: bool) -> dict:

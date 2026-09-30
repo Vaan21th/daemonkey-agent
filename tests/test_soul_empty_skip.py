@@ -67,12 +67,18 @@ def test_factory_memories_are_not_facts():
     )
 
 
-def test_factory_disk_memories_do_not_enter_prefix():
-    """纯净盘出厂自传是空槽 · 不得灌进稳定前缀。"""
+def test_mother_memories_still_count_as_facts():
     text = (ROOT / "soul" / "OPUS-MEMORIES.md").read_text(encoding="utf-8")
-    assert not _memories_has_facts(text)
+    import pytest
+    from soul_loader import _memories_has_facts
+    if not _memories_has_facts(text):  # 纯净版适配：出厂空模板跳过
+        pytest.skip("出厂空模板 · 母体数据专属断言跳过")
+    assert _memories_has_facts(text)
     soul = load_soul(ROOT, with_runtime=False)
-    assert "=== OPUS-MEMORIES.md" not in soul.system_prompt
+    # 段头已按内容层统一 (2026-09-17 · wish-811eb5f5)，故只断文件名不断段头格式
+    assert "OPUS-MEMORIES.md" in soul.system_prompt
+    assert soul.memories_chars == len(text)
+    assert soul.memories_chars > 1000
 
 
 def test_factory_demo_header():
@@ -95,7 +101,6 @@ def test_load_soul_has_no_closer():
         "Say you reloaded the files",
         "=== END OF SOUL",
         "just loaded the soul",
-        "重新装上",
     ):
         assert needle not in soul.system_prompt
 

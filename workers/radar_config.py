@@ -12,6 +12,8 @@
   - enabled      自动刷新总开关
                  False = 后台不再跑雷达（BRO 手动「抓一下雷达」/ auto_pipeline 仍然可用）
   - interval_min 两轮之间的间隔（分钟 · 1..1440）
+  - translate    新条目标题送翻译（2026-09-28 · 这是整条链唯一花 token 的一步 ·
+                 关掉 = 雷达照抓、标题留原文 · 跟 enabled 解耦）
 
 优先级：data/radar_config.json（设置页写的） > .env OPUS_RADAR_INTERVAL_MIN > 默认 30。
 文件不存在时用 .env 兜底 → 老用户升级后行为一个字都不变；
@@ -31,6 +33,7 @@ CONFIG_PATH = DATA_DIR / "radar_config.json"
 DEFAULTS: dict = {
     "enabled": True,
     "interval_min": 30,
+    "translate": True,
 }
 
 MIN_INTERVAL_MIN = 1
@@ -79,6 +82,8 @@ def load_radar_config() -> dict:
     iv = cfg.get("interval_min")
     if isinstance(iv, (int, float)) and not isinstance(iv, bool):
         merged["interval_min"] = _clamp_interval(int(iv))
+    if isinstance(cfg.get("translate"), bool):
+        merged["translate"] = cfg["translate"]
     return merged
 
 
@@ -94,6 +99,8 @@ def save_radar_config(cfg: dict) -> dict:
         iv = cfg.get("interval_min")
         if isinstance(iv, (int, float)) and not isinstance(iv, bool):
             cur["interval_min"] = _clamp_interval(int(iv))
+        if isinstance(cfg.get("translate"), bool):
+            cur["translate"] = cfg["translate"]
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(
         json.dumps(cur, ensure_ascii=False, indent=2),

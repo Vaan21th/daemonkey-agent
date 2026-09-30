@@ -26,37 +26,44 @@
   overflow: hidden;
 }
 
-/* ─── 卷四十四 K stage 2a · tabs bar (📦 应用 / ✨ 创建 / ⚛ 工作流) ─── */
+/* ─── 卷四十四 K stage 2a · tabs bar (📦 应用 / ✨ 创建 / ⚛ 工作流) ───
+   2026-09-20 · 顶部统一：去重底色 bar · 跟全站二级导航一致靠留白分隔 */
 .workshop-view .ws-tabs {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border, #352c4d);
-  background: var(--bg2, #1f1a2c);
+  padding: 12px 16px 2px;
+  background: transparent;
   flex-shrink: 0;
-  height: 44px;
 }
+/* 2026-09-20 · 顶部统一：tab 走「纯文字流」· 选中 = 加粗变亮（对齐 pl-stage / depot-tab）·
+   去掉硬编码的暗紫底色（暖色皮肤下会崩） */
 .workshop-view .ws-tab {
   background: transparent;
-  border: 1px solid transparent;
-  color: var(--dim, #9a90b3);
-  padding: 6px 14px;
-  border-radius: 6px;
+  border: 0;
+  color: var(--dim);
+  padding: 5px 10px;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12.5px;
   font-family: inherit;
-  font-weight: 500;
+  font-weight: 400;
   transition: all .12s;
 }
 .workshop-view .ws-tab:hover {
-  background: #252528;
-  color: #e0e0e0;
+  background: transparent;
+  color: var(--text);
 }
 .workshop-view .ws-tab.active {
-  background: rgba(159, 122, 234, .14);
-  color: var(--opus, #9F7AEA);
-  border-color: rgba(159, 122, 234, .3);
+  background: transparent;
+  color: var(--text);
+  font-weight: 700;
+}
+/* 页头行（标题 + 读数 + 收起）· 2026-09-20 顶部统一 · 主样式继承 .dash-head */
+.workshop-view .ws-head {
+  padding: 4px 16px 12px;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
 }
 .workshop-view .ws-tabs-spacer { flex: 1; }
 .workshop-view .ws-tabs-hint {
@@ -436,7 +443,7 @@
   gap: 10px;
   padding: 14px 22px;
   border-bottom: 1px solid var(--border, #352c4d);
-  background: var(--bg2, #1f1a2c);
+  background: var(--bg, #16131f);
   flex-shrink: 0;
 }
 .workshop-view .ws-ad-back {
@@ -466,7 +473,7 @@
   gap: 4px;
   padding: 0 22px;
   border-bottom: 1px solid var(--border, #352c4d);
-  background: var(--bg2, #1f1a2c);
+  background: var(--bg, #16131f);
   flex-shrink: 0;
   /* 卷四十六续 11 · sub-tab 永远可见 (sidebar+main 布局下 main 内部滚动) */
   position: sticky;
@@ -1513,7 +1520,7 @@ dialog.ws-asset-modal::backdrop {
   justify-content: space-between;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border, #352c4d);
-  background: var(--bg3, #241e34);
+  background: var(--bg, #16131f);
 }
 .workshop-view .ws-tb-title {
   font-weight: 600;
@@ -2646,4 +2653,41 @@ body.theme-pink-white dialog.ws-asset-modal textarea,
   background: var(--bg);
   color: var(--text);
   border-color: var(--border);
+}
+
+/* ═══ 2026-09-20 · 用户：工坊二级顶栏/侧栏统一「深」（页面同色 · 以图2 知识库为参照）+ 清空带（可整段回退） ═══
+   来龙 v1：把顶栏提亮跟侧栏 → 用户：「搞反了」。
+   v2（对）：二级侧栏 + 二级顶栏 + 画布左栏都走页面同款深底（原先的颜色），
+   靠分界线（border-right）区分，不靠色块。 */
+.workshop-view .ws-tabs { background: transparent; }
+.workshop-view .ws-head { background: transparent; }
+.workshop-view .ws-apps-sidebar { background: transparent; }
+.workshop-view .ws-toolbox { background: transparent; }
+
+/* 页头面板与内容之间的 14px 空带（.page-head-block 的 margin-bottom）→ 清掉
+   ⚠ 13468 有 margin: 0 0 14px !important —— 必须同档 !important + 更高特异性才压得过 */
+.workshop-view .page-head-block { margin-bottom: 0 !important; }
+
+/* 工坊侧栏列表滚动条：槽位常驻保框架（不跳动）· 条能看见（0.08→0.22）但不突兀，hover 变主色 */
+.workshop-view .ws-apps-sidebar .ws-apps-grid { scrollbar-gutter: stable; }
+.workshop-view .ws-apps-sidebar .ws-apps-grid::-webkit-scrollbar-thumb { background: rgba(255,255,255,.22); }
+.workshop-view .ws-apps-sidebar .ws-apps-grid::-webkit-scrollbar-thumb:hover { background: rgba(159,122,234,.5); }
+
+/* ═══ 2026-09-20 · 用户：画布区往深走（工具条 / 说明带 / 工作流卡选态）═══ */
+/* ① 画布工具条：bg2 亮带 → 页面深底的蒙层 */
+.workshop-view .ws-canvas-toolbar {
+  background: color-mix(in srgb, var(--bg, #16131f) 94%, transparent);
+}
+/* ② 只读说明带：淡紫渐变框 → 深底 + 弱边（去渐变、降噪） */
+.workshop-view .ws-canvas-readonly-banner {
+  background: rgba(20, 17, 26, 0.6);
+  border: none;
+  color: var(--dim);
+}
+.workshop-view .ws-canvas-readonly-banner strong { color: #cbbcf0; }
+/* ③ 工作流卡选态：钉在深色系（不出现亮底/反白） */
+.workshop-view .ws-flow-item.active {
+  background: rgba(159, 122, 234, 0.10);
+  border-color: rgba(159, 122, 234, 0.42);
+  color: var(--text, #ece8f5);
 }

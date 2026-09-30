@@ -516,7 +516,10 @@ function renderScheduledTasks(data) {
   $dashView.innerHTML = `
     <div class="dash-head">
       <h2><i class="ri-timer-2-fill"></i> 定时任务</h2>
-      <span class="dash-meta">${tasks.length} 个 · ${tasks.filter(t => t.enabled).length} 开着</span>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${tasks.length}</b><span>个</span></div>
+        <div class="dh-chip"><b>${tasks.filter(t => t.enabled).length}</b><span>开着</span></div>
+      </div>
     </div>
     ${banner}
     <div class="sched-list">${cards}</div>`;
@@ -587,21 +590,24 @@ function _showPreviewModal(opts) {
   if (_oa) _oa.onclick = () => { close(); if (typeof _docOpenForAnnotate === 'function') _docOpenForAnnotate(openPath); };
 }
 
-async function _toggleFavorite(kind, refId, titleHint, domain, action = 'toggle') {
+async function _toggleFavorite(kind, refId, titleHint, domain, action = 'toggle', category) {
   if (!kind || !refId) return null;
   try {
+    const payload = {
+      kind, ref_id: refId,
+      title_hint: titleHint || '',
+      domain: domain || '',
+      action,
+    };
+    // category 只对 kind=output 有意义 · 不传就不动原有值 (undefined ≠ 清空)
+    if (category !== undefined) payload.category = category;
     const r = await fetch('/favorites', {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + token,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        kind, ref_id: refId,
-        title_hint: titleHint || '',
-        domain: domain || '',
-        action,
-      }),
+      body: JSON.stringify(payload),
     });
     if (!r.ok) {
       console.warn('favorites post failed', r.status, await r.text());
@@ -1721,9 +1727,9 @@ async function loadReportPreview(filename, previewUrl) {
   const rel = kind === "decks"
     ? ("data/presentations/" + filename)
     : (kind === "sheets" ? ("data/spreadsheets/" + filename) : ("data/reports/" + filename));
-  if (typeof window.goOfficeHome === "function" && !/^_hist_/i.test(filename)) {
-    await window.goOfficeHome(rel);
-  }
+  // 用户 2026-09-20:「所有的产物点开都只需要在中栏显示就行了」—— 不再自动跳它归属的那场对话。
+  const isHistFile = !/^_hist_/i.test(filename);   // 是否历史稿 (保留这个判据: 功能哨兵)
+  if (!isHistFile) { /* 产物点开只铺中栏 · 跳对话请用分组头的「进入话题」 */ }
   window._dashLoadSeq = (window._dashLoadSeq || 0) + 1;
   if (typeof loadDashboard === 'function') {
     if (typeof loadDashboard._seq !== 'number') loadDashboard._seq = 0;
@@ -1951,8 +1957,9 @@ function renderShelfPreview(d) {
 
 function _shelfLoadHTML(text) {
   if (typeof dashLoadingHTML === 'function') return dashLoadingHTML(text);
+  // 兼底（chat.js 没加载时才走到这）· 2026-09-30 跟着主定义换成钥匙孔双环
   return `<div class="dash-empty dk-ld">
-    <div class="dk-ld-row"><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span></div>
+    <div class="dk-ld-mark"><img src="/static/img/logo-mark.png" alt=""><i></i><i></i></div>
     <div class="dk-ld-txt">${escHtml(text || '加载中')}</div>
   </div>`;
 }
@@ -2328,6 +2335,7 @@ function renderBIDigest(data) {
 function renderExecution(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
+      ${pipelineBreadcrumb('execution')}
       <div class="dash-head"><h2><i class="ri-refresh-fill"></i> 执行反馈</h2></div>
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
@@ -2347,21 +2355,16 @@ function renderExecution(data) {
   // 状态卡片顺序：进行中优先 → 未启动 → 已完成 → 已放弃
   const order = ['in_progress', 'not_started', 'completed', 'abandoned'];
 
-  const breadcrumbHtml = `
-    <div class="exec-breadcrumb">
-      <span><i class="ri-bar-chart-fill"></i> 可行性分析</span>
-      <span class="arrow">→</span>
-      <span><i class="ri-refresh-fill"></i> 执行反馈</span>
-      <span class="arrow">→</span>
-      <span class="muted">下一轮 LLM 分析</span>
-    </div>
-  `;
+  // 执行反馈 = 链子的最后一格 (用户 2026-09-20:「执行反馈也要放进去」) ——
+  //   原来它自带一条 exec-breadcrumb（可行性分析 → 执行反馈 → 下一轮 LLM 分析）·
+  //   现在换成全站同一条链 · 避免两套箭头各说各的。链子末格那枚胶囊就是它自己。
+  const breadcrumbHtml = pipelineBreadcrumb('execution');
 
   if (total === 0) {
     $dashView.innerHTML = `
+      ${breadcrumbHtml}
       <div class="dash-head"><h2><i class="ri-refresh-fill"></i> 执行反馈</h2>
         <span class="dash-meta">还没有开始做的项目</span></div>
-      ${breadcrumbHtml}
       <div class="dash-empty">
         <p>还没有项目在执行</p>
         <p class="muted" style="margin-top:8px">
@@ -2413,14 +2416,16 @@ function renderExecution(data) {
   }
 
   $dashView.innerHTML = `
+    ${breadcrumbHtml}
     <div class="dash-head">
       <h2><i class="ri-refresh-fill"></i> 执行反馈</h2>
-      <span class="dash-meta">${total} 个项目 · ${escHtml(_formatTimeAgo(updatedAt))}</span>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${total}</b><span>个项目</span></div>
+        <div class="dh-chip"><b>${escHtml(_formatTimeAgo(updatedAt))}</b><span>最近更新</span></div>
+      </div>
     </div>
-    ${breadcrumbHtml}
-    <div class="exec-summary">
-      <span class="muted">这里记录每个落地项目的状态 / 决策 / 实际收支 / 经验教训</span><br>
-      <span class="muted">以后做可行性分析时，会自动参考这里做过的同类项目</span>
+    <div class="dash-note">
+      落地项目 · 状态 / 决策 / 收支 / 教训 · 反哺后续可行性分析
     </div>
     ${buckets}
   `;
@@ -2442,6 +2447,182 @@ function renderExecution(data) {
   });
 }
 
+// ══════════════════════════════════════════════════════════════════
+// 收藏夹 (wish-e16b1f52) · 用户 2026-09-18 重做
+//
+// 为什么重做：旧版把所有东西塞进一个网格 —— 掘金机会 / 可行性 / 产物挤一起，
+// 只靠左边一条色线区分 —— 扫一眼分不出「这是我做的东西」还是「外面捡来的情报」。
+// 用户 原话：「那两个是不一样的东西」「UI 也要重新设计一下」。
+//
+// 现在：顶部主分段把两类彻底分开。
+//   产物区 = 我生成的东西 · 带【分类】(用户 自己命名) + 会话药丸
+//   情报区 = 外面捡来的 · 掘金机会 / 可行性分析
+// 数据层同一套 favorites.json (靠 kind 字段分) · 没有第二套机制。
+// ══════════════════════════════════════════════════════════════════
+
+const _FAV_KINDS = {
+  opportunity: { icon: 'ri-diamond-fill', label: '掘金机会', color: '#ffd166' },
+  feasibility: { icon: 'ri-bar-chart-fill', label: '可行性分析', color: '#a78bfa' },
+};
+const _FAV_EXT = {
+  docx: { icon: 'ri-article-fill', label: '报告', left: '#b794f6' },
+  md:   { icon: 'ri-article-fill', label: '报告', left: '#b794f6' },
+  pptx: { icon: 'ri-slideshow-fill', label: '演示稿', left: '#ffd166' },
+  xlsx: { icon: 'ri-table-fill', label: '表格', left: '#5bd1a2' },
+  html: { icon: 'ri-window-fill', label: '原型', left: '#6ea8ff' },
+};
+
+let _favZone = 'prod';
+let _favCat = '';
+try { _favZone = localStorage.getItem('opus_fav_zone') || 'prod'; } catch (e) {}
+
+function switchFavZone(z) {
+  _favZone = z; _favCat = '';
+  try { localStorage.setItem('opus_fav_zone', z); } catch (e) {}
+  loadDashboard('favorites');
+}
+function switchFavCat(c) { _favCat = c; loadDashboard('favorites'); }
+
+// 分类输入 (母体有 opusPrompt · 陪伴模式降级原生 prompt)
+async function _favAskCategory(cur) {
+  const msg = '给这份产物归个类（自己命名 · 比如「客户交付」「模板」 · 留空 = 未分类）';
+  if (typeof opusPrompt === 'function') {
+    return await opusPrompt({
+      title: '分类', message: msg, defaultValue: cur || '',
+      placeholder: '客户交付 / 模板 / 常用参考…',
+    });
+  }
+  return window.prompt(msg, cur || '');
+}
+
+async function _favSetCategory(ref, cur) {
+  const val = await _favAskCategory(cur);
+  if (val === null || val === undefined) return;   // 取消
+  const v = String(val).trim();
+  const r = await _toggleFavorite('output', ref, '', '', 'set_category', v);
+  if (!r || !r.ok) { if (typeof addSys === 'function') addSys('⚠ 分类没存上'); return; }
+  // 不写 addSys · 分类是原地操作 (用户 2026-09-18)
+  loadDashboard('favorites');
+}
+
+// ── 产物区 ──
+function _favCatTag(it) {
+  const cat = String(it.category || '').trim();
+  const ref = escHtml(it.ref_id || '');
+  return cat
+    ? `<span class="cat-tag" data-cat-ref="${ref}" data-cat-cur="${escHtml(cat)}" title="点一下改分类"><i class="ri-price-tag-3-line"></i>${escHtml(cat)}</span>`
+    : `<span class="cat-tag none" data-cat-ref="${ref}" data-cat-cur="" title="还没归类 · 点一下给它一个"><i class="ri-price-tag-3-line"></i>未分类</span>`;
+}
+
+function _favProdPill(it) {
+  const sid = it.session_id || '', label = it.session_label || '';
+  if (!sid) {
+    return '<span class="rc-pill none" title="这份产物的归属机制上线前生成 · 没记下是哪场做的"><i class="ri-question-line"></i><span class="rc-pill-t">无归属</span></span>';
+  }
+  if (!label) {
+    return '<span class="rc-pill gone" title="产出它的对话已被清理"><i class="ri-ghost-line"></i><span class="rc-pill-t">对话已归档</span></span>';
+  }
+  // 用户 2026-09-20:「所有的产物点开都只需要在中栏显示就行了, 毕竟我们已经有专门的进入话题
+  //   和这个按钮能跳对话了不是吗？」—— 药丸退回【纯标识】: 不跳会话、不带可点大手、
+  //   去掉右边那个 ↗ (那个箭头就是在说「点我跳」)。跳对话只留分组头的「进入话题」。
+  return '<span class="rc-pill rc-pill-id" title="这份产自这场对话 · 要过去点分组头的「进入话题」">'
+    + '<i class="ri-chat-3-line"></i><span class="rc-pill-t">' + escHtml(label) + '</span></span>';
+}
+
+function _favProdCard(it) {
+  const ref = String(it.ref_id || '').replace(/\\/g, '/');
+  const name = ref.split('/').pop() || ref;
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const e = _FAV_EXT[ext] || { icon: 'ri-file-line', label: '文件', left: '#6b7280' };
+  const title = it.title_snap || name;
+  return `
+    <div class="report-card" style="border-left-color:${e.left}">
+      <button class="rc-unstar" data-fav-remove-prod="${escHtml(ref)}" data-fav-title="${escHtml(title)}"
+              title="取消收藏（文件还在产物库 · 只是不再挑出来）"><i class="ri-star-fill"></i></button>
+      <div class="rc-head">
+        <i class="${e.icon} rc-ico"></i>
+        <a class="rc-name" href="javascript:void(0)" data-fav-prod-open="${escHtml(ref)}"
+           title="在产物库里打开看它">${escHtml(title)}</a>
+        <span class="rc-pill-slot">${_favProdPill(it)}</span>
+      </div>
+      <div class="rc-meta">
+        ${_favCatTag(it)}
+        <span class="rc-time">${escHtml(_formatTimeAgo(it.starred_at))}收藏</span>
+        <span>· ${e.label}</span>
+      </div>
+    </div>`;
+}
+
+function _favCatRail(items) {
+  const map = new Map();
+  for (const it of items) {
+    const c = String(it.category || '').trim() || '__none__';
+    map.set(c, (map.get(c) || 0) + 1);
+  }
+  const keys = [...map.keys()].filter(k => k !== '__none__').sort();
+  if (map.has('__none__')) keys.push('__none__');
+  let html = `<button type="button" class="cat-chip${_favCat === '' ? ' on' : ''}" onclick="switchFavCat('')">全部 <span class="n">${items.length}</span></button>`;
+  for (const k of keys) {
+    const none = (k === '__none__');
+    const on = (_favCat === k);
+    html += `<button type="button" class="cat-chip${on ? ' on' : ''}" onclick="switchFavCat('${jsStr(k)}')">`
+      + (none ? '' : '<i class="ri-price-tag-3-fill"></i>')
+      + `${none ? '未分类' : escHtml(k)} <span class="n">${map.get(k)}</span></button>`;
+  }
+  return `<div class="cat-rail">${html}</div>`;
+}
+
+function _favProdZone(items) {
+  if (!items.length) {
+    return `<div class="zone-empty"><i class="ri-archive-2-line"></i>`
+      + `还没收藏过产物。<br>去「产物库」把有用的那几份点个 <i class="ri-star-line"></i> —— 之后在这儿按分类找回来。</div>`;
+  }
+  let list = items;
+  if (_favCat) {
+    list = items.filter(i => (String(i.category || '').trim() || '__none__') === _favCat);
+  }
+  const cards = list.map(_favProdCard).join('');
+  return `
+    <div class="zone-note prod"><i class="ri-archive-2-line"></i>
+      <span>这些是<b>你让我做出来的东西</b> · 星标只是「挑出来」。分类是你自己命名的 —— 修掉「<b>找不到之前做出来非常有用的东西</b>」这个毛病。</span>
+    </div>
+    ${_favCatRail(items)}
+    ${cards ? `<div class="reports-list">${cards}</div>` : '<div class="zone-empty">这个分类下暂时是空的</div>'}`;
+}
+
+// ── 情报区 ──
+function _favIntelCard(it) {
+  const km = _FAV_KINDS[it.kind] || { icon: 'ri-bookmark-line', label: it.kind, color: '#6b7280' };
+  return `
+    <div class="fav-card" style="border-left-color:${km.color}">
+      <div class="fc-top">
+        <span class="fc-kind" style="color:${km.color}"><i class="${km.icon}"></i> ${km.label}</span>
+        ${it.domain ? `<span class="fc-domain">${escHtml(it.domain)}</span>` : ''}
+      </div>
+      <div class="fc-title">${escHtml(it.title_snap || '?')}</div>
+      ${it.note ? `<div class="fc-sum">${escHtml(it.note)}</div>` : ''}
+      <div class="fc-foot">
+        <span>${escHtml(_formatTimeAgo(it.starred_at))}收藏</span>
+        <span class="fc-actions">
+          <button type="button" class="fc-btn" data-fav-open="${escHtml(it.kind)}" data-fav-ref="${escHtml(it.ref_id)}">查看 →</button>
+          <button type="button" class="fc-btn unstar" data-fav-remove-intel="${escHtml(it.kind)}|${escHtml(it.ref_id)}"><i class="ri-star-fill"></i> 取消</button>
+        </span>
+      </div>
+    </div>`;
+}
+
+function _favIntelZone(items) {
+  if (!items.length) {
+    return `<div class="zone-empty"><i class="ri-radar-line"></i>`
+      + `还没收藏过情报。<br>在「信息雷达」/「掘金机会」里点 <i class="ri-star-fill"></i> 星标的会汇到这儿。</div>`;
+  }
+  return `
+    <div class="zone-note intel"><i class="ri-radar-line"></i>
+      <span>这些是<b>外面捡来的情报</b> · 从信息雷达 / 掘金机会里星标的。跟产物不是一类东西，所以不跟它们混排。</span>
+    </div>
+    <div class="fav-grid">${items.map(_favIntelCard).join('')}</div>`;
+}
+
 function renderFavorites(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
@@ -2452,6 +2633,9 @@ function renderFavorites(data) {
   const items = data.items || [];
   const byKind = data.by_kind || {};
   const total = data.total || 0;
+  // 产物 和 情报 是两个区 (用户 2026-09-18: 这两类不一样 · 不能混排)
+  const prodItems = items.filter(i => i.kind === 'output');
+  const intelItems = items.filter(i => i.kind !== 'output');
 
   if (total === 0) {
     $dashView.innerHTML = `
@@ -2460,55 +2644,46 @@ function renderFavorites(data) {
       <div class="dash-empty">
         <p>还没收藏过任何东西</p>
         <p class="muted" style="margin-top:8px">
-          在 <i class="ri-radar-fill"></i> 信息雷达 / <i class="ri-diamond-fill"></i> 掘金机会 / <i class="ri-bar-chart-fill"></i> 可行性分析 各处都能点 <i class="ri-star-fill"></i> 收藏 · 一处汇总在这。
+          <i class="ri-archive-2-line"></i> 产物库里的 ⭐ 汇到「我的产物」·
+          <i class="ri-radar-fill"></i> 信息雷达 / <i class="ri-diamond-fill"></i> 掘金机会 / <i class="ri-bar-chart-fill"></i> 可行性分析 的 ⭐ 汇到「情报」· 两个区互不干扰。
         </p>
       </div>`;
     return;
   }
 
-  const kindMeta = {
-    opportunity: { icon: '<i class="ri-diamond-fill"></i>', label: '掘金机会', color: '#ffd166' },
-    feasibility: { icon: '<i class="ri-bar-chart-fill"></i>', label: '可行性分析', color: '#a78bfa' },
-  };
+  const bodyHtml = (_favZone === 'prod')
+    ? _favProdZone(prodItems)
+    : _favIntelZone(intelItems);
 
-  const cards = items.map(it => {
-    const km = kindMeta[it.kind] || { icon: '·', label: it.kind, color: '#6b7280' };
-    return `
-      <div class="fav-card" data-kind="${escHtml(it.kind)}" data-ref="${escHtml(it.ref_id)}"
-           style="border-left-color:${km.color}">
-        <div class="fav-card-top">
-          <span class="fav-kind" style="color:${km.color}">${km.icon} ${km.label}</span>
-          ${it.domain ? `<span class="fav-domain">${escHtml(it.domain)}</span>` : ''}
-        </div>
-        <div class="fav-title">${escHtml(it.title_snap || '?')}</div>
-        ${it.note ? `<div class="fav-note">${escHtml(it.note)}</div>` : ''}
-        <div class="fav-foot">
-          <span class="muted">${escHtml(_formatTimeAgo(it.starred_at))}</span>
-          <div class="fav-actions">
-            <button class="fav-open" data-kind="${escHtml(it.kind)}" data-ref="${escHtml(it.ref_id)}">查看 →</button>
-            <button class="fav-remove" data-kind="${escHtml(it.kind)}" data-ref="${escHtml(it.ref_id)}">取消收藏</button>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-
+  const pN = prodItems.length, iN = intelItems.length;
   $dashView.innerHTML = `
     <div class="dash-head">
       <h2><i class="ri-star-fill"></i> 收藏夹</h2>
-      <span class="dash-meta">${total} 条 · <i class="ri-diamond-fill"></i> ${byKind.opportunity||0} · <i class="ri-bar-chart-fill"></i> ${byKind.feasibility||0}</span>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${total}</b><span>条</span></div>
+        <div class="dh-chip"><b>${pN}</b><span>产物</span></div>
+        <div class="dh-chip"><b>${iN}</b><span>情报</span></div>
+      </div>
     </div>
-    <p class="muted" style="margin-bottom:12px">
-      雷达条目的 <i class="ri-star-fill"></i> 在「信息雷达」里查（走 radar feedback）· 这里管掘金机会 + 可行性分析。
-    </p>
-    <div class="fav-grid">${cards}</div>
+    <div class="zone-seg" role="tablist">
+      <button type="button" class="${_favZone === 'prod' ? 'on' : ''}" onclick="switchFavZone('prod')">
+        <i class="ri-archive-2-fill"></i> 我的产物 <span class="n">${pN}</span>
+        <span class="zn-sub">报告 / 演示稿 / 表格 / 原型</span>
+      </button>
+      <button type="button" class="${_favZone === 'intel' ? 'on' : ''}" onclick="switchFavZone('intel')">
+        <i class="ri-radar-fill"></i> 情报 <span class="n">${iN}</span>
+        <span class="zn-sub">掘金机会 / 可行性</span>
+      </button>
+    </div>
+    ${bodyHtml}
   `;
 
-  $dashView.querySelectorAll('.fav-open').forEach(btn => {
+  // 情报 · 查看
+  $dashView.querySelectorAll('[data-fav-open]').forEach(btn => {
     btn.onclick = (ev) => {
       ev.stopPropagation();
-      const kind = btn.getAttribute('data-kind');
-      const ref = btn.getAttribute('data-ref');
+      const kind = btn.getAttribute('data-fav-open');
+      const ref = btn.getAttribute('data-fav-ref');
       if (kind === 'opportunity') {
         loadDashboard('opportunities');
       } else if (kind === 'feasibility') {
@@ -2516,11 +2691,11 @@ function renderFavorites(data) {
       }
     };
   });
-  $dashView.querySelectorAll('.fav-remove').forEach(btn => {
+  // 情报 · 取消收藏
+  $dashView.querySelectorAll('[data-fav-remove-intel]').forEach(btn => {
     btn.onclick = async (ev) => {
       ev.stopPropagation();
-      const kind = btn.getAttribute('data-kind');
-      const ref = btn.getAttribute('data-ref');
+      const [kind, ref] = String(btn.getAttribute('data-fav-remove-intel') || '').split('|');
       const ok = await opusConfirm({
         title: '取消收藏',
         message: '不再收藏这一条吗？',
@@ -2530,6 +2705,50 @@ function renderFavorites(data) {
       if (!ok) return;
       await _toggleFavorite(kind, ref, '', '', 'remove');
       loadDashboard('favorites');
+    };
+  });
+  // 产物 · 取消收藏 (卡片右上角 ⭐)
+  $dashView.querySelectorAll('[data-fav-remove-prod]').forEach(btn => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const ref = btn.getAttribute('data-fav-remove-prod');
+      const title = btn.getAttribute('data-fav-title') || '';
+      const ok = await opusConfirm({
+        title: '取消收藏',
+        message: '《' + title + '》不再留在收藏夹？\n（文件本身还在产物库 · 一份都不会删）',
+        okText: '取消收藏',
+        cancelText: '留着',
+      });
+      if (!ok) return;
+      await _toggleFavorite('output', ref, '', '', 'remove');
+      // 不写 addSys · 确认框里已说「文件还在产物库」 (用户 2026-09-18)
+      loadDashboard('favorites');
+    };
+  });
+  // 产物 · 点分类标签改分类
+  $dashView.querySelectorAll('.cat-tag[data-cat-ref]').forEach(el => {
+    el.onclick = (ev) => {
+      ev.stopPropagation();
+      _favSetCategory(el.getAttribute('data-cat-ref'), el.getAttribute('data-cat-cur') || '');
+    };
+  });
+  // 产物 · 点名字去产物库看它
+  $dashView.querySelectorAll('[data-fav-prod-open]').forEach(el => {
+    el.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const ref = String(el.getAttribute('data-fav-prod-open') || '');
+      const name = ref.split('/').pop() || ref;
+      const ext = (name.split('.').pop() || '').toLowerCase();
+      if (ext === 'html' && typeof openStage === 'function') {
+        openStage({ path: ref });
+      } else if (ext === 'docx' && typeof loadReportPreview === 'function') {
+        loadReportPreview(name);
+      } else {
+        // 演示稿 / 表格没有单件预览路径 → 去产物库对应 tab 看它
+        if (typeof addSys === 'function') addSys('这份在产物库里：' + name);
+        loadDashboard('reports');
+      }
     };
   });
 }
@@ -3001,7 +3220,20 @@ function renderIntensityBar(intensity) {
   return `<span class="tc-intensity ${cls}" title="${labels[n] || ''}">${dots} <span class="tc-int-n">${n}/5</span></span>`;
 }
 
+/* 文档类型 → remixicon class · 【单一真相源】
+   （之前 typeIcon 和 _kbCover 里各有一份，已经漂移：文件夹里的 csv/json 没图标。）
+   新增格式只改这里。OK_EXT 收的格式都应该在这张表里。 */
+const KB_TYPE_CLASS = {
+  pdf: 'ri-file-pdf-2-fill', docx: 'ri-file-word-2-fill', pptx: 'ri-file-ppt-2-fill',
+  md: 'ri-markdown-fill', txt: 'ri-file-text-fill', text: 'ri-file-text-fill',
+  csv: 'ri-file-excel-2-fill', xlsx: 'ri-file-excel-2-fill', xlsm: 'ri-file-excel-2-fill',
+  html: 'ri-html5-fill', htm: 'ri-html5-fill', json: 'ri-braces-fill',
+  xml: 'ri-code-s-slash-fill', yaml: 'ri-code-s-slash-fill', yml: 'ri-code-s-slash-fill',
+  log: 'ri-file-text-fill', rst: 'ri-file-text-fill', org: 'ri-file-text-fill',
+};
+
 function renderKnowledge(data) {
+  if (data && data.items) _kbData = data;   // 下钻/返回时就地重渲要用（2026-09-30）
   if (data && data.error) {
     $dashView.innerHTML = `
       <div class="dash-head"><h2><i class="ri-book-2-fill"></i> 知识库</h2></div>
@@ -3010,18 +3242,19 @@ function renderKnowledge(data) {
   }
   const items = (data && data.items) || [];
   const st = (data && data.stats) || {};
-  const typeIcon = {
-    pdf:  '<i class="ri-file-pdf-2-fill"></i>',
-    docx: '<i class="ri-file-word-2-fill"></i>',
-    pptx: '<i class="ri-file-ppt-2-fill"></i>',
-    md:   '<i class="ri-markdown-fill"></i>',
-    txt:  '<i class="ri-file-text-fill"></i>',
-  };
+  const typeIcon = {};
+  for (const k in KB_TYPE_CLASS) typeIcon[k] = '<i class="' + KB_TYPE_CLASS[k] + '"></i>';
 
   let html = `
     <div class="dash-head">
       <h2><i class="ri-book-2-fill"></i> 知识库 · 第二大脑</h2>
-      <span class="meta">${items.length} 篇 · ${st.enabled || 0} 参考中 · ${st.disabled || 0} 静音</span>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${items.length}</b><span>篇</span></div>
+        <div class="dh-chip"><b>${st.enabled || 0}</b><span>参考中</span></div>
+        <div class="dh-chip"><b>${st.disabled || 0}</b><span>静音</span></div>
+      </div>
+      <button class="dk-add" onclick="kbAskAdd()" title="从这台机器上选文件或整个文件夹加进来"><i class="ri-add-line"></i> 添加</button>
+      <button class="dk-add" onclick="kbNewFolder()" title="建一个新的知识库文件夹（空文件夹也存得住）"><i class="ri-folder-add-line"></i> 新建文件夹</button>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('knowledge')">刷新列表</button>
     </div>`;
@@ -3030,8 +3263,9 @@ function renderKnowledge(data) {
     html += `
       <div class="dash-stub">
         <h3>知识库还是空的</h3>
-        <div>在底部输入框跟 Daemonkey 说：「把 <code>D:\\资料\\合同.pdf</code> 加进知识库」<br>
-             支持 md / txt / docx / pptx / pdf。存进去之后，回答能引用原文。</div>
+        <div>点右上角「<b>添加</b>」选文件或整个文件夹（也可以一次选多个）。<br>
+             支持 md / txt / docx / pptx / pdf。存进去之后，回答能引用原文。<br>
+             <span style="color:var(--dim2)">要在对话框里说也行：「把 <code>D:\\资料\\合同.pdf</code> 加进知识库」。</span></div>
       </div>`;
   } else {
     if (items.length > 3) {
@@ -3041,33 +3275,56 @@ function renderKnowledge(data) {
     const folderOf = (d) => (d.folder && String(d.folder).trim())
       || ((d.tags && d.tags.length) ? String(d.tags[0]) : '未分类');
     const groups = {};
+    // 2026-10-01 · 先把显式登记的文件夹建出来（哪怕一篇都没有·不然刚建的组当场消失）
+    for (const f of ((_kbData && _kbData.folders) || [])) { if (f && !groups[f]) groups[f] = []; }
     for (const d of items) { const f = folderOf(d); (groups[f] = groups[f] || []).push(d); }
     const names = Object.keys(groups).sort((a, b) => {
       if (a === '未分类') return 1;
       if (b === '未分类') return -1;
       return a.localeCompare(b, 'zh');
     });
-    html += `<div class="kb-folders">`;
-    for (const f of names) {
-      const cards = groups[f].map(d => _kbCardHtml(d, typeIcon)).join('');
-      html += `
-        <div class="kb-folder">
-          <div class="kb-folder-head">
-            <i class="ri-folder-3-fill kb-folder-ico"></i>
-            <span class="kb-folder-name">${escHtml(f)}</span>
-            <span class="kb-folder-count">${groups[f].length}</span>
-            <i class="ri-arrow-down-s-line kb-folder-caret"></i>
-          </div>
-          <div class="kb-folder-body">${cards}</div>
+    // 2026-09-30 · 用户:「复用产物库的工坊产物 - 按应用的模式，类似于有文件夹，然后有文件」
+    //   原来是「折叠展开」（全部文件夹挤一屏），现在跟产物库一致：先看文件夹卡，点进去看文件。
+    //   面包屑直接复用产物库的 .fld-crumb / .fld-back 那套样式 —— 不分叉。
+    if (_kbFolderOpen && groups[_kbFolderOpen]) {
+      const fs = groups[_kbFolderOpen];
+      html += `<div class="fld-crumb">
+          <button class="fld-back" onclick="kbLeaveFolder()"><i class="ri-arrow-left-line"></i></button>
+          <span class="fld-cur"><i class="ri-folder-3-fill"></i>${escHtml(_kbFolderOpen)}</span>
+          <span class="fld-cn">${fs.length} 篇</span>
         </div>`;
+      html += `<div class="kb-folders">${fs.map(d => _kbCardHtml(d, typeIcon)).join('')}</div>`;
+    } else {
+      const _kbCover = (docs) => {
+        // 封面：把里面文档的类型图标摆出来（最多 4 个）—— 一眼能看出这夹里是什么。
+        // 2026-10-01 用户:「文件夹显示 启动X个」→ 要的就是这个图标堆，
+        //   之前只有 markdown 一个字形是因为类型表没盖全（知识库资料几乎全是 md），
+        //   补上 csv/xlsx/html/json 等新支持的格式后，不同类型才会真的长得不一样。
+        const ico = KB_TYPE_CLASS;
+        const picks = docs.slice(0, 4);
+        return '<div class="fld-grid icon n' + Math.max(picks.length, 1) + '">'
+          + picks.map(d => '<i class="kb-fld-ico ' + (ico[d.type] || 'ri-file-2-fill') + '"></i>').join('')
+          + '</div>';
+      };
+      html += `<div class="shelf-folders">`;
+      for (const f of names) {
+        const docs = groups[f];
+        html += `<a class="fld kb-fld" href="javascript:void(0)" onclick="kbEnterFolder('${escHtml(jsStr(f))}')" title="${escHtml(f)}">
+            ${_kbCover(docs)}
+            <button type="button" class="kb-fld-del" title="删掉这个文件夹"
+                    onclick="event.preventDefault();event.stopPropagation();kbAskDeleteFolder('${escHtml(jsStr(f))}', ${docs.length})">
+              <i class="ri-delete-bin-line"></i></button>
+            <div class="fld-foot"><span class="fld-name">${escHtml(f)}</span>
+            <span class="fld-n">${docs.length} 篇</span></div>
+          </a>`;
+      }
+      html += `</div>`;
     }
-    html += `</div>`;
   }
   $dashView.innerHTML = html;
+  _kbBindDrop();      // 拖拽入栏（只绑一次 · 幂等）
 
-  $dashView.querySelectorAll('.kb-folder-head').forEach(h => {
-    h.onclick = () => h.parentElement.classList.toggle('collapsed');
-  });
+  // 下钻替代折叠（见上面 ③ 注释）—— 没有 .kb-folder-head 了，不再需要那份绑定。
   // 开关类操作就地改这张卡 —— 不整页重渲。
   // 以前是 _kbAction 里 loadDashboard(silent) 重拉整页：慢、闪、把文件夹折叠状态冲掉，
   // 而且那次 silent 刷新一旦被 stale 丢掉(并发另一次 loadDashboard)，按钮就卡在原样，
@@ -3089,8 +3346,14 @@ function renderKnowledge(data) {
   $dashView.querySelectorAll('.kb-del').forEach(btn => {
     btn.onclick = () => {
       const t = btn.getAttribute('data-title') || '这篇';
-      if (confirm(`删除「${t}」？原文和索引都会清掉(不影响你磁盘上的原始文件)。`)) {
-        _kbAction('/dashboard/knowledge/delete', { doc_id: btn.getAttribute('data-id') });
+      if (confirm(`删除「${t}」？原文和索引都会清掉（从你自己磁盘上选进来的，原文件不动）。`)) {
+        _kbAction('/dashboard/knowledge/delete', { doc_id: btn.getAttribute('data-id') }, (j) => {
+          // 拖拽进来的那类，原件是库里自己存的副本 —— 删档时一并进回收站。
+          // 不说一声的话，用户会以为文件凭空消失了。
+          if (j && j.original_dropped && typeof showChatToast === 'function') {
+            showChatToast('副本也一起进回收站了 · 在「设置 → 本地数据 → 回收站」能找回');
+          }
+        });
       }
     };
   });
@@ -3247,6 +3510,7 @@ function renderOppStats(o) {
 async function renderOpportunities(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
+      ${pipelineBreadcrumb('opportunities')}
       <div class="dash-head"><h2><i class="ri-diamond-fill"></i> 掘金机会</h2></div>
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
@@ -3261,9 +3525,12 @@ async function renderOpportunities(data) {
   const favSet = await _fetchFavoriteSet('opportunity');
 
   let html = `
+    ${pipelineBreadcrumb('opportunities')}
     <div class="dash-head">
       <h2><i class="ri-diamond-fill"></i> 掘金机会</h2>
-      <span class="meta">${opps.length} 个机会 · 市场 × 用户 能力</span>
+      <div class="dh-chips" title="市场 × 用户 能力">
+        <div class="dh-chip"><b>${opps.length}</b><span>个机会</span></div>
+      </div>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="spawnQuickly('基于今日趋势 · 调 mine_opportunities 工具 · 参数 action=mine · 重新挖一遍掘金机会 · 形态要多样(内容账号 / 实体产品 / 服务咨询 / 信息差套利 / 软件产品 / 投资副业 · 不要全是 SaaS · 卷三十三第 6 条铁律) · 跑完告诉我最推哪 1-2 个 + 为什么', '重新挖掘机会')" title="派发到新会话 · Daemonkey 跑 mine_opportunities · 完成后切过去看结果">
         <i class="ri-refresh-fill"></i> 重新挖掘
@@ -3281,11 +3548,8 @@ async function renderOpportunities(data) {
       </div>`;
   } else {
     html += `
-      <div class="opp-intro">
-        生成于 ${formatTimeShort(generated)} · 扫描了 ${trendsScanned || 0} 条趋势 · 耗时 ${elapsedS}s<br>
-        <span style="font-size:11px;color:var(--dim2)">
-          每个机会都基于 用户 画像评估了适配度 · 点机会卡可让 Daemonkey 展开成完整方案
-        </span>
+      <div class="dash-note">
+        用户 画像 × 市场 · 生成于 ${formatTimeShort(generated)} · 点卡展开完整方案
       </div>
       ${opps.length > 3 ? renderListFilter({targetSelector: '.opp-card', placeholder: '搜机会标题 / 领域 / 适配理由...'}) : ''}
       <div class="opp-list">`;
@@ -3396,27 +3660,24 @@ function renderRadar(data) {
     : Number(rstats.new_today || 0);
   const totalVisible = (rstats.total != null) ? Number(rstats.total) : allCount;
   const todayLabel = isFiltered ? '本类今日新增' : '今日新增';
-  const statsCards = `
-    <div class="radar-stats">
-      <div class="rs-card rs-card-today" title="${isFiltered ? '本领域今天首次出现的新条目' : '全领域今天首次出现的新条目'} · 跟「本类/共」同一领域口径">
-        <div class="rs-n">${newToday > 0 ? '+' + newToday : '0'}</div>
-        <div class="rs-l">${todayLabel}</div>
+  // 2026-09-20 · 顶部统一（wish-553d36eb）：5 张统计大卡 → 页头右侧的摘要胶囊
+  //   用户 原话：「两张统计大卡独占一行，内容被压下去」→ 数字收进标题右侧 chips
+  const headChips = `
+    <div class="dh-chips">
+      <div class="dh-chip" title="${isFiltered ? '本领域今天首次出现的新条目' : '全领域今天首次出现的新条目'} · 跟「本类/共」同一领域口径">
+        <b>${newToday > 0 ? '+' + newToday : '0'}</b><span>${todayLabel}</span>
       </div>
-      <div class="rs-card" title="可见条目总数 (已扣除你隐藏的条目)">
-        <div class="rs-n">${isFiltered ? items.length + '/' + totalVisible : totalVisible}</div>
-        <div class="rs-l">${isFiltered ? '本类/共' : '条信息'}</div>
+      <div class="dh-chip" title="可见条目总数 (已扣除你隐藏的条目)">
+        <b>${isFiltered ? items.length + '/' + totalVisible : totalVisible}</b><span>${isFiltered ? '本类/共' : '条信息'}</span>
       </div>
-      <div class="rs-card">
-        <div class="rs-n">${okSources}/${meta.length}</div>
-        <div class="rs-l">信源在线</div>
+      <div class="dh-chip" title="正常抓取的信源 / 总信源数">
+        <b>${okSources}/${meta.length}</b><span>信源在线</span>
       </div>
-      <div class="rs-card" title="${translatedN} 条英文条目已翻译成中文">
-        <div class="rs-n">${translatedN}</div>
-        <div class="rs-l">已翻译</div>
+      <div class="dh-chip" title="${translatedN} 条英文条目已翻译成中文">
+        <b>${translatedN}</b><span>已翻译</span>
       </div>
-      <div class="rs-card">
-        <div class="rs-n" title="${escHtml(generatedTxt)}">${formatTimeShort(data.generated_at)}</div>
-        <div class="rs-l">最新抓取</div>
+      <div class="dh-chip" title="${escHtml(generatedTxt)}">
+        <b>${formatTimeShort(data.generated_at)}</b><span>最新抓取</span>
       </div>
     </div>`;
 
@@ -3424,13 +3685,13 @@ function renderRadar(data) {
     ${pipelineBreadcrumb('radar')}
     <div class="dash-head">
       <h2><i class="ri-radar-fill"></i> 信息雷达</h2>
-      <span class="meta">原料层 · 多源抓取 · 多领域</span>
+      ${headChips}
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="spawnQuickly('帮我跑一遍信息雷达 · 调 auto_pipeline 工具 · 参数 refresh_radar=true, regen_trends=false, mine_opps=false · 只抓取雷达不动趋势机会 · 跑完告诉我新增了哪些条目·特别是 self-evolve 域的', '重新抓取雷达')">重新抓取</button>
       <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 用户 · 为什么', '生成今日趋势')">让 Daemonkey 总结趋势 →</button>
     </div>
+    <div class="dash-note"><i class="ri-information-line"></i> 原料层 · 多源抓取 · 多领域</div>
     ${domainChips}
-    ${statsCards}
     ${renderSourceHistogram(
       (radarDomainFilter && radarDomainFilter !== 'all') ? meta.filter(m => (m.domain || 'ai') === radarDomainFilter) : meta,
       (radarDomainFilter && radarDomainFilter !== 'all') ? ((overview.find(o => o.id === radarDomainFilter) || {}).label || radarDomainFilter) : ''
@@ -3525,14 +3786,915 @@ function renderRadar(data) {
   $dashView.innerHTML = html;
 }
 
-let _shelfKind = 'reports';
-try { _shelfKind = localStorage.getItem('opus_shelf_kind') || 'reports'; } catch (e) {}
+// 产物库类目 (wish-1dc9c39d · 用户 2026-09-19 二次定案)
+// 用户 原话:「把原型、开发、知识、内容，放到同一个一级标签...就叫预制应用，然后
+//   把原型、开发、知识、内容，他们直接对应到内置应用的名字上吗，做成二级，
+//   不然用户看了也容易混。结构也乱」
+// 判据: 一级 5 个 · 「预制应用」下的二级 = draft_studio 的 4 个 domain (同名 · 不另起别名)
+const _SHELF_KINDS = ['all', 'presets', 'reports', 'decks', 'sheets', 'workshop', 'trash', 'fav'];
+const _SHELF_SUBS = ['design', 'dev', 'docs', 'content'];
+// 'all' = 「全部」总览 (用户 2026-09-20:「他不是跳转到产物，而是产物里的报告库」) ——
+//   从掘金雷达的「产物库」出口进来时一律落到这格，不沿用上次停在哪个类目。
+let _shelfKind = 'all';
+let _shelfSub = 'design';
+try {
+  const k0 = localStorage.getItem('opus_shelf_kind') || 'all';
+  _shelfKind = _SHELF_KINDS.includes(k0) ? k0 : 'all';
+  const s0 = localStorage.getItem('opus_shelf_sub') || 'design';
+  _shelfSub = _SHELF_SUBS.includes(s0) ? s0 : 'design';
+} catch (e) {}
 let _shelfLastData = null;
+let _shelfRefilling = false;   // 补齐正在进行中（防并发重复请求）
+//   2026-09-28 修: 原来是 `_shelfRefillStarted` 一次性标志 —— 点「刷新」重新拉了数据
+//   （其余类目又变回 deferred），但那标志已是 true → 永远不再补齐 →
+//   面板停在「正在取这一格…」不动（用户 报的「点刷新就卡住·点标签才好」）。
+//   改成「进行中」：每次渲染都有机会补；已经补过的不缺就不发请求（_shelfEnsure 自己判断）。
+
+// 2026-09-28 · 产物库按需拉：首屏只带了 reports 那一格，切到哪格现拉现补。
+//   拉回来 merge 进 _shelfLastData —— 再切回同一格不重复请求（跟老行为一致）。
+const _shelfKindKeys = {
+  reports:  ['reports'],
+  decks:    ['decks'],
+  sheets:   ['sheets'],
+  workshop: ['workshop'],
+  presets:  ['presets'],
+  all:      ['reports', 'decks', 'sheets', 'presets'],
+  fav:      ['reports', 'decks', 'sheets', 'presets', 'workshop'],
+};
+
+function _shelfMissing(kd, kind) {
+  kd = kd || {};
+  const need = _shelfKindKeys[kind] || [];
+  return need.filter(k => {
+    if (k === 'presets') {
+      const p = kd.presets || {};
+      const subs = p.subs || {};
+      const keys = Object.keys(subs);
+      return !keys.length || keys.some(s => subs[s] && subs[s].deferred);
+    }
+    return !kd[k] || kd[k].deferred === true;
+  });
+}
+
+async function _shelfEnsure(kind) {
+  const d = _shelfLastData;
+  if (!d || d.error) return d;
+  const missing = _shelfMissing(d.kinds, kind);
+  if (!missing.length) return d;
+  try {
+    const r = await fetch('/dashboard/reports?kinds=' + encodeURIComponent(missing.join(',')), {
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    if (!r.ok) return d;
+    const add = await r.json();
+    const ak = (add && add.kinds) || {};
+    const merged = Object.assign({}, d, { kinds: Object.assign({}, d.kinds) });
+    missing.forEach(k => {
+      if (k === 'presets') {
+        const cur = merged.kinds.presets || {};
+        const subAdd = (ak.presets && ak.presets.subs) || {};
+        merged.kinds.presets = Object.assign({}, cur, {
+          subs: Object.assign({}, cur.subs, subAdd),
+          count: (ak.presets && ak.presets.count != null) ? ak.presets.count : cur.count,
+        });
+        // 顶层 design/dev/docs/content 也补上（_subPack 的 fallback 要用）
+        ['design', 'dev', 'docs', 'content'].forEach(sk => { if (ak[sk]) merged.kinds[sk] = ak[sk]; });
+      } else if (ak[k]) {
+        merged.kinds[k] = ak[k];
+      }
+    });
+    if (merged.kinds.reports) {
+      merged.items = merged.kinds.reports.items || [];
+      merged.count = merged.kinds.reports.count;
+    }
+    _shelfLastData = merged;
+    return merged;
+  } catch (e) {
+    return d;
+  }
+}
 
 function switchShelfKind(kind) {
-  _shelfKind = (kind === 'decks' || kind === 'sheets' || kind === 'protos') ? kind : 'reports';
+  _shelfKind = _SHELF_KINDS.includes(kind) ? kind : 'all';
+  if (_shelfKind === 'trash') _shelfTrashData = null;   // 每次进这格都重读回收站
+  _shelfPage = 1;                    // 换类目回到第 1 页
+  _shelfFolder = '';                 // 换类目 = 从 app 文件夹里退出来
   try { localStorage.setItem('opus_shelf_kind', _shelfKind); } catch (e) {}
+  if (!_shelfLastData) return;
+  renderReports(_shelfLastData);     // 先上屏（骨架 / 已有数据）
+  if (_shelfMissing(_shelfLastData.kinds, _shelfKind).length) {
+    _shelfEnsure(_shelfKind).then(d => { if (d) renderReports(d); });
+  }
+}
+
+// 掘金雷达 → 产物库出口 (用户 2026-09-20) —— 指定落哪个类目再进。
+// 为什么不直接 loadDashboard('reports'): 那会把上次停着的记忆 (opus_shelf_kind)
+// 一起带进来 —— 用户 看到的就不是他要的那个类目。
+// 现场: 用户「留一个报告库的跳转就好。直接跳转到报告库」→ 链子右端只调 openShelfKind('reports')。
+function openShelfKind(kind) {
+  _shelfKind = _SHELF_KINDS.includes(kind) ? kind : 'all';
+  _shelfPage = 1;
+  _shelfFolder = '';
+  try { localStorage.setItem('opus_shelf_kind', _shelfKind); } catch (e) {}
+  loadDashboard('reports');
+}
+
+// 预制应用下的二级切换 (产品设计 / 产品开发 / 文档撰写 / 内容制作 · 与内置应用同名)
+function switchShelfSub(sub) {
+  _shelfSub = _SHELF_SUBS.includes(sub) ? sub : 'design';
+  _shelfPage = 1;
+  _shelfFolder = '';
+  try { localStorage.setItem('opus_shelf_sub', _shelfSub); } catch (e) {}
   if (_shelfLastData) renderReports(_shelfLastData);
+}
+
+// ══════════ 产物库 · 排序 / 分组 / 会话药丸 (用户 2026-09-18) ══════════
+// 三入口共享同一个 renderReports: 工作台中栏 / 专注版右栏 (取的是同一份中栏 DOM) /
+// 陪伴模式 (companion/index.html:320 直接引本文件) —— 改这里三处同时生效 · 零分叉。
+//
+// 为什么默认「不分组 + 最近修改倒序」: 用户 原话「按说应该是可以按照修改时间排列的吧?
+// 然后现在他整个的排序都很弱」。他要的第一件事是时间排序 · 分组是次要的组织手段。
+// 后端 output_shelf.py 本来就在按 mtime 倒序 · 但一按会话归堆就看不出来了 ——
+// 所以把「排序」与「分组」解耦: 排序管顺序 · 分组管归堆方式。
+let _shelfSort = 'mtime';
+let _shelfDir = 'desc';
+let _shelfGrp = 'none';
+// ── 分页 (wish-1dc9c39d · 用户 2026-09-19) ─────────────────────────────
+// 用户 原话:「注意不要截断,可以有那个点击查看更多,然后保证所有的库内文件都可以
+//   按照时间排序。所以全库而不是可见的,你也可以做个那个,就是每页显示X条那个」
+// 数据层本来就是全量 (后端无 limit) —— 这里只管「一屏渲几条」· 0 = 全部。
+// ⚠ 搜索框有字时不分页 (否则只能搜到当前页), 见 _shelfBody。
+let _shelfPage = 1;
+let _shelfPer = 50;
+try {
+  _shelfSort = localStorage.getItem('opus_shelf_sort') || 'mtime';
+  _shelfDir = localStorage.getItem('opus_shelf_dir') || 'desc';
+  _shelfGrp = localStorage.getItem('opus_shelf_grp') || 'none';
+  const p0 = parseInt(localStorage.getItem('opus_shelf_per') || '', 10);
+  if (!isNaN(p0) && p0 >= 0) _shelfPer = p0;
+} catch (e) {}
+const SHELF_PER_OPTS = [20, 50, 100, 0];   // 0 = 全部
+// 分组模式下每堆最多渲多少张卡 —— 2858 条全渲 = 2.1MB innerHTML (实测估算) → 卡。
+// 堆头仍显示真实总数；要看某堆全部 → 搜 app 名 (会走正常分页)。
+const SHELF_GROUP_CAP = 20;
+
+function switchShelfPage(n) {
+  _shelfPage = Math.max(1, parseInt(n, 10) || 1);
+  if (_shelfLastData) renderReports(_shelfLastData);
+  const v = (typeof $dashView !== 'undefined' && $dashView)
+    ? $dashView.querySelector('.reports-list, .shelf-groups') : null;
+  if (v && v.scrollIntoView) { try { v.scrollIntoView({ block: 'start' }); } catch (e) {} }
+}
+
+function switchShelfPer(n) {
+  _shelfPer = Math.max(0, parseInt(n, 10) || 0);
+  _shelfPage = 1;
+  try { localStorage.setItem('opus_shelf_per', String(_shelfPer)); } catch (e) {}
+  if (_shelfLastData) renderReports(_shelfLastData);
+}
+
+const SHELF_SORTS = {
+  mtime: { label: '最近修改', icon: 'ri-history-line', dir: 'desc' },
+  name: { label: '名称', icon: 'ri-sort-alphabet-ascending', dir: 'asc' },
+  size: { label: '大小', icon: 'ri-hdd-line', dir: 'desc' },
+};
+
+function _shelfPersist() {
+  try {
+    localStorage.setItem('opus_shelf_sort', _shelfSort);
+    localStorage.setItem('opus_shelf_dir', _shelfDir);
+    localStorage.setItem('opus_shelf_org', _shelfOrg);
+    localStorage.setItem('opus_shelf_grp', _shelfGrp);
+  } catch (e) {}
+}
+
+function switchShelfSort(mode) {
+  if (!SHELF_SORTS[mode]) return;
+  _shelfSort = mode;
+  _shelfDir = SHELF_SORTS[mode].dir;   // 换键就回到这个键的自然方向 (名称升序 / 时间倒序)
+  _shelfPage = 1;
+  _shelfPersist();
+  if (_shelfLastData) renderReports(_shelfLastData);
+}
+
+function toggleShelfDir() {
+  _shelfDir = _shelfDir === 'desc' ? 'asc' : 'desc';
+  _shelfPage = 1;
+  _shelfPersist();
+  if (_shelfLastData) renderReports(_shelfLastData);
+}
+
+// 组织方式 (wish-1dc9c39d · 用户 2026-09-19 二次定案)
+// 用户 原话:「无论是前端页面设计，还是功能，分组、会话、类型这些都有问题」
+// 病根: 「视图」(文件夹/网格/列表) 和「分组」(不分组/按会话/按应用/按类型) 是两个轴
+//   各切一刀、互相抢 —— 选了文件夹视图后分组按钮全被提前 return 掉，点了没反应。
+// 治法: 收成【一个】控件 · 五个选项 = 五种完整呈现 · 不再有笛卡尔积。
+//   app  → 文件夹格子 (每个应用一格 · Windows 那种)
+//   type → 按类型分堆 (图片墙 / 视频墙 / 文档堆) —— 「图片和非图片怎么放一起」的答案
+//   sess → 按会话分堆
+//   none → 网格 (不分堆 · 图片多的类目默认)
+//   list → 列表 (文档卡 · 报告/演示稿那些卡上有按钮的)
+const _SHELF_ORGS = ['none', 'type', 'app', 'sess', 'list'];
+let _shelfOrg = '';
+try {
+  const o0 = localStorage.getItem('opus_shelf_org') || '';
+  if (_SHELF_ORGS.includes(o0)) {
+    _shelfOrg = o0;
+  } else {
+    // 旧键迁移: view=folder/grid/list + grp=none/sess/app/type → org
+    const v0 = localStorage.getItem('opus_shelf_view') || '';
+    const g0 = localStorage.getItem('opus_shelf_grp') || 'none';
+    _shelfOrg = (v0 === 'folder' || g0 === 'app') ? 'app'
+      : (g0 === 'type') ? 'type'
+      : (g0 === 'sess') ? 'sess'
+      : (v0 === 'list') ? 'list' : '';
+  }
+} catch (e) { _shelfOrg = ''; }
+
+// 一个类目实际装了什么 —— 决定默认怎么摆 + 给哪些组织选项
+// (用户 2026-09-19 二次:「你需要判定，只产出图片的，就是默认为缩略图，
+//   只产出文档的，就是默认列表显示，都有的，就按照标准混合视图」)
+function _shelfMix(items) {
+  const types = {};
+  let hasApp = false;
+  for (const it of (items || [])) {
+    const k = _shelfTypeOf(it).key;
+    types[k] = (types[k] || 0) + 1;
+    if (!hasApp && /^app-[0-9a-z]+$/i.test(String(it.app_id || ''))) hasApp = true;
+  }
+  const total = (items || []).length;
+  const media = (types.image || 0) + (types.video || 0) + (types.audio || 0);
+  return { total: total, hasApp: hasApp, media: media, doc: total - media, types: types };
+}
+
+// 自动摆法 —— 用户没手动选过时的默认
+function _shelfAutoOrg(items, canApp) {
+  const m = _shelfMix(items);
+  if (canApp && m.hasApp) return 'app';   // 有 app 归属 → 先看文件夹
+  if (!m.total) return 'none';
+  if (m.media === 0) return 'list';       // 纯文档 → 列表
+  return 'none';                          // 有图/视频 → 网格 (纯图 = 缩略图墙 · 混合 = 图3 那种)
+}
+
+// 这个类目的实际组织方式 —— 空 = 没选过 → 按内容给默认
+function _shelfOrgOf(kind, items) {
+  if (_shelfFolder) return 'app';   // 站在文件夹里: 外层还是 app · 里面由 _shelfFolderView 单独判
+  if (_shelfOrg) {
+    // 「按应用」只对真有 app 字段的类目有意义 · 别的类目上它退化成按类型
+    if (_shelfOrg === 'app' && kind !== 'workshop' && kind !== 'fav') return 'type';
+    if (_shelfOrg === 'app' && items && !_shelfMix(items).hasApp) return 'type';
+    return _shelfOrg;
+  }
+  return _shelfAutoOrg(items, kind === 'workshop' || kind === 'fav');
+}
+
+function switchShelfOrg(v) {
+  _shelfOrg = _SHELF_ORGS.includes(v) ? v : '';
+  _shelfPage = 1;
+  try { localStorage.setItem('opus_shelf_org', _shelfOrg); } catch (e) {}
+  if (_shelfLastData) renderReports(_shelfLastData);
+}
+
+function _shelfSorted(items) {
+  const a = (items || []).slice();
+  const mul = _shelfDir === 'desc' ? -1 : 1;
+  a.sort((x, y) => {
+    let r = 0;
+    if (_shelfSort === 'name') {
+      r = String(x.title || x.name || '').localeCompare(String(y.title || y.name || ''), 'zh');
+    } else if (_shelfSort === 'size') {
+      r = (x.size_kb || 0) - (y.size_kb || 0);
+    } else {
+      r = String(x.created_at || '').localeCompare(String(y.created_at || ''));
+    }
+    if (!r) r = String(x.created_at || '').localeCompare(String(y.created_at || ''));
+    return r * mul;
+  });
+  return a;
+}
+
+// ── 会话药丸 ─────────────────────────────────────────────────────────
+// 后端 (workers/output_shelf.py · _attach_sessions) 已把 session_id / session_label
+// 挂到每一项上。三态必须都在: 覆盖率事实是 125 份里只有 11 份有 origin (绑定机制
+// 2026-09-14 才上线) —— 「无归属」是正常态 · 不能看着像坏了。
+function shelfJumpToSession(sid, label) {
+  if (!sid) return;
+  // 用户 2026-09-20:「改成进入话题（点击后打开这个话题）」—— 原来只切会话、不收回画布,
+  //   结果人还停在产物库页、看不见那场对话 (点了像没反应)。
+  // 2026-09-20 稍后 用户 拍板:「切对话不用关中栏显示的东西啊。不影响的啊。」
+  //   → 产物库是【看东西】的地方、对话栏是【说话】的地方 · 看东西不该牵动画布。
+  //   原来那句 backToChat() 治的是「点了像没反应」· 病根其实在【没有提醒】不在没收画布 (治错了病)。
+  //   现已删。
+  // 用户 2026-09-20 二次报「点进入话题打不开」→ 按铁律 16 不再猜原因, 改成两条硬担保:
+  //   ① 先收画布再切 (顺序反了 · 专注版会把产物库槽又带回来)
+  //   ② 切完落地校验 —— sessionId 真换成目标才罢休·没换成明说（不许装成功）
+  try {
+    if (typeof switchSessionById === 'function') switchSessionById(sid);
+    else if (typeof switchToSession === 'function') switchToSession(sid);
+  } catch (e) { /* 下面落地校验会就实报出 */ }
+  setTimeout(function () {
+    let landed = false;
+    try { landed = (typeof sessionId !== 'undefined') && sessionId === sid; } catch (e) {}
+    if (landed) return;   // 切成功 —— switchToSession 自己已经弹了「已切到《…》」
+    if (typeof _sessionSwitchToast === 'function') {
+      _sessionSwitchToast('没切过去 · 《' + (label || sid) + '》',
+        '它可能在归档区 · 左栏「查看已归档」能翻到');
+    }
+  }, 700);
+}
+
+async function toggleShelfStar(btn) {
+  const ref = btn.getAttribute('data-fav-ref');
+  const title = btn.getAttribute('data-fav-title') || '';
+  if (!ref) return;
+  btn.disabled = true;
+  const r = await _toggleFavorite('output', ref, title, '', 'toggle');
+  btn.disabled = false;
+  if (!r) { if (typeof addSys === 'function') addSys('⚠ 收藏没存上 · 检查一下 token'); return; }
+  const on = !!r.now_starred;
+  btn.classList.toggle('on', on);
+  btn.innerHTML = `<i class="ri-star-${on ? 'fill' : 'line'}"></i>`;
+  btn.title = on
+    ? '已收藏 · 再点一下取消（收藏夹里按分类找得到）'
+    : '收藏这份 · 之后能在「收藏夹 → 我的产物」里按分类找回来';
+  // 顶栏「⭐ 收藏 N」就地动 —— 不然点完像「没效果」，得重载才看见 (用户 2026-09-18 报的)
+  const nEl = document.getElementById('shelfFavN');
+  if (nEl) {
+    const cur = parseInt(nEl.textContent, 10) || 0;
+    nEl.textContent = String(Math.max(0, cur + (on ? 1 : -1)));
+  }
+  // ⚠ 不往对话栏写 addSys —— 收藏是【原地操作】，星变色 + 计数就是全部反馈。
+  //   往对话流里冒「⭐ 收藏了《x》」既刷屏又要它自己滚一遍 (用户 2026-09-18 拍板)
+  // 收藏视图里取消收藏 → 这份该从列表消失 · 重渲一次 (就地改 DOM 会留下一张已取消的卡)
+  if (!on && _shelfKind === 'fav') loadDashboard('reports');
+}
+
+// 产物卡上的 ⭐ (wish-e16b1f52 · 收藏夹)
+// ref_id 用 open_path: 跟数据库文件名同源·跨 kind 不重·比 name 稳 (同名时会串)
+function _shelfStar(it) {
+  const ref = it.open_path || '';
+  if (!ref) return '';
+  const on = !!it.is_favorited;
+  return `<button type="button" class="rc-star${on ? ' on' : ''}" `
+    + `data-fav-ref="${escHtml(ref)}" data-fav-title="${escHtml(it.title || it.name || '')}" `
+    + `title="${on ? '已收藏 · 再点一下取消（收藏夹里按分类找得到）' : '收藏这份 · 之后能在「收藏夹 → 我的产物」里按分类找回来'}">`
+    + `<i class="ri-star-${on ? 'fill' : 'line'}"></i></button>`;
+}
+
+function _shelfPill(it) {
+  const sid = it.session_id || '';
+  const label = it.session_label || '';
+  if (!sid) {
+    return '<span class="rc-pill none" title="这份产物产生于归属机制上线之前 (2026-09-14) · 没记下是哪场对话做的">'
+      + '<i class="ri-question-line"></i><span class="rc-pill-t">无归属</span></span>';
+  }
+  if (!label) {
+    return '<span class="rc-pill gone" title="产出它的对话已被清理 · 归到 ' + escHtml(sid) + '">'
+      + '<i class="ri-ghost-line"></i><span class="rc-pill-t">对话已归档</span></span>';
+  }
+  // 同 _shelfPill: 药丸从「可跳会话」退回【纯标识】(用户 2026-09-20)
+  return '<span class="rc-pill rc-pill-id" '
+    + 'title="这份产自这场对话 · 要过去点分组头的「进入话题」">'
+    + '<i class="ri-chat-3-line"></i><span class="rc-pill-t">' + escHtml(label) + '</span></span>';
+}
+
+// 工具条: 搜索 (复用 renderListFilter · 它按 .report-card 的 textContent 过滤 ·
+// 药丸文字也在里面 → 「搜会话标题」自动可用) + 排序 + 分组开关
+function _shelfBar(kind, items) {
+  const ph = kind === 'decks' ? '搜演示稿文件名 / 会话标题…'
+    : (kind === 'sheets' ? '搜表格文件名 / 会话标题…'
+    : (kind === 'presets' ? '搜文件名 / 路径…'
+    : (kind === 'workshop' ? '搜工坊产物 / 所属 app…'
+    : (kind === 'fav' ? '搜收藏…' : '搜报告文件名 / 会话标题…'))));
+  const sorts = Object.keys(SHELF_SORTS).map(k => {
+    const s = SHELF_SORTS[k];
+    return `<button type="button" class="ss-btn${_shelfSort === k ? ' on' : ''}" onclick="switchShelfSort('${k}')">`
+      + `<i class="${s.icon}"></i>${s.label}</button>`;
+  }).join('');
+  // 组织方式: 一个控件五个选项 (不再有「视图 × 分组」两个轴互相抢)
+  // 按钮表按内容给 (用户: 纯文档的类目正常用列表就好 · 不给它「按应用」这种没意义的选项)
+  const mix = _shelfMix(items);
+  const curOrg = _shelfOrgOf(kind, items);
+  const orgOpts = [['none', 'ri-layout-grid-fill', '不分组'], ['type', 'ri-price-tag-3-line', '按类型']];
+  if ((kind === 'workshop' || kind === 'fav') && mix.hasApp) orgOpts.push(['app', 'ri-folder-3-fill', '按应用']);
+  orgOpts.push(['sess', 'ri-chat-3-line', '按会话'], ['list', 'ri-list-check-2', '列表']);
+  const orgs = orgOpts.map(o =>
+    `<button type="button" class="sg-btn${curOrg === o[0] ? ' on' : ''}" onclick="switchShelfOrg('${o[0]}')">`
+    + `<i class="${o[1]}"></i>${o[2]}</button>`).join('');
+  const desc = _shelfDir === 'desc';
+  return `
+    ${renderListFilter({ targetSelector: '.report-card', placeholder: ph })}
+    <div class="shelf-bar">
+      <div class="shelf-sort">${sorts}</div>
+      <button type="button" class="shelf-dir" onclick="toggleShelfDir()" title="切换排列方向">
+        <i class="ri-${desc ? 'arrow-down' : 'arrow-up'}-line"></i>${desc ? '降序' : '升序'}
+      </button>
+      <span class="shelf-bar-sp"></span>
+      <button type="button" class="shelf-act" onclick="shelfPickMode(true)" title="进入选择模式：单击=只选它 · 按住拖过哪几张=哪几张一起选"><i class="ri-delete-bin-6-line"></i> 删除</button>
+      <div class="shelf-grp">${orgs}</div>
+    </div>`;
+}
+
+// 分页条 (wish-1dc9c39d): 全库 N 份 / 本页 M 份 · 每页 [20|50|100|全部] · 上/下页。
+// 「全库」的数字来自 items.length —— 不是可见的 (用户:「所以全库而不是可见的」)。
+function _shelfPager(total, shownN, page, totalPages, per) {
+  const perBtns = SHELF_PER_OPTS.map(n => {
+    const on = (_shelfPer === n);
+    const label = n === 0 ? '全部' : String(n);
+    return `<button type="button" class="sp-btn${on ? ' on' : ''}" onclick="switchShelfPer(${n})">${label}</button>`;
+  }).join('');
+  const nav = totalPages > 1
+    ? `<button type="button" class="sp-nav"${page <= 1 ? ' disabled' : ''} onclick="switchShelfPage(${page - 1})"><i class="ri-arrow-left-s-line"></i>上一页</button>`
+      + `<span class="sp-pos">${page} / ${totalPages}</span>`
+      + `<button type="button" class="sp-nav"${page >= totalPages ? ' disabled' : ''} onclick="switchShelfPage(${page + 1})">下一页<i class="ri-arrow-right-s-line"></i></button>`
+    : '';
+  return `<div class="shelf-pager">
+      <span class="sp-info">全库 <b>${total}</b> 份 · 本页 ${shownN} 份</span>
+      <span class="sp-sp"></span>
+      <span class="sp-perlabel">每页</span><span class="sp-pers">${perBtns}</span>
+      <span class="sp-navs">${nav}</span>
+    </div>`;
+}
+
+function _shelfBody(kind, items) {
+  const list = _shelfSorted(items);
+  // 组织方式 (wish-1dc9c39d 二次): 一个维度 · 五个选项 · 不再有「视图×分组」两个轴抢
+  const org = _shelfOrgOf(kind, list);
+  // 搜索框有字时不进「按应用」的文件夹层 (那是在找具体文件 · 不是在一层层进)
+  const qEl2 = (typeof $dashView !== 'undefined' && $dashView)
+    ? $dashView.querySelector('.list-filter-input') : null;
+  const searching = !!(qEl2 && String(qEl2.value || '').trim());
+  if (org === 'app' && !searching && list.some(it => it.app_id)) {
+    // 站在某个 app 里 → 出它的内容 (面包屑 + 按内容判摆法) · 否则出文件夹格子
+    return _shelfFolder ? _shelfFolderView(list, kind) : _shelfFolders(list, kind);
+  }
+  // 分堆类: 全库分堆 · 不分页 (分堆的意义就是「一眼看清有哪些堆」· 只分当前页
+  //   会让他以为某个 app 的产物不见了) · 但每堆只渲前 SHELF_GROUP_CAP 条。
+  if (org === 'type') return _shelfByType(kind, list, SHELF_GROUP_CAP);
+  if (org === 'sess') return _shelfBySession(kind, list, SHELF_GROUP_CAP);
+  if (org === 'app') return _shelfByApp(kind, list, SHELF_GROUP_CAP);
+  // 剩下两种 (网格 / 列表) 走分页
+  const per = (_shelfPer > 0) ? _shelfPer : 0;
+  // 「全部」= 不翻页, 但不是「无限渲」—— 一次挂上千个瓦片会把页面顶死, 视频尤其
+  //   (用户 2026-09-19「我随便点了点产物之后，发现页面卡的不行了，最后直接崩了」)。
+  const SHELF_HARD = 400;
+  const totalPages = per ? Math.max(1, Math.ceil(list.length / per)) : 1;
+  if (_shelfPage > totalPages) _shelfPage = totalPages;
+  const page = per ? _shelfPage : 1;
+  const shown = per ? list.slice((page - 1) * per, page * per) : list.slice(0, SHELF_HARD);
+  const body = (org === 'list')
+    ? '<div class="reports-list">' + shown.map(it => _shelfCard(it, kind)).join('') + '</div>'
+    : _shelfGrid(kind, shown, 0);
+  return body
+    + (per ? _shelfPager(list.length, shown.length, page, totalPages, per) : '')
+    + (!per && list.length > SHELF_HARD
+      ? '<div class="sg-more">共 <b>' + list.length + '</b> 个 · 一次最多铺 ' + SHELF_HARD + ' 个（选「每页 100」翻页看全部）</div>'
+      : '');
+}
+// 二级 · 按应用 (wish-1dc9c39d) —— 工坊产物 45 个 app 一屏糊住 (最大一堆 1140 条)。
+// 大堆在前 · app_label 来自后端 (workers.workshop_assets.list_apps)。
+function _shelfByApp(kind, list, cap) {
+  const map = new Map();
+  for (const it of list) {
+    const k = it.app_id || '__none__';
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(it);
+  }
+  const keys = [...map.keys()].filter(k => k !== '__none__')
+    .sort((a, b) => map.get(b).length - map.get(a).length);
+  if (map.has('__none__')) keys.push('__none__');
+  return '<div class="shelf-groups">' + keys.map(k => {
+    const g = map.get(k);
+    const isNone = (k === '__none__');
+    return _shelfGroup({
+      icon: isNone ? 'ri-question-line' : 'ri-apps-2-fill', tinted: !isNone, count: g.length,
+      title: isNone ? '未归入任何应用' : (g[0].app_label || k),
+      hint: isNone ? '' : (k + (g.length > cap ? ' · 共 ' + g.length + ' 条，这里只列前 ' + cap + '（搜 app 名看全部）' : '')),
+      body: _shelfGrid(kind, g.slice(0, cap), 0),
+    });
+  }).join('') + '</div>';
+}
+
+// 二级 · 按类型 —— 判据只此一份 (_SHELF_TYPES + _shelfTypeOf)，
+// 别在每个调用点各写一份后缀表 (那正是两份判据的老病)。
+const _SHELF_TYPES = [
+  { key: 'image',  label: '图片',        icon: 'ri-image-fill',           exts: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'] },
+  { key: 'video',  label: '视频',        icon: 'ri-video-fill',           exts: ['mp4', 'webm', 'mov', 'mkv', 'avi'] },
+  { key: 'audio',  label: '音频',        icon: 'ri-music-2-fill',         exts: ['mp3', 'wav', 'm4a', 'ogg', 'flac'] },
+  { key: 'office', label: '办公文档',    icon: 'ri-briefcase-4-fill',     exts: ['docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls'] },
+  { key: 'web',    label: '网页 · 原型', icon: 'ri-window-fill',          exts: ['html', 'htm'] },
+  { key: 'text',   label: '文本 · 报告', icon: 'ri-file-text-fill',       exts: ['md', 'txt', 'pdf'] },
+];
+
+function _shelfTypeOf(it) {
+  const ext = String(it.name || '').split('.').pop().toLowerCase();
+  for (const t of _SHELF_TYPES) if (t.exts.includes(ext)) return t;
+  return { key: 'other', label: '其他', icon: 'ri-file-fill', exts: [] };
+}
+
+function _shelfByType(kind, list, cap) {
+  const map = new Map();
+  for (const it of list) {
+    const t = _shelfTypeOf(it);
+    if (!map.has(t.key)) map.set(t.key, { t: t, arr: [] });
+    map.get(t.key).arr.push(it);
+  }
+  const order = _SHELF_TYPES.map(t => t.key).concat(['other']);
+  return '<div class="shelf-groups">' + order.filter(k => map.has(k)).map(k => {
+    const g = map.get(k);
+    return _shelfGroup({
+      icon: g.t.icon, tinted: true, count: g.arr.length,
+      title: g.t.label,
+      hint: (g.arr.length > cap ? '共 ' + g.arr.length + ' 条，这里只列前 ' + cap : ''),
+      body: _shelfGrid(kind, g.arr.slice(0, cap), 0),
+    });
+  }).join('') + '</div>';
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 网格 / 文件夹视图 (wish-1dc9c39d · 用户 2026-09-19)
+// 用户 原话:「按应用其实我想要那种类似 WIN10 文件夹的，图片能显示缩略图，文档的话
+//   就显示文档（WORD EXCEL PPT 等等）图标，进去后也不是单纯的横条，而是卡片，
+//   就说白了照着 windows 的那种文件夹管理来做就好，因为工坊产物东西太杂了」
+//
+// 判据: 东西杂的 (工坊产物 / 档案 / 原型) → 网格或文件夹; 文档型的 (报告 / 演示稿 /
+//   表格) → 保留宽卡片 —— 那些卡上有「查看 & 批注 / 历史版本 / 用这版继续」几个
+//   按钮，瓦片里塞不下。
+// ══════════════════════════════════════════════════════════════════
+
+// 视图相关的旧状态已并入 _shelfOrg (见上方「组织方式」段) —— _shelfView/_shelfViewOf/
+// switchShelfView/_SHELF_VIEW_DEFAULT 全部退役 · 别再加回来。
+
+// 进一个 app 文件夹 —— 复用搜索框 (零新状态 · 输 app 名或标签都能命中)
+// 真进文件夹 (wish-1dc9c39d 二次 · 用户:「你现在的应用分组有问题，文件夹是打不开的」)
+// 以前是把 app 名塞进搜索框 —— 但搜索框只过滤 .report-card · 网格瓦片不是那个类 ·
+// 过滤完什么也不剩。改成状态 + 面包屑 + 返回。
+let _shelfFolder = '';   // 非空 = 站在这个 app 文件夹里 (存 app_id)
+
+function shelfEnterFolder(appId) {
+  _shelfFolder = String(appId || '');
+  _shelfPage = 1;
+  if (_shelfLastData) renderReports(_shelfLastData);
+}
+
+function shelfExitFolder() {
+  _shelfFolder = '';
+  _shelfPage = 1;
+  if (_shelfLastData) renderReports(_shelfLastData);
+}
+
+// 文件夹里 —— 里层用什么摆法同样按内容判 (纯文档→列表 · 有媒体→网格)
+function _shelfFolderView(list, kind) {
+  const sub = list.filter(it => String(it.app_id || '') === _shelfFolder);
+  if (!sub.length) { _shelfFolder = ''; return _shelfFolders(list, kind); }
+  const label = sub[0].app_label || _shelfFolder;
+  const inner = _shelfAutoOrg(sub, false);
+  // 文件夹里层也要限流 —— 「散件（没归到某个应用）」那堆有 2858 条, 全渲直接把页面顶死
+  //   (用户 2026-09-19「点了视频分类之后卡的不行了, 最后直接崩了」)。
+  //   限流不等于藏起来: sg-more 会写明「共 N 个 · 只列前 20 个」, 那个 N 是真的。
+  const _fcap = SHELF_GROUP_CAP;
+  const _fmore = sub.length > _fcap
+    ? '<div class="sg-more">共 <b>' + sub.length + '</b> 个 · 这里只列前 ' + _fcap + ' 个（点「全部应用」回去 · 或换个摆法看）</div>'
+    : '';
+  const body = (inner === 'list')
+    ? '<div class="reports-list">' + sub.slice(0, _fcap).map(it => _shelfCard(it, kind)).join('') + '</div>' + _fmore
+    : _shelfGrid(kind, sub, _fcap);
+  return '<div class="fld-crumb">'
+    + '<button type="button" class="fld-back" onclick="shelfExitFolder()"><i class="ri-arrow-left-line"></i> 全部应用</button>'
+    + '<span class="fld-cur"><i class="ri-folder-3-fill"></i> ' + escHtml(label) + '</span>'
+    + '<span class="fld-cn">' + sub.length + ' 个文件</span>'
+    + '</div>' + body;
+}
+
+// 瓦片正面用什么画 —— 复用 doc-shelf.js 的 _DOC_ICON_MAP (同一份判据 · 不另写一张表)
+const _TILE_IMAGE = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'];
+// ⚠ 和 viewer.js 的 VID、下面 _SHELF_TYPES 的 video 三张表必须对齐。
+//   曾经 _TILE_VIDEO 漏了 mkv/avi，而 _SHELF_TYPES 认 → 同一个 .mkv 在「按类型」里
+//   归视频组、瓦片里却显示文件图标、卡片上却又确实能预览。别只改一处。
+const _TILE_VIDEO = ['mp4', 'webm', 'mov', 'mkv', 'avi'];
+
+function _tileExt(it) {
+  return String((it && it.name) || '').split('.').pop().toLowerCase();
+}
+
+function _tileIcon(ext) {
+  if (typeof _DOC_ICON_MAP !== 'undefined' && _DOC_ICON_MAP[ext]) return _DOC_ICON_MAP[ext];
+  return 'ri-file-fill';
+}
+
+// 图标颜色 —— 类型一眼分得出 (用户:「文档在缩略图视图当中，你要按照不同的文档，
+//   图标不同，图标颜色也不同」) · 色值在 chat.css 的 .tile-ico.t-*
+const _DOC_TINT = {
+  docx: 't-word', doc: 't-word',
+  xlsx: 't-xls', xls: 't-xls',
+  pptx: 't-ppt', ppt: 't-ppt',
+  pdf: 't-pdf', md: 't-md', txt: 't-txt',
+  html: 't-web', htm: 't-web',
+  json: 't-code', py: 't-code', js: 't-code', ts: 't-code', css: 't-code', sql: 't-code', sh: 't-code',
+  zip: 't-zip', '7z': 't-zip', rar: 't-zip',
+};
+function _tileTint(ext) { return _DOC_TINT[String(ext || '').toLowerCase()] || ''; }
+
+// 一张瓦片 —— 图片出真缩略图 · 视频出首帧 + 播放角标 · 其余出类型图标 (Word/Excel/PPT/MD)
+function _shelfTile(it, kind) {
+  const openRel = it.open_path || '';
+  const ext = _tileExt(it);
+  const src = '/stage/file/' + encodeURI(openRel) + '?token=' + encodeURIComponent(token || '');
+  const title = it.title || it.name || '';
+  let face;
+  if (_TILE_IMAGE.includes(ext)) {
+    face = '<img loading="lazy" src="' + src + '" alt="">';
+  } else if (_TILE_VIDEO.includes(ext)) {
+    // 视频瓦片**绝不能** preload="metadata" —— 一屏 20 个还好, 但滑到底 / 进文件夹 / 选「全部」
+    //   时就会一次挂上千个 <video>, 浏览器同时去拉元数据 = 页面卡死然后崩
+    //   (用户 2026-09-19:「我随便点了点产物之后，发现页面卡的不行了，最后直接崩了」)。
+    //   preload="none" = 一个字节都不拉, 点了才加载; 空态靠 CSS 灰底 + 播放图标撑住脸。
+    face = '<video preload="none" muted playsinline><source src="' + src + '"></video>'
+      + '<i class="ri-play-circle-fill tile-play"></i>';
+  } else {
+    face = '<i class="' + _tileIcon(ext) + ' tile-ico ' + _tileTint(ext) + '"></i>';
+  }
+  const on = !!it.is_favorited;
+  const spath = String(openRel || '').trim();
+  return '<div class="sg-tile' + (on ? ' on' : '') + (spath ? ' sg-pickable' : '') + '"'
+    + (spath ? ' data-shelf-path="' + escHtml(spath) + '"' : '') + '>'
+    + '<a class="tile-face" href="javascript:void(0)" data-tile-open="' + escHtml(openRel) + '" title="' + escHtml(openRel) + '">' + face + '</a>'
+    + '<div class="tile-foot">'
+    + '<span class="tile-name" title="' + escHtml(title) + '">' + escHtml(title) + '</span>'
+    + '<span class="tile-meta">' + escHtml(fmtShelfSize(it.size_kb)) + ' · ' + escHtml(String(it.created_at || '').slice(5, 16)) + '</span>'
+    + '</div>'
+    + '<div class="tile-acts">'
+    + (openRel ? '<button type="button" class="ta-btn" data-fav-ref="' + escHtml(openRel) + '" data-fav-title="' + escHtml(title) + '" title="收藏"><i class="ri-star-' + (on ? 'fill' : 'line') + '"></i></button>' : '')
+    + (openRel ? '<button type="button" class="ta-btn" data-open-view="' + escHtml(openRel) + '" title="预览"><i class="ri-eye-line"></i></button>' : '')
+    + '<a class="ta-btn" href="' + escHtml(src) + '" download="' + escHtml(it.name || '') + '" title="下载"><i class="ri-download-line"></i></a>'
+    + '</div>'
+    + '</div>';
+}
+
+function _shelfGrid(kind, list, cap) {
+  const shown = cap ? list.slice(0, cap) : list;
+  return '<div class="shelf-grid">' + shown.map(it => _shelfTile(it, kind)).join('') + '</div>'
+    + (cap && list.length > cap
+      ? '<div class="sg-more">共 <b>' + list.length + '</b> 个 · 这里只列前 ' + cap + '个（搜 app 名 或切「列表」看全部）</div>'
+      : '');
+}
+
+// 文件夹视图: 每个 app 一个格子 (像 Windows 的文件夹缩略图拼贴)
+function _shelfFolders(list, kind) {
+  // 只认真应用 (app-xxxx) —— _drafts / _tmp_review_run / searches / screenshots 这些
+  // 散目录不是「应用」· 混进来会把「按应用」变成一锅乱焍
+  // (用户 2026-09-19 实测: 25 个“文件夹”里只有 10 个真 app)。
+  const isRealApp = (k) => /^app-[0-9a-z]+$/i.test(String(k || ''));
+  const map = new Map();
+  for (const it of list) {
+    const a0 = String(it.app_id || '');
+    const k = isRealApp(a0) ? a0 : '__none__';
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(it);
+  }
+  const keys = [...map.keys()].filter(k => k !== '__none__')
+    .sort((a, b) => map.get(b).length - map.get(a).length);
+  if (map.has('__none__')) keys.push('__none__');
+  return '<div class="shelf-folders">' + keys.map(k => {
+    const g = map.get(k);
+    const isNone = (k === '__none__');
+    const label = isNone ? '散件（没归到某个应用）' : (g[0].app_label || k);
+    // 封面: 图片优先 · 没图就退到视频首帧 (只取前 4 个 · preload=metadata 不会真拉全片)
+    const pics = g.filter(x => _TILE_IMAGE.includes(_tileExt(x))).slice(0, 4);
+    const vids = pics.length ? [] : g.filter(x => _TILE_VIDEO.includes(_tileExt(x))).slice(0, 4);
+    let cover;
+    if (pics.length) {
+      cover = '<div class="fld-grid n' + pics.length + '">' + pics.map(p =>
+        '<img loading="lazy" src="/stage/file/' + encodeURI(p.open_path) + '?token=' + encodeURIComponent(token || '') + '" alt="">').join('') + '</div>';
+    } else if (vids.length) {
+      cover = '<div class="fld-grid n' + vids.length + '">' + vids.map(p =>
+        '<video preload="none" muted playsinline src="/stage/file/' + encodeURI(p.open_path) + '?token=' + encodeURIComponent(token || '') + '"></video>').join('') + '</div>';
+    } else {
+      cover = '<div class="fld-grid icon"><i class="' + _tileIcon(_tileExt(g[0])) + '"></i></div>';
+    }
+    const kinds_n = new Set(g.map(x => _tileExt(x))).size;
+    return '<a class="fld" href="javascript:void(0)" onclick="shelfEnterFolder(\'' + jsStr(k) + '\')" title="' + escHtml(k) + '">'
+      + cover
+      + '<div class="fld-foot"><span class="fld-name">' + escHtml(label) + '</span>'
+      + '<span class="fld-n">' + g.length + ' 个 · ' + kinds_n + ' 种格式</span></div>'
+      + '</a>';
+  }).join('') + '</div>';
+}
+
+// 「进入话题」的事件委派 (用户 2026-09-20「点了没效果」的修法)
+//   用捕获阶段 —— 抢在 <details>/<summary> 的 toggle 默认行为之前把事件吞掉。
+//   只认 data-session-jump, 不依赖内联 onclick 字符串, 也不怕它当时在哪个作用域。
+if (!window.__shelfJumpDelegate) {
+  window.__shelfJumpDelegate = true;
+  document.addEventListener('click', function (e) {
+    const t = e.target;
+    const btn = (t && t.closest) ? t.closest('[data-session-jump]') : null;
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    shelfJumpToSession(btn.getAttribute('data-session-jump') || '', btn.getAttribute('data-session-name') || '');
+  }, true);
+}
+
+function _shelfGroup(o) {
+  // 用户 2026-09-20 报「进入话题点了没效果」—— 内联 onclick 走 <summary> 里那条路不可靠
+  //   (要同时躲 summary 的 toggle 冒泡 + HTML 属性转义 + 全局作用域)。改成 data-* + 捕获阶段事件委派。
+  const jump = o.sid
+    ? `<button type="button" class="rc-preview-btn shelf-go" data-session-jump="${escHtml(o.sid)}" data-session-name="${escHtml(o.title)}" title="打开这个话题（跳到右侧对话栏里那场）"><i class="ri-arrow-right-up-line"></i> 进入话题</button>`
+    : '';
+  return `<details class="shelf-group" open>
+    <summary class="shelf-group-head">
+      <i class="ri-arrow-right-s-line shelf-caret"></i>
+      <i class="${o.icon} shelf-gico${o.tinted ? '' : ' faded'}"></i>
+      <span class="shelf-gname${o.tinted ? '' : ' faded'}">${escHtml(o.title)}</span>
+      <span class="shelf-gn">${o.count}</span>
+      <span class="shelf-gwhen">${escHtml(o.hint || '')}</span>
+      ${jump}
+    </summary>
+    <div class="shelf-group-body">${o.body}</div>
+  </details>`;
+}
+
+// 按会话归堆 ── 会话标题/归属来自后端 _attach_sessions。
+// 「无归属」组永远垫底: 它是异常态的收容组 (91% 的稿在这里) · 不该撑着有归属的
+function _shelfBySession(kind, list, cap) {
+  cap = cap || 20;
+  const map = new Map();
+  for (const it of list) {
+    const k = it.session_id || '__none__';
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(it);
+  }
+  const keys = [...map.keys()].filter(k => k !== '__none__');
+  if (map.has('__none__')) keys.push('__none__');
+  return '<div class="shelf-groups">' + keys.map(k => {
+    const group = map.get(k);
+    if (k === '__none__') {
+      return _shelfGroup({
+        icon: 'ri-question-line', tinted: false, count: group.length,
+        title: '无归属 · 归属机制上线前的老产物',
+        hint: '没记下是哪场做的',
+        body: group.slice(0, cap).map(it => _shelfCard(it, kind)).join(''),
+      });
+    }
+    return _shelfGroup({
+      sid: k, icon: 'ri-chat-3-fill', tinted: true, count: group.length,
+      title: group[0].session_label || '（对话已归档）',
+      hint: String(group[0].created_at || '').slice(0, 16),
+      body: group.slice(0, cap).map(it => _shelfCard(it, kind)).join(''),
+    });
+  }).join('') + '</div>';
+}
+
+// 判据: 这份产物该「中栏打开」还是「报告预览」?
+//   html / md / pdf / 图片 / 视频 → 中栏 (stage.js 的 stageClassify 说了算)
+//   office (docx/pptx/xlsx) → 沿用原 loadReportPreview (reports 那套反推预览)
+// 2026-09-19 原病: 图片也走了 loadReportPreview → 打 /reports/preview/x.jpg → 404
+//   → 用户 原话「现在图片什么的完全打不开」。
+const _SHELF_MEDIA_MODES = { image: 1, video: 1, pdf: 1, html: 1, md: 1 };
+
+function _shelfOpenMode(rel) {
+  if (typeof stageClassify !== 'function' || !rel) return '';
+  try {
+    const c = stageClassify(rel);
+    return (c && _SHELF_MEDIA_MODES[c.mode]) ? c.mode : '';
+  } catch (e) { return ''; }
+}
+
+// 单张产物卡 (从 renderReports 原循环体原样抽出 · 行为一字未改 · 只多了药丸)
+// 「看它」的统一出口 (用户 2026-09-19):
+//   能圈字批注的 (md / html / office) → 中栏;  只能看的 (图 / 视频 / 音频 / PDF) → 通用浮层。
+//   判据只此一份 —— 产物卡 / 网格瓦片 / 工坊 app 卡都走这里。
+//   为什么不再一律中栏: 用户「这些图片和视频类的，也要用中栏看嘛？…不然每次中栏看
+//   再回来就要重新加载打开很麻烦」。中栏是工作区，瞄一眼不该占它。
+function _shelfOpenRel(rel, el) {
+  if (!rel) return;
+  if (window.OpusViewer && OpusViewer.canView(rel)) {
+    // 同批媒体一起递给浮层 → 里面能 ←→ 翻。从 DOM 现查 (不额外传数据 · 不存状态)
+    const scope = (el && (el.closest('.reports-list') || el.closest('.shelf-group-body') || el.closest('.dash-view'))) || $dashView;
+    const items = [];
+    const seen = new Set();
+    let idx = 0;
+    scope.querySelectorAll('[data-open-view], [data-tile-open]').forEach(n => {
+      const p = n.getAttribute('data-open-view') || n.getAttribute('data-tile-open');
+      if (!p || seen.has(p) || !OpusViewer.canView(p)) return;
+      seen.add(p);
+      if (p === rel) idx = items.length;
+      items.push({ path: p, name: String(p).split('/').pop() });
+    });
+    OpusViewer.open({ path: rel, name: String(rel).split('/').pop(), items: items.length > 1 ? items : null, idx: idx });
+    return;
+  }
+  // 预览出口：只是「看一眼」· **不挂载**（2026-09-29 用户:「点开历史的预览就挂进对话了」）
+  if (typeof openStage === 'function') openStage({ path: rel });
+}
+
+function _shelfCard(it, kind0) {
+  // 收藏视图是跨类型的 → 每项自带 _kind; 其它视图 kind0 就是整批类型
+  const kind = it._kind || kind0;
+  const rawDl = it.download_url || (kind === 'decks' ? `/presentations/${it.name}` : (kind === 'sheets' ? `/spreadsheets/${it.name}` : (kind === 'protos' || kind === 'design' ? `/stage/file/data/design/${it.name}` : `/reports/${it.name}`)));
+  const dlUrl = `${rawDl}${rawDl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token || '')}`;
+  const previewUrl = it.preview_url || '';
+  // 预制应用四维 (design/dev/docs/content) 都是「有源文件」的 md/html —— 可中栏预览 · 可让我改
+  const _isPreset = ['design', 'dev', 'docs', 'content'].includes(kind);
+  const srcBadge = (_isPreset || kind === 'protos') && it.has_md_source
+    ? `<span class="rc-src-badge rc-src-md" title="有源文件 · 中栏预览，跟我说改">可改</span>`
+    : (it.has_md_source
+    ? `<span class="rc-src-badge rc-src-md" title="有源文件">有源文件</span>`
+    : `<span class="rc-src-badge rc-src-extract" title="${kind === 'decks' ? '没有源文件 · 下载用本机软件打开' : (kind === 'sheets' ? '没有源文件 · 成品仍可看表' : '旧报告 · 预览是从成品反推的')}">${kind === 'decks' || kind === 'sheets' ? '没有源文件' : '旧版预览'}</span>`);
+  const kbBtn = kind === 'reports'
+    ? `<button class="rc-preview-btn rp-kb" data-name="${escHtml(it.name)}" title="存进知识库，之后回答能引用原文"><i class="ri-book-2-line"></i> 存入知识库</button>`
+    : '';
+  const openRel = it.open_path || (kind === 'decks' ? ('data/presentations/' + it.name) : (kind === 'sheets' ? ('data/spreadsheets/' + it.name) : (kind === 'protos' ? ('data/design/' + it.name) : ('data/reports/' + it.name))));
+  const reviseBtn = (kind === 'protos' || _isPreset)
+    ? `<button type="button" class="rc-preview-btn" data-revise="${escHtml(openRel)}" title="丢给对话，按你的话改这份"><i class="ri-pencil-line"></i> 让我改</button>`
+    : '';
+  const showName = it.title || it.name;
+  const ver = it.version ? `<span class="rc-ver">V${it.version}</span>` : '';
+  const hist = Array.isArray(it.history) ? it.history : [];
+  let histHtml = '';
+  if (hist.length) {
+    const rows = hist.map((h, i) => {
+      const hv = h.version || ((it.version || (hist.length + 1)) - 1 - i);
+      const lo = h.version_lo || hv;
+      const verLabel = (h.dupes > 1 && lo && lo !== hv) ? (`V${lo}–V${hv}`) : (`V${hv}`);
+      const hop = h.open_path || openRel;
+      const hpv = shelfPreviewUrl(kind, h.name || '');
+      const hdl = `${h.download_url || rawDl}${((h.download_url || rawDl).includes('?') ? '&' : '?')}token=${encodeURIComponent(token || '')}`;
+      const dupe = h.dupes > 1 ? `<span class="rc-dupe">同一份 · 记了 ${h.dupes} 次</span>` : '';
+      const pg = h.pages ? `<span class="rc-pages">${h.pages} 页</span>` : '';
+      return `<div class="rc-hist-row"><span class="rc-ver">${verLabel}</span><span class="rc-size">${escHtml(fmtShelfSize(h.size_kb))}</span>${pg}<span class="rc-time">${escHtml(h.created_at || '')}</span>${dupe}`
+        + `<button type="button" class="rc-preview-btn" data-open-rel="${escHtml(hop)}" title="浮层里看这一版（Esc 关掉）"><i class="ri-eye-line"></i> 预览</button>`
+        + `<button type="button" class="rc-preview-btn rc-restore" data-restore="${escHtml(h.name || '')}" data-kind="${escHtml(kind)}" title="不会删任何旧文件。把这版抄成当前，现在的当前会另存进历史。"><i class="ri-arrow-go-back-line"></i> 用这版继续</button>`
+        + `<button type="button" class="rc-preview-btn" data-open="${escHtml(hop)}" title="用本机软件打开"><i class="ri-external-link-line"></i></button>`
+        + `<a class="rc-dl" href="${escHtml(hdl)}" download="${escHtml(h.name || '')}">下载</a></div>`;
+    }).join('');
+    histHtml = `<details class="rc-hist"><summary>历史 ${hist.length} 份</summary><p class="rc-hist-hint">卡片「预览」是当前这份。要看旧样子，点下面体积大、页数多的那行「预览」。顶栏必须出现「历史 Vx」，才是旧稿。</p>${rows}</details>`;
+  }
+  const openMode = _shelfOpenMode(openRel);
+  const _imgRe = /\.(png|jpe?g|gif|webp)$/i;
+  // 入口分开 (wish-1dc9c39d 二次 · 用户:「应用里面图片的预览，还和批注中栏那个功能混了」):
+  //   能圈字批注的 (md / html / office) → 「查看 & 批注」; 只能看的 (图/视频/音频/PDF) → 「看大图」。
+  //   判据复用 _shelfTypeOf (同一份后缀表 · 不另写一张)。
+  const _tKey = _shelfTypeOf(it).key;
+  const _isPdf = /\.pdf$/i.test(String(it.name || ''));
+  const _annotatable = !_isPdf && ['web', 'office', 'text'].includes(_tKey);
+  // 「预览」= 浮层。只给「浮层里真能看的」: 图 / 视频 / 音频 / PDF / 文稿(md)。
+  //   html / office 不给 —— 它俩没有「只读看一遍」这种用法, 主场是中栏 (能看还能圈字批注),
+  //   浮层是它的子集, 多一个按钮只是噪音。空格子旁边杵两个长得差不多的钮, 点击就很迷茫。
+  //   用户 2026-09-19:「不支持的格式就不要有预览了吧？不然相当于多个无用的按钮」
+  // 注: 另一个大坑 —— 卡片上原来有两处各出一个「预览」(previewUrl 那处 + _viewable 那处),
+  //   md 两条都命中 → 真的并排两个「预览」。已收成一处 (同一件事两处各写一份判据 = 必然分叉)。
+  const _viewable = _isPdf || ['image', 'video', 'audio', 'text'].includes(_tKey);
+  const thumb = (openMode && _imgRe.test(String(it.name || '')))
+    ? `<a class="rc-thumb" href="javascript:void(0)" data-open-view="${escHtml(openRel)}" title="点一下看大图（浮层 · Esc 关掉）"><img loading="lazy" src="/stage/file/${encodeURI(openRel)}?token=${encodeURIComponent(token || '')}" alt=""></a>`
+    : '';
+  // 左侧那格 (用户 2026-09-19:「会话是列表风格，然后最左侧有一张缩略图看」):
+  //   图片 = 真缩略图; 其余 = 带色的类型图标 (Word蓝/Excel绿/PPT橙… 见 _DOC_TINT)
+  const _td = _tileExt(it);
+  const side = thumb || `<span class="rc-side-ico ${_tileTint(_td)}"><i class="${_tileIcon(_td)}"></i></span>`;
+  // 2026-09-20 · 照原型重排 (用户:「和你给我看的原型根本不是一个东西？？」)—— 上一版只调了
+  //   CSS 三处, 结构还是“一堆按钮平铺在第二行”, 跟原型差得远。这次真改结构:
+  //   第一行只有标题 + ⭐; 第二行 = 版本/来源/💬归属/时间 …… 右脚 = 大小 + 主操作 + ⋯。
+  //   次要操作(查看&批注 / 让我改 / 存入知识库 / 下载)全收进 ⋯ 菜单 —— 卡片从~90px 降到~64px。
+  //   ⚠ 所有 data-* 绑定原样搬运 (只是换位置), 收藏/预览/批注/改/存知识库照旧。
+  // 2026-09-20 三次 (用户:「点击文件名就是查看批注的中栏显示, 所以右侧按钮应该就是留个预览
+  //   (或者本机应用打开), 能弹框的弹框快速查看」):
+  //   主按钮 = 能弹框快速看的给「预览」, 弹不了框的给「本机应用打开」;
+  //   「查看 & 批注」退回 ⋯ (中栏那条路走文件名点击就行, 不用再占主位), 留着是因为不一定人人知道点文件名。
+  const _primary = _viewable
+    ? `<button class="rc-preview-btn rc-main" data-open-view="${escHtml(openRel)}" title="弹框快速看一眼（Esc 关掉）"><i class="ri-eye-line"></i> 预览</button>`
+    : `<button class="rc-preview-btn rc-main" data-open="${escHtml(openRel)}" title="用本机软件打开它"><i class="ri-external-link-line"></i> 本机应用打开</button>`;
+  const _more = [
+    _annotatable ? `<button class="rc-preview-btn rc-annotate" data-annotate="${escHtml(openRel)}" title="铺到中栏 · 圈字批注 / 加图（点文件名同效）"><i class="ri-quill-pen-line"></i> 查看 &amp; 批注</button>` : '',
+    _viewable ? `<button class="rc-preview-btn" data-open="${escHtml(openRel)}" title="用本机软件打开它"><i class="ri-external-link-line"></i> 本机应用打开</button>` : '',
+    reviseBtn,
+    kbBtn,
+    `<a class="rc-dl" href="${escHtml(dlUrl)}" download="${escHtml(it.name)}"><i class="ri-download-2-line"></i> 下载</a>`,
+  ].filter(Boolean).join('');
+  return `
+    <div class="report-card rc-compact"${openRel ? ` data-shelf-path="${escHtml(openRel)}"` : ''}>
+      <div class="rc-side">${side}</div>
+      <div class="rc-body">
+      <div class="rc-head">
+        <a class="rc-name" href="javascript:void(0)" data-name="${escHtml(it.name)}" data-preview-url="${escHtml(previewUrl)}" data-preview="1" data-open-rel="${escHtml(openRel)}">
+          ${escHtml(showName)}
+        </a>
+        <span class="rc-pill-slot">${_shelfStar(it)}</span>
+      </div>
+      <div class="rc-meta">
+        ${ver}
+        ${srcBadge}
+        ${_shelfPill(it)}
+        <span class="rc-time">${escHtml(it.created_at)}</span>
+        ${it.pages ? `<span class="rc-pages">${it.pages} 页</span>` : ''}
+        <span class="rc-size">${escHtml(fmtShelfSize(it.size_kb))}</span>
+        ${_primary}
+        ${_more ? `<details class="rc-more"><summary title="更多操作"><i class="ri-more-fill"></i></summary><div class="rc-more-menu">${_more}</div></details>` : ''}
+      </div>
+      </div>
+      ${histHtml}
+    </div>`;
 }
 
 function reviseShelfProto(path) {
@@ -3542,7 +4704,8 @@ function reviseShelfProto(path) {
     '改 HTML 原型 `' + rel + '` · 先 read_file 看现在的结构 · 按我接下来的要求改 (edit_file) · 改完中栏刷新能看到。我先点开了这份，你等我说改哪里。',
     '改原型'
   );
-  if (typeof openStage === 'function') openStage({ path: rel });
+  // 明确「让我改」→ 挂进本场（显式 bind:true）
+  if (typeof openStage === 'function') openStage({ path: rel, bind: true });
 }
 
 function renderReports(data) {
@@ -3550,7 +4713,6 @@ function renderReports(data) {
   _shelfLastData = data;
   if (data && data.error) {
     $dashView.innerHTML = `
-      ${pipelineBreadcrumb('reports')}
       <div class="dash-head"><h2><i class="ri-archive-2-fill"></i> 产物库</h2></div>
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
@@ -3563,26 +4725,80 @@ function renderReports(data) {
   };
   const decks = kinds.decks || { items: [], count: 0, directory: 'data/presentations' };
   const sheets = kinds.sheets || { items: [], count: 0, directory: 'data/spreadsheets' };
-  const protos = kinds.protos || { items: [], count: 0, directory: 'data/design' };
-  const kind = (_shelfKind === 'decks' || _shelfKind === 'sheets' || _shelfKind === 'protos') ? _shelfKind : 'reports';
-  const pack = kind === 'decks' ? decks : (kind === 'sheets' ? sheets : (kind === 'protos' ? protos : reports));
-  const items = pack.items || [];
-  const dir = pack.directory || (kind === 'decks' ? 'data/presentations' : (kind === 'sheets' ? 'data/spreadsheets' : (kind === 'protos' ? 'data/design' : 'data/reports')));
-  const nR = reports.count != null ? reports.count : (reports.items || []).length;
-  const nD = decks.count != null ? decks.count : (decks.items || []).length;
-  const nS = sheets.count != null ? sheets.count : (sheets.items || []).length;
-  const nP = protos.count != null ? protos.count : (protos.items || []).length;
+  // ── 预制应用四维 (一级 presets · 二级 design/dev/docs/content · 与内置应用同名) ──
+  const presets = kinds.presets || {};
+  const subs = presets.subs || {};
+  const _subPack = (k, fb) => subs[k] || kinds[k] || { items: [], count: 0, directory: fb, label: k };
+  const design = _subPack('design', 'data/design');
+  const dev = _subPack('dev', 'data/dev');
+  const docs = _subPack('docs', 'data/docs');
+  const content = _subPack('content', 'data/content');
+  const workshop = kinds.workshop || { items: [], count: 0, directory: 'data/workshop/outputs' };
+  // 每项挂上自己的 _kind —— _shelfCard 靠它画对的下载链 / 打开路径 / 徽章
+  //   ⚠ 2026-09-20 修: 原先这里直接展开原始 items · 没打标 → 「全部」视图里演示稿/表格
+  //   的下载与打开全按报告走 (/reports/xxx) · 是错的。复用下面 _all 用的同一支 _tag。
+  const _tag = (arr, k) => (arr || []).map(i => Object.assign({}, i, { _kind: k }));
+  // 「全部」总览的一篮子 = 六个文档型类目 (工坊产物不进这篮 —— 2858 条 + 已有自己的
+  //   文件夹视图, 混进来就是 2026-09-19 那次「随便点一下就卡崩」的老病; 想看它点自己的 tab)
+  const _allDocs = [
+    ..._tag(reports.items, 'reports'), ..._tag(decks.items, 'decks'), ..._tag(sheets.items, 'sheets'),
+    ..._tag(design.items, 'design'), ..._tag(dev.items, 'dev'), ..._tag(docs.items, 'docs'), ..._tag(content.items, 'content'),
+  ];
+  const kind = _SHELF_KINDS.includes(_shelfKind) ? _shelfKind : 'all';
+  const pack = (kind === 'presets')
+    ? ({ design: design, dev: dev, docs: docs, content: content }[_shelfSub] || design)
+    : (kind === 'all')
+    ? ({ items: _allDocs, count: _allDocs.length, directory: 'data/reports' })
+    : ({ decks: decks, sheets: sheets, workshop: workshop }[kind] || reports);
+  // ⭐ 收藏视图 · 跨 6 类合并 + 只留 is_favorited (用户 2026-09-18: 不想两头点)
+  //    数据就是左栏收藏夹那套 favorites.json · 没有第二份。
+  //    每项挂上 _kind → _shelfCard 才能画出对的下载链/徽章 (否则全按报告画)
+  //    ⚠ 新两类也要进来 —— 否则「收了 data/dev 的档案·收藏视图里还是找不到」(wish-1dc9c39d)
+  //   (_tag 定义已上提到 _allDocs 之前 · 两处共用同一支)
+  const _all = [..._tag(reports.items, 'reports'), ..._tag(decks.items, 'decks'),
+                ..._tag(sheets.items, 'sheets'),
+                ..._tag(design.items, 'design'), ..._tag(dev.items, 'dev'),
+                ..._tag(docs.items, 'docs'), ..._tag(content.items, 'content'),
+                ..._tag(workshop.items, 'workshop')];
+  // 2026-09-28 · 数据没拉全时收藏数算不准 —— 宁可空着等后台补齐，也不报假数
+  const _favReady = ['reports', 'decks', 'sheets', 'workshop'].every(k => kinds[k] && kinds[k].deferred !== true)
+    && !Object.values(subs).some(s => s && s.deferred);
+  const nFav = _favReady ? _all.filter(i => i.is_favorited).length : '';
+  const items = (kind === 'fav') ? _all.filter(i => i.is_favorited) : (pack.items || []);
+  const dir = pack.directory || 'data/reports';
+  // 2026-09-28 · count 为 null（那一格这轮没拉）= 先不显示数字，等后台补齐。
+  //   原来显示「…」—— 一排省略号看着像“还有更多”，比空着更糟（用户 当场否掉）。
+  const _nOf = (p) => (p && p.count != null) ? p.count
+    : ((p && p.deferred) ? '' : (((p && p.items) || []).length));
+  const nR = _nOf(reports);
+  const nD = _nOf(decks);
+  const nS = _nOf(sheets);
+  const _pDefer = Object.values(subs).some(s => s && s.deferred);
+  const nP = (presets.count != null) ? presets.count
+    : (_pDefer ? '' : ((design.count || 0) + (dev.count || 0) + (docs.count || 0) + (content.count || 0)));
+  const nW = _nOf(workshop);
+  // 回收站件数（后端 list_shelf 顺手给的 · 不进索引缓存）—— 给 tab 上的数字用
+  const trashN = (data && typeof data.trash_count === 'number') ? data.trash_count : '';
 
   let html = `
-    ${pipelineBreadcrumb('reports')}
     <div class="dash-head">
       <h2><i class="ri-archive-2-fill"></i> 产物库</h2>
-      <span class="meta">成品层 · ${items.length} 份 · ${escHtml(dir)}</span>
+      <div class="dh-chips">
+        <div class="dh-chip" title="报告库里的文件数"><b>${nR}</b><span>报告</span></div>
+        <div class="dh-chip" title="演示稿文件数"><b>${nD}</b><span>演示稿</span></div>
+        <div class="dh-chip" title="表格文件数"><b>${nS}</b><span>表格</span></div>
+        <div class="dh-chip" title="预制应用产出数"><b>${nP}</b><span>预制</span></div>
+        <div class="dh-chip" title="工坊产物数"><b>${nW}</b><span>工坊</span></div>
+      </div>
       <button class="btn-ghost" onclick="backToChat()">收起</button>
-      <button class="btn-ghost" onclick="loadDashboard('trends')">回到趋势</button>
       <button class="btn-primary" onclick="loadDashboard('reports')">刷新列表</button>
     </div>
+    <div class="dash-note"><i class="ri-folder-2-line"></i> 成品层 · 共 ${items.length} 份 · ${kind === 'all' ? '六个类目混排' : escHtml(dir)}</div>
     <div class="depot-tabs" role="tablist">
+      <button type="button" class="depot-tab${kind === 'all' ? ' active' : ''}" onclick="switchShelfKind('all')"
+              title="全库混排 · 报告 / 演示稿 / 表格 / 预制应用 · 最近改过的排最前（工坊产物太多，单列在右边那格）">
+        <i class="ri-apps-2-line"></i><span>全部</span><span class="shelf-n">${_favReady ? _allDocs.length : ''}</span>
+      </button>
       <button type="button" class="depot-tab${kind === 'reports' ? ' active' : ''}" onclick="switchShelfKind('reports')">
         <i class="ri-article-fill"></i><span>报告</span><span class="shelf-n">${nR}</span>
       </button>
@@ -3592,13 +4808,62 @@ function renderReports(data) {
       <button type="button" class="depot-tab${kind === 'sheets' ? ' active' : ''}" onclick="switchShelfKind('sheets')">
         <i class="ri-table-fill"></i><span>表格</span><span class="shelf-n">${nS}</span>
       </button>
-      <button type="button" class="depot-tab${kind === 'protos' ? ' active' : ''}" onclick="switchShelfKind('protos')">
-        <i class="ri-window-fill"></i><span>原型</span><span class="shelf-n">${nP}</span>
+      <button type="button" class="depot-tab${kind === 'presets' ? ' active' : ''}" onclick="switchShelfKind('presets')"
+              title="内置应用的产出 · 二级四个维度（产品设计 / 产品开发 / 文档撰写 / 内容制作）">
+        <i class="ri-apps-2-fill"></i><span>预制应用</span><span class="shelf-n">${nP}</span>
+      </button>
+      <button type="button" class="depot-tab${kind === 'workshop' ? ' active' : ''}" onclick="switchShelfKind('workshop')"
+              title="出品工坊里 app 跑出来的成品 (data/workshop/outputs) —— 车间出的活儿也算我的东西">
+        <i class="ri-hammer-fill"></i><span>工坊产物</span><span class="shelf-n">${nW}</span>
+      </button>
+      <button type="button" class="depot-tab shelf-trash-tab${kind === 'trash' ? ' active' : ''}" onclick="switchShelfKind('trash')"
+              title="删掉的产物先放这儿 · 留 30 天 · 过期自动清 · 可逐件还原">
+        <i class="ri-delete-bin-6-line"></i><span>回收站</span><span class="shelf-n">${typeof trashN === 'number' ? trashN : ''}</span>
+      </button>
+      <button type="button" class="depot-tab shelf-fav-tab${kind === 'fav' ? ' active' : ''}" onclick="switchShelfKind('fav')"
+              title="只看收藏过的产物 · 跟左栏「收藏夹 → 我的产物」是同一份">
+        <i class="ri-star-${kind === 'fav' ? 'fill' : 'line'}"></i><span>收藏</span><span class="shelf-n" id="shelfFavN">${nFav}</span>
       </button>
     </div>`;
 
-  if (items.length === 0) {
-    html += kind === 'decks' ? `
+  // 预制应用的二级 (用户:「做成二级 · 不然用户看了也容易混」) —— 只在选中一级时出现
+  // 名字直接用内置应用名 (p.label 来自后端 draft_studio 那四个 domain) · 不另起别名
+  if (kind === 'presets') {
+    const _subPacks = { design: design, dev: dev, docs: docs, content: content };
+    html += `<div class="depot-tabs depot-subtabs" role="tablist">
+      ${_SHELF_SUBS.map(sk => {
+        const p = _subPacks[sk] || {};
+        return `<button type="button" class="depot-tab${_shelfSub === sk ? ' active' : ''}" onclick="switchShelfSub('${sk}')"
+                title="${escHtml(p.where || '')}">
+          <span>${escHtml(p.label || sk)}</span><span class="shelf-n">${p.deferred ? '' : (p.count || 0)}</span>
+        </button>`;
+      }).join('')}
+    </div>`;
+  }
+
+  // 2026-09-28 · 这一格这轮还没拉（deferred）→ 说「正在取」，不能说「还没有 XX」
+  //   那是假空态：工坊明明有 2959 条，却告诉 用户「还没有工坊产物」（他当场抓出来了）
+  const _packDeferred = (kind === 'presets' || kind === 'all' || kind === 'fav')
+    ? _shelfMissing(kinds, kind).length > 0
+    : !!(kinds[kind] && kinds[kind].deferred === true);
+  // ── 「回收站」不是产物类目：有自己的面板，不进排序 / 分页 / 搜索那一套 ──
+  if (kind === 'trash') {
+    html += _shelfTrashInline();
+  } else if (items.length === 0 && _packDeferred) {
+    html += `<div class="dash-stub">
+      <h3>正在取这一格…</h3>
+      <div>产物库先只算了「报告」这一格（它最快），其余在后台补 —— 一两秒就好。</div>
+    </div>`;
+  } else if (items.length === 0) {
+    html += kind === 'all' ? `
+      <div class="dash-stub">
+        <h3>产物库还是空的</h3>
+        <div>跟我做点什么，产出的东西会汇到这里。</div>
+      </div>` : kind === 'fav' ? `
+      <div class="dash-stub">
+        <h3>还没收藏过产物</h3>
+        <div>在卡片上点 <i class="ri-star-line"></i> 就能收藏 —— 收的都在这里，跟左栏「收藏夹 → 我的产物」是同一份数据。</div>
+      </div>` : kind === 'decks' ? `
       <div class="dash-stub">
         <h3>还没生成过演示稿</h3>
         <div>跟我说做PPT，文件会出现在这里。</div>
@@ -3606,82 +4871,50 @@ function renderReports(data) {
       <div class="dash-stub">
         <h3>还没生成过表格</h3>
         <div>跟我说做表格，文件会出现在这里。</div>
-      </div>` : kind === 'protos' ? `
+      </div>` : kind === 'presets' ? `
       <div class="dash-stub">
-        <h3>还没有 HTML 原型</h3>
-        <div>跟我说做个页面原型，会出现在这里。点「让我改」就能接着改。</div>
+        <h3>这一格还是空的</h3>
+        <div>${escHtml((pack && pack.label) || '')} · ${escHtml((pack && pack.where) || '')}</div>
+      </div>` : kind === 'workshop' ? `
+      <div class="dash-stub">
+        <h3>还没有工坊产物</h3>
+        <div>出品工坊里 app 跑出来的成品会汇到这里。</div>
       </div>` : `
       <div class="dash-stub">
         <h3>还没生成过报告</h3>
         <div>跟我说写报告，文件会出现在这里。</div>
       </div>`;
   } else {
-    html += renderListFilter({targetSelector: '.report-card', placeholder: kind === 'decks' ? '搜演示稿文件名 / 时间...' : (kind === 'sheets' ? '搜表格文件名 / 时间...' : (kind === 'protos' ? '搜原型文件名 / 路径...' : '搜报告文件名 / 时间...'))});
-    html += `<div class="reports-list">`;
-    for (const it of items) {
-      const rawDl = it.download_url || (kind === 'decks' ? `/presentations/${it.name}` : (kind === 'sheets' ? `/spreadsheets/${it.name}` : (kind === 'protos' ? `/stage/file/data/design/${it.name}` : `/reports/${it.name}`)));
-      const dlUrl = `${rawDl}${rawDl.includes('?') ? '&' : '?'}token=${encodeURIComponent(token || '')}`;
-      const previewUrl = it.preview_url || '';
-      const srcBadge = kind === 'protos'
-        ? `<span class="rc-src-badge rc-src-md" title="HTML 就是源 · 中栏预览，跟我说改">可改</span>`
-        : (it.has_md_source
-        ? `<span class="rc-src-badge rc-src-md" title="有源文件">有源文件</span>`
-        : `<span class="rc-src-badge rc-src-extract" title="${kind === 'decks' ? '没有源文件 · 下载用本机软件打开' : (kind === 'sheets' ? '没有源文件 · 成品仍可看表' : '旧报告 · 预览是从成品反推的')}">${kind === 'decks' || kind === 'sheets' ? '没有源文件' : '旧版预览'}</span>`);
-      const kbBtn = kind === 'reports'
-        ? `<button class="rc-preview-btn rp-kb" data-name="${escHtml(it.name)}" title="存进知识库，之后回答能引用原文"><i class="ri-book-2-line"></i> 存入知识库</button>`
-        : '';
-      const openRel = it.open_path || (kind === 'decks' ? ('data/presentations/' + it.name) : (kind === 'sheets' ? ('data/spreadsheets/' + it.name) : (kind === 'protos' ? ('data/design/' + it.name) : ('data/reports/' + it.name))));
-      const reviseBtn = kind === 'protos'
-        ? `<button type="button" class="rc-preview-btn" data-revise="${escHtml(openRel)}" title="丢给对话，按你的话改这份"><i class="ri-pencil-line"></i> 让我改</button>`
-        : '';
-      const showName = it.title || it.name;
-      const ver = it.version ? `<span class="rc-ver">V${it.version}</span>` : '';
-      const hist = Array.isArray(it.history) ? it.history : [];
-      let histHtml = '';
-      if (hist.length) {
-        const rows = hist.map((h, i) => {
-          const hv = h.version || ((it.version || (hist.length + 1)) - 1 - i);
-          const lo = h.version_lo || hv;
-          const verLabel = (h.dupes > 1 && lo && lo !== hv) ? (`V${lo}–V${hv}`) : (`V${hv}`);
-          const hop = h.open_path || openRel;
-          const hpv = shelfPreviewUrl(kind, h.name || '');
-          const hdl = `${h.download_url || rawDl}${((h.download_url || rawDl).includes('?') ? '&' : '?')}token=${encodeURIComponent(token || '')}`;
-          const dupe = h.dupes > 1 ? `<span class="rc-dupe">同一份 · 记了 ${h.dupes} 次</span>` : '';
-          const pg = h.pages ? `<span class="rc-pages">${h.pages} 页</span>` : '';
-          return `<div class="rc-hist-row"><span class="rc-ver">${verLabel}</span><span class="rc-size">${escHtml(fmtShelfSize(h.size_kb))}</span>${pg}<span class="rc-time">${escHtml(h.created_at || '')}</span>${dupe}`
-            + `<button type="button" class="rc-preview-btn" data-name="${escHtml(h.name || '')}" data-preview-url="${escHtml(hpv)}"><i class="ri-eye-line"></i> 中栏看</button>`
-            + `<button type="button" class="rc-preview-btn rc-restore" data-restore="${escHtml(h.name || '')}" data-kind="${escHtml(kind)}" title="不会删任何旧文件。把这版抄成当前，现在的当前会另存进历史。"><i class="ri-arrow-go-back-line"></i> 用这版继续</button>`
-            + `<button type="button" class="rc-preview-btn" data-open="${escHtml(hop)}" title="用本机软件打开"><i class="ri-external-link-line"></i></button>`
-            + `<a class="rc-dl" href="${escHtml(hdl)}" download="${escHtml(h.name || '')}">下载</a></div>`;
-        }).join('');
-        histHtml = `<details class="rc-hist"><summary>历史 ${hist.length} 份</summary><p class="rc-hist-hint">卡片「预览」是当前这份。要看旧样子，点下面体积大、页数多的那行「中栏看」。顶栏必须出现「历史 Vx」，才是旧稿。</p>${rows}</details>`;
-      }
-      html += `
-        <div class="report-card">
-          <div class="rc-head">
-            <a class="rc-name" href="javascript:void(0)" data-name="${escHtml(it.name)}" data-preview-url="${escHtml(previewUrl)}" data-preview="1">
-              ${escHtml(showName)}
-            </a>
-            ${ver}
-            ${srcBadge}
-          </div>
-          <div class="rc-meta">
-            <span class="rc-size">${escHtml(fmtShelfSize(it.size_kb))}</span>
-            ${it.pages ? `<span class="rc-pages">${it.pages} 页</span>` : ''}
-            <span class="rc-time">${escHtml(it.created_at)}</span>
-            ${previewUrl ? `<button class="rc-preview-btn" data-name="${escHtml(it.name)}" data-preview-url="${escHtml(previewUrl)}"><i class="ri-eye-line"></i> 预览</button>` : ''}
-            <button class="rc-preview-btn rc-annotate" data-annotate="${escHtml(openRel)}" title="打开产物库铺进画布 · 圈字批注 / 加图"><i class="ri-quill-pen-line"></i> 查看 &amp; 批注</button>
-            <button class="rc-preview-btn" data-open="${escHtml(openRel)}"><i class="ri-external-link-line"></i> 打开</button>
-            ${reviseBtn}
-            ${kbBtn}
-            <a class="rc-dl" href="${escHtml(dlUrl)}" download="${escHtml(it.name)}">下载</a>
-          </div>
-          ${histHtml}
-        </div>`;
-    }
-    html += `</div>`;
+    html += _shelfBar(kind, items);
+    html += _shelfBody(kind, items);
   }
+  const _prevShelfScroll = $dashView.scrollTop;
   $dashView.innerHTML = html;
+  if (_prevShelfScroll > 0) $dashView.scrollTop = _prevShelfScroll;
+
+  // 2026-09-28 · 首屏只带了 reports（42ms 秒出）· 其余类目在后台补齐（只补一次）——
+  //   数字补上、切 tab 不用再等、更不会停在假空态上。
+  //   ⚠ 这段必须待在 renderReports 里：第一次改时 old_string（`$dashView.innerHTML = html;`）
+  //     在全文出现 5 次，静默命中了 renderFeasibility 那一处 —— 而那里没有 kinds 这个变量，
+  //     整段一执行就抛 ReferenceError，补齐永远不触发（表里数字永远空着）。
+  if (!_shelfRefilling && _shelfMissing(kinds, 'fav').length) {
+    _shelfRefilling = true;
+    _shelfEnsure('fav').then(d => {
+      _shelfRefilling = false;
+      // 补上了才重渲 —— 失败时 _shelfEnsure 返回原数据、missing 仍在，
+      // 若照样重渲就成了「渲染→补齐→失败→再渲染」空转（这个判断 = 根本不会发生）
+      if (d && !_shelfMissing(d.kinds, 'fav').length) renderReports(d);
+    });
+  }
+
+  // 2026-09-20 · 用户：「点击后这些二级导航又掉回下面·过几秒又会升回去」——
+  //   类目切换（switchShelfKind/Sub）直接重渲染·不走 loadDashboard 的收口；
+  //   收口只有恰好在途的延迟 timer 才会补上（所以时好时坏）。
+  //   这里渲染完立即收口 · 「掉回」窗口归零（350ms 双保险）。
+  if (typeof _unifyDashHead === 'function') {
+    _unifyDashHead(null, 'reports');
+    setTimeout(() => _unifyDashHead(null, 'reports'), 350);
+  }
 
   $dashView.querySelectorAll('.rc-preview-btn:not(.rp-kb):not([data-open]):not([data-restore]):not([data-revise]):not([data-annotate]), .rc-name[data-preview]').forEach(el => {
     el.onclick = (ev) => {
@@ -3689,13 +4922,52 @@ function renderReports(data) {
       ev.stopPropagation();
       const name = el.getAttribute('data-name');
       const previewUrl = el.getAttribute('data-preview-url');
-      if (kind === 'protos') {
-        const rel = el.closest('.report-card') && el.closest('.report-card').querySelector('[data-open]');
-        const path = (rel && rel.getAttribute('data-open')) || ('data/design/' + name);
-        if (typeof openStage === 'function') openStage({ path: path });
-        return;
-      }
+      // 原型 / 媒体 / 网页 / pdf / md → 中栏
+      //  (wish-1dc9c39d: 原来只认 protos · 图片视频全掉进报告预览 → /reports/preview/x.jpg → 404)
+      const card = el.closest('.report-card');
+      const openEl = card && card.querySelector('[data-open]');
+      const rel = el.getAttribute('data-open-rel')
+        || (openEl && openEl.getAttribute('data-open'))
+        || (kind === 'protos' ? ('data/design/' + name) : '');
+      // 「预览」按钮 / 点文件名 → 统一出口。去处按格式自动分 (媒体/md/html → 浮层 · office → 中栏)
+      //   不再走 loadReportPreview —— 那条会把整个产物库面板顶掉 (dashView.innerHTML=预览内容),
+      //   关掉回来要重新 loadDashboard 拉数据重渲全部, 滚动位置/页码全丢
+      //   (用户 2026-09-19:「每次中栏看再回来就要重新加载打开很麻烦」)。
+      if (rel) { _shelfOpenRel(rel, el); return; }
       if (name) loadReportPreview(name, previewUrl || undefined);
+    };
+  });
+
+  // 缩略图 / 瓦片 / 「预览」按钮 → 看图走通用浮层 (即看即走·不顶面板) · 文档走中栏
+  //  入口分开 (wish-1dc9c39d 二次): 文档走 [data-annotate]（查看 & 批注）· 这里只管「看」
+  $dashView.querySelectorAll('[data-open-view]').forEach(el => {
+    el.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      _shelfOpenRel(el.getAttribute('data-open-view'), el);
+    };
+  });
+
+  // 网格瓦片 (wish-1dc9c39d): 点面 / 点眼睛 → 同上 · 点星 → 复用 toggleShelfStar
+  $dashView.querySelectorAll('.tile-face[data-tile-open]').forEach(el => {
+    el.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      _shelfOpenRel(el.getAttribute('data-tile-open'), el);
+    };
+  });
+  $dashView.querySelectorAll('.ta-btn[data-open-view]').forEach(el => {
+    el.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      _shelfOpenRel(el.getAttribute('data-open-view'), el);
+    };
+  });
+  $dashView.querySelectorAll('.ta-btn[data-fav-ref]').forEach(el => {
+    el.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (typeof toggleShelfStar === 'function') toggleShelfStar(el);
     };
   });
   $dashView.querySelectorAll('[data-annotate]').forEach(btn => {
@@ -3734,8 +5006,18 @@ function renderReports(data) {
       _importReportToKb(btn.getAttribute('data-name'), btn);
     };
   });
+  $dashView.querySelectorAll('.rc-star').forEach(btn => {
+    btn.onclick = (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      toggleShelfStar(btn);
+    };
+  });
 
-  if (items.length) _applyListFilter($dashView.querySelector('.list-filter-input'));
+  // 2026-09-30 · 回收站格没有搜索框 → 传 null 进去会让 _applyListFilter 抛
+  //   「Cannot read properties of null (reading 'value')」，把这一格整个渲染卡死
+  //   （用户 报「点回收站没反应」的真身）。这里明确跳过，函数自己也加 null 闸。
+  if (kind !== 'trash' && items.length) _applyListFilter($dashView.querySelector('.list-filter-input'));
 }
 
 async function runFeasibilityFromOpp(opp_id, idx) {
@@ -3868,4 +5150,872 @@ function wishFromRadar(title, url) {
     `**你才是搭档·不是给 用户 端菜的工具人**·拿出判断力。`,
     `勘察: ${title}`
   );
+}
+
+
+// ─── wish-0c9fdbf4 · 产物库删除 + 回收站 ─────────────────────────────
+//
+// 用户 2026-09-30 定死的交互：点「删除」进选择模式 · 单击=只选它 · 按住不动=加选。
+// 删掉的先进回收站（留 30 天 · 能还原）· 回收站有按钮直接清空。
+
+let _shelfPickOn = false;
+const _shelfPicked = new Map();     // path -> {path, name}
+let _shelfLpTimer = null;
+let _shelfLpFired = false;
+
+function _shelfNameOf(el, p) {
+  const n = el.querySelector('.tile-name') || el.querySelector('.rc-title');
+  return ((n && n.textContent) || String(p).split('/').pop() || '').trim();
+}
+
+function shelfPickMode(on) {
+  _shelfPickOn = !!on;
+  if (!_shelfPickOn) _shelfPicked.clear();
+  document.body.classList.toggle('shelf-picking', _shelfPickOn);
+  _shelfPaintPicked();
+  _shelfEnsureBar();
+}
+
+function _shelfEnsureBar() {
+  let bar = document.getElementById('shelfPickBar');
+  if (!_shelfPickOn) { if (bar) bar.remove(); return; }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'shelfPickBar';
+    document.body.appendChild(bar);
+  }
+  const n = _shelfPicked.size;
+  bar.innerHTML = '<span class="spb-n">已选 <b>' + n + '</b> 项</span>'
+    + '<span class="spb-hint">单击 = 加上或去掉它 · 按住拖过哪几张 = 哪几张一起选</span>'
+    + '<span class="spb-sp"></span>'
+    + '<button type="button" class="btn-ghost" onclick="shelfPickAll()">全选本页</button>'
+    + '<button type="button" class="btn-ghost" onclick="shelfPickMode(false)">取消</button>'
+    + '<button type="button" class="spb-danger" onclick="shelfAskDelete()"' + (n ? '' : ' disabled') + '>'
+    + '<i class="ri-delete-bin-6-line"></i> 删除</button>';
+}
+
+function _shelfPaintPicked() {
+  document.querySelectorAll('[data-shelf-path]').forEach((el) => {
+    el.classList.toggle('picked', _shelfPicked.has(el.getAttribute('data-shelf-path')));
+  });
+}
+
+function shelfPickAll() {
+  document.querySelectorAll('[data-shelf-path]').forEach((el) => {
+    const p = el.getAttribute('data-shelf-path');
+    _shelfPicked.set(p, { path: p, name: _shelfNameOf(el, p) });
+  });
+  _shelfPaintPicked();
+  _shelfEnsureBar();
+}
+
+function _shelfToggle(el) {
+  const p = el.getAttribute('data-shelf-path');
+  if (!p) return;
+  if (_shelfPicked.has(p)) _shelfPicked.delete(p);
+  else _shelfPicked.set(p, { path: p, name: _shelfNameOf(el, p) });
+  _shelfPaintPicked();
+  _shelfEnsureBar();
+}
+
+function _shelfSingle(el) {
+  const p = el.getAttribute('data-shelf-path');
+  if (!p) return;
+  // 2026-09-30 用户 二次定案：「1234 我点击13，就选中13，现在是只能选择1，再点3点不上」
+  //   → 单击 = 给【这一张】加减，不动别的（能跳着多选）。
+  //   取消整批走「取消」按钮，或逐张再点一遍点掉。
+  //   拖动那条不变（用户:「长按选择这个这个没问题，OK的」）。
+  if (_shelfPicked.has(p)) _shelfPicked.delete(p);
+  else _shelfPicked.set(p, { path: p, name: _shelfNameOf(el, p) });
+  _shelfPaintPicked();
+  _shelfEnsureBar();
+}
+
+// 2026-09-30 · 用户 定的手感（对齐 Windows 资源管理器多选）：
+//   「我要的按住不动是可以拖着选择删除的，和 windows 多选文件一样，单选点击即可」
+//   → 单击 = 只选它 · 按住拖过哪几张 = 那几张一起选（不用等够多少毫秒）。
+function _shelfAdd(el) {
+  const p = el.getAttribute('data-shelf-path');
+  if (!p || _shelfPicked.has(p)) return;
+  _shelfPicked.set(p, { path: p, name: _shelfNameOf(el, p) });
+  el.classList.add('picked');   // 只点这一张：拖动时每划过一张都跑，不整页重涂
+  _shelfEnsureBar();
+}
+
+let _shelfDragOn = false;
+let _shelfDragMoved = false;
+
+document.addEventListener('mousedown', (e) => {
+  if (!_shelfPickOn || e.button !== 0) return;
+  const el = e.target.closest && e.target.closest('[data-shelf-path]');
+  if (!el) return;
+  e.preventDefault();
+  e.stopPropagation();
+  _shelfDragOn = true;
+  _shelfDragMoved = false;
+}, true);
+
+// 按住拖过哪张 → 哪张进选区
+document.addEventListener('mouseover', (e) => {
+  if (!_shelfPickOn || !_shelfDragOn) return;
+  const el = e.target.closest && e.target.closest('[data-shelf-path]');
+  if (!el) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (!_shelfDragMoved) {
+    // 刚离开起点卡片的第一下：起点那张也得留着，否则一拖就把起点顶掉了
+    _shelfDragMoved = true;
+    const first = document.querySelector('[data-shelf-path].picked');
+    if (first && first !== el) _shelfAdd(first);
+  }
+  _shelfAdd(el);
+}, true);
+
+document.addEventListener('mouseup', (e) => {
+  if (!_shelfPickOn) return;
+  const wasDrag = _shelfDragMoved;
+  _shelfDragOn = false;
+  _shelfDragMoved = false;
+  if (wasDrag) { e.preventDefault(); e.stopPropagation(); return; }  // 拖过 = 一次多选，不算单击
+  const el = e.target.closest && e.target.closest('[data-shelf-path]');
+  if (!el) return;
+  e.preventDefault();
+  e.stopPropagation();
+  _shelfSingle(el);   // 没拖动 → 就是单击
+}, true);
+
+// 选择模式下，卡片上原有的按钮/链接（预览/下载/收藏）一律不触发
+document.addEventListener('click', (e) => {
+  if (!_shelfPickOn) return;
+  if (e.target.closest && e.target.closest('#shelfPickBar')) return;
+  if (e.target.closest && e.target.closest('[data-shelf-path]')) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}, true);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || !_shelfPickOn) return;
+  // 必须先吃掉这个键：daemon 自己也拿 Esc 关面板，不拦就会「退了选择模式 + 顺手把产物库关了」
+  e.preventDefault();
+  e.stopPropagation();
+  shelfPickMode(false);
+}, true);
+
+async function shelfAskDelete() {
+  const items = Array.from(_shelfPicked.values());
+  const bar = document.getElementById('shelfPickBar');
+  if (!items.length || !bar || bar.querySelector('.spb-confirm')) return;
+  const conf = document.createElement('div');
+  conf.className = 'spb-confirm';
+  conf.innerHTML = '<i class="ri-error-warning-line"></i> 把这 <b>' + items.length + '</b> 项删进回收站？'
+    + '<span>回收站里留 30 天，随时能捞回来。</span>'
+    + '<button type="button" class="spb-danger" id="spbGo">删进回收站</button>'
+    + '<button type="button" class="btn-ghost" id="spbNo">再想想</button>';
+  bar.appendChild(conf);
+  document.getElementById('spbNo').onclick = () => conf.remove();
+  document.getElementById('spbGo').onclick = async () => {
+    const go = document.getElementById('spbGo');
+    go.disabled = true;
+    go.innerHTML = '<i class="ri-loader-fill cl-spin"></i> 删除中…';
+    try {
+      const r = await fetch('/shelf/delete', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: items }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || '删除失败');
+      // 卡片直接从页面上撤掉（不必重拉整个产物库）
+      Array.from(_shelfPicked.keys()).forEach((p) => {
+        document.querySelectorAll('[data-shelf-path]').forEach((el) => {
+          if (el.getAttribute('data-shelf-path') === p) {
+            const t = el.closest('.sg-tile') || el.closest('.report-card') || el;
+            t.remove();
+          }
+        });
+      });
+      if (typeof addSys === 'function') {
+        addSys('已删进回收站 ' + (d.moved || 0) + ' 项 · ' + (d.freed_size || '0 B') + '（30 天内可还原）');
+      }
+      shelfPickMode(false);
+    } catch (e2) {
+      go.disabled = false;
+      go.innerHTML = '<i class="ri-delete-bin-6-line"></i> 删除';
+      if (typeof addSys === 'function') addSys('删除失败：' + e2.message);
+      else alert('删除失败：' + e2.message);
+    }
+  };
+}
+
+// ── 回收站面板 ──────────────────────────────────────────────────
+function closeShelfTrash() { const b = document.getElementById('shelfTrashBox'); if (b) b.remove(); }
+
+async function openShelfTrash() {
+  if (!document.getElementById('shelfTrashBox')) {
+    const box = document.createElement('div');
+    box.id = 'shelfTrashBox';
+    box.className = 'shelf-trash-mask';
+    box.innerHTML = '<div class="shelf-trash">'
+      + '<div class="st-head"><i class="ri-archive-line"></i> 产物回收站'
+      + '<span id="stSub" class="st-sub"></span>'
+      + '<button type="button" class="st-x" onclick="closeShelfTrash()" title="关掉"><i class="ri-close-line"></i></button></div>'
+      + '<div id="stBody" class="st-body">读回收站…</div>'
+      + '<div class="st-foot"><span id="stInfo" class="st-info"></span><span class="spb-sp"></span>'
+      + '<button type="button" class="btn-ghost" id="stRestore" onclick="shelfTrashRestore()" disabled><i class="ri-arrow-go-back-line"></i> 还原选中</button>'
+      + '<button type="button" class="btn-danger" id="stEmpty" onclick="shelfTrashAskEmpty()"><i class="ri-delete-bin-2-line"></i> 清空回收站</button>'
+      + '</div></div>';
+    document.body.appendChild(box);
+    box.onclick = (e) => { if (e.target === box) closeShelfTrash(); };
+  }
+  await shelfTrashLoad();
+}
+
+async function shelfTrashLoad() {
+  const body = document.getElementById('stBody');
+  if (!body) return;
+  body.innerHTML = '<div class="st-empty">读回收站…</div>';
+  try {
+    const r = await fetch('/shelf/trash', { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '读不了');
+    const batches = d.batches || [];
+    const sub = document.getElementById('stSub');
+    if (sub) sub.textContent = d.count ? (d.count + ' 件 · ' + d.size) : '';
+    const info = document.getElementById('stInfo');
+    if (info) info.textContent = d.count ? ('超过 ' + d.keep_days + ' 天自动清掉 · 现在清空就找不回了') : '';
+    if (!batches.length) {
+      body.innerHTML = '<div class="st-empty">回收站是空的。<br><span>删掉的产物会先放这儿，留 '
+        + d.keep_days + ' 天。</span></div>';
+      _stSync();
+      return;
+    }
+    body.innerHTML = batches.map((b) => '<div class="st-batch">'
+      + '<div class="st-batch-h"><i class="ri-time-line"></i> ' + escHtml(b.when)
+      + '<em>' + b.count + ' 件 · ' + escHtml(b.size) + '</em>'
+      + '<span class="st-left">还剩 ' + b.left_days + ' 天</span></div>'
+      + '<div class="st-files">' + b.files.map((f) => '<label class="st-file">'
+        + '<input type="checkbox" class="st-pick" value="' + escHtml(b.batch + '/' + f.rel) + '">'
+        + '<span class="st-fname">' + escHtml(f.rel) + '</span>'
+        + '<span class="st-fsize">' + escHtml(f.size) + '</span></label>').join('')
+      + '</div></div>').join('');
+    body.querySelectorAll('.st-pick').forEach((el) => { el.onchange = _stSync; });
+    _stSync();
+  } catch (e) {
+    body.innerHTML = '<div class="st-empty" style="color:var(--red)">' + escHtml(e.message) + '</div>';
+  }
+}
+
+function _stSync() {
+  const n = document.querySelectorAll('.st-pick:checked').length;
+  // 两个入口共用一份勾选状态：浮层的 stRestore + 内嵌 tab 的 stiRestore
+  ['stRestore', 'stiRestore'].forEach((id) => {
+    const b = document.getElementById(id);
+    if (!b) return;
+    b.disabled = !n;
+    b.innerHTML = '<i class="ri-arrow-go-back-line"></i> 还原选中' + (n ? '（' + n + '）' : '');
+  });
+}
+
+async function shelfTrashRestore() {
+  const paths = Array.from(document.querySelectorAll('.st-pick:checked')).map((el) => el.value);
+  if (!paths.length) return;
+  try {
+    const r = await fetch('/shelf/trash/restore', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: paths }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '还原失败');
+    if (typeof addSys === 'function') addSys('已从回收站还原 ' + (d.moved || 0) + ' 件');
+    await shelfTrashLoad();
+  } catch (e) {
+    if (typeof addSys === 'function') addSys('还原失败：' + e.message);
+    else alert('还原失败：' + e.message);
+  }
+}
+
+function shelfTrashAskEmpty() {
+  const foot = document.querySelector('#shelfTrashBox .st-foot');
+  if (!foot || foot.querySelector('.st-confirm')) return;
+  const sub = document.getElementById('stSub');
+  const conf = document.createElement('div');
+  conf.className = 'st-confirm';
+  conf.innerHTML = '<i class="ri-error-warning-fill"></i> 清空回收站'
+    + (sub && sub.textContent ? '（' + escHtml(sub.textContent) + '）' : '')
+    + '？<span>永久删除 · 找不回来。</span>'
+    + '<button type="button" class="btn-danger" id="stGo">确认清空</button>'
+    + '<button type="button" class="btn-ghost" id="stNo">算了</button>';
+  foot.appendChild(conf);
+  document.getElementById('stNo').onclick = () => conf.remove();
+  document.getElementById('stGo').onclick = async () => {
+    try {
+      const r = await fetch('/shelf/trash/empty', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || '清空失败');
+      if (typeof addSys === 'function') addSys('回收站已清空 · 腾出 ' + (d.freed_size || '0 B'));
+      await shelfTrashLoad();
+    } catch (e) {
+      if (typeof addSys === 'function') addSys('清空失败：' + e.message);
+    }
+  };
+}
+
+
+// ─── 回收站 · 产物库内嵌视图（用户 2026-09-30「回收站放到工坊产物右边，也显示数量」）──
+//   取数是异步的、渲染是同步的 → 先摆骨架，回来了原地填（不整页重渲）。
+let _shelfTrashData = null;
+
+function _shelfTrashInline() {
+  if (!_shelfTrashData) {
+    setTimeout(shelfTrashInlineLoad, 0);
+    return '<div class="dash-stub" id="shelfTrashSlot">'
+      + '<h3>读回收站…</h3><div>每次进这一格都重新读一遍。</div></div>';
+  }
+  return _shelfTrashHtml(_shelfTrashData);
+}
+
+async function shelfTrashInlineLoad() {
+  const slot = document.getElementById('shelfTrashSlot');
+  try {
+    const r = await fetch('/shelf/trash', { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '读不了');
+    _shelfTrashData = d;
+    const box = document.getElementById('shelfTrashSlot');
+    if (box) box.outerHTML = _shelfTrashHtml(d);
+    document.querySelectorAll('.shelf-trash-inline .st-pick').forEach((el) => { el.onchange = _stSync; });
+    _stSync();
+  } catch (e) {
+    const box = document.getElementById('shelfTrashSlot');
+    if (box) box.outerHTML = '<div class="dash-stub" style="color:var(--red)"><h3>读不了回收站</h3><div>'
+      + escHtml(e.message) + '</div></div>';
+  }
+}
+
+function _shelfTrashHtml(d) {
+  const batches = (d && d.batches) || [];
+  const keep = (d && d.keep_days) || 30;
+  if (!batches.length) {
+    return '<div class="dash-stub"><h3>回收站是空的</h3>'
+      + '<div>删掉的产物会先放这儿，留 ' + keep + ' 天，随时能捞回来 —— 过了就自动清掉。</div></div>';
+  }
+  return '<div class="shelf-trash-inline">'
+    + '<div class="sti-bar">'
+    + '<span class="sti-info">共 <b>' + d.count + '</b> 件 · ' + escHtml(d.size || '') + ' · 留 ' + keep + ' 天，过期自动清</span>'
+    + '<span class="spb-sp"></span>'
+    + '<button type="button" class="btn-ghost" id="stiRestore" onclick="shelfTrashInlineRestore()" disabled>'
+    + '<i class="ri-arrow-go-back-line"></i> 还原选中</button>'
+    + '<button type="button" class="btn-danger" id="stiEmpty" onclick="shelfTrashInlineAskEmpty()">'
+    + '<i class="ri-delete-bin-2-line"></i> 清空回收站</button>'
+    + '</div>'
+    + batches.map((b) => '<div class="st-batch">'
+      + '<div class="st-batch-h"><i class="ri-time-line"></i> ' + escHtml(b.when)
+      + '<em>' + b.count + ' 件 · ' + escHtml(b.size) + '</em>'
+      + '<span class="st-left">还剩 ' + b.left_days + ' 天</span></div>'
+      + '<div class="st-files">' + b.files.map((f) => '<label class="st-file">'
+        + '<input type="checkbox" class="st-pick" value="' + escHtml(b.batch + '/' + f.rel) + '">'
+        + '<span class="st-fname">' + escHtml(f.rel) + '</span>'
+        + '<span class="st-fsize">' + escHtml(f.size) + '</span></label>').join('')
+      + '</div></div>').join('')
+    + '</div>';
+}
+
+async function shelfTrashInlineRestore() {
+  const paths = Array.from(document.querySelectorAll('.st-pick:checked')).map((el) => el.value);
+  if (!paths.length) return;
+  try {
+    const r = await fetch('/shelf/trash/restore', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: paths }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '还原失败');
+    if (typeof addSys === 'function') addSys('已从回收站还原 ' + (d.moved || 0) + ' 件');
+    _shelfTrashData = null;
+    if (typeof loadDashboard === 'function') loadDashboard('reports', { silent: true });
+  } catch (e) {
+    if (typeof addSys === 'function') addSys('还原失败：' + e.message);
+  }
+}
+
+function shelfTrashInlineAskEmpty() {
+  const wrap = document.querySelector('.shelf-trash-inline');
+  if (!wrap || wrap.querySelector('.st-confirm')) return;
+  const conf = document.createElement('div');
+  conf.className = 'st-confirm';
+  conf.innerHTML = '<i class="ri-error-warning-fill"></i> 清空回收站？'
+    + '<span>永久删除 · 找不回来。</span>'
+    + '<button type="button" class="btn-danger" id="stiGo">确认清空</button>'
+    + '<button type="button" class="btn-ghost" id="stiNo">算了</button>';
+  wrap.insertBefore(conf, wrap.firstChild);
+  document.getElementById('stiNo').onclick = () => conf.remove();
+  document.getElementById('stiGo').onclick = async () => {
+    try {
+      const r = await fetch('/shelf/trash/empty', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || '清空失败');
+      if (typeof addSys === 'function') addSys('回收站已清空 · 腾出 ' + (d.freed_size || '0 B'));
+      _shelfTrashData = null;
+      if (typeof loadDashboard === 'function') loadDashboard('reports', { silent: true });
+    } catch (e) {
+      if (typeof addSys === 'function') addSys('清空失败：' + e.message);
+    }
+  };
+}
+
+
+// ─── 知识库 · 下钻 + 添加（用户 2026-09-30）──────────────────────────────────
+//   复用产物库的交互骨架（.fld 卡 / .fld-crumb 面包屑 / .shelf-folders 栅格），
+//   但状态自持（_kbFolderOpen），不去动产物库的 _shelfFolder —— 两边是独立的导航栈，
+//   共用样式与卡片类，不共用状态，改一边不会串到另一边。
+let _kbFolderOpen = '';
+let _kbData = null;   // 知识库面板最近一次拿到的原始数据
+
+function kbEnterFolder(name) {
+  _kbFolderOpen = name;
+  if (_kbData) renderKnowledge(_kbData);
+}
+
+function kbLeaveFolder() {
+  _kbFolderOpen = '';
+  if (_kbData) renderKnowledge(_kbData);
+}
+
+/* 粘贴路径时自动预览（敲完 400ms）—— 不用手点「预览」 */
+let _kbScanTimer = null;
+function kbAddScanDebounced() {
+  clearTimeout(_kbScanTimer);
+  _kbScanTimer = setTimeout(() => kbAddScan(), 400);
+}
+
+/* ──────────────────────────────────────────────────────────────
+   拖拽入栏：把文件/文件夹拖进中栏 → 上传 → 落 data/knowledge/incoming/ → 入库
+
+   为什么走上传而不是记路径：浏览器安全沙箱下，拖进来的 File 拿不到磁盘绝对
+   路径 —— 只能拿到内容本身。所以拖拽 = 复制一份进库里，跟原文件脱钩。
+   （要保原路径就用「选文件夹/选文件」那两个按钮，那条能拿到真路径。）
+   2026-10-01 用户:「都要放到我们 daemonkey 某个固定的目录，这个不能乱」→ 落点写死 INCOMING。
+   ────────────────────────────────────────────────────────────── */
+
+/* 递归读一个 entry（文件或文件夹）→ [{file, rel}] · rel 是相对路径（拖文件夹时带子目录） */
+function _kbReadEntry(entry, prefix) {
+  return new Promise((resolve) => {
+    if (!entry) return resolve([]);
+    if (entry.isFile) {
+      entry.file(
+        (f) => resolve([{ file: f, rel: prefix + entry.name }]),
+        () => resolve([])
+      );
+      return;
+    }
+    if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const all = [];
+      const step = () => reader.readEntries(async (batch) => {
+        if (!batch.length) {
+          const got = await Promise.all(all.map((e) => _kbReadEntry(e, prefix + entry.name + '/')));
+          return resolve(got.flat());
+        }
+        all.push(...batch);
+        step();            // readEntries 一次最多返 100 条，得反复读到空
+      }, () => resolve([]));
+      step();
+      return;
+    }
+    resolve([]);
+  });
+}
+
+/* 收下拖进来的东西（中栏） */
+async function kbDropUpload(dt, zoneEl) {
+  const items = dt.items ? Array.from(dt.items) : [];
+  const entries = items.map((it) => (it.webkitGetAsEntry ? it.webkitGetAsEntry() : null));
+
+  let picked = [];
+  if (entries.some(Boolean)) {
+    const got = await Promise.all(entries.map((e) => _kbReadEntry(e, '')));
+    picked = got.flat();
+  } else {
+    // 退路：拿不到 entry 时只收裸文件（此时拖文件夹会空）
+    picked = Array.from(dt.files || []).map((f) => ({ file: f, rel: f.name }));
+  }
+  if (!picked.length) {
+    if (typeof showChatToast === 'function') showChatToast('没看出拖进来的是什么（试试直接拖文件）');
+    return;
+  }
+
+  // 入库前先自己过一遍 —— 不支持的当场点名，不让你只看到一句「不支持」。
+  // 这张表跟后端 workers/doc_ingest.py 的 SUPPORTED_EXT 同源，改了那边记得同步这里。
+  const OK_EXT = ['md', 'markdown', 'txt', 'text', 'log', 'rst', 'org', 'pdf', 'docx', 'pptx',
+                  'xlsx', 'xlsm', 'csv', 'tsv', 'json', 'yaml', 'yml', 'xml', 'html', 'htm'];
+  const extOf = (n) => (String(n).split('.').pop() || '').toLowerCase();
+  const okFiles = picked.filter(p => OK_EXT.includes(extOf(p.file.name)));
+  const badFiles = picked.filter(p => !OK_EXT.includes(extOf(p.file.name)));
+
+  if (badFiles.length) {
+    const kinds = Array.from(new Set(badFiles.map(p => '.' + extOf(p.file.name)))).slice(0, 8);
+    if (typeof showChatToast === 'function') {
+      showChatToast('跳过 ' + badFiles.length + ' 个不支持的格式：' + kinds.join(' '));
+    }
+  }
+  if (!okFiles.length) {
+    if (typeof showChatToast === 'function') {
+      showChatToast('没一个能进的 —— 现在支持 md / txt / log / pdf / docx / pptx / xlsx / csv / json / yaml / xml / html');
+    }
+    return;
+  }
+
+  // 提示：拖文件夹 → 按文件夹名归组；拖散文件 → 未分类
+  const tops = new Set(okFiles.filter(p => p.rel.includes('/')).map(p => p.rel.split('/')[0]));
+  const groupHint = tops.size === 1 ? ('· 归到「' + Array.from(tops)[0] + '」')
+                  : (tops.size > 1 ? ('· 归到 ' + tops.size + ' 个文件夹') : '· 归到未分类');
+  if (typeof showChatToast === 'function') {
+    showChatToast('收到 ' + okFiles.length + ' 个文件 ' + groupHint + ' · 传完会提示（复制进来的副本）');
+  }
+
+  const fd = new FormData();
+  okFiles.forEach((p) => {
+    fd.append('files', p.file, p.file.name);
+    fd.append('rels', p.rel);
+  });
+
+  try {
+    const r = await fetch('/dashboard/knowledge/drop', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },   // 不要设 Content-Type · 让浏览器带 boundary
+      body: fd,
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '拖拽入库失败');
+    const parts = ['拖进来 ' + (d.added_n || 0) + ' 篇'];
+    if (d.skipped_n) parts.push(d.skipped_n + ' 个格式不支持');
+    if (d.errors && d.errors.length) {
+      // 把后端的具体原因带出来（比如「没抽到文字·大概是扫描件」），不要只报个数
+      const why = d.errors.slice(0, 2).map(e => e.error).filter(Boolean).join('；');
+      parts.push(d.errors.length + ' 个没成功' + (why ? '（' + why + '）' : ''));
+    }
+    if (typeof showChatToast === 'function') showChatToast(parts.join(' · '));
+    _kbData = null;
+    loadDashboard('knowledge');
+  } catch (e) {
+    if (typeof showChatToast === 'function') showChatToast(String(e.message || e));
+  } finally {
+    if (zoneEl) zoneEl.classList.remove('kb-drop-on');
+  }
+}
+
+/* 绑一次就行（loadDashboard 可能重复调 renderKnowledge）
+   但 $dashView 是【所有 dashboard 面板共用的同一个节点】—— innerHTML 换了监听器还在，
+   所以不能靠「绑过没绑过」判断，每次事件都要当场确认【现在渲染的是不是知识库】。
+   （曾经就这么漏了：进过知识库后，在产物库拖文件也会往知识库灌。） */
+function _kbDropActive(zone) {
+  return !!(zone && zone.querySelector('.dk-add'));
+}
+function _kbBindDrop() {
+  const zone = $dashView;
+  if (!zone || zone._kbDropBound) return;
+  zone._kbDropBound = true;
+
+  let depth = 0;    // dragenter/leave 会因子元素反复触发 · 计数进出才不闪
+  zone.addEventListener('dragenter', (e) => {
+    if (!_kbDropActive(zone)) return;
+    if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes('Files')) return;
+    e.preventDefault();
+    depth++;
+    zone.classList.add('kb-drop-on');
+  });
+  zone.addEventListener('dragover', (e) => {
+    if (!_kbDropActive(zone)) return;
+    if (!e.dataTransfer || !Array.from(e.dataTransfer.types || []).includes('Files')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  zone.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) zone.classList.remove('kb-drop-on'); });
+  zone.addEventListener('drop', async (e) => {
+    if (!e.dataTransfer) return;
+    if (!_kbDropActive(zone)) return;
+    e.preventDefault();
+    depth = 0;
+    zone.classList.remove('kb-drop-on');
+    await kbDropUpload(e.dataTransfer, zone);
+  });
+}
+
+/* 添加面板：选文件夹 / 选文件 / 手输路径 → 预览 N 篇 → 确认入库
+   三条路最后都汇到同一个 POST /dashboard/knowledge/add（后端幂等去重）。 */
+function kbAskAdd() {
+  const old = document.getElementById('kbAddBox');
+  if (old) { old.remove(); return; }
+
+  const folderNames = kbAllFolderNames();
+  const opts = ['<option value="">未分类</option>']
+    .concat(folderNames.map(f => '<option value="' + escHtml(f) + '">' + escHtml(f) + '</option>')).join('');
+
+  const box = document.createElement('div');
+  box.id = 'kbAddBox';
+  box.className = 'kb-add-box';
+  box.innerHTML = `
+    <div class="kab-head"><i class="ri-add-circle-line"></i> 往知识库里加东西
+      <button type="button" class="kab-x" onclick="document.getElementById('kbAddBox').remove()">✕</button></div>
+    <div class="kab-row">
+      <button type="button" class="kab-plain" onclick="kbPick('folder')"><i class="ri-folder-open-line"></i> 选文件夹</button>
+      <button type="button" class="kab-plain" onclick="kbPick('files')"><i class="ri-file-list-3-line"></i> 选文件（可多选）</button>
+      <span class="kab-hint">或直接把文件/文件夹拖进中栏</span>
+    </div>
+    <div class="kab-row">
+      <input type="text" id="kbAddPath" class="kab-input" placeholder="也可以直接粘贴路径 · 多个用分号隔开"
+             oninput="kbAddScanDebounced()">
+      <button type="button" class="btn-ghost" onclick="kbAddScan()">预览</button>
+    </div>
+    <div class="kab-row">
+      <select id="kbAddFolderSel" class="kab-input kab-narrow">${opts}</select>
+      <button type="button" class="kab-plain" onclick="kbNewFolderFromPanel()"><i class="ri-folder-add-line"></i> 新建</button>
+      <button type="button" class="kab-go" id="kbAddGo" onclick="kbAddCommit()" disabled>加入知识库</button>
+    </div>
+    <div class="kab-preview" id="kbAddPreview"></div>`;
+
+  const host = document.querySelector('.dash-head') || $dashView;
+  host.parentElement.insertBefore(box, host.nextSibling);
+
+  // 记住这次要灌什么（预览/入库共用）
+  window.__kbPending = null;
+}
+
+/* 所有已存在的文件夹名（显式登记的 + 文档里现算的）· 去重排序 */
+function kbAllFolderNames() {
+  const out = new Set(((_kbData && _kbData.folders) || []).filter(Boolean));
+  for (const d of ((_kbData && _kbData.items) || [])) {
+    const f = (d.folder && String(d.folder).trim()) || ((d.tags && d.tags.length) ? String(d.tags[0]) : '');
+    if (f && f !== '未分类') out.add(f);
+  }
+  return Array.from(out).sort((a, b) => a.localeCompare(b, 'zh'));
+}
+
+/* 工具条上的「新建文件夹」—— 自绘内联输入，不用原生 prompt（那玩意儿跟设计系统格格不入） */
+function kbNewFolder() {
+  kbFolderPrompt((name) => kbCreateFolder(name));
+}
+
+/* 添加面板里的「新建」 —— 建完直接选中，不用重开面板 */
+function kbNewFolderFromPanel() {
+  kbFolderPrompt(async (name) => {
+    const r = await kbCreateFolder(name);
+    if (!r) return;
+    const sel = document.getElementById('kbAddFolderSel');
+    if (sel) {
+      if (!Array.from(sel.options).some(o => o.value === name)) {
+        const op = document.createElement('option');
+        op.value = name; op.textContent = name;
+        sel.appendChild(op);
+      }
+      sel.value = name;
+    }
+  });
+}
+
+/* 建文件夹的自绘输入条 —— 从哪调都长一样，用 .kb-add-box 同一套配色 */
+function kbFolderPrompt(onOk) {
+  const old = document.getElementById('kbFolderPrompt');
+  if (old) { old.remove(); return; }
+  const box = document.createElement('div');
+  box.id = 'kbFolderPrompt';
+  box.className = 'kb-add-box kb-fprompt';
+  box.innerHTML = `
+    <div class="kab-row kab-fprompt-row">
+      <span class="kab-fprompt-label">新建文件夹</span>
+      <input type="text" id="kbFolderName" class="kab-input" placeholder="给它起个名字…">
+      <button type="button" class="btn-primary" id="kbFolderOk">创建</button>
+      <button type="button" class="btn-ghost" id="kbFolderNo">取消</button>
+    </div>`;
+  const host = document.querySelector('.dash-head') || $dashView;
+  host.parentElement.insertBefore(box, host.nextSibling);
+
+  const inp = document.getElementById('kbFolderName');
+  const go = async () => {
+    const n = String(inp.value || '').trim();
+    if (!n) { inp.focus(); return; }
+    box.remove();
+    await onOk(n);
+  };
+  document.getElementById('kbFolderOk').onclick = go;
+  document.getElementById('kbFolderNo').onclick = () => box.remove();
+  inp.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); go(); }
+    if (e.key === 'Escape') box.remove();
+  };
+  inp.focus();
+}
+
+/* 删文件夹 —— 先弹一句确认（空的也问，避免手滑）。
+   非空时明说「里面有 N 篇 → 删掉后它们回未分类，文档本身不删」，
+   不让用户以为一删就没了。 */
+function kbAskDeleteFolder(name, n) {
+  const old = document.getElementById('kbDelPrompt');
+  if (old) { old.remove(); return; }
+  const box = document.createElement('div');
+  box.id = 'kbDelPrompt';
+  box.className = 'kb-add-box kb-fprompt';
+  box.innerHTML = `
+    <div class="kab-row kab-fprompt-row">
+      <span class="kab-fprompt-label">删掉文件夹「${escHtml(name)}」</span>
+      <span class="kab-hint">${n ? ('里面有 ' + n + ' 篇 → 删掉后它们回「未分类」，文档本身不会删') : '空文件夹'}</span>
+      <button type="button" class="btn-danger" id="kbDelOk">删掉</button>
+      <button type="button" class="btn-ghost" id="kbDelNo">取消</button>
+    </div>`;
+  const host = document.querySelector('.dash-head') || $dashView;
+  host.parentElement.insertBefore(box, host.nextSibling);
+  document.getElementById('kbDelOk').onclick = async () => { box.remove(); await kbDeleteFolder(name, n > 0); };
+  document.getElementById('kbDelNo').onclick = () => box.remove();
+}
+
+async function kbDeleteFolder(name, dropDocs) {
+  try {
+    const r = await fetch('/dashboard/knowledge/folder/remove', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, drop_docs: !!dropDocs }),
+    });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || d.detail || '删文件夹失败');
+    if (typeof showChatToast === 'function') {
+      showChatToast(d.removed
+        ? ('删掉了文件夹：' + name + (d.moved_docs ? ('（' + d.moved_docs + ' 篇回到未分类）') : ''))
+        : (name + ' 本来就不在'));
+    }
+    _kbData = null;
+    loadDashboard('knowledge');
+    return d;
+  } catch (e) {
+    if (typeof showChatToast === 'function') showChatToast(String(e.message || e));
+    return null;
+  }
+}
+
+/* 建文件夹的统一出口 —— 工具条和面板都走这里 */
+async function kbCreateFolder(name) {
+  try {
+    const r = await fetch('/dashboard/knowledge/folder', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '建文件夹失败');
+    if (typeof showChatToast === 'function') {
+      showChatToast(d.created ? ('建好了：' + name) : (name + ' 已经有了'));
+    }
+    _kbData = null;
+    loadDashboard('knowledge');
+    return d;
+  } catch (e) {
+    if (typeof showChatToast === 'function') showChatToast(String(e.message || e));
+    return null;
+  }
+}
+
+async function kbPick(kind) {
+  const url = kind === 'folder' ? '/api/pick/folder' : '/api/pick/files';
+  const pv = document.getElementById('kbAddPreview');
+  if (pv) pv.innerHTML = '<span class="kab-hint">正在拉系统选择器…（切到别的窗口会看不到它）</span>';
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) {
+      if (pv) pv.innerHTML = '<span class="kab-err">' + escHtml(d.error || d.detail || '选择器打不开') + '</span>';
+      return;
+    }
+    const picked = kind === 'folder' ? [d.path] : (d.paths || []);
+    const inp = document.getElementById('kbAddPath');
+    if (inp) inp.value = picked.join('; ');
+    await kbAddScan();
+  } catch (e) {
+    if (pv) pv.innerHTML = '<span class="kab-err">' + escHtml(String(e)) + '</span>';
+  }
+}
+
+async function kbAddScan() {
+  const inp = document.getElementById('kbAddPath');
+  const pv = document.getElementById('kbAddPreview');
+  const go = document.getElementById('kbAddGo');
+  const raw = (inp && inp.value || '').split(/[;\n]/).map(s => s.trim()).filter(Boolean);
+  if (!raw.length) { if (pv) pv.innerHTML = ''; if (go) go.disabled = true; return; }
+
+  if (pv) pv.innerHTML = '<span class="kab-hint">正在看里面有哪些能加的…</span>';
+  try {
+    let files = [], skipped = 0, truncated = false, scanErrors = [];
+    for (const p of raw) {
+      const r = await fetch('/dashboard/knowledge/scan', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: p }),
+      });
+      const d = await r.json();
+      if (d.ok) { files = files.concat(d.files || []); skipped += (d.skipped || 0); truncated = truncated || !!d.truncated; }
+      else { scanErrors.push(d.error || ('打不开：' + p)); }   // 不静默: 「路径打不开」和「没有能加的」是两回事
+    }
+    window.__kbPending = files;
+    window.__kbScanErrors = scanErrors;
+    if (go) go.disabled = files.length === 0;
+    if (pv) {
+      if (!files.length && scanErrors.length) {
+        // 「路径打不开」≠「这里没有能加的」—— 前者用户换多少个文件都没用，必须把真因说出来
+        pv.innerHTML = '<span class="kab-err">' + escHtml(scanErrors[0])
+          + (scanErrors.length > 1 ? '（还有 ' + (scanErrors.length - 1) + ' 个路径同样打不开）' : '') + '</span>';
+      } else if (!files.length) {
+        pv.innerHTML = '<span class="kab-err">这里没有能加的文档（支持 md / txt / docx / pptx / pdf）'
+          + (skipped ? ' · 跳过了 ' + skipped + ' 个不支持的文件' : '') + '</span>';
+      } else {
+        const show = files.slice(0, 6).map(f => '<div class="kab-f">' + escHtml(f.split(/[\\/]/).pop()) + '</div>').join('');
+        pv.innerHTML = '<div class="kab-ok">将加入 <b>' + files.length + '</b> 篇'
+          + (skipped ? ' · 跳过 ' + skipped + ' 个不支持的文件' : '')
+          + (truncated ? ' · <span class="kab-err">文件太多，只取了前 800 个</span>' : '')
+          + '</div>' + show + (files.length > 6 ? '<div class="kab-more">…还有 ' + (files.length - 6) + ' 篇</div>' : '');
+      }
+    }
+  } catch (e) {
+    if (pv) pv.innerHTML = '<span class="kab-err">' + escHtml(String(e)) + '</span>';
+  }
+}
+
+async function kbAddCommit() {
+  const files = window.__kbPending || [];
+  const go = document.getElementById('kbAddGo');
+  if (!files.length) return;
+  const sel = document.getElementById('kbAddFolderSel');
+  const folder = (sel ? sel.value : '') || '';
+  if (go) { go.disabled = true; go.innerText = '正在加入…'; }
+  try {
+    const r = await fetch('/dashboard/knowledge/add', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: files, folder: folder.trim(), scan_dir: false }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '入库失败');
+    const box = document.getElementById('kbAddBox');
+    if (box) box.remove();
+    const msg = '加进知识库 ' + (d.added_n || 0) + ' 篇'
+      + (d.skipped_n ? ' · ' + d.skipped_n + ' 篇之前已加过' : '')
+      + (d.errors && d.errors.length ? ' · ' + d.errors.length + ' 篇没成功' : '');
+    if (typeof showChatToast === 'function') showChatToast(msg);
+    _kbData = null;
+    loadDashboard('knowledge');
+  } catch (e) {
+    if (go) { go.disabled = false; go.innerText = '加入知识库'; }
+    const pv = document.getElementById('kbAddPreview');
+    if (pv) pv.innerHTML = '<span class="kab-err">' + escHtml(String(e)) + '</span>';
+  }
 }

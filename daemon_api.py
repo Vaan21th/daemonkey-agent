@@ -77,6 +77,21 @@ from tool_loop import run_tool_loop
 from fastapi import HTTPException
 
 
+# 2026-09-16 · 反“跨代污染” (断案: 5 分钟墙复活)
+# 旧版 resume_runner 把 _RESUME_WALL_CLOCK_SEC=300 写进【进程环境】(不是只在自己那轮用) ·
+# daemon 自爆重启时被子进程继承 → 代码默认值已升 3600、前台 turn 仍被 5 分钟墙误杀
+# (实测两次: 06:22→06:26 / 06:29→06:34)。这里把「已知旧默认值」当污染剔除 → 回落代码默认。
+# 真要配就写 .env (不受此处影响 · 因为 .env 的值不会恰好等于这些旧默认值)。
+_LEGACY_ENV_POISON: dict = {
+    "_RESUME_WALL_CLOCK_SEC": (300.0, 600.0),
+    # 2026-09-16 实测: 这两个值也会从旧进程继承下来 (本机环境里实测残留 60.0)。
+    # 它们恰好等于新默认值 → 行为上无害 · 但一并剔掉更干净 (避免下次改默认值时被旧值盖住)。
+    "_RESUME_STALL_SEC": (120.0,),
+    "_RESUME_LLM_TIMEOUT_SEC": (60.0,),
+}
+_PURGED_ENV: set = set()
+
+
 def _purge_legacy_env(name: str, value: float, default: float) -> bool:
     """返回值是否被判定为「跨代污染」并已剔除。"""
     bad = _LEGACY_ENV_POISON.get(name)
@@ -241,7 +256,7 @@ def register_turn(
             })
     try:
         from desktop_pet.activities import write_turn_start
-        write_turn_start()
+        write_turn_start(label)
     except Exception:
         pass
 
@@ -312,7 +327,7 @@ def get_turn_progress(turn_id: str) -> Optional[dict]:
         }
 
 
-# ── 会话常驻事件订阅 (SSE 广播) ──────────────────
+# ── wish-8a9a3482 · 会话常驻事件订阅 (SSE 广播) ──────────────────
 # 病根: 前台 SSE 的 queue 是「每个连接一个」·没有广播注册表 → 后台 turn
 #   (延迟唤醒/定时任务/分身通报) 有产出时不知道该推给谁·只能落 jsonl 等前台轮询补·
 #   turn 跑着的几十秒前端完全静默 (2026-09-16 实测 64 秒黑箱)。
@@ -612,6 +627,43 @@ def _build_remote_system(base: str, session_id: str = "") -> str:
     return base + _REMOTE_SYSTEM_HINT
 
 
+def _build_stable_consts(session_id: str, mode: str) -> str:
+    """wish-fed4c043 · 恒定段 —— 挂在稳定前缀（一个 session 内字节不变）。
+
+    判据：内容不变 → 放缓存前缀里吃命中价（约 1/10）；放易变尾巴则每轮按 miss 全价付。
+
+    ⚠ 只放「真的永不 change」的：
+      ① telemetry 的「使用纪律」说明段（120 tok · 跟时间无关）
+      ② note_style / note_mood / note_gallery 提示（374 tok · 除 mode=taste 恒在）
+
+    ❌ 本话题稿摘要刻意**没有**进来（它低频但会变：挂新稿 / revise 都会改字节）。
+       理由：system 整块在 history **之前** → 它一变，从它往后全 miss、连 history 一起陪葬。
+       会话 50 轮 / 稿变 3 次 → 赚 107k、亏 234k（history 78k）· 赔本。
+       想省它只能靠「durable 快照」（一次性写进历史）· 见 wish-fed4c043 第 2 步。
+    """
+    parts: list = []
+    try:
+        from workers.dynamic_telemetry import TELEMETRY_DISCIPLINE
+        parts.append(TELEMETRY_DISCIPLINE)
+    except Exception:
+        pass
+    if mode != "taste":
+        parts.append(
+            "\n\n这句话若是在改你怎么说话（少说/多说、损/温柔、正经/贫、客套/随便、普通/放开），"
+            "立刻 note_style_shift：quote=他原话，dim=话量|调性|语气|礼节|表现力，"
+            "direction=down|up。在说文档或别人就不要调。不要换嘴。不要把段名说出口。\n"
+            "这句话若是冲你这个人来的情绪（夸你=开心，骂你没用/讨厌你=委屈，"
+            "夸得肉麻/摸头/表白=羞），立刻 note_mood：quote=他原话，mood=开心|委屈|羞。"
+            "这场已有覆盖，他说你听错了/我开玩笑的/没骂你/没表白/别误会：mood=没有。"
+            "他说不是那个意思来哄你、还在这场里：不要收。"
+            "不是说别人、不是文档、不是事砸了要修。不要换嘴，不要改五维，不要去查仓库。\n"
+            "他在评你刚寄的那张画（这张对/好看/别这样/不要这种），立刻 note_gallery："
+            "quote=他原话，verdict=对|别这样。\n"
+        )
+    # session_id 保留在签名里只为兼容调用方（稿摘要已移出这里·见 docstring 的 ❌ 段）
+    return "".join(parts)
+
+
 def _safe_style_note() -> str:
     """每轮读盘上的口吻 + 味道。铁律 14: 易变内容不塞稳定前缀·放 system_suffix。
     口吻焊前缀的话，换嘴必须重载/重启，跨话题还会用旧嘴。"""
@@ -662,13 +714,21 @@ def _state_tail() -> str:
     """L2 状态卡 → 易变尾巴 · 缓存外 · 变一百次免费。
 
     返回紧凑文本：'[状态卡 · 工作状态: 自由职业(as_of 08-20) · 作息模式: 正常(as_of 08-27) ...]'
+
     过期纪律(wish-…· 中等项): 字段 as_of 距今 >7 天 → 尾巴标「待更新(旧: xxx)」而非直接喂旧值，
     避免她拿着过期的"良好·近期熬夜偏多"这种值继续装知道、而 BRO 已经变了。
+
+    行动纪律(2026-09-18 · BRO 澄清设计意图后补): 光有"待更新"不够 —— 这行被动语态看了 22 天
+    没人动。理由: 状态卡的更新时机是**闲聊里被提到就记**(不是定时汇报), 所以提醒必须读起来像
+    「该你动手」+ 说清什么情况下动手, 不能像「系统还没处理」。stale 时额外给一行待办。
     """
     try:
+        from datetime import datetime
         from workers.cognition_loader import load_cognition
         sc = load_cognition().get("state_card") or {}
         parts = []
+        stale_n = 0
+        oldest = ""
         for k, v in sc.items():
             if not isinstance(v, dict) or not v.get("value"):
                 continue
@@ -676,10 +736,28 @@ def _state_tail() -> str:
             a = (v.get("as_of") or "")[:10]
             # 过期判定：as_of 解析成功且距今 >7 天 → 标待更新
             if _state_as_of_stale(a):
+                stale_n += 1
+                if a and (not oldest or a < oldest):
+                    oldest = a
                 parts.append(f"{k}: 待更新(旧: {val}@{a})")
             else:
                 parts.append(f"{k}: {val}" + (f"({a})" if a else ""))
-        return ("[状态卡 · " + " · ".join(parts) + "]\n") if parts else ""
+        if not parts:
+            return ""
+        out = "[状态卡 · " + " · ".join(parts) + "]\n"
+        if stale_n and oldest:
+            try:
+                days = (datetime.now() - datetime.strptime(oldest, "%Y-%m-%d")).days
+            except Exception:
+                days = 0
+            out += (
+                f"[⚠ 待办 · 状态卡 {stale_n} 个字段待更新 · 最旧一个停在 {oldest}（{days} 天前）"
+                f" —— 他现在什么样子我不确定了。"
+                f"他是闲聊里提到就会变的人(不是定期汇报): 听到他提作息/健康/情绪/工作/主线有变化, "
+                f"顺手记 update_owner_note(section='state', state_field=…, state_value=…, as_of=今天)。"
+                f"他冲我发火/夸我/说烦 —— 也是他状态的采样, 但单次只算瞬时, 一晚多次或明显反常才写进基线]\n"
+            )
+        return out
     except Exception:
         return ""
 
@@ -716,6 +794,7 @@ def _make_remote_confirm(
     session_id: str = "",
     turn_id: str = "",
     push_event: Optional[Callable[[str, dict], None]] = None,
+    background: bool = False,
 ):
     """生成一个 confirm callback。
 
@@ -754,7 +833,7 @@ def _make_remote_confirm(
         #   (resume_runner follow_up 续场 turn 走的就是 progress=None)。 这种 turn 里
         #   绝不允许跑「重启/关停自己」的工具·抢在 rank<=threshold 之前拦死·
         #   不受 OPUS_RESUME_AUTO_CONFIRM=guard 影响。 详见 _BACKGROUND_BLOCKED_TOOLS 注释。
-        if push_event is None and spec.name in _BACKGROUND_BLOCKED_TOOLS:
+        if (push_event is None or background) and spec.name in _BACKGROUND_BLOCKED_TOOLS:
             return (
                 "reject:你正跑在一个【后台续场 turn】里 (没有前台 SSE · BRO 不在场看)。"
                 "这个 turn 本身就是上一次重启之后新 daemon 自动拉起的——新代码早已装载、"
@@ -792,7 +871,7 @@ def _make_remote_confirm(
         #
         # 只在 threshold>=3 时拦: 其余档位下 GUARD 本来就走不到执行 (下面 rank>threshold
         # → inline confirm · 无 push_event 时退化 skip) · 不去动那条已有路径。
-        if rank == 3 and threshold >= 3 and push_event is None:
+        if rank == 3 and threshold >= 3 and (push_event is None or background):
             return (
                 "reject:这是 GUARD 级操作 (不可逆或涉及凭据) · 而你正跑在【无人值守的后台 turn】里 "
                 "(没有前台 SSE · 没人能看到批准卡片) · 所以 daemon 不替用户放行。\n"
@@ -832,7 +911,16 @@ def _make_remote_confirm(
                 pass
 
         # 走 inline confirm: 没 push_event (老 caller) 或没 tool_call_id (旧 tool_loop) → 退化 skip
-        if push_event is None or not tool_call_id:
+        # wish-e679e4ec 补丁: background 后台 turn 里 tier 超 threshold 的 (GUARD 在 confirm policy /
+        # CONFIRM 在 auto policy) → 不静默 skip · 给 LLM 明确指引 (它收不到"为什么被拒")
+        if (push_event is None or background) or not tool_call_id:
+            if background:
+                return (
+                    "reject:这是 GUARD 级操作 (不可逆或涉及凭据) · 而你正跑在【无人值守的后台 turn】里 "
+                    "(没有前台 SSE · 没人能看到批准卡片) · 所以 daemon 不替用户放行。\n"
+                    "→ 换个不碰凭据、不做不可逆动作的做法把这轮做完; "
+                    "真必须做这一步 · 把原因写清楚留给用户 · 由他在 WebUI 前台重跑一次。"
+                )
             return "skip"
 
         # wish-2a4d8c1e 核心 · 注册 pending + SSE push + 阻塞 wait
@@ -955,6 +1043,20 @@ def _make_remote_confirm(
         return "go"
 
     return _confirm
+
+
+# ── wish-db46ff9b · ask_user（选择题卡片）· 与 confirm 共用管道 · 分开语义 ──────
+#
+# 跟 confirm 的关系（2026-09-10 BRO 拍板）：
+#   共用：_PENDING_CONFIRMS 表 / threading.Event 等待 / 超时循环 / cancel / SSE 通道
+#   分开：事件名（ask_request vs confirm_request）· 决议语义（choice vs decision）
+#         · 信任机制（confirm 独有 —— ask 绝不接受 trust_*）
+#         · policy 影响（confirm 受 auto_confirm / 信任 flow 影响；ask **不受**——
+#           提问是为了拿信息、不是安全闸，任何 policy 下都必须真问）
+#
+# 为什么不开独立表：pending 表下面挂着 cleanup / 锁 / 轮询补捞（pending_confirms 端点）
+# 三套机制，重造就是白扔。用 kind 字段区分就够。
+_ASK_TIMEOUT_SEC = int(_env_float("OPUS_ASK_TIMEOUT_SEC") or 900)  # 15min
 
 
 def cleanup_pending_ask(tool_call_id: str) -> None:
@@ -1101,43 +1203,94 @@ def _resolve_max_tokens(payload_value) -> int:
 
     BRO 反馈"4096 太小 · DeepSeek 支持 384K 输出 · 这个限制让 OPUS 写两步就被截断".
     新策略: 每条 config 自带 max_tokens · 按模型推荐.
+
+    0.9.x · 补最后一道: 取到的心愿值统一过 safe_max_tokens (thinking 模型抬地板 16384 ·
+    按模型 max_output 压天花板)。 修的是断链 —— 底下那套地板/天花板一直在
+    provider_presets 里躺着 · 没接到主聊天链路 · 于是 config 存 8192 就原样放行,
+    思考 + 工具参数 + 正文挤爆 8192 → 一次回复被切成几段 (2026-09-14 血案)。
+    优先级顺序不变 · 只是出口从四个收成一个 · 末尾统一过闸。
     """
+    model_id = ""
+    cfg = None
+    try:
+        from workers.provider_configs import get_active_config
+        cfg = get_active_config(include_key=False) or None
+        if cfg:
+            model_id = str(cfg.get("model") or "")
+    except Exception:
+        cfg = None
+
+    v = 0
     if payload_value:
         try:
             v = int(payload_value)
-            if v > 0:
-                return v
         except (ValueError, TypeError):
-            pass
-    try:
-        from workers.provider_configs import get_active_config
-        cfg = get_active_config(include_key=False)
-        if cfg and cfg.get("max_tokens"):
-            return int(cfg["max_tokens"])
-    except Exception:
-        pass
-    env_v = os.environ.get("OPUS_MAX_TOKENS")
-    if env_v:
+            v = 0
+    if v <= 0 and cfg and cfg.get("max_tokens"):
         try:
-            v = int(env_v)
-            if v > 0:
-                return v
+            v = int(cfg["max_tokens"])
         except (ValueError, TypeError):
-            pass
-    return 8192
+            v = 0
+    if v <= 0:
+        env_v = os.environ.get("OPUS_MAX_TOKENS")
+        if env_v:
+            try:
+                v = int(env_v)
+            except (ValueError, TypeError):
+                v = 0
+    if v <= 0:
+        v = 8192
+    try:
+        from provider_presets import safe_max_tokens
+        return int(safe_max_tokens(v, model_id))
+    except Exception:
+        return int(v)
 
 
 # ─── 卷三十七 · provider config helper ───
-def _activate_provider_config(cfg_id: str) -> None:
+def _resolve_caller_sid(explicit: str = "") -> str:
+    """拿「当前调用方」的会话 id。
+
+    只认两种来源 (2026-09-23 · 治串台):
+      ① 调用方显式传入 (前端带 session_id / chat 路径随手带)
+      ② 本 turn 的 ContextVar (agent_tools.current_session_id · 每 turn 独立)
+    **绝不读 RUNTIME.session_id** —— 那是进程级全局赋值, 两个会话并发 turn 时
+    后到的会盖掉先到的 → 记账/注入写错会话 = 静默串台。
+    见 playbook: 两个会话同时跑-上下文串台-全局-runtimesession_id-
+    两个都拿不到 → 返回 "" · 宁可不写 (下一轮会被 ensure_session_model 打回·
+    可见可复现) 也不猜一个 (写错会话难查得多)。
+    """
+    sid = (explicit or "").strip()
+    if sid:
+        return sid
+    try:
+        from agent_tools import current_session_id
+        cid = (current_session_id() or "").strip()
+    except Exception:
+        return ""
+    # current_session_id() 在没设过 ContextVar 时会退化成 "t<线程id>"
+    # (agent_tools/__init__.py:79 · 那是给编辑并发锁用的 owner 标识·不是会话 id)。
+    # 照单全收会往一个叫 "t328" 的假会话写记忆 = 静默写垃圾。
+    # 真会话 id 只有两种前缀: api-<日期>_<时分秒>_<hex6> / sub-<hex>。
+    if cid.startswith("api-") or cid.startswith("sub-"):
+        return cid
+    return ""
+
+
+def _activate_provider_config(cfg_id: str, *, sid: str = "", source: str = "auto") -> None:
     """切换 active config · 重建 RUNTIME.client / model / provider / base_url.
 
     跟 /providers/switch 旧路径走同一个 setup_client · 但来源是 provider_configs.json.
+
+    source="user" (用户在 UI 手动切) 时 · 顺带把这次切换写进「当前会话」的记忆 ——
+    否则下一轮 ensure_session_model 会按该会话的老记忆 / 默认档把它打回 ·
+    用户就看到「我切了但好像不是」(2026-09-23 晚 Bonsai 实例 · 一次打回即永久锁死)。
     """
     from workers.provider_configs import get_config, apply_config_to_env, set_active
     cfg = get_config(cfg_id, include_key=True)
     if cfg is None:
         raise HTTPException(404, f"config not found: {cfg_id}")
-    set_active(cfg_id)
+    set_active(cfg_id, source=source)
     apply_config_to_env(cfg)
     from daemon_provider import setup_client
     pkind = cfg["provider_kind"]
@@ -1155,6 +1308,16 @@ def _activate_provider_config(cfg_id: str) -> None:
         # 按模型精确判断在 model_aliases.supports_vision L1 · 这里是双保险)
         RUNTIME.vision_override = cfg.get("vision")
 
+    # 记账 (2026-09-23) · 用户手动切 → 落进当前会话记忆 · 下一轮不再被打回
+    if str(source).strip().lower() == "user":
+        _sid = _resolve_caller_sid(sid)
+        if _sid:
+            try:
+                from daemon_session import set_session_meta
+                set_session_meta(_sid, last_model_cfg=cfg_id)
+            except Exception:
+                pass
+
 
 def ensure_session_model(sid: str) -> dict:
     """把 RUNTIME 切到该会话记住的模型 (wish-1518b97f · 每轮以本对话 cfg 为准)。
@@ -1170,22 +1333,25 @@ def ensure_session_model(sid: str) -> dict:
     if not sid:
         return out
     try:
-        from workers.provider_configs import list_configs, get_config
+        from workers.provider_configs import (
+            list_configs, get_config, get_active_source, get_default_id,
+        )
         from daemon_session import get_session_meta
+        cur = (list_configs(include_keys=False) or {}).get("active_id") or ""
         want = (get_session_meta(sid) or {}).get("last_model_cfg") or ""
         if not want:
-            # 新对话没有记忆 → 用「默认模型」(设置页那个) · 而不是继承上一个对话切过的
-            # active (wish-c6422f9c · 21:00 实测: 新对话继承了上场留的 8B → 8B 看不懂
-            #「生成图片」去做了份 PPT)
-            from workers.provider_configs import get_default_id
-            want = get_default_id()
-        cur = (list_configs(include_keys=False) or {}).get("active_id") or ""
+            # 新对话没有记忆 · 按 active 的来源分两种 (2026-09-23 补 · 治「切了被打回」):
+            #   ① active_source="user" (用户刚在 UI 手动切过) → 继承它 · 那是他的意图
+            #   ② 其余 (只是上个对话连带留下的) → 回落到默认档
+            #      wish-c6422f9c 实测: 新对话继承了上场留的 8B → 8B 去做份 PPT
+            want = cur if get_active_source() == "user" else get_default_id()
         out["cfg_id"] = want or cur
         if not want or want == cur:
             return out
         if get_config(want, include_key=False) is None:
             return out                      # 配置已被删 → 保持现状 · 不抛
-        _activate_provider_config(want)     # 走同一条锁 + setup_client 路
+        # 恢复走 auto · 不写会话记忆 (写成 user 会把上一场的模型污染进本会话)
+        _activate_provider_config(want, sid=sid, source="auto")
         out["switched"] = True
         out["cfg_id"] = want
     except Exception:
@@ -1350,7 +1516,7 @@ def _process_attachments(attachments: list[dict], session_id: str) -> tuple[str,
             try:
                 from workers.session_docs import bind as _bind_doc
                 from workers.session_docs import describe_office
-                rec = _bind_doc(session_id, rel_only) if rel_only else None
+                rec = _bind_doc(session_id, rel_only, claim=True, via="uploaded") if rel_only else None
             except Exception:
                 rec = None
             if rec:
@@ -1535,12 +1701,28 @@ def _chat_impl(
     reasoning_effort: Optional[str] = None,
     advisor_coop: bool = False,
     mode: str = "standard",
+    background: bool = False,
+    tool_profile: str = "",   # wish-16fa5930 · 新对话首轮选的档（只在新会话 meta 空时用）
+    project_id: str = "",     # wish-8f9e4f05 · 新对话挂在哪个外部项目（同通道·只在新会话 meta 空时用）
+    wall_clock_sec: Optional[float] = None,
+    stall_sec: Optional[float] = None,
+    llm_timeout_sec: Optional[float] = None,
 ) -> dict:
     """跑一次 API 端的 tool_loop，返回 reply payload。
 
     抽出来不依赖 FastAPI——这样将来如果想换 Flask / aiohttp / 直接 socket，
     只换上层壳即可。
     """
+    # 2026-09-16 · per-turn 预算改为「显式参数优先」(根治跨代污染 · wish-66dd231d):
+    #   旧版 resume_runner 写 os.environ → 同进程其它 turn 也读到本轮值 · daemon 自爆重启
+    #   时更被子进程继承 → 5 分钟墙复活(实测两次 06:22→06:26 / 06:29→06:34)。
+    #   现在显式传参为准 · env 仅作兼容入口(且经 _LEGACY_ENV_POISON 剔历史脏值)。
+    _budget_wall = wall_clock_sec if wall_clock_sec is not None else _env_float_default("_RESUME_WALL_CLOCK_SEC", 3600.0)
+    _budget_stall = stall_sec if stall_sec is not None else _env_float_default("_RESUME_STALL_SEC", 120.0)
+    # _env_float 不走通用剔除 · 这里显式清一次继承来的旧默认值 (实测本机残留 60.0)
+    _purge_legacy_env("_RESUME_LLM_TIMEOUT_SEC", _env_float("_RESUME_LLM_TIMEOUT_SEC"), 60.0)
+    _budget_llm_to = llm_timeout_sec if llm_timeout_sec is not None else _env_float("_RESUME_LLM_TIMEOUT_SEC")
+
     # 所有 client-side 输入校验必须先于 server-state 检查——保证 400 vs 500 含义正确。
     if not message or not message.strip():
         raise ValueError("message is required and cannot be empty")
@@ -1571,6 +1753,9 @@ def _chat_impl(
 
     # ② 自主巡航进度 (卷七十五续四) · 包一层进度记录器 · 无论 SSE 连没连都记最新一步 ·
     # 让轮询/后台 turn 也能显示进度 (SSE 主对话照常转发 · 行为不变)。 turn_id 空则原样。
+    # wish-db46ff9b · 先留一份原始判据：_make_progress_recorder 包完永远是 callable·
+    # 拿不到"有没有前台 SSE"了（ask_user 靠这个判据拒绝在后台 turn 里假等）。
+    _foreground_sse = progress is not None
     progress = _make_progress_recorder(turn_id, progress)
 
     confirm = _make_remote_confirm(
@@ -1579,7 +1764,27 @@ def _chat_impl(
         session_id=sid,
         turn_id=turn_id,
         push_event=progress,  # wish-2a4d8c1e · 让 confirm 也能 push SSE event
+        background=background,  # wish-e679e4ec · 无人值守后台 turn (resume/proactive) · GUARD 立即 reject 不阻塞等卡片
     )
+
+    # wish-db46ff9b · ask_user 通道（选择题卡片）· 与 confirm 共用 pending 表 + Event 等待
+    # 先 clear 再 set：别让这个 turn 蹭到上一条（已死的）通道。
+    # make_ask_channel 返回 None 时 set_ask_channel(None) —— 工具层会拿到 AskUnavailable 快速失败。
+    try:
+        from workers.ask_bus import clear_ask_channel, set_ask_channel
+
+        clear_ask_channel()
+        set_ask_channel(
+            make_ask_channel(
+                session_id=sid,
+                turn_id=turn_id,
+                push_event=progress,
+                cancel_event=cancel_event,
+                has_foreground=_foreground_sse,
+            )
+        )
+    except Exception:
+        pass
 
     # wish-68b0e173 phase 2a · 不再抢 _API_LOCK 全局锁
     # 用 per-session lock · 不同 sid 真并行 · 同 sid 内仍 serialize (避免 messages 写入冲突)
@@ -1648,6 +1853,61 @@ def _chat_impl(
         try:
             from workers.she_play import set_chat_mode
             set_chat_mode(mode)
+        except Exception:
+            pass
+
+        # wish-16fa5930 · 会话能力档位：每轮按本对话记的档位摊工具
+        # 开跑即锁（第一次跑就把档钉进会话 meta）· 只升不降由前端管
+        try:
+            from workers.tool_profiles import resolve_profile as _rpf
+            from agent_tools._tool_catalog import set_catalog_allowed as _sca
+            from daemon_session import get_session_meta as _gsm, set_session_meta as _ssm
+            _tp = (_gsm(sid) or {}).get("last_tool_profile") or ""
+            if not _tp:
+                # wish-16fa5930 · 新会话首轮：随请求带来的档位（前端选档卡）· 没带 = standard
+                # BRO 2026-09-21 拍板：陪伴模式（mode=companion）没带档 → 默认「闲聊」（房间=陪伴场景 · 轻档）
+                _tp = (tool_profile or "").strip() or ("chat" if mode == "companion" else "standard")
+                _ssm(sid, last_tool_profile=_tp)
+            _tp_id, _tp_names = _rpf(_tp)
+            _sca(_tp_names)                      # None = 不设限（standard = CORE 全量 · 零回归）
+            # ★ BRO 2026-09-23 报：「档位显示 3 件、模型却伸第 4 只 look_at」
+            #   根因：下面 2256-2264 算出的 _allowed_tools 在**普通对话路径上是 None**，
+            #   而 tool_loop._specs_for_llm(allowed) 会 set_catalog_allowed(allowed) **覆盖**这里设的档位值
+            #   → 档位名单白设 → 回退 CORE 全量（含 look_at）· 小模型工具越多越乱伸。
+            #   正解：把档位名单带出去，与 note/channel 名单**取交集**，而不是让后者覆盖成 None。
+            _PROFILE_TOOLS = set(_tp_names) if _tp_names else None
+            try:
+                # 硬探针：裸 loguru 在本 daemon 不落盘（实测 · 见 playbook）→ 走独立 jsonl 通道
+                import json as _json, time as _time
+                from pathlib import Path as _Path
+                _tf = _Path(__file__).resolve().parent / "data" / "runtime" / "tool_profile_trace.jsonl"
+                _tf.parent.mkdir(parents=True, exist_ok=True)
+                with _tf.open("a", encoding="utf-8") as _fh:
+                    _fh.write(_json.dumps({
+                        "ts": _time.strftime("%Y-%m-%dT%H:%M:%S"),
+                        "sid": sid,
+                        "profile": _tp_id,
+                        "tools": (len(_tp_names) if _tp_names else "CORE"),
+                    }, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+            if _tp_id != _tp:
+                _ssm(sid, last_tool_profile=_tp_id)
+        except Exception:
+            pass
+
+        # wish-8f9e4f05 · 这条会话挂在哪个外部项目（BRO 2026-09-26 报「开新对话挂不上」）
+        #   跟档位同一通道：随首轮请求带来 · 只写在本会话 meta 还没有的时候。
+        #   为什么不用老那套「点开新对话记个标记 · 等 30 秒内冒陌生 sid 就挂」：
+        #     · 参数本来就在请求里 —— 不用猜「哪一场是新会话」，也就没有 TTL 窗口
+        #     · 老做法打字稍慢 30 秒就过 → 永远挂不上（实测：3 个项目 chat_count 全 0）
+        #   为什么不覆盖：老会话切回来继续聊时首轮也会带参数，覆盖会把开新对话的
+        #     残留状态染到老会话上 —— 只补空位最安全（与档位「首次锁定」同哲学）。
+        try:
+            from daemon_session import get_session_meta as _gsm2, set_session_meta as _ssm2
+            _pj = (_gsm2(sid) or {}).get("project_id") or ""
+            if not _pj and (project_id or "").strip():
+                _ssm2(sid, project_id=project_id.strip())
         except Exception:
             pass
 
@@ -1912,7 +2172,7 @@ def _chat_impl(
         _workshop_hint = ""
         try:
             from workers.workshop_context import workshop_hint as _ws_hint
-            _workshop_hint = _ws_hint(message)
+            _workshop_hint = _ws_hint(message, sid)
         except Exception:
             pass
 
@@ -1923,7 +2183,43 @@ def _chat_impl(
         #   易变尾巴 (_sys_tail = telemetry时间/git + playbook/记忆/工坊提示 + 微信备注) 每轮变·
         #   走 system_suffix 留在缓存断点之外 → 尾巴变也不冲掉灵魂缓存 (省钱关键)。
         #   localize 对两段分别做 (纯 token 替换·分段等价)。
-        _sys_stable = _build_remote_system(RUNTIME.system_prompt)
+        # wish-e1178ade · 层配置：会话档位若配了「装哪几段」→ 用那一档的 sp
+        # （同档字节稳定 · 保前缀缓存）；没配（standard / 老预设）→ RUNTIME.system_prompt。
+        _sp_base = RUNTIME.system_prompt
+        try:
+            from daemon_session import get_session_meta as _gsm2
+            from daemon_runtime import sp_for_profile as _spfp
+            _sp_base = _spfp((_gsm2(sid) or {}).get("last_tool_profile") or "") or RUNTIME.system_prompt
+        except Exception:
+            _sp_base = RUNTIME.system_prompt
+        _sys_stable = _build_remote_system(_sp_base)
+
+        # wish-8f9e4f05 · 会话挂在项目下时，告诉它「你在哪个目录干活」（BRO 2026-09-26）
+        #   BRO 原话：「也不知道要在这个文件夹进行后续的项目开发或者服务启动」。
+        #   放【稳定前缀】而不是易变尾巴：一个会话里项目不变 → 字节稳定、不吃缓存失效；
+        #   尾巴是每轮变的东西（时间/git），项目塞进去没意义还会白搭一次拼装。
+        try:
+            from daemon_session import get_session_meta as _gsm3
+            _pj_id = (_gsm3(sid) or {}).get("project_id") or ""
+            if _pj_id:
+                from workers.projects import get_project as _get_pj
+                _pj_e = _get_pj(_pj_id) or {}
+                _pj_path = (_pj_e.get("path") or "").strip()
+                if _pj_path:
+                    _sys_stable += (
+                        "\n\n【当前项目】" + str(_pj_e.get("name") or _pj_id) + " · 目录 " + _pj_path + "\n"
+                        "这场对话是在这个外部项目里进行的。凡是指「这个项目 / 当前目录 / 这里」的开发改动、"
+                        "命令执行、脚本运行、服务启动，默认都在上述目录下进行 —— 调工具时把 cwd 指到那儿，"
+                        "不要默认在 daemon 自己的工程根里操作。"
+                    )
+        except Exception:
+            pass
+        # wish-fed4c043 · 恒定段挂稳定前缀末尾（使用纪律 + note 提示 + 本话题稿摘要）。
+        #   实测约 2,520 tok/轮 本来按 miss 全价付 —— 它们一个字都不变，没理由待在易变尾巴里。
+        try:
+            _sys_stable = _sys_stable + _build_stable_consts(sid, mode)
+        except Exception:
+            pass
         # 铁律 14 · 易变内容不塞稳定前缀。相处风格描述随四维每轮可能变·放 system 易变尾巴。
         _state_prefix = _state_tail()  # H4 跨渠道: 陪伴模式也要读状态卡尾巴("我睡了"跨渠道)
         _sys_base = _sys_stable
@@ -1943,6 +2239,9 @@ def _chat_impl(
             + _ledger_hint
             + _companion_weather_hint(mode)
         )
+        # wish-fed4c043 · 本话题稿摘要留在这里（**不回**稳定前缀）：
+        #   它低频但会变（挂新稿 / revise）→ 放 system 里一变就连 history 一起 miss（赔本）。
+        #   留 suffix：变了也只冲它自己（suffix 本来就每轮全价）。
         try:
             from workers.session_docs import system_note as _wd_note
             _docs_live = _wd_note(sid)
@@ -1951,19 +2250,6 @@ def _chat_impl(
         except Exception:
             pass
         if mode != "taste":
-            _sys_tail = (
-                _sys_tail
-                + "\n\n这句话若是在改你怎么说话（少说/多说、损/温柔、正经/贫、客套/随便、普通/放开），"
-                + "立刻 note_style_shift：quote=他原话，dim=话量|调性|语气|礼节|表现力，"
-                + "direction=down|up。在说文档或别人就不要调。不要换嘴。不要把段名说出口。\n"
-                + "这句话若是冲你这个人来的情绪（夸你=开心，骂你没用/讨厌你=委屈，"
-                + "夸得肉麻/摸头/表白=羞），立刻 note_mood：quote=他原话，mood=开心|委屈|羞。"
-                + "这场已有覆盖，他说你听错了/我开玩笑的/没骂你/没表白/别误会：mood=没有。"
-                + "他说不是那个意思来哄你、还在这场里：不要收。"
-                + "不是说别人、不是文档、不是事砸了要修。不要换嘴，不要改五维，不要去查仓库。\n"
-                + "他在评你刚寄的那张画（这张对/好看/别这样/不要这种），立刻 note_gallery："
-                + "quote=他原话，verdict=对|别这样。\n"
-            )
             try:
                 from workers.she_play import play_hint
                 _sys_tail = _sys_tail + play_hint(mode)
@@ -2019,6 +2305,13 @@ def _chat_impl(
             _allowed_tools = {n for n in _REG if n != "write_clipboard"}
         else:
             _allowed_tools = None
+        # ★ BRO 2026-09-23：档位名单必须真正下发（上面那条 trace 说 3 件、实际发 30 件）
+        #   档位配了名单（非 None）→ 与渠道/note 限制取交集（两边都满足才给）；
+        #   档位没配（None · standard）→ 保持原样，零回归。
+        _prof_tools = locals().get("_PROFILE_TOOLS")
+        if _prof_tools:
+            _allowed_tools = (_prof_tools if _allowed_tools is None
+                              else (set(_allowed_tools) & _prof_tools))
         _note_direct = None
         try:
             from workers.stage_note_gate import try_apply_office_notes
@@ -2048,6 +2341,11 @@ def _chat_impl(
                 except Exception:
                     pass
         else:
+            # wish-31fd335e · 面板可观测：记下本次真实拼进请求的 system_suffix 长度
+            try:
+                RUNTIME.last_suffix_chars = len(_localize(_sys_tail))
+            except Exception:
+                pass
             try:
                 reply, messages, usage = run_tool_loop(
                     client=RUNTIME.client,
@@ -2066,8 +2364,9 @@ def _chat_impl(
                     thinking=thinking,
                     reasoning_effort=reasoning_effort,
                     allowed_tool_names=_allowed_tools,
-                    wall_clock_sec=_env_float("_RESUME_WALL_CLOCK_SEC"),
-                    llm_timeout_sec=_env_float("_RESUME_LLM_TIMEOUT_SEC"),
+                    wall_clock_sec=_budget_wall,
+                    llm_timeout_sec=_budget_llm_to,
+                    stall_sec=_budget_stall,
                 )
             except Exception as e:
                 if messages and messages[-1].get("role") == "user":
@@ -2194,6 +2493,10 @@ def _chat_impl(
                         append_turn(sid, "user", _fix_msg, meta={"src": "advisor_review"})
                     except Exception:
                         pass
+                    try:
+                        RUNTIME.last_suffix_chars = len(_localize(_sys_tail))
+                    except Exception:
+                        pass
                     reply, messages, _u2 = run_tool_loop(
                         client=RUNTIME.client,
                         provider=RUNTIME.provider,
@@ -2210,9 +2513,10 @@ def _chat_impl(
                         on_message_commit=_persist_entry,
                         thinking=thinking,
                         reasoning_effort=reasoning_effort,
-                        # wish-8914f90c · 墙钟熔断 (同主调用点)
-                        wall_clock_sec=_env_float("_RESUME_WALL_CLOCK_SEC"),
-                        llm_timeout_sec=_env_float("_RESUME_LLM_TIMEOUT_SEC"),
+                        # wish-8914f90c · 墙钟熔断 (同主调用点) · 2026-09-16 改显式预算
+                        wall_clock_sec=_budget_wall,
+                        llm_timeout_sec=_budget_llm_to,
+                        stall_sec=_budget_stall,
                     )
                     try:
                         usage.input_tokens += _u2.input_tokens
@@ -2237,6 +2541,19 @@ def _chat_impl(
                 _cc.record_hint(sid, _cc_report)
                 if progress is not None:
                     progress("closure_hint", _cc_report)
+        except Exception:
+            pass
+
+        # wish-1235e0da · 画布提示 · 长结构化回复没落产物 → 下一轮自己补一份画布
+        # (BRO 2026-09-10 拍板: 画布要「恰到好处」地自己弹出来 · 不是任何事都弹 · 也不是不弹)
+        # 这里只判据 + 落 pending · 不额外调 LLM(token 零成本) · 注入在下一轮 telemetry
+        try:
+            from workers import closure_check as _ccv
+            from workers.canvas_nudge import detect as _cv_detect, note_pending as _cv_note
+
+            _cv_hit = _cv_detect(reply or "", _ccv.tools_called())
+            if _cv_hit and _cv_note(sid, _cv_hit) and progress is not None:
+                progress("canvas_hint", _cv_hit)
         except Exception:
             pass
 
@@ -2330,6 +2647,39 @@ def _chat_impl(
 
 # ---------- FastAPI app ----------
 
+# 浏览器导航式 404 的友好页 (BRO 2026-09-28)
+#   背景: 产物 HTML 落在 data/workshop/outputs/ 会自动铺中栏，文件被删/移走后
+#   那个标签页一重载就撞 404，浏览器把 {"detail":...} 直接渲染出来 —— 看着像出 bug。
+_FRIENDLY_404_HTML = """<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>这个产物已经不在了</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+         background:#fffdf6; color:#3a3327;
+         font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif; }
+  .box { max-width:520px; padding:28px 30px; text-align:center; }
+  h1 { font-size:17px; font-weight:600; margin:0 0 12px; }
+  code { display:inline-block; background:#efe9da; color:#6b6250;
+         padding:3px 8px; border-radius:6px; font-size:12px; word-break:break-all; }
+  p { font-size:13px; line-height:1.8; color:#8a8172; margin:10px 0 0; }
+  .hint { margin-top:18px; font-size:12px; color:#a89f8d; }
+  @media (prefers-color-scheme: dark) {
+    body { background:#1f1a2c; color:#ece8f5; }
+    code { background:#241e34; color:#c9c0dd; }
+    p { color:#9a90b3; } .hint { color:#6f6685; }
+  }
+</style></head>
+<body><div class="box">
+  <h1>这个产物已经不在了</h1>
+  <p><code>{{NAME}}</code></p>
+  <p>多半是被删掉或挪走了。这个标签页还停在这里，所以看着像出了错。</p>
+  <div class="hint">点标签右侧的 × 关掉它就行 —— 不用重启，也不用刷新</div>
+</div></body></html>
+"""
+
+
 def build_app():
     """延迟 import fastapi——这样依赖没装时整个模块仍可被 import，
     只在真正想跑 API 时才需要装包。"""
@@ -2347,6 +2697,38 @@ def build_app():
         ) from e
 
     app = FastAPI(title="Daemonkey API", version="0.1.0")
+
+    # 浏览器导航式 404 → 给人看的页面（BRO 2026-09-28）
+    #   只对【真浏览器导航】生效: Sec-Fetch-Dest = iframe/document/frame/embed/object
+    #   （老浏览器或地址栏直达则看 Accept: text/html）。
+    #   curl / python / 前端 fetch 都不发这些头 —— 所以 API 的 JSON 契约一点不动。
+    try:
+        import html as _html_mod
+        from starlette.exceptions import HTTPException as _StarletteExc
+        from fastapi.exception_handlers import http_exception_handler as _default_http_exc
+
+        def _is_browser_nav(req):
+            d = (req.headers.get("sec-fetch-dest") or "").lower()
+            if d in ("iframe", "document", "frame", "embed", "object"):
+                return True
+            if not d and "text/html" in (req.headers.get("accept") or "").lower():
+                return True
+            return False
+
+        @app.exception_handler(_StarletteExc)
+        async def _friendly_404(request, exc):
+            try:
+                if getattr(exc, "status_code", 0) == 404 and _is_browser_nav(request):
+                    detail = str(getattr(exc, "detail", "") or "")
+                    name = detail.split(":", 1)[-1].strip() if ":" in detail else detail
+                    body = _FRIENDLY_404_HTML.replace("{{NAME}}", _html_mod.escape(name))
+                    return HTMLResponse(body, status_code=404)
+            except Exception:
+                pass
+            return await _default_http_exc(request, exc)
+    except Exception as _e404:
+        print(f"[daemon] WARN · 友好 404 页未装上 (不阻塞启动): {type(_e404).__name__}: {_e404}",
+              flush=True)
 
     # wish-413999da phase 1 · closure helpers 提到 api_routes/_deps.py
     # 保留同名 local 绑定让旧路由 closure 调用照常工作
@@ -2423,14 +2805,17 @@ def build_app():
     from api_routes import dashboard as _routes_dashboard
     from api_routes import market as _routes_market
     from api_routes import knowledge as _routes_knowledge
+    from api_routes import picker as _routes_picker  # 系统文件/目录选择器（projects 与 knowledge 共用·2026-09-30 抽公共）
     from api_routes import playbooks as _routes_playbooks
     from api_routes import clients as _routes_clients
     from api_routes import vision as _routes_vision
     from api_routes import search_config as _routes_search
     from api_routes import notifications as _routes_notifications
+    from api_routes import radar_settings as _routes_radar_settings  # wish-7f38376e · /radar-config
     from api_routes import advisor as _routes_advisor
     from api_routes import plan as _routes_plan  # 任务计划条 (task_ledger 的步骤层)
     from api_routes import stt as _routes_stt  # wish-241e0014 · /stt/* 语音识别增强
+    from api_routes import projects as _routes_projects  # wish-acc37841 · /api/projects 外部真工程
     # 2026-08-08 · /api/tts 语音回复 (商业化 TTS · 归属待决 · 优雅降级: 纯净版无 voice.py 不崩)
     try:
         from api_routes import voice as _routes_voice
@@ -2449,6 +2834,7 @@ def build_app():
     app.include_router(_routes_providers.router)
     # 知识库/技能库/客户档案路由必须在 dashboard 之前 · /dashboard/knowledge* /dashboard/playbooks* /dashboard/clients* 才不会被 /dashboard/{domain} 吞掉
     app.include_router(_routes_knowledge.router)
+    app.include_router(_routes_picker.router)
     app.include_router(_routes_playbooks.router)
     app.include_router(_routes_clients.router)
     app.include_router(_routes_market.router)
@@ -2458,15 +2844,17 @@ def build_app():
     from api_routes import media_defaults as _routes_media
     app.include_router(_routes_media.router)
     app.include_router(_routes_notifications.router)  # wish-fb6b7427 · /notification-config
+    app.include_router(_routes_radar_settings.router)  # wish-7f38376e · /radar-config（掘金雷达自动刷新）
     from api_routes import local_data as _routes_local_data
     app.include_router(_routes_local_data.router)  # 设置页磁盘占用 + 可选清理
     app.include_router(_routes_advisor.router)  # wish-ea8922f7 · /api/advisor/status + trace
     app.include_router(_routes_plan.router)  # /api/plan/* · 对话框上方的任务计划条 (读+改)
+    app.include_router(_routes_projects.router)  # wish-acc37841 · /api/projects · 我的项目
     app.include_router(_routes_stt.router)  # wish-241e0014 · /stt/* 语音识别增强 (可选更新)
-    from api_routes import wakeups as _routes_wakeups   # 会话内延迟唤醒(计时器)
-    app.include_router(_routes_wakeups.router)          # /api/wakeups · 标题栏倒计时 chip
-    from api_routes import events as _routes_events     # 会话常驻事件流(后台 turn 即时上屏)
-    app.include_router(_routes_events.router)           # /api/events · SSE
+    from api_routes import wakeups as _routes_wakeups  # wish-1b00ca00 · 会话内延迟唤醒(计时器)
+    app.include_router(_routes_wakeups.router)         # /api/wakeups · 输入栏上方倒计时卡
+    from api_routes import events as _routes_events    # wish-8a9a3482 · 会话常驻事件流(后台 turn 即时上屏)
+    app.include_router(_routes_events.router)          # /api/events · 页面开着就连的 SSE
     from api_routes import companion as _routes_companion
     app.include_router(_routes_companion.router)  # DAIMON 陪伴模式 · /companion/* 目录级静态服务
 
@@ -2488,6 +2876,29 @@ def build_app():
             _th.Thread(target=_load, name="stt-boot-preload", daemon=True).start()
         except Exception:
             pass
+
+    # 2026-09-28 · data/ 分区自检 (wish-3586b504)
+    #   BRO:「不是不让新建，如果新建，就必须要让后面的人知道什么东西放在哪里。
+    #         就好比书架不够用了，要买新的，新的书架也要有标签。」
+    #   启动时扫 data/ 一级 —— 报「基线之后新冒出来的格子」+「待归位清单」。只报不拦。
+    @app.on_event("startup")
+    def _fs_layout_boot_check():
+        # 纯净版可能没这个模块 → ImportError 软降级（功能优雅缺失·不崩启动）。
+        # 为什么不直接进 core_manifest: 那会造成母体/纯净版白名单分叉 ——
+        # 要等下个 release 两边同步时再正式纳入，不靠绕闸。
+        try:
+            from workers.fs_layout import scan_unregistered, render_notice
+        except ImportError:
+            return
+        try:
+            _notice = render_notice(scan_unregistered())
+            if _notice:
+                import logging
+                logging.getLogger("opus.fs_layout").warning(_notice)
+        except Exception as _e:
+            import logging
+            logging.getLogger("opus.fs_layout").debug("分区自检跳过: %s", _e)
+
     if _routes_voice is not None:
         app.include_router(_routes_voice.router)  # 2026-08-08 · /api/tts 语音回复 (有 voice 才挂)
 

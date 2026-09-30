@@ -52,7 +52,7 @@ def _run(args: dict) -> ToolResult:
     extra = staged.with_name(staged.stem + ".__extra__.pptx")
     here = folder / "_assets" / family
     try:
-        added_n = render_new_pages(body, extra, style=style, here=here, inherit=got)
+        render_new_pages(body, extra, style=style, here=here, inherit=got)
         info = append_slides(got, extra, staged, after=after)
         out, ver = publish(staged, folder, family, got.suffix.lower() or ".pptx", keep=got)
     except Exception as e:
@@ -82,9 +82,9 @@ def _run(args: dict) -> ToolResult:
                 if after
                 else ("  插到最前面" if after == 0 else "  接在最后")
             ),
-            f"  原稿板式/图还在；新页按原稿配色",
-            f"[[DK-OPEN]]{rel}",
+            "  原稿板式/图还在；新页按原稿配色",
         ]),
+        stage_path=rel,
     )
 
 

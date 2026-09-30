@@ -38,10 +38,49 @@ logger = logging.getLogger("opus.daemon.dashboard")
 
 router = APIRouter()
 
-def _list_reports() -> dict:
-    """产物货架 · 兼容旧字段（count/items/directory=报告）+ kinds.reports/decks。"""
+# 2026-09-15 · 重读路径短 TTL 缓存（wish-3bc2fdaf 续）
+#   reports / calendar 每进一次都现算 0.8~1.2s · 首屏并发下被 GIL 放大
+#   数据源都是文件 · 5s 内的陈旧用户不可感 · refresh=true 一律绕缓存（见 dashboard 开头）
+#   进程内缓存（重启清空）· 不写盘 · 并发下 dict 操作原子，最坏重算一次
+#   ⚠ /dashboard/cockpit 故意不缓存: 它是独立端点、前端调它不带 refresh（static/chat.js:7349）·
+#     加缓存就没绕过路径 = 用户点刷新 5s 内拿旧值。代价是首屏多算一次 · 比“刷新被静默忽略”便宜。
+#     （2026-09-15 code_review 抓出 · 已核实前端三处调用全不带 refresh）
+_CACHE_TTL_SEC = 5.0
+# 产物库专用长 TTL（2026-09-28）· 扫盘贵（全量 2.1s）而数据变化极慢
+_SHELF_CACHE_TTL_SEC = 300.0
+_TTL_CACHE: dict[str, tuple[float, object]] = {}
+
+
+def _ttl_cached(key: str, fn, *args, **kwargs):
+    """5s TTL 缓存 · 异常不写缓存（照常冒出去）。
+
+    2026-09-28 · reports 例外走 5 分钟：全量扫盘实测 2.1s（工坊 2959 条占 1s、
+      decks 44 个 pptx 每个要开文件读页数占 1.1s）—— 产物库不是实时数据，
+      真生成了新文件前端会带 refresh=true 绕缓存。不缓存就得每次点开都重扫。
+    """
+    now = time.time()
+    ttl = _SHELF_CACHE_TTL_SEC if key.startswith("reports") else _CACHE_TTL_SEC
+    hit = _TTL_CACHE.get(key)
+    if hit is not None and (now - hit[0]) < ttl:
+        return hit[1]
+    val = fn(*args, **kwargs)
+    _TTL_CACHE[key] = (now, val)
+    return val
+
+
+def _list_reports(kinds: Optional[list] = None) -> dict:
+    """产物货架 · 兼容旧字段（count/items/directory=报告）+ kinds.reports/decks。
+
+    2026-09-28 · kinds 白名单：只算点名的那几类·其余返 deferred 占位符。
+      实测首屏 reporters 单独算 32ms/12KB · 全量 2102ms/2.3MB。
+      不传 kinds = 老的全量行为（calendar / cockpit 等调用方一个字不变）。
+    """
     from workers.output_shelf import list_shelf
-    return list_shelf()
+
+    if not kinds:
+        return _ttl_cached("reports", list_shelf)
+    key = "reports:" + ",".join(sorted(str(k) for k in kinds))
+    return _ttl_cached(key, lambda: list_shelf(kinds=list(kinds)))
 
 
 def _build_calendar_day(day: str) -> dict:
@@ -1038,6 +1077,37 @@ async def dashboard_billing(
 # ──────────────────────────────────────────────────────────
 
 
+def _setup_missing() -> list:
+    """五项能力里还没配的（中文名）· 纯读配置 · 不调 LLM · 毫秒级。
+
+    wish-3edbf065 · 上手向导的状态来源。任何一项读不到就跳过 ——
+    绝不因为某个配置文件坏了把整条看板建议搞崩。
+    """
+    miss = []
+    try:
+        from workers.memory_embed import load_config as _emb
+        c = _emb() or {}
+        if not (c.get("configured") and c.get("enabled", True)):
+            miss.append("记忆语义检索")
+    except Exception:
+        pass
+    try:
+        from workers.search_config import load_search_config as _srch
+        if not (_srch() or {}).get("configured"):
+            miss.append("外网搜索")
+    except Exception:
+        pass
+    try:
+        from workers.media_defaults import status as _md
+        s = _md() or {}
+        for k, name in (("image", "图片生成"), ("tts", "语音合成"), ("stt", "语音识别")):
+            if not (s.get(k) or {}).get("ready"):
+                miss.append(name)
+    except Exception:
+        pass
+    return miss
+
+
 @router.get("/dashboard/suggestions")
 def dashboard_suggestions(authorization: Optional[str] = Header(None)):
     """条件触发的行动建议 · 每条 = 条件 + 文案 + spawnQuickly prompt。
@@ -1052,6 +1122,20 @@ def dashboard_suggestions(authorization: Optional[str] = Header(None)):
     root = Path(__file__).resolve().parent.parent
     now = datetime.now(timezone.utc)
     out = []
+
+    # 0. 能力没配齐 (wish-3edbf065 · 上手向导) —— 五项能力缺一项就提醒一句。
+    #    缺的项直接点名，用户知道代价再决定配不配；配齐后这条自己消失。
+    _miss = _setup_missing()
+    if _miss:
+        out.append({
+            "id": "setup-incomplete",
+            "icon": "ri-rocket-2-fill",
+            "color": "#b794f6",
+            "text": "她还有 %d 项能力没配齐 · %s" % (
+                len(_miss), "、".join(_miss[:3]) + ("等" if len(_miss) > 3 else "")),
+            "prompt": "打开设置里的「上手向导」，把没配的能力配齐",
+            "label": "去配齐",
+        })
 
     def _days_since(p: Path) -> float | None:
         """文件/目录里最新文件的距今天数 · 不存在返回 None。"""
@@ -1069,15 +1153,30 @@ def dashboard_suggestions(authorization: Optional[str] = Header(None)):
         except Exception:
             return None
 
-    # 1. 月度复盘: reviews 空 或最新 >25 天
-    d = _days_since(root / "data" / "reviews")
-    if d is None or d > 25:
-        out.append({
-            "id": "monthly_review", "icon": "ri-calendar-check-fill", "color": "#F6AD55",
-            "text": "该做月度复盘了" if d is not None else "还没做过月度复盘",
-            "prompt": "帮我做月度复盘 (用 monthly_review 工具起草 · 起草完给我过目)",
-            "label": "月度复盘",
-        })
+    # 1. 月度复盘: 与节律条同源 (workers.rituals) —— 别用目录 mtime。
+    #    2026-09-29 拆格: 原来按 data/reviews/ 目录 mtime 判「距上次多少天」· 而代码审查
+    #    产物原先也写进那个目录 → mtime 天天被刷新 → 「该做月度复盘了」永远不亮。
+    #    同源后由 period_end / next_due 说了算 · 跟日历上那条节律条永远一致。
+    try:
+        from workers.rituals import get_rituals
+        _mr = next((r for r in get_rituals() if r["id"] == "monthly_review"), None)
+    except Exception:
+        _mr = None
+    if _mr is not None:
+        if not _mr.get("last_done"):
+            out.append({
+                "id": "monthly_review", "icon": "ri-calendar-check-fill", "color": "#F6AD55",
+                "text": "还没做过月度复盘",
+                "prompt": "帮我做月度复盘 (用 monthly_review 工具起草 · 起草完给我过目)",
+                "label": "月度复盘",
+            })
+        elif _mr.get("days_left", 1) <= 0:
+            out.append({
+                "id": "monthly_review", "icon": "ri-calendar-check-fill", "color": "#F6AD55",
+                "text": "该做月度复盘了",
+                "prompt": "帮我做月度复盘 (用 monthly_review 工具起草 · 起草完给我过目)",
+                "label": "月度复盘",
+            })
 
     # 2. 操作手册体检: 上次判重 >14 天 且手册 >30 份
     learnings = root / "data" / "learnings"
@@ -1100,9 +1199,9 @@ def dashboard_suggestions(authorization: Optional[str] = Header(None)):
     if pb_count > 30 and (dedup_days is None or dedup_days > 14):
         out.append({
             "id": "audit_playbooks", "icon": "ri-search-eye-line", "color": "#8affd6",
-            "text": f"{pb_count} 份操作手册 · 该检查有没有重复的了",
-            "prompt": "帮我看看操作手册是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)",
-            "label": "检查操作手册",
+            "text": f"{pb_count} 份操作手册 · 该整理重复的了",
+            "prompt": "帮我把重复的操作手册整理掉 (先 audit_playbooks 出簇清单给我过目 · 我说合再 action='curate' 当场合 · 一次一簇)",
+            "label": "整理操作手册",
         })
 
     # 3. 卫生闸: 有待迁移的清理 (重启自动清 · 纯提示)
@@ -1359,6 +1458,58 @@ def dashboard_memory_map(authorization: Optional[str] = Header(None), lite: int 
         return {"error": f"缺依赖 {e.name} · 到启动器「环境」页点【开始安装】补装后重启即恢复"}
 
 
+# ─── wish-0c9fdbf4 · 产物库删除 + 回收站 ───────────────────────────
+
+@router.post("/shelf/delete")
+def shelf_delete(
+    payload: Optional[dict] = Body(None),
+    authorization: Optional[str] = Header(None),
+):
+    """把产物删进回收站（可还原 · 不是直接消）。
+
+    只认 _shelf_roots() 底下的文件 —— 越界路径根本进不来。
+    """
+    check_auth(authorization)
+    from workers.output_shelf import delete_shelf_items
+    items = list((payload or {}).get("items") or [])
+    if not items:
+        raise HTTPException(400, "没选要删的产物")
+    try:
+        return delete_shelf_items(items)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.get("/shelf/trash")
+def shelf_trash_list(authorization: Optional[str] = Header(None)):
+    """回收站清单 · 顺手清掉超过 30 天的批次（零 LLM · 毫秒级）。"""
+    check_auth(authorization)
+    from workers.output_shelf import list_shelf_trash
+    return list_shelf_trash()
+
+
+@router.post("/shelf/trash/restore")
+def shelf_trash_restore(
+    payload: Optional[dict] = Body(None),
+    authorization: Optional[str] = Header(None),
+):
+    """从回收站挪回原位（paths 是 batch/相对路径）。"""
+    check_auth(authorization)
+    from workers.output_shelf import restore_shelf_trash
+    paths = list((payload or {}).get("paths") or [])
+    if not paths:
+        raise HTTPException(400, "没选要还原的")
+    return restore_shelf_trash(paths)
+
+
+@router.post("/shelf/trash/empty")
+def shelf_trash_empty(authorization: Optional[str] = Header(None)):
+    """一键清空回收站 · 永久删 · 找不回。"""
+    check_auth(authorization)
+    from workers.output_shelf import empty_shelf_trash
+    return empty_shelf_trash()
+
+
 @router.post("/shelf/restore/{kind}/{filename}")
 def shelf_restore(
     kind: str,
@@ -1452,7 +1603,10 @@ def shelf_preview_asset(
 
 
 @router.get("/dashboard/{domain}")
-async def dashboard(
+# 2026-09-15 · 同步路由（不是 async def）· 体内是纯同步 IO（读文件 / git / 现算聚合）。
+#   写成 async def 会在事件循环里直接跑 → 独占 loop · 首屏并发时全站请求排队（实测轻接口被拖 3.99s）。
+#   普通 def 由 FastAPI 丢进线程池 · 并发不再互堵。往这里加 await 之前先想清楚。
+def dashboard(
     request: Request,
     domain: str,
     refresh: bool = False,
@@ -1460,6 +1614,7 @@ async def dashboard(
     show_hidden: bool = False,
     date: Optional[str] = None,  # 卷三十三补丁 · YYYY-MM-DD · 雷达/趋势按日筛
     vdomain: Optional[str] = None,  # 卷五十六 · 价值热力图的领域筛选 (calendar_valued / day_signals 用)
+    kinds: Optional[str] = None,  # 2026-09-28 · reports 域按需拉："reports,decks"（不传=全量）
     authorization: Optional[str] = Header(None),
 ):
     """工作室操作台 · 各维度数据源（卷二十一加）
@@ -1477,6 +1632,9 @@ async def dashboard(
       domain_filter=ai    · 卷二十八 · radar 按 domain 过滤
     """
     check_auth(authorization)
+    # refresh=true = 显式要新数据 · 先清 TTL 缓存（否则 5s 内会吐旧值）
+    if refresh:
+        _TTL_CACHE.clear()
 
     if domain == "radar":
         from workers.info_radar import (
@@ -1488,9 +1646,8 @@ async def dashboard(
         if refresh:
             try:
                 # 卷四十六续 5 · refresh_radar 跑多源 RSS / web 抓取 (sync I/O · 20-30s)
-                # 直接调会阻塞 asyncio event loop · 卡死 /chat/stream 等并发请求
-                # 丢线程池跑 · LLM 流式不再被打断
-                await asyncio.to_thread(refresh_radar)
+                # 2026-09-15 · 本路由已是 def（跑在工作线程）· 直接调即可 · 不碰事件循环
+                refresh_radar()
             except Exception as e:
                 raise HTTPException(500, f"radar refresh failed: {e}")
         data = load_radar()
@@ -1597,8 +1754,8 @@ async def dashboard(
         )
         if refresh:
             try:
-                # 卷四十六续 5 · generate_trends 调 LLM (sync · 10-30s) · 同样阻塞 event loop · 丢线程池
-                return await asyncio.to_thread(generate_trends)
+                # 卷四十六续 5 · generate_trends 调 LLM (sync · 10-30s) · 本路由 def · 直接调
+                return generate_trends()
             except Exception as e:
                 raise HTTPException(500, f"trend_finder failed: {e}")
         # 卷三十三补丁 · 按日期过滤 · domain_filter 复用为 day key (YYYY-MM-DD)
@@ -1607,7 +1764,8 @@ async def dashboard(
         return load_trends()
 
     if domain == "reports":
-        return _list_reports()
+        _want = [s.strip() for s in (kinds or "").split(",") if s.strip()] or None
+        return _list_reports(kinds=_want)
 
     if domain == "cognition":
         from workers.cognition_loader import load_cognition
@@ -1627,8 +1785,8 @@ async def dashboard(
         )
         if refresh:
             try:
-                # 卷四十六续 5 · mine_opportunities 调 LLM + 读多文件 (sync · 长) · 丢线程池
-                return await asyncio.to_thread(mine_opportunities)
+                # 卷四十六续 5 · mine_opportunities 调 LLM + 读多文件 (sync · 长) · 本路由 def · 直接调
+                return mine_opportunities()
             except Exception as e:
                 raise HTTPException(500, f"mine_opportunities failed: {e}")
         return load_opportunities()
@@ -1656,8 +1814,8 @@ async def dashboard(
         opp_id = domain_filter
         if opp_id and refresh:
             try:
-                # 卷四十六续 5 · analyze_feasibility 调 LLM (sync · 长) · 丢线程池
-                result = await asyncio.to_thread(analyze_feasibility, opp_id)
+                # 卷四十六续 5 · analyze_feasibility 调 LLM (sync · 长) · 本路由 def · 直接调
+                result = analyze_feasibility(opp_id)
                 if not result.get("ok"):
                     raise HTTPException(500, result.get("error") or "分析失败")
                 return result
@@ -1776,10 +1934,17 @@ async def dashboard(
         }
 
     if domain == "favorites":
-        # 卷三十三 · 统一收藏夹
+        # 卷三十三 · 统一收藏夹 (2026-09-18 加 output · 产物库收藏)
         from workers.favorites import list_favorites
         kind = domain_filter  # 复用 domain_filter · 不影响 radar 那边的 domain
-        data = list_favorites(kind=kind if kind in ("opportunity", "feasibility") else None)
+        data = list_favorites(kind=kind if kind in ("opportunity", "feasibility", "output") else None)
+        # 产物收藏要显示会话药丸 → 补归属 (BRO: 分类 + 跳回对话)
+        if data.get("by_kind", {}).get("output"):
+            try:
+                from workers.output_shelf import attach_session_info
+                attach_session_info(data.get("items") or [])
+            except Exception as e:
+                logger.warning("favorites · output 补会话归属失败: %s", e)
         # 附加快照（标题 / domain 已在 entry 里）
         return data
 
@@ -1871,7 +2036,7 @@ async def dashboard(
             now = _dt.now()
             year, month = now.year, now.month
         try:
-            return build_calendar(year, month)
+            return _ttl_cached(f"calendar:{year}-{month}", build_calendar, year, month)
         except ValueError as e:
             raise HTTPException(400, str(e))
 
@@ -1928,7 +2093,7 @@ async def dashboard(
         if vd in ("all", "全部"):
             vd = None
         if refresh:
-            return await asyncio.to_thread(generate_brief, year, month, vd)
+            return generate_brief(year, month, vd)
         cached = load_brief(year, month, vd)
         if cached:
             return cached

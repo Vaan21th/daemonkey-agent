@@ -30,25 +30,17 @@ ONBOARDING_PATH = DATA_DIR / "onboarding.json"
 # section key → markdown header（6 维·和 soul/OWNER-NOTEBOOK.md + agent_tools/update_bro_note.py 一字不差对齐）
 # state 单独处理（状态卡表格·替换式更新·不进 headers 循环）
 SECTIONS: dict[str, str] = {
-    "state":    "## 〇、状态卡",
-    "profile":  "## 一、当下画像 · Profile",
-    "events":   "## 二、关键事件流 · Events",
-    "rules":    "## 三、长期偏好与边界 · Rules",
-    "dialogue": "## 四、对话风格 · Dialogue",
-    "summary":  "## 五、一句话速写 · Summary",
-    "risks":    "## 六、关怀雷达 · Care Radar",
+    "state":      "## 〇、状态卡",
+    "background": "## 一、背景档案",
+    "stories":    "## 二、他经历的事（日期开头的故事/流水）",
+    "about-user": "## 三、长期偏好与边界",
+    "moments":    "## 四、对话风格 · Dialogue",
+    "archive":    "## 五、一句话速写 · Summary",
+    "watch":      "## 六、关怀雷达 · Care Radar",
 }
 
-STATE_FIELDS: tuple[str, ...] = (
-    "工作状态",
-    "作息模式",
-    "健康基线",
-    "情绪基线",
-    "当前主线",
-    "关系家庭",
-    "经济预算",
-    "忌口过敏",
-)
+# 派生自内核单一真相源（2026-09-30 wish-6e6e561b）—— 此前这里手抄了一份，会分叉。
+from soul_loader import STATE_CARD_FIELDS as STATE_FIELDS  # noqa: E402
 _STATE_SECTION_RE = re.compile(r"(?m)^## 〇、状态卡")
 
 _STATE_CARD_BLOCK = """## 〇、状态卡（我眼里的你 · 相处中自然更新 · as_of+evidence）
@@ -77,7 +69,7 @@ def _notebook_template() -> str:
         "> 他随时可以亲手编辑它 —— 他最有权解释自己。\n\n"
         f"{_STATE_CARD_BLOCK}\n\n"
         f"{headers}\n\n"
-        "## 七、近期更新流水\n\n"
+        "## 七、改动记录\n\n"
         "| 时间 | 来源 | 操作 |\n"
         "|---|---|---|\n"
     )
@@ -487,9 +479,9 @@ TOOLS = [
                         "description": (
                             "写进哪个维度："
                             "state(状态卡·替换式·8 骨架字段) / "
-                            "profile(当下身份/在做的事/理想方向) / events(关键事件) / "
-                            "rules(长期偏好与边界) / dialogue(称呼与口头习惯) / "
-                            "summary(压缩段) / risks(关怀雷达：该提醒他照顾自己的信号)"
+                            "background(身份/在做的事/理想方向/旧背景) / stories(关键事件) / "
+                            "about-user(偏好与边界·会影响我怎么待他) / moments(称呼与说话习惯) / "
+                            "archive(长期沉淀) / watch(该提醒他照顾自己的信号)"
                         ),
                     },
                     "content": {

@@ -82,23 +82,9 @@ async def projects_add(body: dict = Body(...), authorization: Optional[str] = He
     return r
 
 
-_PICK_SCRIPT = (
-    "import sys, tkinter as tk\n"
-    "from tkinter import filedialog\n"
-    "try:\n"
-    "    sys.stdout.reconfigure(encoding='utf-8')\n"   # 中文目录名不能靠 cp936 赌
-    "except Exception:\n"
-    "    pass\n"
-    "r = tk.Tk()\n"
-    "r.withdraw()\n"
-    "try:\n"
-    "    r.attributes('-topmost', True)\n"
-    "except Exception:\n"
-    "    pass\n"
-    "init = sys.argv[1] if len(sys.argv) > 1 else ''\n"
-    "p = filedialog.askdirectory(title='选一个要开发的目录 · OPUS', initialdir=(init or None))\n"
-    "print(p or '')\n"
-)
+# 2026-09-30 · 选择器实现已抽到 api_routes/picker.py（知识库要做「选文件夹/选文件」，
+#   BRO 明确「不要代码分叉，能复用直接复用」）—— 这里只留转发，不再自己维护一份脚本。
+from api_routes.picker import _PICK_SCRIPT  # noqa: F401  (兼容老引用)
 
 
 @router.post("/api/projects/pick-folder")
@@ -116,44 +102,9 @@ async def projects_pick_folder(
     ⚠ 子进程跑（不单因为阻塞：tkinter 必须占主线程）· 用户取消 → 空串 → cancelled。
     """
     check_auth(authorization)
-    # 只在本机访问时弹（远程看不见那台机器的桌面）· 判据见 _client_is_local_machine
-    from api_routes._deps import _client_is_local_machine
-    if not _client_is_local_machine(request):
-        return {"ok": False, "remote": True, "error": "远程接入弹不出这台机器的选择器 · 请直接手输路径"}
-
-    import asyncio
-    import sys
-
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-c", _PICK_SCRIPT, initial,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        )
-    except Exception as e:
-        return {"ok": False, "error": f"拉不起选择器：{e}"}
-
-    try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=240)
-    except asyncio.TimeoutError:
-        try:
-            proc.kill()
-        except Exception:
-            pass
-        return {"ok": False, "error": "等了 4 分钟没人选 · 再试一次或直接手输路径"}
-
-    if proc.returncode != 0:
-        return {
-            "ok": False,
-            "error": "选择器没起来（这台机器没有桌面会话？）· 请手输路径",
-            "detail": (err or b"").decode("utf-8", "replace").strip()[-300:],
-        }
-
-    lines = [ln.strip() for ln in (out or b"").decode("utf-8", "replace").splitlines() if ln.strip()]
-    path = lines[-1] if lines else ""
-    if not path:
-        return {"ok": False, "cancelled": True, "error": "没选（取消了）"}
-    return {"ok": True, "path": path}
+    # 转发到 api_routes/picker.py 的公共实现（原来这里自己抄了一份脚本 · 2026-09-30 收敛）
+    from api_routes.picker import pick_folder as _pick
+    return await _pick(request, initial=initial, authorization=authorization)
 
 
 @router.post("/api/projects/{pid}/open-folder")

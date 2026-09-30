@@ -1088,10 +1088,23 @@ const RESTORE_BATCH = 14;
 let _restoreTurns = [];
 let _restoreCursor = 0;
 
+// wish-e72cc18a · 压缩摘要在数据层是 role:'user' · 陪伴模式同样不能铺成"你说的话"
+function _isCompactionSummary(t) {
+  return !!t && t.role === 'user'
+    && String(t.content || '').trimStart().startsWith('<compaction-summary>');
+}
+
 function buildMsgEl(t) {
   const d = document.createElement('div');
+  if (_isCompactionSummary(t)) {
+    d.className = 'msg sys';
+    d.innerHTML = '<i class="ri-archive-2-line"></i> 上下文已压缩 · 早期对话已折叠'
+      + `<div class="t">${fmtTime(t.ts)}</div>`;
+    return d;
+  }
   const isMe = t.role === 'user';
   d.className = 'msg ' + (isMe ? 'bro' : 'opus');
+  // wish-8daa10c4 · 查看对话时不显示任何压缩痕迹（BRO：要“跟没压过一样”）
   if (isMe) {
     const strip = (typeof _broAttachStrip === 'function')
       ? _broAttachStrip(t.content || '')
@@ -2241,6 +2254,7 @@ async function openSayLog() {
   }
   const msg = await fetch('/sessions/' + encodeURIComponent(sid) + '/messages').then(r => r.json()).catch(() => ({}));
   const turns = (msg.turns || []).filter(t =>
+    !_isCompactionSummary(t) &&   // wish-e72cc18a · 摘要不是"句" · 不进对话浏览
     (t.role === 'user' || t.role === 'assistant') && String(t.content || '').trim()
   );
   if (meta) meta.textContent = turns.length + ' 句 · 跟右边这本话题同一本';

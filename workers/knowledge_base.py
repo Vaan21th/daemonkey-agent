@@ -18,6 +18,8 @@ workers/knowledge_base.py
 from __future__ import annotations
 
 import json
+import logging
+import shutil
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -25,10 +27,18 @@ from pathlib import Path
 
 from workers.safe_write import atomic_write_json, _do_backup
 
+logger = logging.getLogger(__name__)
+
 ROOT = Path(__file__).resolve().parent.parent
 KB_DIR = ROOT / "data" / "knowledge"
 DOCS_DIR = KB_DIR / "docs"
 MANIFEST_PATH = KB_DIR / "manifest.json"
+
+# 拖拽进来的原件固定落这里（api_routes6knowledge.py 的 INCOMING_DIR 同指一处）。
+INCOMING_DIR = KB_DIR / "incoming"
+# 回收站：与「本地数据 → 智能清理」共用同一套（同一个目录、同一个 <ts>/<相对路径> 布局），
+# 这样用户在智能清理的回收站里能一起看到 / 还原 / 清空，不用再学一个新地方。
+TRASH_REL = "data/runtime/trash"
 
 DOC_SOURCE_PREFIX = "doc:"
 
@@ -57,7 +67,7 @@ def load_manifest() -> dict:
     (红线: 升级绝不覆盖用户资料 · 一旦 manifest 损坏且被写覆盖 · 全部文档元数据丢失)。
     """
     if not MANIFEST_PATH.exists():
-        return {"docs": {}}
+        return {"docs": {}, "folders": []}
     try:
         data = json.loads(MANIFEST_PATH.read_text(encoding="utf-8")) or {}
     except Exception:
@@ -66,9 +76,14 @@ def load_manifest() -> dict:
             _do_backup(MANIFEST_PATH)
         except Exception:
             pass
-        return {"docs": {}}
+        return {"docs": {}, "folders": []}
     if not isinstance(data.get("docs"), dict):
         data["docs"] = {}
+    # 2026-10-01 · folders = 显式登记的文件夹名。
+    #   不登记就存不住「我先建个空文件夹、回头再往里放」—— 小组原来是靠文档的 folder 字段
+    #   现算出来的（见 dashboard-panels.js 的 folderOf），一篇都没有时这个组就消失了。
+    if not isinstance(data.get("folders"), list):
+        data["folders"] = []
     return data
 
 
@@ -180,6 +195,62 @@ def list_documents(tag: str | None = None) -> list[dict]:
     return docs
 
 
+def list_folders() -> list[str]:
+    """列显式登记的文件夹名（空文件夹也留着）。"""
+    return [str(x) for x in (load_manifest().get("folders") or []) if str(x).strip()]
+
+
+def add_folder(name: str) -> dict:
+    """新建一个知识库文件夹。
+
+    2026-10-01 BRO:「文件夹显示 ＋添加旁边加一个创建文件夹」——
+    空文件夹必须存得住，所以走 manifest 的 folders 字段显式登记，
+    而不是靠文档的 folder 字段现算（那样一篇都没有时这个组就消失了）。
+    幂等：同名直接返回 created=False，不报错。
+    """
+    name = str(name or "").strip().strip("/\\")
+    if not name:
+        raise ValueError("文件夹名不能为空")
+    with _MANIFEST_LOCK:
+        data = load_manifest()
+        folders = data.setdefault("folders", [])
+        if name in folders:
+            return {"ok": True, "name": name, "created": False, "folders": list(folders)}
+        folders.append(name)
+        _save_manifest(data)
+        return {"ok": True, "name": name, "created": True, "folders": list(folders)}
+
+
+def remove_folder(name: str, *, drop_docs: bool = False) -> dict:
+    """删一个知识库文件夹登记。
+
+    非空时【默认拒绘】—— 不偷着把用户的分组连文档一起干掉。
+    但要让他知道里面有多少篇，前端才好问「里面有 N 篇，一并放回未分类？」——
+    drop_docs=True 才真把里面文档的 folder 清成 ""（文档本身不删，只是回到未分类）。
+
+    幂等：文件夹不存在返回 removed=False，不报错。
+    """
+    name = str(name or "").strip().strip("/\\")
+    if not name:
+        raise ValueError("文件夹名不能为空")
+    with _MANIFEST_LOCK:
+        data = load_manifest()
+        folders = data.setdefault("folders", [])
+        if name not in folders:
+            return {"ok": True, "name": name, "removed": False, "folders": list(folders)}
+        n = sum(1 for d in data["docs"].values() if str(d.get("folder") or "") == name)
+        if n and not drop_docs:
+            return {"ok": False, "name": name, "removed": False, "doc_count": n,
+                    "error": f"里面还有 {n} 篇文档"}
+        for d in data["docs"].values():
+            if str(d.get("folder") or "") == name:
+                d["folder"] = ""
+        folders.remove(name)
+        _save_manifest(data)
+        return {"ok": True, "name": name, "removed": True,
+                "moved_docs": n, "folders": list(folders)}
+
+
 def get_document(doc_id: str) -> dict | None:
     return load_manifest()["docs"].get(doc_id)
 
@@ -198,8 +269,39 @@ def read_document_text(doc_id: str) -> str:
     return p.read_text(encoding="utf-8") if p.exists() else ""
 
 
-def remove_document(doc_id: str) -> dict:
-    """删档:出 manifest + 删 .md + 从 FTS5 清索引。找不到抛 KeyError。"""
+def _our_own_copy(meta: dict) -> Path | None:
+    """这篇的原件是不是「我们自己复制进来的副本」（落在 incoming/ 里）？
+
+    是 → 返回该路径（删档时该连它一起走）；
+    不是（在用户自己的盘上）→ None，**绝不碰**。
+
+    守卫不是「删之前校验一下」，而是根本不会发生：
+    只有落在 INCOMING_DIR 底下的路径才过得了 relative_to()，
+    用户盘上的 D:\我的资料\合同.pdf 天然抛 ValueError → 直接 None。
+
+    2026-10-01 BRO:「拖拽进来的，点击删除只删索引不删文件，那不就有两份了？
+    时间久了文件会很多吗？」—— 之前确实会：拖拽 = 复制一份进 incoming/，
+    删档只清 manifest + docs/，incoming/ 里那份就变成没人引用的孤儿，越拖越多。
+    """
+    raw = str(meta.get("orig_path") or "").strip()
+    if not raw:
+        return None
+    try:
+        p = Path(raw).resolve()
+        p.relative_to(INCOMING_DIR.resolve())
+    except (ValueError, OSError):
+        return None
+    return p
+
+
+def remove_document(doc_id: str, *, drop_original: bool = True) -> dict:
+    """删档:出 manifest + 删 .md + 从 FTS5 清索引。找不到抛 KeyError。
+
+    drop_original=True → 若这篇的原料是我们自己复制进来的副本，连它一起送回收站。
+    不用调用方告知「这篇是不是拖进来的」—— _our_own_copy() 自己看 orig_path 落在
+    哪儿就知道了。从用户自己盘上选进来的那些，相对路径天然不在 incoming/ 下，
+    自动跳过，绝不会动他的盘。
+    """
     with _MANIFEST_LOCK:  # wish-a1c5f147 · 复合操作锁
         data = load_manifest()
         meta = data["docs"].pop(doc_id, None)
@@ -210,7 +312,66 @@ def remove_document(doc_id: str) -> dict:
         if p.exists():
             p.unlink()
         _save_manifest(data)
-        return meta
+
+    # 文件搬运放锁外（不持锁做 IO）。挪不动也绝不让删档失败 —— 宁可留个孤儿，
+    # 也不能让用户点了删除却没反应。
+    meta["original_dropped"] = False
+    if drop_original:
+        src = _our_own_copy(meta)
+        if src is not None and src.exists():
+            try:
+                stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                dst = ROOT / TRASH_REL / stamp / src.relative_to(ROOT)
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(src), str(dst))
+                meta["original_dropped"] = True
+                meta["original_trashed_to"] = dst.relative_to(ROOT).as_posix()
+            except (OSError, ValueError) as e:
+                # ValueError: src 不在 ROOT 下（incoming 被做成指向外部的软链）時 relative_to 会抛。
+                # 必须一并接住 —— 这时候文档和 manifest 都已经落了，再冒到 API 就是
+                # 「东西删了、用户却收到报错」的反向体验。宁可留个孤儿。
+                # 也不能静默（否则 incoming 里攒孤儿、事后无从查是哪次删档什么原因）。
+                logger.warning("删档时原件搬运失败 · 留孤儿 %s: %s", src, e)
+                meta["original_drop_error"] = str(e)
+    return meta
+
+
+def scan_incoming_orphans() -> list[dict]:
+    """扫 incoming/ 里已经不被任何文档引用的文件（孤儿副本）。
+
+    兜底用：正常流程下删档会把副本一起带走，不该有孤儿。
+    但手动改过 manifest / 早期版本留下的会漏在里头 —— 这时用这个扫出来清掉，
+    免得「时间久了文件越积越多」（BRO 2026-10-01 担心的就是这个）。
+    """
+    if not INCOMING_DIR.exists():
+        return []
+    used = set()
+    for d in load_manifest()["docs"].values():
+        raw = str(d.get("orig_path") or "").strip()
+        if raw:
+            try:
+                used.add(str(Path(raw).resolve()).lower())
+            except OSError:
+                pass
+    out: list[dict] = []
+    for p in INCOMING_DIR.rglob("*"):
+        if not p.is_file():
+            continue
+        try:
+            key = str(p.resolve()).lower()
+            stt = p.stat()
+        except OSError:
+            continue
+        if key in used:
+            continue
+        out.append({
+            "name": p.name,
+            "rel": p.relative_to(ROOT).as_posix(),
+            "bytes": stt.st_size,
+            "mtime": datetime.fromtimestamp(stt.st_mtime).strftime("%Y-%m-%d %H:%M"),
+        })
+    out.sort(key=lambda x: -(x.get("bytes") or 0))
+    return out
 
 
 def set_enabled(doc_id: str, enabled: bool) -> dict:

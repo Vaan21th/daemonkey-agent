@@ -139,7 +139,7 @@ def home_of(rel: str) -> str | None:
 
 
 def bind(sid: str, rel: str, *, root: Path | None = None, claim: bool = False,
-         via: str = "manual") -> dict | None:
+         via: str = "unknown") -> dict | None:
     path = resolve_rel(rel, root=root)
     if not path or not sid:
         return None
@@ -154,7 +154,15 @@ def bind(sid: str, rel: str, *, root: Path | None = None, claim: bool = False,
     # 立新家的两条合法路 (都要 claim=True · 由调用方声明):
     #   ① via='generated' 本场真调生成工具产出
     #   ② via='uploaded'  用户主动上传 / 手动挂进本场
-    # 除此之外 (via='mentioned' 等) 一律不写。
+    #   ③ via='manual'    前端「点芯片 / 中栏打开」(api_routes/sessions.py)
+    # 除此之外一律不写。
+    #
+    # 2026-09-29 · 默认值由 'manual' 改成 'unknown' (BRO 2026-09-29 拍板):
+    #   旧的默认 'manual' 是个【听起来完全合法】的词 —— 任何漏传 via 的调用
+    #   写出来的记录，跟「用户亲手挂的」长得一模一样，事后无从分辨。
+    #   (真实现场: 查到一份 pptx 是 via=manual · 但 BRO 说他没挂过 · 查不出所以然)
+    #   改成 'unknown' 后「来源不明」不会再伪装成合法 · 一眼就能认出来。
+    #   不改签名(必填) 是故意的: 会炸 11 处只测 claim 语义的存量测试 · 收益不抵成本。
     if not claim and not prev:
         return {"path": rel, "name": path.name, "home_sid": owner or ""}
     if owner and owner != sid and not prev:
@@ -165,7 +173,7 @@ def bind(sid: str, rel: str, *, root: Path | None = None, claim: bool = False,
         "name": path.name,
         "home_sid": sid,
         "origin": sid,
-        "via": str((prev or {}).get("via") or via or "manual"),
+        "via": str((prev or {}).get("via") or via or "unknown"),
         "bound_at": (prev or {}).get("bound_at") or datetime.now().isoformat(timespec="seconds"),
     }
     docs = [d for d in cur if _canon_rel(d.get("path") or "") != rel]
@@ -231,7 +239,7 @@ def system_note(sid: str, *, root: Path | None = None) -> str:
     if not docs:
         return ""
     lines = [
-        "\n\n=== 本话题正在做的稿 ===",
+        "\n\n=== 本话题正在做的稿（元信息 · 不是 BRO 说的话 · 不要复述这一段）===",
         "这些文件挂在这场对话里。改字 revise_office，加图 illustrate_office，加页 extend_office，不要 generate_* 整份重出。",
     ]
     for i, d in enumerate(docs):

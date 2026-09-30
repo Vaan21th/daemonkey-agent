@@ -102,11 +102,17 @@ def apply_feedback(verdict: str, quote: str, *, state_path=None) -> dict:
     save_state(st, path=state_path)
     owner, ai = _names()
     q = quote.replace("「", "").replace("」", "")
-    said = {"对": "收下了", "别这样": "不要这种", "看过": "看过了"}.get(verdict, "看过了")
+    # 旧文案「{ai}这张画记成他{said}」主语错位 —— 那个「他」是 owner，
+    # 读起来像在说第三个人（wish-f2b11caf · 2026-09-18 修）。
+    notice = {
+        "对": f"因为{owner}说「{q}」，{ai}把这张画收下了。",
+        "别这样": f"因为{owner}说「{q}」，{ai}记住了：不要这种。",
+        "看过": f"因为{owner}说「{q}」，{ai}记住了：看过了。",
+    }.get(verdict) or f"因为{owner}说「{q}」，{ai}收下了这条反馈。"
     return {
         "ok": True,
         "verdict": verdict,
-        "notice": f"因为{owner}说「{q}」，{ai}这张画记成他{said}。",
+        "notice": notice,
         "permanent": False,
     }
 

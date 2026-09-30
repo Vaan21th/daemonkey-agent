@@ -53,7 +53,9 @@ function renderClients(data) {
   $dashView.innerHTML = `
     <div class="dash-head">
       <h2><i class="ri-contacts-book-2-fill"></i> 客户档案</h2>
-      <span class="meta">${total} 个</span>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${total}</b><span>个</span></div>
+      </div>
       <span class="dash-sp"></span>
       <button class="primary" onclick="_clientImportPick()"><i class="ri-file-excel-2-line"></i> 导入 Excel/CSV</button>
       <button onclick="loadDashboard('clients')"><i class="ri-refresh-line"></i> 刷新</button>

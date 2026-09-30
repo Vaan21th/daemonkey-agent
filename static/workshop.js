@@ -375,6 +375,16 @@
           <span class="ws-tabs-hint">应用 = 独立模块 · 工作流 = 把它们串起来 · 删除走回收站</span>
         </div>
 
+        <!-- 2026-09-20 · 顶部统一 (wish-553d36eb) · 页头：标题 + 读数 + 收起（用户：结构复杂自己发挥 · 效果和原型一种东西） -->
+        <div class="ws-head dash-head">
+          <h2><i class="ri-magic-fill"></i> 出品工坊</h2>
+          <div class="dh-chips" id="wsHeadStats">
+            <div class="dh-chip"><b>${_apps.length}</b><span>个应用</span></div>
+            <div class="dh-chip"><b>${_flows.length}</b><span>条工作流</span></div>
+          </div>
+          <button onclick="backToChat()">✕ 收起</button>
+        </div>
+
         <div class="ws-content">
           <!-- ── apps tab · 卷四十六续 11 · sidebar list + main detail 二栏 ── -->
           <!-- 设计: 左侧固定 sidebar (220px) 列应用 · 右侧 main 显示详情或 welcome -->
@@ -582,6 +592,16 @@
         }
       }
     }
+    _refreshWsHead();
+  }
+
+  // 2026-09-20 · 顶部统一 · 页头读数刷新（应用/工作流数 · 等 _apps/_flows 拉到后更新）
+  function _refreshWsHead() {
+    const el = document.getElementById('wsHeadStats');
+    if (!el) return;
+    el.innerHTML =
+      `<div class="dh-chip"><b>${_apps.length}</b><span>个应用</span></div>` +
+      `<div class="dh-chip"><b>${_flows.length}</b><span>条工作流</span></div>`;
   }
 
   // ─── 卷四十六续 11 · 没选应用时主区的 welcome ───

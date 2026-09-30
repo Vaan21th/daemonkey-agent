@@ -24,11 +24,40 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger("opus.memory_compression")
+
+
+# ---------- v3 (wish-273d3d3f · ③) · 参数读取 ----------
+# DSH 原版是「写错不让启动」(库), 我们是长跑服务 → 翻译成
+# 「大声报错 + 拒绝生效 + 回退安全值」: 错误立刻可见可追溯, 而不是悄悄退回默认。
+def _env_int(name: str, default: int) -> int:
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        logger.error("[压缩参数] %s=%r 不是整数 · 已回退 %s (改好 .env 后重启生效)",
+                     name, raw, default)
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except (ValueError, TypeError):
+        logger.error("[压缩参数] %s=%r 不是数字 · 已回退 %s (改好 .env 后重启生效)",
+                     name, raw, default)
+        return default
+
 
 # ---------- 常量 ----------
 
@@ -40,36 +69,57 @@ AUTO_COMPRESS_THRESHOLD = 30     # 遗留常量 · 摘要开火不再数条数�
 COOLDOWN_TURNS = 5               # 两次自动压缩之间至少隔 N 轮
 _TOK_SAFETY_MULT = 1.25          # 估算保守系数 · 防跨 tokenizer 低估 (DeepSeek tokenizer ≠ cl100k_base)
 MAX_RENDER_CHARS = 120000         # 摘要 LLM 输入上限 (v2: 60K→120K · 超限保尾弃头)
-DEFAULT_WINDOW_RATIO = 0.7       # 默认在模型窗口占比多少时触发压缩 (调优 0.6→0.7:配合工具瘦身+任务账本·减少重复摘要造成的"漂移/失忆"·仍比 CC≈0.83 保守)
+DEFAULT_WINDOW_RATIO = 0.8       # 默认触发线: 窗口占比 (v3 2026-09-19: 0.7→0.8 · BRO 拍板。少压=少一次压缩后的 KV cache 重建)
 
 # ---------- v2 · Reasonix 移植 (compact.go/prune.go · wish-7f0adf2c) ----------
 SUMMARY_TAG_OPEN  = "<compaction-summary>"
 SUMMARY_TAG_CLOSE = "</compaction-summary>"
 PRUNED_MARKER = "[已修剪工具结果 — "
 MIN_FOLD_TOKENS = 400            # 经济性: 可折叠区低于此 token 不值一次摘要调用
-TAIL_TOKEN_BUDGET = int(os.environ.get("OPUS_COMPACT_TAIL_TOKENS") or "16384")
+TAIL_TOKEN_BUDGET = _env_int("OPUS_COMPACT_TAIL_TOKENS", 16384)
 TAIL_MAX_WINDOW_FRAC = 0.5       # 尾部 token 预算不超窗口此比例
-PRUNE_MIN_CHARS = int(os.environ.get("OPUS_PRUNE_MIN_CHARS") or "1024")
-PRUNE_RATIO = float(os.environ.get("OPUS_COMPACT_PRUNE_RATIO") or "0.6")  # 先修剪档
+PRUNE_MIN_CHARS = _env_int("OPUS_PRUNE_MIN_CHARS", 1024)
+PRUNE_RATIO = _env_float("OPUS_COMPACT_PRUNE_RATIO", 0.6)  # 先修剪档
 PIN_FIRST_USER_MAX_TOKENS = 1500
 PIN_FIRST_USER_WINDOW_FRAC = 0.15
 MAX_CONSECUTIVE_COMPACTS = 2     # 连续压缩仍超阈值 → 暂停自动压缩 (防每轮重建缓存)
-EMERGENCY_BREAK_TURNS = int(os.environ.get("OPUS_COMPACT_EMERGENCY_TURNS") or "6")  # wish-a5f77893 刀A: 停手后距上次 ≥N 轮 → 紧急豁免一次 (防永久停手 · 事故 246.8k)
+EMERGENCY_BREAK_TURNS = _env_int("OPUS_COMPACT_EMERGENCY_TURNS", 6)  # wish-a5f77893 刀A: 停手后距上次 ≥N 轮 → 紧急豁免一次 (防永久停手 · 事故 246.8k)
 _TOK_PER_CHAR_FALLBACK = 0.35    # CJK 偏多·介于 Go 0.25 与 1.0 之间
 DEFAULT_ABS_CAP_TOKENS = 256_000  # 0.8.8 · 压缩绝对线: 大窗口(1M)模型普通会话到不了 70% → 按体验拐点硬触发
-TAIL_USER_TURNS = int(os.environ.get("OPUS_TAIL_USER_TURNS") or "2")  # 最近 N 个 user 回合原文保活 (OpenCode DEFAULT_TAIL_TURNS)
-PRUNE_PROTECT_TOKENS = int(os.environ.get("OPUS_PRUNE_PROTECT_TOKENS") or "30000")  # wish-a5f77893 刀2: 最近 N tok 内不剪 (对齐 OpenCode PRUNE_PROTECT=40K 思路)
-PRUNE_HISTORY_PRESSURE = int(os.environ.get("OPUS_PRUNE_HISTORY_TOKENS") or "40000")  # 历史过这线先免费剪工具
-MIN_PRUNE_SAVED_CHARS = int(os.environ.get("OPUS_PRUNE_MIN_SAVED_CHARS") or "40000")  # 省不够就不动盘 (护缓存)
+TAIL_USER_TURNS = _env_int("OPUS_TAIL_USER_TURNS", 2)  # 最近 N 个 user 回合原文保活 (OpenCode DEFAULT_TAIL_TURNS)
+USER_VERBATIM_BUDGET = _env_int("OPUS_USER_VERBATIM_TOKENS", 30000)  # wish-e72cc18a 刀1/2: 用户原话逐字保留预算(最近 N tok) · 更早的转摘要 + 原件归档可召回 · 0=禁用(回到旧的“永不摘要”)
+DIGEST_BUDGET_TOKENS = _env_int("OPUS_DIGEST_TOKENS", 20000)  # wish-e72cc18a 刀1/2: 旧压缩摘要(digest)保留预算 · 超出部分交回摘要器吸收(提示词规则9)· 0=禁用(旧“所有 digest 永久保留”)
+PRUNE_PROTECT_TOKENS = _env_int("OPUS_PRUNE_PROTECT_TOKENS", 30000)  # wish-a5f77893 刀2: 最近 N tok 内不剪 (对齐 OpenCode PRUNE_PROTECT=40K 思路)
+PRUNE_HISTORY_PRESSURE = _env_int("OPUS_PRUNE_HISTORY_TOKENS", 40000)  # 历史过这线先免费剪工具
+MIN_PRUNE_SAVED_CHARS = _env_int("OPUS_PRUNE_MIN_SAVED_CHARS", 40000)  # 省不够就不动盘 (护缓存)
+
+# ---------- v3 (wish-98d77aaf) · 保留预算双向钳制 ----------
+# 三个保留预算原是纯绝对值(30k/20k/16k) · 实测占比:
+#   128K 窗口 → 三项合计 51.9% · 压完几乎没省空间 (小窗爆)
+#   1M   窗口 → 三项合计  6.6% · 早期原话被压光 (大窗降智)
+#   256K      → 25.9% · 甜区 —— 但这是巧合不是设计
+# 改为按窗口双向钳制: 上界防小窗爆 · 下界防大窗降智。
+# 数值刻意选在 256K 下与改前【逐位相等】→ 现状零变化。
+USER_VERBATIM_MIN_FRAC = _env_float("OPUS_USER_VERBATIM_MIN_FRAC", 0.08)
+USER_VERBATIM_MAX_FRAC = _env_float("OPUS_USER_VERBATIM_MAX_FRAC", 0.16)
+DIGEST_MIN_FRAC = _env_float("OPUS_DIGEST_MIN_FRAC", 0.05)
+DIGEST_MAX_FRAC = _env_float("OPUS_DIGEST_MAX_FRAC", 0.10)
+TAIL_MIN_WINDOW_FRAC = _env_float("OPUS_TAIL_MIN_FRAC", 0.02)
 _PREFIX_TOK_CACHE: dict = {"n": 0, "t": 0.0}
+_warned_threshold_conflict = False   # v3 · THRESHOLD/RATIO 冲突告警只报一次 (本函数每轮都走)
 
 SUMMARY_MODEL_HINT = (
     "把下面的对话历史压缩成结构化简报。规则：\n"
-    "1. 按固定小标题组织：`持久事实与约束` / `目标` / `决策与理由` / `文件与代码` / `命令与结果` / `错误与修复` / `待办与下一步`\n"
+    "1. 按固定小标题组织：`持久事实与约束` / `目标` / `决策与理由` / `文件与代码` / `命令与结果` / `错误与修复` / `待办与下一步` / `用户纠正与反馈`\n"
     "2. 用 bullet 碎片，不写散文；标识符 / 路径 / 数字逐字保留，不改写不省略\n"
     "3. 不知道就不写；无内容的小标题省略；不要编造\n"
     "4. 不写元描述（'用户问了 X' 'OPUS 回答了 Y'），直接写事实\n"
-    "5. 控制在 300-600 字"
+    "5. 控制在 400-700 字\n"
+    "6. 用户的目标与其演化：措辞重要时【逐字引用用户原话】（加引号），不得改写成概括\n"
+    "7. `用户纠正与反馈` 一段只要出现过纠正就必须写：用户否定过什么、改成了什么、为什么。"
+    "这段最重要——不得省略、不得压成一句话\n"
+    "8. 用户的要求写成 `用户说：<要点或原话>`，拍板写成 `决定：<内容>`（这是引用，不是元描述）\n"
+    "9. 若对话里已有 `<compaction-summary>` 块，它是旧检查点：保留仍为真的事实、丢掉已过期的、合并新信息，不要照抄"
 )
 
 # ── 会话级压缩状态 (H-04 修复 · 来自龙头社区提交) ───────────────────────────
@@ -437,36 +487,111 @@ def estimate_prefix_tokens() -> int:
 def _pinned_prefix_len(msgs: list[dict], ctx_window: int) -> int:
     """从头部数出【永不折叠】的段: 首个可 pin 的 user turn + 紧随的连续旧 digest。
 
-    旧摘要永远不再进折叠区 → 摘要累积 (增量) · 不会二次丢失。
+    旧摘要在一定预算内不再进折叠区 (增量 · 治漂移)。
+
+    wish-e72cc18a 刀1/2 修正 (真·压死根因):
+      原实现 `if _pinnable_user_turn(m): head = i + 1` 会把【所有连续可 pin 的
+      user】都推进保护段。而压缩恰好把 assistant/tool 折走、只留 user——
+      于是头 250 条变成连续 user → head 一路推到 285 → 折叠区归零 →
+      下次压缩无从下手 → 越压越压不动, 最终撞死在窗口上。
+      现改为只认【第一个】user (+ 紧随其后的连续 digest), 保护段有界。
     """
     head = 0
+    seen_first_user = False
     for i, m in enumerate(msgs):
-        if _pinnable_user_turn(m, ctx_window):
-            head = i + 1
-        elif head > 0 and i == head:  # 头部段结束后第一个非 pin 消息 → 停
-            break
-        elif head == 0:
-            # 还没遇到 pin 点 · 跳过 system/工具噪音直到第一个 user
-            if m.get("role") == "user":
-                if _pinnable_user_turn(m, ctx_window):
-                    head = i + 1
-                break
+        if not _pinnable_user_turn(m, ctx_window):
+            if head == 0:
+                # 首个 user 就 pin 不住 (单条过大) → 保护段应为空。
+                # 不能 continue 往后扫: 那会把 [0, 下一个可 pin 点] 之间全划进保护段。
+                if m.get("role") == "user":
+                    break
+                continue          # 只在开头的 system/工具噪音上继续跳过
+            break                 # 保护段到此结束
+        if not seen_first_user:
+            seen_first_user = True
+            head = i + 1          # 首个 user turn → 保护
+        elif _is_compaction_summary(m):
+            head = i + 1          # 紧随其后的旧 digest → 一起保护
+        else:
+            break                 # 第二个普通 user → 保护段不再前推
     return head
 
 
-def _partition_fold(region: list[dict], ctx_window: int) -> tuple[list[dict], list[dict]]:
+def _clamp_budget(base: int, ctx_window: int, min_frac: float, max_frac: float) -> int:
+    """v3 (wish-98d77aaf) · 绝对 token 预算按窗口双向钳制。
+
+    - 上界 max_frac: 防【小窗口】保留量≈窗口 → 压完没空间
+    - 下界 min_frac: 防【大窗口】早期原话被压光 → 降智
+    base <= 0 (显式禁用) / ctx_window <= 0 (认不出窗) → 原样返回, 保持旧行为。
+    256K 窗口下三个预算的钳制结果与改前逐位相等。
+    """
+    if base <= 0 or ctx_window <= 0:
+        return base
+    lo = int(ctx_window * min_frac)
+    hi = int(ctx_window * max_frac)
+    if hi < lo:          # 配置写反 (min > max) → 不打哑谜, 取下界
+        return lo
+    return max(lo, min(base, hi))
+
+
+def _partition_fold(region: list[dict], ctx_window: int,
+                    verbatim_budget: int | None = None) -> tuple[list[dict], list[dict]]:
     """把折叠区分成 kept (原样保留) 与 fold (可折叠进摘要)。
 
-    kept = 小 user turn + 旧 digest (用户原话/已固化摘要永不丢)
-    fold = 其余 (工具往返 / 大消息 / assistant 过程)
+    kept = 【最近 verbatim_budget tok 以内的】user 原话 + 全部旧 digest
+    fold = 其余 (工具往返 / 大消息 / assistant 过程 / 超预算的更早 user 原话)
+
+    wish-e72cc18a 刀1/2: 原实现“用户每句话永不摘要”无上界 → 长会话地板 60%+
+    (实测 b05418: user 原话 92k tok 占 84%)。现给原话加【新鲜度预算】:
+    从末尾往前累计, 超出预算的更早原话交给摘要器——摘要提示词已强制
+    “关键措辞逐字引用 + 单列纠正”, 且原件仍在 sessions/archive/ 可召回。
     """
+    budget = USER_VERBATIM_BUDGET if verbatim_budget is None else int(verbatim_budget)
+    # v3 (wish-98d77aaf) · 双向钳制: 小窗防爆 / 大窗防降智 (256K 下值不变)
+    budget = _clamp_budget(budget, ctx_window, USER_VERBATIM_MIN_FRAC, USER_VERBATIM_MAX_FRAC)
+    # 循环外算一次 · 两个预算各自独立钳制
+    _digest_budget = _clamp_budget(DIGEST_BUDGET_TOKENS, ctx_window,
+                                   DIGEST_MIN_FRAC, DIGEST_MAX_FRAC)
+    allow = [False] * len(region)
+    acc = 0
+    dacc = 0
+    user_closed = False      # 原话通道已用尽
+    digest_closed = False    # digest 通道已用尽
+    for i in range(len(region) - 1, -1, -1):
+        m = region[i]
+        if not isinstance(m, dict) or m.get("role") != "user":
+            continue
+        c = _estimate_tokens([m])
+        if _is_compaction_summary(m):
+            # wish-e72cc18a 刀1/2 补丁: 旧 digest 同样必须有上界。
+            # 原实现“所有 digest 永久保留(存量·治漂移)” → 实测 b05418 攒了 34 个 = 53k tok
+            # (≈21 个百分点的地板)。现只留最近 DIGEST_BUDGET_TOKENS 以内的,
+            # 更早的交给摘要器吸收(提示词规则 9 已明确要求“合并旧检查点·不要照抄”)。
+            # 注: 两个预算必须各自独立关阀 —— 曾用 break 导致 digest 一超预算就
+            # 截断整个循环, 原话预算形同虚设(扫描实测: 原话 8k→40k 结果完全一样)。
+            if digest_closed or (_digest_budget > 0 and dacc + c > _digest_budget):
+                digest_closed = True   # 只关 digest 通道·不影响原话通道
+                continue
+            dacc += c
+            allow[i] = True
+            continue
+        if not _pinnable_user_turn(m, ctx_window):
+            continue                 # 本来就 pin 不住 (单条太大)
+        if user_closed:
+            continue
+        if budget > 0:
+            # 口径必须与 _compact_threshold / 水位面板一致 → 用 _estimate_tokens。
+            # (原用 _msg_chars × _tok_per_char: 冷启动 fallback=0.35 对中文严重低估,
+            #  实测 288 条 user 只算成 12k tok, 而 _estimate_tokens 是 92k → 预算形同虚设)
+            if acc + c > budget:
+                user_closed = True      # 只关原话通道·不影响 digest 通道
+                continue
+            acc += c
+        allow[i] = True
     kept: list[dict] = []
     fold: list[dict] = []
-    for m in region:
-        if _pinnable_user_turn(m, ctx_window):
-            kept.append(m)
-        else:
-            fold.append(m)
+    for i, m in enumerate(region):
+        (kept if allow[i] else fold).append(m)
     return kept, fold
 
 
@@ -478,7 +603,7 @@ def _tail_start(msgs: list[dict], head: int, budget_tokens: int, min_keep: int =
     start = len(msgs)
     acc = 0
     for i in range(len(msgs) - 1, head, -1):
-        c = int(_msg_chars(msgs[i]) * _tok_per_char())
+        c = _estimate_tokens([msgs[i]])
         if len(msgs) - i > min_keep and acc + c > budget_tokens:
             break
         acc += c
@@ -524,17 +649,87 @@ def _compact_threshold(ctx_window: int, prefix: int) -> int:
 
 
 def _get_ratio() -> float:
-    """读 OPUS_AUTO_COMPACT_RATIO · 默认 0.7 · 非法值退化 (省 token 想更狠→调 0.6·想留更多原文→0.8)。"""
+    """读 OPUS_AUTO_COMPACT_RATIO · 默认 0.8 · 非法值报错+回退默认 (v3: 不再静默)。
+
+    省 token 想更狠→0.6 · 想留更多原文→0.85 (合法区间 0.1~0.95)。
+    """
     raw = (os.environ.get("OPUS_AUTO_COMPACT_RATIO") or "").strip()
     if not raw:
         return DEFAULT_WINDOW_RATIO
     try:
         v = float(raw)
-        if 0.1 <= v <= 0.95:
-            return v
     except (ValueError, TypeError):
-        pass
-    return DEFAULT_WINDOW_RATIO
+        logger.error("[压缩参数] OPUS_AUTO_COMPACT_RATIO=%r 不是数字 · 已回退 %.2f (改好 .env 后重启生效)",
+                     raw, DEFAULT_WINDOW_RATIO)
+        return DEFAULT_WINDOW_RATIO
+    if not (0.1 <= v <= 0.95):
+        logger.error("[压缩参数] OPUS_AUTO_COMPACT_RATIO=%.3f 超出合法区间 [0.1, 0.95] · 已回退 %.2f",
+                     v, DEFAULT_WINDOW_RATIO)
+        return DEFAULT_WINDOW_RATIO
+    return v
+
+
+def validate_params() -> list[str]:
+    """v3 (wish-273d3d3f · ③) · 参数自检 · 返问题列表(空=健康)。
+
+    DSH 原版: 「保留比例不小于阈值比例 → 插件加载失败, 因为任何模型容量都无法让该策略有效」。
+    我们对应: 尾部保护比例 >= 触发线 = 压完立刻又超线 = 同款无解组合。
+    调用点: /dashboard 健康检查 · WebUI 保存时拒绝非法组合。
+    """
+    probs: list[str] = []
+    r = _get_ratio()
+    # v3 · 上一条 if 实际上是死分支: _get_ratio() 自己就把越界值钳回默认了,
+    # 拿到手的 r 永远合法。要真把越界暴露出来, 必须查【原始配置】(env 原文)。
+    _raw = (os.environ.get("OPUS_AUTO_COMPACT_RATIO") or "").strip()
+    if _raw:
+        try:
+            _rv = float(_raw)
+            if not (0.1 <= _rv <= 0.95):
+                probs.append(
+                    f"触发线环境变量 {_rv:.2f} 越界 (合法 0.1~0.95) · 已被静默回退到 {r:.2f}")
+        except (ValueError, TypeError):
+            probs.append(
+                f"触发线环境变量 {_raw!r} 不是数字 · 已被静默回退到 {r:.2f}")
+    if TAIL_MAX_WINDOW_FRAC >= r:
+        probs.append(
+            f"尾部保护比例 {TAIL_MAX_WINDOW_FRAC:.2f} >= 触发线 {r:.2f} · "
+            f"压完立刻又超线 (DSH 同款无解组合)")
+    # MAX_CONSECUTIVE_COMPACTS 硬编码常量 2 → 不可能 <1, 不做运行时检查
+    # (原来那条 `if MAX_CONSECUTIVE_COMPACTS < 1` 是恒为假的死分支, 已删)
+    if TAIL_TOKEN_BUDGET <= 0:
+        probs.append("TAIL_TOKEN_BUDGET <= 0 · 尾部无保护 · 会压掉刚说的话")
+
+    # v3 (wish-98d77aaf) · 消双真相源: THRESHOLD 会静默顶掉 RATIO
+    _th = _env_int("OPUS_AUTO_COMPACT_THRESHOLD", 0)
+    if _th > 0 and _raw:
+        probs.append(
+            f"OPUS_AUTO_COMPACT_THRESHOLD={_th} 与 OPUS_AUTO_COMPACT_RATIO={_raw} 同时设了 · "
+            f"阈值优先生效 · 比例形同虚设 (同一件事两个真相源 · 建议只留 RATIO)")
+
+    # v3 (wish-98d77aaf) · 双向钳制区间自检 (写反了会让钳制静默失效)
+    for _nm, _lo, _hi in (
+        ("原话", USER_VERBATIM_MIN_FRAC, USER_VERBATIM_MAX_FRAC),
+        ("digest", DIGEST_MIN_FRAC, DIGEST_MAX_FRAC),
+        ("尾部", TAIL_MIN_WINDOW_FRAC, TAIL_MAX_WINDOW_FRAC),
+    ):
+        if not (0.0 <= _lo < _hi <= 1.0):
+            probs.append(
+                f"{_nm}钳制区间非法: min={_lo:.3f} max={_hi:.3f} · 应满足 0 <= min < max <= 1")
+
+    # v3 (wish-98d77aaf) · 保留总量【实算】vs 触发线 (DSH 同款「无解组合」)
+    #    三项作用在不同区段不叠加·但总保留量超过触发线 = 压完立刻又超线。
+    _cw = _get_context_window(None) or DEFAULT_ABS_CAP_TOKENS
+    _keep = (
+        _clamp_budget(USER_VERBATIM_BUDGET, _cw, USER_VERBATIM_MIN_FRAC, USER_VERBATIM_MAX_FRAC)
+        + _clamp_budget(DIGEST_BUDGET_TOKENS, _cw, DIGEST_MIN_FRAC, DIGEST_MAX_FRAC)
+        + _clamp_budget(TAIL_TOKEN_BUDGET, _cw, TAIL_MIN_WINDOW_FRAC, TAIL_MAX_WINDOW_FRAC)
+    )
+    _line = int(_cw * r)
+    if _keep >= _line:
+        probs.append(
+            f"保留总量 {_keep // 1000}K >= 触发线 {_line // 1000}K (窗口 {_cw // 1000}K × {r:.2f}) · "
+            f"压完立刻又超线 (DSH 同款无解组合 · 调小三个预算或调大 RATIO)")
+    return probs
 
 
 def _cap_override_path():
@@ -558,12 +753,20 @@ def read_cap_override() -> int:
 def set_cap_override(v) -> int:
     """写 WebUI 的压缩绝对线 · 返实际生效值 (钳 40K 下限)。 v<=0 = 清除覆盖 · 回落 env/缺省。
 
+    返回值语义 (v3 · 与 0 区分开):
+      >0  = 生效值
+       0  = 【已清除覆盖】
+      -1  = 【被拒绝】(非数字) · 盘上原值未动
+    旧版两种情形都返 0 → 调用方无法区分「拒了」和「清了」, WebUI 会误报 ok。
+
     即时生效 · 不用重启 (每次 _get_abs_cap 现读)。
     """
     try:
         iv = int(v or 0)
     except (ValueError, TypeError):
-        iv = 0
+        # v3 · 不再静默当成“清除覆盖” · 报错且不动盘(调用方能从日志看出异常)
+        logger.error("[压缩参数] 记忆整理线收到非数字值 %r · 本次不修改 (盘上原值保留)", v)
+        return -1
     p = _cap_override_path()
     try:
         if iv > 0:
@@ -595,12 +798,10 @@ def _get_abs_cap() -> int:
         return max(40_000, ui_v)
     raw = (os.environ.get("OPUS_AUTO_COMPACT_MAX_TOKENS") or "").strip()
     if raw:
-        try:
-            v = int(raw)
-            if v > 0:
-                return max(40_000, v)
-        except (ValueError, TypeError):
-            pass
+        # v3 · 不再静默退回: 非法值走 _env_int 大声报错 + 回退缺省
+        v = _env_int("OPUS_AUTO_COMPACT_MAX_TOKENS", DEFAULT_ABS_CAP_TOKENS)
+        if v > 0:
+            return max(40_000, v)
     return DEFAULT_ABS_CAP_TOKENS
 
 
@@ -623,21 +824,30 @@ def token_budget_check(
     st = _state()
 
     # 1. env 显式阈值（最高优先）
-    try:
-        token_threshold_env = (os.environ.get("OPUS_AUTO_COMPACT_THRESHOLD") or "0").strip()
-        token_threshold = int(token_threshold_env)
-        if token_threshold > 0:
-            estimated = _estimate_tokens(messages)
-            if estimated >= token_threshold:
-                # 过 cooldown
-                turns_since_last = len(messages) - st["last_compression_turn"]
-                if turns_since_last >= COOLDOWN_TURNS:
-                    return True
-                return False
-            # 没过 token 阈值 → 不触发（env 显式设了就不走消息数 fallback）
-            return False
-    except (ValueError, TypeError):
-        pass
+    # v3 · 原实现用 try 把【整段业务逻辑】包住 → env 写错、_estimate_tokens 抛错
+    # 都会被安静吞掉、无痕降级到别的判定路径。现改为只解析 env，业务错照实抛。
+    token_threshold = _env_int("OPUS_AUTO_COMPACT_THRESHOLD", 0)
+    if token_threshold > 0:
+        # v3 (wish-98d77aaf) · 消双真相源。
+        # 这个 env 会【顶掉】OPUS_AUTO_COMPACT_RATIO —— 两者描述同一件事(压缩触发线)。
+        # 原实现静默顶掉·无任何提示 → 现在响亮报出·让漂移无处藏。
+        _ratio_raw = (os.environ.get("OPUS_AUTO_COMPACT_RATIO") or "").strip()
+        if _ratio_raw:
+            global _warned_threshold_conflict
+            if not _warned_threshold_conflict:
+                _warned_threshold_conflict = True
+                logger.warning(
+                    "[压缩参数·冲突] OPUS_AUTO_COMPACT_THRESHOLD=%d 已设 → 它顶掉了 "
+                    "OPUS_AUTO_COMPACT_RATIO=%r (两者同一件事·阈值优先)。"
+                    "建议只留 RATIO · 删掉 THRESHOLD 避免漂移。",
+                    token_threshold, _ratio_raw)
+        estimated = _estimate_tokens(messages)
+        if estimated >= token_threshold:
+            # 过 cooldown
+            turns_since_last = len(messages) - st["last_compression_turn"]
+            return turns_since_last >= COOLDOWN_TURNS
+        # 没过 token 阈值 → 不触发（env 显式设了就不走消息数 fallback）
+        return False
 
     # 2. token 预算 · 认不出窗户也走绝对线 (不再数 30 条)
     ctx_window = _get_context_window(model_id)
@@ -676,8 +886,16 @@ def _generate_summary(
     client: Any,
     model: str,
     provider: str,
+    system_stable: str = "",
 ) -> str:
-    """调 LLM 生成摘要。失败抛异常。"""
+    """调 LLM 生成摘要。失败抛异常。
+
+    v3 (wish-273d3d3f) · 摘要缓存复用:
+      system_stable = 主对话那截「一个 session 内字节不变」的稳定前缀
+      (tool_loop 的 system)。带上它 → 摘要调用与主对话共享同一段开头 →
+      这段走 prompt cache (约 1/10 价), 不再每次从零读。
+      **刻意不带 system_suffix** —— 它每轮变, 带上反而断前缀 (铁律 14)。
+    """
     if client is None:
         raise RuntimeError("LLM client not available for summary generation")
 
@@ -689,20 +907,28 @@ def _generate_summary(
     from daemon_runtime import bg_max_tokens
     _mt = bg_max_tokens(default=4000)
     if provider == "anthropic":
+        _sys_kw = {}
+        if system_stable:
+            _sys_kw["system"] = system_stable   # v3 · 与主对话同前缀 → 命中缓存
         resp = client.messages.create(
             model=model,
             max_tokens=_mt,
             messages=[{"role": "user", "content": prompt}],
+            **_sys_kw,
         )
         for block in resp.content:
             if getattr(block, "type", "") == "text":
                 return block.text.strip()
         raise RuntimeError("anthropic response had no text block")
     else:
+        _oai_msgs: list[dict] = []
+        if system_stable:
+            _oai_msgs.append({"role": "system", "content": system_stable})  # v3 · 同前缀
+        _oai_msgs.append({"role": "user", "content": prompt})
         resp = client.chat.completions.create(
             model=model,
             max_tokens=_mt,
-            messages=[{"role": "user", "content": prompt}],
+            messages=_oai_msgs,
         )
         return (resp.choices[0].message.content or "").strip()
 
@@ -871,14 +1097,62 @@ def prune_if_needed(messages: list[dict], model_id: Optional[str] = None) -> lis
         return messages
     if int(pstats.get("saved_chars") or 0) < MIN_PRUNE_SAVED_CHARS:
         return messages
-    _persist_rewrite(new_msgs)
+    # v3 · 磁盘必须留全量: 内存里的 messages 是「折叠版」(折叠段已被摘要替换),
+    # 直接写盘 = 用折叠版覆盖磁盘上的全量版 → V3 ① 白做。
+    # 解法: 取磁盘原文(全量) → 对全量施加同样的剪枝 → 写回。
+    # prune_stale_tool_results 是纯函数(只换工具结果·不动结构) → 对全量重跑安全。
+    full_msgs = _prune_full_from_disk()
+    if full_msgs is not None:
+        _persist_rewrite(new_msgs, full_msgs)
+    # else: 拿不到全量 → 本次不写盘(内存里 prune 已生效 · 磁盘保持全量)。
+    # 收尾只写一份(原先写在 if 分支里 → 主路径被漏掉, 函数隐式返回 None)。
     st["last_prune_turn"] = len(new_msgs)
     _pruned_total += pstats["pruned"]
     return new_msgs
 
 
-def _persist_rewrite(messages: list[dict]) -> None:
+def _prune_full_from_disk() -> Optional[list[dict]]:
+    """v3 · 取磁盘上的全量会话并施加同样的剪枝 (保住全量版不被折叠版覆盖)。
+
+    为什么必须这么做: prune_if_needed / auto_compress 收到的 messages 是
+    「折叠版」——磁盘上的全量版(带 compacted 标记)只有读盘才拿得到。
+    直接 _persist_rewrite(折叠版) 会把全量抹掉, V3 ①(显示全量/发送折叠) 失效。
+
+    ⚠ 取数必须用 load_session_for_storage(存储形态) · 不能用 load_session_for_ui:
+    后者是给前端渲染的有损形态 (tool_calls 压扁成 {id,name,arguments} / content 超
+    50K 截断) —— 拿它当"全量版"写回 = 在磁盘上把真源降级。
+    (2026-09-19 事故: 这样写盘 → DeepSeek 422 missing field `type` → 会话打不开)
+
+    返回 None = 没读到全量 → 调用方应放弃写盘(保磁盘现状)。
+    """
+    sid = _state().get("current_sid")
+    if not sid:
+        return None
+    try:
+        from daemon_session import load_session_for_storage
+        disk = load_session_for_storage(sid)
+        if not disk:
+            return None
+        pruned, _stats = prune_stale_tool_results(disk)
+        return pruned or None
+    except Exception:
+        logging.getLogger("opus.memcomp").warning(
+            "prune 全量版读盘失败 · 本次不写盘(保住磁盘现有全量)", exc_info=True)
+        return None
+
+
+def _persist_rewrite(messages: list[dict], full_messages: list[dict] | None = None) -> None:
     """v2 · 压缩/修剪结果原子重写 session jsonl (治重启蒸发 · wish-7f0adf2c)。
+
+    v3 (wish-273d3d3f) · 显示/发送分层:
+      messages       = 折叠版(折叠段已被摘要替换) → 返回给内存/LLM
+      full_messages  = 全量版(折叠段原话在 · 打 compacted 标记) → 写盘
+    磁盘存全量 → 重启后 UI 仍完整; load_session 跳过 compacted → LLM 拿折叠版。
+    支持两种调用形态:
+      _persist_rewrite(folded, full)  → 盘上写全量 (auto_compress 主路)
+      _persist_rewrite(folded, full_from_disk) → prune 路也走全量
+    调用方拿不到全量时用 _prune_full_from_disk() 取 (拿不到就别写盘 · 宁可本次不落盘也不丢全量)。
+    失败不抛 (压缩本身已生效 · 持久化尽力而为)。
 
     延迟 import daemon_session 防循环。失败不抛 (压缩本身已生效 · 持久化尽力而为)。
     """
@@ -887,10 +1161,127 @@ def _persist_rewrite(messages: list[dict]) -> None:
         return
     try:
         from daemon_session import rewrite_session
-        rewrite_session(sid, messages)
+        rewrite_session(sid, full_messages if full_messages is not None else messages)
     except Exception:
         logging.getLogger("opus.memcomp").warning(
             "压缩重写 session jsonl 失败 · 磁盘仍是旧版 · 重启会回退到压缩前", exc_info=True)
+
+
+def _msg_key(m) -> Optional[tuple]:
+    """消息比对键 (尾部对齐用 · 不依赖 id() · 磁盘与内存是不同对象)。
+
+    ⚠ wish-220071ea · content 必须先折叠形态再比:
+      磁盘原文存的是 ""，而内存经 load_session 归一后是 None
+      (2026-07-28 跨模型空串修复 daemon_session.py L527-530) ——
+      直接 str() 会算出 "" ≠ "None"，锚点永远找不到 → 静默放弃写盘
+      → 磁盘水位只涨不落(b05418 实测顶穿 102.6%)。
+      空串 / None / 纯空白统一折叠成 "" 再比。
+    """
+    if not isinstance(m, dict):
+        return None
+    c = m.get("content")
+    if c is None or (isinstance(c, str) and not c.strip()):
+        c = ""
+    return (m.get("role"), str(c)[:160],
+            str(m.get("tool_call_id") or ""), bool(m.get("compacted")))
+
+
+def _find_tail_anchor(disk: list[dict], tail: list[dict]) -> Optional[int]:
+    """在 disk 里找 tail 的起始下标 (尾部对齐 · 内容比对)。找不到返 None。
+
+    两版(磁盘全量 / 内存折叠)的【尾部】内容一致(本次压缩没动尾部),
+    所以可以拿内存尾部去磁盘里反推本次折叠区的位置。
+    """
+    if not disk:
+        return None
+    if not tail:
+        return len(disk)
+    t0 = _msg_key(tail[0])
+    if t0 is None:
+        return None
+    for i in range(len(disk) - len(tail), -1, -1):
+        if _msg_key(disk[i]) != t0:
+            continue
+        if all(_msg_key(disk[i + j]) == _msg_key(tail[j]) for j in range(len(tail))):
+            return i
+    return None
+
+
+def _assemble_full_from_disk(messages2: list[dict], head: int, start: int,
+                             digest_msg: dict,
+                             fold: Optional[list[dict]] = None) -> Optional[list[dict]]:
+    """v4 · 组装磁盘全量版: 以磁盘为基底 · 历史一条不丢 · 只给"已折走"补标记。
+
+    为什么必须这么做: auto_compress 收到的 messages2 是「折叠版」——被压过的
+    老原话不在里面。若直接 messages2[:head] + [digest] + tail 拼全量,
+    第二次压缩就会把第一次的全量抹掉(每压一轮丢一层)。
+
+    wish-e3c3e379 修正 (v3 的坑 · 真凶):
+      v3 这里写的是 `[m for m in disk[head:dstart] if m.get("compacted")]` ——
+      只保留【已带标记】的消息。可磁盘上还有一批【没有标记】的历史消息
+      (尤其 assistant: 早期写折叠版时留下的), 它们被当成垃圾系统性丢弃。
+      而 new_region 来自内存折叠版(assistant 早已被折走) → 两头都没有
+      → 每写一次盘就丢一批。实测 b05418: 磁盘 user:assistant 失衡到 189:65,
+      发给模型的更失衡到 185:18; UI 上是「一片我的话、一片你的话」。
+    现在: disk[:dstart] 全取(仅剔旧 digest) —— 历史不丢、顺序原样。
+
+    发送侧隔离(磁盘留全量 ≠ 全发给模型): 靠 compacted 标记区分 —— 已折走的
+    带标记(写盘保留 · load_session 不回放给 LLM), 活的没标记。
+    ⚠ 标记由 load_session(include_compacted=True) 从磁盘带回 ——
+    wish-e3c3e379 修复前它在重建消息时丢了标记, 导致下面的判据恒为空, 全量
+    被折叠版顶掉、老 assistant 被系统性抹掉。
+
+    读盘失败 / 尾部对齐失败 → 返回 None = 【不能安全写盘】。
+    调用方拿到 None 时必须放弃 _persist_rewrite —— 否则就用折叠版覆盖了磁盘全量,
+    与 prune 路径同一条纪律: 宁愿这一次不落盘, 也不能丢全量。
+    基底同样只能取 load_session_for_storage(存储形态) · 不能用 UI 形态(有损)。
+    """
+    try:
+        from daemon_session import load_session_for_storage
+        sid = _state().get("current_sid")
+        if not sid:
+            return None
+        disk = load_session_for_storage(sid)
+    except Exception:
+        logging.getLogger("opus.memcomp").warning(
+            "全量版读盘失败 · 本次不写盘(保住磁盘现有全量)", exc_info=True)
+        return None
+    if not disk:
+        return None
+    dstart = _find_tail_anchor(disk, messages2[start:])
+    if dstart is None or dstart < head:
+        logging.getLogger("opus.memcomp").warning(
+            "全量版尾部对齐失败 · 本次不写盘(保住磁盘现有全量)")
+        return None
+    # 磁盘上的 compacted 标记是权威判据 (前提: load_session 存储形态把标记带回来了)。
+    # 所以这里只需: 全取 disk[:dstart] · 只剔旧 digest —— 不筛、不猜、不重排。
+    # 旧实现在这里按 compacted 筛选 → 无标记的历史消息(尤其 assistant)被当垃圾丢。
+    # 本轮刚被折叠的消息也要补标记 —— 否则下次 load_session 会把它们当"活着的"
+    # 回放给 LLM: 同一段历史既在摘要里、又在原文里, 白占窗口(压缩白做)。
+    # 磁盘上带标记的是【历史上】折过的; 本轮折的还没写进磁盘, 只能靠内容 key 认。
+    # 用 key[:3] 去掉 compacted 位(磁盘上无标记, 内存里也未标, 不影响)。
+    _fold_keys: set = set()
+    for _fm0 in (fold or []):
+        _k0 = _msg_key(_fm0)
+        if _k0:
+            _fold_keys.add(_k0[:3])
+
+    out: list[dict] = []
+    for m in disk[:dstart]:
+        if not isinstance(m, dict):
+            continue
+        if _is_compaction_summary(m):
+            continue                        # 旧 digest · 由新 digest 取代
+        if _fold_keys and not m.get("compacted"):
+            _k3 = _msg_key(m)
+            if _k3 and _k3[:3] in _fold_keys:
+                _mm = dict(m)
+                _mm["compacted"] = True     # 本轮已折走 · 只存盘不发送
+                out.append(_mm)
+                continue
+        out.append(m)                       # 原样保留(compacted 标记随消息带回)
+
+    return out + [digest_msg] + messages2[start:]
 
 
 def auto_compress(
@@ -901,6 +1292,7 @@ def auto_compress(
     keep_last_n: int | None = None,
     model_id: Optional[str] = None,
     force: bool = False,
+    system_stable: str = "",
 ) -> list[dict]:
     """
     自动压缩 v2 (wish-7f0adf2c · Reasonix compact.go 移植)。
@@ -923,6 +1315,7 @@ def auto_compress(
       keep_last_n · 保留最近多少条不压缩（None=自适应）
       model_id  · 用于查 context_window
       force     · 手动触发 (summarize_session) 时 True · 绕过经济性/stuck guard
+      system_stable · v3 · 主对话稳定前缀(抄给摘要调用复用缓存) · 默认 "" 退化为旧行为
 
     返回：新的 messages 列表
     """
@@ -942,14 +1335,34 @@ def auto_compress(
         threshold = _compact_threshold(ctx_window, prefix)
         if _estimate_tokens(messages2) + prefix < threshold:
             # 修剪后已低于阈值 → prune 单独清掉警报 · 不调 LLM
-            _persist_rewrite(messages2)
+            # v3 · 同 prune_if_needed: 磁盘要留全量 (内存 messages 是折叠版)
+            _fm = _prune_full_from_disk()
+            if _fm is not None:
+                _persist_rewrite(messages2, _fm)
+            # 埋点 (wish-accd038a) · prune 单独成事也记一笔：它是"0 次 LLM 调用"的那类压缩
+            _record_compress_event(
+                kind="prune_only",
+                sid=_state()["current_sid"],
+                model=model,
+                provider=provider,
+                model_id=model_id,
+                ctx_window=ctx_window,
+                before_tok=_estimate_tokens(messages) + prefix,
+                after_tok=_estimate_tokens(messages2) + prefix,
+                folded=0,
+                kept=0,
+                pruned=pstats.get("pruned", 0),
+                summary_sec=0.0,
+                summary_chars=0,
+                disk_full=_fm is not None,
+            )
             return messages2
 
     # ---- 步骤 3 · 规划折叠区 ----
     head = _pinned_prefix_len(messages2, ctx_window)
-    budget = TAIL_TOKEN_BUDGET
-    if ctx_window > 0:
-        budget = min(budget, int(ctx_window * TAIL_MAX_WINDOW_FRAC))
+    # v3 (wish-98d77aaf) · 双向钳制: 上界 TAIL_MAX_WINDOW_FRAC (防小窗爆) ·
+    #   下界 TAIL_MIN_WINDOW_FRAC (防大窗降智 · 尾部最短保活量)。256K 下值不变。
+    budget = _clamp_budget(TAIL_TOKEN_BUDGET, ctx_window, TAIL_MIN_WINDOW_FRAC, TAIL_MAX_WINDOW_FRAC)
     start = _tail_start(messages2, head, budget)
     if start - head < 2:
         start = _tail_start(messages2, head, budget, min_keep=1)  # 放宽到至少 1 条
@@ -985,14 +1398,17 @@ def auto_compress(
         )
 
     # ---- 步骤 9 · 摘要 (失败重试一次 · 再败机械折叠兜底) ----
+    # wish-accd038a · 计时包住"尝试 + 重试"整段：反映真实等待时长(不是单次 LLM 耗时)
+    _sum_t0 = time.perf_counter()
     summary = ""
     for attempt in range(2):
         try:
-            summary = _generate_summary(rendered, client, model, provider)
+            summary = _generate_summary(rendered, client, model, provider, system_stable=system_stable)
             if summary:
                 break
         except Exception:
             summary = ""
+    _summary_sec = time.perf_counter() - _sum_t0
     if not summary:
         summary = (
             f"此处折叠了 {len(fold)} 条早期消息以释放上下文 · 自动摘要不可用 · "
@@ -1015,12 +1431,21 @@ def auto_compress(
         "content": "明白。我已装上之前的上下文。继续。",
     }
 
-    # ---- 步骤 10 · 组装 ----
+    # ---- 步骤 10 · 组装 (v3 双版本: 内存折叠版 / 磁盘全量版) ----
     new_messages = messages2[:head] + kept + [digest_msg] + messages2[start:]
-    # digest 后若紧跟 user → 插 ack 防双 user 连排
+
+    # v4 (wish-e3c3e379) · 磁盘全量版由 _assemble_full_from_disk 以磁盘为基底组装:
+    # 历史一条不丢(不再按 compacted 筛选), 已折走的消息在那里面就地补标记。
+    # 详见该函数 docstring。
+    full_messages = _assemble_full_from_disk(messages2, head, start, digest_msg, fold)
+
+    # digest 后若紧跟 user → 插 ack 防双 user 连排 (两个版本都要 · 结构必须一致)
     tail_roles = [m.get("role") for m in new_messages if isinstance(m, dict)]
     if len(tail_roles) >= 2 and tail_roles[-1] == "user" and tail_roles[-2] == "user":
         new_messages.insert(len(new_messages) - 1, ack_msg)
+        # full_messages 可能为 None(拿不到磁盘全量) → 别直接 .insert
+        if full_messages is not None:
+            full_messages.insert(len(full_messages) - 1, ack_msg)
 
     # ---- 步骤 11 · 落盘 + 持久化 + 计数 ----
     _st = _state()
@@ -1028,7 +1453,34 @@ def auto_compress(
     _st["compression_count"] += 1
     _st["consecutive_compacts"] += 1
     _save_summary_json(summary, len(fold), key_facts)
-    _persist_rewrite(new_messages)
+    # v3 · 磁盘写全量版(UI 可回溯) · 内存继续用折叠版(省 token)
+    # full_messages is None = 拿不到磁盘全量 → 本次【不写盘】,
+    # 保住磁盘上已有的全量(下一次压缩还能接着累积)。
+    if full_messages is not None:
+        _persist_rewrite(new_messages, full_messages)
+
+    # ---- 步骤 11.5 · 埋点 (wish-accd038a · 旁路, 写盘失败静默) ----
+    # 只在这一处记 compact —— 不分散到各 return (V3 踩过"收尾分散导致漏 return")
+    try:
+        _pfx_now = estimate_prefix_tokens()
+    except Exception:
+        _pfx_now = 0
+    _record_compress_event(
+        kind="compact",
+        sid=_st["current_sid"],
+        model=model,
+        provider=provider,
+        model_id=model_id,
+        ctx_window=ctx_window,
+        before_tok=_estimate_tokens(messages) + _pfx_now,
+        after_tok=_estimate_tokens(new_messages) + _pfx_now,
+        folded=len(fold),
+        kept=len(kept),
+        pruned=pstats.get("pruned", 0),
+        summary_sec=_summary_sec,
+        summary_chars=len(summary),
+        disk_full=full_messages is not None,
+    )
 
     # ---- 步骤 12 ----
     return new_messages
@@ -1186,3 +1638,79 @@ def get_last_compression_stats() -> dict:
         "pruned_total": _pruned_total,
         "archived_files": _archived_files,
     }
+
+
+# ---------- 埋点 · 压缩事件 append-only (wish-accd038a) ----------
+# 《上下文治理上游精读 · DSH 设计手册》首页约定 09-17~09-19 为对照基线窗口，
+# 采集「压缩触发次数 / 压缩后水位 / 摘要耗时 / 摘要 token 成本 / 面板与磁盘偏差」。
+# 实测：耗时与压后水位两格全盲（前者全库零痕迹，后者只在危险区报警时才记）→
+# 本函数【只补记录, 不动任何压缩逻辑与阈值】。
+# 纪律：埋点是旁路 —— 写盘失败静默跳过, 绝不允许影响压缩本身（压缩是主路）。
+_COMPRESS_EVENTS_PATH = Path("data/runtime/compress_events.jsonl")
+
+# 埋点写盘失败计数 (模块级 · 跨会话混计无害)。
+# 为什么不是纯 pass: 静音 = 出事时没有信号 (V3 code_review 同一坑)。
+# 首次失败 debug 留痕、连续失败每 100 次 warning 一次 —— 既不刷屏、又不失联。
+_compress_event_fail_count: int = 0
+
+
+def _record_compress_event(
+    kind: str,
+    sid: str,
+    model: str,
+    provider: str,
+    model_id: Optional[str],
+    ctx_window: int,
+    before_tok: int,
+    after_tok: int,
+    folded: int,
+    kept: int,
+    pruned: int,
+    summary_sec: float,
+    summary_chars: int,
+    disk_full: bool,
+) -> None:
+    """落一行压缩事件。kind: 'compact' | 'prune_only'。
+
+    存【原始值】(token 数 / 秒)而不是百分比 —— 百分比由展示层拿 ctx_window 现算，
+    这样以后改窗口口径不必回改历史数据。
+    """
+    # global 必须在函数内任何赋值之前声明 (Python 硬规则)
+    global _compress_event_fail_count
+    try:
+        rec = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "kind": kind,
+            "sid": sid,
+            "model": model,
+            "provider": provider,
+            "model_id": model_id,
+            "ctx_window": ctx_window,
+            "before_tok": before_tok,
+            "after_tok": after_tok,
+            "before_pct": round(before_tok / ctx_window * 100, 1) if ctx_window else None,
+            "after_pct": round(after_tok / ctx_window * 100, 1) if ctx_window else None,
+            "folded": folded,
+            "kept": kept,
+            "pruned": pruned,
+            "summary_sec": round(summary_sec, 2),
+            "summary_chars": summary_chars,
+            "disk_full": disk_full,
+        }
+        _COMPRESS_EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _COMPRESS_EVENTS_PATH.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        # 写成功即清零 —— 这个计数器的语义是"【连续】失败"，不清零名不副实
+        _compress_event_fail_count = 0
+    except Exception as exc:
+        # 埋点失败绝不影响压缩（旁路纪律）—— 但不许彻底静音：
+        # 首次 debug 留痕（DEBUG 级可定位），【连续】失败每 100 次升为 warning。
+        # 与成功路径的清零配对: 中途成功一次 → 计数归零 → 下次失败又从 debug 开始。
+        _compress_event_fail_count += 1
+        if _compress_event_fail_count == 1:
+            logger.debug("[压缩埋点] 写盘失败·已跳过 (旁路·不影响压缩): %s", exc, exc_info=True)
+        elif _compress_event_fail_count % 100 == 0:
+            logger.warning(
+                "[压缩埋点] 已连续失败 %d 次 · 最后原因: %s (不影响压缩·但对照数据会缺)",
+                _compress_event_fail_count, exc,
+            )

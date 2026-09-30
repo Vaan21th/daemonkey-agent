@@ -75,13 +75,20 @@ def visible_specs(allowed: set[str] | None) -> list:
     return [REGISTRY[n] for n in sorted(keep) if n in REGISTRY]
 
 
-def deferred_names(allowed: set[str] | None = None) -> list[str]:
+def deferred_names(allowed: set[str] | None = None, exclude: set[str] | None = None) -> list[str]:
+    """不在本轮可见集里的工具名（延迟目录候选）。
+
+    exclude（wish-9de9bce3 · 精准磨）：已经全量进 tools[] 的那批 —— 不在目录里重复出现。
+    """
     from agent_tools import REGISTRY
     allowed = _bound_allowed(allowed)
     vis = visible_names(allowed)
+    ex = set(exclude) if exclude else ()
     out = []
     for name in sorted(REGISTRY):
         if name in vis:
+            continue
+        if ex and name in ex:
             continue
         if allowed is not None and name not in allowed:
             continue
@@ -98,13 +105,16 @@ def _one_line(text: str, n: int = 72) -> str:
 _MAX_DIR_CHARS = 18000
 
 
-def directory_block(allowed: set[str] | None = None) -> str:
-    """稳定前缀里的名字目录。按名排序，字节随 REGISTRY 锁死。"""
+def directory_block(allowed: set[str] | None = None, exclude: set[str] | None = None) -> str:
+    """稳定前缀里的名字目录。按名排序，字节随 REGISTRY 锁死。
+
+    exclude：已全量进 tools[] 的工具 —— 从目录里剔掉（不重复列出 · wish-9de9bce3）。
+    """
     if not catalog_enabled() or is_tight_allowlist(allowed):
         return ""
     from agent_tools import REGISTRY
     rows = []
-    for name in deferred_names(allowed):
+    for name in deferred_names(allowed, exclude=exclude):
         spec = REGISTRY.get(name)
         if spec is None:
             continue
@@ -112,7 +122,7 @@ def directory_block(allowed: set[str] | None = None) -> str:
     if not rows:
         return ""
     header = (
-        "\n## 更多工具（不在本轮 tools[]）\n"
+        "\n=== 工具层 · 延迟工具目录（不在本轮 tools[] 里的） ===\n"
         "核心手可直接调。下面这些用 catalog_search 找，或 catalog_call"
         "(name=工具名, 参数与 name 平级；或 args 传 JSON 字符串)。"
         "名字对就行，不必先 search。args 不要空字符串。\n"
@@ -161,6 +171,35 @@ def resolve_call(name: str, args: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return target, inner or {}
 
 
+def _catalog_tokens(q: str) -> list[str]:
+    """切词给 catalog_search 打分用。
+
+    病根（2026-09-18 实测）：旧实现只按**空格**切，而中文没有空格 ——
+    「记录他的状态」整串当一个 token，只有简介里逐字出现这七个字才得非零分。
+    实测 9 条中文 query 里 8 条返空（唯一命中的是简介逐字含「状态卡」那条），
+    延迟目录 110 件对中文使用者等于不可检索。
+    修法：中文切 2-gram + 单字（英文照旧按空格），让「状态」「作息」这类词能命中。
+    """
+    raw = (q or "").replace("，", " ").replace(",", " ").replace("。", " ").split()
+    out: list[str] = []
+    for t in raw:
+        if any("\u4e00" <= ch <= "\u9fff" for ch in t):
+            if len(t) == 1:
+                out.append(t)
+            else:
+                out.extend(t[i:i + 2] for i in range(len(t) - 1))
+                out.append(t)
+        else:
+            out.append(t)
+    return out
+
+
+#: 单打独斗的噪声 bigram（如「他的」）不该把工具顶进结果 —— 低于此分不返回。
+#: 实测（2026-09-18）：**4 太严会误伤已有检索**（「做个 PPT」从命中变空）；
+#: 2 是「噪声可接受 + 不误伤」的分界。真正的信噪比靠**简介里有没有那批口语词**。
+_MIN_CATALOG_SCORE = 2
+
+
 def search(query: str, allowed: set[str] | None = None, limit: int = 8) -> list[dict[str, Any]]:
     from agent_tools import REGISTRY
     allowed = _bound_allowed(allowed)
@@ -180,12 +219,12 @@ def search(query: str, allowed: set[str] | None = None, limit: int = 8) -> list[
             score += 20
         if q in desc:
             score += 10
-        for tok in q.replace("，", " ").replace(",", " ").split():
+        for tok in _catalog_tokens(q):
             if tok and tok in name.lower():
                 score += 4
             if tok and tok in desc:
                 score += 2
-        if score:
+        if score >= _MIN_CATALOG_SCORE:
             scored.append((score, name))
     scored.sort(key=lambda x: (-x[0], x[1]))
     out = []

@@ -95,7 +95,7 @@ PLACEMENT_TABLE = (
     "→ update_owner_note(section='state', state_field=<8 个之一>, state_value=…, as_of=今天)\n"
     "  ⚠ **8 个之外的不进 state**：项目进展/交付细节 → section='stories'（带日期）· 理解他这个人 → section='about-user' · 想做的功能 → wish_add\n"
     "  （例外：8 条之外**也能进 state**，那就是「涌现长尾」——只收相处中长出的、**不撞这 8 个词根**的了解（口味/倒物/健身）。"
-    "有限位：30 天没人碰过就不冉注入，最多 5 格；撞骨架词根的会被直接拒）\n"
+    "有限位：30 天没人碰过就不再注入，最多 5 格；撞骨架词根的会被直接拒）\n"
     "· 想做的功能/界面/产品改进 → wish_add(title=…, why=…)\n"
     "· 干活硬规矩（「以后一律」「不许」）→ add_iron_rule\n"
     "· 工艺要求/血泪教训（「下次先」「记住了」）→ extract_playbook\n"
@@ -107,6 +107,18 @@ PLACEMENT_TABLE = (
     "引用别人日期（「依据：8/23」）不算\n"
     "  · 常驻原则（不过期、不参与升降）**不写日期** · 要沉的才写日期\n"
     "  · 别写成裸段落（没有 `- ` 开头）· 解析器认不出 = 那条等于不存在\n"
+    "\n"
+    "**字数（一句话一条）**：进前缀的格各有 tok 限额（about-user 2800 · how-we-work 1700 · "
+    "state 1200 · understanding 1000）· 到限额就不再往里写 · 满了自动沉「最老/最长」的（仍可召回）。\n"
+    "  · 别写小作文 —— 一条几百字的整段会把整格吃光（那种该进 stories / 知识库）\n"
+    "\n"
+    "**各落位的写入标准**（写之前先看这条 · 一句话说清一件事）：\n"
+    "  · 画像格 update_owner_note：`- **标题**（日期）：一句话` · 限额见上\n"
+    "  · 铁律 add_iron_rule：**三段齐** —— 触发 / 纪律 / 严禁 · 它是「干活纪律」；"
+    "产品观走 CONSTITUTION，他的事实走 update_owner_note\n"
+    "  · 心愿 wish_add：title=要什么 · why=为什么值得 · 一次一条；"
+    "否掉的也先落一条再标 rejected（否则以后分不清「漏了」还是「决定不做」）\n"
+    "  · 成长 update_self_evolution：一段一个「我学到了什么」· 不写流水账\n"
 )
 
 SECTION_MARKS = {
@@ -115,7 +127,7 @@ SECTION_MARKS = {
     "rules":     "=== 规则层 · DAEMON 工程铁律 (daemon_rules.md · 优先级最高) ===",
     "const_common": _CONST_COMMON_MARK,
     "const_local":  _CONST_LOCAL_MARK,
-    "runtime":   "=== 规则层 · Runtime context（运行环境 + 工具纪律 + 收尾） ===",
+    "runtime":   "=== 运行环境层 · Runtime context（平台 + 工具纪律 + 收尾） ===",
     "catalog":   "=== 工具层 · 延迟工具目录（不在本轮 tools[] 里的） ===",
     "memories":  "=== 灵魂层 · OPUS-MEMORIES.md（我们的历史） ===",
     "notebook":  "=== 灵魂层 · 画像（关于 BRO · 每轮在场） ===",
@@ -131,17 +143,20 @@ SECTION_MARKS = {
 # 判据（BRO 2026-09-18 拍定）：**能召回的就不进前缀；前缀只留「每轮都可能影响
 #      输出且召不回来」的**。
 SECTION_META = {
-    # key: (层, 该不该进前缀, 为什么)
-    "structure":    ("规则层", True,  "路标 · 东西该往哪写 · 每轮定位用 · 不可召回"),
-    "identity":     ("身份层", True,  "我是谁 · 每轮在场"),
-    "rules":        ("规则层", True,  "约束靠「不必意识到」生效 · 召回是概率性的 · 漏纪律不可接受"),
-    "const_common": ("规则层", True,  "产品内核地基（纯净版注入 · 母体有实例宪法则去重）"),
-    "const_local":  ("规则层", True,  "本实例产品观（母体六条）"),
-    "runtime":      ("规则层", True,  "运行环境 · 每轮都要知道"),
-    "catalog":      ("工具层", True,  "不在手边的工具目录 · 不知道就不会用"),
-    "memories":     ("灵魂层", False, "可 FTS5 召回 → 移出（AB 实测 91% ≥ 82% · 省 3,440 tok）"),
-    "notebook":     ("灵魂层", True,  "对他当下的认知 · 每轮都会影响输出"),
-    "evolution":    ("灵魂层", False, "可 FTS5 召回 → 移出（与自传同类 · 省 1,681 tok）"),
+    # key: (层, 该不该进前缀, 为什么, label —— 前缀面板显示名 · 单一真相源)
+    # 第 4 位为什么在这：原来 label 在 api_routes/chat.py 的 _BLOCK_DEFS 里手抄了一份，
+    #   改 SECTION_MARK/META 层名时它不跟 → 面板照I旧（BRO 2026-09-30 当场抓）。
+    #   跟 SECTION_MARKS 同理：**显示名只此一处**，面板从这拿。
+    "structure":    ("规则层", True,  "路标 · 东西该往哪写 · 每轮定位用 · 不可召回", "沉淀位地图"),
+    "identity":     ("身份层", True,  "我是谁 · 每轮在场", "身份层"),
+    "rules":        ("规则层", True,  "约束靠「不必意识到」生效 · 召回是概率性的 · 漏纪律不可接受", "规则层 · 工程铁律"),
+    "const_common": ("规则层", True,  "产品内核地基（纯净版注入 · 母体有实例宪法则去重）", "规则层 · 宪法通用三条"),
+    "const_local":  ("规则层", True,  "本实例产品观（母体六条）", "规则层 · 宪法本实例"),
+    "runtime":      ("运行环境层", True,  "平台 / shell / 工具纪律 / 收尾纪律 · 每轮都要知道", "运行环境层 · Runtime"),
+    "catalog":      ("工具层", True,  "不在手边的工具目录 · 不知道就不会用", "工具层 · 延迟目录"),
+    "memories":     ("灵魂层", False, "可 FTS5 召回 → 移出（AB 实测 91% ≥ 82% · 省 3,440 tok）", "灵魂层 · 自传"),
+    "notebook":     ("灵魂层", True,  "对他当下的认知 · 每轮都会影响输出", "灵魂层 · 画像"),
+    "evolution":    ("灵魂层", False, "可 FTS5 召回 → 移出（与自传同类 · 省 1,681 tok）", "灵魂层 · 成长"),
 }
 
 

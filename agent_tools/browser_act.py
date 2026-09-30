@@ -19,11 +19,18 @@ agent_tools/browser_act.py
 from __future__ import annotations
 
 from . import TIER_AUTO, TIER_CONFIRM, ToolResult, ToolSpec, register_tool
-from ._browser import CDP_URL, ensure_cdp, restart_browser
+from ._browser import CDP_URL, ensure_cdp, restart_browser, silent_window
 from ._browser_actions import READONLY_ACTIONS, dispatch
 
 
 def _run(args: dict) -> ToolResult:
+    # silent_window 包住整段（含 ensure_cdp 现场拉起浏览器）——全程让专属浏览器保持
+    # "收着"，不抢 BRO 正在用的窗口。2026-09-20 BRO 反馈「每次调出浏览器都弹前台」。
+    with silent_window():
+        return _run_silent(args)
+
+
+def _run_silent(args: dict) -> ToolResult:
     if not ensure_cdp():
         return ToolResult(
             ok=False, output="",
@@ -72,7 +79,7 @@ def _summarize(args: dict) -> str:
 SPEC = ToolSpec(
     name="browser_act",
     description=(
-        "在 daemon 专属 Edge 上真操作网页：goto/inspect/click/fill/upload/press/wait/read/download/harvest/screenshot。只读抓文字用 browser_fetch。找不到元素会截图报失败，不装成功。"    ),
+        "在 daemon 专属 Edge 上真操作网页：goto/inspect/click/fill/upload/press/wait/read/download/harvest/eval/screenshot。只读抓文字用 browser_fetch。找不到元素会截图报失败，不装成功。"    ),
     tier=TIER_CONFIRM,
     classify=_classify,
     input_schema={
@@ -82,14 +89,14 @@ SPEC = ToolSpec(
                 "type": "string",
                 "enum": [
                     "goto", "inspect", "click", "fill", "upload", "press",
-                    "wait", "read", "download", "harvest", "screenshot",
+                    "wait", "read", "download", "harvest", "eval", "screenshot",
                 ],
             },
             "url": {"type": "string", "description": "goto 用：要打开的 http(s) 地址"},
             "url_contains": {"type": "string", "description": "锁定标签页：选 url 含此串的那个 tab"},
             "selector": {"type": "string", "description": "CSS 选择器（click/fill/upload/press/wait/read/download/harvest）"},
             "text": {"type": "string", "description": "按可见文字定位（click/download，selector 的替代）"},
-            "value": {"type": "string", "description": "fill 用：要填入的内容"},
+            "value": {"type": "string", "description": "fill 用：要填入的内容；eval 用：要执行的 JS（返回值回传）"},
             "files": {
                 "type": "array",
                 "items": {"type": "string"},

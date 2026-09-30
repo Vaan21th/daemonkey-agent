@@ -20,13 +20,125 @@ router = APIRouter()
 
 @router.get("/tool-profiles")
 async def list_tool_profiles(authorization: Optional[str] = Header(None)):
-    """wish-16fa5930 · 会话能力档位清单（给选档卡 / 顶栏 chip / 管理页用）"""
+    """wish-16fa5930 · 会话能力档位清单（给选档卡 / 顶栏 chip / 管理页用）
+    · wish-6350cced：profile_list 已合并用户预设（带 user: true 标记）"""
     check_auth(authorization)
     try:
         from workers.tool_profiles import profile_list, suggest_profile
         return {"ok": True, "profiles": profile_list(), "suggested": suggest_profile()}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}", "profiles": []}
+
+
+@router.post("/profiles/save")
+async def save_profile(payload: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """wish-6350cced · 装配台「保存为预设」→ data/cognition/tool_profiles_user.json。
+
+    与内置分离：升级永不覆盖。入参 {name, desc?, tools[], soul_thickness?, based_on?}。
+    返回新 id（u- 开头）。校验在 workers.tool_profiles.save_user_preset。
+    """
+    check_auth(authorization)
+    payload = payload or {}
+    try:
+        from workers.tool_profiles import save_user_preset
+        pid, err = save_user_preset(payload)
+        if err:
+            return {"ok": False, "error": err}
+        return {"ok": True, "id": pid}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+@router.post("/profiles/delete")
+async def delete_profile(payload: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """删一个用户预设（内置拒删）。入参 {id}。"""
+    check_auth(authorization)
+    payload = payload or {}
+    try:
+        from workers.tool_profiles import delete_user_preset
+        ok, err = delete_user_preset(str(payload.get("id") or ""))
+        return {"ok": True} if ok else {"ok": False, "error": err}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+@router.post("/profiles/default")
+async def set_profile_default(payload: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """wish-0571fd96 · 钉「新对话默认档」（standard = 恢复出厂默认）。入参 {id}。
+
+    任意档位（含自设预设）可钉；daemon 侧存储 → 电脑 / 手机打开一致。
+    """
+    check_auth(authorization)
+    payload = payload or {}
+    try:
+        from workers.tool_profiles import set_user_default
+        ok, err = set_user_default(str(payload.get("id") or ""))
+        return {"ok": True} if ok else {"ok": False, "error": err}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+@router.post("/profiles/override")
+async def save_builtin_override_ep(payload: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """wish-36ef3ea9 续 · 内置档编辑：把当前状态存成用户覆盖（升级永不覆盖 · 可还原出厂）。
+
+    入参 {pid, tools[], layers?}；clear=true 时 = 还原出厂。
+    """
+    check_auth(authorization)
+    payload = payload or {}
+    try:
+        from workers.tool_profiles import save_builtin_override, clear_builtin_override
+        pid = str(payload.get("pid") or "")
+        if payload.get("clear"):
+            ok, err = clear_builtin_override(pid)
+        else:
+            ok, err = save_builtin_override(pid, payload)
+        return {"ok": True} if ok else {"ok": False, "error": err}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+@router.post("/profiles/update")
+async def update_preset_ep(payload: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """wish-36ef3ea9 续 · 编辑一个用户预设：更新当前定义（保留创建时快照）。入参 {id, tools[], layers?, name?, desc?}。"""
+    check_auth(authorization)
+    payload = payload or {}
+    try:
+        from workers.tool_profiles import update_user_preset
+        ok, err = update_user_preset(str(payload.get("id") or ""), payload)
+        return {"ok": True} if ok else {"ok": False, "error": err}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+@router.post("/profiles/meta")
+async def update_preset_meta_ep(payload: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """wish-4607fd37 · 改用户预设的名称 / 描述（窄通道：不碰工具与层）。
+
+    跟 /profiles/update 分开是故意的：那条要求带 tools[]，只改名会被拒 + 重置快照。
+    入参 {id, name, desc?}。
+    """
+    check_auth(authorization)
+    payload = payload or {}
+    try:
+        from workers.tool_profiles import update_user_preset_meta
+        ok, err = update_user_preset_meta(str(payload.get("id") or ""), payload)
+        return {"ok": True} if ok else {"ok": False, "error": err}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+@router.post("/profiles/restore")
+async def restore_preset_ep(payload: dict = Body(...), authorization: Optional[str] = Header(None)):
+    """wish-36ef3ea9 续 · 预设回到「最初创建时的状态」。入参 {id}。"""
+    check_auth(authorization)
+    payload = payload or {}
+    try:
+        from workers.tool_profiles import restore_user_preset
+        ok, err = restore_user_preset(str(payload.get("id") or ""))
+        return {"ok": True} if ok else {"ok": False, "error": err}
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 @router.get("/models")
@@ -131,7 +243,9 @@ async def switch_model(
         if cfg is None:
             raise HTTPException(404, f"config not found: {cfg_id}")
         old = RUNTIME.model or "(unset)"
-        _activate_provider_config(cfg_id)
+        # source="user": 顶栏手动切 · 落会话记忆 + 新会话继承它 (2026-09-23 治「切了被打回」)
+        _activate_provider_config(
+            cfg_id, sid=str((payload or {}).get("session_id") or ""), source="user")
         return {
             "ok": True,
             "before": old,

@@ -8,12 +8,12 @@
  *   renderListFilter / _applyListFilter / backToChat 都在 chat.js·运行时才解析·安全。
  *
  * 承载:hub 骨架(DEPOT_TABS / loadDepot / 标签条) + 画像(renderCognition)
- *       + Daemonkey 日记(renderDiary) + 操作手册(renderPlaybooks + 工艺铁律)
+ *       + Daemonkey 日记(renderDiary) + 技能库(renderPlaybooks + 工艺铁律)
  *       + 心愿单 / 沉淀位(renderWishlist / renderSinks · 2026-07-12 从 chat.js 搬来)。
  * 仍在 chat.js:loadDashboard 分发(调这里的 render fn)。
  */
 
-// ── 成长档案 (depot) · 把 日记/心愿/沉淀位/操作手册 并成一个 hub · 内部标签切换 ──
+// ── 成长档案 (depot) · 把 日记/心愿/沉淀位/技能库 并成一个 hub · 内部标签切换 ──
 // Grok-2 轮 · 2026-08-27 · inline onclick JS 字符串参数专用转义 (双层·顺序不能反) ·
 // 母体 chat.js / 陪伴 panels.js 已有 · 这里兜底一份 (两种环境都保证可用)。
 function jsStr(v) {
@@ -23,7 +23,7 @@ function jsStr(v) {
 }
 // 复用各子维度现成的 render fn (renderCognition/renderWishlist/renderSinks/renderPlaybooks)·
 // 不重写渲染 · 只在 $dashView 顶部补一条标签条。切子标签 = 重新 loadDepot(sub)。
-// 信息架构 (用户 2026-07-12 拍板):画像/日记拆开·工艺铁律并入操作手册·砍"当下关注"。
+// 信息架构 (用户 2026-07-12 拍板):画像/日记拆开·工艺铁律并入技能库·砍"当下关注"。
 // cognition=画像(对你的记忆·rich viewer) · diary=Daemonkey 日记(它的内心反思·复用 /dashboard/cognition 数据)。
 const DEPOT_TABS = [
   { id: 'cognition', label: '画像',      icon: 'ri-user-heart-line' },
@@ -37,34 +37,17 @@ const DEPOT_TABS = [
 ];
 let _depotActive = 'cognition';
 
-// 成长档案各 tab 的"这是什么"说明横幅 (跟 Daemonkey 心愿那条同款样式)。
-// wishlist 自带横幅(还带按钮)·这里只补其余·避免重复。
+// 成长档案各 tab 的页头说明行（用户 2026-09-20 晚：统一语言风格与字数，对齐
+//   雷达基准「定位 · 要点 · 要点」· 12~26 字；原本空着的 tab 也补上）。
 const _DEPOT_BANNERS = {
-  cognition: {
-    icon: 'ri-user-heart-line',
-    title: '这是 Daemonkey 对你的画像',
-    sub: 'Daemonkey 持续维护的"你当下是个什么样"——作息/情绪/在做的项目/偏好/风险,聊天里它觉得值得长期记住的都写进这里。每次打开都会带上这些记录，不用重新介绍你。顶部"最近记了什么"能看到它最近记了些啥。',
-  },
-  diary: {
-    icon: 'ri-hearts-line',
-    title: '这是心情日记',
-    sub: '她听懂你夸她、说重了、表白，或你在置物架接住她寄来的，都会落在这里。心情和往来分开记，这里合在一起看。当天的心情过了零点会换，但会留下记录。工程纪律不在这里，在操作手册。',
-  },
-  sinks: {
-    icon: 'ri-archive-drawer-fill',
-    title: '这是 Daemonkey 的沉淀位总览',
-    sub: 'Daemonkey 所有长期文件(灵魂/记忆/画像/日志/复盘…)挂在哪一格,这里一眼可见。它是防冗余的元地图:每样新东西该沉到哪,照着它走不乱放。点卡片能预览或在本机打开原文。',
-  },
-  playbooks: {
-    icon: 'ri-tools-fill',
-    title: '这是 Daemonkey 的操作手册 + 铁律',
-    sub: '操作手册:把一次踩过坑、后来走顺的流程,跟 Daemonkey 说"抽成操作手册",它就沉淀在这里,之后同类任务自动取用。铁律:Daemonkey 用失败换来的工程纪律,写进来就注入它每一次的判断里——经验和纪律都不再每次从零试。',
-  },
-  memory_map: {
-    icon: 'ri-sparkling-2-fill',
-    title: '这是 Daemonkey 的记忆星图 · 三道闸治理全景',
-    sub: '每个光点是一份操作手册,位置由语义向量降维而来——挨得近的天然成团,亮线连着的是内容相似的同类。下面三道闸是记忆体系的治理实测:写入闸(卫生)/分层闸(画像)/重排闸(召回),每个数字都是现算的真值。',
-  },
+  cognition:  'Daemonkey 对你的画像 · 从相处里持续更新',
+  she_state:  '她此刻的状态 · 心情与活跃度',
+  diary:      '心情日记 · 她听懂的瞬间都留在这',
+  wishlist:   'Daemonkey 的心愿单 · 它看到好东西会写进来 · 你也能让它加',
+  playbooks:  '操作手册 + 铁律 · 走顺的流程与失败换的纪律',
+  memory_map: '记忆星图 · 每点一份手册 · 亮线连着同类',
+  reviews:    '每月整体回顾 · 从各维自动汇总',
+  sinks:      '沉淀位总览 · 长期文件都挂在哪一格',
 };
 
 async function loadDepot(sub, opts) {
@@ -91,23 +74,39 @@ function _injectDepotTabs(active) {
     `<button class="depot-tab${t.id === active ? ' active' : ''}" data-sub="${t.id}" type="button">` +
     `<i class="${t.icon}"></i><span>${t.label}</span></button>`
   ).join('');
-  $dashView.insertBefore(bar, $dashView.firstChild);
+  // 2026-09-20 · 顶部统一（wish-553d36eb）：二级导航必须在【页头上面】
+  //   用户 原话：「二级…这些都要在顶部，然后他下面是（标题+描述+数字），
+  //   再往下是三级导航」「画像这个就不对，他的二级在标题下面」。
+  //   ⚠ 初版插在 .dash-head 【之后】→ 标签条落在标题下面，正是他打回的那点。
+  //   ⚠ 也别去补「单格面包屑」——用户 当场打回：「标题卡在那，成了双层饼」。
+  //   单格面包屑 = 把页面自己的名字重复两遍 · 纯噪音，只有多格链子才有意义。
+  const _dhead = $dashView.querySelector('.dash-head');
+  const _dblk = _dhead && _dhead.closest('.page-head-block');
+  if (_dblk) {
+    _dblk.parentElement.insertBefore(bar, _dblk);          // 页头块【前面】
+  } else if (_dhead) {
+    _dhead.insertAdjacentElement('beforebegin', bar);      // 页头【前面】
+  } else {
+    $dashView.insertBefore(bar, $dashView.firstChild);
+  }
+
+  // 2026-09-20 · 页头说明行（用户 原型：标题正下方一行小字）
+  //   文案复用各 tab 的 banner 文案（不自己发明）。
+  // 2026-09-20 晚 · 用户：「这些卡片也应该放到图二这种位置（标题下小字）·
+  //   不然还是会有结构不一致」→ 原 banner 卡整个下线：title + sub 一起并进
+  //   标题下的说明小字（全 8 tab 共用这段·一次生效）。
+  const _bn0 = _DEPOT_BANNERS[active];
+  if (_bn0 && _dhead && !$dashView.querySelector('.dash-note')) {
+    const _note = document.createElement('div');
+    _note.className = 'dash-note';
+    _note.textContent = _bn0;
+    const _blk = _dhead.closest('.page-head-block');
+    if (_blk) _blk.appendChild(_note);
+    else _dhead.insertAdjacentElement('afterend', _note);
+  }
   bar.querySelectorAll('.depot-tab').forEach(b => {
     b.addEventListener('click', () => loadDepot(b.dataset.sub));
   });
-  // 标签条下补一条"这是什么"说明 (wishlist 自带·跳过)
-  const bn = _DEPOT_BANNERS[active];
-  if (bn) {
-    const banner = document.createElement('div');
-    banner.className = 'wish-banner depot-banner';
-    banner.innerHTML =
-      `<div class="wish-banner-icon"><i class="${bn.icon}"></i></div>` +
-      `<div class="wish-banner-body">` +
-      `<div class="wish-banner-title">${bn.title}</div>` +
-      `<div class="wish-banner-sub">${bn.sub}</div>` +
-      `</div>`;
-    bar.insertAdjacentElement('afterend', banner);
-  }
 }
 
 
@@ -366,7 +365,7 @@ function _cogStateHistoryModal(field, history) {
 }
 
 // ── 画像 (对你的记忆本 · rich viewer) · Hero+pills+软提醒 / 时间线 / 六维卡片网格 ──
-// 工艺铁律→操作手册 · Daemonkey 日记→独立 tab · 当下关注已砍。数据源 /dashboard/cognition。
+// 工艺铁律→技能库 · Daemonkey 日记→独立 tab · 当下关注已砍。数据源 /dashboard/cognition。
 function renderCognition(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
@@ -386,7 +385,10 @@ function renderCognition(data) {
   let html = `
     <div class="dash-head">
       <h2><i class="ri-user-heart-line"></i> 画像</h2>
-      <span class="meta">${sections.length} 节${lastUpd ? ' · 最后更新 ' + escHtml(lastUpd) : ''}</span>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${sections.length}</b><span>节</span></div>
+        ${lastUpd ? `<div class="dh-chip"><b>${escHtml(lastUpd)}</b><span>最后更新</span></div>` : ''}
+      </div>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('cognition')">刷新</button>
     </div>`;
@@ -483,7 +485,17 @@ function renderCognition(data) {
   // 状态卡(〇) / 了解层(二) 已在上方独立板块展示 · 从网格剔除避免重复·Profile(一)保留作背景明细维
   // 顶部独立板块已展示：状态卡(〇) / 了解层(无序号) / 状态卡变更史(无序号) / 近期更新流水
   // 这些是"顶部 Hero 或独立区块"，不是六维画像网格的维度——从网格剔除避免重复(纯净版兜底显示全部)
-  const skip = /使用说明|使用方式|如何维护|维护日志|维护流水|更新流水|更新日志|变更记录|changelog|元信息|须知|给下一|下一根毛|的提示$|^〇|^二、了解层|了解层（L1|状态卡（Daemonkey|状态卡变更史|变更史.*状态卡/i;
+  // 2026-09-30 补两类漏网（用户 圈出网格里有两张不是维度的卡）：
+  //   ① 「改动记录（机器写的操作流水）」—— 名单原来只挡了「变更记录」，挡不住「改动记录/操作流水」
+  //   ② 「日期开头的段」（如 `## 2026-09-20 · 全站二级页顶部统一（交付）`）—— 那是错位段，
+  //      内容本该是「他经历的事」里的一行；它不是画像维度，网格里不该出现。
+  //      （合规的六维段头都是「主名（说明）」形态，不会以日期开头 —— 这条不会误伤）
+  // 2026-09-30 补漏网（原来是「了解层（L1」→ 段名早改成「了解层（稳定下来的…）」了，正则没跟）：
+  //   放宽为「了解层」，盖住所有变体。「了解层」已在上面「她了解你」板块单独展示，网格里不该重复。
+  // 2026-09-30 再补一类漏网（用户 圈出「六维又变成 8 个了」）：
+  //   「已下沉（自动 · 不注入 · 可召回）」—— 这是 memory_reaper 的归档格，内容**不进前缀**、
+  //     只靠召回可见。它不是画像维度，网格里不该出现（它一出现就多出第 8 格）。
+  const skip = /使用说明|使用方式|如何维护|维护日志|维护流水|更新流水|更新日志|变更记录|改动记录|操作流水|changelog|元信息|须知|给下一|下一根毛|的提示$|^〇|了解层|已下沉|状态卡（Daemonkey|状态卡变更史|变更史.*状态卡|^\d{4}-\d{2}-\d{2}/i;
   let cards = sections.filter(s => !skip.test(s.heading || ''));
   if (cards.length < 2) cards = sections;
 
@@ -493,9 +505,10 @@ function renderCognition(data) {
     const icon = _cogDimIcon(sec.heading);
     const clean = String(sec.heading || '').replace(/^[一二三四五六七八九十\d]+[、.．]\s*/, '');
     const parts = clean.split(' · ');
-    let name = parts[0] || clean || '未命名';
-    // "当下画像"的当下状态已被顶部状态卡接管·这一维的长期背景明细改叫"成长背景"避免语义重复 (2026-08-27)
-    if (/当下画像|当下 \u00b7|profile.*(高|更)/i.test(name) || /当下画像/i.test(clean)) name = '成长背景';
+    // 面板只显示「段头主名」：第一段 + 去掉括号里的补充说明。
+    // 新段头统一是「主名（说明）」形态（如「背景档案（已成背景 · 不再更新）」）——
+    // 这里不再写段名特判，改段头就不用回来改面板（旧特判「当下画像→成长背景」已完成使命）。
+    let name = (parts[0] || clean || '未命名').replace(/（[^）]*）\s*$/, '').trim();
     const meta = parts.slice(1).join(' · ');
     const entries = _cogEntries(sec.body_full || sec.body_excerpt || '', 60);
     // 事件流/流水/压缩段这类 time_ordered 分节是"末尾追加=正序"·反转成最新在前
@@ -572,7 +585,11 @@ function renderDiary(data) {
   let html = `
     <div class="dash-head">
       <h2><i class="ri-hearts-line"></i> 心情日记</h2>
-      <span class="meta">${entries.length} 条${pts}${why ? ' · ' + escHtml(why) : ''}${lastUpd ? ' · 最后更新 ' + escHtml(lastUpd) : ''}</span>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${entries.length}</b><span>条</span></div>
+        ${pts ? `<div class="dh-chip"><b>${Number(data.bond_now != null ? data.bond_now : data.bond_points || 0)}</b><span>陪伴值</span></div>` : ''}
+        ${lastUpd ? `<div class="dh-chip"${why ? ` title="${escHtml(why)}"` : ''}><b>${escHtml(lastUpd)}</b><span>最后更新</span></div>` : ''}
+      </div>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('diary')">刷新</button>
     </div>`;
@@ -637,7 +654,107 @@ function replayBondToy(toy) {
 }
 
 
-// ── 操作手册 · playbook 沉淀查看器 (只读 + 删除 · 灌/召回走 NLP) ──────────
+// ── 技能库 · playbook 沉淀查看器 (只读 + 删除 · 灌/召回走 NLP) ──────────
+// ── 操作手册分页 (用户 2026-09-30 · 「太多了·根本就很恐怖」· 按产物库 _shelfPager 同款) ──
+// 与产物库分开维护状态: 共用 .shelf-pager 样式类 · 不共用 _shelfPer/_shelfPage (否则两边互相干扰)
+// 搜索是「先过滤再分页」—— 不能像 renderListFilter 那样只隐藏当前页的 DOM
+let _pbItems = [];            // 全量 (每次进 tab 重置)
+let _pbPage = 1;
+let _pbPer = 20;              // 0 = 全部
+let _pbQuery = '';
+const PB_PER_OPTS = [20, 50, 100, 0];
+const PB_HARD = 300;          // 「全部」时的硬上限 (同产物库防卡死思路)
+
+function _pbFiltered() {
+  const q = _pbQuery.trim().toLowerCase();
+  if (!q) return _pbItems;
+  return _pbItems.filter(p =>
+    String(p.title || '').toLowerCase().includes(q) ||
+    String(p.id || '').toLowerCase().includes(q) ||
+    String(p.task_type || '').toLowerCase().includes(q) ||
+    (p.tags || []).join(' ').toLowerCase().includes(q));
+}
+
+function _pbCard(p) {
+  const tagBadges = (p.tags || []).map(t => `<span class="rc-src-badge">#${escHtml(t)}</span>`).join(' ');
+  return `
+    <div class="report-card">
+      <div class="rc-head">
+        <span class="rc-name pb-open" data-id="${escHtml(p.id)}" title="点击查看操作手册"><i class="ri-tools-fill"></i> ${escHtml(p.title || p.id)}</span>
+        ${p.task_type ? `<span class="rc-src-badge">${escHtml(p.task_type)}</span>` : ''}
+        ${p.used_count ? `<span class="rc-src-badge">用过 ${p.used_count} 次</span>` : ''}
+      </div>
+      <div class="rc-meta">
+        <span class="rc-time">${escHtml((p.created_at || '').slice(0, 10))}</span>
+        ${tagBadges}
+        <a class="rc-dl pb-del" href="javascript:void(0)" data-id="${escHtml(p.id)}" data-title="${escHtml(p.title || '')}" title="删除这份操作手册"><i class="ri-delete-bin-line"></i></a>
+      </div>
+    </div>`;
+}
+
+function _pbPagerHTML(total, shownN, page, totalPages, per) {
+  const perBtns = PB_PER_OPTS.map(n => {
+    const on = (_pbPer === n);
+    return `<button type="button" class="sp-btn${on ? ' on' : ''}" onclick="switchPbPer(${n})">${n === 0 ? '全部' : n}</button>`;
+  }).join('');
+  const nav = totalPages > 1
+    ? `<button type="button" class="sp-nav"${page <= 1 ? ' disabled' : ''} onclick="switchPbPage(${page - 1})"><i class="ri-arrow-left-s-line"></i>上一页</button>`
+      + `<span class="sp-pos">${page} / ${totalPages}</span>`
+      + `<button type="button" class="sp-nav"${page >= totalPages ? ' disabled' : ''} onclick="switchPbPage(${page + 1})">下一页<i class="ri-arrow-right-s-line"></i></button>`
+    : '';
+  const hint = (!per && total > PB_HARD)
+    ? `<span class="sp-info" style="color:var(--dim2)">· 一次最多铺 ${PB_HARD} 条（选「每页 100」翻页看全部）</span>` : '';
+  return `<div class="shelf-pager">
+      <span class="sp-info">全库 <b>${total}</b> 条 · 本页 ${shownN} 条</span>${hint}
+      <span class="sp-sp"></span>
+      <span class="sp-perlabel">每页</span><span class="sp-pers">${perBtns}</span>
+      <span class="sp-navs">${nav}</span>
+    </div>`;
+}
+
+// 只重渲列表区 + 分页条 (不碰搜索框 DOM -> 不失焦)
+function _pbRenderBody() {
+  const all = _pbFiltered();
+  const per = _pbPer > 0 ? _pbPer : 0;
+  const totalPages = per ? Math.max(1, Math.ceil(all.length / per)) : 1;
+  if (_pbPage > totalPages) _pbPage = totalPages;
+  if (_pbPage < 1) _pbPage = 1;
+  const page = per ? _pbPage : 1;
+  const shown = per ? all.slice((page - 1) * per, page * per) : all.slice(0, PB_HARD);
+
+  const listEl = document.getElementById('pbList');
+  const pagerEl = document.getElementById('pbPager');
+  if (listEl) {
+    listEl.innerHTML = shown.length
+      ? shown.map(_pbCard).join('')
+      : `<div class="dash-empty" style="padding:20px 0">没找到匹配的操作手册</div>`;
+    listEl.querySelectorAll('.pb-open').forEach(el => { el.onclick = () => _pbPreview(el.getAttribute('data-id')); });
+    listEl.querySelectorAll('.pb-del').forEach(el => {
+      el.onclick = () => {
+        const t = el.getAttribute('data-title') || '这条';
+        if (confirm(`删除操作手册「${t}」？沉淀的步骤会清掉(以后不再自动取用 · 不影响本次对话)。`)) {
+          _pbAction('/dashboard/playbooks/delete', { id: el.getAttribute('data-id') });
+        }
+      };
+    });
+  }
+  if (pagerEl) pagerEl.innerHTML = _pbItems.length ? _pbPagerHTML(all.length, shown.length, page, totalPages, per) : '';
+  const stats = document.getElementById('pbStats');
+  if (stats) stats.textContent = _pbQuery.trim() ? `${all.length} / ${_pbItems.length}` : `${_pbItems.length} 条`;
+  const clr = document.getElementById('pbClear');
+  if (clr) clr.hidden = !_pbQuery.trim();
+}
+
+function switchPbPage(p) { _pbPage = p; _pbRenderBody(); }
+function switchPbPer(n) { _pbPer = n; _pbPage = 1; _pbRenderBody(); }
+function onPbSearch(v) {
+  _pbQuery = v || '';
+  _pbPage = 1;                 // 搜索一定回到第 1 页 (否则会停在一个不存在的页码上)
+  const inp = document.getElementById('pbSearch');
+  if (inp && inp.value !== _pbQuery) inp.value = _pbQuery;
+  _pbRenderBody();
+}
+
 function renderPlaybooks(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
@@ -646,12 +763,18 @@ function renderPlaybooks(data) {
     return;
   }
   const items = (data && data.items) || [];
+  // 分页状态在这里重置 (每次进 tab 都是新数据) · 全量存起来给 _pbRenderBody 切片
+  _pbItems = items; _pbPage = 1; _pbQuery = '';
   const iron = (data && data.iron_rules) || [];
   const st = (data && data.stats) || {};
   let html = `
     <div class="dash-head">
       <h2><i class="ri-tools-fill"></i> 操作手册</h2>
-      <span class="meta">操作手册 ${st.total || items.length} 条${st.used ? ' · ' + st.used + ' 条用过' : ''}${iron.length ? ' · 铁律 ' + iron.length + ' 条' : ''}</span>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${st.total || items.length}</b><span>条手册</span></div>
+        ${st.used ? `<div class="dh-chip"><b>${st.used}</b><span>条用过</span></div>` : ''}
+        ${iron.length ? `<div class="dh-chip"><b>${iron.length}</b><span>铁律</span></div>` : ''}
+      </div>
       <button class="btn-ghost" onclick="backToChat()">收起</button>
       <button class="btn-ghost" onclick="loadDashboard('playbooks')">刷新列表</button>
       <button class="btn-primary" onclick="spawnQuickly('帮我看看操作手册是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '检查操作手册')" title="让 Daemonkey 用语义向量检查操作手册 · 重复簇摆出来你拍板"><i class="ri-search-eye-line"></i> 检查重复</button>
@@ -659,9 +782,25 @@ function renderPlaybooks(data) {
 
   // 工艺铁律区(Daemonkey 用失败换来的工程纪律 · 会注入它每一次的判断)
   if (iron.length) {
+    // wish-631ff85b · 重量可见：铁律只占文件的两成，其余是 hot path + 场景索引表。
+    // 不显示这个，用户 调「铁律要精简」的时候会对着一个只有 19% 的靶子开枪。
+    const ironTok = st.iron_tokens || 0;
+    const ironBudget = st.iron_budget || 0;
+    const fileTok = st.iron_file_tokens || 0;
+    const pct = ironBudget ? Math.min(100, Math.round(fileTok / ironBudget * 100)) : 0;
+    const barColor = pct >= 90 ? '#FC8181' : pct >= 70 ? '#F6AD55' : '#4FD1C5';
+    const rest = Math.max(0, fileTok - ironTok);
     html += `
       <div class="pb-iron">
         <div class="cog-sec-title"><i class="ri-shield-star-line"></i> 工艺铁律 <span class="cog-sec-hint">${iron.length} 条 · 注入每次判断</span></div>
+        <div style="display:flex;align-items:baseline;gap:8px;font-size:11px;color:var(--dim);margin:4px 0">
+          <span>整个文件 <b style="color:${barColor};font-size:13px">${fileTok}</b> tok / 预算 ${ironBudget}</span>
+          <span style="margin-left:auto">铁律 ${ironTok} tok · 其余 ${rest}（hot path + 场景索引表）</span>
+        </div>
+        <div class="ctx-block-bar" style="margin:0 0 8px"><div class="ctx-block-fill" style="width:${pct}%;background:${barColor}"></div></div>
+        <div style="font-size:11px;color:var(--dim);background:var(--bg2);border-radius:4px;padding:6px 9px;margin:0 0 10px;line-height:1.7">
+          <i class="ri-chat-1-line" style="color:#4FD1C5"></i> <b style="color:var(--fg)">铁律靠对话管理</b> —— 说「加一条…」「把铁律 14 改成…」「删掉铁律 12」就行，<b style="color:var(--fg)">不用来这儿编辑</b>。改之前我会先查重、把预算代价算给你看。
+        </div>
         <div class="pb-iron-list">`;
     for (const r of iron) {
       html += `
@@ -670,6 +809,7 @@ function renderPlaybooks(data) {
             <span class="cog-e-date">${escHtml(r.date || '')}</span>
             <span class="cog-card-name">${escHtml(r.title || '')}</span>
             ${r.domain && r.domain !== 'global' ? `<span class="cog-card-tag">${escHtml(r.domain)}</span>` : ''}
+            ${r.tokens ? `<span class="cog-card-tag" style="color:var(--dim)">${r.tokens} tok</span>` : ''}
             <i class="ri-arrow-down-s-line cog-card-caret"></i>
           </summary>
           <div class="cog-card-body cog-pre">${escHtml(r.body || '')}</div>
@@ -688,39 +828,20 @@ function renderPlaybooks(data) {
              Daemonkey 会调 <code>extract_playbook</code> 沉淀·之后遇到同类任务自动取用。</div>
       </div>`;
   } else {
-    html += renderListFilter({ targetSelector: '.report-card', placeholder: '搜操作手册标题 / 标签...' });
-    html += `<div class="reports-list">`;
-    for (const p of items) {
-      const tagBadges = (p.tags || []).map(t => `<span class="rc-src-badge">#${escHtml(t)}</span>`).join(' ');
-      html += `
-        <div class="report-card">
-          <div class="rc-head">
-            <span class="rc-name pb-open" data-id="${escHtml(p.id)}" title="点击查看操作手册"><i class="ri-tools-fill"></i> ${escHtml(p.title || p.id)}</span>
-            ${p.task_type ? `<span class="rc-src-badge">${escHtml(p.task_type)}</span>` : ''}
-            ${p.used_count ? `<span class="rc-src-badge">用过 ${p.used_count} 次</span>` : ''}
-          </div>
-          <div class="rc-meta">
-            <span class="rc-time">${escHtml((p.created_at || '').slice(0, 10))}</span>
-            ${tagBadges}
-            <a class="rc-dl pb-del" href="javascript:void(0)" data-id="${escHtml(p.id)}" data-title="${escHtml(p.title || '')}" title="删除这份操作手册"><i class="ri-delete-bin-line"></i></a>
-          </div>
-        </div>`;
-    }
-    html += `</div>`;
+    // 搜索框外观与产物库一致 · 但过滤是「先过滤数据再分页」(不是只藏当前页的 DOM)
+    html += `<div class="list-filter">
+      <span class="list-filter-icon"><i class="ri-search-line"></i></span>
+      <input type="search" class="list-filter-input" id="pbSearch" placeholder="搜操作手册标题 / 标签..." autocomplete="off" oninput="onPbSearch(this.value)">
+      <span class="list-filter-stats" id="pbStats"></span>
+      <button class="list-filter-clear" type="button" id="pbClear" hidden onclick="onPbSearch('')">✕</button>
+    </div>`;
+    html += `<div class="reports-list" id="pbList"></div>`;
+    html += `<div id="pbPager"></div>`;
   }
   $dashView.innerHTML = html;
-  $dashView.querySelectorAll('.pb-open').forEach(el => {
-    el.onclick = () => _pbPreview(el.getAttribute('data-id'));
-  });
-  $dashView.querySelectorAll('.pb-del').forEach(btn => {
-    btn.onclick = () => {
-      const t = btn.getAttribute('data-title') || '这条';
-      if (confirm(`删除操作手册「${t}」？沉淀的步骤会清掉(以后不再自动取用 · 不影响本次对话)。`)) {
-        _pbAction('/dashboard/playbooks/delete', { id: btn.getAttribute('data-id') });
-      }
-    };
-  });
-  if (items.length) _applyListFilter($dashView.querySelector('.list-filter-input'));
+  if (_pbItems.length) _pbRenderBody();
+  // 卡片事件绑定与列表渲染都交给 _pbRenderBody
+  // (它只重渲 #pbList · 不碰搜索框 DOM -> 每敲一个字不会失焦)
 }
 
 async function _pbPreview(id) {
@@ -808,20 +929,8 @@ function renderWishlist(data) {
             </button>`;
   }).join('');
 
-  // 顶部 banner · 引导 Daemonkey 自己写心愿
-  const inspireHtml = `
-    <div class="wish-banner">
-      <div class="wish-banner-icon"><i class="ri-lightbulb-fill"></i></div>
-      <div class="wish-banner-body">
-        <div class="wish-banner-title">这是 Daemonkey 自己的心愿单</div>
-        <div class="wish-banner-sub">
-          Daemonkey 在 self-evolve 域看到好东西·或做对照分析时·会写一份「我想装这个」放这里。
-          用户 批准 → Daemonkey 先勘察出方案 → 用户 review 后让 daemon 真改代码。
-          <span style="opacity:0.6">勘察阶段不改任何代码·用户 全程有 review 权。需要 Cursor 介入时直接对 Daemonkey 说「用 cursor 改这个」即可。</span>
-        </div>
-      </div>
-      <button class="wish-banner-btn" onclick="askOpusForWish()">让 Daemonkey 想想还要装啥</button>
-    </div>`;
+  // 顶部 banner 已退役（用户 2026-09-20 晚：卡片→标题下说明小字 ·
+  //   文字并入 note · 「让 Daemonkey 想想还要装啥」按钮挪进页头动作区）。
 
   // 卷五十三 · git 测谎仪横幅 · 只报"谎报上线" (status=live 但代码没合进 master)。
   // 这是真·暗账·治本今早 用户 的痛点 (修好 B 发现 A 变回去)。 active/review 阶段代码在分支上是正常的·不报警。
@@ -843,9 +952,11 @@ function renderWishlist(data) {
     $dashView.innerHTML = `
       <div class="dash-head">
         <h2><i class="ri-lightbulb-fill"></i> Daemonkey 心愿单</h2>
-        <div class="dash-head-sub">${summary.total || 0} 条 · Daemonkey 想装的能力</div>
+        <div class="dh-chips">
+        <div class="dh-chip"><b>${summary.total || 0}</b><span>条</span></div>
       </div>
-      ${inspireHtml}
+      <button onclick="askOpusForWish()">让 Daemonkey 想想还要装啥</button>
+      </div>
       <div class="dash-empty" style="padding:32px 16px">
         Daemonkey 还没写过心愿 · 让它去 <a href="javascript:loadDashboard('radar')">信息雷达 · 自我演化</a> 看看同类工程
       </div>`;
@@ -858,10 +969,14 @@ function renderWishlist(data) {
   $dashView.innerHTML = `
     <div class="dash-head">
       <h2><i class="ri-lightbulb-fill"></i> Daemonkey 心愿单</h2>
-      <div class="dash-head-sub">${summary.total || 0} 条 · ${(summary.pending || 0) + (summary.active || 0) + (summary.review || 0)} 在办 · ${summary.live || 0} 已上线</div>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${summary.total || 0}</b><span>条</span></div>
+        <div class="dh-chip"><b>${(summary.pending || 0) + (summary.active || 0) + (summary.review || 0)}</b><span>在办</span></div>
+        <div class="dh-chip"><b>${summary.live || 0}</b><span>已上线</span></div>
+      </div>
+      <button onclick="askOpusForWish()">让 Daemonkey 想想还要装啥</button>
     </div>
     ${debtBannerHtml}
-    ${inspireHtml}
     <div class="wish-status-chips">${statusChips}</div>
     ${wishes.length > 3 ? renderListFilter({targetSelector: '.wish-card', placeholder: '搜心愿标题 / 动机 / 反思...'}) : ''}
     <div class="wish-list">${cardsHtml || '<div class="dash-empty">这个状态下没有心愿</div>'}</div>
@@ -895,37 +1010,83 @@ let _mm3d = null;  // {renderer, scene, camera, controls, raf, flyTo}
 
 function _mmStatCard(icon, label, value, sub, color) {
   // 单行数据带 · 变量名对齐皮肤系统 (--bg2/--border/--text/--dim) · sub 直接展示在框内 (2026-08-20 用户: hover 才显示的信息很重要)
-  return `<div style="flex:1;min-width:0;padding:8px 6px;border:1px solid var(--border,#2a2a3a);border-radius:8px;background:var(--bg2,#16161f);text-align:center">` +
+  // 2026-09-29 用户:「那记忆星图的呢？」→ 跟中栏按钮统一: 框和填充的底都去, 靠间距分组
+  return `<div style="flex:1;min-width:0;padding:8px 6px;text-align:center">` +
     `<div style="font-size:15px;font-weight:600;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><i class="${icon}"></i> ${value}</div>` +
     `<div style="font-size:10px;color:var(--text,#ccc);opacity:.85;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>` +
     `<div style="font-size:9px;color:var(--dim);margin-top:2px;line-height:1.45">${sub}</div></div>`;
 }
 
 function memoryMapLoadingHTML() {
-  // ①A 多色星尘加载态 (2026-08-20 用户 选定) · 尘色=星图簇配色 · 核心深浅肤适配
-  const light = (typeof _mmIsLight === 'function') && _mmIsLight();
-  const coreBg = light ? '#d4a017' : '#fff8e7';
-  const coreGlow = light ? 'rgba(212,160,23,.5)' : 'rgba(255,233,176,.4)';
+  // IP 闭眼等待态 (2026-09-30 用户 定稿) · 取代原「橙色小点」
+  // 闭眼 = 静静等 · 加载完 renderMemoryMap 会收尾成睁眼 (见 _mmWakeFlash)
+  // 星尘沿用 2026-08-20 那 8 颗与配色。半径 ±205 → ±150:
+  // v1 半径 ±100 时汇聚终点正好在圆心, 而 IP 就站那儿 → 粒子全被盖住 (实测一帧 0 颗可见)。
+  // 后来还把「到中心才淡出」改成「76% 就淡出」, 不再需要靠大半径绕开 IP;
+  // 而 ±205 又超出了框半高 (框 min-height 400 → 半高 200), 起点落到框外被 overflow:hidden 裁掉。
+  // ±150 落在框内, 又能让「从四周飞向中心」的梯度看出来。
   const dust = [
-    ['-90px','-60px','5px','#8affd6','0s'], ['100px','-40px','3px','#b794f6','.3s'],
-    ['-70px','70px','4px','#f687b3','.6s'], ['90px','80px','2px','#ffd28a','.9s'],
-    ['0','-95px','4px','#8affd6','1.2s'], ['-105px','10px','3px','#b794f6','1.5s'],
-    ['60px','30px','2px','#f687b3','1.8s'], ['-40px','-20px','3px','#ffd28a','2.1s'],
+    ['-146px','-102px','5px','#8affd6','0s'], ['153px','-66px','3px','#b794f6','.3s'],
+    ['-117px','110px','4px','#f687b3','.6s'], ['139px','124px','2px','#ffd28a','.9s'],
+    ['0','-150px','4px','#8affd6','1.2s'], ['-160px','15px','3px','#b794f6','1.5s'],
+    ['95px','51px','2px','#f687b3','1.8s'], ['-66px','-36px','3px','#ffd28a','2.1s'],
   ].map(d => `<div class="mmLdDust" style="--dx:${d[0]};--dy:${d[1]};width:${d[2]};height:${d[2]};background:${d[3]};box-shadow:0 0 6px ${d[3]};animation-delay:${d[4]}"></div>`).join('');
   return `<style>
-@keyframes mmLdConverge { 0%{transform:translate(var(--dx),var(--dy)) scale(.4);opacity:0} 25%{opacity:1} 80%{transform:translate(0,0) scale(1);opacity:1} 100%{transform:translate(0,0) scale(1.6);opacity:0} }
-@keyframes mmLdCore { 0%,72%,100%{transform:scale(1)} 86%{transform:scale(1.6)} }
-@keyframes mmLdBlink { 0%,100%{opacity:.4} 50%{opacity:1} }
-.mmLdDust { position:absolute; border-radius:50%; animation:mmLdConverge 2.6s cubic-bezier(.45,.05,.55,.95) infinite; }
+@keyframes mmLdConverge { 0%{transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(.35);opacity:0} 20%{opacity:.9} 55%{opacity:1} 88%{transform:translate(-50%,-50%) scale(.85);opacity:0} 100%{transform:translate(-50%,-50%) scale(1.2);opacity:0} }
+@keyframes mmLdBreath { 0%,100%{transform:translateX(-50%) scale(1)} 50%{transform:translateX(-50%) scale(1.014)} }
+@keyframes mmLdBlink { 0%,100%{opacity:.45} 50%{opacity:1} }
+.mmLdDust { position:absolute;left:50%;top:50%;border-radius:50%;z-index:1;animation:mmLdConverge 2.6s cubic-bezier(.42,0,.58,1) infinite; }
 </style>
 <div style="display:flex;flex-direction:column;min-height:100%">
   <div class="dash-head"><h2><i class="ri-sparkling-2-fill"></i> 记忆星图 · 三道闸治理</h2></div>
-  <div style="position:relative;flex:1 1 auto;min-height:400px;margin:10px 0 4px;border:1px solid var(--border,#2a2a3a);border-radius:10px;overflow:hidden;background:var(--bg2,#05060d);display:flex;align-items:center;justify-content:center">
+  <div id="mmStage" style="position:relative;flex:1 1 auto;min-height:clamp(420px,74vh,660px);margin:10px 0 4px;border:1px solid var(--border,#2a2a3a);border-radius:10px;overflow:hidden;background:var(--bg2,#05060d)">
     ${dust}
-    <div style="width:10px;height:10px;border-radius:50%;background:${coreBg};box-shadow:0 0 20px ${coreBg},0 0 40px ${coreGlow};animation:mmLdCore 2.6s ease-in-out infinite"></div>
-    <div style="position:absolute;bottom:14px;font-size:11px;color:var(--dim);letter-spacing:2px;animation:mmLdBlink 1.8s ease-in-out infinite">正在汇聚记忆星尘</div>
+    <img src="/static/img/mm-ip-closed.png" alt="" style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);height:80%;width:auto;max-width:100%;z-index:2;animation:mmLdBreath 3.6s ease-in-out infinite">
+    <div style="position:absolute;left:0;right:0;bottom:0;height:158px;z-index:3;pointer-events:none;background:linear-gradient(to bottom,transparent,var(--bg2,#05060d) 58%)"></div>
+    <div style="position:absolute;left:0;right:0;bottom:20px;z-index:4;text-align:center;font-size:13px;color:var(--text,#e8e6f0);opacity:.62;letter-spacing:2.5px;text-shadow:0 1px 6px rgba(0,0,0,.55);animation:mmLdBlink 1.8s ease-in-out infinite">正在汇聚记忆星尘</div>
   </div>
 </div>`;
+}
+
+// 加载过场收尾：闭眼 → 睁眼 (2026-09-30 用户 定稿)
+// 为什么要整层淡出而不是只淡图: 开头的背景不是透明的 —— 它盖住了底下的真内容。
+// 只淡图的话, 背景会“吧”一下整个消失, 看起来就是硬切一块方块。
+// 所以图先溜 (0~620ms), 背景层慢一拍跟着化掉 (260~1000ms)。
+function _mmWakeFlash(rect) {
+  const old = document.getElementById('mmWake');
+  if (old) old.remove();
+  const el = document.createElement('div');
+  el.id = 'mmWake';
+  el.style.cssText = 'position:fixed;z-index:60;pointer-events:none;overflow:hidden;' +
+    `left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;` +
+    'border-radius:10px;background:var(--bg2,#05060d);opacity:1;' +
+    'transition:opacity .74s cubic-bezier(.4,0,.2,1) .26s';
+  const img = document.createElement('img');
+  img.src = '/static/img/mm-ip-open.png';
+  img.alt = '';
+  img.style.cssText = 'position:absolute;bottom:0;left:50%;transform:translateX(-50%);' +
+    'height:80%;width:auto;max-width:100%;opacity:1;' +
+    'transition:opacity .62s cubic-bezier(.4,0,.2,1),transform .62s cubic-bezier(.4,0,.2,1)';
+  const veil = document.createElement('div');
+  veil.style.cssText = 'position:absolute;left:0;right:0;bottom:0;height:158px;pointer-events:none;' +
+    'background:linear-gradient(to bottom,transparent,var(--bg2,#05060d) 58%)';
+  const cap = document.createElement('div');
+  cap.textContent = '正在汇聚记忆星尘';
+  cap.style.cssText = 'position:absolute;left:0;right:0;bottom:20px;text-align:center;font-size:13px;' +
+    'color:var(--text,#e8e6f0);opacity:.62;letter-spacing:2.5px;' +
+    'text-shadow:0 1px 6px rgba(0,0,0,.55);transition:opacity .4s ease';
+  el.appendChild(img); el.appendChild(veil); el.appendChild(cap);
+  document.body.appendChild(el);
+  // 强制一次 reflow 让上面的初始样式先生效 · 否则紧跟的 opacity=0 会被当成“初始值”
+  // —— transition 根本没开始跑, 直接从 1 跳到 0, 这就是之前看着“硬切”的原因之一。
+  void el.offsetWidth;
+  requestAnimationFrame(() => {
+    img.style.opacity = '0';
+    img.style.transform = 'translateX(-50%) scale(1.06)';
+    cap.style.opacity = '0';
+    el.style.opacity = '0';
+  });
+  setTimeout(() => el.remove(), 1100);
 }
 
 function renderMemoryMap(data) {
@@ -944,6 +1105,8 @@ function renderMemoryMap(data) {
 
   let html = `<div style="display:flex;flex-direction:column;min-height:100%">`;
   html += `<div class="dash-head"><h2><i class="ri-sparkling-2-fill"></i> 记忆星图 · 三道闸治理</h2></div>`;
+  // 标题留在过场外(闭眼态也有标题 · 保持连续不闪) · 以下整段从 0 淡入 · 与 IP 淡出交叉
+  html += `<div id="mmBody" style="display:flex;flex-direction:column;flex:1 1 auto;opacity:0;transition:opacity .88s cubic-bezier(.4,0,.2,1)">`;
   html += `<div style="display:flex;gap:6px;margin:10px 0">` +
     _mmStatCard('ri-database-2-fill', '记忆总量', (data.total_chunks || 0).toLocaleString(), '条 chunk · FTS5 索引', '#8affd6') +
     _mmStatCard('ri-shield-check-fill', '写入闸·卫生', 'v' + (hg.version || '?'), `残余噪音 ${hg.remaining_noise ?? '?'} 条`, '#6ed27a') +
@@ -952,10 +1115,12 @@ function renderMemoryMap(data) {
     `</div>`;
   html += `<div style="padding:2px 2px 0;color:var(--dim);font-size:11px;line-height:1.6"><i class="ri-sparkling-2-fill"></i> ${pts.length} 份操作手册 · ${data.constellation && data.constellation.clusters || 0} 个星系 · 亮线 = 语义相似 ≥0.80 · 亮点 = 被取用过 <a href="javascript:void(0)" onclick="spawnQuickly('帮我看看操作手册是不是有重复的 (用 audit_playbooks 工具出簇清单 · 不确定的摆给我选)', '检查操作手册')" style="color:var(--accent,#8a7dff);text-decoration:none;margin-left:6px;white-space:nowrap"><i class="ri-search-eye-line"></i> 检查重复</a></div>`;
   // 星图框 flex:1 弹性填满剩余空间 (2026-08-20 用户: 折叠条贴底 · 展开了整栏滚动 · 不写死高度)
-  html += `<div style="position:relative;flex:1 1 auto;min-height:400px;margin:6px 0 4px;border:1px solid var(--border,#2a2a3a);border-radius:10px;overflow:hidden;background:var(--bg2,#05060d)">` +
+  // min-height 必须与加载态 #mmStage 一致(clamp(420px,74vh,660px)) —— 否则加载完框会从 660 缩回 400
+  //   在陪伴模式的弹窗里(容器矮 · flex 撑不开)这个落差就暴露成'莫名压缩框体'(用户 2026-09-30)
+  html += `<div style="position:relative;flex:1 1 auto;min-height:clamp(420px,74vh,660px);margin:6px 0 4px;border:1px solid var(--border,#2a2a3a);border-radius:10px;overflow:hidden;background:var(--bg2,#05060d)">` +
     `<div id="mmStar3d" style="position:absolute;inset:0"></div>` +
     `<div id="mmStarTip" style="display:none;position:absolute;z-index:5;pointer-events:none;background:var(--bg2,rgba(10,12,24,.92));border:1px solid var(--border,rgba(138,255,214,.35));color:var(--text,#dde);border-radius:8px;padding:6px 9px;font-size:11px;max-width:230px;line-height:1.5"></div>` +
-    `<div style="position:absolute;left:8px;bottom:6px;z-index:4;font-size:10px;color:var(--dim,#556);pointer-events:none">拖拽旋转 · 滚轮缩放 · 点星系名聚焦 · 双击回全景</div>` +
+    `<div style="position:absolute;left:8px;bottom:6px;z-index:4;font-size:10px;color:var(--dim,#556);pointer-events:none">拖拽旋转 · 滚轮缩放 · <b>点柜名放大这一柜</b> · 双击回全景</div>` +
     `</div>`;
   // 记忆构成默认折叠 (2026-08-20 用户: 高度让给星图 · 展开后整栏滚动) · 展开才懒渲染 (display:none 里 Chart 拿到 0 宽)
   _mmSrcData = data.sources || [];
@@ -963,7 +1128,17 @@ function renderMemoryMap(data) {
     `<i id="mmSrcIcon" class="ri-arrow-right-s-fill"></i> 记忆构成 · 各信源 chunk 分布</div>`;
   html += `<div id="mmSrcBody" style="display:none;flex:0 0 auto"><div style="position:relative;height:260px;margin:6px 0 10px"><canvas id="mmChartSrc"></canvas></div></div>`;
   html += `</div>`;
+  html += `</div>`;
+  // 先量旧框位置 · 再落新内容 · 然后贴一层睁眼图淡出 (闭眼→睁眼的衔接)
+  const _prevStage = document.getElementById('mmStage');
+  const _stageRect = _prevStage ? _prevStage.getBoundingClientRect() : null;
   $dashView.innerHTML = html;
+  // 新内容从 0 淡入 (与 #mmWake 的淡出交叉 · 消除'统计条突然出现+IP还在'的错位叠加)
+  requestAnimationFrame(() => {
+    const mb = document.getElementById('mmBody');
+    if (mb) mb.style.opacity = '1';
+  });
+  if (_stageRect) _mmWakeFlash(_stageRect);
 
   // 0.9.7 尾巴5: 空态渲染移出 _whenThreeReady —— 没数据时不该等 Three.js 加载
   // (Three 慢/加载失败时空态提示也跟着黑屏 · hf6 尝试翻车回滚 · 097 重做)
@@ -992,8 +1167,8 @@ function renderMemoryMap(data) {
       box.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#667;font-size:12px;text-align:center;padding:0 20px">当前环境不支持 WebGL · 请在你自己的浏览器打开 ${location.origin}/ui 查看 3D 星图</div>`;
       return;
     }
-    _mmRenderStar3D(box, pts, edges, (data.constellation && data.constellation.cluster_names) || {});
-    _mmLastStar = { pts, edges, names: (data.constellation && data.constellation.cluster_names) || {} };
+    _mmRenderStar3D(box, pts, edges, (data.constellation && data.constellation.cluster_names) || {}, data.boxes || []);
+    _mmLastStar = { pts, edges, names: (data.constellation && data.constellation.cluster_names) || {}, boxes: data.boxes || [] };
     _mmWatchTheme();
   });
 }
@@ -1008,13 +1183,27 @@ function _mmWatchTheme() {
     if (document.body.className === lastCls) return;
     lastCls = document.body.className;
     const box = document.getElementById('mmStar3d');
-    if (box && _mm3d && _mmLastStar) _mmRenderStar3D(box, _mmLastStar.pts, _mmLastStar.edges, _mmLastStar.names);
+    if (box && _mm3d && _mmLastStar) _mmRenderStar3D(box, _mmLastStar.pts, _mmLastStar.edges, _mmLastStar.names, _mmLastStar.boxes || []);
   });
   _mmThemeObs.observe(document.body, { attributes: true, attributeFilter: ['class'] });
 }
 
 // 记忆构成折叠区 · 展开时懒渲染 (display:none 里 Chart 初始化拿 0 宽 · 必须可见才画)
 let _mmSrcData = [];
+
+// source key → 可读名 (裸 key 用户看不懂 · 2026-09-16 刀5-live 收尾)
+const _MM_SRC_LABEL = {
+  session: '对话记录', session_archive: '归档原文(压缩保留)', session_summary: '会话摘要',
+  skill: '操作手册', 'SELF-EVOLUTION': '自进化日志', '用户-NOTEBOOK': '活画像',
+  'OWNER-NOTEBOOK': '人物画像', 'OPUS-MEMORIES': '自传', SKILL: '灵魂技能',
+};
+function _mmSrcLabel(s) {
+  if (_MM_SRC_LABEL[s]) return _MM_SRC_LABEL[s];
+  if (String(s).startsWith('doc:')) return '知识库文档';
+  if (String(s).startsWith('client:')) return '客户档案';
+  return s;
+}
+
 function _mmToggleSrc() {
   const body = document.getElementById('mmSrcBody');
   const icon = document.getElementById('mmSrcIcon');
@@ -1030,7 +1219,7 @@ function _mmToggleSrc() {
       // 信源分布横向柱状 (session 量级碾压 → 对数轴)
       const top = _mmSrcData.slice(0, 8);
       const restN = _mmSrcData.slice(8).reduce((a, s) => a + s.count, 0);
-      const labels = top.map(s => s.source).concat(restN ? ['其他 ×' + (_mmSrcData.length - 8)] : []);
+      const labels = top.map(s => _mmSrcLabel(s.source)).concat(restN ? ['其他 ×' + (_mmSrcData.length - 8)] : []);
       const vals = top.map(s => s.count).concat(restN ? [restN] : []);
       if (_mmChartSrc) _mmChartSrc.destroy();
       _mmChartSrc = new Chart(c2.getContext('2d'), {
@@ -1091,6 +1280,36 @@ function _mmStarTexture() {
   return new THREE.CanvasTexture(c);
 }
 
+function _mmHaloTexture() {
+  // 星云光晕纹理 (2026-09-29 二刀 · 用户:「光团看着 LOW」)
+  //   why: 纯径向渐变 = 一层糊的圆雾, 没有结构。「星云」和「一个圆」的差别就在絮。
+  //   做法: 柔和底 + 46 个随机柔光斑 lighter 叠加 → 不规则、有疏密、有起伏。
+  const S = 256;
+  const c = document.createElement('canvas'); c.width = c.height = S;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  g.addColorStop(0, 'rgba(255,255,255,.42)');
+  g.addColorStop(.28, 'rgba(255,255,255,.22)');
+  g.addColorStop(.62, 'rgba(255,255,255,.06)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, S, S);
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 46; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const dist = Math.pow(Math.random(), .62) * S * 0.40;
+    const x = S / 2 + Math.cos(a) * dist, y = S / 2 + Math.sin(a) * dist * 0.92;
+    const rr = S * (0.05 + Math.random() * 0.14);
+    const op = 0.018 + Math.random() * 0.048;
+    const gg = ctx.createRadialGradient(x, y, 0, x, y, rr);
+    gg.addColorStop(0, 'rgba(255,255,255,' + op + ')');
+    gg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gg;
+    ctx.beginPath(); ctx.arc(x, y, rr, 0, 6.284); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+  return new THREE.CanvasTexture(c);
+}
+
 function _mmDispose3d() {
   if (!_mm3d) return;
   cancelAnimationFrame(_mm3d.raf);
@@ -1102,7 +1321,20 @@ function _mmDispose3d() {
   _mm3d = null;
 }
 
-function _mmRenderStar3D(box, pts, edges, clusterNames) {
+// 六个沉淀位的空间位置 (2026-09-29 · 星图收柜子)
+//   位置是「呈现」不是「数据」—— 后端只出有哪些柜子/各多少, 空间排布前端定。
+//   z 轴 = 前后: 进前缀的靠前 · 越靠后越不进上下文 → 转起来能看到纵深队列,
+//   而不是一个平面铺开六个球 (用户 原话: 别傻子一样铺这样 6 个)。
+const _MM_BOX_POS = {
+  notebook:  [-2.15,  1.45,  1.70],
+  rules:     [-0.70,  2.15,  0.45],
+  playbooks: [ 0.35, -0.05,  2.60],
+  archive:   [-1.95, -1.60, -1.35],
+  docs:      [ 2.35,  0.60, -1.90],
+  decisions: [ 1.65, -2.25, -2.95],
+};
+
+function _mmRenderStar3D(box, pts, edges, clusterNames, boxes) {
   _mmDispose3d();
   const light = _mmIsLight();
   let W = box.clientWidth || 340, H = box.clientHeight || 520;
@@ -1110,8 +1342,68 @@ function _mmRenderStar3D(box, pts, edges, clusterNames) {
   // 背景跟皮肤面板色走 (浅肤=浅底 · 深肤=宇宙黑) · 变量名对齐皮肤系统 --bg2
   const cssPanel = (getComputedStyle(document.body).getPropertyValue('--bg2') || '').trim();
   scene.background = new THREE.Color(light ? (cssPanel || '#f5f3ee') : 0x05060d);
+
+  // ── 柜子分层 ───────────────────────────────────────────────
+  // 真 playbook 点整体搬进「操作手册」柜位 (PCA 坐标本就 [-1,1] · 只缩放平移)
+  const PB_R = 1.30, pbC = _MM_BOX_POS.playbooks;
+  const pbPts = pts.map(p => ({
+    ...p,
+    x: pbC[0] + (p.x || 0) * PB_R,
+    y: pbC[1] + (p.y || 0) * PB_R * 0.85,
+    z: pbC[2] + (p.z || 0) * PB_R,
+  }));
+  // 每个柜子三件: 团中心 / 团半径 / 标签锚点(挂在团上方)
+  //   半径 = chars 开方压缩 —— 手册 44 万字 vs 画像 5 千字差 80 倍,
+  //   线性映射会让小的彻底看不见 (2026-09-29 用户 实拍: 小球只剩标签孤零零挂着)。
+  const boxDefs = [];
+  (boxes || []).forEach(b => {
+    const c = _MM_BOX_POS[b.id]; if (!c) return;
+    const center = new THREE.Vector3(c[0], c[1], c[2]);
+    if (b.id === 'playbooks') { boxDefs.push({ b, center, r: PB_R, labelY: PB_R * 1.15 }); return; }
+    const r = 0.30 + Math.sqrt(Math.max(0, b.chars || 0)) / 250;
+    boxDefs.push({ b, center, r, labelY: Math.max(0.55, r * 1.25) });
+  });
+  // 小柜点云 (体量可视化 · 不参与 hover/raycast)
+  //   半径小的柜用更大更亮的星点 —— 相机要装下整片星域, 远景里 0.055 就等于看不见
+  const boxPts = [];
+  boxDefs.forEach(({ b, center, r }) => {
+    if (b.id === 'playbooks') return;
+    const items = b.items || [];
+    if (items.length) {
+      // 真条目点 (2026-09-29 用户: 其他柜的光点也要能 hover 出明细, 不能只给柜名片)
+      //   黄金角球面散布 —— 稳定不抖 · 每条一颗星
+      const maxC = Math.max(1, items.reduce((a, it) => Math.max(a, it.chars || 0), 1));
+      const sz = r < 0.85 ? 0.115 : 0.09;
+      items.forEach((it, i) => {
+        const th = i * 2.39996, ph = Math.acos(1 - 2 * (i + 0.5) / items.length);
+        const rr = r * (0.62 + Math.pow((it.chars || 0) / maxC, 0.5) * 0.30);
+        boxPts.push({
+          x: center.x + Math.sin(ph) * Math.cos(th) * rr,
+          y: center.y + Math.sin(ph) * Math.sin(th) * rr * 0.9,
+          z: center.z + Math.cos(ph) * rr * 1.5,
+          color: b.color, size: sz, boxId: b.id, item: it,
+        });
+      });
+      return;
+    }
+    // 没明细的柜退回装饰点云 (体量可视化 · 不参与 hover/raycast)
+    //   半径小的柜用更大更亮的星点 —— 相机要装下整片星域, 远景里 0.055 就等于看不见
+    const n = Math.max(18, Math.min(90, Math.round(Math.sqrt(Math.max(1, b.chars || 1)) / 6)));
+    const sz = r < 0.85 ? 0.105 : 0.08;
+    for (let i = 0; i < n; i++) {
+      const th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+      const rr = r * (0.30 + Math.pow(Math.random(), 0.5) * 0.70);
+      boxPts.push({
+        x: center.x + Math.sin(ph) * Math.cos(th) * rr,
+        y: center.y + Math.sin(ph) * Math.sin(th) * rr * 0.9,
+        z: center.z + Math.cos(ph) * rr * 1.5,
+        color: b.color, size: sz, boxId: b.id,
+      });
+    }
+  });
+
   const camera = new THREE.PerspectiveCamera(55, W / H, 0.01, 100);
-  const fitDist = _mmFitDist(camera, pts, W, H);
+  const fitDist = _mmFitDist(camera, pbPts.concat(boxPts), W, H);
   camera.position.copy(new THREE.Vector3(0.55, 0.42, 1).normalize().multiplyScalar(fitDist));
   camera.lookAt(0, 0, 0);
   let renderer;
@@ -1139,7 +1431,8 @@ function _mmRenderStar3D(box, pts, edges, clusterNames) {
   }
   const dustGeo = new THREE.BufferGeometry();
   dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
-  scene.add(new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: light ? 0xa8b0c4 : 0x4a5a7a, size: 0.03, transparent: true, opacity: light ? 0.7 : 1 })));
+  const dustPts = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: light ? 0xa8b0c4 : 0x4a5a7a, size: 0.03, transparent: true, opacity: light ? 0.7 : 1 }));
+  scene.add(dustPts);
 
   // 星点 sprite: 簇 → 黄金角色相 · 孤星冷灰白 · 被取用的更亮
   // 浅肤: normal blending + 深色星点 (additive 在浅底会洗白) · 深肤: additive 发光
@@ -1155,21 +1448,77 @@ function _mmRenderStar3D(box, pts, edges, clusterNames) {
   const densityScale = Math.max(0.55, Math.min(1.1, Math.sqrt(50 / pts.length)));
   const sizeOf = p => sizeOfRaw(p) * densityScale;
   const sprites = [];
-  pts.forEach((p, i) => {
-    const mat = new THREE.SpriteMaterial({ map: starTex, color: colorOf(p), transparent: true, opacity: p.loaded ? 0.95 : 0.65, blending: blend, depthWrite: false });
+  const allSprites = [];   // { sp, boxId, op } · 聚焦时按柜淡化
+  pbPts.forEach((p, i) => {
+    const op = p.loaded ? 0.95 : 0.65;
+    const mat = new THREE.SpriteMaterial({ map: starTex, color: colorOf(p), transparent: true, opacity: op, blending: blend, depthWrite: false });
     const sp = new THREE.Sprite(mat);
     const s = sizeOf(p);
     sp.scale.set(s, s, 1);
     sp.position.set(p.x, p.y, p.z || 0);
     sp.userData.idx = i;
     scene.add(sp); sprites.push(sp);
+    allSprites.push({ sp, boxId: 'playbooks', op, ph: Math.random() * 6.284, fr: 0.5 + Math.random() * 1.6 });
   });
+  // 其余五柜的点云 (体量可视化 · 不参与 hover/raycast)
+  const boxSprites = [];   // 其他柜的点云 (参与 hover → 显示该柜名片)
+  boxPts.forEach(q => {
+    const op = light ? 0.55 : 0.62;
+    const mat = new THREE.SpriteMaterial({ map: starTex, color: new THREE.Color(q.color), transparent: true, opacity: op, blending: blend, depthWrite: false });
+    const sp = new THREE.Sprite(mat);
+    sp.scale.set(q.size, q.size, 1);
+    sp.position.set(q.x, q.y, q.z);
+    sp.userData.box = q.boxId;
+    if (q.item) sp.userData.item = q.item;
+    scene.add(sp);
+    boxSprites.push(sp);
+    allSprites.push({ sp, boxId: q.boxId, op, ph: Math.random() * 6.284, fr: 0.5 + Math.random() * 1.6 });
+  });
+  // 星云光晕 (2026-09-29 二刀 · 用户:「这些各种颜色的光团看着还是有点 LOW」)
+  //   病根两个: ① 单层纯渐变 = 一个圆, 没有絮 (改 _mmHaloTexture) ② r*2.7 比点云散布还大
+  //   → 看着「浮在旁边」而不是「包着星点」。现在缩到 r*2.05 贴住点云, 外面再罩一层极淡的弥散纱。
+  const _haloTex = _mmHaloTexture();
+  const boxHalo = [];
+  boxDefs.forEach(({ b, center, r }) => {
+    const hop = light ? 0.42 : 0.52;
+    const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: _haloTex, color: new THREE.Color(b.color), transparent: true, opacity: hop, blending: blend, depthWrite: false }));
+    core.scale.set(r * 2.05, r * 2.05, 1);
+    core.position.copy(center); scene.add(core);
+    const veil = new THREE.Sprite(new THREE.SpriteMaterial({ map: _haloTex, color: new THREE.Color(b.color), transparent: true, opacity: hop * 0.34, blending: blend, depthWrite: false }));
+    veil.scale.set(r * 3.30, r * 3.30, 1);
+    veil.position.copy(center); scene.add(veil);
+    boxHalo.push({ mm: core, id: b.id, op: hop });
+    boxHalo.push({ mm: veil, id: b.id, op: hop * 0.34, spin: (Math.random() > 0.5 ? 1 : -1) * (0.0002 + Math.random() * 0.0004) });
+  });
+
+  // ── 三级下钻 (2026-09-29 用户: 点大类要铺满整个画幅 · 能退回上一级) ──
+  //   一级 = 六柜全景 · 二级 = 点柜名 → 相机飞进这一柜(其余柜淡成背景) · 双击 = 退回全景
+  function _setFocus(fid) {
+    // 只写「可见度因子」, 真实 opacity 交给每帧的闪烁去乘 —— 两个写口直接抢 material.opacity 会互相覆盖
+    allSprites.forEach(s => { s.dim = (!fid || s.boxId === fid) ? 1 : 0.14; });
+    boxHalo.forEach(h => { h.dim = (!fid || h.id === fid) ? 1 : 0.12; });
+    boxLabels.forEach(({ div, id }) => {
+      div.style.opacity = (!fid || id === fid) ? '1' : '0.16';
+    });
+  }
+  function _focusBox(fid) {
+    const d = boxDefs.find(x => x.b.id === fid);
+    if (!d || !_mm3d) return;
+    _mm3d.flyTo = { target: d.center.clone(), dist: Math.max(d.r * 2.6, 1.35) };
+    _mm3d.focusedBox = fid;
+    _setFocus(fid);
+  }
+  window._mmFocusBox = _focusBox;
+  window._mmResetFocus = () => {
+    if (_mm3d) { _mm3d.flyTo = { target: new THREE.Vector3(0, 0, 0), dist: fitDist }; _mm3d.focusedBox = null; }
+    _setFocus(null);
+  };
 
   // 连边 (顶点色 · additive · 相似度越高越亮)
   if (edges.length) {
     const pos = [], col = [];
     for (const [i, j, sim] of edges) {
-      const a = pts[i], b = pts[j];
+      const a = pbPts[i], b = pbPts[j];
       pos.push(a.x, a.y, a.z || 0, b.x, b.y, b.z || 0);
       const ca = colorOf(a), cb = colorOf(b), k = 0.25 + ((sim || 0.8) - 0.8) * 3;
       col.push(ca.r * k, ca.g * k, ca.b * k, cb.r * k, cb.g * k, cb.b * k);
@@ -1182,7 +1531,7 @@ function _mmRenderStar3D(box, pts, edges, clusterNames) {
 
   // 簇中心 + 星系标签 (HTML overlay · 每帧投影)
   const centers = {};
-  pts.forEach(p => {
+  pbPts.forEach(p => {
     if (p.cluster < 0) return;
     const c = centers[p.cluster] = centers[p.cluster] || { x: 0, y: 0, z: 0, n: 0 };
     c.x += p.x; c.y += p.y; c.z += (p.z || 0); c.n++;
@@ -1190,6 +1539,40 @@ function _mmRenderStar3D(box, pts, edges, clusterNames) {
   const labelLayer = document.createElement('div');
   labelLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden';
   box.appendChild(labelLayer);
+
+  // HUD (2026-09-29 用户: 进一个大类后别的大类在哪看不到 → 空战游戏那种指向箭头)
+  //   聚焦某柜后 · 屏幕外的其他柜在画幅边缘亮出一个指路牌 · 点它直接切过去 · 左上角回全景
+  const hudLayer = document.createElement('div');
+  hudLayer.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:5';
+  box.appendChild(hudLayer);
+  const hudArrows = [];
+  boxDefs.forEach(({ b, center }) => {
+    const el = document.createElement('div');
+    // C · 幽灵文字 (2026-09-29 用户 选型) —— 无底无框, 只有一团发光的字 + 一枚小亮点
+    //   why: 硬边框胶囊长得像网页控件, 那根边框把星图画面割断了; 星图里的东西该是「一团光」。
+    //   悬停提亮 —— 安静时不抢戏, 要动时看得出能点。
+    el.style.cssText = 'position:absolute;pointer-events:auto;cursor:pointer;display:none;'
+      + 'font-size:11px;letter-spacing:.5px;white-space:nowrap;user-select:none;opacity:.82;'
+      + 'transform:translate(-50%,-50%);color:' + b.color + ';'
+      + 'text-shadow:0 0 11px ' + b.color + ',0 0 3px rgba(0,0,0,.85)';
+    const dot = document.createElement('i');
+    dot.style.cssText = 'display:inline-block;width:4px;height:4px;border-radius:50%;'
+      + 'background:currentColor;box-shadow:0 0 8px currentColor;margin-right:5px;vertical-align:1px';
+    el.appendChild(dot);
+    el.appendChild(document.createTextNode(b.label));
+    el.onmouseenter = () => { el.style.opacity = '1'; };
+    el.onmouseleave = () => { el.style.opacity = '.82'; };
+    el.onclick = () => _focusBox(b.id);
+    hudLayer.appendChild(el);
+    hudArrows.push({ el, id: b.id, center });
+  });
+  const hudBack = document.createElement('div');
+  hudBack.textContent = '← 回全景';
+  hudBack.style.cssText = 'position:absolute;left:12px;top:12px;pointer-events:auto;cursor:pointer;display:none;'
+    + 'font-size:11px;padding:3px 10px;border-radius:8px;user-select:none;white-space:nowrap;'
+    + 'color:var(--text,#dcdce6);background:rgba(255,255,255,.05);opacity:.85';
+  hudBack.onclick = () => window._mmResetFocus();
+  hudLayer.appendChild(hudBack);
   const labels = [];
   Object.entries(centers).forEach(([cid, c]) => {
     const center = new THREE.Vector3(c.x / c.n, c.y / c.n, c.z / c.n);
@@ -1202,6 +1585,19 @@ function _mmRenderStar3D(box, pts, edges, clusterNames) {
     labels.push({ div, center });
   });
 
+  // 柜名标签 (六个沉淀位 · 比星系名大一档 · 主标签) —— 星图收柜子后的一等公民
+  const boxLabels = [];
+  boxDefs.forEach(({ b, center, labelY }) => {
+    const div = document.createElement('div');
+    div.textContent = b.label;
+    div.title = (b.count ? b.count + ' 条 · ' : '') + (b.chars || 0).toLocaleString() + ' 字符 · ' +
+      (b.inject === 'full' ? '进前缀' : (b.inject === 'recall' ? '按需召回' : '不进前缀'));
+    div.style.cssText = 'position:absolute;transform:translate(-50%,-50%);pointer-events:auto;cursor:pointer;font-size:13px;font-weight:600;letter-spacing:2.4px;color:' + b.color + ';text-shadow:0 0 14px ' + b.color + ',0 0 34px ' + b.color + ';white-space:nowrap;user-select:none';
+    div.onclick = () => _focusBox(b.id);
+    labelLayer.appendChild(div);
+    boxLabels.push({ div, id: b.id, center: new THREE.Vector3(center.x, center.y + labelY, center.z) });
+  });
+
   // hover tooltip (raycaster 对 sprite)
   const tip = document.getElementById('mmStarTip');
   const ray = new THREE.Raycaster();
@@ -1212,9 +1608,11 @@ function _mmRenderStar3D(box, pts, edges, clusterNames) {
     mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
   });
   renderer.domElement.addEventListener('pointerleave', () => { mouse.set(-2, -2); if (tip) tip.style.display = 'none'; });
-  renderer.domElement.addEventListener('dblclick', () => { if (_mm3d) _mm3d.flyTo = { target: new THREE.Vector3(0, 0, 0), dist: fitDist }; });
+  renderer.domElement.addEventListener('dblclick', () => { if (_mm3d) _mm3d.flyTo = { target: new THREE.Vector3(0, 0, 0), dist: fitDist }; _setFocus(null); });
 
   let hovered = -1;
+  let hoveredBox = null;
+  let hoveredBoxSp = null;
   let frame = 0;
   // 面板宽度随窗口/系统缩放变化 · canvas + 相机 + 标签投影一起跟上
   const ro = new ResizeObserver(() => {
@@ -1242,26 +1640,47 @@ function _mmRenderStar3D(box, pts, edges, clusterNames) {
     // raycast 每 3 帧一次 · hover 精度无感 · 负载省 2/3
     if (frame % 3 === 0) {
       ray.setFromCamera(mouse, camera);
-      const hits = ray.intersectObjects(sprites);
-      const h = hits.length ? hits[0].object.userData.idx : -1;
-      if (h !== hovered) {
-        if (hovered >= 0) { const s = sizeOf(pts[hovered]); sprites[hovered].scale.set(s, s, 1); }
+      const hits = ray.intersectObjects(sprites.concat(boxSprites));
+      const hitObj = hits.length ? hits[0].object : null;
+      const h = hitObj && typeof hitObj.userData.idx === 'number' ? hitObj.userData.idx : -1;
+      const hb = hitObj && hitObj.userData.box ? hitObj.userData.box : null;
+      if (h !== hovered || hb !== hoveredBox) {
+        if (hovered >= 0) { const s = sizeOf(pbPts[hovered]); sprites[hovered].scale.set(s, s, 1); }
         hovered = h;
-        if (hovered >= 0) { const s = sizeOf(pts[hovered]) * 1.5; sprites[hovered].scale.set(s, s, 1); }
+        if (hovered >= 0) { const s = sizeOf(pbPts[hovered]) * 1.5; sprites[hovered].scale.set(s, s, 1); }
+        hoveredBox = hb;
+        hoveredBoxSp = hb && hitObj ? hitObj : null;
         if (tip) {
           if (hovered >= 0) {
-            const p = pts[hovered];
+            const p = pbPts[hovered];
             const gname = p.cluster >= 0 ? (clusterNames[p.cluster] || '星系 ' + p.cluster) : '孤星';
             tip.innerHTML = `<div style="font-weight:600;margin-bottom:2px">${escHtml(p.id)}</div><div style="color:var(--dim,#9aa)">${(p.chars || 0).toLocaleString()} 字符 · ${p.loaded ? '被取用过' : '未取用'} · ${escHtml(gname)}</div>`;
             tip.style.display = 'block';
+          } else if (hb) {
+            // 其他柜的点也能 hover 了 (2026-09-29 用户) → 有明细出明细, 没明细退回柜名片
+            const bd = boxDefs.find(x => x.b.id === hb);
+            const it = hitObj.userData.item;
+            if (it) {
+              tip.innerHTML = `<div style="font-weight:600;margin-bottom:2px;color:${bd ? bd.b.color : '#ccc'}">${escHtml(it.label)}</div><div style="color:var(--dim,#9aa)">${(it.chars || 0).toLocaleString()} 字符 · ${escHtml(bd ? bd.b.label : '')} · ${escHtml(it.sub || '')}</div>`;
+              tip.style.display = 'block';
+            } else if (bd) {
+              const bb = bd.b;
+              tip.innerHTML = `<div style="font-weight:600;margin-bottom:2px;color:${bb.color}">${escHtml(bb.label)}</div><div style="color:var(--dim,#9aa)">${bb.count ? bb.count + ' 条 · ' : ''}${(bb.chars || 0).toLocaleString()} 字符 · ${bb.inject === 'full' ? '进前缀' : (bb.inject === 'recall' ? '按需召回' : '不进前缀')}<br>${escHtml(bb.sub || '')}</div>`;
+              tip.style.display = 'block';
+            } else tip.style.display = 'none';
           } else tip.style.display = 'none';
         }
       }
     }
-    if (tip && hovered >= 0) {
-      const v = sprites[hovered].position.clone().project(camera);
-      tip.style.left = ((v.x + 1) / 2 * W + 10) + 'px';
-      tip.style.top = ((-v.y + 1) / 2 * H - 10) + 'px';
+    if (tip && (hovered >= 0 || hoveredBox)) {
+      let src = null;
+      if (hovered >= 0) src = sprites[hovered].position;
+      else if (hoveredBoxSp) src = hoveredBoxSp.position;
+      if (src) {
+        const v = src.clone().project(camera);
+        tip.style.left = ((v.x + 1) / 2 * W + 10) + 'px';
+        tip.style.top = ((-v.y + 1) / 2 * H - 10) + 'px';
+      }
     }
     for (const { div, center } of labels) {
       const v = center.clone().project(camera);
@@ -1270,6 +1689,38 @@ function _mmRenderStar3D(box, pts, edges, clusterNames) {
       div.style.left = ((v.x + 1) / 2 * W) + 'px';
       div.style.top = ((-v.y + 1) / 2 * H) + 'px';
     }
+    for (const { div, center } of boxLabels) {
+      const v = center.clone().project(camera);
+      if (v.z > 1) { div.style.display = 'none'; continue; }
+      div.style.display = 'block';
+      div.style.left = ((v.x + 1) / 2 * W) + 'px';
+      div.style.top = ((-v.y + 1) / 2 * H) + 'px';
+    }
+    // HUD: 聚焦后 · 屏幕外的其他柜在画幅边缘亮出指路牌 (点它切过去)
+    const fbox = _mm3d ? _mm3d.focusedBox : null;
+    hudBack.style.display = fbox ? 'block' : 'none';
+    hudArrows.forEach(({ el, id, center }) => {
+      if (!fbox || fbox === id) { el.style.display = 'none'; return; }
+      const v = center.clone().project(camera);
+      const sx = (v.x + 1) / 2 * W, sy = (-v.y + 1) / 2 * H;
+      const mg = 42;
+      const off = v.z > 1 || sx < mg || sx > W - mg || sy < mg || sy > H - mg;
+      if (!off) { el.style.display = 'none'; return; }
+      el.style.display = 'block';
+      el.style.left = Math.max(mg, Math.min(W - mg, sx)) + 'px';
+      el.style.top = Math.max(mg, Math.min(H - mg, sy)) + 'px';
+    });
+    // 星星闪烁 + 星云缓转 (2026-09-29 用户: 这些星星能否有点轻微闪烁的感觉)
+    //   逐颗独立相位/频率 —— 同步闪会像坏掉的灯。幅度压到 ±30%, 是「呼吸」不是「眨眼」。
+    const tsec = performance.now() * 0.001;
+    for (const s of allSprites) {
+      s.sp.material.opacity = s.op * (0.70 + 0.30 * Math.sin(tsec * s.fr + s.ph)) * (s.dim === undefined ? 1 : s.dim);
+    }
+    for (const h of boxHalo) {
+      h.mm.material.opacity = h.op * (h.dim === undefined ? 1 : h.dim);
+      if (h.spin) h.mm.material.rotation += h.spin;
+    }
+    dustPts.material.opacity = (light ? 0.70 : 1.0) * (0.78 + 0.22 * Math.sin(tsec * 0.55));
     renderer.render(scene, camera);
   }
   _mm3d = { renderer, scene, camera, controls, raf: 0, flyTo: null, ro };
@@ -1305,7 +1756,9 @@ function renderSinks(data) {
   $dashView.innerHTML = `
     <div class="dash-head">
       <h2><i class="ri-archive-drawer-fill"></i> 沉淀位</h2>
-      <div class="dash-head-sub">${items.length} 个文档 · 点卡片预览或本机打开</div>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${items.length}</b><span>个文档</span></div>
+      </div>
     </div>
     <div class="sink-panel">${sectionsHtml}</div>`;
 }
@@ -1322,7 +1775,9 @@ function renderReviews(data) {
   let html = `
     <div class="dash-head">
       <h2><i class="ri-calendar-check-fill"></i> 月度复盘</h2>
-      <div class="dash-head-sub">${sorted.length} 份 · 周期从近到远 · 点卡片预览 / 下载 / 打开文件夹</div>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${sorted.length}</b><span>份</span></div>
+      </div>
       <button onclick="loadDashboard('reviews', {silent:true})">刷新</button>
     </div>
     <div class="sink-panel">`;
@@ -1391,13 +1846,26 @@ async function reviewReveal(filename) {
   } catch (e) { alert('网络出错: ' + e.message); }
 }
 
+// 注入归属徽章 (用户 2026-09-17: “进前缀的，能不能标注个标识”)
+//   每个沉淀位**进不进当前这轮的前缀**·一眼分清 —— 以前只看得见磁盘大小·看不出这个
+const SINK_INJECT_META = {
+  full:     { label: '进前缀',    icon: 'ri-flashlight-fill', cls: 'si-full',    tip: '每轮全文进固定前缀 · 逐字命中缓存' },
+  excerpt:  { label: '进前缀(节选)', icon: 'ri-flashlight-line', cls: 'si-excerpt', tip: '只进一部分（最近 N 条 / 截节）· 磁盘上比注入的大得多' },
+  map:      { label: '只留指路',  icon: 'ri-map-pin-line',   cls: 'si-map',     tip: '不进正文 · 只在前缀里留一句指路' },
+  recall:   { label: '按需召回',  icon: 'ri-search-eye-line', cls: 'si-recall',  tip: '不进前缀 · 用 recall_memory / catalog_search 按需取' },
+  none:     { label: '不进前缀',  icon: 'ri-archive-2-line', cls: 'si-none',    tip: '完全不在上下文 · 纯工程 / 归档文档' },
+};
+
 function renderSinkCard(it) {
   const lm = SINK_LAYER_META[it.layer] || SINK_LAYER_META.docs;
   const sizeStr = it.size_bytes > 102400 ? (it.size_bytes / 1024).toFixed(0) + ' KB' : (it.size_bytes / 1024).toFixed(1) + ' KB';
   const existsClass = it.exists ? '' : ' sink-card-missing';
+  const im = SINK_INJECT_META[it.inject || 'none'] || SINK_INJECT_META.none;
+  const itok = it.injected_tokens || 0;
+  const injectHtml = `<span class="sink-inject ${im.cls}" title="${escHtml(im.tip)}"><i class="${im.icon}"></i> ${im.label}${itok ? ` · ${_fmtTok(itok)} tok` : ''}</span>`;
   return `
     <div class="sink-card${existsClass}">
-      <span class="sink-card-label">${escHtml(it.label)}</span>
+      <span class="sink-card-label">${escHtml(it.label)} ${injectHtml}</span>
       ${it.role ? `<span class="sink-card-role">${escHtml(it.role)}</span>` : ''}
       <span class="sink-card-meta">${it.lines ? escHtml(String(it.lines)) + ' lines' : ''}${it.lines && it.size_bytes ? ' · ' : ''}${sizeStr}</span>
       <span class="sink-card-actions">
@@ -1624,7 +2092,7 @@ async function wishAction(wid, action) {
   // 卷五十三 · 四态流程 · 提示词对齐新状态机 (pending/active/review/live + plan_pending/blocked)
   const map = {
     approve_daemon: (
-      `用户 批准心愿 ${wid} · 让你 (Daemonkey) 在Daemonkey自己动手装。\n\n` +
+      `用户 批准心愿 ${wid} · 让你 (Daemonkey) 在<名字> 的家自己动手装。\n\n` +
       `**进入勘察模式** —— 这一步只调研·不改任何代码。\n\n` +
       `步骤：\n` +
       `1. 用 wish_update 把 status 改成 active · integration_path 改成 daemon\n` +
@@ -1874,7 +2342,12 @@ function renderSheState(data) {
   const name = prof.名字 || (window.AI_NAME || 'Daemonkey');
   const avatar = prof.头像 || '';
 
-  let html = `<div class="she-wrap">`;
+  let html = `
+    <div class="dash-head">
+      <h2><i class="ri-hearts-line"></i> ${escHtml(name)} · 状态</h2>
+      <button onclick="backToChat()">✕ 收起</button>
+    </div>
+    <div class="she-wrap">`;
 
   // ① 身份卡 —— 方形头像 + 名字 + 引语 (初见名)
   html += `<div class="she-idcard">

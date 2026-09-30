@@ -114,11 +114,8 @@ def _run(args: dict) -> ToolResult:
     lines.extend(_dump_preview(sheets))
     lines.append("")
     lines.append("产物库「表格」可见 · 点结果里的打开进 Excel/WPS。")
-    try:
-        lines.append(f"[[DK-OPEN]]{final.relative_to(_ROOT).as_posix()}")
-    except ValueError:
-        lines.append(f"[[DK-OPEN]]{final.as_posix()}")
-    return ToolResult(ok=True, output="\n".join(lines))
+    # 铺中栏：声明 stage_path（打标记 / 说人话由 tool_loop 出口统一兑现 · 第2刀）
+    return ToolResult(ok=True, output="\n".join(lines), stage_path=final)
 
 
 SPEC = ToolSpec(

@@ -80,7 +80,14 @@ def _load_all() -> dict:
     if not PROJ_FILE.exists():
         return {"updated_at": None, "items": {}}
     try:
-        d = json.loads(PROJ_FILE.read_text(encoding="utf-8"))
+        # encoding="utf-8-sig": 无 BOM 的 utf-8 照读，带 BOM 的也照读（BOM 自动吃掉）。
+        # 为什么必须容错：2026-09-28 我用 PowerShell `Set-Content -Encoding UTF8` 重写过这个文件
+        #   （PS 5.1 的 UTF8 会写 BOM，且中文被按 ANSI 解再按 UTF-8 写 → 二次编码损坏），
+        #   read_text("utf-8") 遇 BOM 直接抛 → 这层 except 把文件判成 corrupt 并重置 →
+        #   BRO 一重启发现「挂的项目全没了」。
+        # 这个文件不归引擎独占（用户手改、别的工具写、编辑器保存都可能带 BOM），
+        # 读的一方得容错，而不是把还能救的内容当垃圾扔掉。
+        d = json.loads(PROJ_FILE.read_text(encoding="utf-8-sig"))
         if not isinstance(d.get("items"), dict):
             d["items"] = {}
         return d

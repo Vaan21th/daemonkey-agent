@@ -290,6 +290,30 @@ def checkpoint_commit(reason: str, owner: Optional[str] = None, notify: bool = T
     return out
 
 
+def _foreign_branch_guard(cur: str, own_prefix: str) -> Optional[str]:
+    """多实例共树 (2026-09-18 · wish-cf51665e): 切走之前先看「这是谁的分支」。
+
+    共树多实例时 checkout 是【工作区级】操作 —— A 从 B 的 wish 分支上 checkout 走,
+    会把 B 没提交的改动一起搬走 (另一份 playbook「文件不见了」的原始病因)。
+
+    判据: 当前分支既不是 master、也不以本实例要用的 wish 前缀开头 → 算「别人的」;
+    此刻若还脏 → 人家多半正在改 → 返回人话警告; 干净 → None 放行
+    (干净说明没人挂着未完成的东西·切走无害)。
+    调用方已持锁。
+    """
+    if not cur or cur == "master" or cur.startswith(own_prefix):
+        return None
+    rc, out, _ = _run_git(["status", "--porcelain"], timeout=10)
+    if rc != 0 or not out.strip():
+        return None
+    n = len([x for x in out.splitlines() if x.strip()])
+    return (
+        f"⚠ 当前挂在 `{cur}`（既不是 master 也不是本 wish 前缀 `{own_prefix}`）· "
+        f"工作区还有 {n} 处未提交改动 —— 疑似另一个实例正在这个分支上改。 "
+        f"共树多实例时 checkout 是工作区级操作·强行切走会把它的工作区一起搬走。 "
+        f"请先 `worktree_status` 确认它已完工·或让它先 commit / 换到自己的 worktree (wish-cf51665e P2)。")
+
+
 def branch_from_master(wish_id: str, slug: str) -> tuple[Optional[str], str]:
     """③号机制: 从 master 切出 wish 分支 (确定的主干基线)。
 
@@ -305,6 +329,9 @@ def branch_from_master(wish_id: str, slug: str) -> tuple[Optional[str], str]:
         cur = cb_out.strip() if cb_rc == 0 else ""
         if cur.startswith(wish_id):
             return cur, f"已在分支 `{cur}` · 不切"
+        _fg = _foreign_branch_guard(cur, wish_id)
+        if _fg:
+            return None, _fg
         st_rc, st_out, _ = _run_git(["status", "--porcelain"], timeout=10)
         if st_rc == 0 and st_out.strip():
             _run_git(["add", "-A"], timeout=20)
@@ -438,6 +465,20 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
     if not branch or branch == "master":
         out["note"] = f"分支无效或本就是 master ({branch!r}) · 跳过 merge"
         return out
+    def _mark_branch_wish_live(_br: str) -> str:
+        """分支名 → 心愿 → 标 live。判据本体在 workers/wishlist（那边可单测）。"""
+        try:
+            from workers.wishlist import mark_wish_live_for_branch
+        except Exception:
+            return ""
+        try:
+            _wid, _msg = mark_wish_live_for_branch(_br)
+        except Exception as e:
+            return f" · ⚠ 标心愿 live 失败：{e}"
+        if _wid:
+            out["wish_live"] = _wid
+        return _msg
+
     with _lock("git_ops:merge"):
         _ensure_identity()
         ex_rc, _, _ = _run_git(["show-ref", "--verify", f"refs/heads/{branch}"], timeout=5)
@@ -455,6 +496,7 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
             out["sha"] = s_out.strip() if s_rc == 0 else None
             note = (f"分支 `{branch}` 内容已在 master (祖先/cherry 等价) · "
                     f"无需重复 merge · 主干已含此 wish")
+            note += _mark_branch_wish_live(branch)
             if _delete_merged_branch(branch):  # 合完即删 · 根治堆积
                 out["branch_deleted"] = True
                 note += " · 已清理该分支"
@@ -468,6 +510,16 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
                                + " · 这不是干净的 wish 分支。 如确需合入: 请 cherry-pick "
                                  "其中干净的改动到新分支 · 或显式 allow_override=True")
                 return out
+        # 多实例共树 (2026-09-18 · wish-cf51665e): 同 branch_from_master —— 当前若挂在
+        # 别人的分支上且还脏·下面那句 checkpoint 会把「人家的未提交改动」commit 进人家的
+        # 分支·再 checkout 走。 先问一句再动手。
+        _own = (expected_wish_id or "").strip() or branch.split("/", 1)[0].strip()
+        _cb_rc, _cb_out, _ = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], timeout=5)
+        _fg = _foreign_branch_guard(_cb_out.strip() if _cb_rc == 0 else "", _own)
+        if _fg:
+            out["blocked"] = True
+            out["note"] = _fg
+            return out
         # 卷五十五 · 切分支前先 checkpoint 当前分支的脏改动 · 否则脏树会让 checkout 直接 abort
         #   (今天事故的一半: 工作区脏着运行时文件 · checkout 报 "local changes would be overwritten")。
         pre_rc, pre_out, _ = _run_git(["status", "--porcelain"], timeout=10)
@@ -526,6 +578,13 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
         if m_rc != 0:
             out["note"] = f"切 master 失败 · {m_err.strip()[:160]}"
             return out
+        # 多实例共树 (2026-09-18 · wish-cf51665e): 分支里若混着自动 checkpoint 提交·提个醒 ——
+        # 那是「挂在别人分支上被存档」留下的痕迹·可能夹带别的实例的半成品。
+        # ⚠ 必须在 merge 之前取：merge 成功后 branch 已是 master 的祖先，master..branch 恒为空
+        #   （旧版把它写在 merge 之后·这段提醒永远进不去·feature 静默失效）。
+        _ck_rc, _ck_out, _ = _run_git(["log", "--format=%s", f"master..{branch}"], timeout=10)
+        _cks = ([x for x in _ck_out.splitlines() if x.startswith("[checkpoint]")]
+                if _ck_rc == 0 else [])
         mg_rc, mg_out, mg_err = _run_git(
             ["merge", "--no-ff", branch, "-m", f"merge {branch} -> master (wish 闭环 · 卷四十八)"],
             timeout=30)
@@ -538,6 +597,10 @@ def merge_wish_to_master(branch: str, expected_wish_id: Optional[str] = None,
         out["ok"] = True
         out["sha"] = s_out.strip() if s_rc == 0 else None
         note = f"已 merge `{branch}` -> master · {out['sha']} · 主干已含此 wish"
+        if _cks:
+            note += (f" · ⚠ 分支含 {len(_cks)} 条自动 checkpoint 提交(`{_cks[0][:50]}`)"
+                     f"· 留意是否夹带别的实例的未完成改动")
+        note += _mark_branch_wish_live(branch)
         # 卷五十五 · 合完即删 wish 分支 · 根治分支堆积 (2026-06-03 BRO 拍板)。
         # 此刻在 master 上·branch 已 --no-ff 合入·-d 安全删掉书签。
         if _delete_merged_branch(branch):
@@ -615,7 +678,7 @@ def audit_wishes_merge_state(wishes: list[dict]) -> dict:
     with _lock("git_ops:wish_audit"):
         rc, brs, _ = _run_git(
             ["for-each-ref", "--format=%(refname:short)", "refs/heads"], timeout=10)
-        branches = {l.strip() for l in brs.splitlines() if l.strip()} if rc == 0 else set()
+        branches = {ln.strip() for ln in brs.splitlines() if ln.strip()} if rc == 0 else set()
         for w in wishes:
             wid = w.get("id")
             if not wid:

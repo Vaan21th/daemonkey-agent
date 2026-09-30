@@ -1,7 +1,7 @@
 """api_routes/radar_settings.py · 掘金雷达 自动刷新配置 (wish-7f38376e)
 
 GET  /radar-config  · 读配置 + 当前调度状态（上次刷新 / 下次刷新 / 上轮抓到多少条）
-POST /radar-config  · 写配置（enabled / interval_min）
+POST /radar-config  · 写配置（enabled / interval_min / translate）
                       scheduler 线程每 10s 热读一次 · 改完立刻生效·不用重启
 """
 
@@ -59,4 +59,6 @@ async def set_radar_config(
         note = "已开启 · 后台会按新频率抓取（最多 10 秒内生效）"
     else:
         note = "已关闭 · 后台不再自动抓取（手动「抓一下雷达」仍然可用）"
+    if not merged.get("translate", True):
+        note += " · 标题翻译已关（雷达照抓 · 零 token）"
     return {"saved": True, "config": merged, "runtime": _runtime_snapshot(), "note": note}

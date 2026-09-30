@@ -1,3 +1,5 @@
+import pytest
+
 from agent_tools import REGISTRY
 from agent_tools._hotpath_guard import begin_turn
 from agent_tools._tool_catalog import (
@@ -13,6 +15,18 @@ from agent_tools._tool_catalog import (
     visible_specs,
 )
 from tool_loop import _rewrite_tool_use, _specs_for_llm, to_openai_tools
+
+
+@pytest.fixture(autouse=True)
+def _isolate_catalog_allowed():
+    """2026-09-19 修红：上游测试若调 set_catalog_allowed({...})，contextvars 会在同一个
+    pytest 进程里残留 → _bound_allowed(None) 拿到旧集合 → deferred_names(None) 被那个
+    集合过滤成空表，本文件断言就假红（单跑绿、全量红）。每个 case 前后都清回 None。
+    """
+    from agent_tools._tool_catalog import set_catalog_allowed
+    set_catalog_allowed(None)
+    yield
+    set_catalog_allowed(None)
 
 
 def test_catalog_on_by_default():
@@ -93,6 +107,17 @@ def test_directory_lists_deferred_not_core():
     assert "catalog_call" in block
     assert "- read_file:" not in block
     assert len(block) <= 18000
+
+
+def test_directory_exclude_drops_full_tools():
+    """wish-9de9bce3 · 精准磨：exclude = 已全量进 tools[] 的 → 目录不重复列出它们。"""
+    blk = directory_block(exclude={"generate_presentation"})
+    assert "- generate_presentation:" not in blk
+    assert "create_app" in blk
+    dn_all = deferred_names(None)
+    dn_ex = deferred_names(None, exclude={"generate_presentation", "generate_report"})
+    assert len(dn_ex) == len(dn_all) - 2
+    assert "generate_presentation" not in dn_ex and "generate_report" not in dn_ex
 
 
 def test_visible_specs_are_registered():

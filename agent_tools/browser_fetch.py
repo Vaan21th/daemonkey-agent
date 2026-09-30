@@ -39,7 +39,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from . import TIER_CONFIRM, ToolResult, ToolSpec, register_tool
-from ._browser import CDP_URL, cdp_available, ensure_cdp
+from ._browser import CDP_URL, cdp_available, ensure_cdp, silent_window
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -104,7 +104,9 @@ def _fetch_via_cdp(url: str, wait_seconds: int) -> tuple[bool, str, str, str]:
             return False, "playwright not installed", "", ""
 
     try:
-        with _sp() as p:
+        # silent_window：每次抓取都 new_page，它会把最小化的专属窗口顶到前台
+        # （实测坐实）→ 包住，收尾自己收回去。
+        with silent_window(), _sp() as p:
             browser = p.chromium.connect_over_cdp(CDP_URL)
             ctx = browser.contexts[0] if browser.contexts else browser.new_context()
             page = ctx.new_page()

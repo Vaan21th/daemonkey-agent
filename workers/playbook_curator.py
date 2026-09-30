@@ -214,10 +214,12 @@ def curate(*, threshold: float = AUTO_MERGE_THRESHOLD,
             })
             continue
 
-        retired = [o["title"] for o in others if set_stale_state(o["id"], "退休")]
+        retired_pairs = [(o["id"], o["title"]) for o in others if set_stale_state(o["id"], "退休")]
+        retired = [t for _, t in retired_pairs]
         report["merged"].append({
             "keeper": keeper["title"], "keeper_id": keeper["id"],
             "retired": retired,
+            "retired_ids": [i for i, _ in retired_pairs],
             "backup": str(archive.relative_to(ROOT)).replace("\\", "/"),
         })
         logger.info("手册合并 · 保留「%s」· 退休 %d 份", keeper["title"], len(retired))
@@ -225,7 +227,26 @@ def curate(*, threshold: float = AUTO_MERGE_THRESHOLD,
     if report["merged"]:
         try:
             from workers.memory_index import incremental_update
-            incremental_update()
+            from workers.playbooks import load_playbook
+            for m in report["merged"]:
+                # 保留者: 正文已被 revise_playbook 换过 → 按新正文重索引
+                pb = load_playbook(m.get("keeper_id")) or {}
+                meta = pb.get("meta") or {}
+                slug = meta.get("slug") or ""
+                tt = meta.get("task_type") or "general"
+                if slug and pb.get("content"):
+                    incremental_update("skill", pb["content"], section=f"{slug}:{tt}")
+                # 被退休的: 必须从 FTS5 里撤掉。set_stale_state 只改 _index.json、
+                # 不碰索引 —— 不撤的话它还在索引里 · 下个 tick 又聚成同一簇 · 重复合并。
+                # (2026-09-29 真跑现场: 18:23 与 18:52 两次 tick 合了同一簇 · 归档里
+                #  同名文件两份 · 大小不同 = 这就是那条 WARNING 的实际后果)
+                for rid in m.get("retired_ids") or []:
+                    rob = load_playbook(rid) or {}
+                    rmeta = rob.get("meta") or {}
+                    rslug = rmeta.get("slug") or ""
+                    rtt = rmeta.get("task_type") or "general"
+                    if rslug:
+                        incremental_update("skill", "", section=f"{rslug}:{rtt}")
         except Exception as e:
             logger.warning("合并后重建索引失败 (%s) · 下次 tick 会补", e)
 

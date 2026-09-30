@@ -145,6 +145,24 @@ async def switch_provider(
         RUNTIME.model = model
         RUNTIME.base_url = resolved_base
 
+    # 2026-09-23 · 这条老路径不走 cfg 表 · 导致 UI (读 active_id) 与实际在跑的模型长期分叉:
+    # 用户看到的「当前模型」还是旧的 · 而下一轮 ensure_session_model 又拿旧值打回。
+    # 现在热切完回头把 cfg 表对上 · 并标 source=user (手动切 = 全局意图 · 新会话该继承)。
+    _matched_cid = ""
+    try:
+        from workers.provider_configs import find_id_by_model, set_active
+        from daemon_session import set_session_meta
+        from daemon_api import _resolve_caller_sid
+        _matched_cid = find_id_by_model(model, base_url)
+        if _matched_cid:
+            set_active(_matched_cid, source="user")
+            # 会话身份只认显式传入 / ContextVar · 不读 RUNTIME.session_id (串台)
+            _sid = _resolve_caller_sid(str((payload or {}).get("session_id") or ""))
+            if _sid:
+                set_session_meta(_sid, last_model_cfg=_matched_cid)
+    except Exception:
+        pass
+
     return {
         "ok": True,
         "provider_kind": provider_kind,
@@ -233,7 +251,7 @@ async def create_provider_config(
         raise HTTPException(400, str(e))
     if payload.get("set_active"):
         from daemon_api import _activate_provider_config
-        _activate_provider_config(cfg["id"])
+        _activate_provider_config(cfg["id"], source="user")
     cfg_safe = dict(cfg)
     cfg_safe["api_key"] = "***" if cfg_safe.get("api_key") else ""
     return {"ok": True, "config": cfg_safe}
@@ -301,7 +319,8 @@ async def activate_provider_config_ep(
         raise HTTPException(404, f"config not found: {cfg_id}")
     try:
         from daemon_api import _activate_provider_config
-        _activate_provider_config(cfg_id)
+        # source="user": 配置卡片上的「启用」是手动切 · 要落会话记忆
+        _activate_provider_config(cfg_id, source="user")
     except HTTPException:
         raise
     except Exception as e:

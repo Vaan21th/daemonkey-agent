@@ -8,28 +8,28 @@ from workers.notebook_tiers import route_write_section
 
 
 def test_accept_fact_rejects_dump_and_unknown_section():
-    assert accept_fact("rules", "不劝睡，除非他撑不住。")
-    assert not accept_fact("rules", "x" * 200)
+    assert accept_fact("about-user", "不劝睡，除非他撑不住。")
+    assert not accept_fact("about-user", "x" * 200)
     assert not accept_fact("nope", "不劝睡")
-    assert not accept_fact("rules", "a\n" * 8)
+    assert not accept_fact("about-user", "a\n" * 8)
 
 
 def test_parse_facts_keeps_three_short_bars():
     raw = (
         '{"facts":['
-        '{"section":"rules","content":"不劝睡除非撑不住"},'
-        '{"section":"events","content":"2026-08-29 猫叫白给"},'
-        '{"section":"dialogue","content":"你来定是真释权"},'
-        '{"section":"rules","content":"第四条不该进"}'
+        '{"section":"about-user","content":"不劝睡除非撑不住"},'
+        '{"section":"stories","content":"2026-08-29 猫叫白给"},'
+        '{"section":"moments","content":"你来定是真释权"},'
+        '{"section":"about-user","content":"第四条不该进"}'
         "]}"
     )
     facts = parse_facts(raw)
     assert len(facts) == 3
-    assert facts[0]["section"] == "rules"
+    assert facts[0]["section"] == "about-user"
 
 
 def test_dated_story_routes_to_events():
-    assert route_write_section("dialogue", "append", "2026-08-29 · 还在省钱期") == "events"
+    assert route_write_section("moments", "append", "2026-08-29 · 还在省钱期") == "stories"
 
 
 def test_recent_transcript_skips_compaction_and_tools():

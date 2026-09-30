@@ -10,7 +10,11 @@ import os
 import re
 from typing import Any
 
-_SECTIONS = frozenset({"profile", "events", "rules", "dialogue", "summary", "risks"})
+from workers.notebook_tiers import SECTIONS as _TIER_SECTIONS
+
+# 可写入格从单一真相源派生 —— 别手抄 key 清单：key 一改，抄的那份就漂成暗雷。
+# 判据与 update_bro_note.TOOL_SECTIONS 保持一致（可写、且不是状态卡）。
+_SECTIONS = frozenset(k for k, m in _TIER_SECTIONS.items() if m.writable and k != "state")
 _MAX_FACTS = 3
 _MAX_CHARS = 160
 _TRANSCRIPT_CAP = 6000
@@ -19,7 +23,7 @@ _FLUSH_HINT = (
     "只提取关于「他」的长期事实：偏好、边界、正在过的日子、关系里刚钉死的约定。\n"
     "不要任务进度、不要代码、不要工具输出、不要复述系统提示。\n"
     "最多 3 条。每条 content 不超过 160 字，必须是他真说过或刚确认的。\n"
-    "section 只能是 profile / events / rules / dialogue。\n"
+    "section 只能是 background / stories / about-user / moments。\n"
     "没有就 {\"facts\":[]}\n"
     "只输出 JSON。"
 )

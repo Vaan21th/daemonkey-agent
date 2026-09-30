@@ -201,6 +201,111 @@ def _branch_guard_warning(path: Path) -> Optional[str]:
     )
 
 
+def _active_wish_ids() -> list:
+    """列出当前所有 active 的 wish id（started_at 新的在前）。
+
+    ⚠ 只用来「告诉人有哪几条可选」—— 不再用它替人挑（2026-09-18 BRO 拍板「不猜，看分支名」）。
+    共树多实例时 active 实测有 6 条·最近那条常常跟手上活无关·挑错 = 改动记到别的账上。
+    读不到 / 没有 → 空 list。
+    注：wish 条目只有 created_at / approved_at / started_at / completed_at·没有 updated_at。
+    """
+    try:
+        import json
+        data = json.loads((ROOT / "data" / "opus_wishlist.json").read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    items = data.get("wishes") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return []
+    act = [w for w in items if isinstance(w, dict)
+           and str(w.get("status") or "").lower() == "active"
+           and str(w.get("id") or "").startswith("wish-")]
+    act.sort(key=lambda w: str(w.get("started_at") or w.get("created_at") or ""), reverse=True)
+    return [str(w.get("id")) for w in act if w.get("id")]
+
+
+def _note_branch(err: str, note: Optional[str]) -> str:
+    """早退时也要说清「HEAD 已经换分支了」。
+
+    切分支发生在所有闸之后、真正写盘之前，但写盘过程自己还有失败路径
+    （mkdir / 会话已回退 / 编辑锁 / 写盘异常）。这些路径如果不带这句，人只看到
+    「写入被拒」，不知道仓库已经不在原分支上 —— 下一步会一直以为自己还在 master，
+    而且 _auto_branch_for_core 下次直接 early return（已经在 wish-* 上），静默不提。
+    """
+    return f"{err}\n\n{note}" if note else err
+
+
+def _auto_branch_for_core(path: Path, wish_id: Optional[str] = None) -> Optional[str]:
+    """核心文件要写、人却在 master 上 → 先开/切 wish 分支再落笔（wish-cf51665e P1「方案 2」）。
+
+    消灭「先开分支、再写文件」两步之间的中间态 —— 忘了第一步就直接改 master（已犯 4 次）。
+    返回一段给 Daemonkey 看的说明（分支已切过去）· None = 不需要 / 做不到
+    （做不到【不阻断】写入 —— 退回 _branch_guard_warning 的事后警告）。
+
+    分层判据（硬→软）:
+      ① wish_id 显式给 → 用它
+      ② 已在 wish-* 分支 → 不需要（下面早退·也避开双重提醒）
+      ③ 否则 → **不猜**，返回「你没挂 wish」的提醒（2026-09-18 BRO 拍板）
+
+    为什么③是「提醒」而不是「自动挑一条 active 的」：实测 wishlist 里 active 有 6 条·
+    最近那条常常跟手上活无关 —— 挑错就把改动记到别的账上；没有 active 时旧逻辑还会
+    编一个 wish-auto-xxx 出来，那种名字合的时候找不到主人。 分支名在这里也给不出答案，
+    因为「人走到这个函数」本身就意味着他在 master 上、没挂分支。
+    """
+    if not _is_daemon_core(path):
+        return None
+    branch = _current_git_branch()
+    if branch is None or branch.startswith("wish-"):
+        return None          # 没 git 信息 / 已经合规 —— 都不动
+    if branch != "master":
+        return None          # 别的 feature 分支 · 不擅自动
+
+    wid = (wish_id or "").strip()
+    if not wid:
+        act = _active_wish_ids()
+        hint = ("  当前 active 的有：" + "、".join(act[:3]) + ("…" if len(act) > 3 else "") + "\n"
+                if act else "  当前 wishlist 里没有 active 的心愿。\n")
+        return ("⚠ 这是 daemon 核心文件 · 你人在 master 上、也没指定挂哪条 wish。\n"
+                "  我没替你挑 —— 猜错会把改动记到别的账上（上次差点）。\n"
+                + hint +
+                "  → 要挂哪条就把 wish_id 传给 write_file 再来一次；"
+                "或先 wish_update 把那条置 active 再走。\n"
+                "  （这次改动会直接落在 master 上 · 除非你先切分支）")
+    new_branch = f"{wid}/core-write"
+
+    reused = False
+    try:
+        with daemon_git_lock("write_file:auto-branch"):
+            res = subprocess.run(
+                ["git", "checkout", "-b", new_branch],
+                cwd=ROOT, capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=15,
+                **no_window_kwargs(),
+            )
+            if res.returncode != 0:
+                # 「分支已存在」是常态而不是异常：分支名按 wid 稳定推出来，所以同一个 wish
+                # 第二次写核心文件必然撞名（或 merge 回 master 后本地分支还留着）。
+                # → 直接切过去复用，别退回 master（退回 = 自动开分支这个能力对该 wish 永久失效）。
+                res2 = subprocess.run(
+                    ["git", "checkout", new_branch],
+                    cwd=ROOT, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=15,
+                    **no_window_kwargs(),
+                )
+                if res2.returncode != 0:
+                    err = (res2.stderr or res.stderr or res.stdout or "").strip()[:200]
+                    return (f"⚠ 想切到 wish 分支 `{new_branch}` 但失败了（{err}）· "
+                            f"本次仍写在 {branch or 'master'} 上 —— 请手动 `git checkout` 后重写一次。")
+                reused = True
+    except Exception as e:
+        return f"⚠ 自动开 wish 分支异常（{e}）· 本次仍写在 {branch or 'master'} 上。"
+
+    head = (f"✓ 这是 daemon 核心文件 · 分支 `{new_branch}` 已存在 → 切过去继续落笔。\n"
+            if reused else
+            f"✓ 这是 daemon 核心文件 · 已在 master 上 → 先切到 wish 分支 `{new_branch}` 再落笔。\n")
+    return head + "  依据：你显式传了 wish_id。"
+
+
 def _classify(args: dict) -> str:
     raw = args.get("path") or ""
     if not raw:
@@ -288,10 +393,14 @@ def _run(args: dict) -> ToolResult:
     if nb_err:
         return ToolResult(ok=False, output="", error=nb_err)
 
+    # wish-cf51665e P1「方案 2」· 所有闸都过了、确定要写了 → 才动分支。
+    # 放这么晚是有意的: 太早切会把「其实会被拒」的情况也白切一次分支。
+    _branch_note = _auto_branch_for_core(path, args.get("wish_id"))
+
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
     except Exception as e:
-        return ToolResult(ok=False, output="", error=f"mkdir parent failed: {e}")
+        return ToolResult(ok=False, output="", error=_note_branch(f"mkdir parent failed: {e}", _branch_note))
 
     old_content: Optional[str] = None
     can_rollback = False
@@ -326,7 +435,7 @@ def _run(args: dict) -> ToolResult:
     # create 模式是新建文件·没有覆盖风险(撞 already exists 已在上面拦)·跳过。
     _owner = current_session_id()
     if _restore_blocked(_owner):
-        return ToolResult(ok=False, output="", error="会话已回退 · 停手")
+        return ToolResult(ok=False, output="", error=_note_branch("会话已回退 · 停手", _branch_note))
     _lock_note = None
     if mode != "create" and path.exists():
         if old_content is not None:
@@ -340,7 +449,8 @@ def _run(args: dict) -> ToolResult:
             str(path), _owner, _cur_text, force=bool(args.get("force")), tool=f"write_file:{mode}"
         )
         if not _lock_ok:
-            return ToolResult(ok=False, output="", error=_lock_note or "编辑锁冲突")
+            return ToolResult(ok=False, output="",
+                              error=_note_branch(_lock_note or "编辑锁冲突", _branch_note))
 
     try:
         # wish-21c3ec8b · 换行保真: 先定目标 eol (已存在文件跟随原风格) · 内容归一化 · newline="" 禁止 Python 转换
@@ -354,7 +464,8 @@ def _run(args: dict) -> ToolResult:
             with path.open("w", encoding="utf-8", newline="") as f:
                 f.write(_payload)
     except Exception as e:
-        return ToolResult(ok=False, output="", error=f"{type(e).__name__}: {e}")
+        return ToolResult(ok=False, output="",
+                          error=_note_branch(f"{type(e).__name__}: {e}", _branch_note))
 
     try:
         # wish-21c3ec8b · 校验也用 newline="" 保留原始字节 · 换行差异不再被归一化掩盖
@@ -429,6 +540,8 @@ def _run(args: dict) -> ToolResult:
         base_output = f"{base_output}\n{_lock_note}"
 
     # 卷四十四 F · branch guard
+    if _branch_note:
+        base_output = f"{base_output}\n\n{_branch_note}"
     warn = _branch_guard_warning(path)
     if warn:
         base_output = f"{base_output}\n\n{warn}"
@@ -446,18 +559,12 @@ def _run(args: dict) -> ToolResult:
         pass
 
     try:
-        from workers.stage_open import append_open_mark
-        base_output = append_open_mark(base_output, path)
-    except Exception:
-        pass
-
-    try:
         from workers.overlay_policy import attach_write_notice
         base_output = attach_write_notice(path, base_output)
     except Exception:
         pass
 
-    return ToolResult(ok=True, output=base_output)
+    return ToolResult(ok=True, output=base_output, stage_path=path)
 
 
 SPEC = ToolSpec(
@@ -470,7 +577,7 @@ SPEC = ToolSpec(
         "properties": {
             "path": {
                 "type": "string",
-                "description": "相对工程根。新文件必须落已有分类：HTML→data/design 或 data/workshop/outputs；草稿→data/runtime/scratch。禁止新建 data/ 下未知目录。",
+                "description": "相对工程根。新文件须落已有分类：HTML→data/design 或 data/workshop/outputs；草稿→data/runtime/scratch。",
             },
             "content": {
                 "type": "string",
@@ -495,6 +602,10 @@ SPEC = ToolSpec(
                     "or the file changed on disk since the last tool write). Only set true after confirming "
                     "you won't clobber someone else's work. Default false."
                 ),
+            },
+            "wish_id": {
+                "type": "string",
+                "description": "核心文件指定 wish 分支 id；不传则自动挑 active 的。",
             },
         },
         "required": ["path"],

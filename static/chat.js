@@ -24,7 +24,7 @@
   var doAI = NAME && NAME !== 'Daemonkey';           // AI 自己的名字
   var doOwner = OWNER && OWNER !== '用户';        // 主人的称呼 (UI 里的 用户 也换掉)
   if (!doAI && !doOwner) return;                // 母体两者都默认 → 保持原样
-  // 正则跳过 OPUS_API_TOKEN / Daemonkey / OWNER-NOTEBOOK 这类技术标识·只换作为称呼出现的词
+  // 正则跳过 OPUS_API_TOKEN / Daemonkey / 用户-NOTEBOOK 这类技术标识·只换作为称呼出现的词
   var RE_AI = /Daemonkey(?![\w-])/g;
   var RE_OWNER = /用户(?![\w-])/g;
   // Daemonkey 分家: 取了自己名字的实例·把母体私有 lore「<名字> 的家」中性成「<名字> 的家」。
@@ -237,6 +237,12 @@ function toggleCompact(force, animate) {
     }
   }
   document.body.classList.toggle('compact', on);
+  // 专注版 + 工作台画布共存 (用户 2026-09-15):
+  //   以前专注版把 nav/detail 整列压成 0 宽 (visibility:hidden) · 中栏画布打不开 ——
+  //   stageEnsureWorkbench() 直接把他踢回工作台 · 看一份稿就要丢专注版布局，回回跳。
+  //   改成: 画布打开时挂 body 类 dk-stage-drawer · 专注版下中栏以抽屉形式浮出来
+  //   (绝对定位覆盖在对话之上 · 关掉画布自动收回去)· 导航栏仍然收起。
+  if (typeof _syncCompactStageDrawer === 'function') _syncCompactStageDrawer();
   if (!on) {
     ['navRail', 'detailPane'].forEach(function (id) {
       var el = document.getElementById(id);
@@ -276,6 +282,13 @@ function toggleCompact(force, animate) {
   localStorage.setItem('opus_ui_compact', on ? '1' : '');
 }
 
+/* 画布在专注版下当抽屉用 · 跟 stageMarkOpen 同一个开关来回同步 */
+function _syncCompactStageDrawer() {
+  var open = document.body.classList.contains('dk-stage-open');
+  var needDrawer = document.body.classList.contains('compact') && open;
+  document.body.classList.toggle('dk-stage-drawer', needDrawer);
+}
+
 /* ═══ 卷八十三 · 简洁版三栏 (用户 2026-08-14 拍板 · 会话清单左常驻 + 产物右折叠) ═══
    复用现成函数: buildSessionRow(会话行) / collectSessionDocs + _docCardHtml(产物卡) ·
    零新增后端 · 工作台模式(body 无 compact)三栏 display:none · 视觉零变化。 */
@@ -287,7 +300,7 @@ function _syncCompactSidebars(on) {
   if (on) {
     s.hidden = false; t.hidden = false; a.hidden = false;
     renderCompactSessions();
-    renderCompactArtifacts();
+    if (typeof renderCompactArtifacts === 'function') renderCompactArtifacts();
   } else {
     // 退出简洁版: 隐藏三栏 + 收起产物面板(下次进入干净)
     s.hidden = true; t.hidden = true; a.hidden = true;
@@ -296,50 +309,7 @@ function _syncCompactSidebars(on) {
   }
 }
 
-// 左侧会话清单 (复用 /sessions API + buildSessionRow · 与抽屉同源 · 排序交给服务端 mtime desc)
-let _compactSessionOffset = 0;
-let _compactShowArchived = false;   // 专注版归档视图开关 (跟工作台抽屉的 showArchivedSessions 各自独立)
-let _compactLastGroupKey = null;   // 分页续接时上一页最后的组 key · 跨页不重复插分组标题
-const _COMPACT_PAGE = 30;
-async function renderCompactSessions(reset = true) {
-  const list = document.getElementById('compactSessionList');
-  if (!list) return;
-  if (!token) { list.innerHTML = '<div class="docs-view-empty">还没填 token</div>'; return; }
-  // 无快照缓存 · 直接拉最新 (排序实时性 > 加载微快) · 保留旧 DOM 顶住不闪 loading
-  if (reset) _compactSessionOffset = 0;
-  try {
-    const params = new URLSearchParams({ api_only: 'true', limit: String(_COMPACT_PAGE), offset: String(_compactSessionOffset) });
-    if (_compactShowArchived) params.set('archived_only', 'true');
-    else params.set('include_archived', 'false');
-    const r = await fetch('/sessions?' + params.toString(), { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) { if (reset) list.innerHTML = '<div class="docs-view-empty">加载失败 [' + r.status + ']</div>'; return; }
-    const data = await r.json();
-    // 同步 meta 缓存 (label / pinned / archived)
-    for (const s of (data.sessions || [])) {
-      sessionMetaCache[s.session_id] = {
-        label: s.label || null,
-        pinned_at: s.pinned_at || null,
-        archived_at: s.archived_at || null,
-        last_model_cfg: s.last_model_cfg || null,
-      };
-    }
-    if (reset) { list.innerHTML = ''; _compactLastGroupKey = null; }
-    // 分组渲染 (今天/昨天/本周/本月/更早) · 分页续接时沿用上一页的组 key · 跨页不重复插标题
-    let gk = _compactLastGroupKey;
-    for (const s of data.sessions) gk = _appendSessionGrouped(list, s, gk);
-    _compactLastGroupKey = gk;
-    _renderCompactFoot(list, data.sessions);
-    _startSessionRunPoll();  // 运行状态轮询 · 专注版列表可见即启动 (也会顺带重排)
-  } catch (e) {
-    if (reset) list.innerHTML = '<div class="docs-view-empty">网络出错: ' + e.message + '</div>';
-  }
-}
-function loadMoreCompactSessions() { _compactSessionOffset += _COMPACT_PAGE; renderCompactSessions(false); }
-// 专注版归档视图切换 (用户: 工作台有归档入口 · 专注版也该有)
-function toggleCompactArchived() {
-  _compactShowArchived = !_compactShowArchived;
-  renderCompactSessions(true);
-}
+// [移出] 专注版列表: renderCompactSessions / loadMoreCompactSessions / toggleCompactArchived → static/session-list.js（wish-16fa5930 第 5 步）
 // 会话运行状态轮询 · wish-xxx · 5s 一次轻拉 /sessions · 只 toggle .session-running + .sp-run 图标
 // 不重建列表 (不闪 / 不丢滚动位置) · 专注版 + 工作台抽屉共用 .session-item[data-sid] → 一处轮询两处受益
 let _sessionRunPollTimer = null;
@@ -364,6 +334,8 @@ async function _refreshSessionRunningStates() {
         pinned_at: s.pinned_at || null,
         archived_at: s.archived_at || null,
         last_model_cfg: s.last_model_cfg || null,
+        last_think_cfg: s.last_think_cfg || {},   // wish-00490c86 · 思考开关跟对话实例走（免切会话多一次 fetch）
+        last_tool_profile: s.last_tool_profile || null,   // wish-16fa5930 · 档位跟对话走（列表徽标数据源）
       };
     }
     // 专注版列表: 按服务端最新顺序重排 (复用后端排序 · 不另写排序逻辑)
@@ -410,57 +382,6 @@ async function _refreshSessionRunningStates() {
   } catch (e) { /* 静默 · 下轮再试 */ }
 }
 
-// 列表尾部: 归档 toggle + 有更多才显示"加载更早" · 按钮统一 btn-ghost (铁律 10) · 居中
-function _renderCompactFoot(list, sessions) {
-  const foot = document.getElementById('compactSessionsFoot');
-  if (!foot) return;
-  const hasMore = sessions && sessions.length >= _COMPACT_PAGE;
-  const archBtn = _compactShowArchived
-    ? '<button class="compact-foot-more" onclick="toggleCompactArchived()"><i class="ri-arrow-left-line"></i> 返回话题列表</button>'
-    : '<button class="compact-foot-more" onclick="toggleCompactArchived()"><i class="ri-archive-line"></i> 查看已归档</button>';
-  const moreBtn = hasMore ? '<button class="compact-foot-more" onclick="loadMoreCompactSessions()">加载更早的话题</button>' : '';
-  foot.innerHTML = `<div class="compact-foot-row">${archBtn}</div>` + (moreBtn ? `<div class="compact-foot-row">${moreBtn}</div>` : '');
-}
-
-// 右侧产物面板 (复用 collectSessionDocs + _docCardHtml · 与 docsView 同源)
-async function renderCompactArtifacts() {
-  const body = document.getElementById('compactArtBody');
-  const sub = document.getElementById('compactArtSub');
-  if (!body) return;
-  if (!token) { body.innerHTML = '<div class="docs-view-empty">还没填 token</div>'; return; }
-  body.innerHTML = '<div class="docs-view-loading">扫描产物…</div>';
-  try {
-    const docs = await collectSessionDocs();
-    if (sub) sub.textContent = docs.length ? `${docs.length} 项` : '';
-    if (!docs.length) {
-      body.innerHTML = `<div class="docs-view-empty">
-        <i class="ri-file-list-3-line"></i>
-        <div>本话题还没有产出</div>
-      </div>`;
-      return;
-    }
-    let html = '';
-    for (const cat of _DOC_CATS) {
-      const group = docs.filter(d => _docCategory(d.ext).key === cat.key);
-      if (!group.length) continue;
-      html += `<div class="docs-sec-title"><i class="${cat.icon}"></i> ${cat.label} <span style="opacity:.6;font-weight:400">(${group.length})</span></div>`;
-      html += group.map(d => _docCardHtml(d)).join('');
-    }
-    body.innerHTML = html;
-  } catch (e) {
-    body.innerHTML = '<div class="docs-view-empty">扫描出错: ' + e.message + '</div>';
-  }
-}
-
-// 产物折叠条: 点击展开/收起 (用户 要"产物列表"文字 + 向左展开图标)
-function toggleCompactArtifacts() {
-  const a = document.getElementById('compactArtifacts');
-  const t = document.getElementById('compactArtToggle');
-  if (!a) return;
-  const open = a.classList.toggle('open');
-  if (t) t.classList.toggle('opened', open);
-  if (open) renderCompactArtifacts();  // 每次展开刷新 (产物可能刚生成)
-}
 // 点面板外 → 关换肤弹层
 document.addEventListener('click', function (e) {
   if (!e.target.closest('.theme-menu')) {
@@ -500,8 +421,10 @@ initTheme();
     buildThemeGrid();
     if (localStorage.getItem('opus_ui_compact') === '1') toggleCompact(true, false);
   }
-  if (document.getElementById('compactBtn')) _go();
-  else document.addEventListener('DOMContentLoaded', _go, { once: true });
+  // 卷八十三 · doc-shelf.js 在本文件之后加载 · 不能在此刻立即 _go()
+  // (立即执行会调 renderCompactArtifacts → ReferenceError → 弹致命遮罩 · 用户「切到专注模式就点不了」)
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _go, { once: true });
+  else setTimeout(_go, 0);
 })();
 let sessionId = localStorage.getItem(STORAGE.session) || '';
 let autoConfirm = localStorage.getItem(STORAGE.autoConfirm) || 'confirm';
@@ -586,18 +509,27 @@ function saveAliases() {
 
 // 卷三十四补丁 · session meta 缓存 · 服务端 label 优先于 localStorage 别名
 let sessionMetaCache = {};
-let showArchivedSessions = false;
-let archivedCount = 0;
+// [移出] showArchivedSessions / archivedCount → static/session-list.js（wish-16fa5930 第 5 步）
 // 拉过一次服务端 label 的 sid · 防没 label 的老会话每次渲染重复请求 (断死循环)
 const _metaTried = new Set();
 
 function aliasFor(sid) {
   if (!sid) return '新话题';
-  // 优先级：服务端 label → localStorage 别名 → api-…xxxxxx
+  // 优先级：服务端 label → localStorage 别名 → 从 sid 时间戳造的可读名
   const serverMeta = sessionMetaCache[sid];
   if (serverMeta && serverMeta.label) return serverMeta.label;
   if (sessionAliases[sid]) return sessionAliases[sid];
-  return 'api-…' + sid.slice(-6);
+  // 2026-09-20 · 兜底不再吐机器码（原来是 'api-…' + 尾 6 位·用户 认不出哪条对话）
+  const _m = /^api-(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2})/.exec(sid || '');
+  return _m ? `${+_m[2]}月${+_m[3]}日 ${_m[4]}:${_m[5]} 的话题` : '未命名话题';
+}
+
+/* 2026-09-20 · 对话里出现的 wish-xxxxxxxx 挂上 hover 标题
+   （用户 需求就这一条：看到 id 就知道是哪个心愿）。
+   只做这一件事 —— 其余机器码、其他界面一律不动。 */
+function softIdsHtml(escaped) {
+  return (typeof window.wishRefsToTitles === 'function')
+    ? window.wishRefsToTitles(escaped) : String(escaped || '');
 }
 
 // wish-3fef4bc7 · DOM 容器化
@@ -892,6 +824,9 @@ const MUTATING_TOOLS = new Set([
 
 let _listFilterInited = false;
 function _applyListFilter(input) {
+  // 2026-09-30 · 有的格没有搜索框（产物库「回收站」）→ 传进来是 null，
+  //   原先直接在 null 上读 .value，一个 TypeError 就把那格的渲染整段打断。
+  if (!input) return;
   const q = (input.value || '').trim().toLowerCase();
   const sel = input.dataset.filterTarget;
   if (!sel) return;
@@ -1046,6 +981,7 @@ function _refreshToolProgressTick() {
 function _startToolProgressTicker(state) {
   if (_toolProgressTickerId) clearInterval(_toolProgressTickerId);
   _toolProgressActiveState = state;
+  if (typeof procThinkIdle === 'function') procThinkIdle(state);   // fold23 · 回合一开始就立卡（用户：输出过程要能看到卡）
   _refreshToolProgressTick(); // 立即刷一次 · 不等 1s
   _toolProgressTickerId = setInterval(_refreshToolProgressTick, 1000);
 }
@@ -1150,7 +1086,8 @@ async function _planApi(method, path, body) {
 }
 
 async function refreshPlan() {
-  // 唤醒倒计时卡跟计划条同刷 —— 这些调用点本就是『这场会话状态刷新』的时机
+  // wish-1b00ca00 · 唤醒倒计时卡跟计划条同刷 —— 这五个调用点本来就是"这场会话状态刷新"的
+  // 时机(切会话/轮询/新会话/本轮结束), 唤醒卡是同一层的东西, 不必再插五处。
   refreshWakeups();
   if (!sessionId) { _renderPlan(null); return; }
   const d = await _planApi('GET', '/api/plan/active?session_id=' + encodeURIComponent(sessionId));
@@ -1158,9 +1095,9 @@ async function refreshPlan() {
 }
 window.refreshPlan = refreshPlan;
 
-// ── 延迟唤醒倒计时 chip（顶部标题栏） ──
+// ── wish-1b00ca00 · 延迟唤醒倒计时 chip（顶部标题栏 · 2026-09-16 从输入栏上方挪来） ──
 // 数据源 GET /api/wakeups?session_id= (workers/wakeups.py 的表)
-// 语义: "我 N 分钟后自己回来收结果" —— 让你看得见这事儿有人记着
+// 语义: "我 N 分钟后自己回来收结果" —— 让 用户 看得见这事儿有人记着
 let _wakeupData = [];
 
 function _fmtEta(sec) {
@@ -1181,16 +1118,16 @@ async function refreshWakeups() {
 }
 window.refreshWakeups = refreshWakeups;
 
-// chip 与 ticker 共用文案：最近一条倒计时（多条时 +N）
+// chip 与 ticker 共用的文案：最近一条倒计时（多条时 +N）
 function _wakeupText() {
   if (!_wakeupData.length) return '';
   const rest = _wakeupData.length - 1;
   return _fmtEta(_wakeupData[0].remaining_sec) + (rest > 0 ? ' +' + rest : '');
 }
 
-/* chip 只放得下一个图标 + 一个倒计时，取最紧凑形态：
+/* chip 只放得下一个图标 + 一个倒计时，所以取最紧凑形态：
    最近一条的剩余时间（多条时 +N）· 全部详情进 title（悬停即见）。
-   取消不在 chip 上做 —— 工具层有 cancel_wakeup，说一句就行。 */
+   取消不在 chip 上做 —— 工具层有 cancel_wakeup，用户 说一句就行。 */
 function _renderWakeups(list) {
   _wakeupData = list || [];
   const chip = document.getElementById('wakeupChip');
@@ -1206,7 +1143,7 @@ function _renderWakeups(list) {
   box.textContent = _wakeupText();
   chip.setAttribute('title', _wakeupData.map(w =>
     '· ' + (w.label || '取结果') + '（' + _fmtEta(w.remaining_sec) + '后）'
-  ).join('\n') + '\n\n（想取消 · 说一句就行）');
+  ).join('\n') + '\n\n（想让 Daemonkey 取消 · 说一句就行）');
 }
 
 // 本地 1s 重算倒计时(不 fetch) —— 体感实时, 不增加请求
@@ -1224,7 +1161,6 @@ setInterval(() => {
   if (!document.getElementById('wakeupChip')) return;
   refreshWakeups();
 }, 5000);
-
 
 function _renderPlan(d) {
   _planData = d;
@@ -1384,8 +1320,11 @@ function _renderPlanSteps(detail) {
     const w = document.createElement('button');
     w.type = 'button';
     w.className = 'plan-foot-link';
-    w.title = '这份计划属于这条心愿 · 点开看心愿单';
-    w.innerHTML = '<i class="ri-lightbulb-line"></i> ' + _planData.wish_id;
+    w.title = '这份计划属于这条心愿 · 点开看心愿单'
+            + (_planData.wish_id ? '（' + _planData.wish_id + '）' : '');
+    // 2026-09-20 · 印标题·不印 hash（hash 只藏在 tooltip 里）
+    w.innerHTML = '<i class="ri-lightbulb-line"></i> ';
+    w.appendChild(document.createTextNode(_planData.wish_title || '心愿单'));
     w.onclick = (e) => {
       e.stopPropagation();
       if (typeof switchView === 'function') switchView('wishlist');
@@ -2271,7 +2210,7 @@ window.refreshHangoutDoor = refreshHangoutDoor;
 
 function startHangout() {
   clearAttachments();
-  if (_docsViewActive) closeDocsView();
+  if (typeof _docsViewActive !== 'undefined' && _docsViewActive && typeof closeDocsView === 'function') closeDocsView();
   _saveActiveStateToCurrentSession();
   const cid = _allocCid();
   const s = _getOrCreateSession(cid);
@@ -2617,7 +2556,7 @@ function opusAlert(opts) {
 
 const $drawer = document.getElementById('drawer');
 const $drawerBackdrop = document.getElementById('drawerBackdrop');
-const $sessionList = document.getElementById('sessionList');
+// [移出] $sessionList → static/session-list.js（wish-16fa5930 第 5 步）
 const $currentLabel = document.getElementById('currentSessionLabel');
 
 function openDrawer() {
@@ -2635,526 +2574,45 @@ function closeDrawer() {
   $drawerBackdrop.classList.remove('open');
 }
 
-// ─── 卷八十一 · A 方案 · 本会话文档聚合视图 (聊天头 📄 按钮) ───
-let _docsViewActive = false;
-
-function toggleDocsView() {
-  if (_docsViewActive) {
-    closeDocsView();
-  } else {
-    openDocsView();
-  }
-}
-
-function openDocsView() {
-  if (!token) {
-    addSys('⚠ 还没填 token —— 点右上角 ⚙ 设置');
-    openSettings();
-    return;
-  }
-  _docsViewActive = true;
-  document.getElementById('chatDocsBtn').classList.add('active');
-  const msgs = document.getElementById('messages');
-  // 新会话无消息时 onboarding 引导卡是显示的 · 一并隐藏避免叠屏 (卷八十一 K3 施工单②)
-  const ob = document.getElementById('onboardingPanel');
-  if (ob && !ob.hidden) { ob.dataset.dvHidden = '1'; ob.hidden = true; }
-  let dv = document.getElementById('docsView');
-  if (!dv) {
-    dv = document.createElement('div');
-    dv.id = 'docsView';
-    dv.className = 'docs-view';
-    msgs.insertAdjacentElement('afterend', dv);
-  }
-  msgs.style.display = 'none';
-  dv.style.display = 'flex';
-  renderDocsView();
-}
-
-function closeDocsView() {
-  _docsViewActive = false;
-  document.getElementById('chatDocsBtn').classList.remove('active');
-  const msgs = document.getElementById('messages');
-  const dv = document.getElementById('docsView');
-  if (msgs) msgs.style.display = '';
-  if (dv) dv.style.display = 'none';
-  const ob = document.getElementById('onboardingPanel');
-  if (ob && ob.dataset.dvHidden === '1') { ob.hidden = false; delete ob.dataset.dvHidden; }
-}
-
-// 聚合本会话产物: 主数据源 = /sessions/{sid}/artifacts (后端扫主文件+归档 · 过滤占位符 · 验证存在)
-async function collectSessionDocs() {
-  const docs = [];       // [{name, url, ext, kind}]
-  const seen = new Set();
-
-  // 1. 主数据源: 后端 artifacts 端点 (扫 session 主 jsonl + 归档 compact/prune 文件 · 压缩也不丢)
-  try {
-    if (sessionId) {
-      const r = await fetch(`/sessions/${encodeURIComponent(sessionId)}/artifacts`, {
-        headers: { 'Authorization': 'Bearer ' + token },
-      });
-      if (r.ok) {
-        const data = await r.json();
-        for (const a of (data.artifacts || [])) {
-          if (!a || !a.url || seen.has(a.url)) continue;
-          seen.add(a.url);
-          docs.push({ name: a.name || '产物', url: a.url, ext: a.ext || '', kind: 'workshop' });
-        }
-      }
-    }
-  } catch (e) { console.warn('collectSessionDocs artifacts api:', e); }
-
-  // 2. 兜底: DOM 扫描 (仅后端 artifacts 失败时才做 · 后端已扫主 jsonl+归档 · 正常不重复劳动)
-  //    卷八十一续二: 原每次全扫 DOM 500+ turns 的 innerHTML 同步正则 → 阻塞主线程几秒
-  //    (用户: 会话列表/产物都慢的隐藏根因) · 现仅在后端异常时兜底
-  if (!docs.length) {
-    try {
-      const msgs = document.querySelectorAll('#messages .md-body, #messages .msg-text, #messages .assistant');
-      msgs.forEach(m => {
-        const html = m.innerHTML || '';
-        const reDoc = /(?:href|src)="([^"]+\.(?:docx?|md|pdf|xlsx?|pptx?|txt|zip)(?:\?[^"]*)?)"/gi;
-        let mm;
-        while ((mm = reDoc.exec(html)) !== null) {
-          const u = mm[1];
-          if (seen.has(u)) continue;
-          seen.add(u);
-          docs.push({ name: _safeDecode(u.split('/').pop() || '产物'), url: u, ext: (u.match(/\.([a-z0-9]+)$/i) || [,''])[1].toLowerCase(), kind: 'workshop' });
-        }
-        const reMedia = /(?:href|src)="([^"]+\.(?:png|jpe?g|gif|webp|mp4|webm|wav|mp3)(?:\?[^"]*)?)"/gi;
-        let mm2;
-        while ((mm2 = reMedia.exec(html)) !== null) {
-          const url = mm2[1];
-          if (!url.includes('/workshop/') && !url.includes('/reports/')) continue;
-          if (seen.has(url)) continue;
-          seen.add(url);
-          docs.push({ name: _safeDecode(url.split('/').pop() || '产物'), url, ext: (url.match(/\.([a-z0-9]+)$/i) || [,''])[1].toLowerCase(), kind: 'workshop' });
-        }
-      });
-    } catch (e) { console.warn('collectSessionDocs dom scan:', e); }
-  }
-
-  return docs;
-}
-
-// Remix 图标映射 (卷八十一 · 铁律10: 不用 emoji 当图标)
-const _DOC_ICON_MAP = {
-  docx:'ri-file-word-2-fill', doc:'ri-file-word-2-fill',
-  xlsx:'ri-file-excel-2-fill', xls:'ri-file-excel-2-fill',
-  pptx:'ri-file-ppt-2-fill', ppt:'ri-file-ppt-2-fill',
-  pdf:'ri-file-pdf-2-fill', md:'ri-markdown-fill',
-  png:'ri-image-fill', jpg:'ri-image-fill', jpeg:'ri-image-fill', gif:'ri-image-fill', webp:'ri-image-fill',
-  mp3:'ri-file-music-fill', wav:'ri-file-music-fill',
-  mp4:'ri-file-video-fill', webm:'ri-file-video-fill',
-};
-function _docIcon(ext) { return `<i class="${_DOC_ICON_MAP[ext] || 'ri-file-fill'}"></i>`; }
-
-// 分类组: 办公文档 / 文本·报告 / 图片 / 音频 / 视频
-const _DOC_CATS = [
-  { key:'office', label:'办公文档',   icon:'ri-briefcase-4-fill', exts:['docx','doc','xlsx','xls','pptx','ppt'] },
-  { key:'text',   label:'文本 · 报告', icon:'ri-file-text-fill',   exts:['md','pdf'] },
-  { key:'image',  label:'图片',       icon:'ri-image-fill',       exts:['png','jpg','jpeg','gif','webp'] },
-  { key:'audio',  label:'音频',       icon:'ri-music-2-fill',     exts:['mp3','wav'] },
-  { key:'video',  label:'视频',       icon:'ri-movie-fill',       exts:['mp4','webm'] },
-];
-function _docCategory(ext) {
-  for (const c of _DOC_CATS) if (c.exts.includes(ext)) return c;
-  return _DOC_CATS[1]; // 兜底进文本组
-}
-
-async function renderDocsView() {
-  const dv = document.getElementById('docsView');
-  if (!dv) return;
-  dv.innerHTML = `
-    <div class="docs-view-head">
-      <span class="docs-view-title"><i class="ri-file-list-3-fill"></i> 本话题产物</span>
-      <span class="docs-view-sub" id="docsViewSub">收集…</span>
-      <button class="docs-view-close" onclick="closeDocsView()" title="返回对话"><i class="ri-arrow-left-line"></i> 返回对话</button>
-    </div>
-    <div class="docs-view-body" id="docsViewBody"><div class="docs-view-loading">扫描会话中的文档…</div></div>
-  `;
-  const docs = await collectSessionDocs();
-  const body = document.getElementById('docsViewBody');
-  const sub = document.getElementById('docsViewSub');
-  if (sub) sub.textContent = `${docs.length} 个文档`;
-  if (!docs.length) {
-    body.innerHTML = `<div class="docs-view-empty">
-      <i class="ri-file-list-3-line" style="font-size:34px;opacity:.3"></i>
-      <div>本话题还没有产出</div>
-      <div class="docs-view-hint">让 Daemonkey 生成报告 / 口播稿 / 周报后 · 文档会出现在这里</div>
-    </div>`;
-    return;
-  }
-  // 按类型分类: 办公文档 / 文本·报告 / 图片 / 音频 / 视频
-  let html = '';
-  for (const cat of _DOC_CATS) {
-    const group = docs.filter(d => _docCategory(d.ext).key === cat.key);
-    if (!group.length) continue;
-    html += `<div class="docs-sec-title"><i class="${cat.icon}"></i> ${cat.label} <span style="opacity:.6;font-weight:400">(${group.length})</span></div>`;
-    html += group.map(d => _docCardHtml(d)).join('');
-  }
-  body.innerHTML = html;
-  // 流式生成中打开可能扫不全 · 提示重开刷新
-  if (typeof _streaming !== 'undefined' && _streaming && sub) {
-    sub.textContent += ' · 生成中 · 完成后重开刷新';
-  }
-}
-
-// 2026-08-11 F4 (墨言审查): decodeURIComponent 遇畸形 % 序列抛 URIError ·
-// 统一安全包裹 (解码失败就返回原文) · 治"产物名含畸形 %"不崩页面
-function _safeDecode(s) {
-  try { return decodeURIComponent(s); } catch (e) { return s; }
-}
-
-function _docCardHtml(d) {
-  const safeUrl = String(d.url || '#').replace(/"/g, '%22');
-  // 从 URL 解析 domain/filename (给 preview/reveal 端点用)
-  // 卷八十一 · outputs 产物是 /workshop/outputs/app_id/子路径/文件名 · 无 domain 语义 · 特判直链
-  const isOutputs = safeUrl.startsWith('/workshop/outputs/');
-  let domain = '', filename = '';
-  if (isOutputs) {
-    domain = 'outputs';
-    filename = _safeDecode(safeUrl.slice('/workshop/outputs/'.length));
-  } else {
-    const m = safeUrl.match(/^\/(?:workshop\/(?:preview|file)\/|reports\/)?([^/]+)\/([^/?]+)/);
-    domain = m ? m[1] : '';
-    filename = m ? m[2] : '';
-  }
-  const isPreviewable = ['md','txt','png','jpg','jpeg','gif','webp','mp3','wav','mp4','webm','pdf','html','htm','pptx','ppt','xlsx','xls','docx','doc'].includes(d.ext);
-  const btn = (ic, label, fn, cls) => `<button class="dvi-btn ${cls}" onclick="event.stopPropagation();${fn}('${jsStr(domain)}','${jsStr(filename)}','${jsStr(d.ext)}')" title="${escHtml(label)}"><i class="${ic}"></i><span>${label}</span></button>`;
-  return `<div class="docs-view-item" data-ext="${d.ext}" data-url="${safeUrl}" data-domain="${domain}" data-filename="${filename}">
-    <span class="dvi-ic">${_docIcon(d.ext)}</span>
-    <span class="dvi-body">
-      <span class="dvi-name">${escHtml(d.name)}</span>
-      <span class="dvi-meta">${String(d.ext).toUpperCase()} · ${_docCategory(d.ext).label}</span>
-    </span>
-    <span class="dvi-actions">
-      ${isPreviewable ? btn('ri-eye-line','预览','_docOpenInBrowser') : ''}
-      ${btn('ri-mac-line','应用打开','_docOpenLocal')}
-      ${btn('ri-save-3-line','另存为','_docSaveAs')}
-    </span>
-  </div>`;
-}
-
-// 浏览器打开 → 统一弹框预览 (卷八十一续 · 用户 拍板: 复用知识库弹框骨架 · 不再新标签)
-// md/txt → fetch preview 渲染 markdown; 图片/音频/视频/pdf → 弹框内嵌; docx/xlsx/pptx → 下载
-async function _docOpenInBrowser(domain, filename, ext) {
-  try {
-    const rel = domain === 'outputs'
-      ? ('data/workshop/outputs/' + filename)
-      : (domain === 'reports'
-        ? ('data/reports/' + filename)
-        : (domain === 'presentations'
-          ? ('data/presentations/' + filename)
-          : (domain === 'spreadsheets'
-            ? ('data/spreadsheets/' + filename)
-            : '')));
-    if (rel && typeof openStage === 'function' && openStage({ path: rel })) return;
-    const t = token ? `?token=${encodeURIComponent(token)}` : '';
-    const dispName = _safeDecode(filename.split('/').pop() || filename);
-    if (domain === 'outputs') {
-      // outputs 产物直链 (后端 /workshop/outputs/{path} 带 MIME)
-      const url = `/workshop/outputs/${encodeURIComponent(filename)}${t}`;
-      if (['md','txt'].includes(ext)) {
-        const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-        if (!r.ok) throw new Error('预览拉取失败 ' + r.status);
-        const text = await r.text();
-        const bodyHtml = (typeof mdRender === 'function') ? mdRender(text) : ('<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>');
-        _showPreviewModal({ title: dispName, metaLine: ext.toUpperCase() + ' · 工坊产物', bodyHtml });
-      } else if (['png','jpg','jpeg','gif','webp'].includes(ext)) {
-        _showPreviewModal({ title: dispName, metaLine: '图片', raw: true, bodyHtml: `<img src="${url}" alt="${escHtml(dispName)}" class="pv-img">` });
-      } else if (['mp3','wav'].includes(ext)) {
-        _showPreviewModal({ title: dispName, metaLine: '音频', raw: true, bodyHtml: `<audio controls preload="metadata" src="${url}" class="pv-media" style="width:100%"></audio>` });
-      } else if (['mp4','webm'].includes(ext)) {
-        _showPreviewModal({ title: dispName, metaLine: '视频', raw: true, bodyHtml: `<video controls preload="metadata" src="${url}" class="pv-media"></video>` });
-      } else if (ext === 'pdf') {
-        _showPreviewModal({ title: dispName, metaLine: 'PDF', raw: true, bodyHtml: `<iframe src="${url}" class="pv-pdf"></iframe>` });
-      } else if (ext === 'html') {
-        // html 预览用 sandbox iframe · 禁脚本/弹窗 · 防恶意 html (卷八十一 产物 html 支持)
-        _showPreviewModal({ title: dispName, metaLine: 'HTML · 工坊产物', raw: true, bodyHtml: `<iframe src="${url}" class="pv-html" sandbox="allow-same-origin" loading="lazy"></iframe>` });
-      } else {
-        // docx/xlsx/pptx 浏览器不能内嵌 → 下载
-        await _docSaveAs(domain, filename);
-      }
-      return;
-    }
-    if (['md','txt'].includes(ext)) {
-      // reports 目录的 md 走 /reports/preview/{filename} · 其余走 /workshop/preview
-      const previewUrl = domain === 'reports'
-        ? `/reports/preview/${encodeURIComponent(filename)}${t}`
-        : `/workshop/preview/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
-      const r = await fetch(previewUrl, { headers: { 'Authorization': 'Bearer ' + token } });
-      if (!r.ok) throw new Error('预览拉取失败 ' + r.status);
-      const data = await r.json();
-      const text = data.markdown || '';
-      const bodyHtml = (typeof mdRender === 'function') ? mdRender(text) : ('<pre style="white-space:pre-wrap">' + escHtml(text) + '</pre>');
-      _showPreviewModal({ title: dispName, metaLine: ext.toUpperCase() + ' · ' + domain, bodyHtml });
-    } else if (['png','jpg','jpeg','gif','webp'].includes(ext)) {
-      const url = domain === 'reports'
-        ? `/reports/${encodeURIComponent(filename)}${t}`
-        : `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
-      _showPreviewModal({ title: dispName, metaLine: '图片', raw: true, bodyHtml: `<img src="${url}" alt="${escHtml(dispName)}" class="pv-img">` });
-    } else if (['mp3','wav'].includes(ext)) {
-      const url = domain === 'reports'
-        ? `/reports/${encodeURIComponent(filename)}${t}`
-        : `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
-      _showPreviewModal({ title: dispName, metaLine: '音频', raw: true, bodyHtml: `<audio controls preload="metadata" src="${url}" class="pv-media" style="width:100%"></audio>` });
-    } else if (['mp4','webm'].includes(ext)) {
-      const url = domain === 'reports'
-        ? `/reports/${encodeURIComponent(filename)}${t}`
-        : `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
-      _showPreviewModal({ title: dispName, metaLine: '视频', raw: true, bodyHtml: `<video controls preload="metadata" src="${url}" class="pv-media"></video>` });
-    } else if (ext === 'pdf') {
-      const url = domain === 'reports'
-        ? `/reports/${encodeURIComponent(filename)}${t}`
-        : `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
-      _showPreviewModal({ title: dispName, metaLine: 'PDF', raw: true, bodyHtml: `<iframe src="${url}" class="pv-pdf"></iframe>` });
-    } else if (ext === 'html') {
-      // html 预览用 sandbox iframe · 禁脚本/弹窗 · 防恶意 html (卷八十一 产物 html 支持)
-      const url = domain === 'reports'
-        ? `/reports/${encodeURIComponent(filename)}${t}`
-        : `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
-      _showPreviewModal({ title: dispName, metaLine: 'HTML · ' + domain, raw: true, bodyHtml: `<iframe src="${url}" class="pv-html" sandbox="allow-same-origin" loading="lazy"></iframe>` });
-    } else {
-      // docx/xlsx/pptx 浏览器不能内嵌 → 下载
-      await _docSaveAs(domain, filename);
-    }
-  } catch (e) {
-    alert('打开失败: ' + e.message);
-  }
-}
-
-// 下载原始文件
-// 另存为: 优先系统保存对话框 (showSaveFilePicker · 让用户选目录) · 不支持时回退浏览器下载
-async function _docSaveAs(domain, filename) {
-  try {
-    const t = token ? `?token=${encodeURIComponent(token)}` : '';
-    // outputs 产物直链下载 (后端 /workshop/outputs/{path} 已带全类型 MIME)
-    let url;
-    if (domain === 'outputs') {
-      url = `/workshop/outputs/${encodeURIComponent(filename)}${t}`;
-    } else if (domain === 'reports') {
-      // reports 目录产物走 /reports/{filename} (download_report 端点)
-      url = `/reports/${encodeURIComponent(filename)}${t}`;
-    } else {
-      url = `/workshop/file/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`;
-    }
-    const r = await fetch(url, { headers: { 'Authorization': 'Bearer ' + token } });
-    if (!r.ok) throw new Error('获取失败 ' + r.status);
-    const blob = await r.blob();
-    const name = filename.split('/').pop() || filename;
-
-    // 优先: 系统另存为对话框 (Chromium 系 Edge/Chrome 支持 · 本地 daemon 场景)
-    if (window.showSaveFilePicker) {
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: name,
-          types: [{ description: '文件', accept: { 'application/octet-stream': ['.' + (name.split('.').pop() || '')] } }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return;
-      } catch (e) {
-        // 用户取消 (AbortError) 静默返回 · 其它错误回退浏览器下载
-        if (e && e.name === 'AbortError') return;
-        console.warn('showSaveFilePicker fallback:', e);
-      }
-    }
-    // 回退: 浏览器默认下载
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  } catch (e) {
-    alert('另存为失败: ' + e.message);
-  }
-}
-
-// 本机软件打开: 调 reveal 端点 → os.startfile
-async function _docOpenLocal(domain, filename, ext) {
-  try {
-    const t = token ? `?token=${encodeURIComponent(token)}` : '';
-    const r = await fetch(`/workshop/reveal/${encodeURIComponent(domain)}/${encodeURIComponent(filename)}${t}`, {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    const data = await r.json();
-    if (!data.ok) throw new Error(data.error || '本机打开失败');
-    addSys(`📄 已用本机软件打开 ${filename}`);
-  } catch (e) {
-    alert('本机打开失败: ' + e.message + ' · 仅本机可用');
-  }
-}
 
 function updateCurrentLabel() {
   $currentLabel.textContent = sessionId ? aliasFor(sessionId) : '新话题';
+  if (typeof window.tpPaintTitleBadge === 'function') { try { window.tpPaintTitleBadge(); } catch (e) {} }   // wish-16fa5930 · 档位标跟上当前对话
 }
 
-let _sessionListOffset = 0;
-let _drawerLastGroupKey = null;   // 分页续接时上一页最后的组 key · 跨页不重复插分组标题
-const SESSION_PAGE = 50;
-
-async function refreshSessionList(reset = true) {
-  if (reset) {
-    _sessionListOffset = 0;
-    _drawerLastGroupKey = null;
-    $sessionList.innerHTML = '<div class="drawer-empty">加载中…</div>';
-  }
-  // 关掉可能开着的菜单
-  closeSessionMenu();
+// 切会话的浮层提醒 (用户 2026-09-20:「点了标题切换了对话之后，没有一个提醒，
+//   我有时候会因为这个发错实例消息」)—— 每个会话 = 一个实例/一套配置,
+//   切完当场说一句「现在在哪一场」· 2.6s 自己消失 · 不进对话流(不污染历史)。
+let _sstTimer = null;
+function _sessionSwitchToast(title, sub) {
   try {
-    const params = new URLSearchParams({ api_only: 'true', limit: String(SESSION_PAGE), offset: String(_sessionListOffset) });
-    if (showArchivedSessions) params.set('archived_only', 'true');
-    else params.set('include_archived', 'false');
-    const r = await fetch('/sessions?' + params.toString(), {
-      headers: { 'Authorization': 'Bearer ' + token },
-    });
-    if (!r.ok) {
-      $sessionList.innerHTML = '<div class="drawer-empty">加载失败 [' + r.status + ']</div>';
-      return;
+    if (!title) return;
+    let el = document.getElementById('sessionSwitchToast');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'sessionSwitchToast';
+      el.className = 'session-switch-toast';
+      document.body.appendChild(el);
     }
-    const data = await r.json();
-    archivedCount = data.archived_count || 0;
-    // 把服务端 meta 同步到缓存 (label / pinned / archived)
-    for (const s of (data.sessions || [])) {
-      sessionMetaCache[s.session_id] = {
-        label: s.label || null,
-        pinned_at: s.pinned_at || null,
-        archived_at: s.archived_at || null,
-        last_model_cfg: s.last_model_cfg || null,
-      };
-    }
-    if (reset && (!data.sessions || data.sessions.length === 0)) {
-      const empty = showArchivedSessions
-        ? '归档区是空的 · 已归档的话题会跑这儿'
-        : '还没有话题 · 点 + 新话题开始';
-      $sessionList.innerHTML = `<div class="drawer-empty">${empty}</div>`;
-      renderArchivedToggle();
-      return;
-    }
-    if (reset) $sessionList.innerHTML = '';
-    // 分组渲染 (今天/昨天/本周/本月/更早) · 与专注版共用 _appendSessionGrouped · 跨页不重复插标题
-    let gk = _drawerLastGroupKey;
-    for (const s of data.sessions) gk = _appendSessionGrouped($sessionList, s, gk);
-    _drawerLastGroupKey = gk;
-    // 还有更多 → 底部加载更多按钮
-    const hasMore = (data.sessions || []).length >= SESSION_PAGE;
-    const loadMoreEl = document.getElementById('sessionLoadMore');
-    if (loadMoreEl) loadMoreEl.remove();
-    if (hasMore) {
-      const btn = document.createElement('div');
-      btn.id = 'sessionLoadMore';
-      btn.className = 'drawer-loadmore';
-      btn.textContent = '加载更早的话题';
-      btn.onclick = () => { _sessionListOffset += SESSION_PAGE; refreshSessionList(false); };
-      $sessionList.appendChild(btn);
-    }
-    renderArchivedToggle();
-    // 当前 session label 可能从服务端拿到了 · 刷新顶部 pill
-    updateCurrentLabel();
-    _startSessionRunPoll();  // 运行状态轮询 · 工作台抽屉列表可见即启动
-  } catch (e) {
-    if (reset) $sessionList.innerHTML = '<div class="drawer-empty">网络出错: ' + e.message + '</div>';
-  }
+    el.innerHTML = '<span class="sst-t"></span><span class="sst-s"></span>';
+    el.querySelector('.sst-t').textContent = title;
+    el.querySelector('.sst-s').textContent = sub || '';
+    el.classList.add('on');
+    if (_sstTimer) clearTimeout(_sstTimer);
+    _sstTimer = setTimeout(() => { try { el.classList.remove('on'); } catch (e) {} }, 2600);
+  } catch (e) { /* 提醒失败绝不影响切换本身 */ }
 }
 
-// 会话按时间分组 (用户 2026-08-15 拍板 · 今天/昨天/本周/本月/更早 · 专注版 + 工作台共用)
-// 分组 key 是【相对今天】的归一字符串 · 跨天自然滚动 · 不依赖任何绝对日期
-function _sessionGroupKey(mtime) {
-  if (!mtime) return '更早';
-  const d = new Date(mtime);
-  if (isNaN(d.getTime())) return '更早';
-  const now = new Date();
-  const startOfDay = function (x) { const t = new Date(x); t.setHours(0, 0, 0, 0); return t; };
-  const today = startOfDay(now).getTime();
-  const dayMs = 86400000;
-  const t = startOfDay(d).getTime();
-  if (t >= today) return '今天';
-  if (t >= today - dayMs) return '昨天';
-  // 本周: 周一 0 点起
-  const dow = (now.getDay() + 6) % 7; // 0=周一
-  const weekStart = today - dow * dayMs;
-  if (t >= weekStart) return '本周';
-  // 本月: 1 号 0 点起
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-  if (t >= monthStart) return '本月';
-  return '更早';
-}
-function _sessionGroupHeaderEl(key) {
-  const h = document.createElement('div');
-  h.className = 'session-group-header';
-  h.textContent = key;
-  return h;
-}
-// 列表追加带分组: 组变化时插标题 · 返回当前组 key (调用方分页续接时传入续用)
-// 专注版 renderCompactSessions 与工作台 refreshSessionList 共用 · 一处写两处受益
-function _appendSessionGrouped(list, session, lastGroupKey) {
-  const gk = _sessionGroupKey(session.mtime);
-  if (gk !== lastGroupKey) list.appendChild(_sessionGroupHeaderEl(gk));
-  list.appendChild(buildSessionRow(session));
-  return gk;
-}
+// [移出] _sessionListOffset / _drawerLastGroupKey / SESSION_PAGE → static/session-list.js（wish-16fa5930 第 5 步）
 
-function buildSessionRow(s) {
-  const div = document.createElement('div');
-  const isPinned = !!s.pinned_at;
-  const isArchived = !!s.archived_at;
-  const isActive = !!s.active;
-  div.className = 'session-item' + (s.session_id === sessionId ? ' active' : '')
-                 + (isPinned ? ' pinned' : '')
-                 + (isArchived ? ' archived' : '')
-                 + (isActive ? ' session-running' : '');
-  div.dataset.sid = s.session_id;
+// [移出] refreshSessionList（抽屉列表） → static/session-list.js（wish-16fa5930 第 5 步）
 
-  const name = document.createElement('div');
-  name.className = 'session-name';
-  const pinIcon = isPinned ? '<span class="sp-pin" title="置顶">📌</span>' : '';
-  const archIcon = isArchived ? '<span class="sp-arch" title="已归档">📁</span>' : '';
-  const runIcon = isActive ? '<span class="sp-run" title="正在运行"><i class="ri-loader-4-line spin"></i></span>' : '';
-  name.innerHTML = pinIcon + archIcon + runIcon + '<span class="sp-label">' + escHtml(aliasFor(s.session_id)) + '</span>';
+// [移出] 会话分组: _sessionGroupKey / _sessionGroupHeaderEl → static/session-list.js（wish-16fa5930 第 5 步）
+// [移出] _appendSessionGrouped → static/session-list.js（wish-16fa5930 第 5 步）
 
-  const meta = document.createElement('div');
-  meta.className = 'session-meta';
-  const when = s.mtime ? new Date(s.mtime).toLocaleString('zh-CN', { hour12: false }) : '';
-  meta.innerHTML = `<span>${s.turns} turns</span><span>${when}</span>`;
-  div.appendChild(name);
-  div.appendChild(meta);
+// [移出] buildSessionRow → static/session-list.js（wish-16fa5930 第 5 步）
 
-  const actions = document.createElement('div');
-  actions.className = 'session-actions';
-  const menuBtn = document.createElement('button');
-  menuBtn.className = 'sa-menu';
-  menuBtn.title = '更多操作';
-  menuBtn.textContent = '⋯';
-  menuBtn.onclick = (e) => { e.stopPropagation(); openSessionMenu(s.session_id, menuBtn); };
-  actions.appendChild(menuBtn);
-  div.appendChild(actions);
-
-  div.onclick = () => switchToSession(s.session_id);
-  return div;
-}
-
-function renderArchivedToggle() {
-  let el = document.getElementById('archivedToggle');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'archivedToggle';
-    el.className = 'archived-toggle';
-    $sessionList.parentElement.appendChild(el);
-  }
-  if (showArchivedSessions) {
-    el.innerHTML = `<button onclick="toggleArchivedView()">← 返回话题列表</button>`;
-  } else if (archivedCount > 0) {
-    el.innerHTML = `<button onclick="toggleArchivedView()">查看已归档 (${archivedCount})</button>`;
-  } else {
-    el.innerHTML = '';
-  }
-}
-
-function toggleArchivedView() {
-  showArchivedSessions = !showArchivedSessions;
-  _refreshSessionLists();
-}
+// [移出] renderArchivedToggle / toggleArchivedView → static/session-list.js（wish-16fa5930 第 5 步）
 
 // ── session 行的 ⋯ popover 菜单 ───────────────────────────
 let _sessionMenuEl = null;
@@ -3238,13 +2696,7 @@ async function _patchSessionMeta(sid, patch) {
   }
 }
 
-// 会话元数据变更后统一刷新两个列表 (工作台抽屉 + 专注版) · 改一处四处受益 (rename/pin/archive/delete 共用)
-function _refreshSessionLists() {
-  refreshSessionList();              // 工作台抽屉
-  if (typeof renderCompactSessions === 'function' && !document.getElementById('compactSessionList')?.hidden) {
-    renderCompactSessions(true);     // 专注版重拉 (无缓存 · 直接拿最新排序)
-  }
-}
+// [移出] _refreshSessionLists → static/session-list.js（wish-16fa5930 第 5 步）
 
 async function togglePinSession(sid) {
   closeSessionMenu();
@@ -3399,6 +2851,7 @@ async function _loadSessionHistory(sid, opts) {
             historical: true });
         }
         if (t.role === 'user') {
+          if (typeof procHistSeal === 'function') procHistSeal(s);   // fold23 · 上一回复封卡（回复边界）
           if (t.src === 'advisor_review') {
             addSys('🧭 顾问验收未通过 · 意见已注入 · 执行者自动修正了一轮', s.$container);
           } else if (t.src === 'proactive') {
@@ -3416,6 +2869,9 @@ async function _loadSessionHistory(sid, opts) {
             _rpt = _rpt.replace(/^\[后台分身完成通报\][^\n]*\n?/, '').trim();
             bgReportCard(s, { title: _title, time: formatTime(t.ts), text: _rpt, sid: sid });
             _skipBgReportAi = true;  // 汇报轮 assistant 一两句话是同一内容转述 · 跳过
+          } else if (_isCompactionSummary(t)) {
+            // wish-e72cc18a · 压缩摘要是 system 语义 (role 仍是 user) · 不铺成 用户 气泡
+            compactionCard(s, _compactionPayload(t));
           } else {
             // 用户 2026-07-29 · 协同轮 user content 被 daemon 注入了『系统指令+施工单全文』
             // (daemon_api.py:1258-1272) · 历史重建若整条渲染 = 绿色大气泡重复金卡内容·很难看。
@@ -3435,6 +2891,7 @@ async function _loadSessionHistory(sid, opts) {
             const _attS = _broAttachStrip(_uc);
             if (_attS.stripped) _uc = _attS.body || '';
             const _broB = addMsg('bro', _uc, null, t.ts, s.$container);
+            // wish-8daa10c4 · 查看对话时不显示任何压缩痕迹（用户：要“跟没压过一样”）
             _attachCkpt(_broB, t.turn_id, t.line, _uc);
             _renderBroAttachments(_broB,
               (t.attachments && t.attachments.length)
@@ -3457,7 +2914,13 @@ async function _loadSessionHistory(sid, opts) {
         } else if (t.role === 'assistant') {
           if (_skipBgReportAi) { _skipBgReportAi = false; continue; }  // 0.9.7-hf1 · 汇报轮转述 · 通报气泡已含要点
           if (t.reasoning_content) {
-            renderReasoningBubble(t.reasoning_content, { collapsed: true, historical: true }, s.$container);
+            if (chatProcessExpanded()) {
+              renderReasoningBubble(t.reasoning_content, { collapsed: false, historical: true }, s.$container);
+            } else if (typeof procThinkPush === 'function') {
+              procThinkPush(s, t.reasoning_content, {});   // fold23 · 思考直接长进卡（不再建独立泡→不再裸在对话栏）
+            } else {
+              renderReasoningBubble(t.reasoning_content, { collapsed: true, historical: true }, s.$container);
+            }
           }
           if (t.content && t.content.trim()) {
             addMsg('opus', t.content, null, t.ts, s.$container);
@@ -3490,11 +2953,18 @@ async function _loadSessionHistory(sid, opts) {
 
 // 会话记住模型 · 切标签时恢复该会话上次用的模型 (没记过/还在跑/已是它 → 不动)
 async function _maybeRestoreSessionModel(sid) {
-  if (!sid || sid.startsWith('tmp-')) return;
+  if (!sid || sid.startsWith('tmp-')) {   // wish-00490c86 · 新对话 → 思考开关回退全局默认
+    try { if (window.applySessionThink) window.applySessionThink(null); } catch (e) {}
+    try { if (window.applySessionProfile) window.applySessionProfile(null); } catch (e) {}
+    return;
+  }
   const st = _sessions[sid];
-  if (st && st.pending) return;                 // 这个会话还在跑 · 不动全局模型
   let meta = sessionMetaCache[sid];
-  if (!meta || !('last_model_cfg' in meta)) {   // 缓存没有 → 拉一次单条 meta
+  // wish-00490c86 · 缓存缺 last_think_cfg 也要拉一次（思考开关跟对话实例走）
+  if (!meta || !('last_model_cfg' in meta) || !('last_think_cfg' in meta)) {   // 缓存没有 → 拉一次单条 meta
+    // 先按「没记录」处理（回退全局）· 防止 fetch 期间发消息带去上一场的思考开关
+    try { if (window.applySessionThink) window.applySessionThink(meta || null); } catch (e) {}
+    try { if (window.applySessionProfile) window.applySessionProfile(meta || null); } catch (e) {}
     try {
       const r = await fetch(`/sessions/${encodeURIComponent(sid)}/meta`, {
         headers: { 'Authorization': 'Bearer ' + token },
@@ -3502,7 +2972,16 @@ async function _maybeRestoreSessionModel(sid) {
       if (r.ok) { const d = await r.json(); meta = sessionMetaCache[sid] = d.meta || {}; }
     } catch (e) { /* 静默 */ }
   }
+  try { if (window.applySessionThink) window.applySessionThink(meta); } catch (e) {}
+  try { if (window.applySessionProfile) window.applySessionProfile(meta); } catch (e) {}   // wish-16fa5930 · 档位 chip 跟上当前对话
   const cfg = (meta || {}).last_model_cfg;
+  // wish-1518b97f · 以前上面第 2 行是 `if (st && st.pending) return;` —— 切回正在跑的
+  // 对话就整个不处理 · 顶栏留着上一场的模型 (看着像“串了”)。后端已改成每轮以本对话
+  // cfg 为准 · 前端不再抢切全局(抢切会打断正在跑的另一场) · 这里只保证顶栏显示对。
+  if (st && st.pending) {
+    if (cfg) { try { loadCurrentModel({ sessionCfg: cfg }); } catch (e) {} }
+    return;
+  }
   if (!cfg || cfg === (window._currentConfigId || '')) return;
   try {
     const r = await fetch('/models/switch', {
@@ -3525,7 +3004,7 @@ async function _maybeRestoreSessionModel(sid) {
 
 async function switchToSession(sid) {
   if (!sid) return;
-  if (_docsViewActive) closeDocsView();  // 卷八十一 · 切会话自动关文档视图 (防显示上一会话列表)
+  if (typeof _docsViewActive !== 'undefined' && _docsViewActive && typeof closeDocsView === 'function') closeDocsView();  // 卷八十一 · 切会话自动关文档视图 (防显示上一会话列表)
   if (sid === sessionId) {
     closeDrawer();
     return;
@@ -3564,8 +3043,10 @@ async function switchToSession(sid) {
     _refreshCompactAfterSwitch();  // 卷八十三 · 简洁版侧栏跟会话走
     refreshPlan();                 // 计划条跟着会话换 (活跃账本是按会话记的)
     if (typeof refreshWorkingDocs === "function") refreshWorkingDocs();
-    if (typeof window.syncOfficeStageHome === "function") window.syncOfficeStageHome();
+    // 用户 2026-09-20:「我切对话也会关中栏。。。太有毒了」→ 去掉『切会话时把不属于这场的中栏产物收掉』。
+    //   切换只换右栏那场对话 · 中栏你看的东西原样留着。
     _refreshHostPulse();
+    _sessionSwitchToast('已切换到《' + aliasFor(sid) + '》');
     return;
   }
 
@@ -3594,6 +3075,8 @@ async function switchToSession(sid) {
   if (typeof refreshWorkingDocs === "function") refreshWorkingDocs();
   if (typeof window.syncOfficeStageHome === "function") window.syncOfficeStageHome();
   _refreshHostPulse();
+  // 切完当场说一句「现在在哪一场」(用户 2026-09-20: 怕发错实例)
+  _sessionSwitchToast('已切换到《' + aliasFor(sid) + '》');
 }
 
 // 卷八十三 · 切会话后: 简洁版左侧清单高亮 + 右侧产物面板跟着换会话
@@ -3607,6 +3090,12 @@ function _refreshCompactAfterSwitch() {
   }
   // 产物面板跟会话走 (这个轻量 · 每次都刷)
   if (typeof renderCompactArtifacts === 'function') renderCompactArtifacts();
+  // wish-e5043955 · 用户 2026-09-28:「专注模式对话之后，不会出现新的对话卡」
+  //   原来这里只改高亮、**不补行** —— 新话题的 sid 要等第一句话发出才在服务端建，
+  //   而列表重拉只在开抽屉/改名/后台消息那几个时机；专注模式没有抽屉 →
+  //   新卡一直不出现，要等切模式才冒出来。这里补：当前 session 不在列表里就插一行。
+  //   只插一行（不整表重渲）—— 避开历史决策「整表重载会闪空白」。
+  if (typeof _insertCompactRow === 'function') { try { _insertCompactRow(); } catch (e) {} }
 }
 
 /* 工具时间线 → chat-timeline.js */
@@ -3642,8 +3131,9 @@ function renderHistoryToolCall(name, argumentsStr, target) {
 function renderHistoryToolResult(content, target) {
   const div = document.createElement('div');
   div.className = 'msg tool-result';
-  // 看 content 头部判断 ok / fail · 失败的 ToolResult.to_string() 一般 'error: ...' 开头
-  const isErr = /^(error:|exit code [1-9]|❌|failed:|未知|fail)/i.test(content || '');
+  // 看 content 头部判断 ok / fail · 失败的 ToolResult.to_string() 以 '[TOOL ERROR] ' 开头
+  // (agent_tools/__init__.py:157) · 早期只列了 'error:' 漏了这个前缀 → 失败被判成成功
+  const isErr = /^\s*(error:|\[TOOL ERROR\]|exit code [1-9]|❌|failed:|未知|fail)/i.test(content || '');
   if (isErr) div.classList.add('failed');
   const icon = isErr ? '<i class="ri-close-fill"></i>' : '<i class="ri-check-fill"></i>';
   div.innerHTML = icon + ' <span class="tool-name">result</span> ';
@@ -3769,7 +3259,7 @@ function _renderTabBar() {
 }
 
 // 关闭一个 tab · 不删 server 历史 · 只清前端 state + DOM container
-// 跑着的不让关 (用户 应该先 ⏹ 停 · 再关)
+// 这场还有分身/服务 → Cursor 同款：问要不要一并停
 async function _closeTabSession(sid) {
   if (!sid) return;
   const s = _sessions[sid];
@@ -3837,9 +3327,9 @@ async function _probeAndStartPoll(state, windowMs = 8000) {
     if (!first) await new Promise(r => setTimeout(r, 1000));
     first = false;
     try {
-      const r = await fetch(`/sessions/${encodeURIComponent(state.sessionId)}/active_turn`, {
+      const r = await _fetchWithTimeout(`/sessions/${encodeURIComponent(state.sessionId)}/active_turn`, {
         headers: { 'Authorization': 'Bearer ' + token },
-      });
+      }, 5000);
       if (r.ok) {
         const j = await r.json();
         if (j && j.turn_id) {
@@ -3928,12 +3418,19 @@ async function _pollSession(state) {
     _stopSessionPoll(state);
     return;
   }
-  if (state._pollBusy) return;
+  // 卷八十五 · 半开连接兜底: daemon 重启瞬间那条 in-flight fetch 可能永不 settle
+  // (旧进程 os._exit 不发 RST · 浏览器一直等) · 它会把 _pollBusy 永久占住 ·
+  // 之后每 3s 的 poll 全被这一行挡掉 → 轮询静默死 → 输入框锁着不解 (用户 2026-09-19)。
+  if (state._pollBusy) {
+    if (Date.now() - (state._pollBusyAt || 0) < 20000) return;
+  }
   state._pollBusy = true;
+  state._pollBusyAt = Date.now();
   try {
     await _pollSessionBody(state);
   } finally {
     state._pollBusy = false;
+    state._pollBusyAt = 0;
   }
 }
 async function _pollSessionBody(state) {
@@ -3942,9 +3439,9 @@ async function _pollSessionBody(state) {
   let activeTurnId = null;
   let progress = null;
   try {
-    const r = await fetch(`/sessions/${encodeURIComponent(state.sessionId)}/active_turn`, {
+    const r = await _fetchWithTimeout(`/sessions/${encodeURIComponent(state.sessionId)}/active_turn`, {
       headers: { 'Authorization': 'Bearer ' + token },
-    });
+    }, 5000);
     if (r.ok) {
       const j = await r.json();
       hasActive = !!(j && j.turn_id);
@@ -3964,9 +3461,9 @@ async function _pollSessionBody(state) {
   }
   // 2) 拉历史 · 看 turn count 变了没
   try {
-    const r = await fetch(`/sessions/${encodeURIComponent(state.sessionId)}/messages`, {
+    const r = await _fetchWithTimeout(`/sessions/${encodeURIComponent(state.sessionId)}/messages`, {
       headers: { 'Authorization': 'Bearer ' + token },
-    });
+    }, 15000);
     if (!r.ok) throw new Error('messages ' + r.status);
     const data = await r.json();
     const newCount = data.count || 0;
@@ -3985,6 +3482,11 @@ async function _pollSessionBody(state) {
       for (let _ti = 0; _ti < _pturns.length; _ti++) {
         const t = _pturns[_ti];
         if (t.role === 'user') {
+          if (_isCompactionSummary(t)) {
+            // wish-e72cc18a · 摘要不铺成 用户 气泡 · 折叠卡
+            compactionCard(state, _compactionPayload(t));
+            continue;
+          }
           // wish-7c579a20 · 带附件消息: 剥皮 + 重建图片/文档(同 _loadSessionHistory)
           let _pc = t.content || '';
           const _pAttS = _broAttachStrip(_pc);
@@ -3997,7 +3499,13 @@ async function _pollSessionBody(state) {
               : _pAttS.legacy.map(function(b) { return { name: b, path: 'data/runtime/attachments/' + b }; }));
         } else if (t.role === 'assistant') {
           if (t.reasoning_content) {
-            renderReasoningBubble(t.reasoning_content, { collapsed: true, historical: true }, state.$container);
+            if (chatProcessExpanded()) {
+              renderReasoningBubble(t.reasoning_content, { collapsed: false, historical: true }, state.$container);
+            } else if (typeof procThinkPush === 'function') {
+              procThinkPush(state, t.reasoning_content, {});   // fold23 · 思考直接长进卡（不再建独立泡）
+            } else {
+              renderReasoningBubble(t.reasoning_content, { collapsed: true, historical: true }, state.$container);
+            }
           }
           if (t.content && t.content.trim()) {
             addMsg('opus', t.content, null, t.ts, state.$container);
@@ -4076,6 +3584,15 @@ async function _pollSessionBody(state) {
       if (!_stillIdle) return;
       try { await _loadSessionHistory(_sid); } catch (e) {}
       _stopSessionPoll(state);
+      // 收尾解锁: 后台续写 turn 完成后 · 若这个 session 正是 用户 在看的前台会话 ·
+      // _stopSessionPoll 只回 idle (3836 `!$input.readOnly` 才刷 · locked 时绕过) ·
+      // 必须显式解锁输入框 · 否则重启/续场 turn 结束后输入框一直锁"还没回来" · 用户 得 F5 才解。
+      if (state.sessionId === sessionId) {
+        pending = false;
+        setSendButtonState('idle');
+        setInputLocked(false);
+        showToolProgress(false);
+      }
     }, 800);
   }
 }
@@ -4146,9 +3663,9 @@ async function _checkProactiveInbox() {
 }
 
 // ═════════════════════════════════════════════════════════════
-// 会话常驻事件流 · 后台 turn 产出即时上屏
+// wish-8a9a3482 · 会话常驻事件流 · 后台 turn 产出即时上屏
 // 病根：bg turn（延迟唤醒/定时任务/分身通报）不写 SSE，产出只落 jsonl，
-//   前台靠 8s 轮询补 → 实测出现过 64 秒黑箱·以为出问题手动刷新。
+//   前台靠 8s 轮询补 → 2026-09-16 实测 64 秒黑箱·用户 以为出问题手动刷新。
 // 修法：页面开着就常驻一条 /api/events（通配订阅·跨会话不用重连），
 //   daemon 侧 broadcast_to_session() 推 bg_status / bg_done 过来。
 // ═════════════════════════════════════════════════════════════
@@ -4177,7 +3694,7 @@ function _connectSessionEvents() {
         const d = JSON.parse(e.data || '{}');
         _clearBgBusy();
         if (d.session_id && d.session_id === sessionId) {
-          // 正开着这个会话 → 直接重载 · 那句话立刻冒出来（不用等轮询、更不用手刷）
+          // 正开着这个会话 → 直接重载 · Daemonkey 那句立刻冒出来（不用等 8s、更不用手刷）
           try { _loadSessionHistory(sessionId); } catch (err) {}
         } else if (d.session_id) {
           const st = _sessions[d.session_id];
@@ -4187,7 +3704,8 @@ function _connectSessionEvents() {
       } catch (err) {}
     });
 
-    // 过程也推上来：提示条跟着「在读文件 / 在跑命令」走，秒级可见
+
+    // ③ wish-8a9a3482 · 过程也推上来：提示条跟着「在读文件 / 在跑命令」走，秒级可见
     es.addEventListener('bg_tool_call', (e) => {
       try {
         const d = JSON.parse(e.data || '{}');
@@ -4248,7 +3766,7 @@ function _markBgBusy(d) {
       el.style.cssText = 'align-items:center;gap:6px;padding:4px 10px;margin:0 auto 6px;'
         + 'width:fit-content;font-size:12px;color:#7dd3fc;background:rgba(56,189,248,.08);'
         + 'border:1px solid rgba(56,189,248,.25);border-radius:999px;';
-      el.style.display = 'none';   // hidden 属性会被显式 display 盖掉·显示/隐藏一律用 style.display
+      el.style.display = 'none';   // hidden 属性会被显式 display 盖掉·所以显示/隐藏一律用 style.display
       el.innerHTML = '<i class="ri-loader-4-line"></i><span></span>';
       const bar = document.querySelector('.input-bar');
       if (bar && bar.parentNode) bar.parentNode.insertBefore(el, bar);
@@ -4256,7 +3774,8 @@ function _markBgBusy(d) {
     }
     const span = el.querySelector('span');
     if (span) {
-      span.textContent = '在后台处理' + (_bgBusyReason ? '：' + _bgBusyReason : '') + '…';
+      span.textContent = 'Daemonkey 在后台处理'
+        + (_bgBusyReason ? '：' + _bgBusyReason : '') + '…';
     }
     el.style.display = 'flex';
   } catch (err) {}
@@ -4347,7 +3866,7 @@ function _showProactiveToast(it) {
 
 function newConversation() {
   clearAttachments();
-  if (_docsViewActive) closeDocsView();  // 卷八十一 · 新建会话自动关文档视图
+  if (typeof _docsViewActive !== 'undefined' && _docsViewActive && typeof closeDocsView === 'function') closeDocsView();  // 卷八十一 · 新建会话自动关文档视图
   // wish-3fef4bc7 · 真并行 · 不杀旧对话 · 先 save 当前 state · 再切到新 cid
   _saveActiveStateToCurrentSession();
   // 给新对话临时 cid · 立刻切 active container 到它 (空 container)
@@ -4430,7 +3949,80 @@ function addMsg(role, text, className, ts, target, opts) {
   if (window.Daemonkey && Daemonkey.emit) Daemonkey.emit('message:render', ev);
   return div;
 }
-function addSys(text, target) { return addMsg('sys', text, null, null, target); }
+function addSys(text, target) {
+  const s = String(text == null ? '' : text);
+  // sys 消息刻意走 textNode（防 XSS）· 但图标需要真元素。
+  // 只认 <i class="ri-*"></i> 这一种标签，其余照旧当纯文本，不用 innerHTML。
+  if (!/<i class="ri-[a-z0-9-]+"><\/i>/.test(s)) return addMsg('sys', s, null, null, target);
+  const el = addMsg('sys', s, null, null, target);
+  if (!el) return el;
+  while (el.firstChild) el.removeChild(el.firstChild);
+  const parts = s.split(/(<i class="ri-[a-z0-9-]+"><\/i>)/g);
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    if (!p) continue;
+    const m = /^<i class="(ri-[a-z0-9-]+)"><\/i>$/.exec(p);
+    if (m) {
+      const ic = document.createElement('i');
+      ic.className = m[1];
+      el.appendChild(ic);
+    } else {
+      el.appendChild(document.createTextNode(p));
+    }
+  }
+  return el;
+}
+
+// ── 压缩摘要渲染 (wish-e72cc18a · 刀4 可见性修复) ─────────────────────────
+// 压缩产生的 digest 在数据层是 role:'user' (content 以 <compaction-summary> 开头)。
+// 不折叠的话会被当成"用户 说的话"渲染成气泡 · 把摘要正文全铺出来 (用户 2026-09-17 报)。
+// 这里统一渲染成可折叠的系统卡：默认收起 · 点开才看正文。
+function _isCompactionSummary(t) {
+  return !!t && t.role === 'user'
+    && String(t.content || '').trimStart().startsWith('<compaction-summary>');
+}
+
+// 摘要卡载荷（标题/时间/剥掉外层 tag 的正文）—— _loadSessionHistory 与 _pollSessionBody 共用
+function _compactionPayload(t) {
+  return {
+    title: '上下文已压缩 · 早期对话已折叠（原话仍完整保留在本会话）',
+    time: formatTime(t.ts),
+    text: String(t.content || '')
+      .replace(/^\s*<compaction-summary>\s*/i, '')
+      .replace(/\s*<\/compaction-summary>\s*$/i, '').trim(),
+  };
+}
+
+function compactionCard(state, info) {
+  if (!state || !state.$container) return null;
+  info = info || {};
+  const div = document.createElement('div');
+  div.className = 'msg advisor-card bg-report-card';
+  div.innerHTML =
+    '<div class="advisor-head">' +
+      '<i class="ri-archive-2-line"></i>' +
+      '<span>' + escHtml(info.title || '上下文已压缩') + '</span>' +
+      (info.time ? '<span class="elapsed">' + escHtml(info.time) + '</span>' : '') +
+    '</div>' +
+    '<div class="blueprint-body" hidden></div>';
+  div.querySelector('.blueprint-body').innerHTML = mdRender((info.text || '').trim() || '（摘要为空）');
+  const actions = document.createElement('div');
+  actions.className = 'advisor-actions';
+  const btn = document.createElement('button');
+  btn.className = 'adv-btn';
+  btn.innerHTML = '<i class="ri-arrow-down-s-line"></i> 展开摘要';
+  btn.addEventListener('click', function() {
+    const b = div.querySelector('.blueprint-body');
+    b.hidden = !b.hidden;
+    btn.innerHTML = b.hidden
+      ? '<i class="ri-arrow-down-s-line"></i> 展开摘要'
+      : '<i class="ri-arrow-up-s-line"></i> 收起摘要';
+  });
+  actions.appendChild(btn);
+  div.appendChild(actions);
+  state.$container.appendChild(div);
+  return div;
+}
 
 function _attachCkpt(el, turnId, line, text) {
   if (!el || !el.classList || !el.classList.contains('bro')) return;
@@ -4484,7 +4076,7 @@ function _beginBroEdit(el) {
   editor.className = 'ckpt-edit';
   const ta = document.createElement('textarea');
   ta.value = cur;
-  ta.rows = Math.min(12, Math.max(1, String(cur).split('\n').length));
+  ta.rows = 1;
   const row = document.createElement('div');
   row.className = 'ckpt-edit-row';
   const ok = document.createElement('button');
@@ -4502,10 +4094,19 @@ function _beginBroEdit(el) {
   el.classList.add('ckpt-editing');
   el.appendChild(hold);
   el.appendChild(editor);
+  function _fitTa() {
+    ta.style.height = 'auto';
+    const cap = Math.floor(window.innerHeight * 0.7);
+    const need = ta.scrollHeight;
+    ta.style.height = Math.min(Math.max(need, 28), cap) + 'px';
+    ta.style.overflowY = need > cap ? 'auto' : 'hidden';
+  }
   function _syncGo() {
     ok.disabled = !String(ta.value || '').trim();
   }
   _syncGo();
+  _fitTa();
+  requestAnimationFrame(_fitTa);
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
   function _quit() {
@@ -4532,7 +4133,7 @@ function _beginBroEdit(el) {
     _quit();
     _editResendFrom(el, next);
   });
-  ta.addEventListener('input', _syncGo);
+  ta.addEventListener('input', function () { _syncGo(); _fitTa(); });
   ta.addEventListener('keydown', function(ev) {
     if (ev.key === 'Escape') {
       ev.preventDefault();
@@ -4886,79 +4487,7 @@ function _ensureLoadEarlierSentinel(container) {
   if (container.firstChild !== s) container.insertBefore(s, container.firstChild);
 }
 
-// 卷三十七 · 流式拼接 · 当前正在 stream 的 DOM 引用
-// wish-3fef4bc7 · 改为 per-state · 没有 state 参数 = 不工作 (直接 return)
-// state.currentStreamingReasoning / state.currentStreamingAssistant 持有 DOM 引用
-function appendReasoningDelta(state, textPiece) {
-  if (!textPiece || !state) return;
-  if (!state.currentStreamingReasoning) {
-    // 用户 2026-07-28: 新一轮思考开始 = 上一轮工具容器到此为止 ·
-    // 收尾旧容器让后续 tool_call 开新容器 · 时间线变成 思考→工具组→思考→工具组 交替
-    if (state._tl) { try { tlFinishRound(state); } catch (e) {} }
-    // 新建一个流式 reasoning bubble · 自动展开 · 标 streaming
-    const div = document.createElement('div');
-    div.className = 'msg opus reasoning streaming';
-    const header = document.createElement('div');
-    header.className = 'reasoning-header';
-    header.innerHTML = `<span class="reasoning-icon"><i class="ri-brain-fill"></i></span> <span class="reasoning-label">思考中</span> <span class="reasoning-toggle">收起 ▴</span>`;
-    header.style.cursor = 'pointer';
-    div.appendChild(header);
-    const body = document.createElement('div');
-    body.className = 'reasoning-body';
-    div.appendChild(body);
-    header.addEventListener('click', () => {
-      const showing = !body.hidden;
-      body.hidden = showing;
-      const toggle = header.querySelector('.reasoning-toggle');
-      if (toggle) toggle.textContent = showing ? '展开 ▾' : '收起 ▴';
-    });
-    if (state.$container) state.$container.appendChild(div);
-    // 0.8.3 · 加 _pending/_raf 字段 · reasoning 走节流渲染
-    state.currentStreamingReasoning = { div, body, _pending: '', _raf: 0 };
-  }
-  // 0.8.3 性能修复 · DeepSeek reasoning 逐 chunk 推 (每秒几十个) ·
-  // 老代码每 chunk appendChild + isNearBottom 读布局 ×2 + 两次滚动 → layout thrashing ·
-  // 长思考 + 大 DOM 时主线程吃满 → 滚动条拖不动 (用户 实测反馈)。
-  // 修复: 累积到 _pending · RAF 合并每帧最多一次 append + 一次滚动判断 (肉眼无感·主线程降一个数量级)
-  const r = state.currentStreamingReasoning;
-  r._pending += textPiece;
-  if (!r._raf) {
-    r._raf = requestAnimationFrame(() => {
-      r._raf = 0;
-      if (!r._pending) return;
-      r.body.appendChild(document.createTextNode(r._pending));
-      r._pending = '';
-      // reasoning-body 自身有 max-height + overflow-y · 必须把它自己也滚到底
-      // 否则外层 $msgs 滚到底 · 但 reasoning 窗口内仍卡在原位 用户 看不到新字
-      // 卷四十六续 3 · body 跟外层都走软滚 · 用户 拖到上面看历史时不打扰
-      if (isNearBottom(r.body)) {
-        r.body.scrollTop = r.body.scrollHeight;
-      }
-      scrollToBottom(state.$container, { force: false });
-    });
-  }
-}
-
-function finalizeStreamingReasoning(state) {
-  if (!state) return;
-  if (!state.currentStreamingReasoning) return;
-  const r = state.currentStreamingReasoning;
-  // 0.8.3 · 节流后最后一帧可能还有 pending 没刷 · finalize 前补刷 + 取消挂起的 RAF
-  if (r._raf) { cancelAnimationFrame(r._raf); r._raf = 0; }
-  if (r._pending) { r.body.appendChild(document.createTextNode(r._pending)); r._pending = ''; }
-  r.div.classList.remove('streaming');
-  // 完成后默认收起 · 减视觉噪音 · 用户 想看再展开
-  const body = r.body;
-  const header = r.div.querySelector('.reasoning-header');
-  if (body && header) {
-    body.hidden = true;
-    const toggle = header.querySelector('.reasoning-toggle');
-    if (toggle) toggle.textContent = '展开 ▾';
-    const label = header.querySelector('.reasoning-label');
-    if (label) label.textContent = `思考完成 · ${body.textContent.length} 字`;
-  }
-  state.currentStreamingReasoning = null;
-}
+/* wish-eeff6e5e 终轮+4 · appendReasoningDelta/finalizeStreamingReasoning/renderReasoningBubble 已迁至 chat-timeline.js（防 chat.js 膨胀）· 本文件只保留调用点 */
 
 // 0.9.1 · 兜底: assistant_reasoning_done 到达但 currentStreamingReasoning 为空
 // (reasoning_delta 因并发/时序丢失时) → 补建一个已完成的折叠气泡 · 不让思考链静默消失
@@ -4971,7 +4500,10 @@ function ensureReasoningBubble(state, text) {
     return;
   }
   // 没有流式气泡 → 直接渲染成历史形态的折叠气泡 (跟 renderReasoningBubble 历史分支一致)
-  renderReasoningBubble(text, { collapsed: true, historical: true }, state.$container);
+  // wish-eeff6e5e 终轮+5 · 本回复的兑底思考也要打 procTurn 标（GLM 类模型 reasoning 一次性到达必走此路）
+  // 不打标 = 收拢时收不进卡片 → 思考行永远暴露在对话栏（用户 实测抓到）
+  const _rd = renderReasoningBubble(text, { collapsed: !chatProcessExpanded(), historical: true }, state.$container);
+  if (_rd) { _rd.dataset.procTurn = '1'; _rd.classList.add('proc-think-hidden'); }
 }
 
 // 卷四十六续 4 · 流式 markdown 实时渲染 · "streaming-safe close"
@@ -5053,6 +4585,7 @@ function appendAssistantDelta(state, textPiece) {
   // 累积 raw text · safe close 在 rerender 时套一层 · 不污染源数据
   state.streamingAssistantRaw = (state.streamingAssistantRaw || '') + textPiece;
   _scheduleAssistantRerender(state);
+  if (typeof _tlKeepAtEnd === 'function') _tlKeepAtEnd(state);   // fold23 · 卡跟到正文之后（用户：卡该在我输出的下面）
   scrollToBottom(state.$container, { force: false });
 }
 
@@ -5091,44 +4624,7 @@ function finalizeStreamingAssistant(state, finalText) {
   } catch (_e) { /* TTS 播放失败不影响对话主流程 */ }
 }
 
-// 卷三十六 · DeepSeek thinking mode · 渲染一条 reasoning 气泡
-// 折叠式 · 默认展开 · 用户 可点收起；样式偏淡灰 + 斜体 · 跟正文区分
-function renderReasoningBubble(text, options = {}, target) {
-  if (!text) return null;
-  const div = document.createElement('div');
-  div.className = 'msg opus reasoning';
-  const collapsed = !!options.collapsed;
-  // 卷三十八 · 历史回放 · 不是 streaming · label 直接显示"思考完成 · N 字"
-  const label = options.historical
-    ? `思考完成 · ${text.length} 字`
-    : '思考中';
-
-  const header = document.createElement('div');
-  header.className = 'reasoning-header';
-  header.innerHTML = `<span class="reasoning-icon"><i class="ri-brain-fill"></i></span> <span class="reasoning-label">${label}</span> <span class="reasoning-toggle">${collapsed ? '展开 ▾' : '收起 ▴'}</span>`;
-  header.style.cursor = 'pointer';
-  div.appendChild(header);
-
-  const body = document.createElement('div');
-  body.className = 'reasoning-body';
-  if (collapsed) body.hidden = true;
-  body.textContent = text;  // 思考链原样显示 · 不走 markdown
-  div.appendChild(body);
-
-  header.addEventListener('click', () => {
-    const showing = !body.hidden;
-    body.hidden = showing;
-    const toggle = header.querySelector('.reasoning-toggle');
-    if (toggle) toggle.textContent = showing ? '展开 ▾' : '收起 ▴';
-  });
-
-  const dst = target || $msgs;
-  if (dst) {
-    dst.appendChild(div);
-    scrollToBottom(dst, { force: false });
-  }
-  return div;
-}
+/* wish-eeff6e5e 终轮+4 · appendReasoningDelta/finalizeStreamingReasoning/renderReasoningBubble 已迁至 chat-timeline.js（防 chat.js 膨胀）· 本文件只保留调用点 */
 
 // ---------- SSE 流式发送（卷十七加） ----------
 
@@ -5295,6 +4791,9 @@ async function send(opts) {
     state._advisorCard._advTimer = null;
   }
   state._advisorCard = null;
+  /* fold27 · 新回合开始：断掉续卡链 —— 上一轮的过程卡必须留在它自己那条回复下面，
+     不能被本轮的 procThinkIdle/procThinkPush 认领（用户 实测：卡被搬到输入框下面）。 */
+  if (typeof procTurnStart === 'function') procTurnStart(state);
 
   // 整轮读秒 ticker(没工具在跑时显示"思考中·已Ns"·别卡 0s)· 仅 visible 起·后台 turn 不动进度条
   if (_isVisible()) _startToolProgressTicker(state);
@@ -5339,6 +4838,8 @@ async function send(opts) {
         auto_confirm: autoConfirm,
         attachments: sendAtts && sendAtts.length ? sendAtts.map(a => ({name: a.name, data_url: a.data_url, path: a.path})) : undefined,
         advisor_coop: _advisorCoopOn() || undefined,   // wish-0e749752 · 顾问协同 toggle
+        tool_profile: (typeof window.tpPendingProfile === 'function' ? window.tpPendingProfile() : '') || undefined,   // wish-16fa5930 · 新对话选的档 · 随首轮进 daemon
+        project_id: (typeof window.pjPendingId === 'function' ? window.pjPendingId() : '') || undefined,   // wish-8f9e4f05 · 新对话挂在哪个外部项目 · 同一条通道（取一次即消费）
         ...modelBehaviorPayload(),
       }),
     });
@@ -5416,6 +4917,18 @@ async function send(opts) {
     if (state.currentStreamingReasoning) finalizeStreamingReasoning(state);
     if (state.currentStreamingAssistant) finalizeStreamingAssistant(state, null);
 
+    // 2026-09-14 · 用户 报：重启时排队的消息会被一瞬间全发出去（因「跑完一轮」和「上游断了」
+    // 共用一个 kick 出口）。现在按本轮结局分流：出错 → 冻住队列·原样留着等用户；正常 → 解冻往下续。
+    if (SessionRuntime.freezeQueue) {
+      if (state.errorShown) {
+        const fro = SessionRuntime.freezeQueue(state.sessionId, 'turn-error');
+        if (fro && state.$container) {
+          addSys('⏸ 队列已暂停 · 这一轮没接上上游（daemon 重启 / 断网）· 排队原样留着，点队列里的 ▶ 手动发', state.$container);
+        }
+      } else if (SessionRuntime.unfreezeQueue) {
+        SessionRuntime.unfreezeQueue(state.sessionId);
+      }
+    }
     const draining = SessionRuntime.kick(state.sessionId);
     // 同步 visible UI (是 visible 才动全局)
     if (_isVisible()) {
@@ -5480,6 +4993,8 @@ async function send(opts) {
         sessionAliases[newSid] = (text || '').slice(0, 24) + ((text || '').length > 24 ? '…' : '');
         saveAliases();
       }
+      // wish-16fa5930 · 新对话预选的档已随首轮请求交给服务端 → 消费掉本地预选
+      if (typeof window.tpOnCommitSession === 'function') { try { window.tpOnCommitSession(newSid); } catch (e) {} }
     } else if (oldSid !== newSid) {
       // 极端情况 daemon 给了不同的真 sid (理论上不会) · 兜底改 state.sessionId
       state.sessionId = newSid;
@@ -5516,7 +5031,9 @@ async function send(opts) {
         if (data && data.session_id) {
           commitSessionId(data.session_id);
         }
-        if (state.assistantBubbles.length === 0) {
+        /* fold27 · 卡里已经有「▸ 思考中…」了就别再放裸占位泡（用户：对话栏要干净整洁）*/
+        const _tlAlive = state._tl && state._tl.$round && state._tl.$round.isConnected;
+        if (state.assistantBubbles.length === 0 && !_tlAlive) {
           const ph = addMsg('opus', 'Daemonkey 正在想', 'msg opus thinking', null, state.$container);
           ph.dataset.placeholder = '1';
           state.assistantBubbles.push(ph);
@@ -5538,9 +5055,6 @@ async function send(opts) {
         if (state.chatMode === 'taste') break;
         // 0.9.1 · 用兜底版: reasoning_delta 丢了也能补建气泡 · 不静默丢思考链
         ensureReasoningBubble(state, data.text || '');
-        const newPh = addMsg('opus', '继续...', 'msg opus thinking', null, state.$container);
-        newPh.dataset.placeholder = '1';
-        state.assistantBubbles.push(newPh);
         break;
       }
 
@@ -5557,7 +5071,7 @@ async function send(opts) {
       case 'auto_resume': {
         state.autoResumeCount = data.count || state.autoResumeCount + 1;
         const note = data.note || `自动续接 ${state.autoResumeCount}/${data.max || 3}`;
-        addSys(`⏩ ${note} · Daemonkey 接着上次断点继续`, state.$container);
+        addSys(`<i class="ri-restart-line"></i>${note} · Daemonkey 接着上次断点继续`, state.$container);
         const newPh = addMsg('opus', '继续中...', 'msg opus thinking', null, state.$container);
         newPh.dataset.placeholder = '1';
         state.assistantBubbles.push(newPh);
@@ -5576,21 +5090,14 @@ async function send(opts) {
           ph.remove();
           state.assistantBubbles.shift();
         }
-        // 用户 2026-07-28: 同 appendReasoningDelta · 新一轮思考前收尾旧工具容器 · 时间线按轮分组
-        if (state._tl) { try { tlFinishRound(state); } catch (e) {} }
-        renderReasoningBubble(data.text || '', {}, state.$container);
-        const newPh = addMsg('opus', '继续...', 'msg opus thinking', null, state.$container);
-        newPh.dataset.placeholder = '1';
-        state.assistantBubbles.push(newPh);
+        // wish-eeff6e5e · 一个回复一张卡：非流式新思考也不再切容器（旧按轮分组逻辑作废）
+        renderReasoningBubble(data.text || '', { collapsed: !chatProcessExpanded() }, state.$container);
         break;
       }
 
       case 'assistant_text': {
-        // 0.9.1 · 文字到达 = 上一轮工具容器到此为止 (轮次边界·不依赖 reasoning_delta)
-        // 修: flash 模型短思考/无思考时不吐 reasoning_delta → 旧容器永不收尾 → 多轮工具全合一个容器
-        if (state._tl && state._tl.$round && state._tl.$round.isConnected) {
-          try { tlFinishRound(state); } catch (e) {}
-        }
+        // wish-eeff6e5e · 一个回复一张卡：文字到达不再切容器（旧 0.9.1 轮次边界随产品定义反转作废）
+        // 多轮工具+多段思考全聚同一张卡 · turn 末（done/error/finally）统一收拢
         state.sawAssistantText = true;
         const ph = state.assistantBubbles[0];
         if (ph && ph.dataset.placeholder) {
@@ -5644,8 +5151,8 @@ async function send(opts) {
         goBtn.innerHTML = '<i class="ri-quill-pen-line"></i> 过收尾三问';
         goBtn.onclick = () => {
           const prompt = '回头看刚才这轮 — 过一遍收尾三问，该沉淀的沉淀：\n'
-            + '① 我这次有没有透露/出现新信号该记进 OWNER-NOTEBOOK？(update_owner_note)\n'
-            + '② 这次的操作流程/踩坑值得抽成 playbook 吗？(extract_playbook)\n'
+            + '① 我这次有没有透露/出现新信号该记进 用户-NOTEBOOK？(update_owner_note)\n'
+            + '② 这次的操作流程/踩坑值得抽成操作手册吗？(extract_playbook)\n'
             + '③ 有没有暴露我的能力缺口该记心愿？(wish_add)\n'
             + '确实啥也不用沉淀就说一句为什么。';
           if (typeof injectChat === 'function') injectChat(prompt, { autosend: false });
@@ -5860,9 +5367,9 @@ async function send(opts) {
         div.dataset.appId = data.app_id || '';
         div.dataset.startedAt = String(startTs);
         const appName = data.app_name || data.app_id || '?';
-        const tools = (data.tools || []).slice(0, 6).join(', ') + ((data.tools || []).length > 6 ? ' ...' : '');
-        div.innerHTML = `<i class="ri-play-circle-fill"></i> <strong>子任务启动</strong>: <code>${escHtml(appName)}</code>` +
-          (tools ? ` <span class="sub-agent-tools" title="允许的工具白名单">[${escHtml(tools)}]</span>` : '');
+        const tools = (data.tools || []).join(', ');
+        div.innerHTML = `<i class="ri-play-circle-fill"></i> 子任务启动 · <code>${escHtml(appName)}</code>`;
+        if (tools) div.title = '允许的工具: ' + tools;
         state.$container.appendChild(div);
         // 记录到 state · 让 app_run_done 算耗时
         state._subAgentMeta = state._subAgentMeta || {};
@@ -5885,18 +5392,19 @@ async function send(opts) {
         const warning = data.warning;
         const hitBudget = data.hit_budget;
         const iterBadge = maxIter ? `${iter}/${maxIter} 轮` : `${iter} 轮`;
-        const tokBadge = `in <code>${inTok.toLocaleString()}</code> · out <code>${outTok.toLocaleString()}</code>` +
-          (cacheTok ? ` · cache <code>${cacheTok.toLocaleString()}</code>` : '');
+        const tokHint = `in ${inTok.toLocaleString()} · out ${outTok.toLocaleString()}` +
+          (cacheTok ? ` · cache ${cacheTok.toLocaleString()}` : '');
         let warnHtml = '';
         if (warning) {
           warnHtml = `<div class="sub-agent-warn${hitBudget ? ' sub-agent-warn-hit' : ''}"><i class="ri-error-warning-fill"></i> ${escHtml(warning)}</div>`;
         }
-        const outKeys = (data.outputs_keys || []).join(', ');
         const div = document.createElement('div');
         div.className = 'msg sub-agent-boundary sub-agent-done' + (hitBudget ? ' sub-agent-hit-budget' : '');
-        div.innerHTML = `<i class="ri-checkbox-circle-fill"></i> <strong>子任务完成</strong>: <code>${escHtml(appName)}</code> · ` +
-          `<span class="sub-agent-stats">${iterBadge} · ${elapsed}s · ${tokBadge}</span>` +
-          (outKeys ? ` <span class="sub-agent-outkeys" title="output_schema 字段">→ ${escHtml(outKeys)}</span>` : '') +
+        div.title = tokHint + (data.outputs_keys && data.outputs_keys.length ? ' · ' + data.outputs_keys.join(', ') : '');
+        div.innerHTML = `<i class="ri-checkbox-circle-fill"></i> 子任务完成 · <code>${escHtml(appName)}</code>` +
+          `<span class="sub-agent-stats"> · ${iterBadge} · ${elapsed}s` +
+          (chatProcessExpanded() ? ` · ${escHtml(tokHint)}` : '') +
+          `</span>` +
           warnHtml;
         state.$container.appendChild(div);
         scrollToBottom(state.$container, { force: false });
@@ -5934,10 +5442,14 @@ async function send(opts) {
           });
           state._advisorCard = null;
         }
-        if (data.ok && data.open_path) {
+        if (data.ok && (data.open_path || (data.open_paths && data.open_paths.length))) {
           // 不再挂在 tool-result 卡上(那在回复正文之前)· 攒起来·turn 结束时统一渲到对话底部(符合阅读习惯)
+          // 2026-09-20 · 一轮多产物全收：以前只认单个 open_path（后端也只抽出第一个标记）
+          //            → 一轮产三份只铺一份、只出一行。现在 open_paths 全量收。
           state._pendingOpens = state._pendingOpens || [];
-          state._pendingOpens.push({ path: data.open_path });
+          const _opens = (Array.isArray(data.open_paths) && data.open_paths.length)
+            ? data.open_paths : [data.open_path];
+          _opens.forEach(function (p) { if (p) state._pendingOpens.push({ path: p }); });
         }
         if (data.ok && Array.isArray(data.images) && data.images.length) {
           // 生图工具产出的可服务图 URL · 攒起来 · turn 末渲成可点放大的图廊
@@ -5988,12 +5500,28 @@ async function send(opts) {
         break;
       }
 
+      case 'ask_request': {
+        state.activeAskCards = state.activeAskCards || new Map();
+        const card = renderAskCard(data, state);
+        if (card) state.activeAskCards.set(data.tool_call_id, card);
+        break;
+      }
+
+      case 'ask_resolved': {
+        state.activeAskCards = state.activeAskCards || new Map();
+        const card = state.activeAskCards.get(data.tool_call_id);
+        if (card) {
+          collapseAskCard(card, data.answered ? 'answered' : (data.reason || 'timeout'), data.choice || '');
+          state.activeAskCards.delete(data.tool_call_id);
+        }
+        break;
+      }
+
       case 'usage':
         state.finalUsage = data;
         break;
 
       case 'done':
-        tlFinishRound(state);  // wish-5256d2a4 · 工具时间线收尾：头部人话统计 + 释放轮容器
         state.finalSessionId = data.session_id || state.finalSessionId;
         state.finalModel = data.model || state.finalModel;
         if (data.usage) state.finalUsage = data.usage;
@@ -6010,6 +5538,7 @@ async function send(opts) {
         flushImages(state);               // 生图产物图廊·先渲图·再渲打开按钮
         flushOpenActions(state);          // 产物「用对应软件打开」按钮·统一落在这一 turn 的最底部
         refreshCtxRing();                 // wish-bec4f3b9 · 回合结束刷压缩圆圈
+        tlFinishRound(state);  // wish-eeff6e5e · 图廊/按钮渲完后收拢卡片并移到回复末尾 · 思考入 quiet
         // 2026-08-06 · done 时后端 RUNTIME.messages 可能还没写入本轮 → 延时重刷一次 (时序兜底)
         setTimeout(refreshCtxRing, 800);
         break;
@@ -6089,13 +5618,82 @@ function refreshSendChrome() {
   }
 }
 
+// ═══ 卷八十五 · 2026-09-19 · 重启续场的「输入框锁死」根治 (用户 实例: 前缀 归档压缩优化V2) ═══
+// 病根: 「锁上」有 3 个入口 (waitForDaemon 的 7140/7174 · _probeAndStartPoll) · 「解锁」却散在
+// 5+ 条路径里各自负责。任何一条断链 —— 半开连接把 await 永久挂住 (旧 daemon os._exit 不发 RST ·
+// 浏览器一直等) / 30 秒没等到 daemon / 轮询被 _pollBusy 挡死 —— 输入框就永久锁在
+// 「还没回来 · 先别发」· 只有 F5 能救。
+// 治本: 锁的解除不再靠「每条路径记得解锁」· 改由看门狗每 3s 问 daemon 两个权威事实:
+//       「这个 session 有 active turn 吗」「有 scheduled/running 的续场吗」·
+//       都没有 + daemon 活着 → 解锁。哪条路径挂死都救得回来。
+function _fetchWithTimeout(url, opts, ms) {
+  const o = Object.assign({}, opts || {});
+  try {
+    if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) {
+      o.signal = AbortSignal.timeout(ms || 8000);
+    }
+  } catch (e) {}
+  return fetch(url, o);
+}
+
+let _inputLockWatchdog = null;
+let _inputLockIdleStreak = 0;
+
+function _stopInputLockWatchdog() {
+  if (_inputLockWatchdog) { clearInterval(_inputLockWatchdog); _inputLockWatchdog = null; }
+  _inputLockIdleStreak = 0;
+}
+
+function _ensureInputLockWatchdog() {
+  if (_inputLockWatchdog) return;
+  _inputLockWatchdog = setInterval(() => { _inputLockWatchdogTick(); }, 3000);
+}
+
+async function _inputLockWatchdogTick() {
+  if (!$input || !$input.readOnly) { _stopInputLockWatchdog(); return; }  // 锁已解 · 退场
+  const sid = sessionId;
+  if (!sid || sid.startsWith('tmp-')) return;
+  const st = _sessions[sid] || null;
+  const H = { 'Authorization': 'Bearer ' + token };
+  let turnId = null;
+  let bg = 'none';
+  let answered = false;
+  try {
+    const r = await _fetchWithTimeout(`/sessions/${encodeURIComponent(sid)}/active_turn`, { headers: H }, 5000);
+    if (!r.ok) return;                    // daemon 还没接管端口 / 鉴权没过 · 下一 tick 再问
+    turnId = ((await r.json()) || {}).turn_id || null;
+    answered = true;
+  } catch (e) { return; }                 // 探不通 = 保持锁 (daemon 真没起时不该放行)
+  try {
+    const r2 = await _fetchWithTimeout(`/sessions/${encodeURIComponent(sid)}/background_turn_status`, { headers: H }, 5000);
+    if (r2.ok) { bg = ((await r2.json()) || {}).status || 'none'; answered = true; }
+  } catch (e) {}
+  if (!answered) return;
+  if (turnId || bg === 'scheduled' || bg === 'running') { _inputLockIdleStreak = 0; return; }
+  if (pending || (st && st.pending)) { _inputLockIdleStreak = 0; return; }  // 本地 SSE 正跑 · 交给它
+  // 连问两次都 idle 才解锁 · 防「active_turn 注册比 turn 起跑晚几百 ms」那个窗口误判
+  _inputLockIdleStreak++;
+  if (_inputLockIdleStreak < 2) return;
+  _inputLockIdleStreak = 0;
+  _stopInputLockWatchdog();
+  try { if (st && st.pollIntervalId) _stopSessionPoll(st); } catch (e) {}  // 防「轮询静默死」· 顺手清掉
+  pending = false;
+  setSendButtonState('idle');
+  setInputLocked(false);
+  showToolProgress(false);
+  try { await _loadSessionHistory(sid); } catch (e) {}
+  addSys('<i class="ri-lock-unlock-line"></i> 输入框已自动解锁 (重启/续场收尾兜底)', st && st.$container);
+}
+
 function setInputLocked(locked, reason) {
   $input.readOnly = !!locked;
   $input.classList.toggle('is-locked', !!locked);
   const aiName = window.AI_NAME || 'Daemonkey';
   if (locked) {
     $input.placeholder = reason || (aiName + ' 还没回来 · 先别发');
+    _ensureInputLockWatchdog();   // 卷八十五 · 锁上就挂兜底看门狗
   } else {
+    _stopInputLockWatchdog();
     refreshSendChrome();
   }
 }
@@ -6238,37 +5836,189 @@ async function refreshCtxRing() {
     if (tip) wrap.querySelector('.ctx-ring').title = `上下文已用 ${pct}% · 距压缩剩 ${_fmtTok(remain)} tok · 点击看明细`;
   } catch (_e) { /* 静默 · 拉不到就不显示 */ }
 }
+function toggleCtxLayer(id) {
+  // 2026-09-19 · 层折叠：点层头 → 展/收该层 · 小三角跟着转（收起时只露层名 + 总量）
+  const box = document.querySelector('.ctx-layer[data-layer="' + id + '"]');
+  if (!box) return;
+  const body = box.querySelector('.ctx-layer-body');
+  const tri = box.querySelector('.ctx-layer-tri');
+  if (!body) return;
+  const open = body.hidden;
+  body.hidden = !open;
+  if (tri) tri.style.transform = open ? 'rotate(90deg)' : '';
+}
 function renderCtxCard() {
   const d = window._ctxData;
   const bars = document.getElementById('ctxCardBars');
   if (!d || !bars) return;
   const blocks = d.blocks || [];
   const total = blocks.reduce((a, b) => a + (b.tokens || 0), 0) || 1;
-  bars.innerHTML = blocks.map(b => {
+  // wish-631ff85b · 固定前缀合计
+  // 后端一直在算 fixed_tokens（= system prompt + tools[]），但前端从没显示过。
+  // 它是两个主轴的交叉点：**它多大 = 每轮先花多少钱**，**它稳不稳 = 缓存命中率高不高**。
+  const fixed = d.fixed_tokens || 0;
+  // 2026-09-19 · 口径拆开（用户 拍板）：顶上那个「固定前缀」含三样 —— system prompt
+  //   + 手边 tools[] + 每轮后缀。但后缀每轮变 → 它自己永远全价，也不影响前面命中。
+  //   合成一个数会让人每次看到都以为「前缀又长胖了」→ 拆成「稳定部分（能命中）」+「每轮后缀（全价）」。
+  const _sufTok = (blocks.find(b => b.key === 'suffix') || {}).tokens || 0;
+  const _stableTok = Math.max(0, fixed - _sufTok);
+  const head = `<div style="padding:6px 0 8px;border-bottom:1px solid var(--bg3);margin-bottom:8px">
+      <div style="display:flex;align-items:baseline;gap:6px">
+        <i class="ri-anchor-fill" style="color:#4FD1C5"></i>
+        <span style="font-size:11px;color:var(--dim)">固定前缀</span>
+        <b style="font-size:15px;color:#4FD1C5">${_fmtTok(fixed)}</b>
+        <span style="font-size:10px;color:var(--dim);margin-left:auto">每轮都送</span>
+      </div>
+      <div style="margin-top:3px;font-size:10px;color:var(--dim);padding-left:14px">
+        稳定部分 <b style="color:#4FD1C5">${_fmtTok(_stableTok)}</b> ← 每轮一字不变 · 稳稳命中
+      </div>
+      ${_sufTok ? `<div style="margin-top:2px;font-size:10px;color:var(--dim);padding-left:14px">
+        每轮后缀 <b style="color:#D6BCFA">${_fmtTok(_sufTok)}</b> ← 在末尾 · 跟上一轮一样就照样命中 · 变了才从它开始全价
+      </div>` : ''}
+    </div>`;
+  // 2026-09-19 · 折叠（用户：面板太高了，需要折叠）
+  //   默认只摊最大的 5 块 —— 面板高度砍掉一半以上，想全看再「展开其余 N 块」。
+  //   按 tokens 降序排，保证默认露出的永远是最该看的（不跟后端返回顺序走）。
+  const _row = (b) => {
     const w = ((b.tokens || 0) / total * 100).toFixed(1);
+    // 用户 2026-09-19：用量面板不展开子块 —— 面板本身很占高度，看完总量就够。
+    // 想看铁律的下钻（hot path / 索引表 / 每条多重）去【操作手册页的铁律专区】，
+    // 那里是它该待的地方；这儿只回答“一共占多少”。
     return `<div class="ctx-block">
-      <div class="ctx-block-row"><span class="lbl"><i class="${b.icon || 'ri-stack-fill'}" style="color:${b.color};margin-right:4px"></i>${escHtml(b.label || b.key || '')}</span><span class="val">${_fmtTok(b.tokens||0)} tok · ${w}%</span></div>
+      <div class="ctx-block-row"><span class="lbl"><i class="${b.icon || 'ri-stack-fill'}" style="color:${b.color};margin-right:4px"></i>${escHtml(b.label || b.key || '')}${b.inject === false ? `<span class="ctx-badge-off" title="${escHtml(b.why || '不进每轮前缀')}">不进前缀</span>` : ''}</span><span class="val">${_fmtTok(b.tokens||0)} tok · ${w}%</span></div>
       <div class="ctx-block-bar"><div class="ctx-block-fill" style="width:${w}%;background:${b.color}"></div></div>
       ${b.file ? `<div class="ctx-block-file"><i class="ri-archive-line"></i> ${escHtml(b.file)}</div>` : ''}
       ${b.sub && b.sub !== b.file ? `<div class="ctx-block-sub">${escHtml(b.sub)}</div>` : ''}
     </div>`;
+  };
+  // 2026-09-19 v2 · 按「层」折叠（用户：不是按大小切块，是按灵魂层/工具层这种同类分组；
+  //   点小三角展开，收起时显示该类别总量）。
+  //   层序对齐 system prompt 的实际装配顺序：身份 → 规则 → 工具 → 灵魂（+ 运行环境）。
+  const _LAYERS = [
+    { id: 'identity', name: '身份层 · 我是谁',       icon: 'ri-fingerprint-line',    color: '#B794F4', keys: ['identity'] },
+    { id: 'rules',    name: '规则层 · 规矩与红线',   icon: 'ri-shield-keyhole-line', color: '#4FD1C5', keys: ['rules', 'structure', 'const_local', 'const_common'] },
+    { id: 'tools',    name: '工具层 · 手边 + 延迟',  icon: 'ri-tools-line',          color: '#63B3ED', keys: ['tools', 'catalog'] },
+    { id: 'soul',     name: '灵魂层 · 画像 / 成长',  icon: 'ri-heart-3-line',        color: '#F687B3', keys: ['notebook', 'how-we-work', 'evolution'] },
+    { id: 'env',      name: '运行环境',              icon: 'ri-computer-line',       color: '#A0AEC0', keys: ['runtime'] },
+    { id: 'suffix',   name: '每轮后缀 · 易变尾巴',   icon: 'ri-timer-flash-line',    color: '#F6AD55', keys: ['suffix'] },
+  ];
+  const _byKey = {};
+  blocks.forEach(b => { if (b.key) _byKey[b.key] = b; });
+  const _used = new Set(['soul', 'history', 'memories']);   // soul 是容器（含下列各块）· history 单独放 · memories(自传)已归档不进前缀、用户 2026-09-28 说不必显示
+  _LAYERS.forEach(L => {
+    L.items = L.keys.map(k => _byKey[k]).filter(Boolean);
+    L.items.forEach(b => _used.add(b.key));
+  });
+  const _orphan = blocks.filter(b => b.key && !_used.has(b.key));
+  if (_orphan.length) {
+    _LAYERS.push({ id: 'other', name: '其他', icon: 'ri-more-line', color: '#718096', items: _orphan, keys: [] });
+  }
+  const _layerHtml = _LAYERS.filter(L => L.items.length).map(L => {
+    const sum = L.items.reduce((a, b) => a + (b.tokens || 0), 0);
+    // 同类只有一个 → 不折叠（用户 2026-09-19：同类只有一个的就不用折叠了）。
+    //   多包一层「层头 + 小三角」只是多一次点击、还把同一个名字写两遍（层头 + 块名）。
+    if (L.items.length === 1) {
+      return `<div class="ctx-layer" style="margin-bottom:3px">${_row(L.items[0])}</div>`;
+    }
+    const pct = (sum / total * 100).toFixed(1);
+    return `<div class="ctx-layer" data-layer="${L.id}" style="margin-bottom:3px">
+      <div class="ctx-block">
+        <div class="ctx-block-row" style="cursor:pointer" onclick="toggleCtxLayer('${L.id}')">
+          <span class="lbl"><i class="${L.icon}" style="color:${L.color};margin-right:4px"></i>${escHtml(L.name)}</span>
+          <span class="val">${_fmtTok(sum)} tok · ${pct}%<i class="ri-arrow-right-s-line ctx-layer-tri" style="margin-left:5px;transition:transform .15s"></i></span>
+        </div>
+        <div class="ctx-block-bar"><div class="ctx-block-fill" style="width:${pct}%;background:${L.color}"></div></div>
+      </div>
+      <div class="ctx-layer-body" hidden style="padding-left:8px;border-left:2px solid var(--bg3);margin:4px 0 8px 6px">
+        ${L.items.map(_row).join('')}
+      </div>
+    </div>`;
   }).join('');
+  const _hist = _byKey['history'];
+  const _histHtml = _hist ? `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--bg3)">
+      ${_row(_hist)}
+      <div style="font-size:10px;color:var(--dim);margin-top:2px">在上下文窗口里 · 但不在固定前缀里（每轮增长）</div>
+    </div>` : '';
+  // 层合计 vs 固定前缀的差 = 拼装骨架（`=== xxx ===` 分隔线 / 换行）· 后端没把它单列成块。
+  //   不显示的话，细看的人会发现「各层加起来 ≠ 顶上的固定前缀」而不知道为什么。
+  const _laySum = _LAYERS.reduce((a, L) => a + L.items.reduce((x, b) => x + (b.tokens || 0), 0), 0);
+  const _gap = Math.max(0, fixed - _laySum);
+  const _gapHtml = _gap > 0
+    ? `<div style="font-size:10px;color:var(--dim);padding:2px 0 2px 4px">+ 拼装骨架（分隔线 / 换行）${_fmtTok(_gap)} tok</div>`
+    : '';
+  bars.innerHTML = head + _layerHtml + _gapHtml + _histHtml;
   const cache = document.getElementById('ctxCardCache');
   const ch = d.cache_hint || {};
-  cache.innerHTML = `<i class="ri-flashlight-fill" style="color:#4FD1C5"></i> 缓存: ${ch.primed ? '前缀已预热 · 命中省钱' : '前缀未预热'}${ch.last_cache_read ? ` · 上轮命中 ${_fmtTok(ch.last_cache_read)} tok` : ''} <span style="color:var(--dim);font-size:10px">(固定前缀 灵魂+工具 每轮命中 = 省钱大头)</span>`;
+  // 命中率比「上轮命中多少 tok」有用 —— 后者上下文越长自然越多，看不出好坏；
+  // 前者一旦掉下来，就说明前缀被改动了（缓存失效）。
+  const rate = (typeof ch.hit_rate === 'number') ? Math.round(ch.hit_rate * 100) : null;
+  const rateColor = rate == null ? 'var(--dim)' : (rate >= 90 ? '#4FD1C5' : rate >= 70 ? '#F6AD55' : '#FC8181');
+  cache.innerHTML = `<i class="ri-flashlight-fill" style="color:#4FD1C5"></i> 缓存命中率 `
+    + `<b style="color:${rateColor}">${rate == null ? '—' : rate + '%'}</b>`
+    + (ch.window ? ` <span style="color:var(--dim);font-size:10px">(近 ${ch.window} 轮)</span>` : '')
+    + (ch.primed ? ' · 前缀已预热' : ' · 前缀未预热')
+    + (ch.last_cache_read ? ` · 上轮命中 ${_fmtTok(ch.last_cache_read)} tok` : '')
+    + `<div style="color:var(--dim);font-size:10px;margin-top:2px">掉下来 = 前缀被改过 → 那一轮全价</div>`;
   const foot = document.getElementById('ctxCardFoot');
-  foot.textContent = `阈值 ${_fmtTok(d.max_tokens||0)} = context_window × 0.7 · 到线自动摘要压缩 · 跟当前对话实例走`;
+  // v3 · 比例从后端 /context-usage 拿（原来写死 0.7 → 改成 0.8 后这行还在说 0.7，
+  // 数字对、公式错，看着像 bug）。以后调参改后端一处即可，前端自动跟。
+  const _ratio = (typeof d.ratio === 'number') ? d.ratio : 0.8;
+  foot.textContent = `阈值 ${_fmtTok(d.max_tokens||0)} = context_window × ${_ratio.toFixed(2)} · 到线自动摘要压缩 · 跟当前对话实例走`;
+  // wish-740b2d2c · 看完整拼装 → 铺中栏。
+  //   用户：「拼装提示词的部分一定要大·能看到全部·不能是小窗·如果两列至少右侧是完整拼装」
+  //   小卡片放不下全文 → 铺到中栏（大区域·还能圈字批注）· 勾选只控制显示，不决定任何东西进不进前缀。
+  const _pfx = document.getElementById('ctxCardPfx');
+  if (_pfx) {
+    _pfx.innerHTML = '<button class="btn-ghost" onclick="openPrefixViewer()" '
+      + 'style="font-size:11px;padding:3px 10px"><i class="ri-file-text-line"></i> 看完整拼装 →</button>';
+  }
+}
+// wish-6350cced · 装配台（用户 2026-09-21：弹窗对用户分辨率不友好 → 回中栏铺 · 自适应）。
+//   保存预设入口在标题栏（stage.js 注入 · 只对这个产物文件出现）；数据侧不变（固定路径 HTML 覆盖写）。
+async function openPrefixViewer(pid) {
+  try {
+    // 用户 2026-09-21：带档位/预设打开 —— 装配台直接切到它（我的预设卡「编辑」按钮用）
+    //   带 sess：「当前会话」文案才能显示该会话真实档名（用户 2026-09-21）
+    const q = (pid ? ('?profile=' + encodeURIComponent(pid) + '&') : '?')
+      + 'sess=' + encodeURIComponent(typeof sessionId === 'string' ? sessionId : '');
+    const r = await fetch('/context-prefix' + q, { headers: { 'Authorization': 'Bearer ' + token } });
+    const d = await r.json();
+    if (!d.ok) { alert('装配台拉不到：' + (d.error || ('HTTP ' + r.status))); return; }
+    if (typeof openStage === 'function') openStage({ path: d.stage_path });
+    else window.open('/stage/file/' + String(d.stage_path || '').replace(/\\/g, '/'), '_blank');
+  } catch (e) {
+    alert('装配台失败：' + (e && e.message ? e.message : e));
+  }
+}
+window.openPrefixViewer = openPrefixViewer;
+// 2026-09-19 修 BUG（用户 实测：点 X 没反应）——
+//   下面那个 document 级监听对**卡内**点击一律 return（设计如此），它的注释写着
+//   「按钮自带 onclick」；但 ctxCardClose 从上线起就没绑过任何处理器 → 点了什么也不发生。
+//   正解：给它一个真的处理器，别靠「应该有人绑」。
+//   （这里不需要 stopPropagation：按钮先跑，事后冒泡到 document 时 card.contains 会 return）
+const _ctxCloseBtn = document.getElementById('ctxCardClose');
+if (_ctxCloseBtn) {
+  _ctxCloseBtn.addEventListener('click', () => {
+    _ctxOpen = false;
+    const _cc = document.getElementById('ctxCard');
+    if (_cc) _cc.hidden = true;
+  });
 }
 // 点击圆圈 ↔ 卡片 · 点外部/关闭按钮收起
 document.addEventListener('click', (e) => {
   const wrap = document.getElementById('ctxRingWrap');
   const card = document.getElementById('ctxCard');
   if (!wrap || !card) return;
+  // 2026-09-19 修 BUG（用户 实测：点「展开」→ 卡片直接消失）：
+  //   card 嵌在 wrap 里 → 卡内任何点击都被判成「点圆圈」→ _ctxOpen 取反 → 卡片关掉。
+  //   原来卡里全是纯展示元素没人点，露不出来；一加可点的东西就暴露了。
+  //   正解：卡内点击一律交给元素自己处理（按钮自带 onclick），不在这里翻开关。
+  if (card.contains(e.target)) return;
   if (wrap.contains(e.target)) {
     _ctxOpen = !_ctxOpen;
     card.hidden = !_ctxOpen;
     if (_ctxOpen) renderCtxCard();
-  } else if (!card.contains(e.target)) {
+  } else {
     _ctxOpen = false;
     card.hidden = true;
   }
@@ -6330,7 +6080,7 @@ $input.addEventListener('keydown', e => {
 //   - 左导航 nav-rail · 8+1 个维度纵向按钮
 //   - 中详情 detail-pane · 点导航 → 这里显示该维度完整列表
 //   - 右对话 chat-pane · 永远显示 · 用户 边看左边内容边右边打字
-//   - "<i class="ri-brain-fill"></i> Daemonkey 日记" 新维度（cognition）· 读 OWNER-NOTEBOOK
+//   - "<i class="ri-brain-fill"></i> Daemonkey 日记" 新维度（cognition）· 读 用户-NOTEBOOK
 // ──────────────────────────────────────────────────────────────
 
 const $detailPane = document.getElementById('detailPane');
@@ -6343,7 +6093,9 @@ const $navGroups = document.getElementById('navGroups');
 const NAV_GROUPS = [
   // 总览 · 工作室看板独立分组放最上 (用户 2026-08-06 · 它不是市场信息·是全局总览)
   { id: 'home',    label: '总览' },
-  { id: 'market',    label: '市场信息' },
+  // 2026-09-20 · 收纳: 「市场信息」+「能力对照」两组并成一条线 · 只留一个入口「掘金雷达」
+  //   (能力对照组的条目全部 navHidden → renderNav 的 hasItems 判断会让空组自动不渲染 · 老 id 不删)
+  { id: 'market',    label: '掘金' },
   { id: 'ability',   label: '能力对照' },
   { id: 'studio',    label: '出品工坊' },
   { id: 'execution', label: '执行落地' },
@@ -6353,16 +6105,28 @@ const NAV_GROUPS = [
 const DOMAIN_META = {
   // 工作室看板 · 起始屏 BI · 独立分组最上 (用户 2026-08-06 拍板 · 它不是市场信息)
   bi:            { icon: '<i class="ri-dashboard-fill"></i>', label: '工作室看板', section: 'home', stub: false },
-  // 市场信息 · 外部信号 · Daemonkey 看世界的眼睛 · 不含 Daemonkey 自己的观察
-  radar:         { icon: '<i class="ri-radar-fill"></i>', label: '信息雷达', section: 'market', stub: false },
-  trends:        { icon: '<i class="ri-line-chart-fill"></i>', label: '今日趋势', section: 'market', stub: false },
-  reports:       { icon: '<i class="ri-archive-2-fill"></i>', label: '产物库',   section: 'market', stub: false },
-  calendar:      { icon: '<i class="ri-calendar-fill"></i>', label: '信息日历', section: 'market', stub: false },
+  // ── 掘金雷达 · 一条线 (用户 2026-09-20 拍板:「左侧栏东西太多了」) ────────────────
+  // 左栏只留 radar 一个入口 (navLabel: '掘金雷达') · 其余六格 navHidden —— 进去后靠页面
+  // 顶部那条链 (pipelineBreadcrumb) 切换，链子右端挂三个出口 (产物库 / 信息日历 / 知识库).
+  // ⚠ id 一个都没改: 全站 60+ 处 loadDashboard('trends'/'reports'/…) 照常通 —— 这次只是收纳.
+  // hub: 子维度靠它把左栏高亮映射回所属入口 (见 _navHl) · 否则点进去左栏就"没人在家".
+  // 市场信息 · 外部信号 · Daemonkey 看世界的眼睛
+  radar:         { icon: '<i class="ri-radar-fill"></i>', label: '信息雷达', navLabel: '掘金雷达', section: 'market', stub: false, hub: 'radar' },
+  trends:        { icon: '<i class="ri-line-chart-fill"></i>', label: '今日趋势', section: 'market', stub: false, navHidden: true, hub: 'radar' },
+  // 2026-09-20 稍后 · 用户:「左侧导航！！把产物库给我弄回来！！没让你收他！」
+  //   上一条收纳把 reports/trends/calendar/opportunities/feasibility/execution 全设了
+  //   navHidden，只留 radar 一格。他知道，但**产物库不该被连带收掉** —— 知识库当时
+  //   单独放回来了，产物库没有。放回掘金组，跟知识库并排。
+  reports:       { icon: '<i class="ri-archive-2-fill"></i>', label: '产物库',   section: 'market', stub: false, hub: 'radar' },
+  calendar:      { icon: '<i class="ri-calendar-fill"></i>', label: '信息日历', section: 'market', stub: false, navHidden: true, hub: 'radar' },
   // 能力对照 · 内部决策 · 市场 × 用户 能力的交叉
-  opportunities: { icon: '<i class="ri-diamond-fill"></i>', label: '掘金机会', section: 'ability', stub: false },
-  feasibility:   { icon: '<i class="ri-bar-chart-fill"></i>', label: '可行性分析', section: 'ability', stub: false },
-  // 私有文档知识库 · 第二大脑 · 灌进来的资料喂掘金脑/可行性 · 与掘金同组让"资料→决策"这条线可见
-  knowledge:     { icon: '<i class="ri-book-2-fill"></i>', label: '知识库', section: 'ability', stub: false },
+  opportunities: { icon: '<i class="ri-diamond-fill"></i>', label: '掘金机会', section: 'ability', stub: false, navHidden: true, hub: 'radar' },
+  feasibility:   { icon: '<i class="ri-bar-chart-fill"></i>', label: '可行性分析', section: 'ability', stub: false, navHidden: true, hub: 'radar' },
+  // 私有文档知识库 · 第二大脑 · 灌进来的资料喂掘金脑/可行性
+  // 2026-09-20 · 用户:「右边的产物库和知识库跳转就不用了，留一个报告库的跳转就好」
+  //   → 链子右端只留一个出口；知识库恢复成左栏一项，挂在「掘金」组 (它本来就是这条线的料库)，
+  //     否则它就没入口了。
+  knowledge:     { icon: '<i class="ri-book-2-fill"></i>', label: '知识库', section: 'market', stub: false },
   // 出品工坊 · 产品生产
   // 卷四十四 K stage 2a · 4 老维度 (content/design/dev/docs) 收进工坊主页"<i class="ri-archive-fill"></i> 应用"tab
   // 它们的 dashboard 端点 GET /dashboard/<id> 仍然有效 (workshop 内部 fetch 直拉)
@@ -6379,10 +6143,12 @@ const DOMAIN_META = {
   // 执行落地 · 卷三十三 · 闭环反馈独立维度 · 卷三十三补丁 · Daemonkey 日记搬这里
   //   因为"Daemonkey 对 用户 的观察"跟"用户 真正在跑的项目"是同一码事——
   //   都是「自我视角」·跟外部信号（radar/trends/reports）分开
-  execution:     { icon: '<i class="ri-refresh-fill"></i>', label: '执行反馈', section: 'execution', stub: false },
+  // 执行反馈 = 闭环反馈端 (用户 2026-09-20:「执行反馈也要放进去」) —— 它记的是掘金机会
+  //   做完之后的真实效果 · 正好是「机会→可行性→做→反馈」这条线的最后一格，所以也收进掘金雷达。
+  execution:     { icon: '<i class="ri-refresh-fill"></i>', label: '执行反馈', section: 'execution', stub: false, navHidden: true, hub: 'radar' },
   scheduled_tasks: { icon: '<i class="ri-timer-2-fill"></i>', label: '定时任务', section: 'execution', stub: false },
   favorites:     { icon: '<i class="ri-star-fill"></i>', label: '收藏夹',   section: 'execution', stub: false },
-  // ── 成长档案 (depot hub) · 把 日记/心愿/沉淀位/操作手册 并成一个入口 · 内部标签切换 ──
+  // ── 成长档案 (depot hub) · 把 日记/心愿/沉淀位/技能库 并成一个入口 · 内部标签切换 ──
   // 这 4 个本就是「Daemonkey 自己积累/沉淀的东西」· 并成一栏减少侧边栏拥挤 (用户 2026-07-11)
   // 2026-08-06 · 用户 拍板: 成长档案挪「总览」分组 (执行落地=用户 正在跑的事·成长档案=Daemonkey 自我成长·两者不同层)
   // 子维度 navHidden · 不单独占导航位 · 但 DOMAIN_META 条目保留 · loadDepot 仍复用它们的 render fn
@@ -6391,7 +6157,7 @@ const DOMAIN_META = {
   // 卷三十五 · Daemonkey 自我演化心愿单 · "我想装这个能力"
   wishlist:      { icon: '<i class="ri-lightbulb-fill"></i>', label: 'Daemonkey 心愿', section: 'home', stub: false, navHidden: true },
   sinks:         { icon: '<i class="ri-archive-drawer-fill"></i>', label: '沉淀位',   section: 'home', stub: false, navHidden: true },
-  // 操作手册 · playbook 沉淀查看器 · 灌/召回仍走 NLP·这里只读+可删
+  // 技能库 · playbook 沉淀查看器 · 灌/召回仍走 NLP·这里只读+可删
   playbooks:     { icon: '<i class="ri-tools-fill"></i>', label: '操作手册', section: 'home', stub: false, navHidden: true },
   // 插件库 · 能力扩展 · Daemonkey 自己用产品开发能写新插件回填这里
   plugins:   { icon: '<i class="ri-puzzle-fill"></i>', label: '插件库', section: 'plugins', stub: false },
@@ -6411,6 +6177,15 @@ const RADAR_DOMAINS_META = {
 let radarDomainFilter = localStorage.getItem('radar_domain_filter') || 'all';
 
 let currentView = null;  // 当前选中的维度 id · null = 没选
+
+// 左栏高亮该落在哪一格 —— **只有当这个维度自己没占左栏位置 (navHidden)** 时, 才用
+// meta.hub 映射回所属入口; 自己有格子的就用它自己。
+// ⚠ 2026-09-20 修 (用户:「点击他怎么还信息雷达显示高亮，你干什么了？！」):
+//   原来只看 hub 不看 navHidden → 产物库自己那格回到左栏后, 高亮还被拉去「掘金雷达」。
+function _navHl(view) {
+  const m = DOMAIN_META[view];
+  return (m && m.navHidden && m.hub) || view;
+}
 
 // ── 左导航渲染 + 切换 · 卷二十九 五分组 ─────────────────────────
 function renderNav() {
@@ -6433,13 +6208,13 @@ function renderNav() {
       if (m.navHidden) continue;  // 合并进 depot hub 的子维度 · 不单独占导航位
       hasItems = true;
       const btn = document.createElement('button');
-      btn.className = 'nav-item' + (id === currentView ? ' active' : '')
+      btn.className = 'nav-item' + (id === _navHl(currentView) ? ' active' : '')
                     + (m.stub ? ' stub' : '')
                     + (m.disabled ? ' disabled' : '');
       btn.dataset.view = id;
       btn.innerHTML =
         `<span class="icon">${m.icon}</span>` +
-        `<span class="label">${m.label}</span>` +
+        `<span class="label">${m.navLabel || m.label}</span>` +
         `<span class="badge" id="navBadge_${id}">·</span>`;
       if (!m.disabled) {
         btn.addEventListener('click', () => switchView(id));
@@ -6510,8 +6285,9 @@ function switchView(view) {
   view = ev.view || view;
   currentView = view;
   // sidebar active 状态同步
+  const hl = _navHl(view);   // hub 子维度 → 高亮所属入口 (2026-09-20 收纳)
   document.querySelectorAll('.nav-item').forEach(b => {
-    b.classList.toggle('active', b.dataset.view === view);
+    b.classList.toggle('active', b.dataset.view === hl);
   });
   // 卷三十七 · 切到 dashboard 维度时 · 清掉底部 ⚙ 设置按钮的高亮
   document.querySelectorAll('.nav-settings-btn.active').forEach(b => b.classList.remove('active'));
@@ -6728,27 +6504,42 @@ function advisorCardFinish(card, info) {
   if (shimmer) shimmer.remove();
   const body = card.querySelector('.advisor-live-body');
   if (body) body.remove();
-  // 摘要 + 动作区 · 用户 2026-07-28: coop 模式 suppressAnswer (施工单全文在下方就位卡 · 这里只留展开过程)
+  // fold 档摘要折起 · expand 档摊开（施工单/验收另有就位卡）
   if (!info.suppressAnswer) {
     const answer = document.createElement('div');
     answer.className = 'advisor-answer';
-    // 卷八十一续 · replan 输出是 markdown (施工单: 标题/表格/列表) · mdRender 渲染不裸 textContent
+    answer.hidden = !chatProcessExpanded();
     const raw = (info.preview || '').trim() || '(顾问输出为空)';
     answer.innerHTML = (typeof mdRender === 'function') ? mdRender(raw) : escHtml(raw);
     card.appendChild(answer);
+    card._advAnswer = answer;
   }
   const actions = document.createElement('div');
   actions.className = 'advisor-actions';
   card.appendChild(actions);
   // 展开顾问过程: sub id 优先 info 给的 · 没有则 fetch /api/advisor/status 兜底
   const renderTraceBtn = (subId) => {
-    if (!subId || actions.querySelector('.adv-btn')) return;
+    if (!subId || actions.querySelector('.adv-btn-trace')) return;
     const btn = document.createElement('button');
-    btn.className = 'adv-btn';
+    btn.className = 'adv-btn adv-btn-trace';
     btn.innerHTML = '<i class="ri-file-list-3-line"></i> 展开顾问过程';
     btn.addEventListener('click', () => advisorTraceToggle(card, subId, btn));
     actions.insertBefore(btn, actions.firstChild);
   };
+  if (card._advAnswer) {
+    const peek = document.createElement('button');
+    peek.className = 'adv-btn adv-btn-peek';
+    peek.innerHTML = card._advAnswer.hidden
+      ? '<i class="ri-article-line"></i> 看顾问结论'
+      : '<i class="ri-arrow-up-s-line"></i> 收起结论';
+    peek.addEventListener('click', () => {
+      card._advAnswer.hidden = !card._advAnswer.hidden;
+      peek.innerHTML = card._advAnswer.hidden
+        ? '<i class="ri-article-line"></i> 看顾问结论'
+        : '<i class="ri-arrow-up-s-line"></i> 收起结论';
+    });
+    actions.insertBefore(peek, actions.firstChild);
+  }
   if (info.subId) {
     renderTraceBtn(info.subId);
   } else {
@@ -6795,8 +6586,8 @@ function advisorTraceToggle(card, subId, btn) {
           const mark = node.ok === true ? '✓ ' : (node.ok === false ? '✗ ' : '');
           row.innerHTML = '<span class="trace-dot tool"><i class="ri-tools-line"></i></span>' +
             '<div class="trace-body"><span class="tool-name">' + mark + escHtml(node.name || '?') + '</span>' +
-            (node.args ? ' <span class="tool-args">' + escHtml(node.args) + '</span>' : '') +
-            (node.result ? '<div class="tool-result">' + escHtml(node.result) + '</div>' : '') + '</div>';
+            (node.args ? ' <span class="tool-args">' + softIdsHtml(escHtml(node.args)) + '</span>' : '') +
+            (node.result ? '<div class="tool-result">' + softIdsHtml(escHtml(node.result)) + '</div>' : '') + '</div>';
         } else if (node.kind === 'answer') {
           row.className = 'trace-row';
           row.innerHTML = '<span class="trace-dot final"><i class="ri-check-line"></i></span>' +
@@ -6833,7 +6624,15 @@ function advisorBlueprintCard(state, info) {
       ? '<div class="blueprint-flow"><i class="ri-check-line"></i> 执行者已按此单施工</div>'
       : '<div class="blueprint-flow"><i class="ri-arrow-right-line"></i> 执行者 <b>按单施工中</b>…</div>');
   // 用户 2026-07-29 · 施工单是 markdown (标题/列表/表格) · 用 mdRender 渲染别裸 textContent
-  div.querySelector('.blueprint-body').innerHTML = mdRender((info.text || '').trim() || '(施工单为空)');
+  const bpBody = div.querySelector('.blueprint-body');
+  bpBody.innerHTML = mdRender((info.text || '').trim() || '(施工单为空)');
+  bpBody.hidden = !chatProcessExpanded();
+  const bpHead = div.querySelector('.advisor-head');
+  if (bpHead) {
+    bpHead.style.cursor = 'pointer';
+    bpHead.title = '点开看施工单全文';
+    bpHead.addEventListener('click', () => { bpBody.hidden = !bpBody.hidden; });
+  }
   if (info.historical && info.subId) {
     const actions = document.createElement('div');
     actions.className = 'advisor-actions';
@@ -6872,7 +6671,15 @@ function advisorReviewCard(state, info) {
     '<div class="blueprint-body"></div>' +
     flow;
   // 用户 2026-07-29 · 验收意见是 markdown (表格/列表/加粗) · 用 mdRender 渲染别裸 textContent
-  div.querySelector('.blueprint-body').innerHTML = mdRender((info.text || '').trim() || '(顾问未给出意见全文)');
+  const rvBody = div.querySelector('.blueprint-body');
+  rvBody.innerHTML = mdRender((info.text || '').trim() || '(顾问未给出意见全文)');
+  rvBody.hidden = pass ? !chatProcessExpanded() : false;
+  const rvHead = div.querySelector('.advisor-head');
+  if (rvHead) {
+    rvHead.style.cursor = 'pointer';
+    rvHead.title = pass ? '点开看验收意见' : '验收未过 · 点此收起/展开意见';
+    rvHead.addEventListener('click', () => { rvBody.hidden = !rvBody.hidden; });
+  }
   if (info.subId) {
     const actions = document.createElement('div');
     actions.className = 'advisor-actions';
@@ -6988,6 +6795,119 @@ function advisorCardRenderHistorical(state, info) {
   }
   state.$container.appendChild(div);
   return div;
+}
+
+// ── wish-db46ff9b · 选择题卡 ──────────────────────────────────────
+// 跟下面的审批卡是两件事：审批问「要不要让我执行这个」，这张问「你要哪个」。
+// 所以它没有风险/规避块、没有信任按钮——答案就是选项本身。
+function renderAskCard(data, state) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ask-card';
+  wrap.dataset.askId = data.tool_call_id || '';
+  wrap.dataset.turnId = data.turn_id || (state && state.currentTurnId) || '';
+
+  const head = document.createElement('div');
+  head.className = 'ask-head';
+  head.textContent = '❯ 想确认一件事';
+  wrap.appendChild(head);
+
+  const q = document.createElement('div');
+  q.className = 'ask-question';
+  q.textContent = data.question || '';
+  wrap.appendChild(q);
+
+  const opts = document.createElement('div');
+  opts.className = 'ask-options';
+  (data.options || []).forEach((label, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ask-option';
+    // 序号不是装饰：微信通道就是靠“回数字”作答，两边同一个心智
+    const num = document.createElement('b');
+    num.textContent = String(i + 1);
+    btn.appendChild(num);
+    btn.appendChild(document.createTextNode(label));
+    btn.addEventListener('click', () => postAskAnswer(wrap, data, label, i));
+    opts.appendChild(btn);
+  });
+  wrap.appendChild(opts);
+
+  // 其他（自己说）· 选项盖不住时不留死路
+  const otherRow = document.createElement('div');
+  otherRow.className = 'ask-other-row';
+  const otherBtn = document.createElement('button');
+  otherBtn.type = 'button';
+  otherBtn.className = 'ask-other-toggle';
+  otherBtn.innerHTML = '<i class="ri-edit-line"></i> 其他（自己说）';
+  const otherInput = document.createElement('input');
+  otherInput.type = 'text';
+  otherInput.className = 'ask-other-input';
+  otherInput.placeholder = '直接写你的答案，回车提交';
+  otherInput.hidden = true;
+  otherRow.appendChild(otherBtn);
+  otherRow.appendChild(otherInput);
+  wrap.appendChild(otherRow);
+  otherBtn.addEventListener('click', () => {
+    otherInput.hidden = false;
+    otherBtn.hidden = true;
+    otherInput.focus();
+  });
+  otherInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const v = (otherInput.value || '').trim();
+      if (v) postAskAnswer(wrap, data, v, -1);
+    }
+  });
+
+  const hint = document.createElement('div');
+  hint.className = 'ask-hint';
+  const mins = Math.max(1, Math.round((data.timeout_sec || 900) / 60));
+  hint.textContent = `不答也行 · ${mins} 分钟后我按“你没回”往下走（不会卡死）`;
+  wrap.appendChild(hint);
+
+  if (state && state.$container) state.$container.appendChild(wrap);
+  return wrap;
+}
+
+async function postAskAnswer(card, data, choice, index) {
+  card.classList.add('ask-card-submitting');
+  card.querySelectorAll('button').forEach((b) => (b.disabled = true));
+  const turnId = card.dataset.turnId || (data && data.turn_id) || '';
+  try {
+    const resp = await fetch('/turns/' + encodeURIComponent(turnId) + '/answer', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tool_call_id: data.tool_call_id,
+        choice: choice,
+        choice_index: index,
+      }),
+    });
+    if (!resp.ok) {
+      const txt = await resp.text();
+      throw new Error('HTTP ' + resp.status + ': ' + txt);
+    }
+    collapseAskCard(card, 'answered', choice);
+  } catch (e) {
+    card.classList.remove('ask-card-submitting');
+    card.querySelectorAll('button').forEach((b) => (b.disabled = false));
+    const hint = card.querySelector('.ask-hint');
+    if (hint) hint.textContent = '提交失败: ' + (e && e.message ? e.message : String(e));
+  }
+}
+
+function collapseAskCard(card, why, choice) {
+  if (!card || card.classList.contains('ask-card-done')) return;
+  card.classList.add('ask-card-done');
+  card.querySelectorAll('button, input').forEach((b) => (b.disabled = true));
+  const hint = card.querySelector('.ask-hint');
+  if (!hint) return;
+  if (why === 'answered') hint.textContent = '已回答：' + (choice || '');
+  else if (why === 'timeout') hint.textContent = '没回答（超时）· Daemonkey 已往下走';
+  else hint.textContent = '已收：' + why;
 }
 
 function renderConfirmCard(data, state) {
@@ -7398,9 +7318,9 @@ async function _waitForBackgroundTurn(sid, timeoutSec = 60) {
   const deadline = Date.now() + timeoutSec * 1000;
   while (Date.now() < deadline) {
     try {
-      const r = await fetch(`/sessions/${encodeURIComponent(sid)}/background_turn_status`, {
+      const r = await _fetchWithTimeout(`/sessions/${encodeURIComponent(sid)}/background_turn_status`, {
         headers: { 'Authorization': 'Bearer ' + token },
-      });
+      }, 5000);
       if (r.ok) {
         const data = await r.json();
         if (data.status === 'completed' || data.status === 'failed' || data.status === 'none') {
@@ -7427,13 +7347,14 @@ async function waitForDaemonAfterRestartTool(state) {
   await new Promise(r => setTimeout(r, 3000));
   let alive = false;
   let lastErr = '';
-  for (let i = 0; i < 60; i++) {
+  // 卷八十五 · 判活改用 /api/core/version (无鉴权 · 无副作用 · 不读 soul)。
+  // 原先是 POST /reload-soul: 每探一次就真重载一遍 system prompt (重读 soul + 重拼前缀) ——
+  // 60 次探测 = 60 次重载 · 又重又跟正在跑的续场 turn 抢 · 且 load_soul 抛错时它返 500
+  // → 「daemon 明明活着却判死」→ 走 else 分支 · 锁着不还也不重试。窗口 30s → 90s。
+  for (let i = 0; i < 180; i++) {
     await new Promise(r => setTimeout(r, 500));
     try {
-      const r = await fetch(`/reload-soul`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
+      const r = await _fetchWithTimeout(`/api/core/version`, {}, 5000);
       if (r.ok) { alive = true; break; }
       lastErr = `HTTP ${r.status}`;
     } catch (e) { lastErr = e.message || 'fetch failed'; }
@@ -7482,7 +7403,7 @@ async function waitForDaemonAfterRestartTool(state) {
       addSys('<i class="ri-checkbox-circle-fill"></i> daemon 已重启 · 新代码已装载 · 可以继续派活了', state && state.$container);
     }
   } else {
-    addSys(`⚠ 30 秒没等到新 daemon (last: ${lastErr}) · 看 data/daemon.err · 或 GUI 启动器手动重启`, state && state.$container);
+    addSys(`⚠ 90 秒没等到新 daemon (last: ${lastErr}) · 看 data/daemon.err · 或 GUI 启动器手动重启 · 输入框会在 daemon 起来后自动解锁`, state && state.$container);
   }
 }
 
@@ -7765,6 +7686,12 @@ document.querySelector('.chat-pane-head')?.addEventListener('click', (e) => {
 
 // chat-pane 总是在右栏显示 · 不再有"返回对话"概念
 function backToChat() {
+  // 专注版：产物库槽开着时「收起」要连槽一起收回 · 否则中栏被留在右栏槽里 = 侧边栏关不掉 (用户 2026-09-15)
+  if (document.body.classList.contains('compact') && typeof toggleCompactLibrary === 'function') {
+    try { toggleCompactLibrary(false); } catch (e) { console.warn('backToChat: 收回产物库槽失败', e); }
+  }
+  // 收起 = 带着展示的产物(画布)一起收 · 否则画布跟着 #detailPane 挪回中栏 = "收起没把产物收起来" (用户 2026-09-15)
+  if (typeof stageClearQuiet === 'function') stageClearQuiet();
   currentView = null;
   document.querySelectorAll('.nav-item.active').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.nav-settings-btn.active').forEach(b => b.classList.remove('active'));
@@ -7830,9 +7757,10 @@ async function refreshNavBadges() {
 // 卷二十八 · 起始屏 = BI 看板
 // 包含：领域热力图（雷达条目按 domain 分布）+ 掘金机会卡（top 3）+ 维度速览
 function renderDetailWelcome() {
+  if (typeof currentView !== 'undefined' && currentView && currentView !== 'bi') return;
   $detailPane.innerHTML = `
     <div class="bi-loading">
-      <div style="font-size:18px;margin-bottom:8px"><i class="ri-diamond-fill"></i> 工作室 BI 看板</div>
+      <div style="font-size:18px;margin-bottom:8px">工作室 BI 看板</div>
       ${typeof dashLoadingHTML === 'function' ? dashLoadingHTML('正在装配看板') : '<div style="font-size:12px;color:var(--dim2)">加载中…</div>'}
     </div>`;
   loadBIDashboard();
@@ -8079,7 +8007,7 @@ async function refreshWorkingDocs() {
     bar.querySelectorAll("[data-wd]").forEach(function (btn) {
       btn.onclick = function () {
         const p = btn.getAttribute("data-wd");
-        if (p && typeof openStage === "function") openStage({ path: p });
+        if (p && typeof openStage === "function") openStage({ path: p, bind: true });
       };
     });
   } catch (e) {
@@ -8141,19 +8069,265 @@ function _splitMissing(name) {
   $dashView.innerHTML = `<div class="dash-head"><h2>${name}</h2></div>`
     + `<div class="dash-empty">这个维度的前端模块正在升级到位<br>重启 daemon 后刷新页面 (F5) 即可恢复。</div>`;
 }
-// 通用加载态 · 三点脉冲 (2026-08-20 · 实测 calendar 4.8s / wishlist 2.3s / radar 0.45s ·
-//   纯文字"加载中…"在秒级等待里太单薄。 星尘是星图专属 · 这里用克制的三点。
+// 通用加载态 · 品牌钥匙孔双环 (2026-09-30 · 用户:「既然有 LOGO 了，加载过场是不是可以
+//   把钥匙孔放上去」→ 选 E「双环」方案 · 原型 data/design/daemonkey-加载过场-LOGO原型.html)
+//   两圈转速不同的细环 + 钥匙孔呼吸 —— 比原来的三个通用圆点有辨识度，
+//   但文案 .dk-ld-txt 继续留着做兜底（环在动看不见时靠文字读状态）。
 //   text 参数给慢 tab 配专属文案 · 颜色全走 CSS 变量 · 深浅肤自适应)
 function dashLoadingHTML(text) {
   return `<div class="dash-empty dk-ld">
-  <div class="dk-ld-row"><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span><span class="dk-ld-dot"></span></div>
+  <div class="dk-ld-mark"><img src="/static/img/logo-mark.png" alt=""><i></i><i></i></div>
   <div class="dk-ld-txt">${text || '加载中'}</div>
 </div>`;
 }
 function _depotTabs(domain) { if (typeof _maybeDepotTabs === 'function') _maybeDepotTabs(domain); }
 
 if (typeof window._dashLoadSeq !== 'number') window._dashLoadSeq = 0;
+// ════ 二级页骨架统一 · 页头收口（2026-09-20 · wish-553d36eb）════════
+// 用户 提的：「收起改成 X · 刷新也用图标 · 没边框的图标 · 移过去有说明 · 点下有反馈」
+// 「遍历所有内页，看是不是统一的风格和排列」
+//
+// 遍历实测（20+ 个渲染点）—— 页头是每页各写各的：
+//   · 读数两套机制：少数页用 .dh-chips 胶囊，其余用 .meta 文字，位置还各不相同
+//   · 按钮四种写法：✕收起 / 收起 / 刷新 / 刷新列表 混着来
+//   · 有的页压根没按钮（月度复盘只有刷新 · 定时任务/收藏夹主分支没有）
+// → 接着补样式治不好。真修法：把页头收成一处。
+//
+// 挂载点 = loadDashboard 的唯一出口（全部二级页都从这一个口进出）。
+//   它内部有 12 个分支各自 return · 所以不能只在末尾挂 —— 在外层包一层，
+//   哪个分支走的都过包层的 finally。一处代码全站生效，
+//   以后新加的页自动继承（铁律 15：根本不会发生 > 事后拦截）。
+//
+// 只做两件事：
+//   ① 通用动作按钮图标化（收起→X · 刷新→圈箭头）· 无边框 + title 说明 + 按下反馈
+//      —— 页面特有的主行动必须留住文字（图标表达不出「重新抓取」和「抓取」的区别）
+//   ② 落地页缺「收起」的补上一颗
+//      详情页/子视图（页头有「← 返回」的）不补 —— 那是子视图不是落地页
+//      ⚠ 只补「收起」不补「刷新」：depot 这类 hub 的刷新会回到默认 tab，会刷错。
+const HEAD_ICON_RULES = [
+  [/^(✕\s*)?(收起|关闭)$/, 'ri-close-line', '收起中栏'],
+  [/^(刷新|刷新列表|重新加载)$/, 'ri-refresh-line', '刷新'],
+];
+
+function _mkHeadIconBtn(icon, tip, code) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'dh-iconbtn';
+  b.dataset.dhIcon = '1';
+  b.title = tip;
+  b.setAttribute('aria-label', tip);
+  b.innerHTML = '<i class="' + icon + '"></i>';
+  b.setAttribute('onclick', code);
+  return b;
+}
+
+// 【用户 2026-09-20 晚 · 说明行全站统一】没有说明行的页从这里兜底补一句 ·
+//   风格对齐雷达基准「定位 · 要点 · 要点」· 12~26 字。有自己说明行的页不动。
+const PAGE_NOTES = {
+  calendar:         '雷达信息的日历排布 · 看哪天进了什么',
+  favorites:        '你星标过的东西 · 产物 / 情报都在',
+  clients:          '合作客户的档案 · 联系人 / 状态 / 交接',
+  scheduled_tasks:  '定时的自动唤醒 · 每天 / 每周按点跑',
+  knowledge:        '你的私有文档 · 回答前 Daemonkey 先查这里',
+  projects:         '外面的真工程 · 挂目录即项目',
+  workshop:         'Daemonkey 的出品车间 · 应用 / 工作流 / 产物',
+};
+
+function _unifyDashHead(root, domain) {
+  const box = root || (typeof $dashView !== 'undefined' ? $dashView : null);
+  if (!box || !box.querySelectorAll) return;
+  const head = box.querySelector('.dash-head');
+  if (!head) return;
+
+  // ⑩ 说明行兜底：从中央表补（页面已有说明行的不动 · 幂等）
+  if (domain && PAGE_NOTES[domain] && !box.querySelector('.dash-note')) {
+    const _pn = document.createElement('div');
+    _pn.className = 'dash-note';
+    _pn.textContent = PAGE_NOTES[domain];
+    head.insertAdjacentElement('afterend', _pn);
+  }
+
+  // ① 已有按钮 → 通用动作图标化
+  head.querySelectorAll('button').forEach(btn => {
+    if (btn.dataset.dhIcon) return;
+    const label = (btn.textContent || '').trim();
+    for (let i = 0; i < HEAD_ICON_RULES.length; i++) {
+      if (!HEAD_ICON_RULES[i][0].test(label)) continue;
+      btn.dataset.dhIcon = '1';
+      btn.classList.add('dh-iconbtn');
+      btn.title = HEAD_ICON_RULES[i][2];
+      btn.setAttribute('aria-label', HEAD_ICON_RULES[i][2]);
+      btn.innerHTML = '<i class="' + HEAD_ICON_RULES[i][1] + '"></i>';
+      break;
+    }
+  });
+
+  // ② 落地页缺「收起」→ 补一颗。详情页（页头带「← 返回」）跳过。
+  const flat = head.textContent || '';
+  const isDetail = flat.indexOf('←') >= 0;
+  if (!isDetail) {
+    const hasClose = !!head.querySelector('button.dh-iconbtn[title="收起中栏"]')
+      || /(收起|关闭)/.test(flat);
+    if (!hasClose && typeof backToChat === 'function') {
+      head.appendChild(_mkHeadIconBtn('ri-close-line', '收起中栏', 'backToChat()'));
+    }
+  }
+
+  // ⑤ 【已撑销 2026-09-20】不要再“给所有页面补掘金雷达链子”了。
+  //    用户 那句话说错了 —— 他要的是【每页自己的二级导航在页头上面】，
+  //    不是“所有页都挂信息日历/信息雷达/掘金机会…那一排”。硬塞的结果是：
+  //    画像页顶上挂着「掘金机会」，语义说不通（用户：「你这放的是咯…………」）。
+  //    掘金雷达那一族的链子【本来就是各 render 自己拼在顶部的】，不用我管。
+  //    我把下面的 ③-c 改成：把页内二级导航（.depot-tabs 等）提到页头【上面】。
+
+  // ③-c 页内二级导航归位到【页头上面】（原型：二级导航在顶、页头在它下面）
+  //    BANK 之前是把它塞进面板【末尾】（结果在标题下面）。
+  //    允许顺序：链子(若有) > 二级导航 > 页头。没有链子的页就把二级导航放最前。
+
+  // ③ 页头面板 —— 链子 + 页头（+说明行）包成一层容器。
+  //    ⚠ 2026-09-20 修正：我当初写「原型里页头是一整块圆角面板」【是看错了】——
+  //    原型（用户 给的图3/图4）里根本没有面板框，全是平铺。
+  //    这层只留作结构锚点，.page-head-block 的底色/边框/圆角已全部清零。
+  if (!head.closest('.page-head-block')) {
+    const wrap = document.createElement('div');
+    wrap.className = 'page-head-block';
+    // ⚠ 用 head 【自己的父节点】而不是 box —— .dash-head 不一定挂在 box 直接子级下。
+    //   实测：「我的项目」的 .dash-head 在 .pj-wrap 里面，
+    //   box.insertBefore(wrap, head) 抛 NotFoundError: "not a child of this node"
+    //   → 整个 loadDashboard 挂掉，页头块永远包不上（实测那页 0 块的真因）。
+    const _hp = head.parentElement;
+    if (_hp) {
+      const pipe = _hp.querySelector(':scope > .pipeline');
+      if (pipe && pipe.nextElementSibling === head) {
+        _hp.insertBefore(wrap, pipe);
+        wrap.appendChild(pipe);
+        wrap.appendChild(head);
+      } else {
+        _hp.insertBefore(wrap, head);
+        wrap.appendChild(head);
+      }
+      // 说明行也归位（⚠ 不能只看 head 的紧邻兄弟 —— depot 标签条可能已插在中间）
+      const note = Array.from(_hp.children)
+        .find(el => el.classList && el.classList.contains('dash-note'));
+      if (note) wrap.appendChild(note);
+    }
+  }
+
+  // ③-b 页内二级导航归位到【页头上面】
+  //   之前塞进面板【末尾】→ 结果是二级导航在标题【下面】。
+  //   用户 要的是：二级导航在页头【上面】。
+  //   掘金雷达那一族的链子（.pipeline）本来就是各 render 拼在顶部的，不用碰。
+  const _blk2 = head.closest('.page-head-block');
+  if (_blk2) {
+    // ⚠ 用 _blk2 【自己的父节点】而不是 box —— 两者不一定是同一个。
+    //   写成 box.insertBefore 时，若 .page-head-block 被包在别的容器里，
+    //   会抛 NotFoundError: "not a child of this node"，整个 loadDashboard 挂掉。
+    //   实测触发点：切到「我的项目」（那页从此 0 页头块、页面是半渲染的）。
+    const _p2 = _blk2.parentElement;
+    if (_p2) {
+      // 各页的「页面级分区切换」= 二级导航，统一提到页头【上面】。
+      //   基准款：信息雷达那条链子在最上，页头在它下面，三级筛选再往下。
+      //   depot-tabs = 成长档案 / 产物库 / 插件库 的类目条
+      //   zone-seg    = 收藏夹的「我的产物 / 情报」
+      //   stage-tabs  = 客户档案的「全部/在合作/线索/暂停/已结束」
+      //   ⚠ 用「一组类名」而不是一页页改 JS（手册：20+ 处手改必漏）。
+      const SECONDARY = ['depot-tabs', 'zone-seg', 'stage-tabs'];
+      Array.from(box.children).forEach(el => {
+        if (!el.classList) return;
+        // 「预制应用」下的三级子类目条（depot-subtabs · 产品设计/产品开发/文档撰写/内容制作）：
+        //   不进页头【上面】—— 用户 2026-09-20 晚：「放到标题栏下面·也就是搜索栏上面」·
+        //   原型层次：二级在顶 → 页头 → 三级 → 四筛 → 列表。
+        if (el.classList.contains('depot-subtabs')) {
+          _blk2.insertAdjacentElement('afterend', el);
+          return;
+        }
+        if (SECONDARY.some(c => el.classList.contains(c))) _p2.insertBefore(el, _blk2);
+      });
+    }
+  }
+
+  // ④ 标题块：图标（占两行）+ 右侧「标题 / 说明」两行（用户 2026-09-20 晚 终版：
+  //   「图标占用两行的空间，右侧上面是标题、下面是描述」· 与 v5 原型 hx-hd 同构）。
+  //   幂等：已升级过（有 .dh-title-lines）就跳过；老结构（tb > h2+note）原地升级。
+  const _h2 = head.querySelector('h2');
+  if (_h2) {
+    let _tb = head.querySelector('.dh-title-block');
+    if (!_tb) {
+      _tb = document.createElement('div');
+      _tb.className = 'dh-title-block';
+      head.insertBefore(_tb, _h2);
+      _tb.appendChild(_h2);
+      const _n0 = box.querySelector('.dash-note');
+      if (_n0) _tb.appendChild(_n0);
+    }
+    if (!_tb.querySelector('.dh-title-lines')) {
+      const _lines = document.createElement('div');
+      _lines.className = 'dh-title-lines';
+      const _ico = _h2.querySelector('i');
+      if (_ico) {
+        const _isp = document.createElement('span');
+        _isp.className = 'dh-title-ico';
+        _ico.parentNode.removeChild(_ico);
+        _isp.appendChild(_ico);
+        _tb.insertBefore(_isp, _tb.firstChild);
+      }
+      const _noteEl = _tb.querySelector('.dash-note') || box.querySelector('.dash-note');
+      _tb.appendChild(_lines);
+      _lines.appendChild(_h2);
+      if (_noteEl) _lines.appendChild(_noteEl);
+    }
+    // 补搬：lines 已就位后说明行才渲染出来（在内容区裸着）→ 直接收进 lines（幂等）
+    const _lines2 = _tb.querySelector('.dh-title-lines');
+    const _lateNote = box.querySelector('.dash-note');
+    if (_lines2 && _lateNote && !_lateNote.closest('.dh-title-lines')) _lines2.appendChild(_lateNote);
+  }
+}
+
+// ── 说明行「一出现就归位」（用户 2026-09-20 晚:「先图1，然后才变成图2」的根源）──────
+//   页面渲染分两拍: 页头骨架先出（收口时说明行还没渲染 → 单行标题块），
+//   内容 render 完成后 .dash-note 才进 DOM（在内容区里裸着，等下一次补收口 → 肉眼可见跳变）。
+//   这里盯住 $dashView: 说明行一进 DOM 且不在 .dh-title-lines 里 → 同帧收口归位。
+//   _unifyDashHead 幂等 + 条件收敛（归位后条件不再满足），收口自身触发的变动会自然稳定。
+(function _watchDashNote() {
+  if (typeof MutationObserver === 'undefined' || typeof document === 'undefined') return;
+  let _pend = false;
+  const _check = () => {
+    _pend = false;
+    const box = (typeof $dashView !== 'undefined' && $dashView) ? $dashView : null;
+    if (!box) return;
+    const note = box.querySelector('.dash-note');
+    if (!note || note.closest('.dh-title-lines')) return;
+    if (typeof _unifyDashHead === 'function') _unifyDashHead(null, window._dashDomain || null);
+  };
+  const _obs = new MutationObserver(() => {
+    if (_pend) return;
+    _pend = true;
+    if (typeof queueMicrotask === 'function') queueMicrotask(_check); else setTimeout(_check, 0);
+  });
+  const _start = () => {
+    const box = (typeof $dashView !== 'undefined' && $dashView) ? $dashView : document.getElementById('dashView');
+    if (box) _obs.observe(box, { childList: true, subtree: true });
+    else setTimeout(_start, 600);
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _start);
+  else _start();
+})();
+
 async function loadDashboard(domain, opts = {}) {
+  if (!opts.silent) window._dashManualAt = Date.now();   // 30s 自刷保护依据: 手动切页时间
+  try {
+    await _loadDashboardCore(domain, opts);
+  } finally {
+    _unifyDashHead(null, domain);
+    // ⚠ 有些 render 是 async 且内部先 await（如 renderOpportunities 要先取收藏集），
+    //   DOM 在 await 之后才写 —— 出口回来时页面还是空的。
+    //   补前密后疏班次兑住（_unifyDashHead 幂等）；说明行归位的**主通道**是
+    //   _watchDashNote（.dash-note 一进 DOM 就同帧收口），这里是兜底。
+    [150, 400, 900, 1600].forEach(ms => setTimeout(() => _unifyDashHead(null, domain), ms));
+  }
+}
+
+async function _loadDashboardCore(domain, opts = {}) {
   if (opts.silent && (
     (typeof _shelfPreviewOpen !== 'undefined' && _shelfPreviewOpen)
     || window._shelfPreviewOpen
@@ -8165,12 +8339,36 @@ async function loadDashboard(domain, opts = {}) {
   //   对话里跑工具后的静默刷新 (scheduleDashboardRefresh / stream finally) 会拿 currentView='settings' 调进来
   //   → fetch /dashboard/settings → 后端没这个域 → 404 → 把 用户 正看的设置页冲成"加载失败 [404]"。 这里直接短路。
   if (!domain || domain === 'settings') return;
+  // 用户 2026-09-15: 记「中栏现在放的是哪个域」—— 专注版产物库是直调 loadDashboard (不经过导航),
+  //   currentView 不会更新; 画布关闭时 stageRemember/stageClose 只认 currentView
+  //   → 打开过预览再点 X 会跳回 BI 看板。 补一个只读写记录, stage 侧优先读它。
+  window._dashDomain = domain;
+  // ⚠ 2026-09-21 修（用户 报「从我的项目切回工坊打不开 + BI 看板失去边距」的真因）：
+  //   这段卸离逻辑原在【自定义 domain 分支之后】—— 而「我的项目」正是自定义 domain：
+  //   loadDashboard('projects') 走 _ud.render 分支直接 return，unmount 永远不执行 →
+  //   画布 DOM 被 innerHTML 冲掉但 workshop-active 类还挂在 $detailPane 上 →
+  //   切回工坊 mount 到残骸（打不开）、其它页布局被那个类带偏（失去边距）。
+  //   挪到所有 return 之前：不管去哪个域，离开工坊先卸干净。
+  //   且卸离与摘类【分开判】：isMounted() 不同步时旧写法连类都摘不掉，
+  //   workshop-active 悬在容器上 → 任何页都缺边距（实测 BI 看板被带偏）。
+  if (domain !== 'workshop') {
+    if (window.OPUS_WORKSHOP_VIEW && window.OPUS_WORKSHOP_VIEW.isMounted()) {
+      window.OPUS_WORKSHOP_VIEW.unmount();
+    }
+    $detailPane.classList.remove('workshop-active');
+  }
   // 0.9.6 · 用户自定义维度 (static/user/user.js 里 Daemonkey.addDomain 注册的) ·
   //   后端没有 /dashboard/<它> · 渲染完全交给用户自己的 render。 出错兜住·别把整个中栏搞白。
   const _ud = Daemonkey._domains[domain];
   if (_ud && typeof _ud.render === 'function') {
     try { await _ud.render($dashView, opts); }
     catch (e) { $dashView.innerHTML = `<div class="dash-empty">用户面板「${domain}」渲染出错<br>${e.message}</div>`; }
+    // ⚠ 2026-09-20 补：自定义维度（插件库 / 我的项目 / 定时任务…）以前在这里
+    //   直接 return 了 —— 根本没经过统一收口，所以它们的页头一直是【原样平铺】：
+    //   没有二级导航、按钮没图标化、说明行没归位。用户：「每个页看起来都不一样」。
+    //   在这里补一次与 loadDashboard 出口完全相同的收口（含异步兑住），一处治全部。
+    _unifyDashHead(null, domain);
+    [150, 400, 900, 1600].forEach(ms => setTimeout(() => _unifyDashHead(null, domain), ms));
     return;
   }
   // 工作室看板 · 起始屏 BI · 侧边栏直返入口 (用户 2026-08-06 · 复用起始屏渲染 · 零新逻辑)
@@ -8180,12 +8378,8 @@ async function loadDashboard(domain, opts = {}) {
     if (typeof loadDepot === 'function') return loadDepot(typeof _depotActive === 'string' ? _depotActive : 'cognition', opts);
     return _splitMissing('成长档案');
   }
-  // 卷四十四 K · 切到非 workshop 前·先 unmount 工坊 (释放 ResizeObserver / events)
-  if (domain !== 'workshop' && window.OPUS_WORKSHOP_VIEW && window.OPUS_WORKSHOP_VIEW.isMounted()) {
-    window.OPUS_WORKSHOP_VIEW.unmount();
-    $detailPane.classList.remove('workshop-active');
-  }
   // 卷四十四 K · workshop 维度走特殊路径 · 不调 API · 直接 mount LiteGraph view
+  //   （⚠ 离开工坊的卸离已提到函数顶部·这里只管挂）
   if (domain === 'workshop') {
     if (!window.OPUS_WORKSHOP_VIEW) {
       $dashView.innerHTML = `<div class="dash-empty">⚠ workshop.js 没加载 · 检查 static/workshop.js</div>`;
@@ -8196,9 +8390,10 @@ async function loadDashboard(domain, opts = {}) {
     return;
   }
   /* 本机回环中间件自己注 token · 前端不再用空 localStorage 挡人 */
-  if (!opts.silent) {
+  if (!opts.silent && domain !== 'memory_map') {
     // 慢 tab 专属文案 (实测: calendar 4.8s · wishlist 2.3s · radar 0.45s · 其余 <0.2s)
-    // memory_map 分支自己会覆盖成星尘加载态 · 这里给它什么无所谓
+    // memory_map 跳过通用钥匙孔加载态 · 直接上自己的星尘加载态(带标题+导航)
+    // —— 少写一次 innerHTML = 少闪一次 (2026-09-30 用户: 标题栏会刷新 2 次)
     const _loadHints = { calendar: '正在对齐日程', wishlist: '正在清点心愿', radar: '正在扫雷达', reviews: '正在翻复盘档案' };
     $dashView.innerHTML = dashLoadingHTML(_loadHints[domain]);
   }
@@ -8217,7 +8412,8 @@ async function loadDashboard(domain, opts = {}) {
   // 记忆星图 tab · 走 /dashboard/memory_map 端点 (0.9.6 · 三道闸治理全景)
   if (domain === 'memory_map') {
     // 后端现算 PCA+漏斗+卫生 · 要 1-3s · 先上星尘加载态 (①A 多色 · 用户 选定)
-    if (typeof memoryMapLoadingHTML === 'function') $dashView.innerHTML = memoryMapLoadingHTML();
+    // 加载态也把二级导航补上 —— 否则导航条要等渲染完才 inject · 中途消失一瞬(用户 看到的'刷新 2 次')
+    if (typeof memoryMapLoadingHTML === 'function') { $dashView.innerHTML = memoryMapLoadingHTML(); _depotTabs('memory_map'); }
     try {
       const r = await fetch('/dashboard/memory_map', { headers: { 'Authorization': 'Bearer ' + token } });
       if (stale()) return;
@@ -8254,7 +8450,11 @@ async function loadDashboard(domain, opts = {}) {
     } catch (e) { $dashView.innerHTML = `<div class="dash-empty">网络出错: ${e.message}</div>`; }
     return;
   }
-  const qs = opts.refresh ? '?refresh=true' : '';
+  // 2026-09-28 · 产物库首屏只要 reports 那一格（实测 32ms/12KB）；其余类目切到才拉。
+  //   全量一次 2102ms/2.3MB·其中 2.0s 花在首屏根本不看的工坊产物(2959 条)上。
+  const qs = (domain === 'reports')
+    ? (opts.refresh ? '?kinds=reports&refresh=true' : '?kinds=reports')
+    : (opts.refresh ? '?refresh=true' : '');
   try {
     const r = await fetch(`/dashboard/${domain}${qs}`, {
       headers: { 'Authorization': 'Bearer ' + token },
@@ -8309,7 +8509,9 @@ function renderWorkshop(domain, data) {
   let html = `
     <div class="dash-head">
       <h2>${icon} ${label}</h2>
-      <span class="meta">${items.length} 份 · ${escHtml(dir)}</span>
+      <div class="dh-chips" title="${escHtml(dir)}">
+        <div class="dh-chip"><b>${items.length}</b><span>份</span></div>
+      </div>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('${domain}')">刷新</button>
     </div>`;
@@ -8529,7 +8731,18 @@ function flushOpenActions(state) {
     bar.appendChild(row);
   });
   state.$container.appendChild(bar);
-  if (typeof openStageLast === 'function') openStageLast(staged);
+  // 2026-09-20 · 没铺进去要出声：以前 openStageLast 静默返回 false（中栏收起 / 没有 pane）
+  //   → 用户 那边就是「这次没铺」，无任何提示 → 看着像概率功能。
+  let _stagedOk = true;
+  if (typeof openStageLast === 'function') {
+    try { _stagedOk = openStageLast(staged) !== false; } catch (e) { _stagedOk = false; }
+  }
+  if (!_stagedOk) {
+    const hint = document.createElement('div');
+    hint.className = 'open-actions-hint';
+    hint.innerHTML = '<i class="ri-error-warning-line"></i> 没能自动铺进中栏 · 点这一行的「在中间看」再试一次';
+    bar.appendChild(hint);
+  }
   try { scrollToBottom(state.$container, { force: false }); } catch (e) { /* noop */ }
   list.length = 0;
 }
@@ -8592,6 +8805,7 @@ const _VERDICT_BADGES = {
 function renderFeasibility(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
+      ${pipelineBreadcrumb('feasibility')}
       <div class="dash-head"><h2><i class="ri-bar-chart-fill"></i> 可行性分析</h2></div>
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
@@ -8601,16 +8815,18 @@ function renderFeasibility(data) {
   const items = data.items || [];
 
   let html = `
+    ${pipelineBreadcrumb('feasibility')}
     <div class="dash-head">
       <h2><i class="ri-bar-chart-fill"></i> 可行性分析</h2>
-      <span class="meta">${items.length} 份分析 · 共 ${data.total || items.length}</span>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${items.length + (data.total && data.total !== items.length ? '/' + data.total : '')}</b><span>份分析</span></div>
+      </div>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('feasibility')">刷新</button>
       <button onclick="switchView('opportunities')" title="去 💎 掘金机会">← <i class="ri-diamond-fill"></i> 机会</button>
     </div>
-    <div class="feas-intro">
-      把 <i class="ri-diamond-fill"></i> 掘金机会卡展开成完整可行性 · 风险/资源/能力/成本/替代方案。
-      在机会卡上点 <b>💰估算成本</b> · 或跟 Daemonkey 说「分析第 N 个机会的可行性」。
+    <div class="dash-note">
+      机会卡的展开式可行性 · 风险 / 资源 / 成本 / 替代方案 · 点卡即分析
     </div>`;
 
   if (items.length === 0) {
@@ -8886,6 +9102,7 @@ let _currentCalendarYM = null;  // {year, month}
 function renderCalendar(data) {
   if (data && data.error) {
     $dashView.innerHTML = `
+      ${pipelineBreadcrumb('calendar')}
       <div class="dash-head"><h2><i class="ri-calendar-fill"></i> 信息日历</h2></div>
       <div class="dash-empty">${escHtml(data.error)}</div>`;
     return;
@@ -9011,9 +9228,13 @@ function renderCalendar(data) {
   ).join('');
 
   $dashView.innerHTML = `
+    ${pipelineBreadcrumb('calendar')}
     <div class="dash-head">
       <h2><i class="ri-calendar-fill"></i> 信息日历</h2>
-      <span class="dash-meta">${year} 年 ${month} 月</span>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${year}</b><span>年</span></div>
+        <div class="dh-chip"><b>${month}</b><span>月</span></div>
+      </div>
     </div>
 
     <div class="cal-toolbar">
@@ -9111,7 +9332,9 @@ function renderCalendarDay(d) {
     <div class="dash-head">
       <button class="back-btn" onclick="loadDashboard('calendar')">← 返回日历</button>
       <h2><i class="ri-calendar-fill"></i> ${escHtml(day)}</h2>
-      <span class="dash-meta">共 ${d.total || 0} 件事</span>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${d.total || 0}</b><span>件事</span></div>
+      </div>
     </div>
     <div class="cal-day-summary">
       <span class="cal-stat"><span class="cal-stat-icon"><i class="ri-radar-fill"></i></span>雷达 <b>${radar.count}</b></span>
@@ -9272,13 +9495,17 @@ function renderPlugins(data) {
   let html = `
     <div class="dash-head">
       <h2><i class="ri-puzzle-fill"></i> 插件库</h2>
-      <span class="meta">${items.length} 个插件 · AUTO ${tierSum.auto || 0} · CONFIRM ${tierSum.confirm || 0} · GUARD ${tierSum.guard || 0}</span>
+      <div class="dh-chips">
+        <div class="dh-chip"><b>${items.length}</b><span>个插件</span></div>
+        <div class="dh-chip" title="自动放行"><b>${tierSum.auto || 0}</b><span>AUTO</span></div>
+        <div class="dh-chip" title="需确认"><b>${tierSum.confirm || 0}</b><span>CONFIRM</span></div>
+        <div class="dh-chip" title="最高危"><b>${tierSum.guard || 0}</b><span>GUARD</span></div>
+      </div>
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('plugins')">刷新</button>
     </div>
-    <div class="plugin-intro">
-      Daemonkey 当前装载的所有工具 · 按层次分组。<br>
-      未来通过 <b><i class="ri-radar-fill"></i> 信息雷达 → <i class="ri-terminal-box-fill"></i> 产品开发</b> · Daemonkey 可以自己写新工具回填到这里。
+    <div class="dash-note">
+      装载的所有工具 · 按层次分组 · 之后能自己写工具回填
     </div>`;
 
   // 各 category 一组
@@ -9287,7 +9514,7 @@ function renderPlugins(data) {
     html += `
       <div class="plugin-cat">
         <div class="plugin-cat-head">
-          <span class="cat-icon">${meta.icon}</span>
+          <span class="cat-icon"><i class="${escHtml(meta.icon || 'ri-more-line')}"></i></span>
           <span class="cat-label">${escHtml(meta.label)}</span>
           <span class="cat-count">${catItems.length}</span>
         </div>
@@ -9353,7 +9580,7 @@ function renderPlugins(data) {
     html += `
       <div class="plugin-cat plugin-cat-future">
         <div class="plugin-cat-head">
-          <span class="cat-icon">✨</span>
+          <span class="cat-icon"><i class="ri-sparkling-line"></i></span>
           <span class="cat-label">未来扩展</span>
           <span class="cat-count">${future.length}</span>
         </div>
@@ -9397,12 +9624,20 @@ function formatRadarTime(iso) {
   } catch { return ''; }
 }
 
-// 卷二十七 · 工作室链路 breadcrumb · 雷达/趋势/报告 互相导航
+// 掘金雷达 · 一条线 (用户 2026-09-20 · 从左栏收进来的四格 + 三个出口)
+// 原来只是「雷达→趋势→产物」三格 · 现在是四格一条线 + 右端三个出口按钮。
+// 四个子页面的顶部都用它渲染 —— 所以这一处改完，雷达/趋势/机会/可行性四页的头部
+// 自动全变成同一条链，且高亮在你当前所在的那格 (零新组件 · 复用原有 .pl-stage 样式)。
 function pipelineBreadcrumb(current) {
   const stages = [
-    { id: 'radar',   icon: '<i class="ri-radar-fill"></i>', label: '雷达',   hint: '原料层 · 多源抓取' },
-    { id: 'trends',  icon: '<i class="ri-line-chart-fill"></i>', label: '趋势',   hint: '提炼层 · Daemonkey 军师视图' },
-    { id: 'reports', icon: '<i class="ri-archive-2-fill"></i>', label: '产物',   hint: '成品层 · 报告 docx + 演示稿 pptx' },
+    // 信息日历排最前 (用户 2026-09-20:「信息日历放到信息雷达前面」) —— 同属原料层,
+    // 它管时间维度 (哪天抓到了什么), 雷达管来源维度。
+    { id: 'calendar',      icon: '<i class="ri-calendar-fill"></i>', label: '信息日历',   hint: '原料层 · 按天看抓到了什么' },
+    { id: 'radar',         icon: '<i class="ri-radar-fill"></i>', label: '信息雷达',   hint: '原料层 · 多源抓取' },
+    { id: 'trends',        icon: '<i class="ri-line-chart-fill"></i>', label: '今日趋势',   hint: '提炼层 · Daemonkey 军师视图' },
+    { id: 'opportunities', icon: '<i class="ri-diamond-fill"></i>', label: '掘金机会',   hint: '决策层 · 机会 × 你的画像' },
+    { id: 'feasibility',   icon: '<i class="ri-bar-chart-fill"></i>', label: '可行性分析', hint: '评估层 · 展开成可动的活' },
+    { id: 'execution',     icon: '<i class="ri-refresh-fill"></i>', label: '执行反馈',   hint: '闭环层 · 做完了的真实效果回流' },
   ];
   const parts = stages.map((s, i) => {
     const active = (s.id === current) ? ' active' : '';
@@ -9411,7 +9646,15 @@ function pipelineBreadcrumb(current) {
       `<button class="pl-stage${active}" onclick="loadDashboard('${s.id}')" ` +
       `title="${escHtml(s.hint)}">${s.icon} ${s.label}</button>`;
   }).join('');
-  return `<div class="pipeline" title="Daemonkey 信息流水线 · 点击切换维度">${parts}</div>`;
+  // 链子之外的三个出口 (原来各占左栏一格) · 产物库进「全部」总览而不是上次停着的类目
+  // 链子右端只留一个出口 (用户 2026-09-20:「产物库和知识库跳转就不用了，留一个报告库的
+  //   跳转就好。直接跳转到报告库」) → 报告库 = 产物库的「报告」类目。
+  const exits = [
+    { id: 'reports', icon: 'ri-article-fill', label: '报告库', click: "openShelfKind('reports')", hint: '直接看报告 · 想看别的类目进去再切' },
+  ].map(e => `<button class="pl-exit${e.id === current ? ' active' : ''}" onclick="${e.click}" ` +
+    `title="${escHtml(e.hint)}"><i class="${e.icon}"></i> ${e.label}</button>`).join('');
+  return `<div class="pipeline" title="掘金雷达 · 点击切换">${parts}` +
+    `<span class="pl-gap"></span>${exits}</div>`;
 }
 
 // 卷二十七 · 简易 inline SVG 直方图（信源贡献）
@@ -9533,15 +9776,17 @@ function renderTrends(data) {
     ${pipelineBreadcrumb('trends')}
     <div class="dash-head">
       <h2><i class="ri-line-chart-fill"></i> 今日趋势 · Daemonkey 军师视图</h2>
-      <span class="meta"><i class="ri-calendar-fill"></i> <b>${escHtml(isArchive ? archiveDay : generatedDay)}</b> · ${trends.length} 个方向 · 扫了 ${itemsScanned} 条 · ${generatedTxt}${isArchive ? ' <span class="badge-archive">归档</span>' : ''}</span>
+      <div class="dh-chips">
+        <div class="dh-chip" title="最近生成 ${generatedTxt}"><b>${escHtml(isArchive ? archiveDay : generatedDay)}</b><span>生成日</span></div>
+        <div class="dh-chip"><b>${trends.length}</b><span>个方向</span></div>
+        <div class="dh-chip"><b>${itemsScanned}</b><span>条原料</span></div>
+      </div>${isArchive ? ' <span class="badge-archive">归档</span>' : ''}
       <button onclick="backToChat()">✕ 收起</button>
       <button onclick="loadDashboard('radar')">← 看原料</button>
       <button onclick="spawnQuickly('看一眼信息雷达最新数据 · 调 auto_pipeline 工具 · 参数 refresh_radar=false, regen_trends=true, mine_opps=false · 只重新生成今日趋势 · 跑完告诉我哪几个趋势最戳到 用户 · 为什么', '重新生成趋势')">让 Daemonkey 重新看一遍</button>
     </div>
-    <div class="trends-intro">
-      不是「今日新闻总结」· 是 Daemonkey 看完雷达 ${itemsScanned} 条后给出的
-      <strong>前瞻性思考 + 工作室视角</strong>——每个趋势都标了强度 + 可切入的角度 +
-      可一键转化的动作。${isArchive ? `<br><span class="archive-hint">⏳ 当前查看的是 <b>${escHtml(archiveDay)}</b> 的归档趋势·不是最新版</span>` : ''}
+    <div class="dash-note">
+      军师视角 · 读完雷达 ${itemsScanned} 条原料的前瞻判断 · 标强度与切角${isArchive ? `<br><span class="archive-hint">⏳ 当前查看的是 <b>${escHtml(archiveDay)}</b> 的归档趋势·不是最新版</span>` : ''}
     </div>
     ${trends.length > 3 ? renderListFilter({targetSelector: '.trend-card', placeholder: '搜趋势标题 / 摘要 / 信源...'}) : ''}`;
 
@@ -9615,7 +9860,9 @@ let _previewModalKeyBound = false;
 // 用户心智: "打开新弹框 = 旧的先关掉" · 不再静默覆盖。
 
 
-async function _kbAction(url, body) {
+/* onOk 回调：知识库开关类操作拿接口回传的 doc 就地改卡片，不整页重拉。
+   不传 onOk 则保持旧行为（重拉整个知识库面板）。 */
+async function _kbAction(url, body, onOk) {
   if (!token) return;
   try {
     const r = await fetch(url, {
@@ -9624,6 +9871,8 @@ async function _kbAction(url, body) {
       body: JSON.stringify(body),
     });
     if (!r.ok) { alert('操作失败 [' + r.status + ']'); return; }
+    const j = await r.json().catch(() => ({}));
+    if (typeof onOk === 'function') { onOk(j); return; }
     loadDashboard('knowledge', { silent: true });
   } catch (e) { alert('网络出错: ' + e.message); }
 }
@@ -9889,16 +10138,40 @@ loadCurrentModel();
 _showCoreVersion();
 _checkProactiveInbox();
 _checkWechatActivity();
-_connectSessionEvents();   // 会话常驻事件流（后台 turn 即时上屏）
+_connectSessionEvents();   // wish-8a9a3482 · 会话常驻事件流（后台 turn 即时上屏）
 setInterval(() => {
   if (!document.hidden) {
     refreshNavBadges();
-    _checkProactiveInbox();
-    if (currentView && ['radar', 'trends', 'reports', 'opportunities'].includes(currentView)) {
+    // 2026-09-30 · 用户:「为什么在产物库，似乎每个X秒自己刷新一下？这个不需要的吧？」
+    //   病根: reports 在这个 30s 白名单里 —— 他进页 60s 后只要没滚动, 每 30s 就被
+    //   静默重拉重渲一遍(白闪), 还会把选择模式刚勾的勾掉。
+    //   摘掉 reports: 产物库是【档案库】不是实时大盘, 切过去时 loadDashboard(view)
+    //   本来就重拉一次, 不需要 30s 级实时。
+    //   再补两条硬闸: 选择模式开着 / 回收站浮层开着 → 任何视图都不刷。
+    if (typeof _shelfPickOn !== 'undefined' && _shelfPickOn) return;
+    if (document.getElementById('shelfTrashBox')) return;
+    if (currentView && ['radar', 'trends', 'opportunities'].includes(currentView)) {
+      // 用户 2026-09-20 晚:「中栏会莫名其妙刷新 · 自己跳回」—— 人在看/在读/刚切页时不打扰:
+      //   ① 表单脏 / 预览或画布开着 / 设置页 (_dashSilentRefreshBlocked)
+      //   ② 中栏有滚动偏移 (正在读列表)  ③ 最近 60s 手动切换过页面
+      try {
+        if (typeof _dashSilentRefreshBlocked === 'function' && _dashSilentRefreshBlocked()) return;
+        const _sc = Math.max(
+          (typeof $dashView !== 'undefined' && $dashView ? $dashView.scrollTop : 0) || 0,
+          (typeof $detailPane !== 'undefined' && $detailPane ? $detailPane.scrollTop : 0) || 0
+        );
+        if (_sc > 40) return;
+        if (Date.now() - (window._dashManualAt || 0) < 60000) return;
+      } catch (e) { /* 保护失败 → 照旧刷新 */ }
       loadDashboard(currentView, { silent: true });
     }
   }
 }, 30000);
+// wish-1b00ca00 · 后台 turn（延迟唤醒 / 定时任务 / 分身通报）完成通知 · 单独 8s 一轮
+// 原来搭在 30s 那班上太慢 —— 用户 会以为"倒计时结束了但你什么都没说"。
+setInterval(() => {
+  if (!document.hidden) _checkProactiveInbox();
+}, 8000);
 setInterval(() => {
   if (!document.hidden) _checkWechatActivity();
 }, 6000);

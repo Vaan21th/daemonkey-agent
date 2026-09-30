@@ -1,11 +1,14 @@
-/* static/settings-pane.js · 工作台设置页 (LLM/多模态/Embedding/访问/微信/通知/本地数据)
+/* static/settings-pane.js · 工作台设置页 (LLM/多模态/Embedding/访问/微信/通知/掘金雷达/本地数据)
    从 chat.js 抽出 · 工作台中栏 + 陪伴家具弹窗共用同一份。
    依赖: token / sessionId / autoConfirm / STORAGE / $detailPane / escHtml / jsStr
          opusConfirm / opusPrompt / opusAlert / backToChat
    房间里 $detailPane === #dashView · backToChat === closeModal */
 
 // 卷三十七 · 中栏 settings view (BRO 截图反馈 · 弹窗装不下 · 改 tabs)
-let _settingsTab = 'llm';  // 'llm' | 'access' | 'data'
+// wish-3edbf065 · 没走完过向导 → 首次进设置就停在上手向导那页（点过「就这样」之后不再自动停）
+let _settingsTab = (() => {
+  try { return localStorage.getItem('opus_ui_setup_done') ? 'llm' : 'setup'; } catch (_) { return 'llm'; }
+})();  // 'setup' | 'llm' | 'vision' | 'embedding' | 'access' | 'wechat' | 'notify' | 'radar' | 'data'
 let _settingsPaintGen = 0;
 function _settingsStill(tab, gen) {
   if (gen != null && gen !== _settingsPaintGen) return false;
@@ -25,12 +28,14 @@ function openSettingsView() {
 
 function renderSettingsView() {
   const tabs = [
+    { id: 'setup', label: '<i class="ri-rocket-2-fill"></i> 上手向导', hint: '把能力一项项配齐 · 每项都写明「不配会失去什么」' },
     { id: 'llm', label: '<i class="ri-brain-fill"></i> LLM 模型', hint: '平台、模型和密钥，可存多套配置' },
     { id: 'vision', label: '<i class="ri-cpu-fill"></i> 多模态', hint: '看图 + 听 + 说 + 画 · 默认生图/语音合成/语音识别也在这里选择' },
     { id: 'embedding', label: '<i class="ri-search-eye-line"></i> Embedding & 搜索', hint: '记忆语义检索 + 可选外网搜索 KEY' },
     { id: 'access', label: '<i class="ri-key-fill"></i> 访问 & 会话', hint: 'API Token / Session / Auto-confirm' },
     { id: 'wechat', label: '<i class="ri-wechat-fill"></i> 微信 & 飞书', hint: '扫码连微信 · 配飞书机器人 · 主动找你的频率 (猫系↔犬系)' },
     { id: 'notify', label: '<i class="ri-notification-3-fill"></i> 通知', hint: '做完或等你点确认时，怎么提醒你 · 音效 / Windows 通知 / 标签闪烁' },
+    { id: 'radar', label: '<i class="ri-radar-fill"></i> 掘金雷达', hint: '后台自动刷新的开关和频率 · 关掉就不抓' },
     { id: 'data', label: '<i class="ri-save-fill"></i> 本地数据', hint: '占用 / 可选清理' },
   ];
   $detailPane.innerHTML = `
@@ -57,7 +62,7 @@ function switchSettingsTab(tabId) {
   _settingsTab = tabId;
   document.querySelectorAll('.settings-tab').forEach(b => {
     b.classList.toggle('active', b.textContent.includes(
-      { llm: 'LLM 模型', vision: '多模态', embedding: 'Embedding', access: '访问', wechat: '微信 & 飞书', notify: '通知', data: '本地数据' }[tabId]
+      { setup: '上手向导', llm: 'LLM 模型', vision: '多模态', embedding: 'Embedding', access: '访问', wechat: '微信 & 飞书', notify: '通知', radar: '掘金雷达', data: '本地数据' }[tabId]
     ));
   });
   renderSettingsBody();
@@ -65,13 +70,514 @@ function switchSettingsTab(tabId) {
 
 function renderSettingsBody() {
   _settingsPaintGen += 1;
-  if (_settingsTab === 'llm') renderSettingsLLM();
+  if (_settingsTab === 'setup') renderSettingsSetup(true);
+  else if (_settingsTab === 'llm') renderSettingsLLM();
   else if (_settingsTab === 'vision') renderSettingsVision();
   else if (_settingsTab === 'embedding') renderSettingsEmbedding();
   else if (_settingsTab === 'access') renderSettingsAccess();
   else if (_settingsTab === 'wechat') renderSettingsWechat();
   else if (_settingsTab === 'notify') renderSettingsNotify();
+  else if (_settingsTab === 'radar') renderSettingsRadar();
   else if (_settingsTab === 'data') renderSettingsData();
+}
+
+// ─── wish-3edbf065 · 上手向导（定稿）──────────────────────────────
+// 五项能力 · 每项写明「配了能干嘛 / 不配差在哪 / 怎么配（多服务可选 · 点开看优缺点 · 直达官网）」
+// 下面是文案与服务清单的唯一数据源 · 改这里整页同步。
+const SETUP_CAPS = [
+  {
+    id: 'embedding', name: '记忆语义检索', icon: 'ri-search-eye-line', tab: 'embedding',
+    what: '让「翻旧账」不用抠原话 —— 你说个意思，它就能找到相关的那段记忆。属于增强项：不配也照样能用，只是联想弱一点。',
+    gains: ['换个说法也能搜到旧事（"上次那个配色"直接命中那一次）', '知识库问一句话就定位到原文', '跨会话的联想召回更准，越用越懂你'],
+    losses: ['最直接的影响是记忆星图的关联会稀疏一些', '翻旧账 / 知识库退化成按原词硬搜 —— 换个说法就找不到', '不影响正常使用 —— 她照样记得你说过的话，只是联想没这么灵'],
+    lossTitle: '不配的话，差在这（不影响正常使用）',
+    check: '点「测试连接」；或直接问我「上次我们聊的那个配色是啥」—— 我答得上来就是通了。',
+    manual: {
+      title: '记忆语义检索 · 完整手册',
+      cost: '云端约 ¥0.5 / 百万字（日常一年几块钱）· 本地 ¥0',
+      routes: [
+        { h: '路线 A · 接云端 API', tag: '最省事', art: 'ri-cloud-fill',
+          kv: [['首选', '硅基流动 siliconflow.cn · 送 2000 万 token · 国内直连'], ['备选', '智谱 bigmodel.cn · 已配过对话 key 可直接复用'],
+               ['花钱', '约 ¥0.5 / 百万字'], ['怎么填', '粘 sk-... → 模型 BAAI/bge-m3'], ['耗时', '约 5 分钟']] },
+        { h: '路线 B · 本地跑', tag: '零成本', art: 'ri-hard-drive-3-fill',
+          kv: [['要装', 'Ollama（ollama.com · 一键安装包）'], ['一条命令', 'ollama pull nomic-embed-text'],
+               ['地址', 'http://127.0.0.1:11434/v1'], ['占用', '磁盘 270MB · 内存约 500MB'], ['代价', '首次慢一两秒 · 完全离线']] },
+      ],
+      pits: '别把对话模型的 key 填进这里（报错就换 bge-m3）· 地址要带 /v1 · 本地跑的话 Ollama 得先启动着。',
+    },
+    paths: [
+      { k: '接云端 API', h: '最省事 · 5 分钟', lv: '★☆☆',
+        body: '<ol class="setup-steps"><li>挑一个服务（下面有对比），注册 → 拿 <code>sk-...</code></li>'
+            + '<li>粘回设置页的 API Key，模型填 <code>BAAI/bge-m3</code>，保存</li><li>点「测试连接」，绿了就成</li></ol>'
+            + '<div class="setup-note">已经配过智谱对话 key 的话，这里能一键复用，不用再注册。</div>',
+        vendors: [
+          { name: '硅基流动', tag: '推荐', price: '免费 2000 万 token · 约 ¥0.5/百万字', url: 'https://cloud.siliconflow.cn',
+            pros: ['国内直连，不用梯子', '注册就送 2000 万 token', 'bge-m3 这个模型完全免费', '首字延迟低，搜索几乎无感'],
+            cons: ['要手机号注册', '高峰期偶尔要排队'] },
+          { name: '智谱 AI', tag: '可复用', price: '约 ¥0.5/百万字', url: 'https://open.bigmodel.cn',
+            pros: ['国内大厂，稳定性好', '已配过智谱对话 key 可一键复用', '中文语料贴合度高'],
+            cons: ['免费额度比硅基流动少', '新账号要实名认证'] },
+          { name: '阿里云百炼', price: '约 ¥0.7/百万字', url: 'https://bailian.console.aliyun.com',
+            pros: ['企业级稳定性，有 SLA', '和阿里云其他服务打通', 'text-embedding-v3 中文很强'],
+            cons: ['要开通百炼服务，配置步骤偏多', '个人用偏重，控制台复杂'] },
+        ] },
+      { k: '本地跑', h: '不花钱 · 装一个东西', lv: '★★☆',
+        body: '<ol class="setup-steps"><li>装 <b>Ollama</b>（ollama.com 下载，双击安装）</li>'
+            + '<li>命令行跑一条：<code>ollama pull nomic-embed-text</code>（约 270MB）</li>'
+            + '<li>设置页填地址 <code>http://127.0.0.1:11434/v1</code>，模型 <code>nomic-embed-text</code></li></ol>'
+            + '<div class="setup-note">之后完全离线、永不花钱。代价是占约 500MB 内存，第一次搜慢一两秒。</div>',
+        vendors: [
+          { name: 'Ollama', tag: '推荐', price: '¥0', url: 'https://ollama.com',
+            pros: ['完全离线，记忆数据不出本机', '一次装好永久免费', '一条命令就能跑，不用配环境'],
+            cons: ['占约 500MB 内存', '首次搜索慢一两秒', '要自己保证 Ollama 后台在跑'] },
+          { name: 'LM Studio', price: '¥0', url: 'https://lmstudio.ai',
+            pros: ['图形界面，不用碰命令行', '同一套工具还能跑本地对话模型', '模型市场里一键下'],
+            cons: ['比 Ollama 更吃资源', '要手动开「本地服务器」开关', '启动比 Ollama 慢'] },
+        ] },
+      { k: '先跳过', h: '', lv: '',
+        body: '<p>不配也能用 —— 记忆检索会退化成「按原词搜」，你攒的东西一条都不会丢。以后想开，随时回来补。</p>' },
+    ],
+  },
+  {
+    id: 'search', name: '外网搜索', icon: 'ri-global-line', tab: 'embedding',
+    what: '让我能上网查实时的事。不配也有搜索，只是走内置兜底通道 —— 抓得慢、结果糙；配上专业 API 后查得准、带出处。',
+    gains: ['查得准：返回结构化结果 + 原文链接，不是我编的', '快：专业 API 一秒出结果，兜底通道要等好几秒', '掘金雷达能稳定抓到新信息', '问「今天有什么新闻」不会扑空'],
+    losses: ['内置兜底：偶尔抓不到、慢几秒、结果页不干净，得自己筛', '问实时的事更容易扑空，或者答得含糊', '雷达 / 趋势这类「看世界」的功能时灵时不灵'],
+    lossTitle: '不配的话，差在这（不是「不能用」）',
+    check: '说一句「帮我搜一下今天的 AI 新闻」—— 回你带链接的结果、且快，就是通了。',
+    manual: {
+      title: '外网搜索 · 完整手册',
+      cost: '云端约 ¥0.03 / 次（有免费额度）· 兜底通道 ¥0',
+      routes: [
+        { h: '路线 A · 专业搜索 API', tag: '查得准', art: 'ri-search-2-line',
+          kv: [['首选', '博查 bochaai.com · 国内直连 · 为 AI 设计'], ['备选', 'Serper.dev / Tavily（要能访问外网）'],
+               ['花钱', '约 ¥0.03 / 次 · 有免费额度'], ['怎么填', '设置页「外网搜索」粘 key'], ['耗时', '约 3 分钟']] },
+        { h: '路线 B · 什么都不做', tag: '零配置', art: 'ri-shield-line',
+          kv: [['要装', '不用装'], ['花钱', '¥0'], ['效果', '偶尔抓不到 · 慢几秒 · 结果不干净'], ['适合', '只是偶尔问一句、不急着要']] },
+      ],
+      pits: '不配不会瘫 —— 别被"没 key 就不能搜"吓到。真配了之后，最大的差别是「快 + 带出处」。',
+    },
+    paths: [
+      { k: '接专业搜索 API', h: '查得准、够快', lv: '★☆☆',
+        body: '<ol class="setup-steps"><li>从下面挑一个（都给了优缺点），注册拿 key</li>'
+            + '<li>粘回设置页「外网搜索」的 API Key，保存</li><li>让它搜一条新闻试试 —— 带链接、出得快就成</li></ol>'
+            + '<div class="setup-note">这一步随时可以配 —— 不配也不会瘫，只是慢和糙。</div>',
+        vendors: [
+          { name: '博查 Bocha', tag: '推荐', price: '有免费额度 · 约 ¥0.03/次', url: 'https://open.bochaai.com',
+            pros: ['国内直连，不用梯子', '专为 AI 设计，返回干净的结构化结果', '中文内容覆盖好', '按次计费不心疼'],
+            cons: ['要实名认证', '免费额度用完要充值'] },
+          { name: 'Serper.dev', price: '注册送 2500 次', url: 'https://serper.dev',
+            pros: ['走 Google，结果质量高', '一次注册送 2500 次，够用很久', '响应极快'],
+            cons: ['要能访问外网（海外站）', '之后按美元结算，充值门槛高'] },
+          { name: 'Tavily', price: '每月 1000 次免费', url: 'https://tavily.com',
+            pros: ['专为 AI Agent 设计，直接返回摘要', '免费额度每月刷新', '和对话流程贴合'],
+            cons: ['要能访问外网', '中文/国内内容覆盖不如博查'] },
+        ] },
+      { k: '用免费兜底', h: '零配置', lv: '',
+        body: '<p>什么都不用做 —— 系统本来就走内置的免费搜索通道。什么时候适合先这样：你只是偶尔问一句、不急着要，或者还在犹豫要不要掏钱。</p>',
+        vendors: [
+          { name: '内置兜底（不填 key）', tag: '零配置', price: '¥0', url: '',
+            pros: ['开箱即用，不用注册不用花钱', '不用管 key 过期、余额这些事'],
+            cons: ['偶尔抓不到结果', '慢几秒（要等它试完几个源）', '结果页不干净，得自己筛'] },
+        ] },
+      { k: '先跳过', h: '', lv: '',
+        body: '<p>等于把「上网看看」这件事整个关掉。适合短期只当本地助手用。</p>' },
+    ],
+  },
+  {
+    id: 'image', name: '图片生成', icon: 'ri-image-fill', tab: 'vision',
+    what: '让我能画图、给 PPT / 报告配图、做封面。',
+    gains: ['对话里说「画一张…」直接出图', '报告、演示稿要配图时自动补上', '封面、头像、素材不用再切别的工具'],
+    losses: ['说「画一张」没反应 —— 只能给你一段文字', 'PPT / 报告要配图时留一块灰底占位', '封面、素材都得你自己去别处做'],
+    check: '说一句「画一只在打字的猫」—— 半分多钟内出图就是通了。',
+    manual: {
+      title: '图片生成 · 完整手册',
+      cost: '云端约 ¥0.05 / 张 · 本地 ¥0（要显卡）',
+      routes: [
+        { h: '路线 A · 接云端 API', tag: '画质最好', art: 'ri-cloud-fill',
+          kv: [['可选', '即梦（火山）/ 通义万相（阿里）/ GPT Image'], ['花钱', '约 ¥0.05 / 张'],
+               ['怎么接', '工坊找生图应用填 key → 设置页选成默认'], ['耗时', '约 5 分钟']] },
+        { h: '路线 B · 本地 ComfyUI', tag: '零成本', art: 'ri-hard-drive-3-fill',
+          kv: [['要装', 'ComfyUI（有整合包，解压即用）'], ['要下', 'SDXL / Flux 模型（几个 G）'],
+               ['地址', 'http://127.0.0.1:8188'], ['门槛', '建议 ≥8G 显存'], ['出图', '一张 10~20 秒']] },
+      ],
+      pits: '没独显就别走本地 —— 会慢到没法用，老老实实接云端按张买。',
+    },
+    paths: [
+      { k: '接云端 API', h: '画质最好', lv: '★★☆',
+        body: '<ol class="setup-steps"><li>挑一个服务，注册并开通图片生成</li><li>到工坊找现成的生图应用，把 key 填进去</li>'
+            + '<li>回设置页「多模态 → 生图」，把它选成默认</li></ol>',
+        vendors: [
+          { name: '即梦（火山引擎）', tag: '推荐', price: '约 ¥0.05/张', url: 'https://jimeng.jianying.com',
+            pros: ['中文提示词理解好', '出图快，风格现代', '国内直连、按张计费'],
+            cons: ['要在火山引擎开通服务', '部分模型要企业认证'] },
+          { name: '通义万相（阿里云）', price: '约 ¥0.06/张', url: 'https://tongyi.aliyun.com/wanxiang',
+            pros: ['阿里云生态，稳定', '中文场景、国风内容强', '有免费体验额度'],
+            cons: ['控制台配置偏绕', '单张价格略高'] },
+          { name: 'GPT Image（OpenAI）', price: '约 $0.04/张', url: 'https://platform.openai.com',
+            pros: ['指令跟随最强，能画准文字', '风格上限高', '多轮改图体验好'],
+            cons: ['要能访问外网', '美元结算，单张最贵', '生成速度偏慢'] },
+        ] },
+      { k: '本地 ComfyUI', h: '零成本 · 要有显卡', lv: '★★★',
+        body: '<ol class="setup-steps"><li>装 <b>ComfyUI</b>（有整合包，解压即用）</li>'
+            + '<li>下一个 SDXL / Flux 模型放到 <code>models/checkpoints</code></li>'
+            + '<li>启动后设置页填 <code>http://127.0.0.1:8188</code></li></ol>'
+            + '<div class="setup-note">一张图 10~20 秒，完全不花钱。建议 8G 显存以上；没独显会非常慢。</div>',
+        vendors: [
+          { name: 'ComfyUI', tag: '推荐', price: '¥0', url: 'https://github.com/comfyanonymous/ComfyUI',
+            pros: ['节点式，能力上限最高', '社区模型/工作流生态最大', '有整合包，解压即用'],
+            cons: ['要 ≥8G 显存，没独显基本跑不动', '第一次下模型要几个 G', '工作流学习曲线陡'] },
+          { name: 'Stable Diffusion WebUI', price: '¥0', url: 'https://github.com/AUTOMATIC1111/stable-diffusion-webui',
+            pros: ['界面简单，像传统画图软件', '插件多', '教程最多，出问题好搜'],
+            cons: ['出图速度比 ComfyUI 慢', '显存占用更高', '新模型支持跟进偏慢'] },
+        ] },
+      { k: '先跳过', h: '', lv: '',
+        body: '<p>不影响任何文字功能 —— 只是要画图时得临时去配一下。</p>' },
+    ],
+  },
+  {
+    id: 'tts', name: '语音合成（说）', icon: 'ri-volume-up-fill', tab: 'vision',
+    what: '让我能出声：语音对话、念稿试听、提醒事项直接读给你听。',
+    gains: ['对话能变成「聊」，而不是「看」', '口播稿能直接听效果，不用自己读', '定时提醒可以念出来'],
+    losses: ['我只能打字，你只能看 —— 没有声音', '口播、配音的稿子没法在对话里直接试听'],
+    check: '设置页「语音合成」点「试听」—— 出声音就是通了。',
+    manual: {
+      title: '语音合成 · 完整手册',
+      cost: '本地 ¥0 · 云端约 ¥0.001 / 千字',
+      routes: [
+        { h: '路线 A · 本地免费', tag: '零成本', art: 'ri-hard-drive-3-fill',
+          kv: [['要装', '工坊「语音合成」应用，一键装'], ['音色', '晓晓 / 云希 / 小艺…几十种'],
+               ['花钱', '¥0'], ['代价', '要联网（走微软在线语音）'], ['耗时', '约 5 分钟']] },
+        { h: '路线 B · 云端音色 / 克隆', tag: '音色更多', art: 'ri-mic-line',
+          kv: [['可选', '火山引擎（豆包）/ 阿里云 CosyVoice / Azure'], ['花钱', '约 ¥0.001 / 千字'],
+               ['亮点', '能克隆你自己的声音'], ['门槛', '要实名 + 开通服务']] },
+      ],
+      pits: '想「听起来像人」优先试云端；想「不要钱」用本地 edge-tts，日常够用。',
+    },
+    paths: [
+      { k: '本地免费', h: '零成本 · 5 分钟', lv: '★☆☆',
+        body: '<ol class="setup-steps"><li>工坊里找「语音合成」应用，一键装</li>'
+            + '<li>回设置页「多模态 → 语音合成」选成默认</li><li>挑一个音色，点试听</li></ol>',
+        vendors: [
+          { name: 'edge-tts', tag: '推荐', price: '¥0', url: 'https://github.com/rany2/edge-tts',
+            pros: ['完全免费，音质自然', '音色多（几十种中文）', '装一次就能用，不用注册'],
+            cons: ['要联网（走微软在线语音）', '不能克隆你自己的声音', '语速/情绪控制较弱'] },
+          { name: 'GPT-SoVITS', price: '¥0', url: 'https://github.com/RVC-Boss/GPT-SoVITS',
+            pros: ['能克隆音色，几分钟素材就够', '完全本地，隐私最好', '中文效果第一梯队'],
+            cons: ['要独立显卡，配置偏麻烦', '要自己准备一段干净录音', '首次训练要花时间'] },
+        ] },
+      { k: '接云端音色', h: '音色更多 · 能克隆', lv: '★★☆',
+        body: '<p>云端 TTS 的选择更多、音色更专业，还能克隆你的声音。按字符计费，通常 ¥0.001/千字这个级别。</p>',
+        vendors: [
+          { name: '火山引擎（豆包语音）', tag: '推荐', price: '约 ¥0.001/千字', url: 'https://www.volcengine.com/product/tts',
+            pros: ['音色多、情感自然', '延迟低，适合实时对话', '能克隆音色'],
+            cons: ['要实名 + 开通服务', '有免费额度但额度不大'] },
+          { name: '阿里云 CosyVoice', price: '约 ¥0.001/千字', url: 'https://help.aliyun.com/zh/isi/',
+            pros: ['支持音色克隆和情感控制', '中文方言覆盖好', '和阿里云打通'],
+            cons: ['控制台配置偏绕', '克隆功能要单独申请'] },
+          { name: 'Azure TTS（微软）', price: '约 $16/百万字符', url: 'https://azure.microsoft.com/products/ai-services/text-to-speech',
+            pros: ['音质天花板级', '语言/音色最全', 'SSML 控制粒度细'],
+            cons: ['要能访问外网', '要绑国际信用卡', '注册流程对国内用户偏难'] },
+        ] },
+      { k: '先跳过', h: '', lv: '',
+        body: '<p>跳过就保持「纯文字」模式。以后想听声音，随时回来开。</p>' },
+    ],
+  },
+  {
+    id: 'stt', name: '语音识别（听）', icon: 'ri-mic-2-fill', tab: 'vision',
+    what: '让你能对着麦克风说话，也让我能听见你的唤醒词。',
+    gains: ['不用打字，直接说话给我听', '口令唤醒（喊一声就出来）', '录音 / 语音备忘能自动转成文字'],
+    losses: ['只能用键盘打字', '唤醒词用不了 —— 得手动点开窗口', '录的音没法自动转文字'],
+    check: '按一下麦克风说句话 —— 文字落进输入框就是通了。',
+    manual: {
+      title: '语音识别 · 完整手册',
+      cost: '本地 ¥0 · 云端约 ¥0.02 / 分钟',
+      routes: [
+        { h: '路线 A · 本地 whisper', tag: '隐私最好', art: 'ri-hard-drive-3-fill',
+          kv: [['怎么开', '设置页「本地语音识别」打开开关'], ['模型', '自动下 whisper-base（约 150MB）'],
+               ['花钱', '¥0'], ['隐私', '录音完全不出本机'], ['耗时', '约 5 分钟']] },
+        { h: '路线 B · 云端转写', tag: '更准', art: 'ri-cloud-fill',
+          kv: [['可选', '讯飞听见 / 阿里云 / OpenAI Whisper API'], ['花钱', '约 ¥0.02 / 分钟'],
+               ['亮点', '识别更准，不吃本机资源'], ['代价', '录音要上传']] },
+      ],
+      pits: '口音重或环境嘈杂时，云端明显更准；日常安静环境本地 whisper 就够。',
+    },
+    paths: [
+      { k: '本地 whisper', h: '隐私最好 · 零成本', lv: '★☆☆',
+        body: '<ol class="setup-steps"><li>设置页「多模态 → 本地语音识别」打开开关</li>'
+            + '<li>点「下载模型」，自动拉 <code>whisper-base</code>（约 150MB）</li><li>等它跑通，麦克风按钮就出来了</li></ol>'
+            + '<div class="setup-note">录音完全不出本机。想更准可以换 <code>whisper-small</code>（约 500MB）。</div>',
+        vendors: [
+          { name: 'faster-whisper（内置）', tag: '推荐', price: '¥0', url: 'https://github.com/SYSTRAN/faster-whisper',
+            pros: ['录音不出本机，隐私最好', '开关一点自动下模型，零门槛', '中文识别够日常用'],
+            cons: ['首次下模型要等一会儿', '大模型会吃内存', '口音重/嘈杂环境不如云端'] },
+          { name: 'whisper.cpp', price: '¥0', url: 'https://github.com/ggml-org/whisper.cpp',
+            pros: ['CPU 也能跑，不用显卡', '体积极小，启动快', '支持量化，内存占用低'],
+            cons: ['要自己编译 / 下模型', '准确率略低于 faster-whisper'] },
+          { name: '硅基流动 SenseVoice', price: '约 ¥0.01/分钟', url: 'https://cloud.siliconflow.cn',
+            pros: ['中文识别特别准', '几乎不要钱', '不用占本机资源'],
+            cons: ['录音要上传到云端', '依赖网络'] },
+        ] },
+      { k: '接云端转写', h: '更准 · 不占本机', lv: '★★☆',
+        body: '<p>云端的识别模型更大更准，也不吃你本机资源。代价是录音要上传、按分钟计费。</p>',
+        vendors: [
+          { name: '讯飞听见', tag: '推荐', price: '约 ¥0.02/分钟', url: 'https://www.iflytek.com',
+            pros: ['中文识别国内第一梯队', '方言支持好', '有实时转写接口'],
+            cons: ['要实名 + 开通', '按分钟计费，长录音会花钱'] },
+          { name: '阿里云智能语音', price: '约 ¥0.02/分钟', url: 'https://www.aliyun.com/product/nls',
+            pros: ['和阿里云生态打通', '支持实时/录音文件两种', '企业级稳定'],
+            cons: ['控制台配置偏绕', '免费额度有限'] },
+          { name: 'OpenAI Whisper API', price: '约 $0.006/分钟', url: 'https://platform.openai.com',
+            pros: ['多语言最强，含口音', '接口极其简单', '带标点、带时间戳'],
+            cons: ['要能访问外网', '美元结算', '国内网络不稳定'] },
+        ] },
+      { k: '先跳过', h: '', lv: '',
+        body: '<p>跳过就是纯键盘模式。别的功能一切正常。</p>' },
+    ],
+  },
+];
+
+const OPUS_SETUP_KEY = 'opus_ui_setup_done';
+let _setupCur = -1;   // -1 = 首页（开始之前）· 0..4 = 五项能力
+let _setupCardH = 0;    // 卡片历史最大高度 —— 锁住它，切页时框架不跳
+let _setupState = {};       // capId -> true/false（实时探测）
+const _setupPath = {};      // capId -> 路径下标
+const _setupVendor = {};    // capId:pi -> 服务下标
+const _setupManualOpen = {};// capId -> 是否展开手册
+
+function _setupFetch(path) {
+  return fetch(path, { headers: { 'Authorization': 'Bearer ' + token } })
+    .then(r => (r.ok ? r.json() : null)).catch(() => null);
+}
+
+async function _setupProbe() {
+  const [emb, media, srch] = await Promise.all([
+    _setupFetch('/embed-config'), _setupFetch('/media-defaults'), _setupFetch('/search-config'),
+  ]);
+  return {
+    embedding: !!(emb && emb.enabled && emb.configured),
+    search: !!(srch && srch.configured),
+    image: !!(media && media.image && media.image.ready),
+    tts: !!(media && media.tts && media.tts.ready),
+    stt: !!(media && media.stt && media.stt.ready),
+  };
+}
+
+function _setupDoneCount() {
+  return SETUP_CAPS.filter(c => _setupState[c.id]).length;
+}
+
+// force=true（首次进入 / 从别的 tab 切回）才重新探测状态。
+// 翻页 · 切路径 · 选服务 · 展开手册一律走 _setupPaint()（同步 · 不经过「正在查…」白屏）
+async function renderSettingsSetup(force) {
+  const gen = _settingsPaintGen;
+  const body = document.getElementById('settingsBody');
+  if (!body) return;
+  if (force || !Object.keys(_setupState).length) {
+    body.innerHTML = '<div class="dash-empty">正在查你配到哪了…</div>';
+    const st = await _setupProbe();
+    if (!_settingsStill('setup', gen)) return;
+    _setupState = st;
+  }
+  _setupPaint();
+}
+
+// ── 首页（BRO: 放 IP 形象 · 讲清向导是什么 · 说明工坊跑通的应用也是能力来源）──
+function _setupIntroHtml() {
+  return `
+    <div class="setup-intro">
+      <img class="setup-intro-ip" alt="" onerror="this.style.display='none'"
+           src="/companion/assets/ip-greet.png">
+      <div class="setup-intro-body">
+        <h3>这页带你把这 5 项能力配齐</h3>
+        <p>没配齐她也能用 —— 只是会少掉写明的那些功能。一项一项来，随时能跳过，以后想补再回来。</p>
+        <div class="setup-intro-grid">
+          ${SETUP_CAPS.map(c => `<div class="setup-intro-card">
+            <i class="${c.icon}"></i>
+            <b>${escHtml(c.name)}</b>
+            <span>${escHtml(c.what)}</span></div>`).join('')}
+        </div>
+        <div class="setup-tip">
+          <div class="setup-tip-h"><i class="ri-lightbulb-flash-fill"></i> 能力不一定靠外部服务 —— 先看看工坊里已经装了什么</div>
+          <ul>
+            <li><b>语音合成</b>：工坊里的「语音合成」应用装好就能出声（edge-tts · 免费）</li>
+            <li><b>图片生成</b>：工坊里现成的生图应用，这里选成默认即可</li>
+            <li><b>语音识别</b>：设置里的本地 whisper 开关，点一下自动下模型，录音不出本机</li>
+            <li><b>记忆检索</b>：属于增强项，可以本地跑（Ollama · 零成本），也可以先不配 —— 不影响正常使用</li>
+            <li><b>外网搜索</b>：不配也有内置兜底，只是慢一点、糙一点</li>
+          </ul>
+          <div class="setup-tip-f">先翻翻工坊里已经装了什么 —— 有些能力是「装上就有」。</div>
+        </div>
+        <div class="setup-acts">
+          <button class="btn-primary" type="button" onclick="setupGo(0)">开始 · 看第一项 <i class="ri-arrow-right-line"></i></button>
+          <span class="ld-bar-gap"></span>
+          <a class="setup-manual-btn" onclick="setupMarkDone()">这些我懂了 · 先不看</a>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── 单项能力的卡片正文 ──
+function _setupCapHtml(cur, ok) {
+  const pIdx = _setupPath[cur.id] || 0;
+  const p = cur.paths[pIdx];
+
+  const gains = `<div class="setup-blk gain"><div class="setup-blk-h"><i class="ri-sparkling-2-fill"></i> 配好之后能干嘛</div>
+    <ul>${cur.gains.map(x => `<li>${escHtml(x)}</li>`).join('')}</ul></div>`;
+  const loses = `<div class="setup-blk loss"><div class="setup-blk-h"><i class="ri-close-circle-fill"></i> ${escHtml(cur.lossTitle || '不配会失去这些')}</div>
+    <ul>${cur.losses.map(x => `<li>${escHtml(x)}</li>`).join('')}</ul></div>`;
+
+  const ptabs = cur.paths.map((x, i) =>
+    `<div class="setup-ptab${i === pIdx ? ' on' : ''}" onclick="setupPickPath('${cur.id}',${i})">${escHtml(x.k)}</div>`).join('');
+
+  // 服务清单：只列名字/价格/优缺点，不打「推荐」这类倾向标记 —— 让他自己挑
+  let vendorHtml = '';
+  if (p.vendors && p.vendors.length) {
+    const vkey = cur.id + ':' + pIdx;
+    const vSel = _setupVendor[vkey] != null ? _setupVendor[vkey] : 0;
+    const v = p.vendors[vSel];
+    const vchips = p.vendors.map((x, i) =>
+      `<div class="setup-vchip${i === vSel ? ' on' : ''}" onclick="setupPickVendor('${cur.id}',${pIdx},${i})">
+         ${escHtml(x.name)}${x.price ? `<span>${escHtml(x.price)}</span>` : ''}</div>`).join('');
+    const link = v.url
+      ? `<a class="setup-vgo" href="${escHtml(v.url)}" target="_blank" rel="noopener">去拿 KEY <i class="ri-external-link-line"></i></a>` : '';
+    vendorHtml = `<div class="setup-vchips">${vchips}</div>
+      <div class="setup-vdet">
+        <div class="setup-vhd">${escHtml(v.name)}${link}</div>
+        <ul class="setup-vpc">${(v.pros || []).map(x => `<li class="p">${escHtml(x)}</li>`).join('')}${(v.cons || []).map(x => `<li class="c">${escHtml(x)}</li>`).join('')}</ul>
+      </div>`;
+  }
+
+  const manualOpen = !!_setupManualOpen[cur.id];
+  const m = cur.manual;
+  const manualHtml = (manualOpen && m) ? `
+    <div class="setup-manual">
+      <div class="setup-manual-h"><i class="ri-book-2-fill"></i> ${escHtml(m.title)}
+        <span class="setup-manual-x" onclick="setupManual('${cur.id}',false)"><i class="ri-close-line"></i></span></div>
+      <div class="setup-manual-grid">
+        ${m.routes.map(r => `<div class="setup-manual-card">
+          <h6><i class="${r.art}"></i> ${escHtml(r.h)}${r.tag ? `<span class="pick">${escHtml(r.tag)}</span>` : ''}</h6>
+          <dl>${r.kv.map(kv => `<dt>${escHtml(kv[0])}</dt><dd>${escHtml(kv[1])}</dd>`).join('')}</dl>
+        </div>`).join('')}
+      </div>
+      <div class="setup-pits"><i class="ri-error-warning-fill"></i> <b>常见坑</b>：${escHtml(m.pits)}</div>
+    </div>` : '';
+
+  const doneN = _setupDoneCount();
+  return `
+    ${doneN === SETUP_CAPS.length
+      ? '<div class="setup-allok"><i class="ri-checkbox-circle-fill"></i> 五项全配齐了 —— 记忆能联想、能上网查、能画、能听会说。</div>' : ''}
+    <div class="setup-head">
+      <h3><i class="${cur.icon}"></i> ${escHtml(cur.name)}
+        ${ok ? '<span class="setup-badge ok"><i class="ri-check-fill"></i> 已配好</span>'
+             : '<span class="setup-badge no"><i class="ri-error-warning-line"></i> 没配</span>'}</h3>
+      <div class="setup-sub">${escHtml(cur.what)}</div>
+    </div>
+    <div class="setup-blkrow">${gains}${loses}</div>
+    <div class="setup-ptabs">${ptabs}</div>
+    <div class="setup-pane">
+      ${p.h ? `<h5>${escHtml(p.h)}${p.lv ? ` <span class="lv">难度 ${escHtml(p.lv)}</span>` : ''}</h5>` : ''}
+      ${p.body}${vendorHtml}
+    </div>
+    <div class="setup-chk"><i class="ri-checkbox-circle-line"></i> <b>怎么知道配对没有</b>：${escHtml(cur.check)}</div>
+    ${manualHtml}
+    <div class="setup-acts">
+      ${_setupCur > -1 ? `<button class="btn-ghost" type="button" onclick="setupGo(${_setupCur - 1})"><i class="ri-arrow-left-line"></i> 上一项</button>` : ''}
+      <button class="btn-primary" type="button" onclick="setupGoConfig('${cur.id}')"><i class="ri-settings-3-line"></i> 去配置这项</button>
+      ${_setupCur < SETUP_CAPS.length - 1 ? `<button class="btn-ghost" type="button" onclick="setupGo(${_setupCur + 1})">下一项 <i class="ri-arrow-right-line"></i></button>` : ''}
+      <span class="ld-bar-gap"></span>
+      <a class="setup-manual-btn" onclick="setupManual('${cur.id}',${manualOpen ? 'false' : 'true'})">
+        <i class="ri-book-2-fill"></i> ${manualOpen ? '收起手册' : '不会配？看完整手册'}</a>
+    </div>`;
+}
+
+// 骨架只建一次，之后只 patch「芯片行 + 卡片」两块 —— 不再整页重建
+function _setupPaint() {
+  const body = document.getElementById('settingsBody');
+  if (!body) return;
+  const doneN = _setupDoneCount();
+  if (doneN === SETUP_CAPS.length) {
+    try { localStorage.setItem(OPUS_SETUP_KEY, '1'); } catch (_) {}
+  }
+  const onIntro = _setupCur < 0;
+  const cur = onIntro ? null : SETUP_CAPS[_setupCur];
+
+  const chips = `<div class="setup-chip${onIntro ? ' on' : ''}" onclick="setupGo(-1)">
+      <i class="ri-play-circle-line"></i><span>开始之前</span><em>这是什么</em></div>`
+    + SETUP_CAPS.map((c, i) => {
+        const good = !!_setupState[c.id];
+        return `<div class="setup-chip${i === _setupCur ? ' on' : ''}${good ? ' ok' : ''}" onclick="setupGo(${i})">
+          <i class="${c.icon}"></i><span>${escHtml(c.name)}</span>
+          <em>${good ? '✓ 已配' : '没配'}</em></div>`;
+      }).join('');
+
+  if (!document.getElementById('setupHero')) {
+    body.innerHTML = `
+      <div class="llm-section setup-hero" id="setupHero">
+        <div class="llm-section-head">
+          <h3><i class="ri-rocket-2-fill"></i> 上手向导 · <span id="setupDone">0</span>/${SETUP_CAPS.length} 项已配齐</h3>
+          <span class="llm-hint">不配也能用，只是会少掉写明的那些功能。随时可以跳回来补。</span>
+        </div>
+        <div class="setup-prog"><i id="setupProg"></i></div>
+        <div class="setup-chips" id="setupChips"></div>
+      </div>
+      <div class="llm-section setup-card" id="setupCard"></div>
+      <div class="actions" style="margin-top:16px;align-items:center">
+        <button class="btn-ghost" type="button" onclick="setupMarkDone()"><i class="ri-check-double-line"></i> 不折腾了 · 就这样</button>
+        <span class="field-hint">点过之后不再自动停在这一页（随时还能从上面的 tab 进来）</span>
+      </div>`;
+  }
+  const $done = document.getElementById('setupDone');
+  if ($done) $done.textContent = String(doneN);
+  const $prog = document.getElementById('setupProg');
+  if ($prog) $prog.style.width = Math.round(doneN / SETUP_CAPS.length * 100) + '%';
+  document.getElementById('setupChips').innerHTML = chips;
+  // 先松掉旧的 min-height 再量，免得量到被自己撑高的值（否则会一轮轮往上滚）
+  const $card = document.getElementById('setupCard');
+  $card.style.minHeight = '0px';
+  $card.innerHTML = onIntro ? _setupIntroHtml() : _setupCapHtml(cur, !!_setupState[cur.id]);
+  const h = $card.scrollHeight;
+  if (h > _setupCardH) _setupCardH = h;
+  $card.style.minHeight = _setupCardH + 'px';
+}
+
+function setupGo(i) {
+  _setupCur = Math.max(-1, Math.min(SETUP_CAPS.length - 1, i));
+  _setupPaint();
+}
+function setupPickPath(capId, i) {
+  _setupPath[capId] = i;
+  _setupPaint();
+}
+function setupPickVendor(capId, pi, vi) {
+  _setupVendor[capId + ':' + pi] = vi;
+  _setupPaint();
+}
+function setupManual(capId, open) {
+  _setupManualOpen[capId] = open !== false;
+  _setupPaint();
+}
+function setupMarkDone() {
+  try { localStorage.setItem(OPUS_SETUP_KEY, '1'); } catch (_) {}
+  switchSettingsTab('llm');
+}
+// 跳到对应设置页把那一块闪一下，让用户知道该动哪里
+function setupGoConfig(capId) {
+  const cap = SETUP_CAPS.find(c => c.id === capId);
+  if (!cap) return;
+  switchSettingsTab(cap.tab);
+  setTimeout(() => {
+    let el = null;
+    if (cap.id === 'embedding' || cap.id === 'search') el = document.getElementById('embBody');
+    else if (cap.id === 'image') el = document.getElementById('mediaImageApp');
+    else if (cap.id === 'tts') el = document.getElementById('mediaTtsApp');
+    else if (cap.id === 'stt') el = document.getElementById('sttBody');
+    const sec = el && el.closest ? el.closest('.llm-section') : null;
+    if (!sec) return;
+    sec.classList.add('setup-flash');
+    sec.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    setTimeout(() => sec.classList.remove('setup-flash'), 2400);
+  }, 450);
 }
 
 // ─── 卷三十六 · LLM 配置面板 ───
@@ -268,7 +774,9 @@ async function switchLlmConfig() {
     const resp = await fetch('/providers/switch', {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(cfg),
+      body: JSON.stringify(Object.assign({}, cfg, {
+        session_id: (typeof getSid === 'function' ? getSid() : (window.getSid ? window.getSid() : '')),
+      })),
     });
     const data = await resp.json();
     if (resp.ok && data.ok) {
@@ -849,9 +1357,10 @@ function onLlmEditPresetChange() {
     sel.appendChild(opt);
   });
   // wish-cef00196 · LM Studio 本地模型：占位 key + 自动拉取本机模型
-  if (preset.id === 'lm-studio') {
+  // wish-cc1f37af · 本机 fork llama.cpp（自定义量化）：同款处理 · 换占位 key
+  if (preset.id === 'lm-studio' || preset.id === 'llama-prism') {
     const keyInput = document.getElementById('llmEditApiKey');
-    if (keyInput && !keyInput.value) keyInput.value = 'lm-studio';
+    if (keyInput && !keyInput.value) keyInput.value = preset.id;
     const keyHint = keyInput?.parentElement?.querySelector('.field-hint');
     if (keyHint) keyHint.textContent = '本机模型不需要真 key · 已自动填占位符 · 不用改';
     fetchLocalModels();
@@ -2489,6 +2998,122 @@ async function renderSettingsNotify() {
   };
 }
 
+// ─── wish-7f38376e · 掘金雷达设置面板 ───
+// 后台自动刷新的开关与频率 · 存 data/radar_config.json · scheduler 每 10s 热读 → 改完不用重启
+const _RADAR_INTERVAL_OPTIONS = [
+  [30, '每 30 分钟'],
+  [60, '每 1 小时'],
+  [120, '每 2 小时'],
+  [360, '每 6 小时'],
+  [720, '每 12 小时'],
+  [1440, '每天'],
+];
+
+function _radarTs(iso) {
+  if (!iso) return '—';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  } catch (_) {
+    return String(iso);
+  }
+}
+
+async function renderSettingsRadar() {
+  const gen = _settingsPaintGen;
+  const body = document.getElementById('settingsBody');
+  if (!_settingsStill('radar', gen) || !body) return;
+  body.innerHTML = '<div class="dash-empty">加载中…</div>';
+
+  let data = { config: { enabled: true, interval_min: 30 }, runtime: {} };
+  try {
+    const resp = await fetch('/radar-config', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (resp.ok) data = await resp.json();
+  } catch (_) {}
+  if (!_settingsStill('radar', gen)) return;
+
+  const cfg = data.config || {};
+  const rt = data.runtime || {};
+  const curInterval = Number(cfg.interval_min) || 30;
+  const opts = _RADAR_INTERVAL_OPTIONS.slice();
+  if (!opts.some(o => o[0] === curInterval)) opts.push([curInterval, `每 ${curInterval} 分钟`]);
+  opts.sort((a, b) => a[0] - b[0]);
+
+  const lastLine = rt.last_run_at
+    ? `${_radarTs(rt.last_run_at)} 那轮${rt.last_run_ok === false ? '没跑成' : `抓到 ${rt.last_run_items == null ? 0 : rt.last_run_items} 条`}`
+    : '还没跑过';
+  const nextLine = cfg.enabled
+    ? (rt.next_run_at ? _radarTs(rt.next_run_at) : '—')
+    : '已关闭 · 不跑';
+
+  body.innerHTML = `
+    <div class="llm-section">
+      <div class="llm-section-head">
+        <h3><i class="ri-radar-fill"></i> 掘金雷达 · 后台自动刷新</h3>
+        <span class="llm-hint">关掉就不抓 · 手动「抓一下雷达」仍然可用</span>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="rdrEnabled" ${cfg.enabled ? 'checked' : ''}>
+          <span><i class="ri-refresh-line"></i> 自动刷新雷达</span>
+        </label>
+        <div class="field-hint">开着时后台按下面的频率去刷信息源 · 关掉后完全不跑 · 不再有 token 消耗。</div>
+      </div>
+      <div class="field">
+        <label><i class="ri-time-line"></i> 刷新频率</label>
+        <select id="rdrInterval">
+          ${opts.map(o => `<option value="${o[0]}" ${o[0] === curInterval ? 'selected' : ''}>${o[1]}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="rdrTranslate" ${cfg.translate !== false ? 'checked' : ''}>
+          <span><i class="ri-translate-2"></i> 翻译新条目标题</span>
+        </label>
+        <div class="field-hint">这是整条链唯一花 token 的一步（一轮就几百 token）· 关掉后雷达照抓、标题留英文原文。</div>
+      </div>
+      <div class="field">
+        <label><i class="ri-history-line"></i> 现在这样</label>
+        <div class="field-hint" style="line-height:1.8">
+          上次刷新：${escHtml(lastLine)}<br>
+          下次刷新：${escHtml(nextLine)}<br>
+          累计自动跑了 ${rt.runs_completed == null ? 0 : rt.runs_completed} 轮
+        </div>
+      </div>
+      <div class="actions" style="margin-top:12px">
+        <button class="btn-primary" id="rdrSave"><i class="ri-save-fill"></i> 保存</button>
+      </div>
+      <div id="rdrResult" style="margin-top:8px;font-size:13px"></div>
+    </div>
+  `;
+
+  document.getElementById('rdrSave').onclick = async () => {
+    const resEl = document.getElementById('rdrResult');
+    resEl.innerHTML = '<span style="color:var(--sys)"><i class="ri-loader-fill"></i> 保存中…</span>';
+    try {
+      const resp = await fetch('/radar-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({
+          enabled: document.getElementById('rdrEnabled').checked,
+          interval_min: parseInt(document.getElementById('rdrInterval').value, 10) || 30,
+          translate: document.getElementById('rdrTranslate').checked,
+        }),
+      });
+      const out = await resp.json();
+      if (!resp.ok) {
+        resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> ${escHtml(out.detail || '保存失败')}</span>`;
+        return;
+      }
+      resEl.innerHTML = `<span style="color:#6ed27a"><i class="ri-check-fill"></i> ${escHtml(out.note || '已保存')}</span>`;
+    } catch (e) {
+      resEl.innerHTML = `<span style="color:var(--red)"><i class="ri-close-fill"></i> ${escHtml(e.message)}</span>`;
+    }
+  };
+}
+
 function renderSettingsData() {
   const body = document.getElementById('settingsBody');
   body.innerHTML = `<div id="ldUsage" class="field-hint">正在扫磁盘… 文件多时要几秒，扫完还在这一页，不会跳走。</div>`;
@@ -2571,6 +3196,19 @@ function paintLocalDataUsage(data) {
   const html = `
     <div class="llm-section ld-section">
       <div class="llm-section-head">
+        <h3><i class="ri-magic-line"></i> 智能清理 · 临时文件</h3>
+        <span class="llm-hint">扫一眼根目录和 data/ 里堆着的临时件（日志、临时脚本、开发时留下的源码拷），自动判哪条能删、哪条该留。清掉的东西先搬进回收站，找得回。</span>
+      </div>
+      <div class="actions"><button type="button" class="btn-primary" id="ldTempScan"><i class="ri-radar-line"></i> 扫一遍看看</button></div>
+      <div id="ldTempBox"></div>
+      <div class="ld-trash-bar">
+        <button type="button" class="btn-ghost" id="ldTrashBtn"><i class="ri-delete-bin-6-line"></i> 回收站</button>
+        <span class="llm-hint" id="ldTrashHint">清掉的东西都先放这儿 · 30 天后自动清 · 也能现在就清掉</span>
+      </div>
+      <div id="ldTrashBox"></div>
+    </div>
+    <div class="llm-section ld-section">
+      <div class="llm-section-head">
         <h3><i class="ri-hard-drive-2-line"></i> 磁盘占用 · ${escHtml(data.total_size || '0 B')} · ${Number(data.total_files || 0).toLocaleString('zh-CN')} 个文件</h3>
         <span class="llm-hint">勾选再清。灵魂、应用配方、知识库不在这里。</span>
       </div>
@@ -2614,6 +3252,99 @@ function paintLocalDataUsage(data) {
   if (btn) btn.onclick = () => purgeLocalDataPicks();
   const br = document.getElementById('ldBrowserClear');
   if (br) br.onclick = () => resetAll();
+  const ts = document.getElementById('ldTempScan');
+  if (ts) ts.onclick = () => ldTempStart();
+  const tb = document.getElementById('ldTrashBtn');
+  if (tb) tb.onclick = () => ldTrashToggle();
+  ldTempInit();   // 每次进这一页都先照一次镜子：后端什么状态，这里就显示什么
+  ldTrashRefresh();
+}
+
+/* ── 回收站（2026-10-01 补）──────────────────────────────
+   智能清理和知识库删档搬走的东西都落在 data/runtime/trash/<批次>/。
+   之前只有往里写的口，没有往外的 —— 挪进去就既看不见也清不掉。 */
+let _ldTrashOpen = false;
+
+async function ldTrashRefresh() {
+  let d = null;
+  try {
+    const r = await fetch('/local-data/trash', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    d = await r.json();
+    if (!d || typeof d.count !== 'number') throw new Error('返回格式不对');
+  } catch (e) {
+    // 不能静默 —— 否则 401/500 会被当成「回收站是空的」，用户以为清干净了
+    const h = document.getElementById('ldTrashHint');
+    if (h) h.innerHTML = '<span style="color:var(--red)"><i class="ri-error-warning-fill"></i> 回收站信息获取失败，请重试</span>';
+    return null;
+  }
+  const h = document.getElementById('ldTrashHint');
+  if (h) {
+    h.textContent = d.count
+      ? (d.count + ' 批 · ' + d.total_files + ' 个文件 · ' + d.total_size + ' · 30 天后自动清')
+      : '空的 · 清掉的东西会先放这儿，30 天后自动清';
+  }
+  if (_ldTrashOpen) ldTrashRender(d);
+  return d;
+}
+
+function ldTrashToggle() {
+  _ldTrashOpen = !_ldTrashOpen;
+  const box = document.getElementById('ldTrashBox');
+  if (!_ldTrashOpen) { if (box) box.innerHTML = ''; return; }
+  ldTrashRefresh();
+}
+
+function ldTrashRender(d) {
+  const box = document.getElementById('ldTrashBox');
+  if (!box) return;
+  if (!d || !d.count) { box.innerHTML = '<div class="ld-trash-empty">回收站是空的</div>'; return; }
+  box.innerHTML = `<div class="ld-trash-list">`
+    + d.batches.map((b) => `<div class="ld-trash-batch">
+        <div class="ld-trash-top">
+          <b>${escHtml(b.batch)}</b>
+          <span>${b.files} 个 · ${escHtml(b.size)} · ${b.left_days} 天后自动清</span>
+          <button type="button" class="btn-ghost" onclick="ldTrashRestore('${escHtml(jsStr(b.batch))}')">还原</button>
+          <button type="button" class="btn-ghost ld-del" onclick="ldTrashEmpty('${escHtml(jsStr(b.batch))}')">清掉</button>
+        </div>
+        <div class="ld-trash-items">${b.items.slice(0, 6).map(escHtml).join(' · ')}${b.items.length > 6 ? ' …' : ''}</div>
+      </div>`).join('')
+    + `</div><div class="ld-trash-foot">
+        <button type="button" class="btn-ghost ld-del" onclick="ldTrashEmpty('')">全部清空（${escHtml(d.total_size)}）</button>
+      </div>`;
+}
+
+async function ldTrashRestore(batch) {
+  const d = await ldTrashRefresh();
+  const b = (d && d.batches || []).find((x) => x.batch === batch);
+  if (!b || !b.items.length) return;
+  try {
+    const r = await fetch('/local-data/trash/restore', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: b.items.map((x) => batch + '/' + x) }),
+    });
+    const j = await r.json();
+    if (typeof showChatToast === 'function') {
+      showChatToast('还原 ' + (j.moved || 0) + ' 个' + (j.errors && j.errors.length ? ' · ' + j.errors[0] : ''));
+    }
+    await ldTrashRefresh();
+  } catch (e) { /* 静默 · 下面的刷新会把真相带回来 */ }
+}
+
+async function ldTrashEmpty(batch) {
+  const what = batch ? ('这一批（' + batch + '）') : '整个回收站';
+  if (!window.confirm('确定永久删掉' + what + '？找不回了。')) return;
+  try {
+    const r = await fetch('/local-data/trash/empty', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(batch ? { batch } : {}),
+    });
+    const j = await r.json();
+    if (typeof showChatToast === 'function') showChatToast('清掉 ' + (j.batches_removed || 0) + ' 批 · 腾出 ' + (j.freed_size || '0 B'));
+    await ldTrashRefresh();
+  } catch (e) { /* 同上 */ }
 }
 
 async function purgeLocalDataPicks() {
@@ -2672,4 +3403,244 @@ async function resetAll() {
   keys.forEach((k) => { if (k && !keep.has(k)) localStorage.removeItem(k); });
   const after = document.getElementById('ldResult');
   if (after) after.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> 浏览器缓存已清 · 密码还在</span>';
+}
+
+// ─── wish-9d30a22e · 临时件智能清理（扫 → 判 → 勾 → 回收站 / 真删）───
+//
+// 状态活在 data/runtime/temp_scan.json（后端），前端只是它的镜子 ——
+// 所以「扫到一半切走再回来」「扫完切走再回来」看到的都是同一份进度/结果。
+
+let _clTimer = null;
+let _clTick = null;
+
+function _clStopAll() {
+  if (_clTimer) { clearInterval(_clTimer); _clTimer = null; }
+  if (_clTick) { clearInterval(_clTick); _clTick = null; }
+}
+
+function _clSize(bytes) {
+  bytes = parseInt(bytes, 10) || 0;
+  if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return bytes + ' B';
+}
+
+async function _clStatus() {
+  try {
+    const r = await fetch('/local-data/temp-scan', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { return null; }
+}
+
+function _clPollStart() {
+  _clStopAll();
+  _clTimer = setInterval(async () => {
+    if (!document.getElementById('ldTempBox')) { _clStopAll(); return; }   // 切走了就停 · 后端照跑
+    const st = await _clStatus();
+    if (!st) return;
+    _clRender(st);
+    if (st.status !== 'running') _clStopAll();
+  }, 3000);
+}
+
+// 进这一页时调 —— 后端的进行中/已完成，在这儿如实还原
+async function ldTempInit() {
+  _clStopAll();
+  const st = await _clStatus();
+  if (!st) return;
+  _clRender(st);
+  if (st.status === 'running') _clPollStart();
+}
+
+async function ldTempStart() {
+  const btn = document.getElementById('ldTempScan');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-fill ld-spin"></i> 正在起…'; }
+  let st = { status: 'error', error: '请求没发出去' };
+  try {
+    const r = await fetch('/local-data/temp-scan', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } });
+    st = r.ok ? await r.json() : { status: 'error', error: (await r.json()).detail || '起不来' };
+  } catch (e) { st = { status: 'error', error: e.message }; }
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-radar-line"></i> 再扫一遍'; }
+  _clRender(st);
+  if (st.status === 'running') _clPollStart();
+}
+
+function _clRender(st) {
+  const box = document.getElementById('ldTempBox');
+  if (!box) return;
+  _clStopAll();
+  const status = (st && st.status) || 'idle';
+
+  if (status === 'running') {
+    const t0 = st.started_at ? new Date(String(st.started_at).replace('T', ' ')).getTime() : 0;
+    const sec = t0 ? Math.max(0, Math.round((Date.now() - t0) / 1000)) : 0;
+    box.innerHTML = `<div class="ld-running">
+      <div class="ld-run-h"><i class="ri-loader-fill ld-spin"></i> ${escHtml(st.step || '正在扫…')}</div>
+      <div class="ld-run-bar"><i id="clRunBar" style="width:${Math.min(95, sec / 120 * 100)}%"></i></div>
+      <div class="ld-run-f">已经跑了 <b id="clRunSec">${sec}</b> 秒 · 实测一~三分钟（看模型响应快慢）。
+        放心切走 —— 它在后台跑，回来还是这一页。</div>
+    </div>`;
+    _clTick = setInterval(() => {
+      const el = document.getElementById('clRunSec');
+      if (!el) { _clStopAll(); return; }
+      const n = (parseInt(el.textContent, 10) || 0) + 1;
+      el.textContent = String(n);
+      const bar = document.getElementById('clRunBar');
+      if (bar) bar.style.width = Math.min(95, n / 120 * 100) + '%';
+    }, 1000);
+    return;
+  }
+
+  if (status === 'error') {
+    box.innerHTML = `<div class="ld-err"><i class="ri-error-warning-fill"></i> ${escHtml(st.error || '扫失败了')}
+      · 可以再点一次「再扫一遍」</div>`;
+    return;
+  }
+
+  if (status === 'done' && st.result) { paintTempForm(st.result, st); return; }
+
+  box.innerHTML = '<div class="field-hint" style="margin-top:10px">还没扫过 —— 点上面「扫一遍看看」，它会列出堆在目录里的临时件，逐条说明是什么、能不能删。</div>';
+}
+
+function _clRow(it) {
+  const tag = it.keep
+    ? '<span class="ld-tag keep"><i class="ri-shield-check-line"></i> 建议留</span>'
+    : '<span class="ld-tag drop' + (it.risk === 'high' ? ' risky' : '') + '"><i class="ri-delete-bin-6-line"></i> 建议清</span>';
+  const why = [it.what, it.reason].filter(Boolean).join(' · ');
+  return `<label class="ld-row">
+    <input type="checkbox" class="ld-pick" value="${escHtml(it.id)}" data-bytes="${escHtml(String(it.bytes || 0))}" data-size="${escHtml(it.size || '')}" data-path="${escHtml(it.path)}"${it.keep ? '' : ' checked'}>
+    <span class="ld-main">
+      <span class="ld-pathline"><code>${escHtml(it.path)}</code>${tag}<span class="ld-size">${escHtml(it.size || '')}</span></span>
+      <span class="ld-why">${escHtml(why || '（没给说明）')}</span>
+    </span>
+  </label>`;
+}
+
+function paintTempForm(d, st) {
+  const box = document.getElementById('ldTempBox');
+  if (!box) return;
+  const items = d.items || [];
+  if (!items.length) {
+    box.innerHTML = '<div class="field-hint" style="margin-top:10px">没扫到可以清理的临时件 —— 挺干净的。</div>';
+    return;
+  }
+  const dropItems = items.filter((x) => !x.keep);
+  const keepItems = items.filter((x) => x.keep);
+  const dropBytes = dropItems.reduce((s, x) => s + (parseInt(x.bytes, 10) || 0), 0);
+  const when = String((st && st.finished_at) || '').replace('T', ' ');
+
+  box.innerHTML = `
+    <div class="ld-head">
+      共 <b>${items.length}</b> 条候选 · 建议清 <b class="ld-warn">${dropItems.length}</b> 条
+      <em>（${escHtml(_clSize(dropBytes))}）</em>
+      ${when ? `<span class="ld-when">扫于 ${escHtml(when)}</span>` : ''}
+    </div>
+    <div class="ld-groups">
+      <details class="ld-group" open>
+        <summary><i class="ri-delete-bin-6-line"></i> 建议清理
+          <em>${dropItems.length} 条 · ${escHtml(_clSize(dropBytes))}</em></summary>
+        <div class="ld-list">${dropItems.map(_clRow).join('')}</div>
+      </details>
+      ${keepItems.length ? `<details class="ld-group">
+        <summary><i class="ri-shield-check-line"></i> 建议保留 <em>${keepItems.length} 条</em></summary>
+        <div class="ld-list">${keepItems.map(_clRow).join('')}</div>
+      </details>` : ''}
+    </div>
+    <div class="ld-actbar">
+      <span class="ld-picked" id="clPicked">已勾 0 项 · 0 B</span>
+      <span class="ld-bar-gap"></span>
+      <button type="button" class="btn-ghost" id="clSuggest">只勾建议清</button>
+      <button type="button" class="btn-ghost" id="clNone">全不勾</button>
+      <button type="button" class="btn-ghost" id="clToTrash"><i class="ri-archive-line"></i> 移到回收站</button>
+      <button type="button" class="btn-danger" id="clDelete"><i class="ri-delete-bin-2-line"></i> 永久删除</button>
+    </div>
+    <div id="clConfirm"></div>
+    <div id="clResult" class="field-hint"></div>
+  `;
+
+  const $ = (id) => document.getElementById(id);
+  if ($('clSuggest')) $('clSuggest').onclick = () => {
+    box.querySelectorAll('.ld-pick').forEach((el) => {
+      const it = items.find((x) => x.id === el.value);
+      el.checked = !!(it && !it.keep);
+    });
+    _clPicked();
+  };
+  if ($('clNone')) $('clNone').onclick = () => {
+    box.querySelectorAll('.ld-pick').forEach((el) => { el.checked = false; });
+    _clPicked();
+  };
+  if ($('clToTrash')) $('clToTrash').onclick = () => _clAsk('trash');
+  if ($('clDelete')) $('clDelete').onclick = () => _clAsk('delete');
+  box.querySelectorAll('.ld-pick').forEach((el) => { el.onchange = () => { _clPicked(); if ($('clConfirm')) $('clConfirm').innerHTML = ''; }; });
+  _clPicked();
+}
+
+function _clPicked() {
+  const picks = [...document.querySelectorAll('.ld-pick:checked')];
+  const bytes = picks.reduce((s, el) => s + (parseInt(el.dataset.bytes, 10) || 0), 0);
+  const el = document.getElementById('clPicked');
+  if (el) el.textContent = '已勾 ' + picks.length + ' 项 · ' + _clSize(bytes);
+  return picks;
+}
+
+// 确认不弹窗、就在原地展开一条 —— 之前把 50 行路径塞进通用弹窗才是「丑」的根源
+function _clAsk(mode) {
+  const cEl = document.getElementById('clConfirm');
+  if (!cEl) return;
+  const picks = _clPicked();
+  if (!picks.length) { cEl.innerHTML = '<div class="ld-err2">先勾要清的</div>'; return; }
+  const bytes = picks.reduce((s, el) => s + (parseInt(el.dataset.bytes, 10) || 0), 0);
+  const n = picks.length, sz = _clSize(bytes);
+
+  cEl.innerHTML = (mode === 'trash')
+    ? `<div class="ld-confirm">
+         <div class="ld-cf-t"><i class="ri-archive-line"></i>
+           把勾选的 <b>${n}</b> 项（${escHtml(sz)}）搬到 <code>data/runtime/trash/</code>？
+           <span>原位置会空出来，东西留在回收站里，随时能捞回来。</span></div>
+         <div class="ld-cf-b">
+           <button type="button" class="btn-primary" id="clCfmGo">搬过去</button>
+           <button type="button" class="btn-ghost" id="clCfmNo">再想想</button>
+         </div>
+       </div>`
+    : `<div class="ld-confirm danger">
+         <div class="ld-cf-t"><i class="ri-error-warning-fill"></i>
+           <b>永久删除</b>这 <b>${n}</b> 项（${escHtml(sz)}）？
+           <span>直接删干净 —— 不进回收站，找不回。</span></div>
+         <div class="ld-cf-b">
+           <button type="button" class="btn-danger" id="clCfmGo">确认永久删除</button>
+           <button type="button" class="btn-ghost" id="clCfmNo">算了</button>
+         </div>
+       </div>`;
+  document.getElementById('clCfmNo').onclick = () => { cEl.innerHTML = ''; };
+  document.getElementById('clCfmGo').onclick = () => ldTempPurge(mode);
+}
+
+async function ldTempPurge(mode) {
+  const picks = [...document.querySelectorAll('.ld-pick:checked')];
+  const resEl = document.getElementById('clResult');
+  const cEl = document.getElementById('clConfirm');
+  if (cEl) cEl.innerHTML = '';
+  if (!picks.length) return;
+  if (resEl) resEl.innerHTML = '<span style="color:var(--sys)"><i class="ri-loader-fill ld-spin"></i> 处理中…</span>';
+  try {
+    const r = await fetch('/local-data/temp-purge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ paths: picks.map((el) => el.value), mode: mode }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '清理失败');
+    const verb = mode === 'trash' ? '搬走' : '删掉';
+    const tail = mode === 'trash'
+      ? ' · 在 <code>' + escHtml(d.trash || '') + '</code>（能捞回来）'
+      : ' · 已永久删除';
+    picks.forEach((el) => { const row = el.closest('.ld-row'); if (row) row.remove(); });
+    if (resEl) resEl.innerHTML = '<span style="color:#6ed27a"><i class="ri-check-fill"></i> '
+      + verb + ' ' + escHtml(String(d.moved || 0)) + ' 项 · 腾出 ' + escHtml(d.freed_size || '0 B') + tail + '</span>';
+    _clPicked();
+  } catch (e) {
+    if (resEl) resEl.innerHTML = '<span style="color:var(--red)"><i class="ri-close-fill"></i> ' + escHtml(e.message) + '</span>';
+  }
 }

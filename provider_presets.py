@@ -291,6 +291,16 @@ PRESETS: list[ProviderPreset] = [
         note="用 LM Studio 跑本机模型 (Qwen 8B 等) · 零成本 · 断网可用 · 数据不出本机。先在 LM Studio Developer 页启动本地服务器 (默认 1234 端口) · 再点「拉取本机模型」自动发现已加载的模型。",
     ),
     ProviderPreset(
+        id="llama-prism",
+        name="本机 llama.cpp (自定义量化 · fork)",
+        base_url="http://127.0.0.1:18080/v1",
+        provider_kind="openai",
+        recommended_models=[],  # 动态发现 · 点「拉取本机模型」自动填 (同 lm-studio)
+        key_hint="本机模型不需要 key · 占位即可",
+        signup_url="",
+        note="本机用 llama-server 跑自定义/非标准量化的 GGUF (如 ternary 三值模型) · 零成本 · 断网可用 · 数据不出本机。官方 llama.cpp 拒载这类格式 · 需用作者 fork 的 llama-server · 默认端口 18080 · 起好服务后点「拉取本机模型」自动发现。",
+    ),
+    ProviderPreset(
         id="custom",
         name="自定义",
         base_url="",
@@ -419,6 +429,7 @@ def is_thinking_model(model_id: str) -> bool:
 #              (o1/o3 类·thinking 是模型定义的一部分·API 上最狠只能降 effort)
 THINK_OFF_API_PARAM = "api_param"
 THINK_OFF_SOFT_PROMPT = "soft_prompt"
+THINK_OFF_CHAT_TEMPLATE = "chat_template_kwargs"  # 请求体开关 · 需后端透传 chat_template_kwargs
 THINK_OFF_NONE = "none"
 THINK_OFF_SOFT_TOKEN = "/no_think"
 
@@ -441,6 +452,12 @@ def resolve_think_off(model_id: str, base_url: str = "") -> tuple[str, str]:
         return THINK_OFF_API_PARAM, ""
     if "bigmodel.cn" in b:          # 智谱官方 base_url 下的自定义模型名
         return THINK_OFF_API_PARAM, ""
+    # ①.5 走 chat template 开关的 (wish-acf6e762) · 请求体 chat_template_kwargs.enable_thinking=false
+    #   实测 ternary-bonsai-2-27b: 基线思考 112 字/43 tok → 关后 0 字/2 tok (省 95%)
+    #   ⚠ 只有能【透传】chat_template_kwargs 的后端吃这条 (llama.cpp 原生 server 可以 ·
+    #     LM Studio 会吃掉该参数 → 实测无效) · 故按模型粒度声明 (playbook 纪律)
+    if "bonsai" in m:
+        return THINK_OFF_CHAT_TEMPLATE, ""
     # ② 有 prompt 软开关的 (实测有效·见上)
     if "qwen" in m or "qwq" in m:
         return THINK_OFF_SOFT_PROMPT, THINK_OFF_SOFT_TOKEN

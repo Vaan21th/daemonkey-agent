@@ -283,7 +283,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="extract_playbook",
     description=(
-        "任务结束后把经验存进 data/playbooks。extract 必填问题/步骤/试错过。失败用 feedback 写回原册。蒸馏先 distill 再 distill_confirm。不要写到别的文件夹。"
+        "BRO 给了工艺要求 / 血泪教训（「下次先…」/「这次记住了」）→ 把经验存进 data/playbooks。extract 必填问题/步骤/试错过。失败用 feedback 写回原册。蒸馏先 distill 再 distill_confirm。不要写到别的文件夹。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

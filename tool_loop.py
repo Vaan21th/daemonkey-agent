@@ -185,7 +185,19 @@ DEFAULT_MAX_ITERATIONS = 200
 # 注入上限 = 最多给 LLM N 次"你重复了 · 换思路" · 还不变就真的 break
 _STUCK_WINDOW = 6
 _STUCK_REPEAT_THRESHOLD = 3
+# 2026-09-23 · 递增档 (学 deepseek-harness guard/repeat-tool-reminder):
+#   原来一刀 3 就摆硬姿态 · 现在第 1 档轻提醒、第 2 档详细、到最高档才 break。
+#   更宽容 = 不砍正当长查 (今晚连跑十几轮查不同东西·那种不该被拦)。
+_STUCK_THRESHOLDS = (3, 5, 8)
 _STUCK_INJECT_CAP = 2
+
+# 2026-09-23 · 透明工具 (同上 · 学它的 exclude 语义):
+#   记账/状态记录类调用「既不递增也不重置」计数 ——
+#   否则循环里插一条记账就把重复链洗白了 (它的原话: 穿插的记录类工具不能掩盖循环)。
+_STUCK_TRANSPARENT_TOOLS = frozenset({
+    "track_task", "update_owner_note", "update_bro_note", "note_mood", "note_gallery",
+    "note_style_shift", "set_emotion", "wish_add", "wish_update", "summarize_session",
+})
 
 # 读型工具 (2026-08-14 方案 B · BRO 拍板): 参数用完整哈希 · 治 python_exec/read_file 前 120 字样板撞车
 # 误判案例: 连续几次 python_exec code 都是 'import os,re\nroot=...\nc=open(...)' 前 120 字相同 → 误判死循环
@@ -223,6 +235,8 @@ def _tool_signature(name: str, args_str: str) -> str:
         治 python_exec/read_file 前 120 字样板 (import/root/open) 撞车误判死循环
       - 写型工具 (有副作用): 保持前 120 字截断 · 保守防真死循环 (改文件/删东西不能浪)
     """
+    if name in _STUCK_TRANSPARENT_TOOLS:
+        return ""                                   # 透明: 调用方会跳过 (不计数)
     snippet = (args_str or "").strip()
     snippet = " ".join(snippet.split())
     if name in _READ_TOOLS:
@@ -249,8 +263,11 @@ def _stuck_tail_count(signatures: list[str]) -> tuple[str, int]:
 
 
 def _stuck_action(top_count: int, inject_count: int) -> str:
-    if top_count < _STUCK_REPEAT_THRESHOLD:
+    """递增档: <3 不动作 · 3~4 轻提醒 · 5~7 再提醒 · >=8 硬停。"""
+    if top_count < _STUCK_THRESHOLDS[0]:
         return ""
+    if top_count >= _STUCK_THRESHOLDS[-1]:
+        return "break"                      # 最高档 → 硬停 (交给人看)
     if inject_count < _STUCK_INJECT_CAP:
         return "nudge"
     return "break"
@@ -269,12 +286,109 @@ def _stuck_break_text(top_sig: str, top_count: int, window: int) -> str:
     )
 
 
+# ── 回合内紧急降水位 (wish-a5f77893 · 2026-09-16 · 刀B/C/D) ─────────────
+# 事故复盘 (daemon.log 02:24 · turn-8d3): 压缩检查只在回合入口 → 高水位回合内
+# 无人降水位 → 动态预算被压到 ~2k → 每 iter 思考吃光·正文空·自愈同水位重复 3 次仍空。
+_MT_FLOOR = int(os.environ.get("OPUS_MT_FLOOR") or "8192")   # 输出预算地板: 低于此 → 先紧急降水位再发
+_URGENT_COMPACT_MAX = int(os.environ.get("OPUS_URGENT_COMPACT_MAX") or "2")  # 每回合紧急压缩上限 (防缓存反复重建)
+_URGENT_COMPACT_GAP = 2      # 两次紧急压缩至少隔 N 个 iter
+
+# 2026-09-18 · 心跳两段式阈值 (wish-32ce1863)
+# 病: 心跳是「chunk 驱动」的 —— 首个 chunk 到达前结构上无法产生心跳
+#     (模型长思考 / 排队 / 服务慢，与「真挂起」不可区分) → 120s 阈值误砍长思考。
+# 治: 等首 chunk 期间用宽阈值(地板)，首 chunk 之后恢复严阈值。
+_TTFT_STALL_FLOOR = float(os.environ.get("OPUS_TTFT_STALL_FLOOR") or "300")
+
+
+def _is_context_overflow_error(exc: Exception) -> bool:
+    """识别 provider 的“上下文超长”类报错 (刀4 · wish-a5f77893)。
+
+    各家文案 (多半英文·个别中转中文):
+      OpenAI:    "This model's maximum context length is N tokens" /
+                 "Please reduce the length of the messages"
+      DeepSeek:  "maximum context length" / "input length ... exceed"
+      Anthropic: "prompt is too long" / "input length and max_tokens exceed context limit"
+    宽进 (认出就压一次再试·误判最多白压一次) · 不替代调用失败的上抛路径。
+    2026-09-16 (review 20260916-064719): 先排「限流/配额」——它们的文案也常带 "too many tokens" /
+    "exceed"，若当超长处理 → 白压一次上下文(烧 token + 打乱上下文) 而且压了也不解决限流。
+    """
+    try:
+        s = str(exc).lower()
+    except Exception:
+        return False
+    if any(k in s for k in (
+        "rate limit", "rate_limit", "too many requests",
+        "quota", "insufficient_quota", "billing",
+        "try again later", "retry after",
+    )):
+        return False
+    return any(k in s for k in (
+        "context length", "context_length_exceeded", "context window",
+        "prompt is too long", "reduce the length", "too many tokens",
+        "input length", "max_tokens exceed",
+    ))
+
+
 MAX_LENGTH_RESUME = 3
 _LENGTH_RESUME_USER = (
     "你刚才的回答被 max_tokens 截断了 · 请**从断点接着写**·不要重复前面已经说过的内容。"
     "如果还有工具要调·继续调。如果是文字回复·直接续上。"
     "目标: 让这次任务有完整结果。"
 )
+
+# 0.9.x · 空回复自愈 (2026-09-14 · 一晚连续 4 次现场)
+# 现场: reasoning 1609 / 3089 / 4926 / 6762 字 · content 全空 · tool_calls 全空
+#       usage out 只有 5308 (预算 32768) → **不是 max_tokens 不够** · 是模型自己收手
+# 结论: reasoning 模式下 · 模型把结论全说进了 reasoning_content · 正文一字没给
+# 原先只填一句占位文案告诉 BRO「发生了」· 要他自己说「给我个总结」再走一轮 · 现在自动要
+MAX_EMPTY_RESUME = 3
+_EMPTY_RESUME_USER = (
+    "你上一轮的正文是空的 —— 结论全写在思考链里了，BRO 一个字都没收到。"
+    "请**直接把要跟他说的话写进正文**·不要再想一遍·不要再调工具·给他一个能读的回复。"
+)
+
+# 2026-09-23 · 无进展保护 (治「连跑十几轮只调工具、正文一字不出」)
+# 现场: turn-b61 连跑 16 轮 / 2 分 45 秒 · 全程 finish_reason=tool_calls · has_text=False
+#      用户体感 = "卡死 / 像别的程序在回话"。空回复自愈只治「stop 且正文空」· 治不了这条。
+# 不砍工具、不降上限 —— 只在该收口时注入一条提醒 (走跟自愈同一条通路)。
+MAX_NO_TEXT_STREAK = 12
+_NO_TEXT_RESUME_USER = (
+    "你已经连续多轮只调工具、一直没给 BRO 正文 —— 先停一下。"
+    "用一两句话把查到的结论和自己的状态说清楚，再决定还要不要继续查。"
+)
+
+# 2026-09-23 · 运行时信封净化
+# 现象 (BRO 报 "感觉不是同一个 OPUS"): 上下文里混进
+#   [Timestamp: 2026-09-23T22:05:00] / [Session info: Current session: api-...]
+# 这类**不是本工程生成**的信封行 (全仓 .py/.js/.md/.json 搜不到生成代码) ·
+# 且那个 session id 在 sessions/ 和 _index.json 里都不存在 → 模型据它推断
+# "现在 22:05 / 我在另一个会话" · 基于假前提做判断 (源头未定 · 见 wish-26643574)。
+# 处置: 把这几种外来信封行从消息体里剔掉 (原地 · 纯内存 · 不重写 jsonl 正文) · 并告警。
+# 判据严格: 只剔「整行就是这个标记」的行 —— 正文里恰好提到这几个字样不受影响。
+import re as _re  # noqa: E402  (重复 import 无害·本块自带依赖)
+_ENVELOPE_LINE_RE = _re.compile(
+    r"^[ \t]*\[(?:Timestamp|Session info|System time|Current session)[^\]]*\][ \t]*$",
+    _re.MULTILINE,
+)
+
+
+def _strip_envelope_tags_inplace(messages: list) -> int:
+    """剔除外来运行时信封行 · 返回改动了几条消息 (0 = 干净)。"""
+    hits = 0
+    for m in messages:
+        try:
+            c = m.get("content")
+            if not isinstance(c, str) or "[" not in c:
+                continue
+            if not _ENVELOPE_LINE_RE.search(c):
+                continue
+            nc = _ENVELOPE_LINE_RE.sub("", c)
+            if nc != c:
+                m["content"] = nc
+                hits += 1
+        except Exception:
+            continue
+    return hits
 
 
 class _StreamCancelGuard:
@@ -311,6 +425,53 @@ class _StreamCancelGuard:
         return False
 
 
+# ── 心跳看门狗 (2026-09-16 · wish-1dc8d738 · 替换"5 分钟墙钟") ──────────
+# 旧墙钟: 从 turn 开始算总时长, 到点一刀 — 误伤正常长活 (09-16 断案: 18 个 turn 卡 4.5-5.5min,
+# BRO 用"继续"手动续场 37 天未察)。新判定盯"最后一次进展"(心跳):
+#   LLM 流每 chunk / 迭代推进 / 工具边界 = 跳一下; 心跳停 > stall_sec 才判"真卡"。
+# 分层不变: 工具执行期豁免心跳判定 (工具自有 timeout · 各自负责)。
+
+def _hb_feed(cancel_check) -> None:
+    """标记一次心跳 (有进展)。未装心跳包装时 no-op。"""
+    _b = getattr(cancel_check, "beat", None)
+    if _b is not None:
+        try:
+            _b()
+        except Exception:
+            pass
+
+
+def _hb_tool_enter(cancel_check) -> None:
+    """工具执行开始: 置 in_tool (心跳豁免) + 喂跳。"""
+    if cancel_check is None:
+        return
+    try:
+        cancel_check._in_tool = True
+    except Exception:
+        pass
+    _hb_feed(cancel_check)
+
+
+def _hb_tool_exit(cancel_check) -> None:
+    """工具执行结束: 清 in_tool + 喂跳。"""
+    if cancel_check is None:
+        return
+    try:
+        cancel_check._in_tool = False
+    except Exception:
+        pass
+    _hb_feed(cancel_check)
+
+
+def _aborted_note(cancel_check) -> str:
+    """中断收尾文案 (2026-09-16 · 不再冒充"用户取消"): 区分 心跳停/总时长/用户取消。"""
+    if getattr(cancel_check, "stalled", False):
+        return "[⏱ 心跳停止 · 已安全中断（不是报错 · 也不是你取消的）]"
+    if getattr(cancel_check, "timed_out", False):
+        return "[⏱ 达到总时长上限 · 已安全中断（不是报错 · 也不是你取消的）]"
+    return "[OPUS aborted by BRO · partial only]"
+
+
 class _AntBlock:
     def __init__(self, type: str, id: str = "", name: str = "", input: Any = None, text: str = ""):
         self.type = type
@@ -331,6 +492,36 @@ def _usage_from_ant(obj) -> UsageStats:
     )
 
 
+def _hb_set_awaiting(cc, val: bool) -> None:
+    """安全设置「等首 chunk」两段阈值标记 (wish-32ce1863)。
+
+    2026-09-18 · 心跳是 chunk 驱动的: 首个 chunk/event 到达前结构上无法产生心跳
+    (模型长思考 / 排队与「真挂起」不可区分) → 该期间改用宽阈值地板。
+
+    调用方传入的 cancel_check 是任意 callable、未必可写属性 → 写失败静默降级
+    退回旧行为(严阈值)，不影响回合正确性。(code_review 20260918)
+    """
+    if cc is None:
+        return
+    try:
+        cc.awaiting_first_chunk = val
+    except Exception as _e:
+        # 降级但留痕 (playbook: 大而全的 pass 会把证据一起吞掉)
+        logger.debug(f"[hb] awaiting_first_chunk 置位失败(已降级): {_e!r}")
+
+
+def _hb_beat_safe(cc) -> None:
+    """安全刷新心跳基准 (进入宽阈值期时调 · 让地板从「开始等」那一刻算起)。"""
+    if cc is None:
+        return
+    try:
+        b = getattr(cc, "beat", None)
+        if callable(b):
+            b()
+    except Exception as _e:
+        logger.debug(f"[hb] beat 刷新失败(已忽略): {_e!r}")
+
+
 def _consume_anthropic_stream(resp, cancel_check, progress):
     """把 Anthropic stream 收成 (text, tool_use_blocks, usage, stop_reason, aborted)。"""
     text = ""
@@ -348,6 +539,9 @@ def _consume_anthropic_stream(resp, cancel_check, progress):
     try:
         with _StreamCancelGuard(resp, cancel_check):
             for event in resp:
+                # 2026-09-18 · 首个 event 到达 = 退出宽阈值期，恢复严阈值
+                _hb_set_awaiting(cancel_check, False)
+                _hb_feed(cancel_check)  # 心跳: 每个新事件 = 有进展 (2026-09-16)
                 if cancel_check is not None and cancel_check():
                     _close()
                     aborted = True
@@ -463,45 +657,49 @@ _EXPLAIN_PROMPT = (
 )
 
 
-# ── 失败熔断器 (墨言 094 wish-d2c2aa9a 移植 · 治"工具连续失败同类错误 → 换花样再撞"死磕) ──
-# 同一错误类别连续失败 ≥ _FAIL_CIRCUIT_AT 次 → 注入 nudge 停手 · 再撞 1 次 → 硬 break (带部分产出)。
-# 单次 run 内 break 即天然冷却 (run 结束) · 跨 turn 冷却不做 (环境性失败 30 分钟冷却易误伤)。
-_FAIL_CIRCUIT_AT = 2          # 连续同类失败 N 次 → nudge (停手汇报)
-_FAIL_CIRCUIT_BREAK_AT = 3    # nudge 后同类再失败第 N 次 → 硬 break
+# ── 失败熔断器 (墨言 094 · 只拦墙，不拦换源) ──
+# 墙 = 鉴权/限流/验证码/工具不准用。连撞 → nudge → 再撞硬 break。
+# 404 / 超时 / 空搜 / 普通异常 = 换源挖掘，不进熔断。同 URL 死磕交给 stuck detection。
+# 单次 run 内 break 即冷却 · 不跨 turn。
+_FAIL_CIRCUIT_AT = 2          # 连续同类墙 N 次 → nudge
+_FAIL_CIRCUIT_BREAK_AT = 3    # nudge 后再撞第 N 次 → 硬 break
 _FAIL_CIRCUIT_NUDGE_PROMPT = (
-    "你连续 {count} 次调工具都返回同一类错误 (`{category}`)。\n"
-    "**这像在死磕同一条失败路径** —— 换 URL / 换关键词 / 换工具花样再撞大概率还是同一个错误。\n\n"
+    "你连续 {count} 次撞上同一类墙 (`{category}`)。\n"
+    "**这是鉴权 / 限流 / 验证码 / 工具不准用** —— 换一个同性质的源，大概率还是这堵墙。\n\n"
     "请立即停手:\n"
-    "  - 用文字汇报当前能拿到的部分（哪怕只有一半也算）\n"
-    "  - 说清这个错误类别 ({category}) 是哪来的·你卡在哪\n"
-    "  - 如果必须继续·换**不同类别**的方向·不要再撞同类错误\n"
-    "不要无视这条提示再调同类工具——我会硬拦下你。"
+    "  - 用文字汇报已经拿到的部分\n"
+    "  - 说清这堵墙 ({category}) 是哪来的\n"
+    "  - 死链、超时、空搜可以换源再试；这类墙不行\n"
+    "不要无视这条提示再撞同一类墙——我会硬拦下你。"
 )
 _FAIL_CIRCUIT_BREAK_PROMPT = (
-    "[OPUS 失败熔断 · 同类错误连续失败 {count} 次·已自动停下]\n\n"
-    "错误类别: `{category}`\n"
-    "这是死磕同一失败路径 · 已按熔断器硬停（防止继续烧 token 换花样再撞）。\n"
-    "建议: 看上面的部分产出 + session jsonl · 告诉我换思路或放弃。"
+    "[OPUS 失败熔断 · 同一类墙连续 {count} 次·已自动停下]\n\n"
+    "墙: `{category}`\n"
+    "鉴权 / 限流 / 验证码 / 工具不准用 · 换源再撞也是这堵墙。\n"
+    "建议: 看上面的部分产出，换思路或放弃。死链和空搜不在此列。"
 )
 # 错误类别判定 (error 字符串粗分类 · 命中即归类 · 未命中按异常类型名 / other)
 _ERR_CAT_RULES = (
-    # 数字状态码只匹配带上下文强信号 (http/status 前缀 / 错误名后缀) · 防 traceback 行号 "line 403" 误命中
-    ("http_4xx", ("unauthorized", "forbidden", "not found", "rate limit",
-                  "too many requests", "too many request", "client error",
-                  "http 401", "http 403", "http 404", "http 405", "http 429",
-                  "status 401", "status 403", "status 404", "status 405", "status 429",
-                  "status code 401", "status code 403", "status code 404",
-                  "status code 405", "status code 429", "http_status", "4xx")),
+    # 状态码必须带 http/status 上下文 · 防 traceback「line 403」
+    ("http_deny", ("unauthorized", "forbidden", "rate limit",
+                   "too many requests", "too many request",
+                   "http 401", "http 403", "http 429",
+                   "status 401", "status 403", "status 429",
+                   "status code 401", "status code 403", "status code 429")),
+    ("http_miss", ("http 404", "http 405",
+                   "status 404", "status 405",
+                   "status code 404", "status code 405")),
     ("timeout", ("timeout", "timed out", "timedout")),
     ("network", ("connection", "connect error", "dns", "read error",
                  "remoteprotocolerror", "protocol error", "连接失败", "网络错误", "网络异常")),
-    ("anti_bot", ("验证码", "安全验证", "异常访问", "请求异常", "滑动验证", "人机验证",
+    ("anti_bot", ("验证码", "安全验证", "异常访问", "滑动验证", "人机验证",
                   "captcha", "recaptcha")),
     ("not_allowed", ("not allowed", "unknown tool", "not in this app scope")),
 )
 _ERR_CAT_FALLBACK = "other"
-# 业务拒绝类 (用户取消/解释) 不参与熔断 —— 那是 confirm 层的语义反馈·不是技术失败
 _ERR_CAT_NON_CIRCUIT = ("declined", "explain", "reject:")
+# 只有墙才熔断。404/超时/空搜/普通异常靠 stuck（同工具同参数）拦死磕。
+_ERR_CAT_CIRCUIT = frozenset({"http_deny", "anti_bot", "not_allowed"})
 
 
 def _classify_error(result) -> Optional[str]:
@@ -527,11 +725,7 @@ def _classify_error(result) -> Optional[str]:
 
 
 class _FailCircuit:
-    """失败熔断器状态机 (单次 run 内) · 同类错误连续失败 → nudge → 再撞硬 break。
-
-    喂每次工具结果 (observe) · 返回 None=继续 / "nudge"=该注入提示 / "break"=该硬停。
-    连续计数按【调用序列】· 成功或类别变化或业务拒绝 → 重置。
-    """
+    """墙连撞 → nudge → 硬停。换源失败（404/超时/空搜）重置，不当死循环。"""
     __slots__ = ("streak", "current", "nudged")
 
     def __init__(self) -> None:
@@ -541,8 +735,7 @@ class _FailCircuit:
 
     def observe(self, result) -> Optional[str]:
         cat = _classify_error(result)
-        if cat is None:
-            # 成功 / 业务拒绝 → 重置连续计数 + 重置 nudge 机会 (下次同类失败仍会先提醒)
+        if cat is None or cat not in _ERR_CAT_CIRCUIT:
             self.streak = 0
             self.current = None
             self.nudged = False
@@ -570,6 +763,24 @@ def _collect_partial_output(messages: list[dict], max_parts: int = 3, max_chars_
             if t and t not in parts:
                 parts.append(t)
     return "\n\n".join(parts)[-max_parts * max_chars_per:]
+
+
+def _collect_recent_tools(messages: list[dict], max_items: int = 6, max_chars: int = 150) -> str:
+    """墙钟超时收尾用: 摘最近几轮工具结果的开头 (跳掉 stdout 标记/修剪头) · 2026-09-15。"""
+    lines: list[str] = []
+    for m in messages:
+        if m.get("role") != "tool":
+            continue
+        raw = [ln.strip() for ln in str(m.get("content") or "").splitlines() if ln.strip()]
+        shown = next((ln for ln in raw
+                      if ln not in ("--- stdout ---", "--- stderr ---")
+                      and not ln.startswith("[已修剪工具结果")), "")
+        if not shown:
+            continue
+        s = shown[:max_chars]
+        if s not in lines:
+            lines.append(s)
+    return "\n".join("· " + ln for ln in lines[-max_items:])
 
 
 def _call_confirm(
@@ -616,9 +827,11 @@ def _run_tool(spec, args, progress, cancel_check):
     ptok = _TOOL_PROGRESS_HOOK.set(
         lambda step, msg: _push(progress, "tool_progress", {"step": step, "msg": msg})
     )
+    _hb_tool_enter(cancel_check)  # 心跳: 工具执行期豁免判定 (工具自有 timeout)
     try:
         return spec.run(args)
     finally:
+        _hb_tool_exit(cancel_check)  # 心跳: 工具结束 · 恢复判定 + 喂跳
         _TOOL_PROGRESS_HOOK.reset(ptok)
         reset_cancel_check(ctok)
 
@@ -669,41 +882,138 @@ def _result_preview(result: ToolResult, max_chars: int = 300, tool_name: str = "
 _OPEN_MARK_RE = re.compile(r"[ \t]*\[\[DK-OPEN\]\](.+?)[ \t]*(?:\n|$)")
 
 
-def _take_open_path(result: ToolResult) -> str:
-    """抽出并剥掉 [[DK-OPEN]] marker · 返回相对路径(没有则空串)。 就地清理 result.output。"""
+def _to_stage_rel(cand: str) -> str:
+    """候选路径必须真实存在、且能上中栏 —— 否则不算数（返回空串）。
+
+    BRO 2026-09-20 实锤：marker 正则对**所有**工具输出生效，而 tool_loop / stage_open
+    的注释、playbook 正文、历史日志里都写着样本行（标记名 + 一个假路径）。
+    读一遍这些文件就把样本当成真标记抽走 → 前端弹出「相对路径 · 用对应软件打开」这种
+    垃圾动作条，还把真产物挤掉（前端只认最后一个路径）→ 该铺的画布反而打不开。
+    判据落在文件系统现实上：样本里的 相对路径 / {rel} / <path> 一律落空。
+    """
+    s = str(cand or "").strip().strip("`").strip().strip('"').strip("'")
+    if not s:
+        return ""
+    try:
+        from pathlib import Path as _P
+        from workers.stage_open import ROOT as _ROOT, rel_posix, stage_mode
+        p = _P(s)
+        if not p.is_absolute():
+            p = _P(_ROOT) / p
+        if not p.is_file():
+            return ""
+        if not stage_mode(p):
+            return ""
+        return rel_posix(p) or ""
+    except Exception:
+        return ""
+
+
+def _is_serve_url(u: str) -> bool:
+    """图廊只收真 URL（http(s):// 或 / 开头的服务路径）。
+
+    同一类病：文档注释里的样本（"daemon 可服务的 URL(...)"）会被当成真图 URL
+    塞进对话底部图廊，渲成一排坏图。
+    """
+    s = str(u or "").strip().strip("`").strip().strip('"')
+    return s.lower().startswith(("http://", "https://", "/"))
+
+
+def _take_declared_stage(result: ToolResult) -> list[str]:
+    """第2刀 · 结构化声明通道：工具在 ToolResult.stage_path 里声明「我产了哪个文件」。
+
+    比喉探输出里的字符串标记可靠 —— 字符串通道有两个毛病：① 文档里写着样本就会被误抽
+    (2026-09-20 那批垃圾动作条)；② 每个工具要在每个分支手写一行，漏一个就哑。
+    两个通道并存期间：有声明优先用声明，没有则回退标记喉探（老工具不改也不坏）。
+    """
+    if not result.ok:                      # 失败调用即便带了声明也不算产物（与标记通道对称）
+        return []
+    rel = _to_stage_rel(getattr(result, "stage_path", "") or "")
+    return [rel] if rel else []
+
+
+def _note_stage(result: ToolResult, paths: list[str]) -> None:
+    """第2刀 · 出口统一补「铺没铺中栏」那句人话 —— 与 stage_notice 同一份判据。
+
+    工具改成只声明 stage_path 之后，那句「✓ 已铺中栏」就没人写了；而它本来是专门
+    做给模型看的（wish-bc4fe249「铺没铺中栏，别让模型猜」）—— 少了它模型又只能猜。
+    所以搬到这里：老工具（自己 attach 过）已有这句 → 不重复；声明通道 → 补上。
+    """
+    if not (result.ok and paths):
+        return
+    try:
+        from workers.stage_open import stage_notice
+        note = stage_notice(paths[-1])
+        if note and note not in (result.output or ""):
+            result.output = "%s\n%s\n" % ((result.output or "").rstrip(), note)
+    except Exception:
+        pass
+
+
+def _strip_spans(text: str, spans: list[tuple[int, int]]) -> str:
+    """按区间剥掉指定片段（左闭右开）· 只用于「真认下的」标记。"""
+    buf: list[str] = []
+    last = 0
+    for a, b in spans:
+        buf.append(text[last:a])
+        last = b
+    buf.append(text[last:])
+    return "".join(buf).rstrip() + "\n"
+
+
+def _take_open_paths(result: ToolResult) -> list[str]:
+    """抽出并剥掉**所有** marker · 只留「真实存在 + 能上中栏」的，按出现顺序去重。
+
+    2026-09-20 · 原来用 search 只抽第一个 —— 一轮产 3 份文件只有第一份有机会铺，
+    这正是 BRO 说的「铺中栏像概率功能」的来源之一（基线实测：3 个标记只抽出 1 个）。
+    现在全收；事件里 open_path 仍是最后一个（= 最近产出的那份），另带 open_paths 全量。
+    """
     if not (result.ok and result.output):
-        return ""
-    m = _OPEN_MARK_RE.search(result.output)
-    if not m:
-        return ""
-    result.output = _OPEN_MARK_RE.sub("", result.output).rstrip() + "\n"
-    return m.group(1).strip()
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    spans: list[tuple[int, int]] = []
+    for m in _OPEN_MARK_RE.finditer(result.output):
+        rel = _to_stage_rel(m.group(1))
+        if rel and rel not in seen:
+            seen.add(rel)
+            out.append(rel)
+            spans.append(m.span())
+    if spans:
+        # 只剥「认下的」标记。以前是无条件 sub() —— 文件里写着的样本标记也会被吃掉，
+        # 而工具「读了再回写」（edit_file 就是）就会把源文件里的样本**永久**删掉：
+        # 2026-09-20 实测 tool_loop.py 自己注释里的样本就被吃成了「DK-IMGdaemon」。
+        result.output = _strip_spans(result.output, spans)
+    return out
 
 
 # ── 可内联显示的配图 marker ───────────────────────────────────────
 # 生图工具(generate_image …)每张成功的图在输出里塞一行
-#   [[DK-IMG]]daemon 可服务的 URL(/presentations/... 或 /workshop/outputs/...)
+#    [[DK-IMG]]daemon 可服务的 URL(/presentations/... 或 /workshop/outputs/...)
 # tool_loop 抽成 tool_result 事件的 images 列表 → 前端在对话底部渲可点放大的图廊 ·
 # 并把 marker 从 output 里剥掉(不污染喂给 LLM 的内容和 preview · LLM 仍能用它下面的文件路径清单)。
 _IMG_MARK_RE = re.compile(r"[ \t]*\[\[DK-IMG\]\](.+?)[ \t]*(?:\n|$)")
 
 
 def _take_image_urls(result: ToolResult) -> list:
-    """抽出并剥掉 [[DK-IMG]] marker · 返回去重保序的 URL 列表(上限 12)。 就地清理 result.output。"""
+    """抽出并剥掉 DK-IMG marker · 返回去重保序的 URL 列表(上限 12)。 就地清理 result.output。
+
+    与 _take_open_paths 同一条规矩：只剥「真认下的（能服务的 URL）」标记 ——
+    文档/注释里的样本一字不动，否则「读了再回写」会把源文件里的样本永久吃掉。
+    """
     if not (result.ok and result.output):
         return []
-    raw = [m.group(1).strip() for m in _IMG_MARK_RE.finditer(result.output)]
-    if not raw:
-        return []
-    result.output = _IMG_MARK_RE.sub("", result.output).rstrip() + "\n"
     seen: set[str] = set()
     out: list[str] = []
-    for u in raw:
-        if u and u not in seen:
+    spans: list[tuple[int, int]] = []
+    for m in _IMG_MARK_RE.finditer(result.output):
+        u = m.group(1).strip()
+        if _is_serve_url(u) and u not in seen and len(out) < 12:
             seen.add(u)
             out.append(u)
-        if len(out) >= 12:
-            break
+            spans.append(m.span())
+    if spans:
+        result.output = _strip_spans(result.output, spans)
     return out
 
 
@@ -826,8 +1136,15 @@ def _inject_pending_images(msgs: list) -> list:
         # 2026-09-23 修跨会话串台 (wish-7fa81bd0): 基准改用**本轮**身份。
         # 病根: 原来比的是 RUNTIME.session_id —— 进程全局 · daemon_api 每个 turn 进来都覆盖它。
         # 两个会话同时跑时，后到的 turn 把全局盖成对方的 sid → 校验从「不等于」变「等于」
-        # → A 会话上传的图直接注进 B 会话的输入。current_session_id() 是 ContextVar
-        # (set_session_context 在 /chat 入口设) · 每 turn 独立 · 并发也不会互相污染。
+        # → A 会话上传的图直接注进 B 会话的输入。实测: 19:30 续场 turn 收到了 19:30:35
+        # 另一个会话传的图。current_session_id() 是 ContextVar(set_session_context 在
+        # /chat 入口设) · 每 turn 独立 · 并发也不会互相污染。
+        # 2026-09-23 修跨会话串台 (wish-7fa81bd0): 基准改用**本轮**身份。
+        # 病根: 原来比的是 RUNTIME.session_id —— 进程全局 · daemon_api 每个 turn 进来都覆盖它。
+        # 两个会话同时跑时，后到的 turn 把全局盖成对方的 sid → 校验从「不等于」变「等于」
+        # → A 会话上传的图直接注进 B 会话的输入。实测: 19:30 续场 turn 收到了 19:30:35
+        # 另一个会话传的图。current_session_id() 是 ContextVar(set_session_context 在
+        # /chat 入口设) · 每 turn 独立 · 并发也不会互相污染。
         from agent_tools import current_session_id
         if pend.get("sid") != current_session_id():
             return msgs
@@ -1242,6 +1559,7 @@ def run_tool_loop(
     thinking: str | None = None,
     reasoning_effort: str | None = None,
     wall_clock_sec: float | None = None,
+    stall_sec: float | None = None,
     llm_timeout_sec: float | None = None,
     pending_messages: Callable[[], list] | None = None,
 ) -> tuple[str, list[dict], UsageStats]:
@@ -1297,6 +1615,18 @@ def run_tool_loop(
         # 自愈本身不能把主流程搞崩
         pass
 
+    # ── 运行时信封净化 (2026-09-23 · wish-26643574) ────────────────────
+    # 外来 [Timestamp:]/[Session info:] 行会让模型以为自己在另一个时间/会话上推理。
+    # 纯内存剔行 · 与上面的结构自愈同一位置 (都在「发给 LLM 之前」)。
+    try:
+        _env_hits = _strip_envelope_tags_inplace(messages)
+        if _env_hits:
+            import logging as _lg2
+            _lg2.getLogger("opus.tool_loop").warning(
+                "[信封净化] 剔除外来运行时标记 %d 条消息 (纯内存 · 不改 jsonl 原文)", _env_hits)
+    except Exception:
+        pass
+
     # ── 自动压缩钩子（wish-58af621e · 卷三十五 + wish-83fe7c7b · 卷五十四）──────
     # 在每次 tool_loop 入口按 token 预算 + 模型窗口动态触发压缩，
     # 省 token + 避免长对话爆 context。对所有路径（终端/API/SSE）生效。
@@ -1316,7 +1646,10 @@ def run_tool_loop(
                 _trace("compact_flush", **_flush)
             except Exception:
                 pass
-            compressed = auto_compress(messages, client, model, provider, model_id=model)
+            # v3 (wish-273d3d3f · ②) · 把主对话的稳定前缀 system 带给摘要调用 →
+            # 两边开头字节级一致 → 摘要调用也能吃到 prompt cache (不等 system_suffix · 它每轮变)
+            compressed = auto_compress(messages, client, model, provider, model_id=model,
+                                       system_stable=system)
             if compressed is not messages:
                 messages.clear()
                 messages.extend(compressed)
@@ -1351,21 +1684,53 @@ def run_tool_loop(
         except Exception:
             pass  # 假 client / 旧 SDK 无 with_options → 保持原 client (不炸主链路)
 
-    # 墙钟熔断: 后台/受限 turn 总时长上限 · 超时走 abort path 释放会话锁。
-    # 背景: 第三次"重启后卡死"事故 (墨言 08-09 16:47) — 后台续场 turn 调 LLM 挂起 25 分钟
-    # (timeout=300s × 多次重试) → 占 session 锁 40+ 分钟 → 用户死等。
-    # max_iterations 只在 LLM 调用返回时前进 · 单次 create() 挂起时救不了 · 必须墙钟兜底。
-    # 实现: 包装 cancel_check — 每轮迭代 / 流内 / watcher 心跳都会检查它 → 超时自动 abort。
-    if wall_clock_sec and wall_clock_sec > 0:
-        _wall_start = time.monotonic()
+    # 心跳看门狗 (2026-09-16 · wish-1dc8d738 · 由"墙钟熔断"升级):
+    # 旧墙钟从 turn 开始算总时长, 到点一刀 — 误伤正常长活 (09-16 断案: 18 个 turn 卡 4.5-5.5min)。
+    # 新判定盯"最后一次进展"(心跳): LLM 流每 chunk / 迭代推进 / 工具边界 = 跳一下;
+    #   心跳停 > stall_sec 才判"真卡" (治 08-09 墨言事故那种 LLM 挂起)。
+    # wall_clock_sec 退居"总时长宽兜底"(防无限循环), 先到先 fire。
+    # 分层不变: 工具执行期豁免心跳判定 (工具自有 timeout · 各自负责)。
+    if (wall_clock_sec and wall_clock_sec > 0) or (stall_sec and stall_sec > 0):
+        _hb_start = time.monotonic()
         _user_cancel = cancel_check
 
-        def _wall_cancel() -> bool:
+        def _hb_cancel() -> bool:
             if _user_cancel is not None and _user_cancel():
                 return True
-            return time.monotonic() - _wall_start > wall_clock_sec
+            if getattr(_hb_cancel, "_in_tool", False):
+                # 工具执行期: 豁免心跳判定 (工具自有 timeout) · 仅留总时长宽兜底
+                if wall_clock_sec and wall_clock_sec > 0 and time.monotonic() - _hb_start > wall_clock_sec:
+                    _hb_cancel.timed_out = True
+                    return True
+                return False
+            now = time.monotonic()
+            # 2026-09-18 · 两段式: 等首 chunk 期间无法产生心跳 → 用宽阈值地板。
+            # 仅当 stall_sec 本身有效时才套地板 —— stall_sec=0/None 是调用方显式
+            # 关闭停滞检测的语义，不能被地板"重新打开"(code_review 20260918)。
+            if stall_sec and stall_sec > 0:
+                _eff_stall = (
+                    max(stall_sec, _TTFT_STALL_FLOOR)
+                    if getattr(_hb_cancel, "awaiting_first_chunk", False)
+                    else stall_sec
+                )
+                if now - _hb_cancel._last > _eff_stall:
+                    _hb_cancel.stalled = True  # 分清"心跳停/总时长/用户取消" · 收尾文案不同
+                    return True
+            if wall_clock_sec and wall_clock_sec > 0 and now - _hb_start > wall_clock_sec:
+                _hb_cancel.timed_out = True
+                return True
+            return False
 
-        cancel_check = _wall_cancel
+        def _hb_beat() -> None:
+            _hb_cancel._last = time.monotonic()
+
+        _hb_cancel.timed_out = False  # type: ignore[attr-defined]
+        _hb_cancel.stalled = False
+        _hb_cancel._last = _hb_start
+        _hb_cancel._in_tool = False
+        _hb_cancel.awaiting_first_chunk = False  # 2026-09-18 · 两段阈值标记
+        _hb_cancel.beat = _hb_beat
+        cancel_check = _hb_cancel
 
 
     if provider == "openai":
@@ -1414,6 +1779,29 @@ def _extract_openai_cache_usage(usage: Any) -> tuple[int, int]:
     return creation, read
 
 
+def _inject_reasoning_off_token(messages, token: str) -> bool:
+    """把「关思考」的控制词并进 system 消息 (软开关·如 Qwen3 的 /no_think)。
+
+    wish-33624071 · 有些模型没有 API 开关·但训练时教过 prompt 里的控制词。
+    实测 (LM Studio · qwen3-8b-heretic): system 里加 /no_think →
+      reasoning 559字→0字 · completion_tokens 369→42 (省 88.6%) · 快 7.4 倍 · content 一字不少。
+    幂等: 已含该词就不再追加·防多轮越加越多。没 system 消息就在最前补一条。
+    """
+    if not isinstance(messages, list):
+        return False
+    for msg in messages:
+        if isinstance(msg, dict) and msg.get("role") == "system":
+            cur = msg.get("content")
+            if isinstance(cur, str):
+                if token in cur:
+                    return True
+                msg["content"] = (cur + "\n" + token) if cur else token
+                return True
+            return True
+    messages.insert(0, {"role": "system", "content": token})
+    return True
+
+
 def _apply_openai_reasoning(kwargs: dict, model: str, base_url: str | None,
                             thinking: str | None, reasoning_effort: str | None) -> None:
     """卷七十五续五 · 把 UI 的「思考模式 / 推理强度」落到 openai 协议请求参数上。
@@ -1422,6 +1810,10 @@ def _apply_openai_reasoning(kwargs: dict, model: str, base_url: str | None,
     保证零回归。 只对【已知接受该参数】的家族/厂商下发·别的静默跳过 → 防未知参数 400:
       - thinking → DeepSeek / GLM(智谱) 认 extra_body.thinking.{enabled|disabled};
       - reasoning_effort → GPT-5 / o 系列 / grok 认顶层 reasoning_effort。
+
+    wish-33624071 (2026-09-14) · 「关」不再只有一条路: 真切到 off 时先问能力声明表
+    (provider_presets.resolve_think_off) —— 有 prompt 软开关的模型 (Qwen3 系)
+    走 system 注控制词·没通路的如实不动 (UI 已标灰)。 不按厂商穷举 if-else。
     """
     base = (base_url or "").lower()
     ml = (model or "").lower()
@@ -1429,6 +1821,29 @@ def _apply_openai_reasoning(kwargs: dict, model: str, base_url: str | None,
     is_glm = "bigmodel.cn" in base or ml.startswith("glm")
     tv = (thinking or "auto").lower()
     thinking_off = False
+    # wish-33624071 · 软开关分流 (必须先于下面两家方言判)· 真切到「关」时才注入
+    if tv == "off":
+        try:
+            from provider_presets import (
+                resolve_think_off as _resolve_think_off,
+                THINK_OFF_SOFT_PROMPT as _TOK_SOFT,
+                THINK_OFF_CHAT_TEMPLATE as _TOK_CT,
+            )
+            _mode, _token = _resolve_think_off(model, base_url)
+        except Exception:
+            _mode, _token = "", ""
+        if _mode == _TOK_SOFT and _token:
+            _inject_reasoning_off_token(kwargs.get("messages"), _token)
+            return  # 软开关已把思考关掉·不再下发任何 reasoning 参数
+        if _mode == _TOK_CT:
+            # wish-acf6e762 · chat template 开关 (Qwen3.8 新模板系 · 本机 fork llama-server 透传)
+            # 走 extra_body —— openai SDK 不认未知顶层 kwarg (会 TypeError)
+            _eb = kwargs.setdefault("extra_body", {})
+            _eb["chat_template_kwargs"] = {"enable_thinking": False}
+            thinking_off = True
+        elif _mode != "api_param":
+            # 用户说「关」但这个模型没有 API 通路 → 至少不主动加思考 (不发 reasoning_effort)
+            thinking_off = True
     if is_deepseek or is_glm:
         if tv == "off":
             kwargs["extra_body"] = {"thinking": {"type": "disabled"}}
@@ -1436,14 +1851,22 @@ def _apply_openai_reasoning(kwargs: dict, model: str, base_url: str | None,
         elif tv == "on" or (tv == "auto" and is_deepseek):
             kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
         # auto + glm → 不设 · 用厂商默认
-    # reasoning_effort · 只发给【实测接受该参数】的家族 · 且思考没被关掉时才发:
-    #   GPT-5 / o 系 / grok / DeepSeek-V4 (2026-07 实测 low/high 均不报 400·V4 把 low/medium 映射成 high)。
-    #   GLM 只有 5.2+ 认·老 GLM 发了会 400·保守不发 (思考开关已够用)。
-    eff = (reasoning_effort or "").lower()
-    if eff in ("low", "medium", "high") and not thinking_off:
-        fam0 = ml.split("-")[0]
-        if "gpt-5" in ml or ml.startswith("grok") or fam0 in ("o1", "o3", "o4") or is_deepseek:
-            kwargs["reasoning_effort"] = eff
+    # reasoning_effort · 标准档 → 该模型接受的档 (provider_presets.map_effort_level ·
+    #   单一真相源 · wish-4fd607c5 v2): UI 摆通用的标准档·发送端就近映射
+    #   (DeepSeek 上 中→高 · GPT-5 上 极高→高)。
+    #   wish-3d02d762 校正：不吃这参数的 (GLM·本机) → supported 空 → 永不发 ✓；
+    #   未识别模型 → 保守三档 + 默认档为空 —— 用户不选就不发（零回归）；
+    #   但用户【主动选档】时会按保守三档就近映射下发（有意设计：让他能试）。
+    #   旧文案「认不出的 → 不发」与实现对不上，别照它推理。
+    eff = (reasoning_effort or "").strip().lower()
+    if eff and not thinking_off:
+        try:
+            from provider_presets import map_effort_level as _map_effort_level
+            _mapped = _map_effort_level(eff, model, base_url)
+        except Exception:
+            _mapped = eff if eff in ("low", "medium", "high") else None
+        if _mapped:
+            kwargs["reasoning_effort"] = _mapped
 
 
 def _loop_openai(
@@ -1496,6 +1919,48 @@ def _loop_openai(
     total = UsageStats()
     final_text = ""
 
+    # ── 回合内紧急降水位 (wish-a5f77893 · 2026-09-16 · 刀B/C/D) ────────────
+    # 事故复盘 (daemon.log 02:24 · turn-8d3): 压缩检查只在回合入口 (:1332) → 高水位
+    # 回合内无人降水位 → 动态预算被压到 ~2k → 每 iter 思考吃光·正文空 · 自愈在同一
+    # 水位重复 3 次仍空 · 烧 20 iter 才侥幸出话。修法: 预算被挤 (_mt_safe < _squeezed_floor)
+    # 时 → 强制压缩 (绕过入口停手/冷却 · 本回合节流 ≤2 次)。
+    _uc_state: dict = {"count": 0, "last_iter": -99}
+
+    def _urgent_compact(reason: str, ignore_gap: bool = False) -> bool:
+        """紧急降水位: 压缩全部当前消息 + 重建发送列表。返回是否压成功。
+
+        保持切片不变量 oai_messages[1:1+len(messages)]==messages (出口按它回写 messages)。
+        ignore_gap: 真·400 溢出场景允许同 iter 再试一次 (仍守每回合 count 上限)。
+        """
+        nonlocal oai_messages
+        if _uc_state["count"] >= _URGENT_COMPACT_MAX:
+            return False
+        if not ignore_gap and iteration - _uc_state["last_iter"] < _URGENT_COMPACT_GAP:
+            return False
+        _cur = [e for e in oai_messages[1:] if e is not _tail_note]
+        try:
+            from workers.memory_compression import auto_compress as _ac
+            _new = _ac(list(_cur), client, model, "openai", model_id=model, force=True)
+        except Exception as _e:
+            logger.warning("[紧急压缩·失败] reason=%s iter=%d: %s (不影响主流程)", reason, iteration, _e)
+            _uc_state["count"] = _URGENT_COMPACT_MAX   # 失败别反复试
+            return False
+        if _new is None or len(_new) >= len(_cur):
+            logger.warning("[紧急压缩·无效] reason=%s iter=%d · %d 条未减 (水位压不动)",
+                           reason, iteration, len(_cur))
+            _uc_state["count"] = _URGENT_COMPACT_MAX
+            return False
+        _had_tail = _tail_note is not None and any(e is _tail_note for e in oai_messages)
+        messages[:] = _new
+        oai_messages = [oai_messages[0]] + list(_new)
+        if _had_tail:
+            oai_messages.append(_tail_note)
+        _uc_state["count"] += 1
+        _uc_state["last_iter"] = iteration
+        logger.warning("[紧急压缩] reason=%s iter=%d · %d→%d 条 (本回合第 %d/%d 次)",
+                       reason, iteration, len(_cur), len(_new), _uc_state["count"], _URGENT_COMPACT_MAX)
+        return True
+
     # 卷三十七 · 流式输出 · thinking 模型推荐 stream=True · 让 reasoning 一字一字吐
     # (thinking / reasoning_effort 的开关下沉到 _apply_openai_reasoning · 每轮 kwargs 里应用)
 
@@ -1503,6 +1968,8 @@ def _loop_openai(
     # 策略: 检测到 length · 自动注入一条 user 继续指令 · 接着 LLM 把没说完的写完
     # 上限 3 次 · 防无限烧 token (每次 max_tokens 大的话 · 3 次累计输出可达 100K+)
     length_resume_count = 0
+    empty_resume_count = 0
+    _no_text_streak = 0          # 2026-09-23 · 连续无正文轮数 (无进展保护)
 
     # 卷四十四 · stuck detection 状态 · 跟踪最近 N 次 tool call signature
     # 同 signature 连续出现 ≥ THRESHOLD 次 · 注入 user 提示让 LLM 反思
@@ -1518,10 +1985,30 @@ def _loop_openai(
     iteration = 0
     while iteration < max_iterations:
         iteration += 1
+        _hb_feed(cancel_check)  # 心跳: 迭代推进 = 有进展 (2026-09-16)
         # 卷三十六 · 头部 check cancel · 避免无谓再开一轮 LLM (省 token)
         if cancel_check is not None and cancel_check():
-            final_text = "[OPUS aborted by BRO]"
+            if getattr(cancel_check, "stalled", False):
+                # 2026-09-16 · 心跳停止 → 给收尾交代(带工具摘要)并落盘 (断案病根: 超时不再冒充"用户取消")
+                _done_tools = _collect_recent_tools(oai_messages)
+                final_text = ("⏱ 心跳停止（模型/流长时间无响应）· 已安全中断（不是报错 · 也不是你取消的）。"
+                              + (("\n已完成的部分:\n" + _done_tools) if _done_tools else ""))
+            elif getattr(cancel_check, "timed_out", False):
+                # 2026-09-15 修: 后台续场墙钟到点 → 给收尾交代(带工具摘要)并落盘 · 不再闷掉
+                _done_tools = _collect_recent_tools(oai_messages)
+                final_text = ("⏱ 本轮后台续场到达时长上限 · 已安全中断（不是报错 · 也不是你取消的）。"
+                              + (("\n已完成的部分:\n" + _done_tools) if _done_tools else ""))
+            else:
+                final_text = "[OPUS aborted by BRO]"
             _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
+            try:
+                _abort_entry = {"role": "assistant", "content": final_text}
+                oai_messages.append(_abort_entry)
+                _commit(_abort_entry)
+                if getattr(cancel_check, "stalled", False) or getattr(cancel_check, "timed_out", False):
+                    logger.info("[heartbeat] 中断收尾 · iter=%s · 已补收尾并落盘", iteration)
+            except Exception:
+                pass
             break
         # 0.9.7 · followup 运行中消息 (P0-3): 每轮迭代头收一次外部塞进来的消息
         # (主对话对运行中分身追加指令) · 注入为 user 消息 · 分身下一轮自然看到。
@@ -1537,6 +2024,9 @@ def _loop_openai(
         # 用户全局 max_tokens 固定占坑 (如 393216) · messages 涨到 ~650K 时
         # messages+completion 超窗口 → 按窗口动态收窄输出预算。
         _mt_safe = max_tokens
+        # 判据: “被窗口挤压”而非“用户配置本身小” → min(地板, 配置上限)
+        # (code_review 2026-09-16: 配置小 max_tokens 时 _mt_safe 恒 < 地板 → 会每轮白压)
+        _squeezed_floor = min(_MT_FLOOR, max_tokens)
         try:
             from workers.memory_compression import _estimate_tokens as _est_tok
             from workers.memory_compression import _get_context_window as _cw_for
@@ -1545,6 +2035,11 @@ def _loop_openai(
                 _est_now = _est_tok(oai_messages)
                 _headroom = max(1024, int(_ctx * 0.05))
                 _mt_safe = min(max_tokens, max(512, _ctx - _est_now - _headroom))
+                # 刀B (wish-a5f77893): 预算被挤到地板下 → 先紧急降水位再算
+                # (事故: 被压到 ~2k 硬发 · 全回合空转 · daemon.log 02:24)
+                if _mt_safe < _squeezed_floor and _urgent_compact("budget_floor"):
+                    _est_now = _est_tok(oai_messages)
+                    _mt_safe = min(max_tokens, max(512, _ctx - _est_now - _headroom))
         except Exception:
             _mt_safe = max_tokens
         kwargs: dict[str, Any] = dict(
@@ -1561,7 +2056,27 @@ def _loop_openai(
         # DeepSeek 开 thinking · 其余不动)。 helper 只对已知支持的厂商/家族下发 · 防未知参数 400。
         _apply_openai_reasoning(kwargs, model, base_url, thinking, reasoning_effort)
 
-        resp = client.chat.completions.create(**kwargs)
+        # 刀4 (wish-a5f77893): provider 报“上下文超长”类 400 → 紧急压缩后重试本 iter
+        # (真撞窗的最后兜底 · 与刀B/C/D 的预防互补; Anthropic 路径后续补对称)
+        _overflow_retry = 0
+        # 2026-09-18 · 两段阈值: 从这里到首个 chunk 之间无法产生心跳 → 进宽阈值期
+        _hb_set_awaiting(cancel_check, True)
+        _hb_beat_safe(cancel_check)  # 基准重置: 宽阈值从「开始等」算 (code_review 20260918)
+        while True:
+            try:
+                resp = client.chat.completions.create(**kwargs)
+                break
+            except Exception as _req_e:
+                if (
+                    _overflow_retry < 2
+                    and _is_context_overflow_error(_req_e)
+                    and _urgent_compact("overflow_400", ignore_gap=True)
+                ):
+                    _overflow_retry += 1
+                    kwargs["messages"] = _diet_messages_for_send(oai_messages)
+                    logger.warning("[400·超长自愈] 已压缩并重试请求 (第 %d 次)", _overflow_retry)
+                    continue
+                raise
 
         # 流式累加状态
         text = ""
@@ -1576,6 +2091,9 @@ def _loop_openai(
         try:
             with _StreamCancelGuard(resp, cancel_check):
                 for chunk in resp:
+                    # 2026-09-18 · 首个 chunk 到达 = 退出宽阈值期，恢复严阈值
+                    _hb_set_awaiting(cancel_check, False)
+                    _hb_feed(cancel_check)  # 心跳: 每个新 chunk = 有进展 (2026-09-16)
                     if cancel_check is not None and cancel_check():
                         try:
                             resp.close()
@@ -1630,7 +2148,7 @@ def _loop_openai(
                 raise
 
         if _aborted_inline:
-            final_text = text or "[OPUS aborted by BRO · partial only]"
+            final_text = text or _aborted_note(cancel_check)
             _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
             # 把已收到的部分保留进 messages 以免丢
             if text or reasoning or tool_calls_acc:
@@ -1680,6 +2198,13 @@ def _loop_openai(
         # tool_calls = 还有工具要跑 · 正常
         # stop = LLM 自己说完了
         # content_filter = 内容过滤 · 罕见
+        # 0.9.x · 同时落日志: 原先只推前端不落盘 · 事后无据可查。
+        # 2026-09-14 端到端排查 "思考完没出文字" 时 · daemon.log 里一个字都没有。
+        logger.info(
+            "[llm] iter=%d finish_reason=%s has_text=%s has_tools=%s reasoning=%d字",
+            iteration, finish_reason or "unknown", bool(text), bool(tool_calls),
+            len(reasoning) if reasoning else 0,
+        )
         _push(progress, "assistant_finish", {
             "iteration": iteration,
             "finish_reason": finish_reason or "unknown",
@@ -1687,6 +2212,28 @@ def _loop_openai(
             "has_tool_calls": bool(tool_calls),
             "reasoning_len": len(reasoning) if reasoning else 0,
         })
+
+        # 2026-09-23 · 无进展保护 (见 MAX_NO_TEXT_STREAK 注释):
+        # 连续 N 轮只有 tool_calls、正文零字 → 注入一条「该收口了」的提醒
+        if text:
+            _no_text_streak = 0
+        elif tool_calls:
+            _no_text_streak += 1
+            if _no_text_streak % MAX_NO_TEXT_STREAK == 0:
+                logger.warning(
+                    "[无进展·收口提醒] 连续 %d 轮只有工具调用 · 正文零字 (iter=%d) → 注入收口提醒",
+                    _no_text_streak, iteration,
+                )
+                _push(progress, "auto_resume", {
+                    "reason": "no_text_streak",
+                    "count": _no_text_streak,
+                    "max": MAX_NO_TEXT_STREAK,
+                    "note": f"连续 {_no_text_streak} 轮只调工具没出正文 · 已提醒先收口",
+                })
+                # 只进当轮上下文 · 不落盘 (学 deepseek-harness: guard 提醒仅驻留内存)。
+                # 落盘会在 BRO 的会话记录里留一条「假 user 消息」· 空回复自愈就有这毛病。
+                _nt_nudge = {"role": "user", "content": _NO_TEXT_RESUME_USER}
+                oai_messages.append(_nt_nudge)
 
         # 段落完成事件 · 让前端把流式 bubble "锁定"·准备下一段
         if reasoning:
@@ -1700,7 +2247,50 @@ def _loop_openai(
 
         # 卷三十八 · 兜底: reasoning 非空 + content 空 + 无 tool_calls = LLM 想完了没说话
         # 不让前端拿不到 final_text · 给一句解释 · BRO 至少知道发生了什么
-        if not text and not tool_calls and reasoning:
+        _empty_reply = (not text) and (not tool_calls) and bool(reasoning)
+        if _empty_reply and empty_resume_count < MAX_EMPTY_RESUME:
+            # 刀C (wish-a5f77893): length 型空回复 = 输出预算被切光 → 同水位重试必然
+            # 再空 (事故: iter=1/2/3 连空) → 重试前先降水位·恢复预算。
+            if finish_reason == "length" and _mt_safe < _squeezed_floor:
+                _urgent_compact("length_empty", ignore_gap=True)
+            # 0.9.x · 空回复自愈: 模型把结论说进了 reasoning_content · 正文空。
+            # 直接再要一次正文 · 别让 BRO 自己催「给我个总结」。
+            empty_resume_count += 1
+            logger.warning(
+                "[空回复·自愈] 正文空 · finish_reason=%s · reasoning=%d字 · iter=%d → 自动要正文 %d/%d",
+                finish_reason, len(reasoning), iteration,
+                empty_resume_count, MAX_EMPTY_RESUME,
+            )
+            _push(progress, "auto_resume", {
+                "reason": "empty",
+                "count": empty_resume_count,
+                "max": MAX_EMPTY_RESUME,
+                "note": f"上一轮思考完了没写正文 · 自动要一次第 {empty_resume_count}/{MAX_EMPTY_RESUME} 次",
+            })
+            _empty_entry = {"role": "assistant", "content": "", "reasoning_content": reasoning}
+            oai_messages.append(_empty_entry)
+            _commit(_empty_entry)
+            _empty_nudge = {"role": "user", "content": _EMPTY_RESUME_USER}
+            oai_messages.append(_empty_nudge)
+            _commit(_empty_nudge)
+            continue
+        if _empty_reply:
+            # 0.9.x · 空回复现场: 这行就是判据 ——
+            #   finish_reason=length → 输出预算被切光 (该查 max_tokens)
+            #   finish_reason=stop   → 模型自己收手没说话 (provider 侧行为)
+            logger.warning(
+                "[空回复] 重试 %d 次仍未拿到正文 · finish_reason=%s · reasoning=%d字 · iter=%d"
+                " · 判据: length=预算切光 / stop=模型自己收手",
+                empty_resume_count, finish_reason, len(reasoning), iteration,
+            )
+            text = (
+                "（OPUS 思考完了但没出文字回复 · "
+                f"reasoning 共 {len(reasoning)} 字 · 上面气泡可展开看）\n\n"
+                f"已自动重要 {MAX_EMPTY_RESUME} 次正文仍未拿到 —— 这是模型侧的行为"
+                "（不是 max_tokens 不够）。换一个模型、或说一句「继续」都能走下去。"
+            )
+        elif not text and not tool_calls:
+            # 无 reasoning 也无正文 · 极罕见 · 保留旧文案
             text = (
                 "（OPUS 思考完了但没出文字回复 · "
                 f"reasoning 共 {len(reasoning)} 字 · 上面气泡可展开看）\n\n"
@@ -1722,8 +2312,8 @@ def _loop_openai(
                 }
                 for i, tc in enumerate(tool_calls)
             ]
-            if reasoning:
-                assistant_entry["reasoning_content"] = reasoning
+        if reasoning:
+            assistant_entry["reasoning_content"] = reasoning
         oai_messages.append(assistant_entry)
         _commit(assistant_entry)
 
@@ -1735,6 +2325,9 @@ def _loop_openai(
             and not tool_calls
             and length_resume_count < MAX_LENGTH_RESUME
         ):
+            # 刀C: 预算被切型续接 —— 先降水位 (否则续接还困在小预算里)
+            if _mt_safe < _squeezed_floor:
+                _urgent_compact("length_resume", ignore_gap=True)
             length_resume_count += 1
             _push(progress, "auto_resume", {
                 "reason": "length",
@@ -1855,11 +2448,14 @@ def _loop_openai(
 
             _imgs = _take_image_urls(result)
             _hits = _take_hits(result)
-            _open_path = _take_open_path(result)
-            if _open_path:
+            _sniffed = _take_open_paths(result)      # 总是跑：负责剥掉旧标记（不污染喂给 LLM 的内容）
+            _open_paths = _take_declared_stage(result) or _sniffed
+            _note_stage(result, _open_paths)         # 统一补一句人话（工具那层不再各自写）
+            _open_path = _open_paths[-1] if _open_paths else ""
+            for _p in _open_paths:
                 try:
                     from workers.session_docs import bind_runtime
-                    bind_runtime(_open_path)
+                    bind_runtime(_p)
                 except Exception:
                     pass
             _push(progress, "tool_result", {
@@ -1868,6 +2464,7 @@ def _loop_openai(
                 "error": result.error or "",
                 "preview": _result_preview(result, tool_name=name),
                 "open_path": _open_path,
+                "open_paths": _open_paths,
                 "images": _imgs,
                 "hits": _hits,
             })
@@ -1899,9 +2496,10 @@ def _loop_openai(
 
             # 卷四十四 · stuck detection · 把这次 tool call signature 加进滚动窗口
             sig = _tool_signature(name, tc.get("arguments", ""))
-            recent_signatures.append(sig)
-            if len(recent_signatures) > _STUCK_WINDOW:
-                recent_signatures.pop(0)
+            if sig:                     # 透明工具 (记账类) 既不增也不重置计数
+                recent_signatures.append(sig)
+                if len(recent_signatures) > _STUCK_WINDOW:
+                    recent_signatures.pop(0)
 
         if aborted:
             _seen = {m.get("tool_call_id") for m in oai_messages if m.get("role") == "tool"}
@@ -2055,13 +2653,35 @@ def _loop_anthropic(
     recent_signatures: list[str] = []
     stuck_inject_count = 0
     length_resume_count = 0
+    empty_resume_count = 0
+    _no_text_streak = 0          # 2026-09-23 · 连续无正文轮数 (无进展保护)
 
     iteration = 0
     while iteration < max_iterations:
         iteration += 1
+        _hb_feed(cancel_check)  # 心跳: 迭代推进 = 有进展 (2026-09-16)
         if cancel_check is not None and cancel_check():
-            final_text = "[OPUS aborted by BRO]"
+            if getattr(cancel_check, "stalled", False):
+                # 2026-09-16 · 心跳停止 → 给收尾交代(带工具摘要)并落盘
+                _done_tools = _collect_recent_tools(ant_messages)
+                final_text = ("⏱ 心跳停止（模型/流长时间无响应）· 已安全中断（不是报错 · 也不是你取消的）。"
+                              + (("\n已完成的部分:\n" + _done_tools) if _done_tools else ""))
+            elif getattr(cancel_check, "timed_out", False):
+                # 2026-09-15 修: 同 openai 路径 · 墙钟到点给收尾交代
+                _done_tools = _collect_recent_tools(ant_messages)
+                final_text = ("⏱ 本轮后台续场到达时长上限 · 已安全中断（不是报错 · 也不是你取消的）。"
+                              + (("\n已完成的部分:\n" + _done_tools) if _done_tools else ""))
+            else:
+                final_text = "[OPUS aborted by BRO]"
             _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
+            try:
+                _abort_entry = {"role": "assistant", "content": final_text}
+                ant_messages.append(_abort_entry)
+                _commit(_abort_entry)
+                if getattr(cancel_check, "stalled", False) or getattr(cancel_check, "timed_out", False):
+                    logger.info("[heartbeat] 中断收尾 · iter=%s · 已补收尾并落盘", iteration)
+            except Exception:
+                pass
             break
         # 0.9.7 · followup 运行中消息 (与 openai 循环同款)
         if pending_messages is not None:
@@ -2088,12 +2708,16 @@ def _loop_anthropic(
                 kwargs["thinking"] = {"type": "enabled", "budget_tokens": _budget}
 
         kwargs["stream"] = True
+        # 2026-09-18 · 两段阈值 (与 openai 路径对称 · code_review 20260918):
+        #   非流式发起时到首个 event 之间同样无心跳可喂 → 进宽阈值期
+        _hb_set_awaiting(cancel_check, True)
+        _hb_beat_safe(cancel_check)  # 基准重置: 宽阈值从「开始等」算
         resp = client.messages.create(**kwargs)
         text, tool_use_blocks, turn_stats, stop_reason, _aborted_inline = _consume_anthropic_stream(
             resp, cancel_check, progress,
         )
         if _aborted_inline:
-            final_text = text or "[OPUS aborted by BRO · partial only]"
+            final_text = text or _aborted_note(cancel_check)
             _push(progress, "assistant_text", {"text": final_text, "has_tool_calls": False})
             if text or tool_use_blocks:
                 _partial = []
@@ -2123,6 +2747,36 @@ def _loop_anthropic(
             "cache_creation_tokens": turn_stats.cache_creation_tokens,
             "iteration": iteration,
         })
+
+        # 0.9.x · 空回复自愈 (对称 OpenAI 路径 · 2026-09-14)
+        # 没正文也没 tool_use = 这一轮模型什么都没给 · 直接再要一次 · 别让 BRO 空等
+        if (not text) and (not tool_use_blocks) and empty_resume_count < MAX_EMPTY_RESUME:
+            empty_resume_count += 1
+            logger.warning(
+                "[空回复·自愈] 正文空 · stop_reason=%s · iter=%d → 自动要正文 %d/%d",
+                stop_reason, iteration, empty_resume_count, MAX_EMPTY_RESUME,
+            )
+            _push(progress, "auto_resume", {
+                "reason": "empty",
+                "count": empty_resume_count,
+                "max": MAX_EMPTY_RESUME,
+                "note": f"上一轮没写正文 · 自动要一次第 {empty_resume_count}/{MAX_EMPTY_RESUME} 次",
+            })
+            ant_messages.append({"role": "assistant", "content": []})
+            _commit({"role": "assistant", "content": []})
+            ant_messages.append({"role": "user", "content": _EMPTY_RESUME_USER})
+            _commit({"role": "user", "content": _EMPTY_RESUME_USER})
+            continue
+        if (not text) and (not tool_use_blocks):
+            logger.warning(
+                "[空回复] 重试 %d 次仍未拿到正文 · stop_reason=%s · iter=%d",
+                empty_resume_count, stop_reason, iteration,
+            )
+            text = (
+                "（OPUS 思考完了但没出文字回复 · 上面气泡可展开看）\n\n"
+                f"已自动重试 {MAX_EMPTY_RESUME} 次正文仍未拿到 —— 模型侧行为，"
+                "换一个模型或说一句「继续」都能走下去。"
+            )
 
         if text:
             _push(progress, "assistant_text", {"text": text, "has_tool_calls": bool(tool_use_blocks)})
@@ -2254,11 +2908,14 @@ def _loop_anthropic(
 
             _imgs = _take_image_urls(result)
             _hits = _take_hits(result)
-            _open_path = _take_open_path(result)
-            if _open_path:
+            _sniffed = _take_open_paths(result)      # 总是跑：负责剥掉旧标记（不污染喂给 LLM 的内容）
+            _open_paths = _take_declared_stage(result) or _sniffed
+            _note_stage(result, _open_paths)         # 统一补一句人话（工具那层不再各自写）
+            _open_path = _open_paths[-1] if _open_paths else ""
+            for _p in _open_paths:
                 try:
                     from workers.session_docs import bind_runtime
-                    bind_runtime(_open_path)
+                    bind_runtime(_p)
                 except Exception:
                     pass
             _push(progress, "tool_result", {
@@ -2267,6 +2924,7 @@ def _loop_anthropic(
                 "error": result.error or "",
                 "preview": _result_preview(result, tool_name=tu.name),
                 "open_path": _open_path,
+                "open_paths": _open_paths,
                 "images": _imgs,
                 "hits": _hits,
             })
@@ -2288,9 +2946,11 @@ def _loop_anthropic(
             })
 
             _sig_args = json.dumps(args, ensure_ascii=False) if isinstance(args, dict) else str(args or "")
-            recent_signatures.append(_tool_signature(name, _sig_args))
-            if len(recent_signatures) > _STUCK_WINDOW:
-                recent_signatures.pop(0)
+            _sig = _tool_signature(name, _sig_args)
+            if _sig:                    # 透明工具 (记账类) 既不增也不重置计数
+                recent_signatures.append(_sig)
+                if len(recent_signatures) > _STUCK_WINDOW:
+                    recent_signatures.pop(0)
 
             # 失败熔断器 (墨言 094 wish-d2c2aa9a) · 同类错误连续失败 → nudge 合并进 tool_results → 再撞硬 break
             _fc_action = fail_circuit.observe(result)

@@ -128,14 +128,9 @@ def _run(args: dict) -> ToolResult:
     ]
     out = "\n".join(lines)
     # 画布页铺中栏：打 [[DK-OPEN]] 标记 → tool_loop 抽成 open_path → 前端 flushOpenActions 自动 openStageLast
-    if canvas_rel and not canvas_rel.startswith("__ERR__"):
-        try:
-            from workers.stage_open import append_open_mark
-
-            out = append_open_mark(out, canvas_rel)
-        except Exception:
-            pass
-    return ToolResult(ok=True, output=out)
+    # 铺中栏：声明 stage_path（打标记 / 说人话由 tool_loop 出口统一兑现 · 第2刀）
+    _stage_rel = canvas_rel if (canvas_rel and not canvas_rel.startswith("__ERR__")) else ""
+    return ToolResult(ok=True, output=out, stage_path=_stage_rel)
 
 
 SPEC = ToolSpec(

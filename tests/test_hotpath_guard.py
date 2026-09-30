@@ -38,6 +38,10 @@ def test_clipboard_wechat_only():
     assert block_clipboard_write() is None
     set_channel("wechat")
     assert block_clipboard_write()
+    begin_turn()
+    set_channel("feishu")
+    assert block_clipboard_write()
+    assert "feishu_send" in block_clipboard_write()
 
 
 def test_fetch_stops_after_two():

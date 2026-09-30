@@ -283,6 +283,13 @@ _PB_TASK_WEIGHT = {
 # 同一 session 10 分钟内已注入过的 playbook 不重复注入 (连续同类问题 = 已在上下文里)
 _PB_INJECT_COOLDOWN_SEC = 600.0
 _PB_INJECTED_RECENT: dict[str, list[tuple[str, float]]] = {}
+
+# wish-65ea4984 step8 · 注入体积闸
+#   条数早有上限 (limit=2) · 但「单条多大 / 整段多大」没有 —— 库里有 16KB 的册子、
+#   标题也越写越长，命中一次就能把尾巴撞大。画像侧早有对称的 _MEM_SNIPPET_CHARS(=180)，
+#   playbook 侧补上。**截断必须留痕**（加「已截断」字样）—— 静默砍 = 另一种能力静默失效。
+_PB_INJECT_TITLE_CHARS = 60
+_PB_INJECT_TOTAL_CHARS = 1200
 _PB_LOCK = threading.Lock()   # M6 · 多 session 并发时 检查-更新 段串行
 
 # 0.9.0 · 注入日志 (wish 注入收敛样本收集) · 只写不改行为
@@ -734,8 +741,10 @@ def relevant_playbooks(message: str, *, limit: int = 2, session_id: str = "") ->
         _fail_n = pb.get("use_fail", 0)
         if not _stale_s and _fail_n:
             _stale_s = f" · ⚠[曾失败 {_fail_n} 次]"
+        _raw_title = pb.get("title", "") or ""
+        _title = _raw_title[:_PB_INJECT_TITLE_CHARS] + ("…" if len(_raw_title) > _PB_INJECT_TITLE_CHARS else "")
         lines.append(
-            f"- `{pb.get('id', '')}` · {pb.get('title', '')} (复用过 {pb.get('used_count', 0)} 次){debug_s}{weak_s}{_stale_s}"
+            f"- `{pb.get('id', '')}` · {_title} (复用过 {pb.get('used_count', 0)} 次){debug_s}{weak_s}{_stale_s}"
         )
     try:
         from workers.playbook_cluster import format_injection
@@ -750,7 +759,13 @@ def relevant_playbooks(message: str, *, limit: int = 2, session_id: str = "") ->
         pass
     _log_injection(msg, "playbook", [pb.get("id", "") for pb in fresh],
                    hit_score=best_score, session_id=session_id, item_kind="id", weak=weak_ids)
-    return "\n".join(lines)
+    out = "\n".join(lines)
+    # 整段体积闸：超了就砍尾 + **明写砍了**（不静默）
+    if len(out) > _PB_INJECT_TOTAL_CHARS:
+        out = (out[:_PB_INJECT_TOTAL_CHARS]
+               + f"\n…（注入段已按体积闸截断 · 原文 {len(out)} 字 · "
+                 f"看全文用 `extract_playbook(action='load', playbook_id=…)`）\n")
+    return out
 
 
 # ── ① 记忆自动注入 (保守版) ───────────────────────────────────────

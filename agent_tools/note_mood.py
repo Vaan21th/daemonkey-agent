@@ -14,7 +14,7 @@ def _ledger(*, mood: str, quote: str, cleared: str = "") -> None:
         from workers.cognition_loader import update_opus_diary
         if cleared:
             title = f"没有 · 不当成{cleared}"
-            body = f"原话：{quote}\n这场不当成{cleared}了。"
+            body = f"原话：{quote}\n把刚才那份{cleared}收回来了。"
         else:
             title = mood
             body = f"原话：{quote}"

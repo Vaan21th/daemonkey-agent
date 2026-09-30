@@ -11,7 +11,7 @@ wish-83fe7c7b · 卷五十四 加:
 
 from __future__ import annotations
 
-import os
+from pathlib import Path
 
 import pytest
 
@@ -19,7 +19,7 @@ from workers import memory_compression as mc
 
 
 @pytest.fixture(autouse=True)
-def _reset_cooldown(monkeypatch):
+def _reset_cooldown(monkeypatch, tmp_path):
     """每个 case 隔离 cooldown 状态 · 环境变量也隔离 · 前缀估算不真 load 灵魂"""
     st = {
         "current_sid": "",
@@ -33,6 +33,12 @@ def _reset_cooldown(monkeypatch):
     monkeypatch.setattr("workers.provider_configs.window_for_model", lambda mid: 0)
     monkeypatch.delenv("OPUS_AUTO_COMPACT_THRESHOLD", raising=False)
     monkeypatch.delenv("OPUS_AUTO_COMPACT_RATIO", raising=False)
+    # 0.9.x · 隔离 WebUI 的压缩绝对线 (data/runtime/compact_cap.json)
+    # 本机用户把 CAP 改过(如 512K) 会抬高绝对线 · 测试造的数据就不够触发 → 假失败
+    monkeypatch.setattr(mc, "read_cap_override", lambda: 0)
+    # wish-accd038a · 埋点隔离: 压缩测试不许往真实 compress_events.jsonl 写
+    # 否则单测产生的事件会混进用户的对照窗口 → 污染真实数据 (测试目的就是让数据可信)
+    monkeypatch.setattr(mc, "_COMPRESS_EVENTS_PATH", Path(tmp_path) / "compress_events.jsonl")
     yield
 
 
@@ -274,7 +280,14 @@ def test_tail_start_aligns_tool_boundary():
 
 
 def test_prune_stale_tool_results_basic(tmp_path, monkeypatch):
-    """大工具结果被修剪 → placeholder + 归档 + 幂等"""
+    """大工具结果被修剪 → placeholder + 归档 + 幂等
+
+    2026-09-19 修红：wish-a5f77893 刀2 加了「最近 PRUNE_PROTECT_TOKENS(30k) tok 不剪」。
+    本测试样本总量远小于 30k → 保护起点被压到 0 → 全保护 → 不剪。
+    这是**对的**行为（小会话本来就不该剪）· 要验剪枝逻辑本身就得先关掉这个保护
+    （budget<=0 = 不启用保护）。
+    """
+    monkeypatch.setattr(mc, "PRUNE_PROTECT_TOKENS", 0)
     mc._state()["current_sid"] = "test-prune"
     monkeypatch.setattr(mc, "_ARCHIVE_DIR", tmp_path)
     msgs = _mk_tool_heavy_msgs()
@@ -301,7 +314,13 @@ def test_mechanical_fold_fallback(tmp_path, monkeypatch):
     """摘要失败 → 机械折叠兜底 (归档仍存在 · 不崩)"""
     mc._state()["current_sid"] = "test-mech"
     monkeypatch.setattr(mc, "_ARCHIVE_DIR", tmp_path)
-    monkeypatch.setattr(mc, "_persist_rewrite", lambda m: None)  # 避免真写 sessions/
+    # v3 · _persist_rewrite 多了 full_messages 参数 → mock 要能吃可变参数
+    monkeypatch.setattr(mc, "_persist_rewrite", lambda m, *a, **k: None)  # 避免真写 sessions/
+    # 2026-09-19 (wish-98d77aaf 顺带) · 本测试造的消息量(160 条 / ~17k tok)在真实模型
+    # 窗口下已【不再触发压缩】—— deepseek-v4-flash 被认成 1M 窗口, 触发线高达 281k。
+    # 但本测试验的是「摘要失败会不会机械折叠兜底」, 前提是【压缩真的走到摘要步】。
+    # 钉一个人为小窗(8K)让前提重新成立 —— 测的是兜底逻辑, 不是真实模型容量。
+    monkeypatch.setattr(mc, "_get_context_window", lambda *a, **k: 8_000)
 
     # 构造: 工具结果 1000 字符 (< PRUNE_MIN_CHARS 1024 · 不触发 prune 提前清警报)
     # 但累积体积足够 → 折叠区有内容 → 压缩走到摘要步
@@ -367,13 +386,17 @@ def test_flash_vision_exp_does_not_compact_on_30_short_msgs():
 
 
 def test_prefix_counts_toward_small_window(monkeypatch):
-    """小窗口: 历史单独不够线 · 加上前缀就该压"""
+    """小窗口: 历史单独不够线 · 加上前缀就该压
+
+    v3 · 断言跟随当前触发线(不再硬编码 0.7 时代的 140K) —— 调 ratio 不该让本测试误红。
+    """
     monkeypatch.setattr(mc, "estimate_prefix_tokens", lambda: 80_000)
-    # haiku 200K * 0.7 = 140K · 前缀 80K → 历史再 70K 就该触发
-    msgs = [_make_msg("user", "你好世界" * 400) for _ in range(30)]
+    _win = mc._get_context_window("claude-haiku-4-5-20251022")
+    _line = int(_win * mc._get_ratio())
+    msgs = [_make_msg("user", "你好世界" * 400) for _ in range(40)]
     hist = mc._estimate_tokens(msgs)
-    assert hist < 140_000
-    assert hist + 80_000 >= 140_000
+    assert hist < _line, f"历史 {hist} 应小于线 {_line} (样本量需调)"
+    assert hist + 80_000 >= _line, f"历史+前缀 {hist + 80_000} 应 >= 线 {_line} (样本量需调)"
     assert mc.token_budget_check(msgs, model_id="claude-haiku-4-5-20251022") is True
 
 
@@ -381,7 +404,7 @@ def test_compact_threshold_prefix_eats_tiny_window():
     """视觉 16K：前缀已经大于窗×0.7 · 开火线改走前缀+25.6 万，不拿 11K 当永久过线。"""
     cap = mc._get_abs_cap()
     assert mc._compact_threshold(16_384, 80_000) == 80_000 + cap
-    assert mc._compact_threshold(200_000, 80_000) == 140_000
+    assert mc._compact_threshold(200_000, 80_000) == int(200_000 * mc._get_ratio())  # v3 · 随触发线
     assert mc._compact_threshold(0, 80_000) == 80_000 + cap
 
 
@@ -499,6 +522,7 @@ def test_prune_if_needed_skips_tiny_save(monkeypatch, tmp_path):
 
 
 def test_prune_if_needed_persists_when_worth_it(monkeypatch, tmp_path):
+    monkeypatch.setattr(mc, "PRUNE_PROTECT_TOKENS", 0)  # 同 basic · 关掉 30k 保护才验得到剪枝
     monkeypatch.setattr(mc, "_ARCHIVE_DIR", tmp_path)
     monkeypatch.setattr(mc, "_persist_rewrite", lambda m: None)
     mc._state()["current_sid"] = "t"
@@ -508,3 +532,148 @@ def test_prune_if_needed_persists_when_worth_it(monkeypatch, tmp_path):
     out = mc.prune_if_needed(msgs, model_id="deepseek-v4-flash")
     assert out is not msgs
     assert any(mc.PRUNED_MARKER in (m.get("content") or "") for m in out)
+
+
+# ---- wish-220071ea · 锚点对齐：content 空串/None 形态折叠 ----
+# 病: 磁盘原文 content="" / 内存经 load_session 归一成 None
+#     → str() 后 "" ≠ "None" → _find_tail_anchor 永远返 None
+#     → 「全量版尾部对齐失败 · 本次不写盘」→ 磁盘水位只涨不落
+#     → 实测 b05418 8 次 compact 只成功 1 次，顶穿 102.6%
+# 这一段是硬约束: 折叠过头也要防（把不同消息折成同一条会找错锚点）。
+
+
+def test_msg_key_folds_empty_content_and_none():
+    """比对键必须把 "" / None / 纯空白 折叠成同一形态。"""
+    a = {"role": "assistant", "content": ""}
+    b = {"role": "assistant", "content": None}
+    c = {"role": "assistant", "content": "   "}
+    assert mc._msg_key(a) == mc._msg_key(b) == mc._msg_key(c)
+
+
+def test_msg_key_still_distinguishes_real_content():
+    """折叠不能过头: 有内容的仍要区分（否则把不同消息判成同一条 → 锚点找错）。"""
+    a = {"role": "assistant", "content": "A"}
+    b = {"role": "assistant", "content": "B"}
+    assert mc._msg_key(a) != mc._msg_key(b)
+    # 空 vs 有内容 也必须不同
+    assert mc._msg_key({"role": "assistant", "content": ""}) != mc._msg_key(a)
+
+
+def test_find_tail_anchor_disk_emptystring_vs_memory_none():
+    """磁盘 "" ↔ 内存 None: 锚点必须找得到（修复前 100% 返 None）。"""
+    tc = [{"id": "t1", "type": "function", "function": {"name": "f", "arguments": "{}"}}]
+    disk = [
+        _make_msg("user", "问题"),
+        {"role": "assistant", "content": "", "tool_calls": tc},
+        {"role": "tool", "content": "结果", "tool_call_id": "t1"},
+        _make_msg("user", "后续"),
+    ]
+    mem = [
+        _make_msg("user", "问题"),
+        {"role": "assistant", "content": None, "tool_calls": tc},
+        {"role": "tool", "content": "结果", "tool_call_id": "t1"},
+        _make_msg("user", "后续"),
+    ]
+    # 整段对齐
+    assert mc._find_tail_anchor(disk, mem) == 0
+    # 只对齐尾部（模拟 messages2[start:]）也要成立
+    assert mc._find_tail_anchor(disk, mem[2:]) == 2
+    # 锚点确实落在含空 content 那条上 —— 证明折的不是别的地方
+    assert mc._find_tail_anchor(disk, mem[1:]) == 1
+
+
+# ---------------------------------------------------------------------------
+# wish-e3c3e379 · 压缩写盘丢历史（磁盘全量版被折叠版顶掉）
+#
+# 事故链 (2026-09-20 定位):
+#   ① daemon_session.load_session 重建消息时不带 compacted 字段
+#   ② → _assemble_full_from_disk 里 `if m.get("compacted")` 恒为假
+#   ③ → 每次压缩写盘都拿"折叠版"重建磁盘 → 历史(尤其 assistant)被系统性抹掉
+#   实测: b05418 磁盘 user:assistant 失衡到 189:65, 发给模型的失衡到 185:18;
+#         UI 上表现为「一片我的话、一片你的话」。
+# ---------------------------------------------------------------------------
+
+
+def test_load_session_storage_keeps_compacted_flag(tmp_path, monkeypatch):
+    """存储形态必须带回 compacted 标记 · 发给 LLM 的折叠版必须不带。"""
+    import json as _json
+
+    import daemon_session
+
+    p = tmp_path / "s.jsonl"
+    p.write_text(
+        _json.dumps({"role": "user", "content": "活着的问题", "ts": "1"}) + "\n"
+        + _json.dumps({"role": "assistant", "content": "已被折走的话", "ts": "2",
+                       "compacted": True}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(daemon_session, "session_path", lambda sid: p)
+
+    llm = daemon_session.load_session("s")
+    stor = daemon_session.load_session_for_storage("s")
+
+    assert len(llm) == 1, "折叠版应跳过 compacted 行"
+    assert all("compacted" not in m for m in llm), "发给 LLM 的消息不许带 compacted 字段"
+    assert len(stor) == 2, "存储形态必须连已折走的一起回放"
+    assert stor[1].get("compacted") is True, "存储形态丢了 compacted 标记 → 写盘必丢历史"
+
+
+def test_assemble_full_from_disk_keeps_unmarked_history(monkeypatch):
+    """磁盘全量版不许丢【没有 compacted 标记】的历史消息（本次 bug 的正题）。
+
+    旧实现只保留 m.get("compacted") 为真的 → 无标记的老 assistant 被当垃圾丢。
+    """
+    import daemon_session
+
+    digest = {"role": "user",
+              "content": mc.SUMMARY_TAG_OPEN + "\n摘要\n" + mc.SUMMARY_TAG_CLOSE}
+    disk = [
+        {"role": "user", "content": "问题一", "ts": "1"},
+        {"role": "assistant", "content": "回答一·无标记", "ts": "2"},        # ← 关键
+        {"role": "user", "content": "问题二", "ts": "3"},
+        {"role": "assistant", "content": "回答二·已折走", "ts": "4", "compacted": True},
+        {"role": "user", "content": "尾部问题", "ts": "5"},
+    ]
+    monkeypatch.setattr(daemon_session, "load_session_for_storage", lambda sid: list(disk))
+    monkeypatch.setitem(mc._SESSION_STATE.get(), "current_sid", "fake-sid")
+
+    messages2 = [dict(m) for m in disk if not m.get("compacted")]   # 折叠版
+    out = mc._assemble_full_from_disk(messages2, 0, 3, dict(digest))
+
+    assert out is not None, "对齐必须成功（不该退回 None）"
+    contents = [m.get("content") for m in out]
+    assert "回答一·无标记" in contents, "🔴 无标记的历史 assistant 被丢了（本次 bug 复发）"
+    assert "回答二·已折走" in contents, "已折走的历史也要留在磁盘"
+    assert "尾部问题" in contents, "尾部不能被吞"
+    # 顺序：历史在前 · 摘要居中 · 尾部在后
+    assert contents.index("回答一·无标记") < contents.index("回答二·已折走")
+    assert [m.get("content") for m in out][-1] == "尾部问题"
+
+
+def test_assemble_marks_this_round_folded(monkeypatch):
+    """本轮被折叠的消息必须补 compacted 标记。
+
+    漏了它 → 下次 load_session 把它们当"活着的"重新回放 → 同一段历史既在
+    摘要里又在原文里 → 压缩白做、窗口白占。
+    """
+    import daemon_session
+
+    digest = {"role": "user",
+              "content": mc.SUMMARY_TAG_OPEN + "\n摘要\n" + mc.SUMMARY_TAG_CLOSE}
+    disk = [
+        {"role": "user", "content": "老问题", "ts": "1"},
+        {"role": "assistant", "content": "老回答·本轮折走", "ts": "2"},
+        {"role": "user", "content": "尾部问题", "ts": "3"},
+    ]
+    monkeypatch.setattr(daemon_session, "load_session_for_storage", lambda sid: list(disk))
+    monkeypatch.setitem(mc._SESSION_STATE.get(), "current_sid", "fake-sid")
+
+    messages2 = [dict(m) for m in disk]
+    fold = [messages2[1]]                      # 本轮折叠的只有那条 assistant
+    out = mc._assemble_full_from_disk(messages2, 0, 2, dict(digest), fold)
+
+    marked = [m for m in out if m.get("compacted")]
+    assert len(marked) == 1, f"应当恰好 1 条被标 · 实得 {len(marked)}"
+    assert marked[0].get("content") == "老回答·本轮折走"
+    assert not [m for m in out if m.get("compacted")
+                and m.get("content") != "老回答·本轮折走"], "不许误标没折的消息"

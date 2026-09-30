@@ -290,6 +290,14 @@ def run_app(
         f"[内核纪律 · 产出隔离] 本次运行所有落盘产出 (图/音/视频/文档) 必须写入 "
         f"data/workshop/outputs/{aid}/ · 严禁写入其他 app 的 outputs 目录。"
         "需要引用其他 app 的历史产出·只读·不写。",
+        # 2026-09-28 · wish-3586b504: 工作区与成品区分离。
+        #   治的是「app 把 node_modules / 中间帧 / 录屏素材倒进成品架」——
+        #   Remotion 一个 app 就往 outputs 里塞了 12715 个依赖文件，产物库每次扫盘都白翻。
+        f"[内核纪律 · 工作区] 干活的临时物 (依赖安装 node_modules / 中间帧 / 构建缓存 / "
+        f"下载素材) 一律写进工作区 data/workshop/work/{aid}/ —— 工程层已把默认工作目录设成这里"
+        " (shell_exec / python_exec 不传 cwd 就在这儿跑)。"
+        f"工作区随时可被清理·只有【最终成品】才写 data/workshop/outputs/{aid}/。"
+        "一句话: 过程态进 work/ · 结果进 outputs/。",
     ]
     slots = app.get("asset_slots") or []
     if slots:
@@ -347,19 +355,40 @@ def run_app(
     # run_app 上面已拼了 app 版调度预算 mandate · 不让通用核心重复注入。
     from .subagent_runner import run_subagent
 
-    sub = run_subagent(
-        system=system_prompt,
-        user_msg=user_msg,
-        runtime=runtime,
-        tools_whitelist=allowed_names,       # 卷七十二 · 白名单真生效
-        max_iterations=max_iterations,
-        max_tokens=used_max_tokens,
-        model=app.get("model_hint") or runtime.model,
-        progress=progress,
-        cancel_check=cancel_check,
-        inject_budget_mandate=False,
-        persist=False,                       # app 跑完即丢 · 不沉 session jsonl
-    )
+    # 2026-09-28 · wish-3586b504 · app 工作区: 过程态进 work/ · 结果进 outputs/
+    #   工程层把默认工作目录交给 app（同「操作系统给进程 cwd」）—— app 的 prompt 里不写路径。
+    #   work/<app_id>/ 已在 data/cognition/LAYOUT.md 登记过，这里直接建、不再走 ensure_dir
+    #   （它是已登记格子的实例子目录，不是新格子）。
+    from agent_tools import set_app_work_dir, reset_app_work_dir
+    # 存量 bug 顺手修: L366 用了 Path 但本文件顶部没 import·被 except 吞掉
+    # → app 工作区 data/workshop/work/<aid> 静默建不起来(cwd 隔离失效)。
+    from pathlib import Path
+    _work_token = None
+    if aid:
+        try:
+            _wd = Path(__file__).resolve().parent.parent / "data" / "workshop" / "work" / aid
+            _wd.mkdir(parents=True, exist_ok=True)
+            _work_token = set_app_work_dir(str(_wd))
+        except Exception:
+            _work_token = None
+
+    try:
+        sub = run_subagent(
+            system=system_prompt,
+            user_msg=user_msg,
+            runtime=runtime,
+            tools_whitelist=allowed_names,       # 卷七十二 · 白名单真生效
+            max_iterations=max_iterations,
+            max_tokens=used_max_tokens,
+            model=app.get("model_hint") or runtime.model,
+            progress=progress,
+            cancel_check=cancel_check,
+            inject_budget_mandate=False,
+            persist=False,                       # app 跑完即丢 · 不沉 session jsonl
+        )
+    finally:
+        if _work_token is not None:
+            reset_app_work_dir(_work_token)
 
     if not sub.ok:
         if progress:
@@ -385,7 +414,8 @@ def run_app(
     # 沉淀闭环 v2 刀④ · 收口提示计数 (反复跑 ≥3 次 30 分钟内会触发"要不要固化"提示)
     try:
         from .workshop_run_closure import note_app_run
-        note_app_run(app.get("id") or "")
+        from .flow_runner import _runtime_session_id
+        note_app_run(app.get("id") or "", _runtime_session_id(runtime))
     except Exception:
         pass
 

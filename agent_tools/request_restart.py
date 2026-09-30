@@ -170,17 +170,14 @@ def _run(args: dict) -> ToolResult:
     if style not in ("graceful", "dry_run"):
         return ToolResult(ok=False, output="", error="style must be 'graceful' or 'dry_run'")
 
-    # 卷四十六 III 补丁 3 · 自动续场任务 (BRO 反馈: 重启后不要让我手动发消息触发 Daemonkey 继续)
+    # 卷九十一 (2026-09-17 BRO 拍板): 删掉「空 follow_up 按 reason 拼默认续场」的兜底。
+    # 原意是防 DeepSeek 不填 follow_up 时 BRO 误以为"没重启成" · 但它跟 WebUI 那句
+    # 「留空 = 只重启 · 不自动续场」的承诺直接冲突 —— 同一个语义两条路各说各话。
+    # 现在收口: 不填 = 不续场。 想续场就显式写 follow_up_message (铁律 5 本来就这么要求)。
     follow_up_message = (args.get("follow_up_message") or "").strip() or None
-    # 卷八十四 · 防呆 (2026-07-28 BRO 实测: DeepSeek 调 request_restart 不填 follow_up →
-    # 重启其实成功了但没续场消息 · BRO 以为没重启成 → 手动按 WebUI 重启按钮)
-    # 空了就按 reason 拼默认续场任务 · 保证新 daemon 起来后 Daemonkey 自动继续干活 · 不等 BRO 手动触发
-    # (dry_run 也拼 · 预演就该看到真跑的完整行为 · 否则防呆没法低成本验证)
     if not follow_up_message:
-        follow_up_message = (
-            f"你之前调 request_restart 重启了 daemon (原因: {reason[:200]})。"
-            "请验证相关改动已生效 (端点 / 行为 / 日志任选其一以上), 然后用一两句话告诉 BRO 结果。"
-        )
+        print("[request_restart] 未填 follow_up_message · 本次重启不自动续场 "
+              "(BRO 2026-09-17 拍板: 留空 = 不续场)", flush=True)
     if follow_up_message and len(follow_up_message) > 1000:
         return ToolResult(ok=False, output="", error="follow_up_message too long (max 1000 chars)")
 
@@ -270,6 +267,39 @@ def _run(args: dict) -> ToolResult:
     except Exception as e:
         checkpoint_note = f"\n  checkpoint: 跳过 (异常 {type(e).__name__}: {e})"
 
+    # 2026-09-19 · wish-9697480c：报「距上次重启多久」。
+    # 依据：实测长轮按距重启分档 —— <5min 85~92% vs >2h 87~95%，且重启附近的轮占 60%。
+    # 串自己的批：改一处就重启 vs 攒五处重启一次，后者少四轮全价。
+    since_note = ""
+    try:
+        import json as _json
+        from datetime import datetime as _dt
+        from pathlib import Path as _P
+        _p = _P(__file__).resolve().parent.parent / "data" / "runtime" / "restart_history.jsonl"
+        if _p.exists():
+            _last = None
+            for _ln in _p.read_text(encoding="utf-8").splitlines()[::-1]:
+                try:
+                    _o = _json.loads(_ln)
+                except Exception:
+                    continue
+                if _o.get("event") == "daemon_started" and _o.get("timestamp"):
+                    _last = _o["timestamp"]
+                    break
+            if _last:
+                _mins = (_dt.now() - _dt.fromisoformat(_last)).total_seconds() / 60
+                if _mins < 90:
+                    since_note = (f"\n  ⚠ 距上次重启仅 {_mins:.0f} 分钟 —— 前缀缓存刚重建，这批轮会拉低命中率。"
+                                  f"能攒批就再攒几处一起重启。")
+                else:
+                    since_note = f"\n  距上次重启 {_mins:.0f} 分钟 ({_mins/60:.1f} 小时)"
+    except Exception as _e:
+        # 原来是单包 pass —— 依赖 restart_history.jsonl 的字段格式 (timestamp 写成 epoch 数字 /
+        #   带时区的 ISO 串与 naive datetime.now() 相减会抛 TypeError)，一旦漂移就永久失效
+        #   且毫无线索 (code_review 2026-09-19 第 11 条)。日志型文件最容易格式漂移。
+        import logging as _logging
+        _logging.getLogger(__name__).debug("since_note 计算失败 (不影响重启本身): %s", _e)
+
     _trigger_shutdown_async(delay_sec=2.0, reason=f"request_restart_tool: {reason[:120]}")
 
     auto_resume_note = ""
@@ -281,6 +311,13 @@ def _run(args: dict) -> ToolResult:
             f"     (后台 turn auto_confirm='confirm' · 跟主对话同级 · AUTO+CONFIRM 自动 go·\n"
             f"      能跑 read_file/curl/python_exec/write_file/git commit 等验证类 · 只 GUARD 会被后台 skip/deny)"
         )
+    else:
+        # 卷九十一 (2026-09-17): 留空 = 不续场 (旧行为会按 reason 拼一条 · 已删)。
+        # 这里必须明说 · 否则又回到"BRO 以为重启失败"的老误会。
+        auto_resume_note = (
+            "\n  5. **本次不自动续场** (未填 follow_up_message) · 新 daemon 起来后不会自己跑验证 turn。\n"
+            "     如果你需要重启后自动验证 → 下次务必显式填 follow_up_message (铁律 5 要求)。"
+        )
 
     return ToolResult(
         ok=True,
@@ -290,6 +327,7 @@ def _run(args: dict) -> ToolResult:
             f"  session_id: {session_id}\n"
             f"  follow_up_message: {follow_up_message or '(None · 不会自动续场)'}\n"
             f"  pid: {os.getpid()}"
+            f"{since_note}"
             f"{checkpoint_note}\n\n"
             f"接下来:\n"
             f"  1. daemon 自爆 · BRO 的下一个请求会撞 connection refused\n"

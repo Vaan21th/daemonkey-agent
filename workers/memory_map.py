@@ -15,6 +15,7 @@ import json
 import logging
 import re
 import sqlite3
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,22 @@ INJECT_LOG = ROOT / "data" / "runtime" / "inject_log.jsonl"
 INJECT_USED = ROOT / "data" / "runtime" / "inject_used.jsonl"
 
 _CLUSTER_THRESHOLD = 0.80  # 跟判重清单同口径
+
+# 星图重活缓存 (2026-09-29 · BRO: "有新的就只缓存新的, 不会越用越慢")
+#   why: _hygiene 要全库扫 11 万条 chunks 数噪音 —— 实测 5.9s, 占 /memory_map 总耗时 85%。
+#   星图是「看板」不是「账本」· 分钟级陈旧可接受, 每次现算 7 秒不可接受。
+#   TTL 分开: 噪音数变很慢给 30 分钟 · 点云图 5 分钟足够新。
+_CACHE: dict = {}
+
+
+def _cached(key: str, ttl: float, fn):
+    now = time.time()
+    hit = _CACHE.get(key)
+    if hit and (now - hit[0]) < ttl:
+        return hit[1]
+    val = fn()
+    _CACHE[key] = (now, val)
+    return val
 
 
 def _load_pb_vectors(conn: sqlite3.Connection) -> dict[str, dict]:
@@ -240,20 +257,139 @@ def _hygiene(conn: sqlite3.Connection) -> dict:
 
 
 def _notebook_tiers() -> dict:
-    """画像分层实测: 全量 vs 分层后字符数。"""
+    """画像分层实测: 全量 vs 分层后字符数。
+
+    2026-09-30 wish-27273a5b · 画像拆成一格一文件后改走 identity 句柄 ——
+    原来硬找 soul/OWNER-NOTEBOOK.md / BRO-NOTEBOOK.md，两个都不在 →
+    画像柜 full_chars/core_chars 恒定 0（星图上「画像」显得空的）。
+    """
     from workers.notebook_tiers import split_tiers
 
-    for fn in ("OWNER-NOTEBOOK.md", "BRO-NOTEBOOK.md"):
-        p = ROOT / "soul" / fn
-        if p.exists():
-            full = p.read_text(encoding="utf-8")
+    try:
+        from identity import owner_notebook_path
+
+        nb = owner_notebook_path(ROOT / "soul")
+        if nb.exists():
+            full = nb.read_text(encoding="utf-8")
             core, archived = split_tiers(full)
             return {
                 "full_chars": len(full),
                 "core_chars": len(core),
                 "archived": [{"title": t, "chars": n} for t, n in archived],
             }
+    except Exception:
+        pass
     return {"full_chars": 0, "core_chars": 0, "archived": []}
+
+
+def _boxes(constellation: dict) -> list[dict]:
+    """六个沉淀位（柜子）· 星图全景数据 (2026-09-29 BRO 拍板)。
+
+    why: 星图以前只有「操作手册」一柜 —— 它其实是整个记忆体系的看板，
+    却只照到了四分之一。 现在收成六柜，一眼看清「东西放在哪、各占多少、进不进前缀」。
+
+    分工（别越界）: 这里出「有哪些柜子 / 各多少 / 进不进前缀 / **柜里每条是什么**」——
+    **空间位置是呈现层的事（前端定），后端不越界**。
+
+    items (2026-09-29 二刀 · BRO): 以前只有操作手册的点是真条目，其他柜的点是前端随机糊的，
+    鼠标移上去出不了明细。现在每柜都出逐条 items → 每颗星就是一条，悬停即见。
+    """
+
+    def _dir_files(p: Path) -> list[Path]:
+        if not p.exists():
+            return []
+        return [p] if p.is_file() else [f for f in sorted(p.rglob("*.md")) if f.is_file()]
+
+    def _text(p: Path) -> str:
+        try:
+            return p.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            return ""
+
+    def _dir_chars(p: Path) -> tuple[int, int]:
+        fs = _dir_files(p)
+        return sum(len(_text(f)) for f in fs), len(fs)
+
+    def _clip(s, n: int = 52) -> str:
+        s = re.sub(r"\s+", " ", str(s or "")).strip()
+        return s if len(s) <= n else s[: n - 1] + "…"
+
+    nb = _notebook_tiers()
+    rules_p = ROOT / "data" / "cognition" / "daemon_rules.md"
+    rules_chars, _ = _dir_chars(rules_p)
+    rules_txt = _text(rules_p)
+    rules_n = len(re.findall(r"(?m)^## 铁律", rules_txt))
+    pb_chars, _ = _dir_chars(ROOT / "data" / "playbooks")
+    docs_p = ROOT / "data" / "knowledge"
+    docs_chars, docs_n = _dir_chars(docs_p)
+    arch = nb.get("archived") or []
+
+    # ── 逐条明细：星图上每颗星 = 一条 ─────────────────────
+    nb_items: list[dict] = []
+    try:
+        from workers.notebook_tiers import _iter_sections, is_core_section
+        from identity import owner_notebook_path
+
+        # 2026-09-30 wish-27273a5b · 拆格后必须走句柄（原来硬找 BRO-NOTEBOOK.md，
+        # 文件已删 → _text 返 "" → 画像柜一颗星都出不来）。
+        _nb_txt = owner_notebook_path(ROOT / "soul").read_text(encoding="utf-8")
+        for title, body in _iter_sections(_nb_txt):
+            if is_core_section(title):
+                nb_items.append({"label": _clip(title, 26), "chars": len(body), "sub": "进前缀"})
+    except Exception:
+        pass
+
+    rules_items: list[dict] = []
+    for m in re.finditer(r"(?m)^## (铁律[^\n]*)$", rules_txt):
+        nxt = rules_txt.find("\n## ", m.end())
+        rules_items.append({
+            "label": _clip(m.group(1), 30),
+            "chars": (nxt - m.end()) if nxt > 0 else (len(rules_txt) - m.end()),
+            "sub": "走操作标准",
+        })
+
+    docs_items = []
+    for f in _dir_files(docs_p):
+        t = _text(f)
+        m = re.search(r"(?m)^#\s+(.{1,80})", t)
+        docs_items.append({"label": _clip(m.group(1) if m else f.stem, 30),
+                           "chars": len(t), "sub": "按需召回"})
+    arch_items = [{"label": _clip(a.get("title"), 30), "chars": int(a.get("chars") or 0),
+                   "sub": "格满自动沉下来"} for a in arch]
+
+    dec_items: list[dict] = []
+    dec_chars, dec_n = 0, 0
+    try:
+        from workers import wishlist as wl
+
+        for w in (wl.list_wishes() or []):
+            if isinstance(w, dict) and w.get("status") == "rejected":
+                n = len(json.dumps(w, ensure_ascii=False))
+                dec_n += 1
+                dec_chars += n
+                dec_items.append({"label": _clip(w.get("title"), 30), "chars": n, "sub": "已否掉 · 为什么不做"})
+    except Exception:
+        pass
+
+    return [
+        {"id": "notebook", "label": "画像", "color": "#a99fff", "inject": "full",
+         "chars": int(nb.get("core_chars") or 0), "count": len(nb_items),
+         "sub": "本体约束 / 怎么跟他干活", "items": nb_items},
+        {"id": "rules", "label": "铁律", "color": "#5ee8b0", "inject": "full",
+         "chars": rules_chars, "count": rules_n, "sub": "走操作标准 · 不参与升降",
+         "items": rules_items},
+        {"id": "playbooks", "label": "操作手册", "color": "#ffc45c", "inject": "recall",
+         "chars": pb_chars, "count": len(constellation.get("points") or []), "sub": "原星图的家"},
+        {"id": "archive", "label": "归档层", "color": "#7cc8ff", "inject": "none",
+         "chars": sum(int(a.get("chars") or 0) for a in arch), "count": len(arch),
+         "sub": "格子满了自动沉下来", "items": arch_items},
+        {"id": "docs", "label": "知识库", "color": "#ff9ec9", "inject": "recall",
+         "chars": docs_chars, "count": docs_n, "sub": "私有文档 · 按需召回",
+         "items": docs_items},
+        {"id": "decisions", "label": "决策留痕", "color": "#c3b6ff", "inject": "recall",
+         "chars": dec_chars, "count": dec_n, "sub": "否掉过什么 · 为什么",
+         "items": dec_items},
+    ]
 
 
 def build_memory_map(lite: bool = False) -> dict:
@@ -281,11 +417,13 @@ def build_memory_map(lite: bool = False) -> dict:
                             "migrated": not mh.needs_migration(conn)},
                 "notebook": _notebook_tiers(),
             }
+        constellation = _cached("constellation", 300, lambda: _constellation(conn))
         return {
             "total_chunks": total,
-            "constellation": _constellation(conn),
+            "constellation": constellation,
+            "boxes": _boxes(constellation),
             "sources": _sources(conn),
-            "hygiene": _hygiene(conn),
+            "hygiene": _cached("hygiene", 1800, lambda: _hygiene(conn)),
             "notebook": _notebook_tiers(),
             "funnel": _funnel(),
         }

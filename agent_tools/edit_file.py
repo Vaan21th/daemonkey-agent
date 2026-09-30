@@ -221,12 +221,21 @@ def _run_batch(args: dict, raw: str, edits: list) -> ToolResult:
             base = f"{base}\n\n{b_warn}"
     except Exception:
         pass
+    return ToolResult(ok=True, output=_finish_output(base, path), stage_path=path)
+
+
+def _finish_output(base: str, path) -> str:
+    """成功出口的统一收尾：覆盖层提示。
+
+    铺中栏从 2026-09-20 起改走 stage_path 声明（打标记 / 说人话全由 tool_loop 出口
+    统一兑现）—— 工具这层不再有「记得手写一行标记」这种活，漏接在结构上不再可能。
+    """
     try:
         from workers.overlay_policy import attach_write_notice
         base = attach_write_notice(path, base)
     except Exception:
         pass
-    return ToolResult(ok=True, output=base)
+    return base
 
 
 def _run(args: dict) -> ToolResult:
@@ -392,19 +401,7 @@ def _run(args: dict) -> ToolResult:
     except Exception:
         pass
 
-    try:
-        from workers.stage_open import append_open_mark
-        base = append_open_mark(base, path)
-    except Exception:
-        pass
-
-    try:
-        from workers.overlay_policy import attach_write_notice
-        base = attach_write_notice(path, base)
-    except Exception:
-        pass
-
-    return ToolResult(ok=True, output=base)
+    return ToolResult(ok=True, output=_finish_output(base, path), stage_path=path)
 
 
 SPEC = ToolSpec(

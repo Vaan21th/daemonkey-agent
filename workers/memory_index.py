@@ -267,7 +267,7 @@ CLIENTS_MANIFEST = ROOT / "data" / "clients" / "manifest.json"
 #
 # 2026-08-12 (wish-ba84aa18 迭代 · BRO 拍板精粒度): 灵魂层按"信息会不会被压缩掉"分:
 #   - SELF-EVOLUTION 全进: 只注入末尾几条 · 历史全靠 recall_memory 语义召回 (唯一真正需要向量的灵魂文件)
-#   - BRO-NOTEBOOK 只进"关键事件流"板块 (section 含 '事件流'): 全量注入但无限增长 · 给未来压缩铺路
+#   - BRO-NOTEBOOK 只进"他经历的事"板块 (section 含新名或旧名 '事件流'): 全量注入但无限增长 · 给未来压缩铺路
 #   - OPUS-MEMORIES / SKILL / CONSTITUTION 不进: 自传/入口/宪法全量注入 system prompt · embedding 冗余
 #   - session_summary / skill / doc: 本来就不注入 → 保持全进
 EMBED_SOURCES = frozenset({
@@ -276,7 +276,7 @@ EMBED_SOURCES = frozenset({
 EMBED_SOURCE_PREFIXES = ("doc:",)
 # 只进特定板块的灵魂文件: source 在 SET + section 必须含关键词才进向量
 EMBED_SOURCES_SECTION_ONLY = {
-    "BRO-NOTEBOOK": ("事件流",),
+    "BRO-NOTEBOOK": ("他经历的事", "事件流"),   # 新名在前 · 旧名兜底
 }
 EMBED_SECTION_KEYWORDS = tuple(
     kw for kws in EMBED_SOURCES_SECTION_ONLY.values() for kw in kws
@@ -440,6 +440,15 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE memory_chunks ADD COLUMN embedding BLOB")
         except Exception:
             pass
+    # 第 1 步 · 召回计数 (wish-fa1699c1 后续) · 幂等补列。
+    # 「这条值不值得留」没人答得了 · 「这条有没有被用到」是客观事实 ——
+    # 下沉 / 升格都拿它当尺子。
+    for _cname, _cdecl in (("hit_count", "INTEGER DEFAULT 0"), ("last_hit", "TEXT DEFAULT ''")):
+        if _cname not in _cols:
+            try:
+                conn.execute(f"ALTER TABLE memory_chunks ADD COLUMN {_cname} {_cdecl}")
+            except Exception:
+                pass
     # standalone FTS5 · 不是 external content · content_tok 是 jieba 切词后版
     conn.execute("""
         CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
@@ -714,9 +723,12 @@ def _rebuild_core(conn, now) -> int:
     total = 0
 
     # ---- 索引 soul/ 下的 md 文件 ----
+    # 2026-09-30 wish-27273a5b · 画像拆成一格一文件后，下面两个单文件名**一个都不存在**
+    # （静默 continue）→ rebuild 会把画像整体丢出索引，要等下次写画像才由
+    # update_bro_note.incremental_update 补回来（中间的召回窗口是空的）。
+    # 画像改走 identity 句柄单独索引：多格模式 read_text 返回全格正文，
+    # source 仍统一叫 OWNER-NOTEBOOK（_chunk_hits / recall 都认它）。
     soul_files = [
-        ("OWNER-NOTEBOOK.md", "OWNER-NOTEBOOK"),
-        ("BRO-NOTEBOOK.md", "BRO-NOTEBOOK"),
         ("SELF-EVOLUTION.md", "SELF-EVOLUTION"),
         ("OPUS-MEMORIES.md", "OPUS-MEMORIES"),
         ("SKILL.md", "SKILL"),
@@ -739,6 +751,27 @@ def _rebuild_core(conn, now) -> int:
             )
         total += len(chunks)
         logger.info("  索引 %s: %d chunks", source_label, len(chunks))
+
+    try:
+        from identity import owner_notebook_path as _onp
+
+        _nbp = _onp(SOUL_DIR)
+        if _nbp.exists():
+            chunks = _chunk_markdown(_nbp.read_text(encoding="utf-8"), "OWNER-NOTEBOOK", now)
+            for c in chunks:
+                _insert_chunk_with_fts(
+                    conn,
+                    source=c["source"],
+                    section=c["section"],
+                    chunk_index=c["chunk_index"],
+                    content=c["content"],
+                    token_count=c["token_count"],
+                    updated_at=c["updated_at"],
+                )
+            total += len(chunks)
+            logger.info("  索引 OWNER-NOTEBOOK: %d chunks", len(chunks))
+    except Exception as _e_nb:
+        logger.warning("画像索引失败(不影响其他): %s", _e_nb)
 
     # ---- 索引 playbooks (卷四十六 II · wish-1c229865 · skill 主动召回) ----
     if PLAYBOOKS_DIR.exists():
@@ -1182,6 +1215,18 @@ def check_stale() -> bool:
             logger.info("索引过期: %s 有新修改", fn)
             return True
 
+    # 2026-09-30 wish-27273a5b · 画像拆成一格一文件后，上面那两个单文件名一个都不存在 →
+    # 画像改了不会触发索引重建（召回拿旧内容）。补一格一文件的 mtime 检查。
+    _nbdir = SOUL_DIR / "notebook"
+    if _nbdir.is_dir():
+        for _p in _nbdir.glob("*.md"):
+            try:
+                if _p.stat().st_mtime > db_mtime:
+                    logger.info("索引过期: soul/notebook/%s 有新修改", _p.name)
+                    return True
+            except OSError:
+                continue
+
     # 注意: sessions/*.jsonl + *.summary.json 不参与 stale 判定 (wish-93b0cabf · 2026-08-06)
     # 病根: session 每轮对话必写 → mtime 永远 > db → check_stale 永远 True →
     #       load_soul 每次都同步全量 rebuild (30-40s) → 阻塞事件循环 → 对话卡死。
@@ -1236,14 +1281,23 @@ def refresh_stale() -> int:
     total = 0
 
     # 灵魂文件 · 逐文件单源增量 (几十条 chunk · 秒级)
+    # 2026-09-30 wish-27273a5b · 画像同理走句柄（见 _rebuild_core 里的注释）。
     for fn, label in [
-        ("OWNER-NOTEBOOK.md", "OWNER-NOTEBOOK"), ("BRO-NOTEBOOK.md", "BRO-NOTEBOOK"),
         ("SELF-EVOLUTION.md", "SELF-EVOLUTION"), ("OPUS-MEMORIES.md", "OPUS-MEMORIES"),
         ("SKILL.md", "SKILL"),
     ]:
         p = SOUL_DIR / fn
         if p.exists() and p.stat().st_mtime > base_mtime:
             total += incremental_update(label, p.read_text(encoding="utf-8"))
+
+    try:
+        from identity import owner_notebook_path as _onp2
+
+        _nbp2 = _onp2(SOUL_DIR)
+        if _nbp2.exists() and _nbp2.stat().st_mtime > base_mtime:
+            total += incremental_update("OWNER-NOTEBOOK", _nbp2.read_text(encoding="utf-8"))
+    except Exception as _e_nb2:
+        logger.warning("画像增量索引失败(不影响其他): %s", _e_nb2)
 
     # playbooks · 逐篇 section 级增量 (task_type 从 _index.json 查 · 逻辑同 _rebuild_core)
     if PLAYBOOKS_DIR.exists():
@@ -1357,7 +1411,9 @@ def search(
 
     scope_filter_c = ""
     if scope == "bro":
-        scope_filter_c = "AND c.source = 'BRO-NOTEBOOK'"
+        # 2026-09-30 wish-27273a5b · 拆格后画像索引的 source 统一叫 OWNER-NOTEBOOK；
+        # 旧索引里还有 BRO-NOTEBOOK 残留 —— 两个都认，否则 scope='bro' 召回拿不到画像。
+        scope_filter_c = "AND c.source IN ('OWNER-NOTEBOOK', 'BRO-NOTEBOOK')"
     elif scope == "self":
         scope_filter_c = "AND c.source IN ('SELF-EVOLUTION', 'OPUS-MEMORIES', 'SKILL')"
     elif scope == "sessions":
@@ -1509,6 +1565,22 @@ def search(
                 results = reranked
         except Exception as e:
             logger.warning("embedding rerank failed (%s) · 保持 FTS5 结果", e)
+
+    # ── 第 1 步 · 召回计数 (wish-fa1699c1 后续) ─────────────────────────
+    # 被 search 返回 = 被用到 → +1。这是「下沉 / 升格」唯一客观的尺子:
+    # 不问「这条值不值得留」(没人答得了) · 只看「这条有没有被用到」(机器自己数)。
+    # 热路径 · 写失败绝不能影响召回结果 (统计是搭车的 · 不是主任务)。
+    _hit_ids = [c.id for c in results if isinstance(c.id, int) and c.id > 0]
+    if _hit_ids:
+        try:
+            _hit_ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            conn.executemany(
+                "UPDATE memory_chunks SET hit_count = COALESCE(hit_count, 0) + 1, last_hit = ? WHERE id = ?",
+                [(_hit_ts, _hid) for _hid in _hit_ids],
+            )
+            conn.commit()
+        except Exception as e:
+            logger.debug("hit_count 写回跳过 (%s)", e)
 
     conn.close()
     return results

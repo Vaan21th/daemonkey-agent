@@ -140,9 +140,9 @@ def _run(args: dict) -> ToolResult:
                 output="\n".join([
                     f"换了第{page}页版式 · {out.name} · V{ver}",
                     f"  路径: {rel}",
-                    f"  没有同源文稿，只动这一页，其余页留下",
-                    f"[[DK-OPEN]]{rel}",
+                    "  没有同源文稿，只动这一页，其余页留下",
                 ]),
+                stage_path=rel,
             )
         return ToolResult(ok=False, output="", error=str(e))
     except ValueError as e:
@@ -219,9 +219,9 @@ def _run(args: dict) -> ToolResult:
             f"局部改完 · {out.name} · V{ver}",
             f"  路径: {rel}",
             f"  {note}",
-            f"  上一版进历史，货架只留这一份",
-            f"[[DK-OPEN]]{rel}",
+            "  上一版进历史，货架只留这一份",
         ]),
+        stage_path=rel,
     )
 
 

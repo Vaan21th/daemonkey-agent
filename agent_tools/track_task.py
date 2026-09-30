@@ -36,6 +36,8 @@ def _summarize(args: dict) -> str:
     if action == "step":
         st = (args.get("status") or "done").strip()
         return f"推进第 {args.get('step')} 步 → {st}"
+    if action == "close":
+        return "销账(收尾)"
     kind = (args.get("kind") or "note").strip()
     text = (args.get("text") or "").strip()
     preview = text[:40] + ("…" if len(text) > 40 else "")
@@ -53,13 +55,15 @@ def _link_wish(led: dict, wish_id: str) -> tuple[bool, str]:
         from workers import wishlist
     except Exception as e:
         return False, f"wish 联动不可用: {e}"
-    if wishlist.get_wish(wish_id) is None:
+    w = wishlist.get_wish(wish_id)
+    if w is None:
         return False, (f"没有这条 wish: {wish_id} · 先用 wish 工具查真实 id"
                        "(别凭印象填·挂错了 wish 面板会显示别人的进度)。")
     if led.get("wish_id") != wish_id:
         led["wish_id"] = wish_id
         tl.save_ledger(led)
-    return True, f" · 已挂到 {wish_id}"
+    # 2026-09-20 · 报给 BRO 看的一律用标题（wish_id 是机器码·太难看）
+    return True, f" · 已挂到《{(w or {}).get('title') or wish_id}》"
 
 
 def _align_title(led: dict, wish_id: str) -> None:
@@ -164,10 +168,25 @@ def _run(args: dict) -> ToolResult:
             return ToolResult(ok=False, output="",
                               error=f"没找到第 {i} 步(或没有活跃计划) · 先 action='plan' 列计划。")
         p = tp.progress(led)
-        tail = " · 全部步骤已结算 · 该收尾汇报了" if p["all_done"] else (
+        tail = " · 全部步骤已结算 · 该收尾汇报了(收完尾 `track_task(action='close')` 销账·销了就不再注入)" if p["all_done"] else (
             f" · 下一步: 第 {(p.get('current') or {}).get('i')} 步 "
             f"{(p.get('current') or {}).get('text', '')}")
         return ToolResult(ok=True, output=f"第 {i} 步已更新 · 进度 {p['settled']}/{p['total']}{tail}")
+
+    if action == "close":
+        try:
+            from workers import task_plan as tp
+        except Exception as e:
+            return ToolResult(ok=False, output="", error=f"task_plan 不可用: {e}")
+        task = (args.get("task") or "").strip() or None
+        led = tp.close_ledger(sid, slug=task)
+        if led is None:
+            return ToolResult(ok=False, output="",
+                              error="没找到活跃账本 · 先 action='plan' 列计划再销。")
+        return ToolResult(
+            ok=True,
+            output=f"已销账《{led.get('title')}》· 后续不再注入(文件保留供回看)。",
+        )
 
     # 默认 note
     kind = args.get("kind") or "note"
@@ -191,14 +210,14 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="track_task",
     description=(
-        "多步任务账本。三步以上开工先 action=plan；做完一步立刻 step=done。结论用 note。新窗口先 open。action: plan/step/open/note/list。别名：计划/步骤/拆解/待办/进度/分步/多步骤/长任务/一步步/todo。"    ),
+        "多步任务账本。三步以上开工先 action=plan；做完一步立刻 step=done。结论用 note。新窗口先 open。全部结算后 close 销账(不再注入)。action: plan/step/open/note/list/close。别名：计划/步骤/拆解/待办/进度/分步/多步骤/长任务/一步步/todo。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["open", "note", "list", "plan", "step"],
+                "enum": ["open", "note", "list", "plan", "step", "close"],
                 "description": "plan=列步骤 · step=推进 · open=建账本 · note=结论 · list=列出。默认 note。",
             },
             "task": {

@@ -29,14 +29,26 @@ def _summarize(args: dict) -> str:
 def _run(args: dict) -> ToolResult:
     from workers.memory_reaper import render_suggestions, scan
 
+    # 2026-09-30 wish-27273a5b · 画像拆成一格一文件后，这里硬找两个单文件名
+    # （一个都不存在）→ 直接报「画像文件不存在」—— 体检工具整个失效。
+    # 改走 identity 句柄：单文件 / 多格两种形态它自己判。
     text = None
-    for fn in ("OWNER-NOTEBOOK.md", "BRO-NOTEBOOK.md"):
-        p = _ROOT / "soul" / fn
-        if p.exists():
-            text = p.read_text(encoding="utf-8")
-            break
+    try:
+        from identity import owner_notebook_path
+
+        _nb = owner_notebook_path(_ROOT / "soul")
+        if _nb.exists():
+            text = _nb.read_text(encoding="utf-8")
+    except Exception:
+        text = None
     if text is None:
-        return ToolResult(False, "", "画像文件不存在（soul/ 下没有 OWNER-NOTEBOOK.md / BRO-NOTEBOOK.md）")
+        for fn in ("OWNER-NOTEBOOK.md", "BRO-NOTEBOOK.md"):
+            p = _ROOT / "soul" / fn
+            if p.exists():
+                text = p.read_text(encoding="utf-8")
+                break
+    if text is None:
+        return ToolResult(False, "", "画像还没写（soul/notebook/ 是空的 · soul/ 下也没有画像单文件）")
 
     result = scan(text)
     n = sum(len(v) for v in result.values())
