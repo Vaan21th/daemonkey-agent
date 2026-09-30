@@ -92,7 +92,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="mirror_capability",
     description=(
-        "从行为痕迹提炼 BRO 市场能力画像。actions: generate（跑 LLM）/ load（只读快照）。"
+        "从行为痕迹提炼使用者的市场能力画像。actions: generate（跑 LLM）/ load（只读快照）。"
     ),
     tier=TIER_AUTO,
     input_schema={

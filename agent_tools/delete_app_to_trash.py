@@ -85,7 +85,7 @@ def _run(args: dict) -> ToolResult:
 _SPEC = ToolSpec(
     name="delete_app_to_trash",
     description=(
-        "软删工坊 app 到回收站（可 restore_app）。BRO 说删 app 时第一刀就是本工具，禁止 shell_exec rm。永久删走 empty_trash。"
+        "软删工坊 app 到回收站（可 restore_app）。用户说删 app 时第一刀就是本工具，禁止 shell_exec rm。永久删走 empty_trash。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

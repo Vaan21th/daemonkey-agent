@@ -125,9 +125,7 @@ def _write_run(args: dict) -> ToolResult:
 READ_SPEC = ToolSpec(
     name="read_clipboard",
     description=(
-        "Read BRO's current clipboard text content. Use when BRO says 'check my clipboard', "
-        "'look at what I copied', or implies he wants you to see something he just copied "
-        "(error log, code snippet, URL, etc) instead of typing it out."
+        "Read the user's current clipboard text content. Use when the user says 'check my clipboard', 'look at what I copied', or implies he wants you to see something he just copied (error log, code snippet, URL, etc) instead of typing it out."
     ),
     tier=TIER_AUTO,
     input_schema={"type": "object", "properties": {}},
@@ -139,10 +137,7 @@ READ_SPEC = ToolSpec(
 WRITE_SPEC = ToolSpec(
     name="write_clipboard",
     description=(
-        "Write text to BRO's clipboard for him to paste. Use when you've prepared a summary, "
-        "code snippet, command, or URL that BRO will want to paste somewhere (Cursor / WeChat / browser). "
-        "CONFIRM tier — overwriting clipboard is mildly disruptive."
-    ),
+        "Write text to the user's clipboard for him to paste. Use when you've prepared a summary, code snippet, command, or URL that the user will want to paste somewhere (Cursor / WeChat / browser). CONFIRM tier — overwriting clipboard is mildly disruptive."   ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

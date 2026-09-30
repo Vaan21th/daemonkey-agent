@@ -92,13 +92,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="set_model",
     description=(
-        "Switch the underlying LLM model that OPUS itself runs on, at runtime. "
-        "Useful when the user (BRO) asks to try a different model "
-        "(deepseek / kimi / glm / sonnet / opus / r1 / gpt / gemini etc). "
-        "Accepts a short alias or a full AiHubMix model id. "
-        "Set persist=true to also write OPUS_MODEL into .env so the choice survives restart. "
-        "Call with empty model to list the recommended alias options. "
-        "Effect takes hold on the NEXT user turn (this turn already started under the old model)."
+        "Switch the underlying LLM model that you run on, at runtime. Useful when the user asks to try a different model (deepseek / kimi / glm / sonnet / opus / r1 / gpt / gemini etc). Accepts a short alias or a full AiHubMix model id. Set persist=true to also write Daemonkey_MODEL into .env so the choice survives restart. Call with empty model to list the recommended alias options. Effect takes hold on the NEXT user turn (this turn already started under the old model)."
     ),
     tier=TIER_AUTO,  # static fallback; persist=True 会被 classify 升到 CONFIRM
     input_schema={

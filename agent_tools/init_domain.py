@@ -170,7 +170,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="init_domain",
     description=(
-        "一句话建雷达领域，可选立刻刷源。BRO 说「帮我关注 X」时调。源配比大陆约 70%/海外约 30%；海外只挂大陆能直连的（arxiv / 官方 blog / GitHub releases），别加 HN / HuggingFace。找不到 RSS 也可 sources=[] 先占位，再 manage_info_source 补。slug 用 ascii-dash，label 中文。"
+        "一句话建雷达领域，可选立刻刷源。用户说「帮我关注 X」时调。源配比大陆约 70%/海外约 30%；海外只挂大陆能直连的（arxiv / 官方 blog / GitHub releases），别加 HN / HuggingFace。找不到 RSS 也可 sources=[] 先占位，再 manage_info_source 补。slug 用 ascii-dash，label 中文。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

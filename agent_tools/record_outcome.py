@@ -192,7 +192,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="record_outcome",
     description=(
-        "记录掘金机会的真实状态。actions: record/list/load。BRO 说不做/开干/赚了多少时调。decision_reason 最重要。会反哺 mine_opportunities。"
+        "记录掘金机会的真实状态。actions: record/list/load。用户说不做/开干/赚了多少时调。decision_reason 最重要。会反哺 mine_opportunities。"
     ),
     tier=TIER_AUTO,
     input_schema={

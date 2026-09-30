@@ -169,7 +169,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="auto_pipeline",
     description=(
-        "一句话跑雷达刷新→趋势→掘金。BRO 说巡一圈时调。约 1–3 分钟，任一步失败保留已完成结果。BRO 没空时别跑。"
+        "一句话跑雷达刷新→趋势→掘金。用户说巡一圈时调。约 1–3 分钟，任一步失败保留已完成结果。用户没空时别跑。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

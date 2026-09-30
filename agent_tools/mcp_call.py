@@ -302,9 +302,7 @@ SPEC_DESCRIBE = ToolSpec(
 SPEC_CALL = ToolSpec(
     name="mcp_call_tool",
     description=(
-        "Call a tool on a configured MCP server. CONFIRM tier because the remote tool's "
-        "actual side effects are unknown to OPUS in advance—e.g. github 'create_issue' really "
-        "creates an issue. Use mcp_list / mcp_describe_tool first to know what you're invoking."
+        "Call a tool on a configured MCP server. CONFIRM tier because the remote tool's actual side effects are unknown to you in advance—e.g. github 'create_issue' really creates an issue. Use mcp_list / mcp_describe_tool first to know what you're invoking."
     ),
     tier=TIER_CONFIRM,
     input_schema={

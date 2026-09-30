@@ -303,7 +303,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="analyze_feasibility",
     description=(
-        "把一个掘金机会展开成可行性分析。actions: analyze/list/load。用 opp_id 或 opp_index。可行性只给 BRO 看，须挂在机会上。"
+        "把一个掘金机会展开成可行性分析。actions: analyze/list/load。用 opp_id 或 opp_index。可行性只给 用户看，须挂在机会上。"
     ),
     tier=TIER_AUTO,
     input_schema={

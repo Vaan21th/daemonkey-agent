@@ -140,7 +140,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="mine_opportunities",
     description=(
-        "雷达/趋势 × BRO 画像挖掘金机会。actions: mine（跑 LLM 覆写）/ list（只读）。输出 3–5 张卡，形态须多样，fit_reason 引用画像。"
+        "雷达/趋势 × 用户画像挖掘金机会。actions: mine（跑 LLM 覆写）/ list（只读）。输出 3–5 张卡，形态须多样，fit_reason 引用画像。"
     ),
     tier=TIER_AUTO,
     input_schema={

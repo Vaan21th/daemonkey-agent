@@ -86,7 +86,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="app_set_secret",
     description=(
-        "给 app 存 KEY/token，真值落 gitignored secrets。BRO 给密钥时第一刀调本工具。之后只用 ${secret:<app_id>:<name>}。禁止写进 app json / prompt / md。"
+        "给 app 存 KEY/token，真值落 gitignored secrets。用户给密钥时第一刀调本工具。之后只用 ${secret:<app_id>:<name>}。禁止写进 app json / prompt / md。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

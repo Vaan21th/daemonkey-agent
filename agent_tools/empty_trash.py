@@ -128,7 +128,7 @@ def _classify(args: dict) -> str:
 _SPEC = ToolSpec(
     name="empty_trash",
     description=(
-        "永久删除回收站项目，不可恢复。等 BRO 明确说永久删再调。传 target_id 或 kind（app/flow/all），不能两个都给。"
+        "永久删除回收站项目，不可恢复。等 用户明确说永久删再调。传 target_id 或 kind（app/flow/all），不能两个都给。"
     ),
     tier=TIER_GUARD,
     input_schema={

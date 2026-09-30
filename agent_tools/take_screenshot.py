@@ -92,11 +92,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="take_screenshot",
     description=(
-        "Capture a screenshot of BRO's screen. Saved to sessions/screenshots/. "
-        "Returns the file path (NOT the image data—saves tokens). "
-        "Use when BRO says 'look at my screen', 'see this', or you need visual context "
-        "of his current work. Optional region={left,top,right,bottom} for a specific area; "
-        "default captures all screens."
+        "Capture a screenshot of the user's screen. Saved to sessions/screenshots/. Returns the file path (NOT the image data—saves tokens). Use when the user says 'look at my screen', 'see this', or you need visual context of his current work. Optional region={left,top,right,bottom} for a specific area; default captures all screens."
     ),
     tier=TIER_AUTO,
     input_schema={

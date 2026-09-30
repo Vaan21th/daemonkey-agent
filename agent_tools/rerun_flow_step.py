@@ -131,7 +131,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="rerun_flow_step",
     description=(
-        "BRO 对某步产出不满意时强制重跑该步（即使已 done）。修 bug 从失败步续跑用 run_flow resume。"
+        "用户对某步产出不满意时强制重跑该步（即使已 done）。修 bug 从失败步续跑用 run_flow resume。"
     ),
     tier=TIER_CONFIRM,
     classify=_classify,
