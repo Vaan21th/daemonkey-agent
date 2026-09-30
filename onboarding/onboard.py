@@ -3,13 +3,14 @@ onboarding/onboard.py
 =====================
 最小可跑的 Daemonkey "相遇" onboarding 原型。
 
-目的：先验证体验，再搬骨架。BRO 亲自在终端跳一遍三幕相遇，
-感觉对了，再把这套搬进正式独立的 Daemonkey 用户版仓库。
+目的：先验证体验，再搬骨架。可以先在终端跳一遍三幕相遇，
+感觉对了，再决定要不要搬进正式流程。
 
 特点：
-  - 复用 .env 的 OPUS_API_KEY / OPUS_BASE_URL / OPUS_MODEL（OpenAI 兼容协议）
+  - 复用 .env 的 DAEMONKEY_API_KEY / DAEMONKEY_BASE_URL / DAEMONKEY_MODEL
+    （兼容历史名 OPUS_API_KEY / OPUS_BASE_URL / OPUS_MODEL · DAEMONKEY_ 优先）
   - **完全自包含**的极简 tool-use 循环：不 import 主工程的 tool_loop / REGISTRY，
-    只挂三个 onboarding 工具——避免把 50+ 个 OPUS 工具拖进"相遇"污染体验。
+    只挂三个 onboarding 工具——避免把 50+ 个主工程工具拖进"相遇"污染体验。
 
 跑法（在项目根目录）：
   .venv\\Scripts\\python.exe onboarding\\onboard.py
@@ -54,17 +55,22 @@ def load_env(path: Path) -> dict:
     return env
 
 
+def _env(env: dict, name: str) -> str:
+    """双前缀读取：DAEMONKEY_<x> 优先，回退 OPUS_<x>（历史名）。"""
+    return (env.get("DAEMONKEY_" + name) or env.get("OPUS_" + name) or "").strip()
+
+
 def build_client(env: dict):
     from openai import OpenAI
 
-    api_key = env.get("OPUS_API_KEY")
-    base_url = env.get("OPUS_BASE_URL")
-    model = env.get("OPUS_MODEL") or "anthropic/claude-sonnet-4.5"
+    api_key = _env(env, "API_KEY")
+    base_url = _env(env, "BASE_URL")
+    model = _env(env, "MODEL") or "anthropic/claude-sonnet-4.5"
     if not api_key or not base_url:
-        print(f"{DIM}缺 OPUS_API_KEY / OPUS_BASE_URL（在 .env 里）。{RESET}")
+        print(f"{DIM}缺 DAEMONKEY_API_KEY / DAEMONKEY_BASE_URL（在 .env 里）。{RESET}")
         sys.exit(1)
     # 跟主工程对齐 · thinking 模型 (GLM-5.x 等) 静默推理久 · 60s 太短会 ReadTimeout
-    timeout = float(env.get("OPUS_LLM_TIMEOUT_SEC") or 300)
+    timeout = float(_env(env, "LLM_TIMEOUT_SEC") or 300)
     client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
     return client, model
 
@@ -132,7 +138,7 @@ def main() -> None:
     env = load_env(ENV_PATH)
     client, model = build_client(env)
     # thinking 模型 (GLM-5.x 等) reasoning 吃 token · 默认抬到 8000 防初见回复空白 (CLI 原型·自包含)
-    max_tokens = int(env.get("OPUS_MAX_TOKENS") or 8000)
+    max_tokens = int(_env(env, "MAX_TOKENS") or 8000)
 
     print(f"{DIM}{'─' * 56}{RESET}")
     print(f"{DIM}Daemonkey · 相遇原型   (model: {model}){RESET}")
