@@ -214,7 +214,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="add_iron_rule",
     description=(
-        "BRO 定下干活纪律 / 硬规矩（「以后一律…」/「不许…」/「必须…」）→ 加一条铁律：只写 daemon_rules.md。先 list_iron_rules 取 max+1。产品观走 CONSTITUTION；BRO 事实走 update_owner_note。简介不许写成长文（铁律 15）。细读：read_scenario('self_evolution')。"    ),
+        "用户定下干活纪律 / 硬规矩（「以后一律…」/「不许…」/「必须…」）→ 加一条铁律：只写 daemon_rules.md。先 list_iron_rules 取 max+1。产品观走 CONSTITUTION；用户事实走 update_owner_note。简介不许写成长文（铁律 15）。细读：read_scenario('self_evolution')。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

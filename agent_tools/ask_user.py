@@ -85,7 +85,7 @@ def _summarize(args: dict) -> str:
 SPEC = ToolSpec(
     name="ask_user",
     description=(
-        "在对话里弹一张选择题卡 · 等 BRO 点一下再继续（Cursor 那种）。"
+        "在对话里弹一张选择题卡 · 等 用户点一下再继续（Cursor 那种）。"
         " question 是问题 · options 是 2~5 个选项；**没有选项就别调**·直接在回复里问。"
     ),
     tier=TIER_AUTO,

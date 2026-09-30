@@ -158,7 +158,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="wechat_send",
     description=(
-        "经微信给 BRO 发文本或媒体。长任务完成/截图/报告时用。不要每句回复都发（桥会自动回）。媒体需要 24h 会话窗。CONFIRM。"
+        "经微信给 用户发文本或媒体。长任务完成/截图/报告时用。不要每句回复都发（桥会自动回）。媒体需要 24h 会话窗。CONFIRM。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

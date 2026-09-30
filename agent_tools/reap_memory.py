@@ -65,7 +65,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="reap_memory",
     description=(
-        "看记忆里谁该退役（格子满了写不进 / BRO 问「有什么该清的」时调）。"
+        "看记忆里谁该退役（格子满了写不进 / 用户问「有什么该清的」时调）。"
         "只出建议不动手 —— 短命格(state 30天/stories 90天)到点提示 · critical 永不提示。"
         "要真清走 update_owner_note 或界面删除。"
     ),

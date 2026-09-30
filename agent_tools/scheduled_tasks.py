@@ -124,7 +124,7 @@ def _list_run(args: dict) -> ToolResult:
 
 SPEC_LIST = ToolSpec(
     name="list_scheduled_tasks",
-    description="列出所有定时任务(含状态 / 下次执行 / 上次结果)。 BRO 问\"有哪些定时任务\" / \"定时任务跑得怎么样\"时用。",
+    description="列出所有定时任务(含状态 / 下次执行 / 上次结果)。 用户问\"有哪些定时任务\" / \"定时任务跑得怎么样\"时用。",
     tier=TIER_AUTO,
     input_schema={"type": "object", "properties": {}},
     run=_list_run,
@@ -163,7 +163,7 @@ SPEC_UPDATE = ToolSpec(
     name="update_scheduled_task",
     description=(
         "改一个已有定时任务: 开关(enabled) / 改时间(schedule_*) / 改指令(prompt) / 改微信通知。 "
-        "BRO 说\"停用那个雷达任务\"→ enabled=false; \"把复盘改到周六\"→ schedule_type=weekly weekday=5。 "
+        "用户说\"停用那个雷达任务\"→ enabled=false; \"把复盘改到周六\"→ schedule_type=weekly weekday=5。 "
         "只传要改的字段。 先 list_scheduled_tasks 拿 task_id。"
     ),
     tier=TIER_CONFIRM,
@@ -203,7 +203,7 @@ def _delete_run(args: dict) -> ToolResult:
 
 SPEC_DELETE = ToolSpec(
     name="delete_scheduled_task",
-    description="删一个定时任务。 BRO 说\"删掉那个任务\"时用。 先 list_scheduled_tasks 拿 task_id。",
+    description="删一个定时任务。 用户说\"删掉那个任务\"时用。 先 list_scheduled_tasks 拿 task_id。",
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

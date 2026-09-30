@@ -172,8 +172,8 @@ SPEC = ToolSpec(
         "列 daemon_rules.md 现有所有铁律 (编号 + 标题) · 给 LLM 加铁律前查重用\n\n"
         "**用途**:\n"
         "  - 调 add_iron_rule 之前 · 看现有最大编号 · 取 max+1 (防漏编 / 撞号)\n"
-        "  - BRO 问『现在工程多少条铁律』时直接调这个回\n"
-        "  - Daemonkey 自己反思想加铁律前 · 看是否已有同类规则 (避免重复)"
+        "  - 用户问『现在工程多少条铁律』时直接调这个回\n"
+        "  - 你自己反思想加铁律前 · 看是否已有同类规则 (避免重复)"
     ),
     tier=TIER_AUTO,
     input_schema={"type": "object", "properties": {}, "additionalProperties": False},

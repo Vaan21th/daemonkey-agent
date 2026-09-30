@@ -136,7 +136,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="draft_studio",
     description=(
-        "在 Daemonkey 工作室出品文档 · 落 data/<domain>/（markdown 档案 + 默认同产一份可上中栏画布的原型 HTML）。"
+        "在 你工作室出品文档 · 落 data/<domain>/（markdown 档案 + 默认同产一份可上中栏画布的原型 HTML）。"
         " 适合: 选题/口播稿 (content) · spec/用户旅程 (design) · TODO/技术调研 (dev) · FAQ/wiki (docs)。"
         " 正式 docx 报告用 generate_report。"
     ),
