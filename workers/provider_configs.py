@@ -6,7 +6,7 @@ workers/provider_configs.py
 
 为什么这个文件存在：
   - 之前 .env 里只能存一个 OPUS_BASE_URL / OPUS_MODEL / OPUS_API_KEY
-  - BRO 想"我要同时存 DeepSeek 官方 V4 Pro / V4 Flash / AiHubMix Claude Opus 4.7"
+  - 用户想"我要同时存 DeepSeek 官方 V4 Pro / V4 Flash / AiHubMix Claude Opus 4.7"
   - 然后右上角切换器从勾选 (pinned) 的几个里选 · 不重启 daemon
 
 数据形态：
@@ -69,7 +69,7 @@ def _migrate_from_env() -> dict:
 
     .env 里没配 (新装机) · 也生成空骨架。
     """
-    # 2026-10-05 · 新名优先·旧名兼容（BRO 拍「保守稳定」）
+    # 2026-10-05 · 新名优先·旧名兼容（用户拍「保守稳定」）
     #   纯净版用户在父进程环境里碰巧有 OPUS_API_KEY（装过旧版/别的工具设了同名）时·
     #   旧逻辑会静默拿它当自己的 key 写进 provider_configs.json —— 用户完全不知道。
     #   改成 DAEMONKEY_* 优先：只要 .env 里有过新名，就绝不出旧名。
@@ -124,7 +124,7 @@ def _guess_preset_id(base_url: str, provider_kind: str) -> str:
 
 
 def _guess_name(preset_id: str, model: str) -> str:
-    """给一条 config 取个人话名字 · BRO 在 UI 上能识别."""
+    """给一条 config 取个人话名字 · 用户在 UI 上能识别."""
     preset_label = {
         "deepseek-official": "DeepSeek 官方",
         "aihubmix": "AiHubMix",
@@ -344,7 +344,7 @@ def update_config(cfg_id: str, patch: dict) -> dict:
                             c["context_window"] = n
                         continue
                     c[k] = v.strip() if isinstance(v, str) else v
-            # wish-8ffb9d65 follow-up (BRO 2026-07-28): 顾问(director)全局只能有一个 ·
+            # wish-8ffb9d65 follow-up (用户 2026-07-28): 顾问(director)全局只能有一个 ·
             # 设新顾问时把其他配置的 director 原子清掉 · 否则 UI 能点出两个"顾问"徽标
             if (patch or {}).get("director") is True:
                 for other in data.get("configs") or []:

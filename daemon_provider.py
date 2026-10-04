@@ -2,7 +2,7 @@
 daemon_provider.py
 ==================
 
-LLM provider 抽象——OPUS 的"心脏"对接谁。
+LLM provider 抽象——Daemonkey 的"心脏"对接谁。
 
 支持：
   - anthropic：直连 Anthropic 官方 API
