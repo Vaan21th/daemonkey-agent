@@ -332,7 +332,7 @@ def dir_exists(root: Path) -> bool:
 
 _SECTION_RE = re.compile(r"\n(?=## )")
 _LEAD_COMMENT_RE = re.compile(r"\A(?:<!--.*?-->\s*)+", re.S)
-_LEAD_HEAD_RE = re.compile(r"\A## [^\n]*\n+")
+_LEAD_HEAD_RE = re.compile(r"\A## [^\n]*\n*")
 
 
 def _label_map(root: Path) -> dict:

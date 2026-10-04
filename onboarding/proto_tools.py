@@ -75,6 +75,27 @@ def _notebook_template() -> str:
     )
 
 
+def _sync_to_notebook(text: str) -> None:
+    """把「逻辑单文件」拆进 soul/notebook/ 各格（主工程标准结构）。
+
+    2026-10-05 · 实机验收发现：初见原来只写老单文件 soul/OWNER-NOTEBOOK.md，
+    14 格永远空着 → has_facts 一直 False → 首启路径上格子等于没用上，
+    且一旦日后有任何写入落进格子，老单文件里的内容会静默失联。
+    这里在每次写老单文件之后同步拆格，两条路并存但内容同源。
+    失败不抛：老单文件已写好，不阻断初见。
+    """
+    try:
+        import sys as _sys
+        _root = DATA_DIR.parent
+        if str(_root) not in _sys.path:
+            _sys.path.insert(0, str(_root))
+        from workers import notebook_store as NS
+        NS.ensure_seeded(_root)
+        NS.write_full(_root, text)
+    except Exception:
+        pass
+
+
 def _ensure_data() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     if not NOTEBOOK_PATH.exists():
@@ -255,6 +276,7 @@ def _run_update_owner_note(args: dict) -> tuple[bool, str]:
         if not ok:
             return False, msg
         NOTEBOOK_PATH.write_text(new_text, encoding="utf-8")
+        _sync_to_notebook(new_text)
         return True, f"已更新状态卡：{msg}"
 
     content = (args.get("content") or "").strip()
@@ -271,6 +293,7 @@ def _run_update_owner_note(args: dict) -> tuple[bool, str]:
         body += f"\n- {content}"
         text = text[:s] + body + "\n\n" + text[e:].lstrip("\n")
     NOTEBOOK_PATH.write_text(text, encoding="utf-8")
+    _sync_to_notebook(text)
     return True, f"已记进画像「{section}」：{content[:40]}"
 
 
