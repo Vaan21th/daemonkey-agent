@@ -278,7 +278,7 @@ def _notebook_tiers() -> dict:
                 "archived": [{"title": t, "chars": n} for t, n in archived],
             }
     except Exception:
-        pass
+        logger.warning("memory_map: 画像句柄读取失败 → 星图画像柜按空显示", exc_info=True)
     return {"full_chars": 0, "core_chars": 0, "archived": []}
 
 

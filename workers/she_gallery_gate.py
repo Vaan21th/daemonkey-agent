@@ -176,7 +176,9 @@ def new_signals(since: datetime | None) -> list[str]:
         from identity import owner_notebook_path
         nb = owner_notebook_path(_ROOT / "soul")
     except Exception:
-        nb = _ROOT / "soul" / "BRO-NOTEBOOK.md"
+        # 兜底也不能写死旧单文件名 —— 拆格后 soul/BRO-NOTEBOOK.md 早就不存在了
+        # （dangling 路径让 _mtime_after 静默返 False）。宁可指到格目录。
+        nb = _ROOT / "soul" / "notebook"
     if _mtime_after(nb, since):
         found.append("画像")
     if _card_after(since):

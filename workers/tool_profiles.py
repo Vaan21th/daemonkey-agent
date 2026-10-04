@@ -189,6 +189,20 @@ def profile_soul_layers(pid):
     return lay
 
 
+def profile_soul_thickness(pid) -> str:
+    """档位的「灵魂厚度」（thin / standard / full）· 没配 = ""（当 standard 处理）。
+
+    BRO 2026-10-05 报：闲聊档写着 thin、实际下发全量 —— 这个字段以前没人读过它。
+    """
+    d = (_load().get("profiles") or {})
+    p = d.get(pid) if isinstance(pid, str) and pid else None
+    if not isinstance(p, dict) and isinstance(pid, str) and pid:
+        p = (_load_user().get("presets") or {}).get(pid)
+    if not isinstance(p, dict):
+        return ""
+    return str(p.get("soul_thickness") or "").strip().lower()
+
+
 def suggest_profile() -> dict:
     """按当前模型给一个建议档（原型缺口③ · 本地小模型 → 闲聊档）。
 
@@ -231,7 +245,7 @@ def save_user_preset(d: dict):
     if len(tools) > 40:
         return None, f"勾了 {len(tools)} 件 —— 档位最多 40 件（超了会被截断），挑一挑"
     th = d.get("soul_thickness") or "standard"
-    if th not in ("thin", "standard"):
+    if th not in ("thin", "standard", "companion"):
         th = "standard"
     # wish-e1178ade · 层配置：勾了哪几段（None = 全装）。只认 SECTION_MARKS 的键；
     # 全集归一为 None（「全勾」= 跟默认走·不钉死现状）。空列表合法（全不装·实验档）。

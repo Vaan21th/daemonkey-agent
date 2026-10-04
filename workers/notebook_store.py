@@ -12,8 +12,11 @@
 """
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 NOTEBOOK_DIR = "notebook"
 
@@ -73,18 +76,24 @@ def exists(root: Path, section: str) -> bool:
     return (_dir(root) / (section + ".md")).exists()
 
 
-def read_section(root: Path, section: str) -> str:
+def read_section(root: Path, section: str, errors: str | None = None) -> str:
     p = _dir(root) / (section + ".md")
     if not p.exists():
         return ""
-    return strip_header(p.read_text(encoding="utf-8"))
+    kw = {"encoding": "utf-8"}
+    if errors:
+        kw["errors"] = errors
+    return strip_header(p.read_text(**kw))
 
 
-def read_header(root: Path, section: str) -> dict:
+def read_header(root: Path, section: str, errors: str | None = None) -> dict:
     p = _dir(root) / (section + ".md")
     if not p.exists():
         return {}
-    return parse_header(p.read_text(encoding="utf-8"))
+    kw = {"encoding": "utf-8"}
+    if errors:
+        kw["errors"] = errors
+    return parse_header(p.read_text(**kw))
 
 
 def _normalize_body(body: str, label: str) -> str:
@@ -120,20 +129,20 @@ def write_section(root: Path, section: str, body: str, *, header: dict | None = 
     return p
 
 
-def iter_sections(root: Path):
+def iter_sections(root: Path, errors: str | None = None):
     """按 SECTION_ORDER 遍历存在的格 -> (section, header, body)。"""
     seen = set()
     for sec in SECTION_ORDER:
         if exists(root, sec):
             seen.add(sec)
-            yield sec, read_header(root, sec), read_section(root, sec)
+            yield sec, read_header(root, sec, errors=errors), read_section(root, sec, errors=errors)
     # 兜底：目录里有 ORDER 没列到的（别丢内容）
     d = _dir(root)
     if d.is_dir():
         for p in sorted(d.glob("*.md")):
             sec = p.stem
             if sec not in seen:
-                yield sec, read_header(root, sec), read_section(root, sec)
+                yield sec, read_header(root, sec, errors=errors), read_section(root, sec, errors=errors)
 
 
 def inject_text(root) -> str:
@@ -295,7 +304,14 @@ def ensure_seeded(root) -> list[str]:
             "---\n\n" % (sec, SEED_LABELS.get(sec, sec),
                           "true" if sec in INJECT_SECTIONS else "false")
         )
-        p.write_text(head + _SEED_BODIES.get(sec, _SEED_BODY), encoding="utf-8")
+        body = _SEED_BODIES.get(sec, _SEED_BODY)
+        # seed 引导是「格式说明」不是内容 —— 统一包成 HTML 注释再写盘。
+        # 不包的话 inject_text / has_facts 会把它当「画像有内容」：
+        # 纯净版首启即 has_facts=True，4 个注入格的出厂说明直接进每轮前缀。
+        # （_clean_body 只剥 `## 段头` 和 HTML 注释 —— 原来 seed 写成 `>` 引用块，剥不掉。）
+        if body.strip() and not body.lstrip().startswith("<!--"):
+            body = "<!--\n" + body.rstrip() + "\n-->\n\n"
+        p.write_text(head + body, encoding="utf-8")
         created.append(sec)
     return created
 
@@ -332,7 +348,10 @@ def _classify(head: str) -> str | None:
     """段头 -> 格 key。锚点表只此一份（notebook_tiers.SECTIONS）。"""
     try:
         from workers.notebook_tiers import SECTIONS
-    except Exception:
+    except ImportError:
+        # 收窄：原来 except Exception 会把表内拼写/语法错误也吞掉 → 分类能力被静默关掉，
+        # 那时所有段头都认不出，整份内容一起走兜底分支。
+        logger.warning("notebook_store._classify: notebook_tiers 导入失败 → 段头分类不可用", exc_info=True)
         return None
     for k, m in SECTIONS.items():
         anchor = getattr(m, "anchor", ()) or ()
@@ -361,14 +380,14 @@ def _clean_body(b: str) -> str:
     return b
 
 
-def read_full(root: Path) -> str:
+def read_full(root: Path, errors: str | None = None) -> str:
     """多格 -> 「逻辑单文件」。
 
     段头统一用文件头里的 label（read/write 对称，靠 label_map 反查不靠猜）。
     正文里原有的 ## 段头和格式说明注释都剥掉 —— 否则回来时会双头。
     """
     parts = []
-    for sec, hdr, body in iter_sections(root):
+    for sec, hdr, body in iter_sections(root, errors=errors):
         b = _clean_body(body)
         if not b:
             continue
@@ -386,7 +405,13 @@ def write_full(root: Path, text: str) -> list[str]:
         head = ch.strip().split("\n")[0].lstrip("# ").strip()
         if not head:
             continue
-        sec = lmap.get(head) or _classify(head) or "stories"
+        sec = lmap.get(head) or _classify(head)
+        if not sec:
+            # 认不出的段头**不能**默认灌进用户格 —— 那会污染 stories，并破坏
+            # 「只写内容真变了的格」的隔离承诺（同一段内容同时出现在两处）。
+            # 落机器维护的 demoted（不注入 · 可召回 · 可追溯）+ 留一行 warning。
+            logger.warning("notebook_store.write_full: 未登记段头 %r → 落 demoted", head[:40])
+            sec = "demoted"
         if sec not in buckets:
             buckets[sec] = []
             order.append(sec)

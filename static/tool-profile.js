@@ -22,10 +22,10 @@ function tpLabel(id) {
   return (!id || id === 'standard') ? '标准' : String(id);
 }
 
-var TP_ICON = { standard: 'ri-stack-line', chat: 'ri-chat-smile-2-line', work: 'ri-briefcase-4-line', code: 'ri-code-s-slash-line', dev3d: 'ri-box-3-line', image: 'ri-image-line', writing: 'ri-quill-pen-line' };
-var TP_TONE = { standard: '#35c9a0', chat: '#8b93a1', work: '#5ad1c8', code: '#ffa657', dev3d: '#6ea8ff', image: '#e07bff', writing: '#ffb454' };
+var TP_ICON = { standard: 'ri-stack-line', chat: 'ri-chat-smile-2-line', minimal: 'ri-focus-3-line', work: 'ri-briefcase-4-line', code: 'ri-code-s-slash-line', dev3d: 'ri-box-3-line', image: 'ri-image-line', writing: 'ri-quill-pen-line' };
+var TP_TONE = { standard: '#35c9a0', chat: '#8b93a1', minimal: '#6b7280', work: '#5ad1c8', code: '#ffa657', dev3d: '#6ea8ff', image: '#e07bff', writing: '#ffb454' };
 
-var TP_SHORT = { standard: '标准', chat: '闲聊', work: '工作', code: '编程', dev3d: '3D', image: '生图', writing: '写作' };
+var TP_SHORT = { standard: '标准', chat: '闲聊', minimal: '极简', work: '工作', code: '编程', dev3d: '3D', image: '生图', writing: '写作' };
 /* 档位 → 徽标数据（话题列表 + 标题栏共用；没记录 = 默认标准档）
    short=列表短名 · label=带件数（标题栏用）· dim=标准档做淡 */
 function tpBadgeInfo(id) {

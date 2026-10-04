@@ -78,6 +78,18 @@ async def set_profile_default(payload: dict = Body(...), authorization: Optional
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
+def _bust_sp_cache():
+    """改档后清掉按档缓存的 system prompt。
+
+    BRO 2026-10-05：改完档位的层/厚度后，不带这行就得重启才生效。
+    """
+    try:
+        from daemon_runtime import _SP_CACHE
+        _SP_CACHE.clear()
+    except Exception:
+        pass
+
+
 @router.post("/profiles/override")
 async def save_builtin_override_ep(payload: dict = Body(...), authorization: Optional[str] = Header(None)):
     """wish-36ef3ea9 续 · 内置档编辑：把当前状态存成用户覆盖（升级永不覆盖 · 可还原出厂）。
@@ -93,6 +105,7 @@ async def save_builtin_override_ep(payload: dict = Body(...), authorization: Opt
             ok, err = clear_builtin_override(pid)
         else:
             ok, err = save_builtin_override(pid, payload)
+        _bust_sp_cache()
         return {"ok": True} if ok else {"ok": False, "error": err}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
@@ -106,6 +119,7 @@ async def update_preset_ep(payload: dict = Body(...), authorization: Optional[st
     try:
         from workers.tool_profiles import update_user_preset
         ok, err = update_user_preset(str(payload.get("id") or ""), payload)
+        _bust_sp_cache()
         return {"ok": True} if ok else {"ok": False, "error": err}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}
@@ -136,6 +150,7 @@ async def restore_preset_ep(payload: dict = Body(...), authorization: Optional[s
     try:
         from workers.tool_profiles import restore_user_preset
         ok, err = restore_user_preset(str(payload.get("id") or ""))
+        _bust_sp_cache()
         return {"ok": True} if ok else {"ok": False, "error": err}
     except Exception as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}"}

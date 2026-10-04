@@ -144,11 +144,16 @@
   .launch-ops::-webkit-scrollbar { width: 8px; }
   .launch-ops::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 4px; }
   .launch-ops > * { flex-shrink: 0; }
-  .launch-ops .lg-brand { margin-top: 44px; }
+  .launch-ops .lg-brandlock { margin-top: 44px; }
   .launch-ops .lg-first { margin-bottom: auto; }
   .lg-brand { font-size: 42px; font-weight: 800; letter-spacing: 0.02em; line-height: 1.1;
     background: linear-gradient(180deg, #f4f5ff 20%, #b9b3ff 80%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .lg-slogan { font-size: 12px; color: var(--muted); margin-top: 8px; font-style: italic; font-family: Georgia, serif; }
+  .lg-slogan { font-size: 12px; color: var(--muted); margin-top: 12px; font-style: italic; font-family: Georgia, serif; }
+  /* 品牌 logo：猴子图形 + 字标 横排并放 · 2026-10-05 · assets/logo-mark.png + logo-word.png */
+  /* 关键：宽自适应 —— .launch-ops 宽只有 46%，固定 264px 会超出容器导致左側截断 */
+  .lg-brandlock { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 100%; }
+  .lg-mark { width: 38px; height: 38px; object-fit: contain; mix-blend-mode: multiply; flex-shrink: 0; }
+  .lg-wordmark { display: block; height: 33px; width: auto; max-width: calc(100% - 46px); object-fit: contain; object-position: left center; mix-blend-mode: multiply; }
   .lg-actions { margin-top: 22px; }
   .btn-start { width: 100%; height: 52px; border-radius: 12px; border: none; cursor: pointer; font-family: inherit;
     font-size: 15px; font-weight: 700; color: #fff; letter-spacing: 1px;
@@ -283,7 +288,10 @@
           <button type="button" class="skin-pick" id="btnSkin">DAIMON</button>
         </div>
         <div class="launch-ops">
-          <div class="lg-brand" id="lgBrand">Daemonkey</div>
+          <div class="lg-brandlock">
+            <img class="lg-mark" src="../static/img/logo-mark.png" alt="">
+            <img class="lg-wordmark" src="../static/img/logo-word.png" alt="Daemonkey">
+          </div>
           <div class="lg-slogan" id="lgSlogan">an AI that lives with you.</div>
           <div class="lg-actions">
             <button class="btn-start" id="btnStart"><svg viewBox="0 0 24 24"><path d="M8 5 v14 l11 -7 Z"/></svg>启动 Daemonkey</button>

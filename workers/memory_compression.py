@@ -76,6 +76,7 @@ SUMMARY_TAG_OPEN  = "<compaction-summary>"
 SUMMARY_TAG_CLOSE = "</compaction-summary>"
 PRUNED_MARKER = "[已修剪工具结果 — "
 MIN_FOLD_TOKENS = 400            # 经济性: 可折叠区低于此 token 不值一次摘要调用
+TAIL_ANCHOR_MIN_CHECK = 3        # wish-6a7cedd5: 尾部放宽对齐时·至少连续几条命中才算锚 (防误锚)
 TAIL_TOKEN_BUDGET = _env_int("OPUS_COMPACT_TAIL_TOKENS", 16384)
 TAIL_MAX_WINDOW_FRAC = 0.5       # 尾部 token 预算不超窗口此比例
 PRUNE_MIN_CHARS = _env_int("OPUS_PRUNE_MIN_CHARS", 1024)
@@ -1199,12 +1200,32 @@ def _find_tail_anchor(disk: list[dict], tail: list[dict]) -> Optional[int]:
     t0 = _msg_key(tail[0])
     if t0 is None:
         return None
-    for i in range(len(disk) - len(tail), -1, -1):
+    # 一趟扫完 · 取【匹配最长】的候选 (code_review 2026-10-01 指出: 从末尾倒序命中即返回
+    # = 专挑证据最少的位置 —— 越靠后 min(len(tail), len(disk)-i) 越小, 尾部凑够
+    # TAIL_ANCHOR_MIN_CHECK 条同 key 就会锚错)。
+    # 严格遍(完整匹配)自然包含在内: k == len(tail) 时立即返回。
+    # 放宽遍 (wish-6a7cedd5): tail 取自【内存】折叠版 · 含本轮刚生成尚未落盘的消息
+    #   → 内存常比磁盘新。旧版只跑严格遍, len(tail) > len(disk) 时 range 上界变负
+    #   → 循环一次不进 → 返 None →「全量版尾部对齐失败 · 本次不写盘」
+    #   → 磁盘停在旧全量 → 水位只涨不落 (实测 119.5% · 前次同病灶 102.6%)。
+    #   这里只比对【磁盘里确实存在】的那一段, 尾部未落盘部分不参与。
+    best_i: Optional[int] = None
+    for i in range(len(disk) - 1, -1, -1):
         if _msg_key(disk[i]) != t0:
             continue
-        if all(_msg_key(disk[i + j]) == _msg_key(tail[j]) for j in range(len(tail))):
-            return i
-    return None
+        k = min(len(tail), len(disk) - i)
+        # i 倒序递减 → (len(disk)-i) 递增 → k 单调不减, 所以循环里【最后命中】的
+        # best_i 天然就是匹配最长的那个 (code_review 2026-10-01: 原 best_k 比较是死代码)。
+        _full = k >= len(tail)                 # 完整匹配 (老行为)
+        # 门槛只管【放宽匹配】(tail 尾部有未落盘消息那一类);
+        # 完整匹配不管多短都放行 —— 要不会把老场景(短 tail)一起干掉。
+        if not _full and k < TAIL_ANCHOR_MIN_CHECK:
+            continue
+        if all(_msg_key(disk[i + j]) == _msg_key(tail[j]) for j in range(k)):
+            if _full:
+                return i            # 完整匹配 = 证据最充分 · 直接命中
+            best_i = i
+    return best_i
 
 
 def _assemble_full_from_disk(messages2: list[dict], head: int, start: int,

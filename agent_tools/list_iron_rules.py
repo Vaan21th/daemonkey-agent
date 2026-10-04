@@ -149,7 +149,7 @@ def _run(args: dict) -> ToolResult:
     lines = [
         f"# 现有铁律 (共 {len(rules)} 条 · 加新铁律传 rule_number={rules[-1]['n'] + 1})",
         "",
-        "## 按 domain 分组 (wish-ff100836 卷四十六 II)",
+        "## 按 domain 分组",
         "",
     ]
     for dom in sorted(by_domain.keys()):

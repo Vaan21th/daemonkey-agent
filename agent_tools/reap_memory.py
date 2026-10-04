@@ -15,9 +15,12 @@
 """
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from . import TIER_AUTO, ToolResult, ToolSpec, register_tool
+
+logger = logging.getLogger(__name__)
 
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -40,6 +43,8 @@ def _run(args: dict) -> ToolResult:
         if _nb.exists():
             text = _nb.read_text(encoding="utf-8")
     except Exception:
+        # 留痕：静默吞会把「句柄坏了」伪装成「画像还没写」
+        logger.warning("reap_memory: 画像句柄读取失败 → 回落单文件兜底", exc_info=True)
         text = None
     if text is None:
         for fn in ("OWNER-NOTEBOOK.md", "BRO-NOTEBOOK.md"):

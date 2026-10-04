@@ -46,7 +46,7 @@ _AVAILABLE_SCENARIOS = (
 
 def _summarize(args: dict) -> str:
     name = (args.get("name") or "?").strip()
-    return f"读 scenario · {name} · 按需取场景化铁律细则 (wish-af1245d7 卷四十六 II)"
+    return f"读 scenario · {name} · 按需取场景化铁律细则"
 
 
 def _run(args: dict) -> ToolResult:

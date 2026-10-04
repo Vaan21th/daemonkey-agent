@@ -240,11 +240,10 @@ def _notebook_target_label() -> str:
     """回执里说清写到了哪 —— 一格一文件后落点是目录不是单文件（2026-09-30 wish-27273a5b）。"""
     try:
         from workers import notebook_store as _NS
-
-        if _NS.dir_exists(ROOT):
-            return "灵魂层 soul/notebook/（一格一文件）"
-    except Exception:
-        pass
+    except ImportError:
+        return OWNER_NOTEBOOK_FILENAME     # notebook_store 不在 = 真·老布局
+    if _NS.dir_exists(ROOT):
+        return "灵魂层 soul/notebook/（一格一文件）"
     return OWNER_NOTEBOOK_FILENAME
 
 
@@ -665,7 +664,7 @@ def _run_state(args: dict) -> ToolResult:
             f"{global_line}"
             f"  local   : {local_path.relative_to(ROOT)}\n"
             f"  flow    : 操作记录已追加到'改动记录'{fts_msg}{reload_msg}\n"
-            f"  effect  : 本 daemon 下一轮对话即刻带上 (卷五十四热重载)" +
+            f"  effect  : 本 daemon 下一轮对话即刻带上" +
             ("" if global_path else " · 全局目录回来后用 soul sync script 可补同步其他容器")
         ),
     )
@@ -992,7 +991,7 @@ def _run(args: dict) -> ToolResult:
             f"{global_line}"
             f"  local   : {local_path.relative_to(ROOT)}\n"
             f"  flow    : 操作记录已追加到'改动记录'{fts_msg}{reload_msg}\n"
-            f"  effect  : 本 daemon 下一轮对话即刻带上 (卷五十四热重载)" +
+            f"  effect  : 本 daemon 下一轮对话即刻带上" +
             ("" if global_path else " · 全局目录回来后用 soul sync script 可补同步其他容器")
         ),
     )

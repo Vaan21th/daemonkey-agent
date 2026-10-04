@@ -34,17 +34,22 @@ def _resolve_notebook() -> tuple[str, object]:
       拆格后**两个都不存在** → 回退值仍指老路径 → `condense_state_card`
       每 6h tick 直接返「notebook not found」→ 周度凝练静默停摆
       （daemon.log 20:01:28 有原话）。
-    改走 identity.OwnerNotebook：本模块只用 .exists() / .read_text()，
-    duck-type 刚好兼容，**下游一行不用改**。
-    """
-    try:
-        from identity import owner_notebook_path
+    改走 identity.OwnerNotebook：本模块只用 .exists() / .read_text() /
+    .write_text()，duck-type 刚好兼容，**下游一行不用改**。
 
-        nb = owner_notebook_path(ROOT / "soul")
-        return getattr(nb, "name", "OWNER-NOTEBOOK.md"), nb
-    except Exception:
-        p = ROOT / "soul" / "OWNER-NOTEBOOK.md"
-        return "OWNER-NOTEBOOK.md", p
+    ⚠ 2026-10-01 补：上一版这里写的是「本模块只用 .exists() / .read_text()」——
+    漏了同文件 554 行的 nb_path.write_text()（凝练产物落「已下沉」段）。
+    写那句注释时没 grep 本文件的全部调用点，于是拆格后它撞
+    `OwnerNotebook has no attribute write_text`，而异常被下面的
+    except 吃成 warning → 每 tick 失败、无人发现。写「下游不用改」之前，
+    先把「下游到底调了哪几个方法」grep 出来（手册：只装一个入口的闸是假闸）。
+    """
+    # 不兜底到硬编码单文件名：identity 是内核地基，导入失败 = 工程已崩，不该被静默兜住；
+    # 且兜底路径（soul/OWNER-NOTEBOOK.md）拆格后不存在 —— 兜住也只是让凝练静默空转。
+    from identity import owner_notebook_path
+
+    nb = owner_notebook_path(ROOT / "soul")
+    return getattr(nb, "name", "OWNER-NOTEBOOK.md"), nb
 
 
 NOTEBOOK_FILENAME, DEFAULT_NOTEBOOK = _resolve_notebook()

@@ -3551,6 +3551,18 @@ function Check-LauncherUpdate {
         if (-not $remoteVer) { return }
         $remoteVer = "v$remoteVer"
         if ($remoteVer -eq $localVer) { return }   # 2026-08-15 · 已最新静默 · 不刷屏
+        # 2026-10-05 · 只在【远端更新】时才覆盖。
+        #   旧 bug: 只判断 -ne，远端落后时会把本地新版【降级】覆盖。
+        #   实例: 本地 v1.0.3 vs gitee v1.0.2 → 判为"不同"→ 拉旧版盖掉本地改动。
+        #   版本号解析不了时宁可不覆盖（安全侧）。
+        try {
+            $rv = [version]($remoteVer -replace '^v', '')
+            $lv = [version]($localVer  -replace '^v', '')
+            if ($rv -le $lv) {
+                Add-Log "启动器本地 $localVer 不低于远端 $remoteVer · 跳过覆盖" 'info'
+                return
+            }
+        } catch { return }
         Add-Log "发现启动器新版: $localVer → $remoteVer · 下载中…" 'warn'
         $oldProxy2 = [System.Net.WebRequest]::DefaultWebProxy
         [System.Net.WebRequest]::DefaultWebProxy = $null

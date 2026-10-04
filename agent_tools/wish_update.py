@@ -267,7 +267,7 @@ SPEC = ToolSpec(
             },
             "dev_branch": {
                 "type": "string",
-                "description": "OPUS 改代码用的 git 分支名 (如 wish-58af621e/装压缩层)",
+                "description": "实施分支名 (如 feature/my-change)",
             },
             "diff_summary": {
                 "type": "string",

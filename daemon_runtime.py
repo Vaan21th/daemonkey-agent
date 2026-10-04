@@ -113,18 +113,28 @@ def sp_for_profile(pid) -> str:
         from workers.tool_profiles import profile_soul_layers, resolve_profile
         lay = profile_soul_layers(pid or "")
         _pid, toolset = resolve_profile(pid or "")
+        # ★ BRO 2026-10-05 报：闲聊档写着 thin、实际下发全量 —— 档位的 soul_thickness 从没被这里读过。
+        #   thin / full 必须走 load_soul；只有 "" / standard 才允许走零改动快路径。
+        _th = ""
+        try:
+            from workers.tool_profiles import profile_soul_thickness as _pst
+            _th = _pst(pid or "") or ""
+        except Exception:
+            _th = ""
         excl = set()
         if toolset:
             from agent_tools._tool_catalog import visible_names
             excl = set(visible_names(toolset))
-        if lay is None and not excl:
+        if lay is None and not excl and _th in ("", "standard"):
             return RUNTIME.system_prompt or ""
-        key = str(pid or "")
+        key = f"{pid or ''}|{_th}"      # 厚度进键：档改了不会拿到旧缓存
         hit = _SP_CACHE.get(key)
         if hit is not None:
             return hit
         from soul_loader import load_soul
-        sp = load_soul(layers=lay, catalog_exclude=excl or None).system_prompt
+        sp = load_soul(layers=lay,
+                       thickness=(_th if _th in ("thin", "companion") else None),   # thin/companion 生效·standard/full 保持原行为
+                       catalog_exclude=excl or None).system_prompt
         _SP_CACHE[key] = sp
         return sp
     except Exception:

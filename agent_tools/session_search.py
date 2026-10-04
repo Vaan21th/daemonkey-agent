@@ -227,7 +227,7 @@ SPEC = ToolSpec(
             "session_id": {
                 "type": "string",
                 "description": (
-                    "get 时必填 · search 时可选。格式: 'api-2026-05-26_014022_697694'"
+                    "get 时必填 · search 时可选。格式: 'api-<日期>_<时间>_<随机段>'"
                 ),
             },
             "since": {

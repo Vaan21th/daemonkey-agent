@@ -42,11 +42,8 @@ FEASIBILITY_DIR.mkdir(exist_ok=True)
 OPPORTUNITIES_FILE = DATA_DIR / "opportunities.json"
 
 # 主人画像笔记双读 (母体 BRO-NOTEBOOK / 开源版 OWNER-NOTEBOOK)·解析在 identity.py 单一真源
-try:
-    from identity import owner_notebook_path as _owner_notebook_path
-except Exception:
-    def _owner_notebook_path(soul_dir):
-        return Path(soul_dir) / "BRO-NOTEBOOK.md"
+# 不再兜底到硬编码单文件名（拆格后它已不存在 —— 兜住只是假成功）。
+from identity import owner_notebook_path as _owner_notebook_path
 
 logger = logging.getLogger("opus.feasibility")
 

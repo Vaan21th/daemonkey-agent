@@ -355,7 +355,7 @@ SPEC = ToolSpec(
             "session_id": {
                 "type": "string",
                 "description": (
-                    "Current session id (e.g. 'api-2026-05-26_063247_e404f8')。不知道就留空 — RUNTIME.session_id 自动 fallback。"
+                    "Current session id。不知道就留空 — RUNTIME.session_id 自动 fallback。"
                 ),
             },
             "tool_call_id": {

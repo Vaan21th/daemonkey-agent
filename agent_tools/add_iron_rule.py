@@ -37,7 +37,7 @@ from .list_iron_rules import BUDGET_TOK, parse_rules, read_rules_text
 ROOT = Path(__file__).resolve().parent.parent
 DAEMON_RULES_PATH = ROOT / "data" / "cognition" / "daemon_rules.md"
 DIARY_PATH = ROOT / "data" / "cognition" / "opus-diary.md"
-ANCHOR_LINE = "## 卷四十四的反面教材"
+ANCHOR_LINE = "## 反面教材"
 _WRITE_LOCK = threading.Lock()
 
 # 新装实例没有 daemon_rules.md (母体是历史积累才有的)。 而 soul_loader 只要文件存在就
