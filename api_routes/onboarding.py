@@ -77,9 +77,21 @@ def _load_env() -> dict:
     return env
 
 
+def _pick(env: dict, name: str) -> str:
+    """读配置：新名 DAEMONKEY_ 优先 · 旧名 OPUS_ 兜底。
+
+    2026-10-05 · 病根：save_key 走 write_public_env 写盘时·开源版 PUBLIC_ENV_PREFIX
+    是 "DAEMONKEY_" → .env 里落的是 DAEMONKEY_API_KEY；但本文件所有【读取】处
+    只找 OPUS_API_KEY → 读不到 → /api/onboarding/status 永远 has_key:false
+    → 用户填完 key 页面仍说"还没配置 key" → 初见卡死。
+    两库同源（本文件在白名单·port 会互相覆盖）· 故两端都按新名优先读取。
+    """
+    return (env.get("DAEMONKEY_" + name) or env.get("OPUS_" + name) or "").strip()
+
+
 def _has_key() -> bool:
     env = _load_env()
-    return bool(env.get("OPUS_API_KEY") and env.get("OPUS_BASE_URL"))
+    return bool(_pick(env, "API_KEY") and _pick(env, "BASE_URL"))
 
 
 def _max_tokens(model: str = "") -> int:
@@ -112,9 +124,9 @@ def _get_client():
     if _client is not None:
         return _client, _model
     env = _load_env()
-    api_key = env.get("OPUS_API_KEY")
-    base_url = env.get("OPUS_BASE_URL")
-    model = env.get("OPUS_MODEL") or "deepseek-chat"
+    api_key = _pick(env, "API_KEY")
+    base_url = _pick(env, "BASE_URL")
+    model = _pick(env, "MODEL") or "deepseek-chat"
     if not api_key or not base_url:
         return None, None
     from openai import OpenAI
@@ -186,8 +198,8 @@ def _run(messages: list):
         # 把服务端原文糊脸上用户看不懂 · 这里补一段可操作的排查提示(纯文本 · 不依赖前端渲染)。
         if "401" in msg or "Authentication" in msg:
             env = _load_env()
-            bu = env.get("OPUS_BASE_URL") or ""
-            mdl = env.get("OPUS_MODEL") or ""
+            bu = _pick(env, "BASE_URL")
+            mdl = _pick(env, "MODEL")
             msg = (
                 "模型服务拒绝了认证 (401)。请检查 .env 里的三行配置：\n"
                 f"- base_url（当前 = {bu or '未填'}）必须是你模型服务商的官方地址"
