@@ -245,7 +245,11 @@ def write_global_then_sync(filename: str, new_text: str, daemon_root: Path) -> t
         try:
             from workers import notebook_store as NS
 
-            if NS.dir_exists(daemon_root):
+            # 2026-10-05：判据 dir_exists → has_facts（与母体同修）。
+            #   首启落 14 格空骨架（目录在·格内只有注释）→ dir_exists 判成多格模式
+            #   → read_full 跳过空格 → 合成空 → 写入报 section not found（通道全哑）。
+            #   has_facts = 格子有真内容才算多格模式，与注入侧、identity 同一把尺子。
+            if NS.has_facts(daemon_root):
                 NS.write_full(daemon_root, new_text)
                 return None, daemon_root / SOUL_DIR_NAME / NS.NOTEBOOK_DIR
         except Exception:
@@ -279,7 +283,9 @@ def read_global_soul_file(filename: str, daemon_root: Path) -> str:
         try:
             from workers import notebook_store as NS
 
-            if NS.dir_exists(daemon_root):
+            # 2026-10-05：dir_exists → has_facts · 与写入侧同判据（见 write_global_then_sync）。
+            # 格子全空（首启骨架）→ has_facts=False → 回退读老单文件 · 内容不丢。
+            if NS.has_facts(daemon_root):
                 return NS.read_full(daemon_root)
         except Exception:
             pass   # 回退老路径
