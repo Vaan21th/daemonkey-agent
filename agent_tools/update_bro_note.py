@@ -247,7 +247,9 @@ def _notebook_target_label() -> str:
         from workers import notebook_store as _NS
     except ImportError:
         return OWNER_NOTEBOOK_FILENAME     # notebook_store 不在 = 真·老布局
-    if _NS.dir_exists(ROOT):
+    # 2026-10-05：判据 dir_exists → has_facts（与 soul_loader 读写两侧同尺子）。
+    # 首启骨架全空时 has_facts=False → 回执如实说落在 OWNER-NOTEBOOK.md。
+    if _NS.has_facts(ROOT):
         return "灵魂层 soul/notebook/（一格一文件）"
     return OWNER_NOTEBOOK_FILENAME
 
@@ -346,7 +348,13 @@ def _find_state_section(text: str) -> tuple[int, int]:
     返回 (start_idx, end_idx)，end 是下一个 '## ' 或文末。
     """
     label = _section_label("state", STATE_SECTION_MARKER)
-    m = re.search(r"(?m)^## " + re.escape(label) + r"[ \t]*$", text)
+    # 2026-10-05：容忍单文件时代的带序号写法 `## 〇、状态卡`。
+    #   半迁移场景（纯净版首启）：格空 → 读回退老单文件 → 段头还是 `## 〇、状态卡`
+    #   → 精确匹配 `## 状态卡` 找不到 → 写入照样失败。带序号前缀一起吃。
+    #   行尾锚必须留：`状态卡` 是 `状态卡变更史` 的前缀，裸子串会串段。
+    m = re.search(
+        r"(?m)^## (?:[〇一二三四五六七八九十]+、)?\s*" + re.escape(label) + r"[ \t]*$", text
+    )
     if not m:
         return -1, -1
     start = m.start()
