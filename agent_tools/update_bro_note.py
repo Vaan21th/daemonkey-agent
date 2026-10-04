@@ -74,7 +74,11 @@ SECTIONS: dict[str, tuple[str, ...]] = {
 FLOW_ORD = "近期更新流水"  # 按标题关键字匹配「## 七、近期更新流水」——保留其序号但匹配用关键字
 
 # 状态卡 · L2 易变尾巴 · 替换式更新（不进 SECTIONS 序号锚）
-STATE_SECTION_MARKER = "〇、状态卡"
+# 段头文案的真相源 = 格文件头的 label（拆格后 state.md 写的是 `label: 状态卡`）。
+# 这里的值只作**兜底**：老单文件布局 / 读不到 label 时用。别再把它当权威 ——
+# 2026-10-05 查实：老代码硬编码 `〇、状态卡`（单文件时代的带序号写法），拆格后段头
+# 改成 `状态卡` → 一个字段的差 → 整段定位不到 → state 写入 100% 失败。
+STATE_SECTION_MARKER = "状态卡"
 # 派生自内核单一真相源（2026-09-30 wish-6e6e561b）—— 此前这里手抄了一份，会分叉。
 from soul_loader import STATE_CARD_FIELDS as STATE_FIELDS  # noqa: E402
 
@@ -84,7 +88,8 @@ from soul_loader import STATE_CARD_FIELDS as STATE_FIELDS  # noqa: E402
 STATE_FIELD_ROOTS: tuple[str, ...] = (
     "工作", "作息", "健康", "情绪", "主线", "家庭", "经济", "预算", "忌口",
 )
-_STATE_SECTION_RE = re.compile(r"(?m)^## 〇、状态卡")
+# `_STATE_SECTION_RE` 已废（2026-10-05 wish-f923df3f）：状态卡段头从格文件头
+# 的 label 派生（见 _find_state_section），不再硬编码。段头再改名也自动跟上。
 STATE_HISTORY_MARKER = "状态卡变更史"
 _STATE_HISTORY_RE = re.compile(r"(?m)^## 状态卡变更史")
 
@@ -258,21 +263,64 @@ def _flow_preview(content: str, limit: int = 46) -> str:
     return s or "(空)"
 
 
+def _section_label(section: str, fallback: str = "") -> str:
+    """段头文案的真相源 = 格文件头的 `label`（拆格后它才是权威）。
+
+    为什么不能硬编码：拆格（2026-09-30 wish-27273a5b）后，合成文本里的段头由每格
+    frontmatter 的 label 拼出来。state.md 写的是 `label: 状态卡`，而老代码认
+    `〇、状态卡`（单文件时代的带序号写法）—— 一个字段的差就整段定位不到。
+    **从 label 派生 = 段头再改名也自动跟上**（铁律 15「根本不会发生」）。
+    读不到（老单文件布局 / 纯净版未 port）→ 回退 fallback。
+    """
+    try:
+        from workers import notebook_store as NS
+        lbl = NS.read_header(ROOT, section).get("label")
+        if lbl:
+            return str(lbl)
+    except Exception:
+        pass
+    return fallback
+
+
+def _flow_labels() -> tuple:
+    """流水段的定位候选（按序）：格文件头的 label 优先，再兜底旧名。
+
+    原来硬编码 `近期更新流水`（单文件时代 `## 七、近期更新流水` 的关键字），拆格后
+    那段叫 `改动记录（机器写的操作流水）` → 匹配不上 → `_append_to_flow` 静默
+    `return text`，**不报错**，流水一断 17 天（2026-09-18 → 10-05）没人发现。
+    """
+    out: list = []
+    lbl = _section_label("changelog", "")
+    if lbl:
+        out.append(lbl)
+    for fb in (FLOW_ORD, "改动记录"):
+        if fb and fb not in out:
+            out.append(fb)
+    return tuple(out)
+
+
 def _append_to_flow(text: str, section_key: str, operation: str, preview: str = "") -> str:
-    """在'近期更新流水'表格末尾追加一行。如果找不到流水段，原样返回。
+    """在流水表格末尾追加一行。
+
+    段不存在 / 段里还没表头时**都建出来**，别静默丢 —— 首启（changelog 还是空骨架）
+    时合成文本里根本没有这一段（`read_full` 跳过空格），原写法直接 `return text`，
+    第一次写入的流水就没了，且**不报错**。
 
     行里带一段内容预览·让 BRO / 下一根毛扫一眼就知道"这次记了啥"·
     而不是只看到 section=events (append) 这种看不懂的记录。
     """
-    flow_start, flow_end = _find_section(text, FLOW_ORD)
-    if flow_start < 0:
-        return text
-
+    labels = _flow_labels()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     detail = f"{section_key} ({operation})"
     if preview:
         detail += f"：{preview}"
     new_row = f"| {timestamp} | OPUS · update_owner_note | {detail} |"
+    _head = "| 时间 | 谁更新了 | 改了什么 |\n|---|---|---|"
+
+    flow_start, flow_end = _find_section(text, labels)
+    if flow_start < 0:
+        label = labels[0] if labels else "改动记录"
+        return text.rstrip() + f"\n\n## {label}\n\n{_head}\n{new_row}\n"
 
     # 找段内最后一个 "|" 开头的行：新表(只有表头+分隔行)插在分隔行后·老表插在最后一条数据后
     flow_body = text[flow_start:flow_end]
@@ -283,17 +331,22 @@ def _append_to_flow(text: str, section_key: str, operation: str, preview: str = 
             last_table_line = i
 
     if last_table_line < 0:
-        return text  # no table found, give up
-
-    # insert new row right after the last existing table row
-    lines.insert(last_table_line + 1, new_row)
+        lines = [lines[0], "", _head, new_row]   # 段在但一条表格行都没有 → 补表头
+    else:
+        lines.insert(last_table_line + 1, new_row)
     new_flow_body = "\n".join(lines)
     return text[:flow_start] + new_flow_body + text[flow_end:]
 
 
 def _find_state_section(text: str) -> tuple[int, int]:
-    """定位 `## 〇、状态卡` 段。返回 (start_idx, end_idx)，end 是下一个 '## ' 或文末。"""
-    m = _STATE_SECTION_RE.search(text)
+    """定位状态卡段。**段头文案从格文件头的 label 派生**（不再硬编码）。
+
+    用行尾锚而不是裸子串：`状态卡` 是 `状态卡变更史` 的前缀，裸匹配会串段
+    （这次侥幸靠段序没炸，但是脆的）。
+    返回 (start_idx, end_idx)，end 是下一个 '## ' 或文末。
+    """
+    label = _section_label("state", STATE_SECTION_MARKER)
+    m = re.search(r"(?m)^## " + re.escape(label) + r"[ \t]*$", text)
     if not m:
         return -1, -1
     start = m.start()
@@ -442,7 +495,7 @@ def _delete_state_field(state_field: str) -> ToolResult:
     sec_start, sec_end = _find_state_section(text)
     if sec_start < 0:
         return ToolResult(ok=False, output="",
-                          error=f"section '## {STATE_SECTION_MARKER}' not found")
+                          error=f"section '## {_section_label('state', STATE_SECTION_MARKER)}' not found")
     body = text[sec_start:sec_end]
     kept: list[str] = []
     removed = 0
@@ -529,17 +582,23 @@ def _run_state(args: dict) -> ToolResult:
     # ⚠ 涌现准入（2026-09-30 wish-6e6e561b）：字段名撞骨架词根 → 拒。
     # BRO：「我需要的是一直都是能在落位时候就知道该落哪，而不是我发现了之后你去搬」——
     # 这条判据就是「落位时就知道」：写的时候就被挡回骨架那格，不会拖到以后再去搬。
-    _hit = [r for r in STATE_FIELD_ROOTS if r in state_field]
-    if _hit:
-        return ToolResult(
-            ok=False,
-            output="",
-            error=(
-                f"state_field '{state_field}' 与骨架字段撞词根（{'/'.join(_hit)}）——"
-                f" 这是当下状态，请直接改那 8 个骨架字段之一；"
-                f"真要记 8 条之外的，换个不带这些词的名字（或者它根本该去 stories / about-user）"
-            ),
-        )
+    # FIX 2026-10-05（state 通道死锁）：骨架字段本身必须先放行。
+    # STATE_FIELD_ROOTS 的 9 个词根（工作/作息/健康/情绪/主线/家庭/经济/预算/忌口）
+    # **全部是 8 个骨架字段名的子串** —— 原写法把「工作状态」「情绪基线」「当前主线」…
+    # 也当成长尾字段拦下了，导致 state 写入 100% 失败（2026-09-30 上线后 5 天无人写成功）。
+    # 这个闸要治的只是「涌现长尾撞词根」（如「健康」撞「健康基线」），不是骨架自己。
+    if state_field not in STATE_FIELDS:
+        _hit = [r for r in STATE_FIELD_ROOTS if r in state_field]
+        if _hit:
+            return ToolResult(
+                ok=False,
+                output="",
+                error=(
+                    f"state_field '{state_field}' 与骨架字段撞词根（{'/'.join(_hit)}）——"
+                    f" 这是当下状态，请直接改那 8 个骨架字段之一；"
+                    f"真要记 8 条之外的，换个不带这些词的名字（或者它根本该去 stories / about-user）"
+                ),
+            )
 
     try:
         notebook_fn, text = _read_notebook()
@@ -562,7 +621,10 @@ def _run_state(args: dict) -> ToolResult:
         return ToolResult(
             ok=False,
             output="",
-            error=f"section '## {STATE_SECTION_MARKER}' not found in {notebook_fn}",
+            error=(
+                f"section '## {_section_label('state', STATE_SECTION_MARKER)}' not found in {notebook_fn}\n"
+                f"  该文本真实段头: {_real_headings(text)[:8]}"
+            ),
         )
 
     section_header = _section_header_line(text, sec_start)
@@ -743,13 +805,38 @@ def _run(args: dict) -> ToolResult:
             pass
 
     _meta = section_meta(section_key)
-    sec_start, sec_end = _find_section(text, _anchor_tbl[section_key])
+
+    def _keys(_sk: str) -> tuple:
+        """定位候选 = anchor 表 + 格文件头的 label。
+
+        拆格后合成文本里的段头是 label 拼出来的，不再是老段头 —— 两个都试才不会漏。
+        """
+        _ks = list(_anchor_tbl.get(_sk) or ())
+        _lbl = _section_label(_sk, "")
+        if _lbl and _lbl not in _ks:
+            _ks.append(_lbl)
+        return tuple(_ks)
+
+    sec_start, sec_end = _find_section(text, _keys(section_key))
+    if sec_start < 0:
+        # 段不存在 ≠ 写不了。
+        # 首启时该格只有出厂骨架（全是 HTML 注释），read_full 的 _clean_body 剥完就是空的
+        # → 跳过 → **合成文本里根本没有这一段** → _find_section 找不到 → 报错。
+        # 母体各格都有内容所以碰不到；纯净版首启（用户版）第一条画像就撞在这里。
+        # 治根：按格文件头的 label 把段头拼出来接在文末。
+        #   为什么必须用 label：write_full 靠 _label_map（label→格）反查段归属，
+        #   认不出的段头会**整段落进 demoted**（不注入·可召回）—— 那就等于没写进用户要的格。
+        #   label 是唯一真源，所以建出来的段拆得回去。
+        _lbl = _section_label(section_key, (_anchor_tbl[section_key] or (section_key,))[0])
+        text = text.rstrip() + f"\n\n## {_lbl}\n"
+        sec_start, sec_end = _find_section(text, _keys(section_key))
     if sec_start < 0:
         _heads = "；".join(_real_headings(text)) or "（这个文件一个 `## ` 段都没有）"
         return ToolResult(
             ok=False, output="",
             error=(
-                f"在 {notebook_fn} 里没找到「{' / '.join(_anchor_tbl[section_key])}」段。\n"
+                f"在 {notebook_fn} 里没找到「{' / '.join(_anchor_tbl[section_key])}」段，"
+                f"按格文件头 label（{_section_label(section_key, '(无)')}）建了也仍定位不到。\n"
                 f"  · 这格放什么：{_meta.what if _meta else '（未知格）'}\n"
                 f"  · 该文件真实有这些段：{_heads}"
             ),
