@@ -3432,6 +3432,10 @@ function Complete-MainWebView {
     try {
         $kind = [Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind]::Allow
         $wv.CoreWebView2.SetVirtualHostNameToFolderMapping('dk.assets', (Join-Path $script:Root 'assets'), $kind)
+        # 2026-10-05 · 品牌素材（logo-mark/logo-word）在 static/img/ 下·而 static 不在 dk.assets 的映射根里
+        #   → HTML 里写 ../static/img/... 会越出虚拟主机根 · 浏览器当 404 → 碎图（BRO 截图实证）
+        #   把 static/ 也挂一个虚拟主机 · HTML 用 https://dk.static/… 引用即可（复用白名单已有素材·不新增条目）
+        try { $wv.CoreWebView2.SetVirtualHostNameToFolderMapping('dk.static', (Join-Path $script:Root 'static'), $kind) } catch { Add-Log "dk.static 映射失败: $_" 'warn' }
         $mapped = $true
     } catch { Add-Log "虚拟目录映射失败: $_" 'warn' }
     try {

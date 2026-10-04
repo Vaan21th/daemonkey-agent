@@ -69,11 +69,16 @@ def _migrate_from_env() -> dict:
 
     .env 里没配 (新装机) · 也生成空骨架。
     """
-    api_key = (os.environ.get("ANTHROPIC_API_KEY")
+    # 2026-10-05 · 新名优先·旧名兼容（BRO 拍「保守稳定」）
+    #   纯净版用户在父进程环境里碰巧有 OPUS_API_KEY（装过旧版/别的工具设了同名）时·
+    #   旧逻辑会静默拿它当自己的 key 写进 provider_configs.json —— 用户完全不知道。
+    #   改成 DAEMONKEY_* 优先：只要 .env 里有过新名，就绝不出旧名。
+    api_key = (os.environ.get("DAEMONKEY_API_KEY")
+               or os.environ.get("ANTHROPIC_API_KEY")
                or os.environ.get("OPUS_API_KEY") or "").strip()
-    base_url = (os.environ.get("OPUS_BASE_URL") or "").strip()
-    model = (os.environ.get("OPUS_MODEL") or "").strip()
-    explicit_provider = (os.environ.get("OPUS_PROVIDER") or "").strip().lower()
+    base_url = (os.environ.get("DAEMONKEY_BASE_URL") or os.environ.get("OPUS_BASE_URL") or "").strip()
+    model = (os.environ.get("DAEMONKEY_MODEL") or os.environ.get("OPUS_MODEL") or "").strip()
+    explicit_provider = (os.environ.get("DAEMONKEY_PROVIDER") or os.environ.get("OPUS_PROVIDER") or "").strip().lower()
 
     if explicit_provider in ("openai", "anthropic"):
         provider_kind = explicit_provider
