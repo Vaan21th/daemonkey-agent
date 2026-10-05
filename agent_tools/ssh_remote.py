@@ -11,7 +11,7 @@ Daemonkey 通过 SSH 到社区客户/部署服务器跑只读诊断命令——
   Daemonkey 跑了哪条命令到哪台服务器。
 
 安全姿态（平衡型白名单）：
-  - host 必须在 OPUS_SSH_HOST_WHITELIST（默认 starway / caiman / aimanju）
+  - host 必须在 OPUS_SSH_HOST_WHITELIST（默认空 · 在 ~/.ssh/config 里配你的别名）
   - command 严格只读 verb 白名单（tail / cat / docker logs / systemctl status / ...）
   - 任何写命令拒绝（rm / mv / chmod / systemctl restart / docker exec / ...）
   - 任何 shell 组合拒绝（; && || > >> < $() 反引号）
@@ -339,8 +339,7 @@ SPEC = ToolSpec(
             "host": {
                 "type": "string",
                 "description": "SSH alias from ~/.ssh/config; must be in OPUS_SSH_HOST_WHITELIST. "
-                               "Defaults: starway (115.191.73.164) / caiman (14.103.52.52) / "
-                               "aimanju (39.96.116.53).",
+                               "Empty by default — set your own aliases first.",
             },
             "command": {
                 "type": "string",
