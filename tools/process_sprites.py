@@ -2,9 +2,9 @@
 tools/process_sprites.py  v0.2
 ==============================
 
-把 BRO 用 GPT-Image-2 / Gemini 3 跑出来的 sprite sheet 一键处理成桌宠能用的帧。
+把 用户 用 GPT-Image-2 / Gemini 3 跑出来的 sprite sheet 一键处理成桌宠能用的帧。
 
-v0.2 升级（2026-05-16 04:10，应对 BRO 实测出的真实 sprite 形态）：
+v0.2 升级（2026-05-16 04:10，应对 用户 实测出的真实 sprite 形态）：
   - 支持 **任意网格布局**（1×N 水平 / N×M 网格 / 不规则都能）
   - 行扫描 → row_segs；每行内列扫描 → cell_bboxes
   - **底对齐居中** —— 走路/坐下/睡觉等地面动作猫脚永远在画布底

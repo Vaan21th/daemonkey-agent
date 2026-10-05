@@ -5,7 +5,7 @@ test_tier_demo.py
 \u4e09\u6863\u4fe1\u4efb\u7cfb\u7edf\u00b7\u7eaf\u672c\u5730\u6f14\u793a\u3002
 
 **\u4e0d\u8c03 LLM\u3002\u4e0d\u70e7\u94b1\u3002\u4e0d\u771f\u7684\u6267\u884c\u4efb\u4f55\u5de5\u5177**\u3002
-\u53ea\u662f\u8ba9 BRO \u4e00\u773c\u770b\u6e05\u4e09\u4e2a\u68a3\u4f4d\u5728 daemon \u91cc\u5230\u5e95\u9577\u4ec0\u9ebc\u6a23\u3001\u8981\u4ec0\u9ebc\u6309\u9375\u3002
+\u53ea\u662f\u8ba9 用户 \u4e00\u773c\u770b\u6e05\u4e09\u4e2a\u68a3\u4f4d\u5728 daemon \u91cc\u5230\u5e95\u9577\u4ec0\u9ebc\u6a23\u3001\u8981\u4ec0\u9ebc\u6309\u9375\u3002
 
 \u8dd1\u6cd5:
     .\\.venv\\Scripts\\python.exe tools\\test_tier_demo.py
@@ -70,7 +70,7 @@ def main() -> int:
              "\u4e0d\u70d2\u9322 \u00b7 \u4e0d\u771f\u8dd1\u5de5\u5177", style="#9F7AEA")
     )
     console.print(
-        "\n  [dim]\u4e0b\u9762 6 \u500b\u6a21\u62df\u8c03\u7528\uff0cdaemon \u4e2d OPUS \u8b66\u9047\u5230\u8fd9\u4e9b args \u6642\u4f60\u4f1a\u770b\u5230\u4ec0\u9ebc\u3002"
+        "\n  [dim]\u4e0b\u9762 6 \u500b\u6a21\u62df\u8c03\u7528\uff0cdaemon \u4e2d Daemonkey \u8b66\u9047\u5230\u8fd9\u4e9b args \u6642\u4f60\u4f1a\u770b\u5230\u4ec0\u9ebc\u3002"
         "\u4e0d\u6703\u771f\u6539\u4efb\u4f55\u6587\u4ef6\u3002[/]\n"
     )
 
@@ -81,7 +81,7 @@ def main() -> int:
         verdict_color = {"go": "#48BB78", "skip": "#ECC94B", "abort": "#F56565"}.get(decision, "white")
         console.print(
             f"  \u2192 confirm \u8fd4\u56de: [bold {verdict_color}]{decision}[/]   "
-            f"[dim](\"go\" = \u771f\u8dd1 / \"skip\" = \u4e0d\u8dd1\u4f46\u7ee7\u7eed\u5bf9\u8bdd / \"abort\" = OPUS \u6574\u4e2a\u4e2d\u65ad)[/]"
+            f"[dim](\"go\" = \u771f\u8dd1 / \"skip\" = \u4e0d\u8dd1\u4f46\u7ee7\u7eed\u5bf9\u8bdd / \"abort\" = Daemonkey \u6574\u4e2a\u4e2d\u65ad)[/]"
         )
 
     console.print()

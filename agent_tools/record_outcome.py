@@ -181,7 +181,7 @@ def _run(args: dict) -> ToolResult:
         prefix = (
             "ℹ 没有字段变化 · 没写盘\n\n"
             if result.get("no_op")
-            else "✓ 已记录 · 下次 mine_opportunities 时 OPUS 会读到这条反馈\n\n"
+            else "✓ 已记录 · 下次 mine_opportunities 时 Daemonkey 会读到这条反馈\n\n"
         )
         return ToolResult(ok=True, output=prefix + _format_outcome(outcome))
 

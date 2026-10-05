@@ -5,7 +5,7 @@
 
 为什么有这个模块
 ------------------
-2026-06-09 用户做视频 8 小时的复盘结论: app 的 system_prompt 是自由文本 ·
+2026-06-09 用户 做视频 8 小时的复盘结论: app 的 system_prompt 是自由文本 ·
 LLM 每次自由发挥 · 质量漂移; 而 ui_form_schema 是硬 schema · 每次都填得稳。
 => 把"必须有哪些部分"做成硬结构 · "每部分写什么"留给 LLM 发挥。
 
@@ -216,7 +216,7 @@ def render_reject(errors: list[str], app_id: str | None) -> str:
         "## 动作\n"
         "(步骤化的执行流程)\n\n"
         "## 输出规范\n"
-        f"(产出一律写 data/workshop/outputs/{aid}/ · 命名规则 · 给用户的展示方式)\n\n"
+        f"(产出一律写 data/workshop/outputs/{aid}/ · 命名规则 · 给 用户 的展示方式)\n\n"
         "## 坑清单\n"
         "(踩过的坑 · 初建可写 '暂无' · 但段落必须在 · 以后迭代往这里沉淀)\n\n"
         "## 资产引用 (声明了 asset_slots 才需要)\n"

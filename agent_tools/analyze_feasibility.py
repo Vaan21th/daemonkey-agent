@@ -2,9 +2,9 @@
 agent_tools/analyze_feasibility.py
 ===================================
 
- · 可行性分析工具
+可行性分析工具
 
-把 OPUS 一句话推荐的"掘金机会"·深度展开成完整可行性分析。
+把 Daemonkey 一句话推荐的"掘金机会"·深度展开成完整可行性分析。
 
 档位：AUTO
   只读 opportunities.json + OWNER-NOTEBOOK · 只写 data/feasibility/ · 不外联
@@ -49,7 +49,7 @@ def _format_analysis(analysis: dict) -> str:
     ]
 
     # 补丁 · 信源段（宪法第 5 条 · 人机认知对齐）
-    # 把信源**放在最前面**——用户 应该先看到"这次分析基于什么信源"·再读 OPUS 的判断
+    # 把信源**放在最前面**——用户 应该先看到"这次分析基于什么信源"·再读 Daemonkey 的判断
     sources = analysis.get("sources") or {}
     radar_items = sources.get("radar_items") or []
     report_items = sources.get("reports") or []
@@ -76,7 +76,7 @@ def _format_analysis(analysis: dict) -> str:
         # 信源真的没找到·明确告诉 用户·别藏起来
         lines.append("## 📚 信源")
         lines.append("> **没找到相关雷达条目 / 报告** · 这次分析信源不足。 "
-                     "用户 建议：先让 OPUS 跑一份相关报告·或扩大雷达源·再回来重新分析。")
+                     "用户 建议：先让 Daemonkey 跑一份相关报告·或扩大雷达源·再回来重新分析。")
         lines.append("")
 
     risks = analysis.get("risks") or []
@@ -90,7 +90,7 @@ def _format_analysis(analysis: dict) -> str:
             )
         lines.append("")
 
-    #  · SWOT
+    # SWOT
     swot = analysis.get("swot") or {}
     if any(swot.get(k) for k in ("strengths", "weaknesses", "opportunities", "threats")):
         lines.append("## SWOT 分析")
@@ -107,7 +107,7 @@ def _format_analysis(analysis: dict) -> str:
                     lines.append(f"- {x}")
         lines.append("")
 
-    #  · 未来预期
+    # 未来预期
     outlook = analysis.get("future_outlook") or {}
     if any(outlook.get(k) for k in ("three_months", "six_months", "one_year")):
         lines.append("## 未来预期 · 按 用户 现实节奏")
@@ -119,7 +119,7 @@ def _format_analysis(analysis: dict) -> str:
             lines.append(f"- **12 个月**: {outlook['one_year']}")
         lines.append("")
 
-    #  · 成功路径
+    # 成功路径
     path = analysis.get("success_path") or {}
     stages = path.get("stages") or []
     if stages or path.get("end_state"):
@@ -184,7 +184,7 @@ def _format_analysis(analysis: dict) -> str:
     if analysis.get("go_no_go"):
         lines.append(f"## Go / No-Go\n\n{analysis.get('go_no_go')}\n")
 
-    #  · 闭环 outcome 状态
+    # 闭环 outcome 状态
     outcome = analysis.get("outcome") or {}
     if outcome:
         st = outcome.get("status", "not_started")
@@ -303,8 +303,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="analyze_feasibility",
     description=(
-        "把一个掘金机会展开成可行性分析。actions: analyze/list/load。用 opp_id 或 opp_index。可行性只给 用户看，须挂在机会上。"
-    ),
+        "把一个掘金机会展开成可行性分析。actions: analyze/list/load。用 opp_id 或 opp_index。可行性只给 用户看，须挂在机会上。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

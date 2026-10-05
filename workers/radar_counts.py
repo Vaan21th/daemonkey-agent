@@ -2,16 +2,16 @@
 workers/radar_counts.py
 =======================
 
-卷五十八续 X · 信息雷达计数的【唯一真相源】
+续 X · 信息雷达计数的【唯一真相源】
 
-背景 (BRO 2026-06-06):
+背景 (用户 2026-06-06):
   工程里曾有 4 套并行计数口径——日历格子 / 日详情 / 边栏角标 / 雷达页 tab·
   各算各的·到处对不上 (251 vs 10·139 vs 133·+13)。 这个模块把
   "一条雷达 item 算哪天、算不算可见、今天新增几条" 收敛成单一实现·
   所有 UI 都引用它·不再各算各的。
 
-口径 (BRO 2026-06-06 拍板 · 续 X 升级为首见台账):
-  - 可见 visible : radar.json 全量 − feedback==hidden (BRO 主动藏的不算)
+口径 (用户 2026-06-06 拍板 · 续 X 升级为首见台账):
+  - 可见 visible : radar.json 全量 − feedback==hidden (用户 主动藏的不算)
   - 归日 item_day: 首次见到 (radar_seen 台账) 优先 · fetched · published 兜底
   - 今日新增     : 首次见到落在【UTC 今天】(= 今天才冒出来的·非本轮抓取全部)
                   fetched_at 每轮刷新全重标·靠它会让"今日新增=刷新日全部"失真·
@@ -80,7 +80,7 @@ def _item_id(item: dict) -> str:
 def item_day(item: dict, *, seen_map: Optional[dict] = None) -> Optional[date]:
     """一条雷达 item 归到哪一天 · 首次见到(first_seen) 优先 · fetched · published 兜底。
 
-    卷五十八续 X · 全工程统一调这个 (历史上 calendar_view 用 fetched、info_value 用
+    续 X · 全工程统一调这个 (历史上 calendar_view 用 fetched、info_value 用
     published·又都没"首次见到"·埋了 251/139/+13 那堆坑)。
     seen_map 不传则自己加载 (单条调用方便·批量请传入避免每条都读盘)。
     """
@@ -159,7 +159,7 @@ def radar_stats(items: Optional[list[dict]] = None, *, today: Optional[str] = No
       - new_today           : 今天首次见到的可见条数 (全领域总和)
       - by_domain           : {domain: 可见条数} · 给雷达页分类 tab (修 139≠133)
       - new_today_by_domain : {domain: 今天首见条数} · 让"今日新增"能跟 tab 走
-                              (BRO 2026-06-06: 切领域时今日新增也该是该领域的·别全领域总和混一格)
+                              (用户 2026-06-06: 切领域时今日新增也该是该领域的·别全领域总和混一格)
     """
     vis = visible_items(items)
     seen_map = _first_seen_map()

@@ -56,7 +56,7 @@ def main() -> int:
     hr("[2] action=add (smoke test source)")
     r = spec.run({
         "action": "add",
-        "name": "OPUS Smoke Test Feed",
+        "name": "Daemonkey Smoke Test Feed",
         "url": "https://example.com/feed.xml",
         "category": "test",
         "max_items": 5,

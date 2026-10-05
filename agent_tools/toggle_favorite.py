@@ -2,7 +2,7 @@
 agent_tools/toggle_favorite.py
 ==============================
 
- · 统一收藏 / 取消收藏 NLP 工具
+统一收藏 / 取消收藏 NLP 工具
 
 支持收藏 2 类（雷达 ⭐ 走 tag_radar_item·这里不重复）：
   - opportunity · 掘金机会
@@ -170,7 +170,7 @@ def _run(args: dict) -> ToolResult:
         output=(
             f"{icon} · {_KIND_LABEL.get(kind, kind)} `{ref_id}`\n"
             f"  标题：{title_snap or '（没标题快照）'}\n"
-            f"  在收藏夹左侧栏「⭐ 收藏」入口可以一处看全 · 可能加这个入口"
+            f"  在收藏夹左侧栏「⭐ 收藏」入口可以一处看全"
         ),
     )
 

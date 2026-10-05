@@ -1,7 +1,7 @@
 """workers/polling_runner.py
 ==============================
 
-卷四十六 III 补丁 5 · Y8 · scripted app async polling 框架 · 2026-05-26
+III 补丁 5 · Y8 · scripted app async polling 框架 · 2026-05-26
 
 为什么需要这个
 ----------------
@@ -12,7 +12,7 @@
   GET  /v1/query/abc-123 (3s 后) → {status: "Processing"}  等
   GET  /v1/query/abc-123 (10s 后) → {status: "Success", video_url: "..."}
 
-现状 http_executor 只支持单次请求 · OPUS 想接入 Hailuo / Runway / Replicate
+现状 http_executor 只支持单次请求 · Daemonkey 想接入 Hailuo / Runway / Replicate
 这类 API · 必须在 LLM 里自己手动 polling — token 浪费 + 体验差。
 
 Y8 给一个**结构化 polling 框架** · 在 exec_template 里加 `polling` 字段 ·
@@ -26,7 +26,7 @@ http_executor 检测到就委托给本模块跑完整 polling loop · LLM 看到
 - **不引入 asyncio**: 同步 polling (time.sleep) · 跟 http_executor 用的同款
   requests 库 · 复杂度低。 异步留下个 wish
 - **不做线程并行**: 一个 polling 阻塞 _chat_impl 这个 turn · 加 cancel_event
-  支持 (BRO 点 stop 时能中断)
+  支持 (用户 点 stop 时能中断)
 - **succeeded / failed / continue 三态**: 用 status_path 取出来的值跟
   succeeded_values / failed_values 比 · 其他算 continue
 - **超时**: max_attempts (默认 60) + timeout_sec (默认 300) · 取早到的

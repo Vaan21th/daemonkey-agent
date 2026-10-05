@@ -40,7 +40,11 @@ def _run(args: dict) -> ToolResult:
 
     query = (args.get("query") or "").strip().lower()
     detailed = bool(args.get("detailed"))
-    limit = int(args.get("limit") or 50)
+    try:
+        limit = int(args.get("limit") or 50)
+    except (TypeError, ValueError):
+        limit = 50
+    limit = max(1, min(limit, 50))
 
     try:
         flows = list_flows(max_items=200)

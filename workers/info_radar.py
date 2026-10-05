@@ -94,6 +94,20 @@ logger = logging.getLogger("opus.radar")
 
 
 # ---------------------------------------------------------------------------
+# 实例渲染 helper（{AI}/{OWNER} 令牌 → 本实例的名字 · 缺省值实例 = no-op）
+# ---------------------------------------------------------------------------
+
+
+def _loc(s: str) -> str:
+    """领域文案出网前过实例渲染（缺省值实例 no-op · 自有名字的实例换名）。"""
+    try:
+        from identity import localize
+        return localize(s or "")
+    except Exception:
+        return s or ""
+
+
+# ---------------------------------------------------------------------------
 # 数据结构
 # ---------------------------------------------------------------------------
 
@@ -151,7 +165,7 @@ DOMAIN_META: dict[str, dict] = {
         "label": "自我演化",
         "icon": "🔧",
         "color": "#63b3ed",
-        "description": "GitHub 同类工程 · OPUS 的镜像参考 · 看到好东西就自己学过来",
+        "description": "GitHub 同类工程 · {AI} 的镜像参考 · 看到好东西就自己学过来",
     },
 }
 
@@ -437,10 +451,10 @@ def list_domains() -> list[dict]:
     for did, meta in DOMAIN_META.items():
         out.append({
             "id": did,
-            "label": meta["label"],
+            "label": _loc(meta["label"]),
             "icon": meta["icon"],
             "color": meta["color"],
-            "description": meta["description"],
+            "description": _loc(meta["description"]),
             "sources_count": src_counts.get(did, 0),
             "items_count": item_counts.get(did, 0),
         })
@@ -670,6 +684,33 @@ def _atomic_write(path: Path, content: str) -> None:
     atomic_write_text(path, content, backup=False)
 
 
+def _seed_sources() -> list[dict]:
+    """出厂种子 · 按实例裁剪：母体=全量 / 开源版=只 self-evolve 基建源（内容源由用户在初见里自建）。"""
+    try:
+        from identity import INSTANCE_KIND
+        _open = INSTANCE_KIND == "open"
+    except Exception:
+        _open = False
+    if _open:
+        return [dict(s) for s in DEFAULT_SOURCES if s.get("domain") == "self-evolve"]
+    return [dict(s) for s in DEFAULT_SOURCES]
+
+
+def _apply_open_seed_removals() -> None:
+    """开源版全新实例：出厂不带 4 个母体起始域（用户之后可自建 · add_domain 会清记账恢复）。"""
+    try:
+        from identity import INSTANCE_KIND
+        if INSTANCE_KIND != "open":
+            return
+    except Exception:
+        return
+    if DOMAINS_REMOVED_FILE.exists():
+        return
+    _save_removed_domains(["ai", "super-individual", "game-money", "wildcard"])
+    for slug in ("ai", "super-individual", "game-money", "wildcard"):
+        DOMAIN_META.pop(slug, None)
+
+
 def _load_sources_file() -> list[dict]:
     """读 sources.json · 不存在则写入默认 + 返回
 
@@ -677,16 +718,18 @@ def _load_sources_file() -> list[dict]:
     如果在用户的 sources.json 里缺失·自动补上（避免 BRO 升级后 GitHub 源没出现）
     """
     if not SOURCES_FILE.exists():
+        _seed = _seed_sources()
+        _apply_open_seed_removals()
         _atomic_write(
             SOURCES_FILE,
             json.dumps(
-                {"version": 1, "sources": DEFAULT_SOURCES},
+                {"version": 1, "sources": _seed},
                 ensure_ascii=False,
                 indent=2,
             ),
         )
-        logger.info("created default sources.json with %d sources", len(DEFAULT_SOURCES))
-        return list(DEFAULT_SOURCES)
+        logger.info("created default sources.json with %d sources", len(_seed))
+        return _seed
     try:
         data = json.loads(SOURCES_FILE.read_text(encoding="utf-8"))
         sources = list(data.get("sources", []))
@@ -705,7 +748,7 @@ def _load_sources_file() -> list[dict]:
         return sources
     except Exception as e:
         logger.error("sources.json corrupt; falling back to defaults: %s", e)
-        return list(DEFAULT_SOURCES)
+        return _seed_sources()
 
 
 def _save_sources(sources: list[dict]) -> None:
@@ -812,7 +855,7 @@ def remove_source(source_id: str, *, force: bool = False) -> dict:
             if s.get("system_required") and not force:
                 raise PermissionError(
                     f"source '{source_id}' 是 system_required · 不允许删除 · "
-                    "这些源是 OPUS 监控同类工程必需的 · 想停用可以 update enabled=False"
+                    "这些源是监控同类工程必需的 · 想停用可以 update enabled=False"
                 )
             removed = sources.pop(i)
             _save_sources(sources)
@@ -1339,7 +1382,7 @@ def load_radar() -> dict:
             "sources_meta": [],
             "items": [],
             "note": "radar not yet generated · run `python -m workers.info_radar` "
-                    "or 跟 OPUS 说 \u300c刷新雷达\u300d",
+                    "or 说 \u300c刷新雷达\u300d",
         }
     try:
         return json.loads(RADAR_FILE.read_text(encoding="utf-8"))

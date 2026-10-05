@@ -2,7 +2,7 @@
 agent_tools/open_app.py
 =======================
 
-帮 用户 启动桌面应用——他说"开 Cursor"/"打开微信"/"启动 Chrome"，OPUS 直接调。
+帮 用户 启动桌面应用——他说"开 Cursor"/"打开微信"/"启动 Chrome"，Daemonkey 直接调。
 
 实现：
   - 内置 用户 常用 app 的快捷别名 → 真实路径表

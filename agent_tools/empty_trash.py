@@ -1,7 +1,7 @@
 """agent_tools/empty_trash.py
 =============================
 
- K stage 2c++ · wish-6fd76512 · 真删回收站项目·不可恢复
+K stage 2c++ · wish-6fd76512 · 真删回收站项目·不可恢复
 
 **为什么有这个工具**:
     软删 (delete_app_to_trash) 把 app 移到 _trash · 仍然占磁盘。 30 天后清理 / 用户
@@ -128,8 +128,7 @@ def _classify(args: dict) -> str:
 _SPEC = ToolSpec(
     name="empty_trash",
     description=(
-        "永久删除回收站项目，不可恢复。等 用户明确说永久删再调。传 target_id 或 kind（app/flow/all），不能两个都给。"
-    ),
+        "永久删除回收站项目，不可恢复。等 用户明确说永久删再调。传 target_id 或 kind（app/flow/all），不能两个都给。"    ),
     tier=TIER_GUARD,
     input_schema={
         "type": "object",

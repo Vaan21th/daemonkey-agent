@@ -5,8 +5,8 @@
 
 为什么不强制问每次都问
 ------------------------
-"跑一次问一次要不要沉淀" 会变成骚扰 · 跟用户说"不要打扰"是迟早的事。 真正需要被提醒
-的是 *打磨型* 场景: 用户在反复试同一个 app / 同一条 flow · 而没有 update_app 把这次改进
+"跑一次问一次要不要沉淀" 会变成骚扰 · 跟 用户 说"不要打扰"是迟早的事。 真正需要被提醒
+的是 *打磨型* 场景: 用户 在反复试同一个 app / 同一条 flow · 而没有 update_app 把这次改进
 固化回去——这就是 2026-06-09 那场视频事故的形状(三版声音克隆只钉住废的第一版)。
 
 实现思路
@@ -27,7 +27,7 @@
 --------------
 - 持久化 = 跨重启记忆 = 老问题没人沉淀仍卡在那里反复提示 · 反而更烦
 - daemon 重启意味着新一轮工作 · 重新计数即可
-- 真要持久化 · changelog/asset history 已经在那 · 助手自己回顾就行
+- 真要持久化 · changelog/asset history 已经在那 · Daemonkey 自己回顾就行
 """
 
 from __future__ import annotations
@@ -36,8 +36,10 @@ import time
 from typing import Optional
 
 # 内存状态 (进程级 · daemon 启动归零)
-_app_runs: dict[str, list[float]] = {}   # aid -> 最近 N 次跑的时间戳 (秒)
-_flow_dones: dict[str, dict] = {}         # fid -> {run_id, at}
+# wish-run-anchor (2026-09-29): 值里带 session_id · 渲染时只出本场发起的。
+# 之前只有时间戳 · A 对话跑 app、B 对话 30 分钟内也会收到提示。
+_app_runs: dict[str, list[tuple[float, str]]] = {}   # aid -> [(时间戳, sid)]
+_flow_dones: dict[str, dict] = {}         # fid -> {run_id, at, session_id}
 _suppress_until: dict[str, float] = {}    # key -> 抑制到何时 (epoch sec)
 
 _TRIGGER_APP_RUNS = 3
@@ -49,25 +51,25 @@ def _now() -> float:
     return time.time()
 
 
-def note_app_run(aid: str) -> None:
+def note_app_run(aid: str, session_id: str = "") -> None:
     """app_runner 跑完调 · 失败永不抛"""
     if not aid:
         return
     try:
         cutoff = _now() - _TRIGGER_WINDOW
-        hist = [t for t in _app_runs.get(aid, []) if t >= cutoff]
-        hist.append(_now())
+        hist = [(t, s) for (t, s) in _app_runs.get(aid, []) if t >= cutoff]
+        hist.append((_now(), str(session_id or "")))
         _app_runs[aid] = hist[-10:]  # 只留最近 10 次足够判定
     except Exception:
         pass
 
 
-def note_flow_done(fid: str, run_id: str) -> None:
+def note_flow_done(fid: str, run_id: str, session_id: str = "") -> None:
     """flow_runner 跑完调"""
     if not fid:
         return
     try:
-        _flow_dones[fid] = {"run_id": run_id, "at": _now()}
+        _flow_dones[fid] = {"run_id": run_id, "at": _now(), "session_id": str(session_id or "")}
     except Exception:
         pass
 
@@ -97,16 +99,22 @@ def _flow_brief(fid: str) -> Optional[dict]:
         return None
 
 
-def build_closure_hint() -> str:
-    """主对话每轮 workshop_hint 内部调 · 返回拼进 system prompt 的提示段(无候选则空)"""
+def build_closure_hint(session_id: str = "") -> str:
+    """主对话每轮 workshop_hint 内部调 · 返回拼进 system prompt 的提示段(无候选则空)
+
+    wish-run-anchor (2026-09-29): session_id 非空 → 只出本场发起的 app / flow。
+    之前 A 对话跑了 app · B 对话 30 分钟内也会收到「该沉淀了」的提示。
+    """
     lines: list[str] = []
     now = _now()
+    sid = str(session_id or "")
 
     # 1. 反复跑某个 app
     for aid, hist in list(_app_runs.items()):
-        if len(hist) < _TRIGGER_APP_RUNS:
+        mine = [t for (t, s) in hist if (not sid) or s == sid]
+        if len(mine) < _TRIGGER_APP_RUNS:
             continue
-        if (now - hist[-1]) > _TRIGGER_WINDOW:
+        if (now - mine[-1]) > _TRIGGER_WINDOW:
             continue
         if _is_suppressed(f"app:{aid}"):
             continue
@@ -114,7 +122,7 @@ def build_closure_hint() -> str:
         name = (app or {}).get("name") or aid
         cur_v = (app or {}).get("version") or "?"
         lines.append(
-            f"- app `{aid}` 「{name}」(v{cur_v}) 在这 30 分钟内跑了 {len(hist)} 次 · "
+            f"- app `{aid}` 「{name}」(v{cur_v}) 在这 30 分钟内跑了 {len(mine)} 次 · "
             f"如果调出了好版本 · `update_app(aid={aid}, change_note=...)` 把改进固化回去 / "
             f"如果产出值得留 (声音/IP/参考) · `manage_app_asset(action=set, app_id={aid}, ...)` 沉淀进资产表"
         )
@@ -122,6 +130,8 @@ def build_closure_hint() -> str:
 
     # 2. flow 跑完
     for fid, info in list(_flow_dones.items()):
+        if sid and (info.get("session_id") or "") != sid:
+            continue
         if _is_suppressed(f"flow:{fid}"):
             continue
         if (now - info["at"]) > _TRIGGER_WINDOW:

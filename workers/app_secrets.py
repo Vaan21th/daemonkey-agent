@@ -2,16 +2,16 @@
 workers/app_secrets.py
 ======================
 
-卷四十四 K stage 2c++ · wish-96ee1b52 · App secret 安全存储
+K stage 2c++ · wish-96ee1b52 · App secret 安全存储
 
 为什么有这个模块
 ------------------
-daemon OPUS 装 API 应用时需要 KEY (例如 GPT Image 走 aipg.work · 需要 sk-xxx)。
-之前没有这个机制·daemon OPUS 唯一选择是把 KEY 明文写进 data/workshop/apps/<app>.json·
+daemon Daemonkey 装 API 应用时需要 KEY (例如 GPT Image 走 aipg.work · 需要 sk-xxx)。
+之前没有这个机制·daemon Daemonkey 唯一选择是把 KEY 明文写进 data/workshop/apps/<app>.json·
 KEY 直接进 git history / session jsonl / system_prompt = 三重暴露。
 
-这是规则 gap · 不是 OPUS 偷懒 (BRO 2026-05-25 18:42 一句话点中):
-  - .env 是 GUARD tier · daemon OPUS 不能直接写
+这是规则 gap · 不是 Daemonkey 偷懒 (用户 2026-05-25 18:42 一句话点中):
+  - .env 是 GUARD tier · daemon Daemonkey 不能直接写
   - 没 secret store 工具 · 他只能把 KEY 写 app json
   - 给他工具 · 而不是骂他 · 这才是教练应该做的
 
@@ -19,14 +19,14 @@ KEY 直接进 git history / session jsonl / system_prompt = 三重暴露。
 ----
 - 文件: data/workshop/secrets/<app_id>.json (gitignored · 不 commit)
 - 数据: {"app_id": "...", "secrets": {"name": "value", ...}}
-- daemon OPUS 通过 app_set_secret / app_list_secrets 工具操作
-- daemon OPUS **不能直接读 secret 真值** — 真值用 ${secret:app-xxx:name} placeholder
+- daemon Daemonkey 通过 app_set_secret / app_list_secrets 工具操作
+- daemon Daemonkey **不能直接读 secret 真值** — 真值用 ${secret:app-xxx:name} placeholder
   在 shell_exec 里走 env 注入 · 子进程才能 resolve 拿到 · LLM context 永远只看 placeholder
 
 跟 provider_configs.py 的关系
 -------------------------------
 - provider_configs 管 daemon 自己的 LLM client config (含 LLM API key)
-- app_secrets 管 daemon OPUS 造的 app 用的第三方 KEY
+- app_secrets 管 daemon Daemonkey 造的 app 用的第三方 KEY
 - 两者隔离: daemon 自己的 KEY 通过 .env (受 GUARD 锁保护) · app 的 KEY 走这里
 - 共用 _atomic_write 模式 · 但不互相 import (避免循环 + 概念隔离)
 """
@@ -46,8 +46,8 @@ SECRETS_DIR = ROOT / "data" / "workshop" / "secrets"
 # ── 内部 atomic write ────────────────────────────────────────
 
 def _atomic_write(path: Path, content: str) -> None:
-    """卷四十六 III · wish-badd4 收编到 safe_write
-    app_secrets.json 是 BRO 自建 app 的 API key·丢了找不回·backup=True"""
+    """III · wish-badd4 收编到 safe_write
+    app_secrets.json 是 用户 自建 app 的 API key·丢了找不回·backup=True"""
     from .safe_write import atomic_write_text
     atomic_write_text(path, content, backup=True)
 
@@ -89,7 +89,15 @@ def _load(app_id: str) -> dict:
     try:
         data = json.loads(fp.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        # 文件坏了 · 重置 (BRO 重要 KEY 丢了至少能看到清空 · 而不是静默错值)
+        # B-① · 2026-08-27 · 损坏时先备份再重置 · 防 set_secret 覆盖丢其它 KEY (Grok 全量审计)
+        try:
+            import shutil
+            import time as _t
+            bak = fp.with_name(f"{fp.stem}.corrupt-{int(_t.time())}{fp.suffix}")
+            shutil.copy2(fp, bak)
+        except Exception:
+            pass
+        # 文件坏了 · 重置 (用户 重要 KEY 丢了至少能看到清空 · 而不是静默错值)
         return {"app_id": app_id, "secrets": {}}
     if not isinstance(data, dict) or "secrets" not in data:
         return {"app_id": app_id, "secrets": {}}
@@ -148,7 +156,7 @@ def get_secret(app_id: str, secret_name: str) -> Optional[str]:
       - 不把返回值 commit 进 git
       - 不写到 session jsonl
 
-    daemon OPUS 通过 agent_tools 调用时**不会**直接拿到 value · 只会拿到 placeholder。
+    daemon Daemonkey 通过 agent_tools 调用时**不会**直接拿到 value · 只会拿到 placeholder。
     真 resolve 发生在 daemon 内部 (shell_exec 的 env 注入路径)。
     """
     app_id = _validate_app_id(app_id)

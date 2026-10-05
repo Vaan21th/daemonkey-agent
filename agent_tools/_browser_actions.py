@@ -11,10 +11,12 @@ browser_act 的动作分发——把网页动作（点/填/等/读/下载/收/�
 from __future__ import annotations
 
 import datetime as dt
+import json
+import re
 from pathlib import Path
 
 from . import ToolResult
-from ._browser import pick_page
+from ._browser import peeking, pick_page
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -22,18 +24,55 @@ DEFAULT_TIMEOUT_MS = 10000
 SHOT_DIR = PROJECT_ROOT / "sessions" / "screenshots"
 DOWNLOAD_ROOT = PROJECT_ROOT / "sessions" / "downloads"
 
-READONLY_ACTIONS = {"read", "wait", "screenshot", "inspect"}
+READONLY_ACTIONS = {"read", "wait", "screenshot", "inspect", "eval"}
 
 _MEDIA_EXTS = (".png", ".jpeg", ".jpg", ".webp", ".gif", ".mp4", ".webm")
 
 
+def _clamp_timeout_ms(raw) -> int:
+    try:
+        n = int(raw if raw is not None else DEFAULT_TIMEOUT_MS)
+    except (TypeError, ValueError):
+        raise ValueError("timeout_ms 必须是整数毫秒")
+    return max(1000, min(n, 600_000))
+
+
+def _sandbox_dir(raw, default: Path) -> Path:
+    """下载目录必须落在工程根内。"""
+    if raw:
+        p = Path(str(raw))
+        if not p.is_absolute():
+            p = PROJECT_ROOT / p
+        p = p.resolve()
+    else:
+        p = default.resolve()
+    try:
+        p.relative_to(PROJECT_ROOT.resolve())
+    except ValueError:
+        raise ValueError(f"路径越界: {p}")
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def _safe_prefix(raw: str) -> str:
+    name = Path(str(raw or "img").strip() or "img").name
+    name = re.sub(r"[^A-Za-z0-9_\-\u4e00-\u9fff]", "_", name)[:40]
+    return name or "img"
+
+
 def _save_shot(page, tag: str) -> str:
-    """给当前页截图（兜底取证用）。返回相对路径或空串。"""
+    """给当前页截图（兜底取证用）。返回相对路径或空串。
+
+    2026-09-20 · 专属浏览器常态是「收着的」，而最小化窗口没有合成帧 —— 直接截会
+    超时（原生 30s）甚至挂死（CDP）。peeking 把窗口临时展开到屏幕外（不激活、
+    看不见）截完就收回，截图可靠且不打扰 用户。
+    """
     try:
         SHOT_DIR.mkdir(parents=True, exist_ok=True)
         ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
         out = SHOT_DIR / f"act_{tag}_{ts}.png"
-        page.screenshot(path=str(out))
+        with peeking():
+            page.screenshot(path=str(out), timeout=12000)
         return str(out.relative_to(PROJECT_ROOT))
     except Exception:
         return ""
@@ -58,7 +97,11 @@ def dispatch(browser, args: dict) -> ToolResult:
     text = (args.get("text") or "").strip()
     value = args.get("value")
     key = (args.get("key") or "").strip()
-    timeout = int(args.get("timeout_ms") or DEFAULT_TIMEOUT_MS)
+    timeout_raw = args.get("timeout_ms")
+    try:
+        timeout = _clamp_timeout_ms(timeout_raw)
+    except ValueError as e:
+        return ToolResult(ok=False, output="", error=str(e))
 
     need_new = action == "goto"
     page = pick_page(browser, url_contains, create_if_missing=need_new)
@@ -67,10 +110,9 @@ def dispatch(browser, args: dict) -> ToolResult:
             ok=False, output="",
             error="Edge 里没有可操作的标签页。先用 action=goto 开一个，或在 Edge 里手动打开目标网站。",
         )
-    try:
-        page.bring_to_front()
-    except Exception:
-        pass
+    # 2026-09-20 · 不再 bring_to_front：Playwright 全程走 CDP，点击/填表/截图都不依赖
+    # OS 前台焦点；而它会 activateTarget → 把最小化的专属窗口还原并抢 用户 的前台
+    # （实测坐实）。要看窗口时 用户 自己点任务栏即可。
 
     if action == "goto":
         url = (args.get("url") or "").strip()
@@ -156,6 +198,32 @@ def dispatch(browser, args: dict) -> ToolResult:
         except Exception as e:
             return _fallback(page, action, f"等不到 {selector!r}: {type(e).__name__}")
 
+    if action == "eval":
+        # 2026-10-01 (wish-94b2546b) · 执行自定义 JS 并回传结果。
+        # 补上这个能力之前，验 UI 拿计算样式只能自己上 playwright + 猜 CDP 端口，
+        # 结果连到了 用户 的主浏览器(9222)弹标签抢他前台。能力长在工具上，就不必自己找路。
+        js = str(value or "").strip()
+        if not js:
+            return ToolResult(
+                ok=False, output="",
+                error=(
+                    'eval 需要把 JS 放进 value 字段。例：value="document.title" · '
+                    'value="() => getComputedStyle(document.body).color" · '
+                    '多行要写成 IIFE：value="() => { const a=1; return a; }"'
+                ),
+            )
+        try:
+            raw = page.evaluate(js)
+        except Exception as e:
+            return _fallback(page, action, f"JS 执行失败: {type(e).__name__}: {e}")
+        try:
+            out = json.dumps(raw, ensure_ascii=False, default=str)
+        except Exception:
+            out = repr(raw)
+        if len(out) > 8192:
+            out = out[:8192] + f"...[截断·原长 {len(out)} 字符]"
+        return ToolResult(ok=True, output=out)
+
     if action == "read":
         try:
             if selector:
@@ -186,8 +254,13 @@ def dispatch(browser, args: dict) -> ToolResult:
         return ToolResult(ok=True, output=f"截图已存: {shot}\npage: {page.url}")
 
     if action == "download":
-        dl_dir = Path(args.get("download_dir") or (DOWNLOAD_ROOT / dt.date.today().isoformat()))
-        dl_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            dl_dir = _sandbox_dir(
+                args.get("download_dir"),
+                DOWNLOAD_ROOT / dt.date.today().isoformat(),
+            )
+        except ValueError as e:
+            return ToolResult(ok=False, output="", error=str(e))
         try:
             with page.expect_download(timeout=max(timeout, 30000)) as info:
                 if selector:
@@ -197,15 +270,19 @@ def dispatch(browser, args: dict) -> ToolResult:
                 else:
                     return ToolResult(ok=False, output="", error="download 需要触发下载的 selector 或 text")
             dl = info.value
-            out = dl_dir / dl.suggested_filename
+            fname = Path(dl.suggested_filename or "download.bin").name
+            out = (dl_dir / fname).resolve()
+            out.relative_to(dl_dir.resolve())
             dl.save_as(str(out))
+        except ValueError as e:
+            return ToolResult(ok=False, output="", error=f"下载路径越界: {e}")
         except Exception as e:
             return _fallback(page, action, f"下载没触发/超时: {type(e).__name__}")
         return ToolResult(ok=True, output=f"已下载: {out}\n文件夹: {dl_dir}（可直接打开）")
 
     if action == "harvest":
         sel = selector or "img"
-        prefix = (args.get("name_prefix") or "img").strip() or "img"
+        prefix = _safe_prefix(args.get("name_prefix") or "img")
         try:
             srcs = page.eval_on_selector_all(
                 sel, "els => els.map(e => e.currentSrc || e.src || '').filter(Boolean)"
@@ -216,8 +293,13 @@ def dispatch(browser, args: dict) -> ToolResult:
         urls = [s for s in srcs if s.startswith("http") and not (s in seen or seen.add(s))]
         if not urls:
             return _fallback(page, action, f"{sel!r} 没匹配到可下载的图/视频(src)")
-        dl_dir = Path(args.get("download_dir") or (DOWNLOAD_ROOT / dt.date.today().isoformat()))
-        dl_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            dl_dir = _sandbox_dir(
+                args.get("download_dir"),
+                DOWNLOAD_ROOT / dt.date.today().isoformat(),
+            )
+        except ValueError as e:
+            return ToolResult(ok=False, output="", error=str(e))
         saved, failed = [], 0
         for u in urls:
             try:

@@ -256,7 +256,9 @@ def _batch_translate(client, model: str, batch: list[dict]) -> dict[int, dict]:
     raw = ""
     try:
         from daemon_runtime import bg_max_tokens
-        resp = client.chat.completions.create(
+        from daemon_provider import chat_create_safe  # K3 等模型 temperature 硬限制 · 自动降级
+        resp = chat_create_safe(
+            client,
             model=model,
             max_tokens=bg_max_tokens(),
             temperature=0.3,

@@ -2,16 +2,16 @@
 workers/session_search.py
 =========================
 
-卷四十六 II · wish-2a92774d · hermes 风格 L2 session 聚合搜索
+II · wish-2a92774d · hermes 风格 L2 session 聚合搜索
 
 设计动机:
   现状: workers/memory_index.py 已经把 sessions/*.jsonl 全部 index 进 FTS5 (每条
         message 成一个 chunk · 1221 chunks · scope='sessions' 也能搜)。
-  缺口: 搜出来是 message-level 碎片 · 没按 session 分组聚合 · BRO 看不出
+  缺口: 搜出来是 message-level 碎片 · 没按 session 分组聚合 · 用户 看不出
         "X session 在 5/23 谈了什么 · 跟 5/26 哪个 session 同主题"。
 
 本模块在 memory_index 之上做 hermes L2 增强:
-  1. session 列表 + metadata 提取 (创建时间 / 第一句 BRO message / msg 数)
+  1. session 列表 + metadata 提取 (创建时间 / 第一句 用户 message / msg 数)
   2. since/until 时间过滤
   3. 单 session 全 message 拉取 (LLM 想看某 session 完整上下文时)
   4. 按 session 聚合的搜索 (1 个 session 多 matched_messages · 不是 N 个孤立碎片)
@@ -247,11 +247,14 @@ def search_in_sessions(
     conn.execute("PRAGMA journal_mode=WAL")
 
     # 走 FTS5 · 只看 source='session' · 用 BM25 rank 排序 (修 wish-1c229865 顺带发现的 latent bug · 之前 FTS5 path 失败 · 跑 LIKE fallback)
+    # wish-189cab52 (墨言模块 13) · MATCH 列限定: FTS5 表 3 列 (content_tok/source/section)·
+    # 裸扫全列会让元数据词 ('assistant'/'tool') 命中 source/section 污染召回。
+    # 这里 query 走短语包裹 ("<q>") · 列限定 content_tok : "<q>" 是合法 FTS5 语法·安全。
     sql = """
         SELECT c.source, c.section, c.content, c.updated_at, memory_fts.rank
         FROM memory_fts
         JOIN memory_chunks c ON memory_fts.rowid = c.id
-        WHERE memory_fts MATCH ? AND c.source = 'session'
+        WHERE memory_fts MATCH 'content_tok : ' || ? AND c.source = 'session'
         ORDER BY memory_fts.rank
         LIMIT 500
     """
@@ -330,11 +333,14 @@ def search_in_sessions(
 # ─── stats / 自检 ──────────────────────────────────────────────────────────
 
 def get_session_stats() -> dict:
-    """sessions/ 统计 · daemon 启动时 / BRO 查 `sessions 多少 jsonl 多少 message` 时用。"""
+    """sessions/ 统计 · daemon 启动时 / 用户 查 `sessions 多少 jsonl 多少 message` 时用。"""
     if not SESSIONS_DIR.exists():
         return {"sessions_dir_exists": False, "total_sessions": 0}
 
     files = list(SESSIONS_DIR.glob("*.jsonl"))
+    # 刀5 (wish-a5f77893 · 2026-09-16): 顺带统计归档规模 (归档已进索引 · 让"历史有多少"可见)
+    _archive_dir = SESSIONS_DIR / "archive"
+    _arch_files = list(_archive_dir.glob("*.jsonl")) if _archive_dir.exists() else []
     total_msg = 0
     total_bytes = 0
     earliest = None
@@ -375,5 +381,7 @@ def get_session_stats() -> dict:
         "size_mb": round(total_bytes / 1024 / 1024, 2),
         "earliest_session_at": earliest or "",
         "latest_session_at": latest or "",
+        "archive_files": len(_arch_files),
+        "archive_mb": round(sum(f.stat().st_size for f in _arch_files) / 1024 / 1024, 1) if _arch_files else 0.0,
         "index": index_stats,
     }

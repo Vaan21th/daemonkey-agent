@@ -2,17 +2,17 @@
 agent_tools/monthly_review.py
 =============================
 
- II · wish-bf190d9c · 月度复盘工具 (用户 6/23 第一次截止)
+II · wish-bf190d9c · 月度复盘工具 (用户 6/23 第一次截止)
 
 用户 2026-05-23 15:50 A1 决议:
   - 5/23 → 6/23 作为第一次月度 review · 不凑自然月
-  - OPUS 6/15-6/20 起 B2 review 工具 (= 本工具)
+  - Daemonkey 6/15-6/20 起 B2 review 工具 (= 本工具)
   - 6/22 起草 review 草稿
   - 6/23 跟 用户 一起 review
 
 档位: TIER_CONFIRM
   - draft mode 调 LLM 跑 4 块产物 (~$0.15-0.30) · 写入 data/reviews/<period_end>-draft.md
-  - final mode 把 用户 批注合并 · 写入 -final.md (不自动改 OWNER-NOTEBOOK · 由 OPUS 之后手动调 update_bro_note 合并)
+  - final mode 把 用户 批注合并 · 写入 -final.md (不自动改 OWNER-NOTEBOOK · 由 Daemonkey 之后手动调 update_bro_note 合并)
 
 actions:
   - draft    · 起草新月度复盘 (默认)
@@ -69,7 +69,6 @@ def _run(args: dict) -> ToolResult:
         generate_monthly_review,
         render_review_markdown,
         save_review_draft,
-        save_review_final,
         list_reviews,
     )
 
@@ -148,7 +147,7 @@ def _run(args: dict) -> ToolResult:
                 f"1. **直接打开文件**: `{path.relative_to(ROOT)}` (任何 .md 编辑器都行 · 推荐 Typora / VSCode)\n"
                 f"2. **浏览器**: 用 daemon endpoint · `GET /reviews/preview/{path.name}` 拿 markdown · 或 `GET /reviews/file/{path.name}` 下载 (需 token)\n"
                 f"\n"
-                f"用户 边读边批注 (4 个批注区已留空) · 完成后跟 OPUS 说 『把批注合并归档』 · OPUS 调 "
+                f"用户 边读边批注 (4 个批注区已留空) · 完成后跟 Daemonkey 说 『把批注合并归档』 · Daemonkey 调 "
                 f"`monthly_review` action=final + annotations='...' 归档 final 版。"
             )
             return ToolResult(ok=True, output=summary)
@@ -168,31 +167,15 @@ def _run(args: dict) -> ToolResult:
                 )
             draft_text = draft_path.read_text(encoding="utf-8")
 
-            review_stub = {
-                "period_start": "see-draft",
-                "period_end": period_end,
-                "generated_at": datetime.now(timezone.utc).isoformat(),
-                "blocks": {
-                    "bro_notebook_changes": {
-                        "file": "see draft",
-                        "period": "see draft",
-                        "commit_count": 0,
-                        "lines_added": 0,
-                        "lines_removed": 0,
-                        "commits": [],
-                    },
-                    "capability_snapshot": "(see draft)",
-                    "engineering_milestones": "(see draft)",
-                    "next_month_advice": "(see draft)",
-                },
-            }
-            final_path = save_review_final(review_stub, annotations)
-            (ROOT / "data" / "reviews" / f"{period_end}-final.md").write_text(
+            md = (
                 draft_text.replace("status=draft", "status=final")
                 + "\n\n---\n\n## 用户 实际批注 (final)\n\n"
-                + (annotations or "_(空)_"),
-                encoding="utf-8",
+                + (annotations or "_(空)_")
             )
+            final_path = ROOT / "data" / "reviews" / f"{period_end}-final.md"
+            tmp = final_path.with_suffix(".md.tmp")
+            tmp.write_text(md, encoding="utf-8")
+            tmp.replace(final_path)
 
             return ToolResult(
                 ok=True,
@@ -204,7 +187,7 @@ def _run(args: dict) -> ToolResult:
                     f"- 批注长度: {len(annotations)} 字\n"
                     f"\n"
                     f"⚠ **注意**: 当前 final 不自动改 soul/OWNER-NOTEBOOK.md (避免脚本 bug 损坏灵魂层) · "
-                    f"OPUS 之后看 用户 批注 · 手动调 `update_bro_note` 工具把"
+                    f"Daemonkey 之后看 用户 批注 · 手动调 `update_bro_note` 工具把"
                     f"下月建议 / 月度 summary 段合并回 OWNER-NOTEBOOK。\n"
                     f"\n"
                     f"🔴 **对账闭环最后一棒**: 合并完 · 调 `monthly_review` action=reflow period_end={period_end} 盖回流戳 · "
@@ -266,8 +249,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="monthly_review",
     description=(
-        "月度复盘。actions: draft 起草 / final 归档 / reflow 回流画像 / list / load。产物落 data/reviews/，不在报告库。细则：read_scenario('reflection')。"
-    ),
+        "月度复盘。actions: draft 起草 / final 归档 / reflow 回流画像 / list / load。产物落 data/reviews/，不在报告库。细则：read_scenario('reflection')。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

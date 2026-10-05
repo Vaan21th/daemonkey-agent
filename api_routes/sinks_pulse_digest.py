@@ -39,27 +39,41 @@ router = APIRouter()
 
 
 # ────────────────────────────────────────────────────────────────
-# 沉淀位地图 (wish-149eab3f · 16 文件沉淀位 + 1 虚拟「记忆库」)
+# 沉淀位地图 (wish-149eab3f · 18 文件沉淀位 + 1 虚拟「记忆库」)
+# 2026-09-17 加: prefix (完整前缀逐字快照) / structure (层定义单一真相源)
 # virtual=True 的位不是单文件·而是 FTS5 索引聚合 (卷五十八续 · 接通血管收尾)
+#
+# `inject` = 这个沉淀位**进不进当前这轮的前缀**（BRO 2026-09-17: “进前缀的，能不能标注个标识”）
+#   · "full"  每轮全文进前缀（逐字命中缓存）
+#   · "excerpt" 只进一部分（最近 N 条 / 截节）· 磁盘上比注入的大得多
+#   · "map"   不进正文 · 只在前缀里留一句指路
+#   · "recall" 不进前缀 · 靠 recall_memory / catalog_search 按需取
+#   · "none"  完全不在上下文 · 纯工程/归档文档
+# 单一真相源: soul/SKILL.md 不在 · 看 soul_loader.SECTION_MARKS + STRUCTURE.md
 # ────────────────────────────────────────────────────────────────
 SINKS: dict[str, dict] = {
-    "roadmap":           {"layer": "route",     "label": "ROADMAP",          "path": "ROADMAP.md",                       "role": "路线决策"},
-    "captains-log":      {"layer": "history",   "label": "CAPTAINS-LOG",     "path": ".cursor/CAPTAINS-LOG.md",          "role": "工程史"},
-    "sink-map":          {"layer": "meta",      "label": "SINK-MAP",         "path": ".cursor/SINK-MAP.md",              "role": "沉淀位地图"},
-    "decisions":         {"layer": "meta",      "label": "DECISIONS",        "path": ".cursor/DECISIONS.md",             "role": "BRO 拍板归档"},
-    "next-moves":        {"layer": "meta",      "label": "NEXT-MOVES",       "path": ".cursor/NEXT-MOVES.md",            "role": "短期看板 (半 archive)"},
-    "self-evolution":    {"layer": "soul",      "label": "SELF-EVOLUTION",   "path": "soul/SELF-EVOLUTION.md",           "role": "OPUS 演化档案"},
-    "bro-notebook":      {"layer": "soul",      "label": "BRO-NOTEBOOK",     "path": "soul/BRO-NOTEBOOK.md",             "role": "BRO 6 维画像"},
-    "opus-memories":     {"layer": "soul",      "label": "OPUS-MEMORIES",    "path": "soul/OPUS-MEMORIES.md",            "role": "OPUS 自传"},
-    "skill":             {"layer": "soul",      "label": "SKILL",            "path": "soul/SKILL.md",                    "role": "OPUS 角色入口"},
-    "memory":            {"layer": "memory",    "label": "记忆库",            "path": "<live:fts5>",                      "role": "FTS5 跨会话记忆 · 对话摘要", "virtual": True},
-    "product-design":    {"layer": "docs",      "label": "PRODUCT-DESIGN",   "path": "docs/PRODUCT-DESIGN.md",           "role": "产品宪法"},
-    "architecture":      {"layer": "docs",      "label": "ARCHITECTURE",     "path": "docs/ARCHITECTURE.md",             "role": "工程架构"},
-    "memory-architecture": {"layer": "docs",    "label": "MEMORY-ARCHITECTURE", "path": "docs/MEMORY-ARCHITECTURE.md",   "role": "记忆架构"},
-    "daemon-guide":      {"layer": "docs",      "label": "DAEMON-GUIDE",     "path": "docs/DAEMON-GUIDE.md",             "role": "daemon 用户指南"},
-    "quickstart":        {"layer": "docs",      "label": "QUICKSTART",       "path": "docs/QUICKSTART.md",               "role": "故障排查"},
-    "agents":            {"layer": "entry",     "label": "AGENTS",           "path": "AGENTS.md",                        "role": "下根毛入口"},
-    "readme":            {"layer": "entry",     "label": "README",           "path": "README.md",                        "role": "公开门面"},
+    "roadmap":            {"layer": "route",     "label": "ROADMAP",          "path": "ROADMAP.md",                       "role": "路线决策",              "inject": "none"},
+    "prefix":             {"layer": "meta",      "label": "PREFIX",           "path": "data/cognition/PREFIX.md",         "role": "完整前缀 · 逐字全文快照", "inject": "none"},
+    "structure":          {"layer": "meta",      "label": "STRUCTURE",        "path": "data/cognition/STRUCTURE.md",      "role": "沉淀位结构 · 层定义（单一真相源）", "inject": "full"},
+    "captains-log":       {"layer": "history",   "label": "CAPTAINS-LOG",     "path": ".cursor/CAPTAINS-LOG.md",          "role": "工程史",                "inject": "none"},
+    "sink-map":           {"layer": "meta",      "label": "SINK-MAP",         "path": ".cursor/SINK-MAP.md",              "role": "沉淀位地图",            "inject": "none"},
+    "decisions":          {"layer": "meta",      "label": "DECISIONS",        "path": ".cursor/DECISIONS.md",             "role": "{OWNER} 拍板归档",          "inject": "none"},
+    "next-moves":         {"layer": "meta",      "label": "NEXT-MOVES",       "path": ".cursor/NEXT-MOVES.md",            "role": "短期看板 (半 archive)",   "inject": "none"},
+    "self-evolution":     {"layer": "soul",      "label": "SELF-EVOLUTION",   "path": "soul/SELF-EVOLUTION.md",           "role": "{AI} 演化档案",         "inject": "recall"},
+    # 2026-09-30 wish-27273a5b · 画像拆成一格一文件后，这里挂「目录位」（kind=dir）：
+    #   列表显示 14 格各自的字节/行数，预览合成 14 格全文。
+    #   旧写法指 `soul/BRO-NOTEBOOK.md` 单文件 —— 文件已删，卡片显示 0.0 KB 却还报 5098 tok。
+    "notebook":           {"layer": "soul",      "label": "OWNER-NOTEBOOK",  "path": "soul/notebook/",                 "role": "画像 · 一格一文件",     "kind": "dir", "inject": "excerpt"},
+    "opus-memories":      {"layer": "soul",      "label": "{AI}-MEMORIES",    "path": "soul/OPUS-MEMORIES.md",            "role": "{AI} 自传",             "inject": "recall"},
+    "skill":              {"layer": "soul",      "label": "IDENTITY",        "path": "soul/IDENTITY.md",               "role": "{AI} 角色入口 (2026-09-17 由 SKILL.md 改名)", "inject": "excerpt"},
+    "memory":             {"layer": "memory",    "label": "记忆库",            "path": "<live:fts5>",                      "role": "FTS5 跨会话记忆 · 对话摘要", "virtual": True, "inject": "recall"},
+    "product-design":     {"layer": "docs",      "label": "PRODUCT-DESIGN",   "path": "docs/PRODUCT-DESIGN.md",           "role": "产品宪法",              "inject": "none"},
+    "architecture":       {"layer": "docs",      "label": "ARCHITECTURE",     "path": "docs/ARCHITECTURE.md",             "role": "工程架构",              "inject": "none"},
+    "memory-architecture": {"layer": "docs",    "label": "MEMORY-ARCHITECTURE", "path": "docs/MEMORY-ARCHITECTURE.md",   "role": "记忆架构",              "inject": "none"},
+    "daemon-guide": {"layer": "docs",      "label": "DAEMON-GUIDE","path": "docs/DAEMON-GUIDE.md",        "role": "daemon 用户指南",       "inject": "none"},
+    "quickstart":         {"layer": "docs",      "label": "QUICKSTART",       "path": "docs/QUICKSTART.md",               "role": "故障排查",              "inject": "none"},
+    "agents":             {"layer": "entry",     "label": "AGENTS",           "path": "AGENTS.md",                        "role": "传承入口",            "inject": "none"},
+    "readme":             {"layer": "entry",     "label": "README",           "path": "README.md",                        "role": "公开门面",              "inject": "none"},
 }
 
 
@@ -77,8 +91,11 @@ def _resolve_sink(slug: str) -> "tuple[dict, Path]":
 
 # ── 虚拟「记忆库」沉淀位 (卷五十八续 · 让 recall_memory 的库在面板里看得见) ──
 _MEM_SOURCE_LABELS = {
-    "BRO-NOTEBOOK": "📖 BRO 画像", "SELF-EVOLUTION": "📝 OPUS 演化档案",
-    "OPUS-MEMORIES": "🧬 OPUS 自传", "SKILL": "⚙️ 灵魂入口",
+    # 2026-09-30 wish-27273a5b · 拆格后画像索引 source 统一叫 OWNER-NOTEBOOK；
+    # 旧名保留（旧索引残留/老用户那条路都还会出现）—— 否则新身显示成原始 source 串。
+    "OWNER-NOTEBOOK": "📖 人物画像", "BRO-NOTEBOOK": "📖 {OWNER} 画像",
+    "SELF-EVOLUTION": "📝 {AI} 演化档案",
+    "OPUS-MEMORIES": "🧬 {AI} 自传", "SKILL": "⚙️ 灵魂入口",
     "session": "💬 对话记录", "session_summary": "🧠 对话摘要",
     "skill": "🛠️ playbook",
 }
@@ -97,12 +114,103 @@ def _memory_stats() -> dict:
         return {"stats": {"error": str(e), "total_chunks": 0, "by_source": []}, "size": 0, "mtime": 0}
 
 
+def _injected_tokens(slug: str) -> int:
+    """这个沉淀位**实际进前缀**有多少 tok（不是磁盘文件大小）。
+
+    单一真相源 = soul_loader.load_soul() 的真实拼装结果 —— 按 slug 对应的段头切。
+    不在前缀里的（map / recall / none）返 0。
+    """
+    _SEG = {
+        "structure": "structure", "skill": "identity",
+        "opus-memories": "memories", "notebook": "notebook",
+        "self-evolution": "evolution",
+    }
+    key = _SEG.get(slug)
+    if not key:
+        return 0
+    try:
+        import tiktoken
+        from soul_loader import load_soul, SECTION_MARKS as _SM
+        sp = load_soul(ROOT).system_prompt
+        mark = _SM.get(key, "")
+        if not mark:
+            return 0
+        i = sp.find(mark)
+        if i < 0:
+            return 0
+        end = len(sp)
+        for _k, _m in _SM.items():
+            if _m == mark:
+                continue
+            j = sp.find(_m, i + 1)
+            if 0 <= j < end:
+                end = j
+        return len(tiktoken.get_encoding("cl100k_base").encode(sp[i:end]))
+    except Exception:
+        return 0
+
+
+def _dir_sink_files(d: Path) -> list[dict]:
+    """目录位的成员清单（一个格一个 .md）· 行数/字节/是否进前缀都逐格算。"""
+    if not (d.exists() and d.is_dir()):
+        return []
+    out = []
+    try:
+        from workers.notebook_store import INJECT_SECTIONS
+        inj = set(INJECT_SECTIONS)
+    except Exception:
+        inj = set()
+    for f in sorted(d.glob("*.md")):
+        try:
+            st = f.stat()
+            n = sum(1 for _ in f.open(encoding="utf-8", errors="replace"))
+        except Exception:
+            continue
+        out.append({"name": f.stem, "bytes": st.st_size, "lines": n,
+                    "inject": f.stem in inj})
+    return out
+
+
+def _render_notebook_markdown() -> str:
+    """灵魂层画像 · 14 格预览：先一张清单表（哪格进前缀），再逐格全文。"""
+    d = ROOT / "soul" / "notebook"
+    fs = _dir_sink_files(d)
+    n_inj = sum(1 for x in fs if x["inject"])
+    L = ["# 灵魂层 · 画像（一格一文件）", "",
+         f"_`soul/notebook/` 下每格一个独立 `.md` —— 文件边界即格边界。"
+         f"标 **⚡** 的 {n_inj} 格进每轮前缀；其余只列 label 在「已归档的历史层」，靠 `recall_memory` 召回（**全文一字未删**）。_",
+         "",
+         "| 格 | 进前缀 | 行 | 字节 |", "|---|---|---|---|"]
+    for x in fs:
+        L.append("| `%s` | %s | %d | %s |" % (x["name"], "⚡" if x["inject"] else "—",
+                                                x["lines"], format(x["bytes"], ",")))
+    L += ["", "---", ""]
+    for x in fs:
+        f = d / (x["name"] + ".md")
+        try:
+            body = f.read_text(encoding="utf-8", errors="replace").strip()
+        except Exception:
+            body = "(读不出来)"
+        L += [f"## {x['name']}" + ("  ⚡ 进前缀" if x["inject"] else ""), "", body, ""]
+    return "\n".join(L)
+
+
+def _loc(s: str) -> str:
+    """沉淀位文案出网前过实例渲染：{AI}/{OWNER} 令牌 → 本实例的名字 (缺省值实例 = no-op)。"""
+    try:
+        from identity import localize
+        return localize(s or "")
+    except Exception:
+        return s or ""
+
+
 def _virtual_sink_item(slug: str, meta: dict) -> dict:
     """给虚拟沉淀位拼 /sinks 列表项 (字段对齐文件位·前端通用渲染不用区分)。"""
     base = {
-        "slug": slug, "label": meta["label"], "role": meta["role"],
+        "slug": slug, "label": _loc(meta["label"]), "role": _loc(meta["role"]),
         "layer": meta["layer"], "path": meta["path"],
         "exists": False, "size_bytes": 0, "mtime": 0, "lines": 0,
+        "inject": meta.get("inject", "none"), "injected_tokens": 0,
     }
     if slug == "memory":
         m = _memory_stats()
@@ -110,7 +218,7 @@ def _virtual_sink_item(slug: str, meta: dict) -> dict:
         total = st.get("total_chunks", 0)
         by = {r["source"]: r["chunks"] for r in st.get("by_source", [])}
         summ = by.get("session_summary", 0)
-        role = f"{meta['role']} · {total} 片段"
+        role = _loc(meta['role']) + f" · {total} 片段"
         if summ:
             role += f" · {summ} 摘要"
         base.update({"role": role, "exists": total > 0, "size_bytes": m["size"], "mtime": m["mtime"]})
@@ -127,7 +235,7 @@ def _render_memory_markdown(max_summaries: int = 12) -> str:
         lines.append(f"> <i class='ri-error-warning-fill'></i> {st['error']}")
         lines.append("")
     lines += [
-        f"_OPUS 用 `recall_memory` 工具能搜到的长期记忆 · 索引片段总数 **{total}**_",
+        f"_{{AI}} 用 `recall_memory` 工具能搜到的长期记忆 · 索引片段总数 **{total}**_",
         "",
         "## 各来源分布",
         "",
@@ -135,7 +243,7 @@ def _render_memory_markdown(max_summaries: int = 12) -> str:
         "|---|---|---|",
     ]
     for r in st.get("by_source", []):
-        lab = _MEM_SOURCE_LABELS.get(r["source"], r["source"])
+        lab = _loc(_MEM_SOURCE_LABELS.get(r["source"], r["source"]))
         lines.append(f"| {lab} | {r['chunks']} | {r.get('tokens', 0)} |")
     lines += ["", "## 最近的对话摘要 (蒸馏)", ""]
 
@@ -191,19 +299,36 @@ async def list_sinks(
         if meta.get("virtual"):
             items.append(_virtual_sink_item(slug, meta))
             continue
+        if meta.get("kind") == "dir":
+            fs = _dir_sink_files(ROOT / meta["path"])
+            role = _loc(meta["role"]) + (f" · {len(fs)} 格 · 进前缀 {sum(1 for x in fs if x['inject'])} 格" if fs else "")
+            items.append({
+                "slug": slug, "label": _loc(meta["label"]), "role": role,
+                "layer": meta["layer"], "path": meta["path"],
+                "exists": bool(fs),
+                "size_bytes": sum(x["bytes"] for x in fs),
+                "mtime": int(max((f.stat().st_mtime for f in (ROOT / meta["path"]).glob("*.md")), default=0)) if fs else 0,
+                "lines": sum(x["lines"] for x in fs),
+                "inject": meta.get("inject", "none"),
+                "injected_tokens": _injected_tokens(slug),
+                "files": fs,
+            })
+            continue
         path = (ROOT / meta["path"])
         exists = path.exists() and path.is_file()
         stat = path.stat() if exists else None
         items.append({
             "slug": slug,
-            "label": meta["label"],
-            "role": meta["role"],
+            "label": _loc(meta["label"]),
+            "role": _loc(meta["role"]),
             "layer": meta["layer"],
             "path": meta["path"],
             "exists": exists,
             "size_bytes": stat.st_size if stat else 0,
             "mtime": int(stat.st_mtime) if stat else 0,
             "lines": (sum(1 for _ in path.open(encoding="utf-8", errors="replace")) if exists else 0),
+            "inject": meta.get("inject", "none"),
+            "injected_tokens": _injected_tokens(slug),
         })
     layers = sorted({m["layer"] for m in SINKS.values()})
     return {"ok": True, "count": len(items), "items": items, "layers": layers}
@@ -224,10 +349,20 @@ async def preview_sink(
     # 虚拟「记忆库」: 不读文件·实时合成 markdown
     if SINKS.get(slug, {}).get("virtual"):
         meta = SINKS[slug]
-        md = _render_memory_markdown() if slug == "memory" else "(虚拟沉淀位 · 暂无预览)"
+        md = _loc(_render_memory_markdown()) if slug == "memory" else "(虚拟沉淀位 · 暂无预览)"
         return {
-            "ok": True, "slug": slug, "label": meta["label"], "layer": meta["layer"],
-            "role": meta["role"], "path": meta["path"], "markdown": md,
+            "ok": True, "slug": slug, "label": _loc(meta["label"]), "layer": meta["layer"],
+            "role": _loc(meta["role"]), "path": meta["path"], "markdown": md,
+            "size_bytes": len(md.encode("utf-8")), "mtime": int(time.time()), "truncated": False,
+        }
+
+    # 目录位（一格一文件）：不读单文件·实时合成 14 格清单 + 全文
+    if SINKS.get(slug, {}).get("kind") == "dir":
+        meta = SINKS[slug]
+        md = _loc(_render_notebook_markdown())
+        return {
+            "ok": True, "slug": slug, "label": _loc(meta["label"]), "layer": meta["layer"],
+            "role": _loc(meta["role"]), "path": meta["path"], "markdown": md,
             "size_bytes": len(md.encode("utf-8")), "mtime": int(time.time()), "truncated": False,
         }
 
@@ -243,9 +378,9 @@ async def preview_sink(
     return {
         "ok": True,
         "slug": slug,
-        "label": meta["label"],
+        "label": _loc(meta["label"]),
         "layer": meta["layer"],
-        "role": meta["role"],
+        "role": _loc(meta["role"]),
         "path": meta["path"],
         "markdown": raw,
         "size_bytes": path.stat().st_size,
@@ -318,11 +453,10 @@ async def pulse_stream(
     # 内部诊断 probe · 仅 verify_daemon_endpoints smoke test 用
     # 返回即时 JSON · 不进 SSE 循环。正常副屏连接不应传此参数。
     if probe == "1":
+        from desktop_pet.activities import read_last_events as _re
         try:
-            from desktop_pet.activities import read_last_events as _re
             _events = _re(5)
         except Exception:
-            # desktop_pet 未装（Daemonkey 开源版没有桌宠外设）→ 空事件
             _events = []
         return {
             "status": "ok",
@@ -335,12 +469,7 @@ async def pulse_stream(
         # 立即发连接帧——让 SSE 客户端和 smoke test 不用等 (wish-4b16633d SSE 盲点修)
         yield f"data: {json.dumps({'type': 'connected'})}\n\n"
 
-        # desktop_pet 未装（Daemonkey 开源版没有桌宠外设）→ 退化成空事件流·别让 SSE 整个崩掉
-        try:
-            from desktop_pet.activities import read_last_events
-        except Exception:
-            def read_last_events(_n: int = 5):
-                return []
+        from desktop_pet.activities import read_last_events
         last_ts = 0.0
         try:
             events = read_last_events(5)
@@ -535,13 +664,13 @@ async def dashboard_digest(
                 if _parse_iso(w.get("created_at", "")) >= threshold:
                     new_wishes.append(w.get("title", "?")[:40])
         items.append({
-            "domain": "wishlist", "label": "OPUS 心愿单", "icon": "<i class='ri-lightbulb-fill'></i>",
+            "domain": "wishlist", "label": _loc("{AI} 心愿单"), "icon": "<i class='ri-lightbulb-fill'></i>",
             "new_count": len(new_wishes),
             "total": total_wishes,
             "highlight": new_wishes[0] if new_wishes else "",
         })
     except Exception as e:
-        items.append({"domain": "wishlist", "label": "OPUS 心愿单", "icon": "<i class='ri-lightbulb-fill'></i>",
+        items.append({"domain": "wishlist", "label": _loc("{AI} 心愿单"), "icon": "<i class='ri-lightbulb-fill'></i>",
                       "new_count": 0, "total": 0, "error": str(e)})
 
     try:

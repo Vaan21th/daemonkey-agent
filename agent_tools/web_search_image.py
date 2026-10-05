@@ -4,7 +4,7 @@ agent_tools/web_search_image.py
 
 按 query 搜图片 · 返回 markdown 块给 LLM 直接贴进回答 · 用户 在 chat 里看缩略图 + 点进原始页。
 
-wish-4f25c4a1 (用户 2026-05-25 19:36) — daemon OPUS 思考链:
+wish-4f25c4a1 (用户 2026-05-25 19:36) — daemon Daemonkey 思考链:
   「我目前的工具链里确实没有直接的搜图片→返回 URL 工具」
 用户: 「所以你没别的办法能拿到搜索引擎的图吗?」
 
@@ -55,7 +55,7 @@ USER_AGENT = (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-# 注：目录名不能以 `_` 开头 ( 用户 远程浏览器实测 · `_search/` 路径会裂图 ·
+# 注：目录名不能以 `_` 开头 (用户 远程浏览器实测 · `_search/` 路径会裂图 ·
 #     `searches/` 同样的子结构能正常加载 · 真根因未钉死但工程上规避).
 SEARCH_OUTPUT_DIR = ROOT / "data" / "workshop" / "outputs" / "searches"
 
@@ -145,21 +145,29 @@ def _baidu_search(query: str, max_results: int) -> list[dict]:
     return items
 
 
-def _download_thumbnail(client: httpx.Client, url: str, dst: Path) -> bool:
-    """下载缩略图到 dst · 已存在跳过 · 失败返 False"""
-    if dst.exists() and dst.stat().st_size > 0:
-        return True
+def _download_thumbnail(client: httpx.Client, url: str, dst: Path):
+    """下载缩略图 · 按 Content-Type 选扩展名 · 失败返 None · 成功返实际 Path。"""
     try:
         resp = client.get(url, timeout=15.0)
         if resp.status_code != 200:
-            return False
+            return None
         ct = (resp.headers.get("Content-Type") or "").lower()
         if "image" not in ct:
-            return False
-        dst.write_bytes(resp.content)
-        return True
+            return None
+        ext = ".jpg"
+        if "png" in ct:
+            ext = ".png"
+        elif "webp" in ct:
+            ext = ".webp"
+        elif "gif" in ct:
+            ext = ".gif"
+        out = dst.with_suffix(ext)
+        if out.exists() and out.stat().st_size > 0:
+            return out
+        out.write_bytes(resp.content)
+        return out
     except Exception:
-        return False
+        return None
 
 
 def _summarize(args: dict) -> str:
@@ -173,7 +181,10 @@ def _run(args: dict) -> ToolResult:
     if not query:
         return ToolResult(ok=False, output="", error="empty query")
 
-    max_results = int(args.get("max_results") or DEFAULT_MAX_RESULTS)
+    try:
+        max_results = int(args.get("max_results") or DEFAULT_MAX_RESULTS)
+    except (TypeError, ValueError):
+        max_results = DEFAULT_MAX_RESULTS
     max_results = max(1, min(max_results, HARD_MAX_RESULTS))
 
     try:
@@ -206,11 +217,10 @@ def _run(args: dict) -> ToolResult:
         for i, item in enumerate(items, start=1):
             local_name = f"{i:02d}.jpg"
             local_path = out_dir / local_name
-            ok = _download_thumbnail(client, item["thumbnail_url"], local_path)
-            if ok:
-                # 用 file mtime 当 cache buster · 防浏览器对同 URL 的负缓存
-                # (相同 query 复用同目录但 mtime 稳定时 url 仍稳定 · 浏览器命中正缓存)
-                mtime = int(local_path.stat().st_mtime)
+            saved = _download_thumbnail(client, item["thumbnail_url"], local_path)
+            if saved:
+                local_name = saved.name
+                mtime = int(saved.stat().st_mtime)
                 item["local_url"] = f"/workshop/outputs/searches/{dirname}/{local_name}?v={mtime}"
                 download_ok += 1
             else:
@@ -253,8 +263,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="web_search_image",
     description=(
-        "按 query 搜图，返回缩略图本地链+来源页。直接把返回的 markdown 贴进回答。只下缩略图，必须保留来源 URL。"
-    ),
+        "按 query 搜图，返回缩略图本地链+来源页。直接把返回的 markdown 贴进回答。只下缩略图，必须保留来源 URL。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

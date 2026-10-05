@@ -147,7 +147,7 @@ def _run(args: dict) -> ToolResult:
                 ok=True,
                 output=(
                     "已清除标记" if not r.get("no_op")
-                    else f"opp_id={iid} 本来就没标记 · no-op"
+                    else f"item_id={iid} 本来就没标记 · no-op"
                 ),
             )
 

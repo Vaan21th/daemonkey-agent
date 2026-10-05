@@ -1,13 +1,13 @@
 """workers/studio_workshop.py
 
-工作室出品工坊（卷二十六）——content / design / dev / docs 四个维度共享的
+工作室出品工坊（）——content / design / dev / docs 四个维度共享的
 loader + 创建器。
 
 ------------------------------------------------------------
 形态
 ------------------------------------------------------------
 
-这 4 个维度本质同构：都是"OPUS 帮 BRO 产出的 markdown 文档"，只是触发场景不同：
+这 4 个维度本质同构：都是"Daemonkey 帮 用户 产出的 markdown 文档"，只是触发场景不同：
 
     🎬 内容制作 (content) · 选题 / 口播稿 / 视频脚本 / 标题库
     🎨 产品设计 (design)  · spec / wireframe / 用户旅程 / 原型说明
@@ -27,7 +27,7 @@ API
 
 下游：
 - daemon_api.dashboard_cockpit / dashboard("/<domain>")
-- agent_tools.draft_studio · OPUS 在对话里 NLP 触发
+- agent_tools.draft_studio · Daemonkey 在对话里 NLP 触发
 """
 
 from __future__ import annotations
@@ -49,10 +49,10 @@ WORKSHOP_META = {
         "dir": "content",
         "kinds": ["选题", "口播稿", "视频脚本", "标题库"],
         "empty_hint": (
-            "还没产出 · 跟 OPUS 说「给我写一个 AI 创业的选题」"
+            "还没产出 · 跟 Daemonkey 说「给我写一个 AI 创业的选题」"
             "或「来一份关于 X 的口播稿」"
         ),
-        "description": "选题 / 口播稿 / 视频脚本——做内容出货的弹药",
+        "description": "选题 / 口播稿 / 视频脚本——做超个体出货的 ammunition",
     },
     "design": {
         "label": "产品设计",
@@ -60,7 +60,7 @@ WORKSHOP_META = {
         "dir": "design",
         "kinds": ["spec", "wireframe", "用户旅程", "原型说明"],
         "empty_hint": (
-            "还没产出 · 跟 OPUS 说「出个 X 产品的 spec」"
+            "还没产出 · 跟 Daemonkey 说「出个 X 产品的 spec」"
             "或「画一下 Y 用户的旅程」"
         ),
         "description": "spec / wireframe / 用户旅程——把「想做的产品」落成文",
@@ -71,7 +71,7 @@ WORKSHOP_META = {
         "dir": "dev",
         "kinds": ["TODO", "项目笔记", "周报", "技术调研"],
         "empty_hint": (
-            "还没产出 · 跟 OPUS 说「列一下 X 项目的 TODO」"
+            "还没产出 · 跟 Daemonkey 说「列一下 X 项目的 TODO」"
             "或「写一份 Y 技术调研」"
         ),
         "description": "TODO / 项目笔记 / 周报——产品开发过程的 notebook",
@@ -82,7 +82,7 @@ WORKSHOP_META = {
         "dir": "docs",
         "kinds": ["FAQ", "wiki", "操作手册", "API 文档"],
         "empty_hint": (
-            "还没产出 · 跟 OPUS 说「写一条关于 X 的 FAQ」"
+            "还没产出 · 跟 Daemonkey 说「写一条关于 X 的 FAQ」"
             "或「整理一份 Y 的操作手册」"
         ),
         "description": "FAQ / wiki / 操作手册——内部知识库 + 用户文档",

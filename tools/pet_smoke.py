@@ -3,7 +3,7 @@ tools/pet_smoke.py
 ==================
 
 测 pet/sprite.py 的非 UI 部分。
-UI 需要显示器 · OPUS 没有显示器 · 让 BRO 自己跑 start-pet.ps1 看实际窗口。
+UI 需要显示器 · Daemonkey 没有显示器 · 让 用户 自己跑 start-pet.ps1 看实际窗口。
 
 跑法:
     .\\.venv\\Scripts\\python.exe -m tools.pet_smoke
@@ -94,7 +94,7 @@ def main() -> int:
 
     print("\n" + "=" * 50)
     if failures == 0:
-        print("[smoke] ALL PASS · 实际 UI 显示请 BRO 跑 start-pet.ps1")
+        print("[smoke] ALL PASS · 实际 UI 显示请 用户 跑 start-pet.ps1")
         return 0
     print(f"[smoke] {failures} FAIL")
     return 1

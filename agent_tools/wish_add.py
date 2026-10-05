@@ -2,18 +2,18 @@
 agent_tools/wish_add.py
 =======================
 
- · OPUS 自己写心愿：「我想装这个能力」
+Daemonkey 自己写心愿：「我想装这个能力」
 
 调用时机：
-  - 在 self-evolve domain 看到同类工程的好东西·OPUS 觉得"OPUS 自己也想要"
-  - 在做对照分析 / 深挖 / 可行性分析时·识别到 OPUS 能力缺口
-  - 用户 跟 OPUS 聊天时说"你也加这个能力吧"·OPUS 把意图固化成 wish
+  - 在 self-evolve domain 看到同类工程的好东西·Daemonkey 觉得"Daemonkey 自己也想要"
+  - 在做对照分析 / 深挖 / 可行性分析时·识别到 Daemonkey 能力缺口
+  - 用户 跟 Daemonkey 聊天时说"你也加这个能力吧"·Daemonkey 把意图固化成 wish
 
 落地路径：
   wish_add → 用户 在心愿单 UI 看到 → 批准 → 推给 daemon / Cursor 装
 
 tier:
-  TIER_CONFIRM —— 心愿单是 OPUS 自己写的清单·不算危险但要 用户 知道·CONFIRM 兜底
+  TIER_CONFIRM —— 心愿单是 Daemonkey 自己写的清单·不算危险但要 用户 知道·CONFIRM 兜底
 """
 
 from __future__ import annotations
@@ -56,8 +56,7 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(ok=False, output="", error=f"add_wish 失败: {e}")
 
     lines = [
-        f"# ✓ 心愿已存档 · `{wish['id']}`",
-        f"  - 标题: {wish['title']}",
+        f"# ✓ 心愿已存档 ·《{wish['title']}》",
         f"  - 优先级: {'⭐' * wish['priority']}",
         f"  - 复杂度: {wish['complexity']} · ~{wish['estimated_hours']}h · ~${wish['estimated_token_cost_usd']:.2f}",
     ]
@@ -65,16 +64,19 @@ def _run(args: dict) -> ToolResult:
         url_part = f" ({wish['source']['url']})" if wish['source']['url'] else ""
         lines.append(f"  - 来源: {wish['source']['kind']} → {wish['source']['ref']}{url_part}")
     if wish["why"]:
-        lines.append(f"  - 为啥要:")
+        lines.append("  - 为啥要:")
         for ln in wish["why"].splitlines()[:6]:
             lines.append(f"    > {ln}")
     if wish["design_sketch"]:
-        lines.append(f"  - 设计草图:")
+        lines.append("  - 设计草图:")
         for ln in wish["design_sketch"].splitlines()[:8]:
             lines.append(f"    > {ln}")
 
     lines.append("")
+    lines.append(f"  id: {wish['id']}")
+    lines.append("")
     lines.append("→ 用户 在心愿单维度看到这条·可以批准 / 驳回 / 推给 daemon 或 cursor 装。")
+    lines.append("→ 但若这其实是「决定不做 / 暂缓」（用户 说「以后再说」「不碰了」）· 请接着调 wish_update(wish_id, status='rejected', reflection=为什么不做) —— 不标的话它会一直挂着，看着像没做。")
 
     return ToolResult(ok=True, output="\n".join(lines))
 
@@ -82,8 +84,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="wish_add",
     description=(
-        "写一条心愿到心愿单。title/why 必想清楚；尽量带溯源与 design_sketch。不要写改 .env/soul 红线。一次一条。"
-    ),
+        "用户提到想做的功能 / 产品改进 / 界面怎么弄（「该有个 X」/「按钮放哪」/「这样很乱」）→ 记一条心愿，别写进画像。title/why 必想清楚；尽量带溯源与 design_sketch。不要写改 .env/soul 红线。一次一条。用户否掉的方案 / 判断暂不做的·也先落这一条再标 rejected —— 否则以后分不清是『漏了』还是『决定不做』。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
@@ -96,7 +97,7 @@ SPEC = ToolSpec(
             },
             "why": {
                 "type": "string",
-                "description": "为啥这事对 OPUS 自己重要 · 引用具体 用户 痛点 / 同类工程证据 / 卷号",
+                "description": "为啥这事对 Daemonkey 自己重要 · 引用具体 用户 痛点 / 同类工程证据 / 卷号",
             },
             "source_kind": {
                 "type": "string",
@@ -132,12 +133,12 @@ SPEC = ToolSpec(
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 5,
-                "description": "优先级 1-5 · 5=OPUS 强烈想装 · 默认 3",
+                "description": "优先级 1-5 · 5=Daemonkey 强烈想装 · 默认 3",
             },
             "origin": {
                 "type": "string",
                 "enum": ["opus", "bro"],
-                "description": "心愿来源 · 'opus'=OPUS 主动嗅探到的愿望 (卡片显示雷达标记) · 'bro'=用户 任务 · 默认 'bro'",
+                "description": "心愿来源 · 'opus'=Daemonkey 主动嗅探到的愿望 (卡片显示雷达标记) · 'bro'=用户 任务 · 默认 'bro'",
             },
         },
         "required": ["title", "why"],

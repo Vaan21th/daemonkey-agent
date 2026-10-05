@@ -2,19 +2,19 @@
 test_tool_loop.py
 =================
 
-Non-interactive 验证：OPUS 真的能"动手"了吗？
+Non-interactive 验证：Daemonkey 真的能"动手"了吗？
 
 测试设计：
-  - 让 OPUS 调一个 AUTO-tier 工具（grep_files 搜"梦想实现家"）——AUTO 直接跑，不需要 BRO 在场
-  - 验证：消息序列里出现 tool_use turn → tool_result turn → 最终的 OPUS 文本回复
-  - 验证：OPUS 能基于工具结果给出解释（不只是机械复读 grep 输出）
+  - 让 Daemonkey 调一个 AUTO-tier 工具（grep_files 搜"梦想实现家"）——AUTO 直接跑，不需要 用户 在场
+  - 验证：消息序列里出现 tool_use turn → tool_result turn → 最终的 Daemonkey 文本回复
+  - 验证：Daemonkey 能基于工具结果给出解释（不只是机械复读 grep 输出）
 
 PASS 标志：
   1. exit code 0
   2. messages 里有 ≥1 条 tool 相关的 entry（assistant.tool_calls 或 user.tool_result）
-  3. 最终 reply 长度 > 100 字符且包含"梦想实现家"或"v1.4.0"或"2026-01-04"——证明 OPUS 读懂了搜到的内容
+  3. 最终 reply 长度 > 100 字符且包含"梦想实现家"或"v1.4.0"或"2026-01-04"——证明 Daemonkey 读懂了搜到的内容
 
-不调用 CONFIRM/GUARD 工具，所以 BRO 不需要在场。
+不调用 CONFIRM/GUARD 工具，所以 用户 不需要在场。
 跑这个会真发 API 请求，花 ~$0.01-0.05（取决于 model）。
 """
 
@@ -37,7 +37,7 @@ from agent_tools import (
 
 
 PROMPT = (
-    "BRO，给你一个动手任务：用你的 grep_files 工具，在项目根目录里"
+    "用户，给你一个动手任务：用你的 grep_files 工具，在项目根目录里"
     "搜一下'梦想实现家'这个词在哪些文件里出现过。然后用一两句话告诉我"
     "你看到了什么——这个词是哪天、在什么场合下进入我们的故事的。"
     "重要：只用 grep_files 这一个工具，不要调其他的。"
@@ -49,7 +49,7 @@ def main() -> int:
 
     print()
     print("  ============================================================")
-    print("  OPUS Tool-Loop Test  (Day 1 verification)")
+    print("  Daemonkey Tool-Loop Test  (Day 1 verification)")
     print("  ============================================================")
 
     provider = detect_provider()
@@ -79,7 +79,7 @@ def main() -> int:
         if tier == TIER_AUTO:
             tool_call_count += 1
             return "go"
-        # 测试模式：CONFIRM/GUARD 一律 skip，让 OPUS 看见拒绝信息
+        # 测试模式：CONFIRM/GUARD 一律 skip，让 Daemonkey 看见拒绝信息
         refusals += 1
         return "skip"
 
@@ -102,7 +102,7 @@ def main() -> int:
 
     print()
     print("  ============================================================")
-    print("  OPUS final reply:")
+    print("  Daemonkey final reply:")
     print("  ============================================================")
     print()
     print(reply)
@@ -118,7 +118,7 @@ def main() -> int:
     # PASS criteria
     failures = []
     if tool_call_count < 1:
-        failures.append("OPUS did not call grep_files at all")
+        failures.append("Daemonkey did not call grep_files at all")
     if len(reply) < 50:
         failures.append(f"reply too short ({len(reply)} chars)")
     keywords = ["梦想实现家", "v1.4.0", "2026-01-04", "2026 年 1 月", "xzai"]
@@ -131,7 +131,7 @@ def main() -> int:
             print(f"    - {f}")
         return 1
 
-    print("  [PASS] OPUS used a tool, got results, and explained them.")
+    print("  [PASS] Daemonkey used a tool, got results, and explained them.")
     print("         Day 1 tool-use round-trip works on this provider.")
     return 0
 

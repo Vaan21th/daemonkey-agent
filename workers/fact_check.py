@@ -2,12 +2,12 @@
 workers/fact_check.py
 =====================
 
-卷三十五补丁3 · 事实较量 facade · 让 feasibility / trend / opportunity worker
+补丁3 · 事实较量 facade · 让 feasibility / trend / opportunity worker
 能在跑 LLM 之前·先拉一遍真实搜索·把客观市场实证塞进 prompt。
 
 为什么这个文件存在:
-  - 卷三十五补丁2 给 LLM 加了"不许编事实"红线·但只是 prompt 提醒
-  - BRO 卷三十五补丁3 要求"web_search 真扎根 · 做到 OK"
+  - 补丁2 给 LLM 加了"不许编事实"红线·但只是 prompt 提醒
+  - 用户 补丁3 要求"web_search 真扎根 · 做到 OK"
   - 这个文件是 A 路径的实现 —— LLM 跑之前先 search · 把真实结果塞 prompt
 
 设计:
@@ -21,9 +21,9 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
+from typing import Optional  # noqa: F401  (类型提示用·保留)  # 注: 实际未用·可后续清
 
-from agent_tools.web_search import _DDGResultParser, SEARCH_URL, USER_AGENT, MAX_LIMIT
+from agent_tools.web_search import _DDGResultParser, SEARCH_URL_DDG, USER_AGENT, MAX_LIMIT
 
 
 logger = logging.getLogger("opus.fact_check")
@@ -53,7 +53,7 @@ def search_for_evidence(
     try:
         import httpx
         resp = httpx.post(
-            SEARCH_URL,
+            SEARCH_URL_DDG,
             data={"q": query},
             headers={
                 "User-Agent": USER_AGENT,
@@ -191,7 +191,7 @@ def verify_claim(claim: str, *, limit: int = 5) -> dict:
         return {
             "ok": True, "claim": claim, "query": claim,
             "results": [], "verdict": "unsupported",
-            "notes": "0 结果 · 这条 claim 在公开网上找不到佐证 · BRO 谨慎采信",
+            "notes": "0 结果 · 这条 claim 在公开网上找不到佐证 · 用户 谨慎采信",
         }
 
     # 朴素判定 · 抽 claim 里的数字 · 看有没有在任何结果的 snippet/title 出现
@@ -211,10 +211,10 @@ def verify_claim(claim: str, *, limit: int = 5) -> dict:
         notes = "搜索结果中找到匹配数字 · 较可信"
     elif numbers and not has_match:
         verdict = "partial"
-        notes = "找到相关网页但数字未直接验证 · 需 BRO 看原文确认"
+        notes = "找到相关网页但数字未直接验证 · 需 用户 看原文确认"
     else:
         verdict = "partial"
-        notes = "找到相关网页·BRO 自行判断与 claim 的吻合度"
+        notes = "找到相关网页·用户 自行判断与 claim 的吻合度"
 
     return {
         "ok": True,

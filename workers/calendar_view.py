@@ -2,18 +2,18 @@
 workers/calendar_view.py
 ========================
 
-卷三十三 · 信息日历视图
+信息日历视图
 
-BRO 卷三十三原话：
+用户 原话：
   「信息日历和今日趋势那个要有日历和折线图·最终实现周趋势·月趋势·
    来观察某一个点的发展趋势和市场相应」
 
 这一版先做"日历格子"——按天聚合 radar / trends / reports / outcomes 的
-事件量·让 BRO 一眼看见"哪一天信号最强、哪一天我做了什么决策"。
+事件量·让 用户 一眼看见"哪一天信号最强、哪一天我做了什么决策"。
 
 wish-4500c91c (2026-06-01) 加了 sessions 维度：
   - 扫描 data/sessions/*.jsonl · 按 user message 时间戳聚合"每天对话活跃度"
-  - 这是 BRO 最频繁的活动——比 radar 抓取更能反映"每天都在做事"
+  - 这是 用户 最频繁的活动——比 radar 抓取更能反映"每天都在做事"
   - radar 的 fetched_at 在一轮刷新里全标同一时间（合理——那是抓取日）
     所以如果长时间不刷新 radar，日历就靠 sessions 撑着不空
 
@@ -60,7 +60,7 @@ def _parse_iso_date(s: str) -> Optional[date]:
 
 
 def _iter_radar_dates() -> list[date]:
-    """从 radar.json 拿可见条目的归日 · 卷五十八续 X 走唯一真相源 radar_counts
+    """从 radar.json 拿可见条目的归日 · 续 X 走唯一真相源 radar_counts
     (扣 hidden + fetched 优先归日)·让月历 radar 数跟边栏/雷达页同一口径。"""
     try:
         from workers.radar_counts import visible_days
@@ -150,7 +150,7 @@ def _iter_sessions_dates() -> list[date]:
     """扫描 data/sessions/*.jsonl · 按每条 user message 的时间戳聚合
 
     每条 user message (role=user) 的日期算一次"会话活动"——
-    这是 BRO 每天跟 OPUS 互动的真实痕迹，比 radar 抓取更能反映"每天都在做事"。
+    这是 用户 每天跟 Daemonkey 互动的真实痕迹，比 radar 抓取更能反映"每天都在做事"。
 
     返回: 每个 user message 一个 date（同一天多条 = 多个相同 date）"""
     p = ROOT / "sessions"
@@ -229,8 +229,8 @@ def build_calendar(year: int, month: int) -> dict:
         rp = _count_on(d, reports_dates)
         oc = _count_on(d, outcomes_dates)
         se = _count_on(d, sessions_dates)
-        # 卷五十八续 X · BRO 拍板: 对话(sessions)单独标记·不进"信息"总数/热力·
-        # 否则 251 条对话淹没掉真正的信息(雷达/趋势)·BRO 看不懂格子。
+        # 续 X · 用户 拍板: 对话(sessions)单独标记·不进"信息"总数/热力·
+        # 否则 251 条对话淹没掉真正的信息(雷达/趋势)·用户 看不懂格子。
         tot = r + t + rp + oc
         days.append({
             "date": d.isoformat(),
@@ -267,7 +267,7 @@ def build_calendar(year: int, month: int) -> dict:
             "total": 0,
         })
 
-    # 卷五十八续 VII · 节律 overlay (Layer2 周期仪式到期日) · 失败不影响日历主体
+    # 续 VII · 节律 overlay (Layer2 周期仪式到期日) · 失败不影响日历主体
     rituals_summary: list[dict] = []
     try:
         from workers.rituals import get_rituals, rituals_for_month

@@ -10,7 +10,7 @@ agent_tools/verify_claim.py
 
 用法（NLP）:
   用户: 「我刚听说 ChatGPT 月活 1000 万了 · 真的吗？」
-  OPUS: 调 verify_claim(claim="ChatGPT 月活 1000 万")
+  Daemonkey: 调 verify_claim(claim="ChatGPT 月活 1000 万")
         → 返回 verdict + 找到的相关网页
         → OPUS 把判定告诉 用户
 

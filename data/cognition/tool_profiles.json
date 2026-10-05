@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "updated": "2026-09-18",
+  "note": "会话能力档位：每档 = 一场对话开跑时搬上桌的工具名单。名单顺序在此固定（缓存纪律：顺序一动，前缀全变）。standard = CORE 全量（默认 + 兜底 · 老会话没记录也落它）。工具本身永远在库房里，搜得到、调得动；档位只决定这一场摊开哪几件。v2（2026-09-18 · 拍板「有用户」）：出厂四入口 = 闲聊 / 工作 / 编程 / 场景（场景是抽屉标题，摊开 3D / 生图 / 写作三张子卡）。灵魂厚度字段先留、行为未接（wish-92b6d4c0）。",
+  "profiles": {
+    "standard": {
+      "name": "标准",
+      "default": true,
+      "desc": "干活默认档：文件、工坊、办公稿",
+      "soul_thickness": "standard",
+      "size": "中",
+      "tools": "CORE"
+    },
+    "minimal": {
+      "name": "极简",
+      "default": false,
+      "desc": "只有人格核 · 最省 · 不带画像",
+      "soul_thickness": "thin",
+      "size": "小",
+      "tools": ["read_file", "look_at", "web_search", "web_fetch", "recall_memory",
+                "catalog_search", "catalog_call"]
+    },
+    "chat": {
+      "name": "闲聊",
+      "default": false,
+      "desc": "聊天、看图、搜东西 · 记得你但轻",
+      "soul_thickness": "companion",
+      "size": "小",
+      "tools": [
+        "read_file", "look_at", "web_search", "web_fetch",
+        "recall_memory", "generate_image",
+        "set_emotion", "note_mood", "note_style_shift", "note_gallery",
+        "catalog_search", "catalog_call"
+      ]
+    },
+    "work": {
+      "name": "工作",
+      "default": false,
+      "desc": "办公那摊：报告 / 表格 / 演示稿 / 读 PDF / 查资料",
+      "soul_thickness": "standard",
+      "size": "小",
+      "tools": [
+        "read_file", "write_file", "glob_files", "grep_files", "outline_file",
+        "pdf_read", "read_clipboard", "write_clipboard", "look_at",
+        "web_search", "web_fetch", "recall_memory",
+        "generate_report", "generate_spreadsheet", "generate_presentation",
+        "revise_office", "extend_office", "illustrate_office", "inspect_office",
+        "draft_studio", "generate_image", "track_task",
+        "set_emotion", "note_mood", "note_style_shift", "note_gallery",
+        "catalog_search", "catalog_call"
+      ]
+    },
+    "code": {
+      "name": "编程",
+      "default": false,
+      "desc": "改代码那摊：读写代码 / 跑命令 / 测试 / 代码审查 / 提交",
+      "soul_thickness": "standard",
+      "size": "小",
+      "tools": [
+        "read_file", "write_file", "edit_file",
+        "grep_files", "glob_files", "outline_file", "search_code",
+        "shell_exec", "python_exec",
+        "lint_check", "verify_daemon_endpoints", "code_review",
+        "worktree_status", "safe_merge", "commit_taste",
+        "request_restart", "read_scenario", "track_task", "dispatch_subagent",
+        "recall_memory", "session_search", "look_at",
+        "set_emotion", "note_mood", "note_style_shift", "note_gallery",
+        "catalog_search", "catalog_call"
+      ]
+    },
+    "dev3d": {
+      "name": "3D 建模",
+      "default": false,
+      "desc": "建模 + 渲染 + 文件/命令行（等能力包送来 Blender 手）",
+      "soul_thickness": "full",
+      "size": "小",
+      "tools": [
+        "read_file", "write_file", "edit_file",
+        "shell_exec", "python_exec", "glob_files", "grep_files",
+        "look_at", "web_search", "web_fetch",
+        "read_scenario", "recall_memory", "session_search",
+        "mcp_list", "mcp_describe_tool", "mcp_call_tool",
+        "catalog_search", "catalog_call"
+      ]
+    },
+    "image": {
+      "name": "生图",
+      "default": false,
+      "desc": "出图这一条线",
+      "soul_thickness": "full",
+      "size": "小",
+      "tools": [
+        "generate_image", "look_at", "read_file", "write_file", "glob_files",
+        "web_search", "web_fetch", "recall_memory", "session_search",
+        "set_emotion", "mcp_list", "mcp_call_tool",
+        "catalog_search", "catalog_call"
+      ]
+    },
+    "writing": {
+      "name": "写作",
+      "default": false,
+      "desc": "写稿改稿",
+      "soul_thickness": "full",
+      "size": "小",
+      "tools": [
+        "read_file", "write_file", "edit_file", "grep_files", "glob_files", "outline_file",
+        "web_search", "web_fetch",
+        "generate_report", "generate_presentation",
+        "revise_office", "extend_office", "inspect_office",
+        "recall_memory", "catalog_search", "catalog_call"
+      ]
+    }
+  }
+}

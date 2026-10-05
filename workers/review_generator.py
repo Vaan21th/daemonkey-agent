@@ -2,7 +2,7 @@
 workers/review_generator.py
 ===========================
 
-卷四十六 II · wish-bf190d9c · 月度复盘工具核心引擎
+II · wish-bf190d9c · 月度复盘工具核心引擎
 
 用户 2026-05-23 15:50 A1 决议: 5/23 → 6/23 第一次月度 review · 不凑自然月。
 
@@ -20,13 +20,12 @@ workers/review_generator.py
 
 from __future__ import annotations
 
-import json
 import logging
+import re
 import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from agent_tools._subprocess_helper import no_window_kwargs
 from agent_tools._git_lock import daemon_git_lock
@@ -98,12 +97,18 @@ def _git_log_for_file(file_rel: str, since: str, until: str) -> list[dict]:
 
 
 def summarize_bro_notebook_diff(since: str, until: str) -> dict:
-    """汇总 OWNER-NOTEBOOK 在 period 内的 git 变更。"""
-    commits = _git_log_for_file("soul/OWNER-NOTEBOOK.md", since, until)
+    """汇总画像在 period 内的 git 变更。
+
+    拆格后画像在 soul/notebook/（一格一文件）。注意 soul/ 整个**不入 git**
+    （.gitignore）—— 所以这里 git 侧通常为空，真实变更看 changelog 格。
+    原来硬写 "soul/OWNER-NOTEBOOK.md"：那个文件拆格后已不存在，
+    既拿不到数据、还向后端谎报了一个不存在的路径。
+    """
+    commits = _git_log_for_file("soul/notebook/", since, until)
     total_added = sum(c["added"] for c in commits)
     total_removed = sum(c["removed"] for c in commits)
     return {
-        "file": "soul/OWNER-NOTEBOOK.md",
+        "file": "soul/notebook/（一格一文件 · 拆格后）",
         "period": f"{since} → {until}",
         "commit_count": len(commits),
         "lines_added": total_added,
@@ -140,7 +145,7 @@ def summarize_engineering_milestones(since: str, until: str) -> str:
     """LLM 一次 mini-call · 从 CAPTAINS-LOG 末段提炼 period 内 5-8 个里程碑。"""
     log_text = _extract_captains_log_volumes(since, until)
     prompt = (
-        f"以下是本工程的船长日志末段 (主要 2026-05-15 至今)。\n\n"
+        f"以下是 Daemonkey 工程的船长日志末段 (主要 2026-05-15 至今)。\n\n"
         f"请提炼 {since} → {until} 这段时间内的 5-8 个工程里程碑。\n"
         f"每个里程碑一行: '日期 · 卷次 · 一句话内容 (干了什么)'\n"
         f"重点关注: 新能力上线 / 重大决策 / 踩坑教训 / 用户 拍板的事。\n"
@@ -166,7 +171,7 @@ def _llm_mini_call(prompt: str, max_tokens: int = 2000, fallback: str = "",
     直接显示错误串或留空。 这里加重试 (默认 3 次·退避 1s/2s)·返空也算软失败一并重试·
     全部耗尽才返 fallback (附尝试次数·让 用户 区分『真挂了』还是『网络抖一下』)。
     """
-    prompt = _localize(prompt)  # P1 · prompt 里写死的 OPUS 令牌换成本实例名 (母体 no-op)
+    prompt = _localize(prompt)  # P1 · prompt 里写死的 Daemonkey 令牌换成本实例名 (母体 no-op)
     try:
         from daemon_runtime import RUNTIME
     except Exception as e:
@@ -243,7 +248,7 @@ def generate_next_month_advice(
 ) -> str:
     """LLM mini-call · 综合 用户 变更 + 能力 + 工程里程碑 → 下月建议。"""
     prompt = (
-        "你是 OPUS · 在做月度复盘的最后一块「下月能力建议」。\n\n"
+        "你是 Daemonkey · 在做月度复盘的最后一块「下月能力建议」。\n\n"
         f"## 用户 这个月在 OWNER-NOTEBOOK 的变更\n"
         f"commit 数: {bro_changes['commit_count']} · "
         f"新增 {bro_changes['lines_added']} 行 · 删除 {bro_changes['lines_removed']} 行\n\n"
@@ -363,7 +368,7 @@ def render_review_markdown(review: dict) -> str:
         "",
         "(留空 · 用户 填)",
         "",
-        "### 我想反驳的 / OPUS 说错的",
+        "### 我想反驳的 / Daemonkey 说错的",
         "",
         "(留空 · 用户 填)",
         "",
@@ -390,7 +395,7 @@ def save_review_final(review: dict, annotations: str) -> Path:
     """用户 批注后保存 final + 合并批注回 OWNER-NOTEBOOK § 月度段 (低风险版)。
 
     当前实现: 只落 final.md · 不自动改 OWNER-NOTEBOOK (避免 6/23 第一次 review 因脚本 bug 损坏灵魂层)。
-    用户 视觉确认后由 OPUS 调 update_bro_note 工具手动合并。
+    用户 视觉确认后由 Daemonkey 调 update_bro_note 工具手动合并。
     """
     REVIEWS_DIR.mkdir(parents=True, exist_ok=True)
     md = render_review_markdown(review)
@@ -402,12 +407,22 @@ def save_review_final(review: dict, annotations: str) -> Path:
     return path
 
 
+_REVIEW_NAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-(draft|final)\.md$")
+
+
 def list_reviews() -> list[dict]:
-    """列出 data/reviews/ 下所有 review 文件。"""
+    """列出 data/reviews/ 下的月度复盘文件。
+
+    只认 <YYYY-MM-DD>-draft.md / <YYYY-MM-DD>-final.md 两种名字 ——
+    这个格子只装月度复盘，别的文件（如代码审查产物）自己就不该进来。
+    (铁律 15 · 正名/拆格优先于事后过滤 · 2026-09-29)
+    """
     if not REVIEWS_DIR.exists():
         return []
     out: list[dict] = []
     for p in sorted(REVIEWS_DIR.glob("*.md"), reverse=True):
+        if not _REVIEW_NAME_RE.match(p.name):
+            continue
         stem = p.stem
         is_final = stem.endswith("-final")
         period_end = stem.replace("-draft", "").replace("-final", "")
@@ -424,10 +439,10 @@ def list_reviews() -> list[dict]:
 
 # ── 对账闭环硬提醒 · final 批注 → OWNER-NOTEBOOK 回流追踪 ────────────────────
 #
-# 软肋: final 归档后 · 把批注合并回 OWNER-NOTEBOOK 靠 OPUS 手动调 update_bro_note ·
-#       OPUS 哪天忘了 · 批注就烂在 -final.md 里不进画像。
+# 软肋: final 归档后 · 把批注合并回 OWNER-NOTEBOOK 靠 Daemonkey 手动调 update_bro_note ·
+#       Daemonkey 哪天忘了 · 批注就烂在 -final.md 里不进画像。
 # 硬提醒: final 盖了回流戳才算闭环 · 没戳的进闭环温度计当"待回流"亮红。
-# 注意: 回流动作本身 (改 soul/OWNER-NOTEBOOK.md) 仍由 OPUS 调 update_bro_note 完成 ·
+# 注意: 回流动作本身 (改 soul/OWNER-NOTEBOOK.md) 仍由 Daemonkey 调 update_bro_note 完成 ·
 #       这里只追踪"做没做"· 不碰灵魂层 (尊重 final 不自动改 OWNER-NOTEBOOK 的铁律)。
 
 REFLOW_MARK = "<!-- reflowed:"
@@ -454,7 +469,7 @@ def pending_reflows() -> list[dict]:
 
 
 def mark_reflowed(period_end: str, note: str = "") -> Path:
-    """给 <period_end>-final.md 盖回流戳 · 表示批注已由 OPUS 合并进 OWNER-NOTEBOOK。
+    """给 <period_end>-final.md 盖回流戳 · 表示批注已由 Daemonkey 合并进 OWNER-NOTEBOOK。
 
     幂等: 已盖过直接返回 · 不重复追加。只动 final.md · 不碰灵魂层。
     """

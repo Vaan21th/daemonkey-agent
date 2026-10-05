@@ -2,22 +2,22 @@
 agent_tools/intent_to_wish.py
 =============================
 
- G · wish-2dcf2b48 · 意图守护 · 模糊需求 → wish_add 草稿
+G · wish-2dcf2b48 · 意图守护 · 模糊需求 → wish_add 草稿
 
 为什么有这个工具
 ----------------
-用户 跟 OPUS 聊天经常说『改一下 X 吧』『加个 Y』『我想要 Z』 — 模糊请求。
-OPUS 现在的反应模式是**直接动手 write_file** · 跳过 wish 流程 · 没分支隔离 ·
-没 用户 review · 结果就是 D + E 的反面教材 (d1d279c / 8e4389a)。
+用户 跟 Daemonkey 聊天经常说『改一下 X 吧』『加个 Y』『我想要 Z』 — 模糊请求。
+Daemonkey 现在的反应模式是**直接动手 write_file** · 跳过 wish 流程 · 没分支隔离 ·
+没 用户 review · 结果就是D + E 的反面教材 (d1d279c / 8e4389a)。
 
-根因不是 OPUS 偷懒·是模糊请求跟 wish 工具的形式不匹配 — OPUS 缺一个
+根因不是 Daemonkey 偷懒·是模糊请求跟 wish 工具的形式不匹配 — Daemonkey 缺一个
 "先把模糊请求结构化"的中间层。
 
 调用路径
 --------
-  用户 模糊请求 → OPUS 调 intent_to_wish → 拿到 wish 草稿 → review → 调 wish_add 落档 (status=pending)
+  用户 模糊请求 → Daemonkey 调 intent_to_wish → 拿到 wish 草稿 → review → 调 wish_add 落档 (status=pending)
                                                           ↓
-                                          用户 在 UI 批准 → OPUS 勘察出方案 (daemon_phase=plan_pending)
+                                          用户 在 UI 批准 → Daemonkey 勘察出方案 (daemon_phase=plan_pending)
                                                           ↓
                               用户 批方案 → 清 daemon_phase 自动开分支改代码 → status=review → 验收 live 自动 merge
 
@@ -51,12 +51,12 @@ _SYSTEM_PROMPT = """你是 Daemonkey 工程的「心愿单结构化助手」。
 
 【字段规范】
   title         · 一句话讲清要做啥 · ≤ 50 字 · 描述目标·不要命令式 (好"信源直方图加折叠按钮·让 用户 看雷达不被高条干扰" / 差"加折叠按钮")
-  why           · 至少 2 句 · 第 1 句"为什么这事值得做" + 第 2 句"不做会怎样" · 必须扣 用户 痛点·不许"OPUS 想要"
+  why           · 至少 2 句 · 第 1 句"为什么这事值得做" + 第 2 句"不做会怎样" · 必须扣 用户 痛点·不许"Daemonkey 想要"
   design_sketch · 拆 1-3 步 markdown · 每步写"改哪个文件 + 改什么逻辑"·不知道文件就写 "TBD · 需要先 grep 确认"
   complexity    · "low" / "medium" / "high" (≤2h / 2-8h / >8h)
   estimated_hours · 数字 · 1-12
   priority      · 整数 1-5 (5=非常急·1=可有可无)
-  rationale     · 给 OPUS 看的元解释 · "我为什么这么填这些字段" · 帮 OPUS 自己 review
+  rationale     · 给 Daemonkey 看的元解释 · "我为什么这么填这些字段" · 帮 Daemonkey 自己 review
 
 【输出格式】
 **严格输出 JSON** · 一个 object · 6 字段 + rationale · 不许加任何额外字段·不许加 ```json``` 围栏·直接吐 JSON 体。
@@ -222,9 +222,9 @@ def _run(args: dict) -> ToolResult:
         "---",
         "",
         "**下一步建议**:",
-        "1. 你 (OPUS) 看一遍·觉得字段对就直接调 `wish_add` · 把上面 6 个字段贴进去",
+        "1. 你 (Daemonkey) 看一遍·觉得字段对就直接调 `wish_add` · 把上面 6 个字段贴进去",
         "2. 觉得 LLM 帮你想浅了·可以再调一次 intent_to_wish · 把 context 写得更细",
-        "3. 落档后默认 status=pending · 用户 在 WebUI 心愿单点「批准」· OPUS 勘察出方案等批 · 批了才写码 (态)",
+        "3. 落档后默认 status=pending · 用户在 WebUI 心愿单点「批准」· 你勘察出方案等批 · 批了才写码",
         "",
         "⚠ **不要直接 write_file 改代码** · 没进 wish 流程就改 = 没分支隔离 = 出错没法回退",
     ]
@@ -235,8 +235,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="intent_to_wish",
     description=(
-        "模糊请求的强制第一调用：把「改一下/加个/弄个」落成 wish 草稿。调之前禁止 grep/read/write。明确到文件行号或只读调研不用。返回草稿后你 review 再 wish_add，不要自动落档。"
-    ),
+        "模糊请求的强制第一调用：把「改一下/加个/弄个」落成 wish 草稿。调之前禁止 grep/read/write。明确到文件行号或只读调研不用。返回草稿后你 review 再 wish_add，不要自动落档。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

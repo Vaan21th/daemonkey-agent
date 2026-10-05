@@ -2,23 +2,23 @@
 agent_tools/read_dashboard.py
 ==============================
 
-让 OPUS 在对话里"看见"工作室看板的实际数据。
+让 Daemonkey 在对话里"看见"工作室看板的实际数据。
 
 档位：AUTO
   纯读 · 不动数据 · 不外联 · 任何场景都安全。
 
 为什么这个工具至关重要：
-   用户 说："这些聚合了的信息，我是否在对话中直接提到一些什么他就可以
+  用户 说："这些聚合了的信息，我是否在对话中直接提到一些什么他就可以
   进行一些动作，例如写报告/写文稿/出原型？"
 
-  这个需求的底层缺口是 OPUS 在对话里**不知道当前看板有什么**——用户 说"把第三条
-  雷达写成报告"时，OPUS 不知道第三条是啥，只能瞎猜。
+  这个需求的底层缺口是 Daemonkey 在对话里**不知道当前看板有什么**——用户 说"把第三条
+  雷达写成报告"时，Daemonkey 不知道第三条是啥，只能瞎猜。
 
   解决方案有两种：
     (a) 系统提示词里塞当前看板摘要——每次对话开头都塞 → token 浪费 + 信息过时；
-    (b) **加一个 read_dashboard 工具，OPUS 需要时主动调** → 按需 · 即时 · 不污染上下文。
+    (b) **加一个 read_dashboard 工具，Daemonkey 需要时主动调** → 按需 · 即时 · 不污染上下文。
 
-  选 (b)。这也是为什么这个工具 tier=AUTO——OPUS 想读就读 · 不打扰 用户。
+  选 (b)。这也是为什么这个工具 tier=AUTO——Daemonkey 想读就读 · 不打扰 用户。
 
 NLP 触发场景：
   - 用户 "把第 3 条做成报告"      → read_dashboard(domain=radar, head=5) → 找第 3 条
@@ -39,12 +39,12 @@ _DOMAIN_HANDLERS: dict[str, str] = {
     "radar": "信息雷达",
     "trends": "今日趋势",
     "reports": "报告库",
-    "cognition": "OPUS 日记 / 用户 画像",
+    "cognition": "Daemonkey 日记 / 用户 画像",
     "content": "内容制作",
     "design": "产品设计",
     "dev": "产品开发",
     "docs": "文档撰写",
-    "wishlist": "OPUS 心愿单 · 自演化任务清单",
+    "wishlist": "Daemonkey 心愿单 · 自演化任务清单",
     "opportunities": "掘金机会 · 已评估的赚钱点",
     "feasibility": "可行性分析 · SWOT + Go/No-Go",
     "outcomes": "执行反馈 · 落地结果",
@@ -61,7 +61,7 @@ def _summarize(args: dict) -> str:
 def _format_radar(data: dict, head: int) -> str:
     items = (data.get("items") or [])[:head]
     if not items:
-        return "（雷达暂时没数据 · 可以让 OPUS 调 refresh_radar 重新抓）"
+        return "（雷达暂时没数据 · 可以让 Daemonkey 调 refresh_radar 重新抓）"
     lines = [f"📡 信息雷达 · 取前 {len(items)} 条（共 {len(data.get('items') or [])} 条）"]
     for i, it in enumerate(items, 1):
         title = it.get("title", "(无标题)")
@@ -81,7 +81,7 @@ def _format_radar(data: dict, head: int) -> str:
 def _format_trends(data: dict, head: int) -> str:
     trends = (data.get("trends") or [])[:head]
     if not trends:
-        return "（今日趋势还没生成 · 可以让 OPUS 调 trend_finder 现总结）"
+        return "（今日趋势还没生成 · 可以让 Daemonkey 调 trend_finder 现总结）"
     lines = [f"🌊 今日趋势 · {len(trends)} 个"]
     for i, t in enumerate(trends, 1):
         title = t.get("title", "")
@@ -110,7 +110,7 @@ def _format_cognition(data: dict, head: int) -> str:
     diary = data.get("opus_diary", {})
     open_qs = data.get("open_questions", [])
 
-    lines = ["🧠 OPUS 日记 + 用户 画像"]
+    lines = ["🧠 Daemonkey 日记 + 用户 画像"]
     lines.append(f"\nBRO 画像 (soul/OWNER-NOTEBOOK.md · {bro.get('size_bytes', 0)} 字节)")
     for sec in (bro.get("sections") or [])[:head]:
         lines.append(f"  · {sec.get('heading')}")
@@ -130,12 +130,12 @@ def _format_cognition(data: dict, head: int) -> str:
 
 
 def _format_wishlist(data: dict, head: int) -> str:
-    """ · OPUS 心愿单 · 让 OPUS 调出自己写的心愿继续干活."""
+    """Daemonkey 心愿单 · 让 Daemonkey 调出自己写的心愿继续干活."""
     wishes = (data.get("wishes") or [])[:head]
     if not wishes:
-        return "（心愿单空 · OPUS 还没写过心愿）"
+        return "（心愿单空 · Daemonkey 还没写过心愿）"
     total = data.get("count") or len(wishes)
-    lines = [f"💝 OPUS 心愿单 · 取前 {len(wishes)} 条（共 {total} 条）"]
+    lines = [f"💝 Daemonkey 心愿单 · 取前 {len(wishes)} 条（共 {total} 条）"]
     for i, w in enumerate(wishes, 1):
         wid = w.get("id", "?")
         title = w.get("title", "(无标题)")
@@ -163,12 +163,12 @@ def _format_wishlist(data: dict, head: int) -> str:
         branch = (w.get("dev_branch") or "").strip()
         if branch:
             lines.append(f"   git 分支: {branch}")
-        #  · wish reflection 回流 (Hermes '从经验改进' 那一环): 完成后写的复盘心得
-        # 摆进 NLP read · OPUS 翻自己心愿单时看得到上次干这事学到了啥·不重复踩坑
+        # wish reflection 回流 (Hermes '从经验改进' 那一环): 完成后写的复盘心得
+        # 摆进 NLP read · Daemonkey 翻自己心愿单时看得到上次干这事学到了啥·不重复踩坑
         refl = (w.get("reflection") or "").strip().replace("\n", " ")
         if refl:
             lines.append(f"   💭 复盘: {refl[:220]}")
-        #  测谎仪 · 只在 status 和 git 对不上时报警:
+        # 测谎仪 · 只在 status 和 git 对不上时报警:
         #   live 但没合 = 谎报上线 (最危险)·active/review 没合 = 正常 (活儿在分支上)
         if w.get("git_merge_state") == "unmerged":
             n = w.get("git_unmerged_commits", 0)
@@ -184,7 +184,7 @@ def _format_wishlist(data: dict, head: int) -> str:
 def _format_opportunities(data: dict, head: int) -> str:
     items = (data.get("opportunities") or data.get("items") or [])[:head]
     if not items:
-        return "（掘金机会暂时没数据 · OPUS 可以调 mine_opportunities 重新生成）"
+        return "（掘金机会暂时没数据 · Daemonkey 可以调 mine_opportunities 重新生成）"
     lines = [f"💎 掘金机会 · 取前 {len(items)} 条"]
     for i, o in enumerate(items, 1):
         title = o.get("title", "(无标题)")
@@ -203,7 +203,7 @@ def _format_opportunities(data: dict, head: int) -> str:
 def _format_feasibility(data: dict, head: int) -> str:
     items = (data.get("analyses") or data.get("items") or [])[:head]
     if not items:
-        return "（可行性分析没数据 · OPUS 可以调 analyze_feasibility）"
+        return "（可行性分析没数据 · Daemonkey 可以调 analyze_feasibility）"
     lines = [f"📊 可行性分析 · 取前 {len(items)} 条"]
     for i, a in enumerate(items, 1):
         title = a.get("title") or a.get("opp_title", "(无标题)")
@@ -242,7 +242,7 @@ def _format_outcomes(data: dict, head: int) -> str:
 def _format_workshop(data: dict, head: int, icon: str, label: str) -> str:
     items = (data.get("items") or [])[:head]
     if not items:
-        return f"（{icon} {label} 工坊空 · 跟 OPUS 说做一份就有了 · 引导: {data.get('empty_hint', '')}）"
+        return f"（{icon} {label} 工坊空 · 跟 Daemonkey 说做一份就有了 · 引导: {data.get('empty_hint', '')}）"
     lines = [f"{icon} {label} · {len(items)} 份产出"]
     for i, it in enumerate(items, 1):
         kind = it.get("kind") or ""
@@ -283,10 +283,10 @@ def _format_all(head: int) -> str:
 
     try:
         cog = load_cognition(section_excerpt_chars=60, diary_max_entries=3)
-        parts.append(f"\n🧠 OPUS 日记 ({len(cog['opus_diary'].get('entries') or [])} 条 / "
+        parts.append(f"\n🧠 Daemonkey 日记 ({len(cog['opus_diary'].get('entries') or [])} 条 / "
                      f"画像 {len(cog['bro_profile'].get('sections') or [])} 节)")
     except Exception as e:
-        parts.append(f"\n🧠 OPUS 日记 — 读取失败: {e}")
+        parts.append(f"\n🧠 Daemonkey 日记 — 读取失败: {e}")
 
     for d in ("content", "design", "dev", "docs"):
         try:
@@ -338,10 +338,11 @@ def _run(args: dict) -> ToolResult:
             from pathlib import Path
             ROOT = Path(__file__).resolve().parent.parent
             reports_dir = ROOT / "data" / "reports"
+            all_docs = sorted(reports_dir.glob("*.docx"),
+                              key=lambda p: p.stat().st_mtime, reverse=True) if reports_dir.exists() else []
+            total = len(all_docs)
             items = []
-            if reports_dir.exists():
-                for p in sorted(reports_dir.glob("*.docx"),
-                                key=lambda p: p.stat().st_mtime, reverse=True)[:head]:
+            for p in all_docs[:head]:
                     stat = p.stat()
                     items.append({
                         "name": p.name,
@@ -353,7 +354,7 @@ def _run(args: dict) -> ToolResult:
                     })
             return ToolResult(
                 ok=True,
-                output=_format_reports({"items": items, "count": len(items)}, head),
+                output=_format_reports({"items": items, "count": total}, head),
             )
 
         if domain == "cognition":
@@ -376,7 +377,7 @@ def _run(args: dict) -> ToolResult:
             from workers.wishlist import list_wishes
             all_w = list_wishes()  # list[dict] · 已按 priority 排
             wishes = all_w[:head]
-            #  · 给 OPUS 也标 git 真实合并状态 (从 git 算·不只信 status 标签)
+            # 给 Daemonkey 也标 git 真实合并状态 (从 git 算·不只信 status 标签)
             try:
                 from workers.git_ops import audit_wishes_merge_state
                 audit = audit_wishes_merge_state(wishes)
@@ -429,7 +430,9 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="read_dashboard",
     description=(
-        "读 你工作室任意一维的实际数据 · 让 你在对话里能引用「第 3 条雷达」/「这周第一份报告」/「上次写的口播稿」这样的具体内容。 任何时候 用户指向看板内容 · 你都应该先读这个工具拿到事实再操作。"
+        "读 你工作室任意一维的实际数据 · 让 你在对话里能引用「第 3 条雷达」/"
+        "「这周第一份报告」/「上次写的口播稿」这样的具体内容。"
+        " 任何时候 用户指向看板内容 · 你都应该先读这个工具拿到事实再操作。"
     ),
     tier=TIER_AUTO,
     input_schema={

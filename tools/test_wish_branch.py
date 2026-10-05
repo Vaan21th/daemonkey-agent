@@ -1,4 +1,4 @@
-"""卷四十四 · wish_update 自动 git 分支验证脚本
+"""wish_update 自动 git 分支验证脚本
 
 流程：
   1. 创建一个测试 wish (status=approved, phase=planned)
@@ -6,7 +6,7 @@
   3. 观察是否真的 git checkout -b 出来了分支
   4. cleanup: 删 wish + 删分支 + 切回原分支
 
-跑完留下一段 git log 给 BRO 看·然后再清理。
+跑完留下一段 git log 给 用户 看·然后再清理。
 """
 from __future__ import annotations
 import json
@@ -59,7 +59,7 @@ def main() -> int:
     test_wish_id = f"wish-test-{int(time.time()) % 100000}"
     test_wish = {
         "id": test_wish_id,
-        "title": "卷四十四测试 · 验证 git 分支自动化",
+        "title": "测试 · 验证 git 分支自动化",
         "why": "这是 _test_wish_branch.py 创建的临时 wish·测完即删",
         "status": "approved",
         "integration_path": "daemon",
@@ -90,7 +90,7 @@ def main() -> int:
         result = wish_spec.run({
             "wish_id": test_wish_id,
             "daemon_phase": "implementing",
-            "comment": "卷四十四 · 自动化测试",
+            "comment": "自动化测试",
         })
         print(f"  ok={result.ok}")
         if result.error:

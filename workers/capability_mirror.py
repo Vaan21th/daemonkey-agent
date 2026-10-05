@@ -2,30 +2,30 @@
 workers/capability_mirror.py
 ============================
 
-卷三十六 · 市场能力镜像引擎
+市场能力镜像引擎
 
-OPUS 周期性提炼 BRO 的市场能力切片 → 反哺看清自己。
+Daemonkey 周期性提炼 用户 的市场能力切片 → 反哺看清自己。
 
-差异化分叉（BRO 2026-05-23 定调）:
+差异化分叉（用户 2026-05-23 定调）:
   - hermes 单向: AI 越来越懂用户·帮用户干更多活
-  - OPUS 双向: AI 懂 BRO + BRO 借 AI 看清自己 → 找到定位 + 赚钱机会
+  - Daemonkey 双向: AI 懂 用户 + 用户 借 AI 看清自己 → 找到定位 + 赚钱机会
 
 数据源（全只读）:
-  1. soul/BRO-NOTEBOOK.md · BRO 画像（6 维）
-  2. data/favorites.json · BRO 收藏的机会/可行性分析
+  1. soul/OWNER-NOTEBOOK.md · 用户 画像（6 维）
+  2. data/favorites.json · 用户 收藏的机会/可行性分析
   3. data/radar_feedback.json · 雷达条目 👍/👎/⭐/🗑
   4. data/outcomes.json · record_outcome 的闭环反馈
   5. data/opportunities.json · 已挖掘的掘金机会
-  6. sessions/_index.json · 会话元数据（置顶/重命名 = BRO 重视的话题）
-  7. sessions/*.summary.json · 最近对话的压缩摘要（卷五十八续 VI · 接通桥）
+  6. sessions/_index.json · 会话元数据（置顶/重命名 = 用户 重视的话题）
+  7. sessions/*.summary.json · 最近对话的压缩摘要（续 VI · 接通桥）
      ← 此前镜子只看"点击痕迹"·看不到真实对话。 这一源让 Layer0 的对话信号
        流进镜子层·同时也是 review 画像块的对话输入(review_input 那笔)。
 
 输出:
   data/bro_capability_snapshot.md · 四个区段:
-    显性能力 · BRO 真做过且成的事
-    隐性能力 · BRO 反复收藏/点赞但还没动手 → 兴趣+潜力
-    排斥模式 · BRO 👍 / 👎 / 收藏中出现的"不做的理由"模式
+    显性能力 · 用户 真做过且成的事
+    隐性能力 · 用户 反复收藏/点赞但还没动手 → 兴趣+潜力
+    排斥模式 · 用户 👍 / 👎 / 收藏中出现的"不做的理由"模式
     成长轨迹 · 能力随时间的变化方向
 """
 
@@ -48,21 +48,23 @@ SNAPSHOT_PATH = DATA_DIR / "bro_capability_snapshot.md"
 # ── 数据加载 ──────────────────────────────────────────────────
 
 def _load_bro_profile(max_chars: int = 3500) -> str:
-    """读 BRO-NOTEBOOK · 截前 max_chars（要点都在前面）"""
-    bro_file = SOUL_DIR / "BRO-NOTEBOOK.md"
+    """读主人画像 · 截前 max_chars（要点都在前面）"""
+    from identity import owner_notebook_path, owner_notebook_missing_note
+    bro_file = owner_notebook_path(SOUL_DIR)
+    missing = owner_notebook_missing_note()
     if not bro_file.exists():
-        return "（画像笔记还没放到 soul/ 目录）"
+        return f"（{missing}）"
     try:
         text = bro_file.read_text(encoding="utf-8")
     except Exception:
-        return "（BRO-NOTEBOOK 读不出来）"
+        return "（画像读不出来）"
     if len(text) <= max_chars:
         return text
-    return text[:max_chars] + "\n\n…（已截断 · 完整画像在 soul/BRO-NOTEBOOK.md）"
+    return text[:max_chars] + "\n\n…（已截断）"
 
 
 def _load_favorites(max_items: int = 30) -> str:
-    """加载 BRO 收藏夹 · 返回可读文本"""
+    """加载 用户 收藏夹 · 返回可读文本"""
     fav_file = DATA_DIR / "favorites.json"
     if not fav_file.exists():
         return "（暂无收藏）"
@@ -113,7 +115,7 @@ def _load_radar_feedback(max_items: int = 30) -> str:
 def _load_outcomes(max_items: int = 20) -> str:
     """加载闭环反馈 · record_outcome 的历史。
 
-    卷五十四修: 老版读 `data/outcomes.json` 单文件 · 但 record_outcome 实际写
+    修: 老版读 `data/outcomes.json` 单文件 · 但 record_outcome 实际写
     `data/outcomes/<opp_id>.json` 每机会一文件 (workers/outcomes.py OUTCOMES_DIR) ·
     路径对不上 → 能力镜像永远空转报"暂无闭环反馈"。 现直接复用 outcomes 的标准渲染器。
     """
@@ -147,7 +149,7 @@ def _load_opportunities(max_items: int = 10) -> str:
 
 
 def _load_recent_summaries(max_chars: int = 4000) -> str:
-    """读最近对话的压缩摘要 · 让镜子照得见真实对话（卷五十八续 VI · 接通桥）。
+    """读最近对话的压缩摘要 · 让镜子照得见真实对话（续 VI · 接通桥）。
 
     委托 memory_index.load_recent_summaries（摘要读取逻辑的单一真相源）·
     带 [会话 id · 日期] 前缀供 LLM cite。 失败优雅降级·不抛。
@@ -169,16 +171,16 @@ except Exception:
         return t
 
 
-SYSTEM_PROMPT = """你是 OPUS 的"市场能力镜像"分析引擎。
+SYSTEM_PROMPT = """你是 Daemonkey 的"市场能力镜像"分析引擎。
 
-你的任务不是给 BRO 打分——是帮他**看见自己**。
+你的任务不是给 用户 打分——是帮他**看见自己**。
 
-你要从 BRO 的行为痕迹（收藏了什么 / 拒绝了什么 / 做了什么 / 怕什么 / 想做什么）中，
+你要从 用户 的行为痕迹（收藏了什么 / 拒绝了什么 / 做了什么 / 怕什么 / 想做什么）中，
 提炼出他的**市场能力画像**，像一个镜子一样反照回去。
 
 原则:
 - 不吹捧 · 不贬低 · 不诊断
-- 用具体证据说话（"BRO 收藏了 X 但一直没动" 比 "BRO 对 X 有兴趣" 好 100 倍）
+- 用具体证据说话（"用户 收藏了 X 但一直没动" 比 "用户 对 X 有兴趣" 好 100 倍）
 - 模式 > 个案（1 次收藏是噪音·5 次同类收藏是信号）
 - 短 · 每段 3-5 句够了
 - 不确定就说"证据不够·待观察"
@@ -191,14 +193,14 @@ SYSTEM_PROMPT = """你是 OPUS 的"市场能力镜像"分析引擎。
 3. 排斥模式 · 他拒绝过什么 + 拒绝的口径
 4. 成长轨迹 · 时间序列上的变化方向
 
-最后给一段"给 BRO 的镜子话"——50 字以内。"""
+最后给一段"给 用户 的镜子话"——50 字以内。"""
 
 USER_PROMPT_TEMPLATE = """# 数据输入
 
-## BRO 画像 (BRO-NOTEBOOK 前 3500 字)
+## 用户 画像 (OWNER-NOTEBOOK 前 3500 字)
 {bro_profile}
 
-## BRO 收藏夹
+## 用户 收藏夹
 {favorites}
 
 ## 雷达反馈 (👍/👎/⭐/🗑)
@@ -215,8 +217,8 @@ USER_PROMPT_TEMPLATE = """# 数据输入
 
 ---
 
-请基于以上数据·输出 BRO 的市场能力镜像快照。
-四个区段 + 给 BRO 的镜子话（≤50 字）。
+请基于以上数据·输出 用户 的市场能力镜像快照。
+四个区段 + 给 用户 的镜子话（≤50 字）。
 输出纯 markdown · 不要 JSON 包装。
 如果某个区段数据不够·直接写"证据不足·待观察"。"""
 
@@ -251,16 +253,16 @@ def generate_snapshot() -> dict:
         recent_summaries=recent_summaries,
     )
 
-    # 用户称呼替换 (2026-08-15 镜像标题 BRO 硬编码修复):
-    #   BRO 是母体主人的称呼 · 开源版用户相遇时留的 owner_name (如「飘飘」)
-    #   应该出现在快照标题/镜子话里。 有 owner_name → 全模板替换；无 → 保持 BRO (母体兼容)。
+    # 用户称呼替换 (2026-08-15 镜像标题 用户 硬编码修复):
+    #   用户 是母体主人的称呼 · 开源版用户相遇时留的 owner_name (如「飘飘」)
+    #   应该出现在快照标题/镜子话里。 有 owner_name → 全模板替换；无 → 保持 用户 (母体兼容)。
     try:
         from api_routes.core import _owner_name
         _owner = _owner_name() or ""
     except Exception:
         _owner = ""
-    if _owner and _owner != "BRO":
-        user_prompt = user_prompt.replace("BRO", _owner)
+    if _owner and _owner != "用户":
+        user_prompt = user_prompt.replace("用户", _owner)
 
     started = time.time()
     logger.info("capability_mirror: calling LLM")

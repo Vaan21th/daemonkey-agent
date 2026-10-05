@@ -1,12 +1,12 @@
 """agent_tools/app_delete_secret.py
 =====================================
 
- K stage 2c++ · wish-96ee1b52 · 删一个 app 的 secret
+K stage 2c++ · wish-96ee1b52 · 删一个 app 的 secret
 
 **调用时机**:
-    - 用户 让 OPUS 把某个 KEY 旋转/失效掉
-    - OPUS 调 app_set_secret 时打错 name · 想清理重存
-    - app 不再使用 · 用户 让 OPUS 整体清掉
+    - 用户 让 Daemonkey 把某个 KEY 旋转/失效掉
+    - Daemonkey 调 app_set_secret 时打错 name · 想清理重存
+    - app 不再使用 · 用户 让 Daemonkey 整体清掉
 
 **tier**:
     TIER_CONFIRM —— 删 KEY 是敏感操作 · 删错了 用户 要重新去 API 平台拿 · 麻烦

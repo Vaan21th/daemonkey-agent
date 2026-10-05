@@ -2,11 +2,11 @@
 workers/softness_score.py
 =========================
 
-卷三十二 · 雷达条目"软文嫌疑度"评估（规则版 · 卷三十三可加 LLM 版）
+雷达条目"软文嫌疑度"评估（规则版 · 可加 LLM 版）
 
 为什么需要这玩意：
   雷达里抓回来的资讯·有真新闻·也有"震惊·这个 AI 工具吊打 ChatGPT"这种营销稿。
-  用户时间宝贵·要让"硬信号"排在前面·把软文压到底部。
+  用户 是超级个体·时间宝贵·要让"硬信号"排在前面·把软文压到底部。
 
 评分维度：
   1. 标题特征（最强信号·中英文双侧）
@@ -15,7 +15,7 @@ workers/softness_score.py
      - 数字钓鱼: "10x / 100x / N 倍" + 形容词组合
      - 反问钓鱼: "为什么 X 这么 Y / how X is destroying Y"
 
-  2. 信源历史（BRO 反馈反哺）
+  2. 信源历史（用户 反馈反哺）
      - workers.radar_feedback.source_negative_score(source) > 0 → 加分
 
   3. 内容长度（极短摘要 + 标题党 = 高软文嫌疑）
@@ -151,7 +151,7 @@ def softness_score(item: dict) -> dict:
         score += url_score
         signals.append("tracking_url")
 
-    # 信源负面历史（BRO 已经踩过的源）
+    # 信源负面历史（用户 已经踩过的源）
     try:
         from workers.radar_feedback import source_negative_score
         neg = source_negative_score(source)
@@ -189,7 +189,7 @@ def annotate_items(items: Iterable[dict]) -> list[dict]:
 
 def sort_items(items: Iterable[dict]) -> list[dict]:
     """
-    雷达排序规则（卷三十二）：
+    雷达排序规则（）：
       1. starred 永远第一
       2. thumbs_up 第二档
       3. low 软文 第三档

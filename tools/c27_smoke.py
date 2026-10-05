@@ -1,4 +1,4 @@
-"""tools/c27_smoke.py — 卷二十七冒烟测试
+"""tools/c27_smoke.py — 冒烟测试
 
 测试范围：
   - workers/translator.py · 翻译器 + cache
@@ -241,7 +241,7 @@ def test_pipeline_breadcrumb_in_js():
 
 
 def main():
-    print("=== 卷二十七 smoke test ===")
+    print("=== smoke test ===")
     start = time.time()
     test_translator_unit()
     test_translator_cache_skip()

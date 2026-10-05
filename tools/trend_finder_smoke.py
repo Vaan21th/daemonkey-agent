@@ -3,7 +3,7 @@ tools/trend_finder_smoke.py
 ============================
 
 测 workers/trend_finder.py 的纯函数 + 调用结构 · 不实际调 LLM
-（LLM 调用 BRO 自己点"今日趋势"按钮验证 · 不在这烧 token）
+（LLM 调用 用户 自己点"今日趋势"按钮验证 · 不在这烧 token）
 
 跑法:
     .\\.venv\\Scripts\\python.exe -m tools.trend_finder_smoke
@@ -158,7 +158,7 @@ def main() -> int:
 
     print("\n" + "=" * 50)
     if failures == 0:
-        print("[smoke] ALL PASS · trend_finder 结构 OK · LLM 调用留 BRO 自己点按钮验证")
+        print("[smoke] ALL PASS · trend_finder 结构 OK · LLM 调用留 用户 自己点按钮验证")
         return 0
     print(f"[smoke] {failures} FAIL")
     return 1

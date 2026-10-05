@@ -2,7 +2,7 @@
 agent_tools/
 ============
 
-OPUS 在 tool use 循环里调用的"器官"——每个工具一个 .py 文件。
+Daemonkey 在 tool use 循环里调用的"器官"——每个工具一个 .py 文件。
 
 设计原则：
   1. **协议无关**：每个工具只关心自己的输入输出，不知道 Anthropic / OpenAI 的 schema 长什么样。
@@ -31,7 +31,7 @@ TIER_CONFIRM = "confirm"
 TIER_GUARD = "guard"
 
 
-# ──  · wish-f30d571d · 工具进度钩子 ────────────────────────────
+# ── wish-f30d571d · 工具进度钩子 ────────────────────────────
 # tool_loop 在执行 spec.run(args) 前向 ContextVar 写入 push_progress(step, msg)
 # 回调，长跑工具 (如 auto_pipeline) 在步骤之间调 push_tool_progress() 推送进度
 # 到 SSE。ContextVar 线程内传递 · 不改任何 _run 签名 · 零侵入。
@@ -92,7 +92,7 @@ def current_turn_id() -> str:
     return _TURN_CTX.get() or ""
 
 
-# ── 卷七十四续十五 · 本轮回复正文 ContextVar(两步法长文档生成兜底) ─────────────
+# ── 续十五 · 本轮回复正文 ContextVar(两步法长文档生成兜底) ─────────────
 # 痛点: DeepSeek 等模型 tool call 的长 JSON 参数(generate_report.body / write_file.content)
 # 经常丢成空壳——它们写正文(普通文本流)是强项·丢的只是结构化长参数。
 # 解法(只增不减): LLM 先把完整正文写在【回复正文】里(强项)·再调工具【不带 body/content】·
@@ -101,6 +101,32 @@ def current_turn_id() -> str:
 # 前沿模型(Claude/GPT)照旧直接传 body·根本不碰这条兜底·零影响。
 _CURRENT_TURN_TEXT: contextvars.ContextVar[str] = \
     contextvars.ContextVar("_current_turn_text", default="")
+
+
+# ── 2026-09-28 · app 工作区 ContextVar (wish-3586b504) ──────────────────────
+# app 运行时的「工作目录」。用户 定的分区规则: app 的依赖/中间帧/缓存属「工作区」，
+# 随时可删、不进产物库；只有最终成品才进 outputs/。
+#   run_app 起跑前 set · 跑完 reset · 工具(shell_exec/python_exec)默认 cwd 优先读它。
+#   这样 app **不需要在 prompt 里写工作路径** —— 工程层给，同「操作系统给进程 cwd」。
+_APP_WORK_CTX: contextvars.ContextVar[Optional[str]] = \
+    contextvars.ContextVar("_app_work_ctx", default=None)
+
+
+def set_app_work_dir(path: Optional[str]) -> contextvars.Token:
+    """run_app 起跑前调 · 返回 Token · finally 里 reset_app_work_dir(token)"""
+    return _APP_WORK_CTX.set(path)
+
+
+def reset_app_work_dir(token: contextvars.Token) -> None:
+    try:
+        _APP_WORK_CTX.reset(token)
+    except Exception:
+        pass
+
+
+def current_app_work_dir() -> str:
+    """当前是否在 app 运行上下文里 · 是则返回它的工作区路径 · 否则空串"""
+    return str(_APP_WORK_CTX.get() or "")
 
 
 def set_current_turn_text(text: str) -> None:
@@ -114,12 +140,12 @@ def current_turn_text() -> str:
 # ────────────────────────────────────────────────────────────────────────
 
 
-# ── 0.2.0 · 信任 flow 上下文 (用户痛点: 跑过 OK 的 flow 不要次次问) ──
+# ── v4 · 0.2.0 · 信任 flow 上下文 (用户 痛点: 跑过 OK 的 flow 不要次次问) ──
 # agent_tools/run_flow.py 启动时检查 flow.trust_level ≥ 2 · 设这个 ContextVar 为 flow_id
-# daemon 的 confirm callback 看到这个 ContextVar 不为空 · 对 CONFIRM tier 的工具直接返 "yes" ·
-# 但 GUARD 仍走原流程 (保命线)。
+# daemon 的 confirm callback (daemon_api._chat_impl 注入到 run_tool_loop 的那个) 看到这个
+# ContextVar 不为空 · 对 CONFIRM tier 的工具直接返 "yes" · 但 GUARD 仍走原流程 (保命线)。
 # 设计原则:
-#   - 只覆盖 CONFIRM · GUARD 永远要用户拍 (rm -rf / drop / 改 .env 之类)
+#   - 只覆盖 CONFIRM · GUARD 永远要 用户 拍 (rm -rf / drop / 改 .env 之类)
 #   - 用 ContextVar 而非全局变量 · 多会话并发安全
 #   - 设了之后由调用方在结束时 reset · 避免泄露到其他 task
 _TRUSTED_FLOW_CTX: contextvars.ContextVar[Optional[str]] = \
@@ -151,6 +177,10 @@ class ToolResult:
     output: str
     truncated: bool = False
     error: Optional[str] = None
+    # 2026-09-20 · 结构化产物声明（第2刀地基）· 工具只“声明事实”：我这次产了哪个文件。
+    #   打标记 / 判定 / 记账全由 tool_loop 出口统一兜现 —— 工具里那 11 处手写 attach
+    #   会逐个退役，“某个分支漏接”在结构上不再可能。默认空 = 不影响任何现有构造。
+    stage_path: str = ""
 
     def to_string(self, max_chars: int = 8000) -> str:
         if not self.ok:

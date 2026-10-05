@@ -5,16 +5,16 @@ agent_tools/remove_domain.py
 补丁 · 用户 NLP 删一个雷达 domain
 
 用例：
-  - 用户: "把文玩这个领域删了" / "我不关注某某领域了"
-  - OPUS: 调本工具 · 默认 reassign 模式（保留源·改归 self-evolve·防误删）
+  - 用户: "把文玩这个领域删了" / "我不关注游戏掘金了"
+  - Daemonkey: 调本工具 · 默认 reassign 模式（保留源·改归 wildcard·防误删）
 
 档位：CONFIRM
   改写 domains_extra.json + 可能改 radar_sources.json · 应给 用户 确认
   尤其 sources_action=delete 是不可逆的·必须 CONFIRM
 
 红线：
-  - self-evolve 是唯一内置领域·不能删
-  - 默认 reassign · 把源归到 self-evolve · 而不是 delete
+  - 内置 4 个 domain (ai / super-individual / game-money / wildcard) 不能删
+  - 默认 reassign · 把源归到 wildcard · 而不是 delete
 """
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def _run(args: dict) -> ToolResult:
             lines.append(f"    - ...还有 {len(affected) - 15} 条")
 
     lines.append("")
-    lines.append("下次刷新雷达就生效 · 也可以让 OPUS 立即 manage_info_source action=refresh")
+    lines.append("下次刷新雷达就生效 · 也可以让 Daemonkey 立即 manage_info_source action=refresh")
 
     return ToolResult(ok=True, output="\n".join(lines))
 
@@ -78,15 +78,14 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="remove_domain",
     description=(
-        "删雷达领域。默认 sources_action=reassign 把源归到 fallback。self-evolve 永远不能删。真要连源删须显式 delete。"
-    ),
+        "删雷达领域。默认 sources_action=reassign 把源归到 fallback。self-evolve 永远不能删。真要连源删须显式 delete。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
         "properties": {
             "domain_slug": {
                 "type": "string",
-                "description": "要删的 domain slug · 比如用户自建的 'indie-game' 'pixel-art'",
+                "description": "要删的 domain slug · 比如 'wenwan' 'wildcard' 'game-money'",
                 "minLength": 2,
                 "maxLength": 40,
             },
@@ -101,7 +100,8 @@ SPEC = ToolSpec(
             "target_domain": {
                 "type": "string",
                 "description": (
-                    "reassign 模式下·源要归到哪个 domain · 不传默认归到 self-evolve"
+                    "reassign 模式下·源要归到哪个 domain · 不传默认自动 fallback "
+                    "(优先 wildcard → ai → super-individual)"
                 ),
             },
         },

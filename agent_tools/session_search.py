@@ -2,7 +2,7 @@
 agent_tools/session_search.py
 ==============================
 
- II · wish-2a92774d · session 聚合搜索 (hermes 风格 L2)
+II · wish-2a92774d · session 聚合搜索 (hermes 风格 L2)
 
 跟 recall_memory 的区别:
   - recall_memory · 通用 memory 搜索 (OWNER-NOTEBOOK + SELF-EVOLUTION + sessions)
@@ -209,8 +209,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="session_search",
     description=(
-        "专搜 sessions/*.jsonl，按会话聚合。通用记忆用 recall_memory。actions: search/list/get/stats。支持 FTS5 与 since/until。"
-    ),
+        "专搜 sessions/*.jsonl，按会话聚合。通用记忆用 recall_memory。actions: search/list/get/stats。支持 FTS5 与 since/until。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

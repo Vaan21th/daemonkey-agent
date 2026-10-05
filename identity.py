@@ -53,6 +53,7 @@ def _identity_write_path(root=None) -> Path:
 DEFAULT_AI_NAME = "OPUS"
 DEFAULT_OWNER_NAME = "BRO"
 DEFAULT_DOMAIN = "ai"  # 母体: 未分组雷达项的兜底领域
+INSTANCE_KIND = "open"  # 实例类型: mother=母体 · open=开源版（分发配置·两库各自维护·别覆写）
 
 # mtime 缓存: 避免每轮 /chat 读盘·又能在 onboarding 写完 IDENTITY.json 后自动失效
 _cache: dict = {"mtime": None, "data": {}}
@@ -151,11 +152,37 @@ class OwnerNotebook:
     def read_text(self, encoding="utf-8", errors=None):
         NS = self._store()
         if NS is not None:
-            return NS.read_full(self._soul)
+            # errors 也要透传 —— 否则同一份画像在多格/单文件两种形态下行为不同，
+            # 且失败只发生在新布局上，排查时会被误当「新布局坏了」。
+            return NS.read_full(self._soul, errors=errors)
         kw = {"encoding": encoding}
         if errors is not None:
             kw["errors"] = errors
         return self._single().read_text(**kw)
+
+    def write_text(self, text, encoding="utf-8", errors=None):
+        """「逻辑单文件」→ 多格 · 与 read_text 对称的写边界。
+
+        为什么必须有：消费者（state_condenser._write_notebook 落「已下沉」段 /
+        cognition_loader.delete_understanding_field 删了解层条目）的写入逻辑
+        全按「一个文件」写成 —— 读全文、改、写全文。拆格后 read_text 已经
+        会拼回单文件（notebook_store.read_full），**但没人把 write 接上**，
+        于是 nb_path.write_text(...) 撞 AttributeError。
+
+        2026-10-01 实锤：凝练产物落「已下沉」段每 tick 失败（被 except 吃成
+        warning）、delete_understanding_field 同理 → 记忆下沉/凝练全废。
+        根因不是「两处调用点漏改」，是**兼容层只建了读边界**（见
+        notebook_store 兼容层注释：写边界 write_full 本来就写好了，只是没人
+        把它暴露成 .write_text）。
+        """
+        NS = self._store()
+        if NS is not None:
+            NS.write_full(self._soul, text)
+            return
+        kw = {"encoding": encoding}
+        if errors is not None:
+            kw["errors"] = errors
+        self._single().write_text(text, **kw)
 
     def stat(self):
         """最新 mtime —— 任何一格变了都算画像变了（she_gallery 靠这个判「有新东西」）。"""
@@ -165,11 +192,23 @@ class OwnerNotebook:
             mts = [p.stat().st_mtime for p in d.glob("*.md")] if d.is_dir() else []
             if mts:
                 return SimpleNamespace(st_mtime=max(mts), st_size=0)
+            # 多格已启用（目录在）→ 目录就是唯一真源；此时单文件是迁移孤儿，
+            # **不回落它** —— 否则 stat 说「画像刚更新」而 read_text 读回空，两边打架。
+            return SimpleNamespace(st_mtime=0, st_size=0)
         return self._single().stat()
 
     @property
     def name(self) -> str:
-        return OWNER_NOTEBOOK_FILENAME
+        """真实后端名 —— 单文件是文件名，多格是目录名。
+
+        原来恒返回 OWNER-NOTEBOOK.md：多格模式下那个文件并不存在，
+        消费方拿它当文件名/拼路径就指向空气（含 state_condenser 的
+        NOTEBOOK_FILENAME —— 它拼出的 soul/OWNER-NOTEBOOK.md 确实不存在）。
+        """
+        NS = self._store()
+        if NS is not None and (self._soul / NS.NOTEBOOK_DIR).is_dir():
+            return NS.NOTEBOOK_DIR
+        return self._single().name
 
     def __str__(self) -> str:
         NS = self._store()
@@ -252,6 +291,12 @@ def localize(text: str) -> str:
         return text
     owner = owner_name()
     ai = ai_name()
+    # 源头中性令牌 → 本实例的名字。放在 no-op 判断之前:
+    # 缺省名实例也走这一步·{OWNER}/{AI} → 各自默认值·与旧行为逐字等同。
+    if "{OWNER}" in text:
+        text = text.replace("{OWNER}", owner)
+    if "{AI}" in text:
+        text = text.replace("{AI}", ai)
     if owner == DEFAULT_OWNER_NAME and ai == DEFAULT_AI_NAME:
         return text
     if owner != DEFAULT_OWNER_NAME:

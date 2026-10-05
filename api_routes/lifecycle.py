@@ -4,11 +4,11 @@ api_routes/lifecycle.py · daemon 生命周期路由 (wish-413999da · phase 1)
 
 7 路由 · daemon 的生死掌控:
 
-  POST /restart-daemon        · 重启 daemon (装载新 Python 代码) · 卷四十一/卷四十六 III+IV
+  POST /restart-daemon        · 重启 daemon (装载新 Python 代码) · /III+IV
   POST /shutdown-daemon       · 关闭 daemon (不起新进程)
-  GET  /rollback              · 拉候选 commits 给 BRO 选 · 卷四十四 G
+  GET  /rollback              · 拉候选 commits 给 用户 选 · G
   POST /rollback              · 执行回档 + 重启 (wish-196213df)
-  POST /reload-soul           · 热重载 system prompt (改 SKILL.md/BRO-NOTEBOOK 不用重启)
+  POST /reload-soul           · 热重载 system prompt (改 SKILL.md/OWNER-NOTEBOOK 不用重启)
   GET  /api/env/reload_status · .env hot reload watcher 状态 (Y6)
   GET  /api/lifecycle_status  · daemon 生命周期可见 UI banner / 重启历史 (wish-ed5553d5)
 
@@ -42,9 +42,9 @@ router = APIRouter()
 
 @router.get("/api/env/reload_status")
 async def env_reload_status(authorization: Optional[str] = Header(None)):
-    """卷四十六 III 补丁 5 · Y6 · .env hot reload watcher 状态
+    """III 补丁 5 · Y6 · .env hot reload watcher 状态
 
-    无 auth · 让 BRO 调 curl 一行看 watcher 在不在跑 + 上次 reload 改了啥
+    无 auth · 让 用户 调 curl 一行看 watcher 在不在跑 + 上次 reload 改了啥
     """
     try:
         from workers.env_reloader import get_status
@@ -55,7 +55,7 @@ async def env_reload_status(authorization: Optional[str] = Header(None)):
 
 @router.get("/api/lifecycle_status")
 async def lifecycle_status(authorization: Optional[str] = Header(None)):
-    """卷四十六 III · wish-ed5553d5 · UI banner / 重启历史可见 · 无需 auth"""
+    """III · wish-ed5553d5 · UI banner / 重启历史可见 · 无需 auth"""
     try:
         from workers.daemon_lifecycle import get_status
         return get_status()
@@ -70,17 +70,17 @@ async def restart_daemon(
 ):
     """重启 daemon · 装载新 Python 代码 (改完 .py 用 · /reload-soul 只重读 prompt)。
 
-    卷四十一 V2 (改自 V1 子进程绑不上端口的 bug):
+    V2 (改自 V1 子进程绑不上端口的 bug):
     - V1 用 DETACHED_PROCESS + DEVNULL stdout/stderr → 子进程 uvicorn 启动崩 (依赖 stdout)
-    - V2 把 stdout/stderr 重定向到 data/daemon.out/.err · 不再 DEVNULL · 顺便让 BRO 能 tail log
+    - V2 把 stdout/stderr 重定向到 data/daemon.out/.err · 不再 DEVNULL · 顺便让 用户 能 tail log
     - parent 关 socket 后等 1.5s 给子进程绑端口的窗口 · 然后 os._exit
 
-    卷四十六 III · os._exit 跳 atexit · 必须显式 mark_graceful_shutdown
+    III · os._exit 跳 atexit · 必须显式 mark_graceful_shutdown
     + 写 restart_request 让新 daemon 续场 (告诉它这是 WebUI 重启 · 不是 crash)
 
-    卷四十六 IV · payload 加 follow_up_message + session_id (BRO 痛点 2026-05-26 早 8:48):
+    IV · payload 加 follow_up_message + session_id (用户 痛点 2026-05-26 早 8:48):
       WebUI 重启按钮原本不传 body · 新 daemon 起来只 inject system notice 不自动续场 ·
-      BRO 期待"重启完帮我验证 X"必须手动再发一条 user 消息。 现在 UI 可以填验证任务 ·
+      用户 期待"重启完帮我验证 X"必须手动再发一条 user 消息。 现在 UI 可以填验证任务 ·
       走跟 request_restart 工具完全一样的 follow_up_message 通道 · resume_runner 会 spawn
       background turn。
     """
@@ -143,8 +143,8 @@ async def restart_daemon(
 async def shutdown_daemon(authorization: Optional[str] = Header(None)):
     """关闭 daemon · 不起新进程。
 
-    卷四十一 · BRO 想完全停下后用 GUI 启动器从头来 · 或者就单纯让 OPUS 睡一下。
-    卷四十六 III · 加 mark_graceful_shutdown · 否则下次启动会误判 crash
+    用户 想完全停下后用 GUI 启动器从头来 · 或者就单纯让 Daemonkey 睡一下。
+    III · 加 mark_graceful_shutdown · 否则下次启动会误判 crash
     """
     check_auth(authorization)
 
@@ -163,7 +163,7 @@ async def shutdown_daemon(authorization: Optional[str] = Header(None)):
 
 @router.get("/rollback")
 async def rollback_candidates(authorization: Optional[str] = Header(None)):
-    """卷四十四 G · UI 回档按钮 (wish-196213df) · 拉候选 commits 给 BRO 选目标
+    """G · UI 回档按钮 (wish-196213df) · 拉候选 commits 给 用户 选目标
 
     返回:
       - current_branch · 当前 git 分支
@@ -171,7 +171,7 @@ async def rollback_candidates(authorization: Optional[str] = Header(None)):
       - candidates     · 最近 5 个 commits [{sha, short, msg, date}]
       - history        · 最近 10 条回档记录 (sessions/_rollback_history.json)
 
-    OPUS 改崩了 daemon · BRO 在 UI 上点 ⏪ 回档 · 这个端点先返回候选给 BRO 选。
+    Daemonkey 改崩了 daemon · 用户 在 UI 上点 ⏪ 回档 · 这个端点先返回候选给 用户 选。
     """
     check_auth(authorization)
 
@@ -228,18 +228,18 @@ async def rollback_execute(
     payload: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """卷四十四 G · UI 回档按钮 (wish-196213df) · 执行回档 + 重启 daemon
+    """G · UI 回档按钮 (wish-196213df) · 执行回档 + 重启 daemon
 
     body:
       - target_commit       · str  · 必须在最近 5 个 commits 内 (GET /rollback 返回的 sha)
       - confirm             · bool · 必须 true · 防误点
-      - reason              · str  · 可选 · BRO 写为啥要回档
-      - follow_up_message   · str  · 可选 · 卷四十六 IV (2026-05-26): 回档完成后 OPUS 自动跑的验证任务
+      - reason              · str  · 可选 · 用户 写为啥要回档
+      - follow_up_message   · str  · 可选 · IV (2026-05-26): 回档完成后 Daemonkey 自动跑的验证任务
       - session_id          · str  · 可选 · 跟 follow_up_message 配对 · resume turn 落档的目标 session
 
     流程:
       1. 验证 target_commit 在 candidates 内 (安全限制 · 不让一次跳太远)
-      2. 有 dirty → git stash push --include-untracked (BRO 后悔可 git stash pop)
+      2. 有 dirty → git stash push --include-untracked (用户 后悔可 git stash pop)
       3. git reset --hard <target_commit>
       4. append sessions/_rollback_history.json
       5. 触发 daemon restart (复用 /restart-daemon 的机制 · 子进程接管 · os._exit)
@@ -284,18 +284,21 @@ async def rollback_execute(
         dirty_p = subprocess.run(["git", "status", "--porcelain"], **_kw)
         had_dirty = bool((dirty_p.stdout or "").strip())
         stash_msg: Optional[str] = None
+        sp = None
         if had_dirty:
             ts = time.strftime("%Y-%m-%d %H:%M:%S")
-            stash_msg = f"rollback at {ts} · BRO clicked UI button"
+            stash_msg = f"rollback at {ts} · 用户 clicked UI button"
             sp = subprocess.run(
                 ["git", "stash", "push", "-m", stash_msg, "--include-untracked"], **_kw,
             )
-        if sp.returncode != 0:
+        # 工作区干净时没有 stash 动作 · sp 保持 None · 跳过检查 (修 UnboundLocalError)
+        if sp is not None and sp.returncode != 0:
             raise HTTPException(500, f"git stash 失败: {(sp.stderr or '')[:300]}")
 
-    rp = subprocess.run(["git", "reset", "--hard", target], **_kw)
-    if rp.returncode != 0:
-        raise HTTPException(500, f"git reset 失败: {(rp.stderr or '')[:300]}")
+        # B-① · 2026-08-27 · reset --hard 移进 git 锁内 (原来在 with 外 · 与其它 git 操作并发可撕裂) (Grok 全量审计)
+        rp = subprocess.run(["git", "reset", "--hard", target], **_kw)
+        if rp.returncode != 0:
+            raise HTTPException(500, f"git reset 失败: {(rp.stderr or '')[:300]}")
 
     history_path = ROOT / "sessions" / "_rollback_history.json"
     history = []
@@ -312,7 +315,7 @@ async def rollback_execute(
         "to_commit": target,
         "stashed": had_dirty,
         "stash_msg": stash_msg,
-        "triggered_by": "BRO",
+        "triggered_by": "用户",
         "reason": reason or None,
     })
     history_path.parent.mkdir(parents=True, exist_ok=True)
@@ -377,9 +380,9 @@ async def rollback_execute(
 
 @router.post("/reload-soul")
 async def reload_soul(authorization: Optional[str] = Header(None)):
-    """热重载 system prompt · 改了 SKILL.md / runtime_addendum / BRO-NOTEBOOK 不用重启 daemon。
+    """热重载 system prompt · 改了 SKILL.md / runtime_addendum / OWNER-NOTEBOOK 不用重启 daemon。
 
-    卷三十九 · 改 system prompt 后下一次 chat 即刻生效。返回 before/after 字符数差。
+    改 system prompt 后下一次 chat 即刻生效。返回 before/after 字符数差。
     """
     check_auth(authorization)
     try:

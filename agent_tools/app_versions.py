@@ -6,8 +6,8 @@
 为什么有这个
 ------------
 刀①给 save_app 加了 version + changelog (元数据)·刀④给 update 加了内容快照 ·
-但光有快照用户没法用——这个工具让 AI 在对话里说"上次那版怎么写的"时·能 list /
-读 / diff / 回滚出来给用户看。
+但光有快照 用户 没法用——这个工具让 Daemonkey 在对话里说"上次那版怎么写的"时·能 list /
+读 / diff / 回滚出来给 用户 看。
 
 action:
     list     · 列某 app 的历史版本 (摘要)
@@ -65,7 +65,10 @@ def _run(args: dict) -> ToolResult:
         version = args.get("version")
         if version is None:
             return ToolResult(ok=False, output="", error="show 需要 version 参数")
-        data = load_version(aid, int(version))
+        try:
+            data = load_version(aid, int(version))
+        except (TypeError, ValueError):
+            return ToolResult(ok=False, output="", error="version 必须是整数")
         if not data:
             return ToolResult(ok=False, output="", error=f"v{version} 不存在")
         lines = [
@@ -86,7 +89,10 @@ def _run(args: dict) -> ToolResult:
         vb = args.get("version_b")
         if va is None or vb is None:
             return ToolResult(ok=False, output="", error="diff 需要 version + version_b")
-        d = diff_summary(aid, int(va), int(vb))
+        try:
+            d = diff_summary(aid, int(va), int(vb))
+        except (TypeError, ValueError):
+            return ToolResult(ok=False, output="", error="version / version_b 必须是整数")
         lines = [f"# diff v{d['a']} → v{d['b']} · 变更 {len(d['changes'])} 处"]
         for ch in d["changes"]:
             field = ch["field"]
@@ -104,7 +110,10 @@ def _run(args: dict) -> ToolResult:
         version = args.get("version")
         if version is None:
             return ToolResult(ok=False, output="", error="rollback 需要 version 参数 (回滚到第几版)")
-        data = load_version(aid, int(version))
+        try:
+            data = load_version(aid, int(version))
+        except (TypeError, ValueError):
+            return ToolResult(ok=False, output="", error="version 必须是整数")
         if not data:
             return ToolResult(ok=False, output="", error=f"v{version} 不存在")
         cur = load_app(aid)
@@ -135,8 +144,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="app_versions",
     description=(
-        "查工坊 app 历史快照。list/show/diff/rollback。回滚会 +1 新 version，不直接覆盖当前。"
-    ),
+        "查工坊 app 历史快照。list/show/diff/rollback。回滚会 +1 新 version，不直接覆盖当前。"    ),
     tier=TIER_AUTO,
     classify=_classify,
     input_schema={

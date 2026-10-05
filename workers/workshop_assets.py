@@ -1,10 +1,10 @@
 """workers/workshop_assets.py
 
- K stage 2c · 出品工坊资产层 · apps + workflows
- K stage 2c++ · wish-6fd76512 · 软删 + 回收站 (2026-05-25 第十六根毛)
- 12 · wish-165ea1f6 phase A · ui_form_schema (2026-05-26 第二十之前的一次)
- 12 · wish-165ea1f6 phase B · output_schema (2026-05-26 第二十之前的一次)
- 13 · wish-165ea1f6 phase C · exec_kind + exec_template (2026-05-26 第二十之前的一次)
+K stage 2c · 出品工坊资产层 · apps + workflows
+K stage 2c++ · wish-6fd76512 · 软删 + 回收站 (2026-05-25 第十六根毛)
+续 12 · wish-165ea1f6 phase A · ui_form_schema (2026-05-26 第二十一根毛)
+续 12 · wish-165ea1f6 phase B · output_schema (2026-05-26 第二十一根毛)
+续 13 · wish-165ea1f6 phase C · exec_kind + exec_template (2026-05-26 第二十一根毛)
 
 ------------------------------------------------------------
 跟 studio_workshop.py 是什么关系
@@ -14,8 +14,8 @@ studio_workshop.py
     旧 4 维 markdown 产出 (content / design / dev / docs) — 已有 · 不动 · 仍在跑
 
 workshop_assets.py (本文件)
-    新形态: app + workflow 资产 · 一个个 json 文件 · 给 AI 自演进用
-    - app: 独立模块 · 一个被 AI prompt + 工具白名单封装的子能力
+    新形态: app + workflow 资产 · 一个个 json 文件 · 给 Daemonkey 自演进用
+    - app: 独立模块 · 一个被 Daemonkey prompt + 工具白名单封装的子能力
     - workflow: 把多个 app / 工具串起来的 LiteGraph 流程
 
 ------------------------------------------------------------
@@ -53,15 +53,15 @@ output_schema 字段说明 (wish-165ea1f6 phase B):
         label · 给 用户 看的人话
     哲学: 不强约束 (app 输出形态太多·硬卡 schema 会限制创造力)。 没填默认单一 'output' 字符串。
 
-exec_kind / exec_template 字段说明 (wish-165ea1f6 phase C · 2026-05-26 主对话 AI 提出):
+exec_kind / exec_template 字段说明 (wish-165ea1f6 phase C · 2026-05-26 主对话 Daemonkey 提出):
     `exec_kind` ∈ 'agentic' (默认) | 'scripted'
         - agentic · 走 app_runner.run_app · 一次 LLM session · 老路径 · 灵活但贵 (phase B 实现)
         - scripted · 走 http_executor · 表单字段直接拼 HTTP · 0 LLM · 快/省/稳 (phase C 实现)
-
+    
     `exec_template` (scripted 必填 · agentic 可空):
         声明式 HTTP 调用模板 · 不允许任意表达式 (只允许变量替换 + 简单条件路由)
         见 _validate_exec_template 函数注释里的完整 schema
-
+    
     哲学: scripted = 给纯 API 转发 app 一条直路 (GPT Image 2 / SOVITS / ElevenLabs 等都是这种)
          agentic = 给需要智能决策的 app 留 LLM 通道 ("整理周报" / "写代码改 bug" 这种)
          二者底层引擎不同 · 同一个 /workshop/apps/{aid}/run endpoint 按 exec_kind 路由
@@ -99,6 +99,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -151,7 +152,7 @@ def save_app(spec: dict) -> dict:
         id (新建时)        - app-<8hex>
         kind               - "app"
         created_at         - ISO 8601
-        created_by         - "AI" 默认
+        created_by         - "Daemonkey" 默认
         runs               - 0
         icon               - '<i class="ri-puzzle-fill"></i>' 默认 (Remix Icon)
         tools              - [] 默认
@@ -176,8 +177,9 @@ def save_app(spec: dict) -> dict:
     aid = (spec.get("id") or "").strip()
     if not aid:
         aid = "app-" + uuid.uuid4().hex[:8]
-    elif not aid.startswith("app-"):
-        raise ValueError(f"app id must start with 'app-': {aid}")
+    elif not re.fullmatch(r"app-[A-Za-z0-9_.\-]+", aid):
+        # B-① · 2026-08-27 · 白名单校验 · 拦 / \ .. (原来只 startswith 可穿越) (Grok 全量审计)
+        raise ValueError(f"app id must start with 'app-' and contain only safe chars: {aid}")
 
     tools = spec.get("tools") or []
     if not isinstance(tools, list):
@@ -221,7 +223,7 @@ def save_app(spec: dict) -> dict:
         "exec_template": exec_template,
         "asset_slots": validate_asset_slots(spec.get("asset_slots")),
         "created_at": spec.get("created_at") or _iso_now(),
-        "created_by": (spec.get("created_by") or "AI").strip(),
+        "created_by": (spec.get("created_by") or "Daemonkey").strip(),
         "runs": int(spec.get("runs") or 0),
         "shipped": False,  # 默认 False · 下面 sticky 逻辑会复原 prev.shipped 或读 spec.shipped
     }
@@ -384,7 +386,7 @@ def save_flow(spec: dict) -> dict:
     elif not fid.startswith("flow-"):
         raise ValueError(f"flow id must start with 'flow-': {fid}")
 
-    # 0.2.0 · 信任账本 (trust_level)
+    # v4 · 0.2.0 · 信任账本 (trust_level)
     # 保留旧值 · 否则 update_app 类 load→改→save 流程会把信任洗成 0
     existing = load_flow(fid) or {} if fid else {}
     existing_trust = int(existing.get("trust_level") or 0)
@@ -393,7 +395,11 @@ def save_flow(spec: dict) -> dict:
         trust_level = existing_trust
     else:
         trust_level = max(0, min(3, int(incoming_trust)))
-    success_runs = int(spec.get("success_runs") or existing.get("success_runs") or 0)
+    # B-① · 2026-08-27 · 0 是合法值 · 不能用 or 链 (reset_flow_trust 清零后会被旧计数覆盖) (Grok 全量审计)
+    if "success_runs" in spec and spec.get("success_runs") is not None:
+        success_runs = int(spec.get("success_runs"))
+    else:
+        success_runs = int(existing.get("success_runs") or 0)
     last_failure_at = spec.get("last_failure_at") if "last_failure_at" in spec else existing.get("last_failure_at")
     trusted_by = spec.get("trusted_by") if "trusted_by" in spec else existing.get("trusted_by")
 
@@ -406,9 +412,9 @@ def save_flow(spec: dict) -> dict:
         "steps": steps,
         "litegraph_json": graph,
         "created_at": spec.get("created_at") or _iso_now(),
-        "created_by": (spec.get("created_by") or "AI").strip(),
+        "created_by": (spec.get("created_by") or "Daemonkey").strip(),
         "runs": int(spec.get("runs") or 0),
-        # 信任账本 (用户 痛点: 跑过 OK 的 flow 不要次次问)
+        # v4 · 信任账本 (用户 痛点: 跑过 OK 的 flow 不要次次问)
         # trust_level 含义:
         #   0 = 没跑过 / 失败过 · CONFIRM 全要 y/n
         #   1 = 跑过 1 次成功 · 入口不打断 · 内部 CONFIRM 仍要 y/n
@@ -429,7 +435,7 @@ def save_flow(spec: dict) -> dict:
     return payload
 
 
-# 信任账本辅助函数 (flow_runner / trust_flow 工具调)
+# v4 · 信任账本辅助函数 (flow_runner / trust_flow 工具调)
 def bump_flow_trust(fid: str) -> Optional[dict]:
     """flow 一次 run 成功后调 · success_runs++ · 满 3 次自动升 trust_level 到 2"""
     flow = load_flow(fid)
@@ -511,16 +517,20 @@ def empty_trash_flow(fid: str) -> bool:
 # 公共入口 · runs 计数 (沉淀闭环 v2 刀② · 字段早就有 · 自增一直缺失)
 # ──────────────────────────────────────────────────────────
 
+_RUNS_LOCK = threading.Lock()  # B-① · 2026-08-27 · runs 计数 RMW 原子 (Grok 全量审计)
+
+
 def _increment_runs(path: Path) -> None:
     """直改 json 的 runs+1 · 不走 save_app 校验 (内部计数 · 非内容变更 · 不动 version)"""
     if not path.exists():
         return
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        data["runs"] = int(data.get("runs") or 0) + 1
-        _atomic_write(path, json.dumps(data, ensure_ascii=False, indent=2))
-    except Exception:
-        pass  # 计数失败不影响执行
+    with _RUNS_LOCK:  # 读-改-写原子 · 防并发两线程都读 N 都写 N+1 丢计数
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data["runs"] = int(data.get("runs") or 0) + 1
+            _atomic_write(path, json.dumps(data, ensure_ascii=False, indent=2))
+        except Exception:
+            pass  # 计数失败不影响执行
 
 
 def increment_app_runs(aid: str) -> None:
@@ -579,7 +589,7 @@ def _iso_now() -> str:
 
 
 def _atomic_write(path: Path, content: str) -> None:
-    """原子写—— · wish-badd4 收编到 safe_write
+    """原子写——III · wish-badd4 收编到 safe_write
     workshop assets registry (app / workflow / templates) 是 用户 自建作品·backup=True"""
     from .safe_write import atomic_write_text
     atomic_write_text(path, content, backup=True)
@@ -716,9 +726,9 @@ _VALID_RESPONSE_KINDS = {"json", "text", "binary_save", "b64_save"}
 
 def _validate_exec_template(spec: object) -> dict:
     """规范化 + 校验 exec_template · 返回清洗后的 dict
-
+    
     完整 schema (wish-165ea1f6 phase C · 故意做窄·避免变成 mini Jinja DSL):
-
+    
     {
       "kind": "http",                          // 当前只支持 http · 未来可加 shell/python
       "routes": [                              // 至少 1 个 · 按 when 顺序匹配 · 第一个命中
@@ -745,7 +755,7 @@ def _validate_exec_template(spec: object) -> dict:
         }
       }
     }
-
+    
     设计哲学:
       - **不允许任意表达式** (没有 ternary · 没有 lambda · 没有 eval) ·
         条件分支只能走 routes[].when 的 '<field>==<value>' 简单匹配
@@ -1053,7 +1063,7 @@ def _sanitize_app(data: dict) -> dict:
         "spec_version": int(data.get("spec_version") or 1),
         "changelog": list(data.get("changelog") or []),
         "created_at": data.get("created_at") or "",
-        "created_by": data.get("created_by") or "AI",
+        "created_by": data.get("created_by") or "Daemonkey",
         "runs": int(data.get("runs") or 0),
         # 沉淀闭环 v2 刀⑤修正 (2026-06-10): shipped=True 标记自带 app · 随 DK 出厂 · UI 隐藏删按钮
         "shipped": bool(data.get("shipped") or False),
@@ -1070,9 +1080,9 @@ def _sanitize_flow(data: dict, *, with_graph: bool) -> dict:
         "steps": list(data.get("steps") or []),
         "node_count": _count_nodes(data.get("litegraph_json")),
         "created_at": data.get("created_at") or "",
-        "created_by": data.get("created_by") or "AI",
+        "created_by": data.get("created_by") or "Daemonkey",
         "runs": int(data.get("runs") or 0),
-        # 0.2.0 · 信任账本字段 (UI 卡显示 trust badge 用)
+        # v4 · 0.2.0 · 信任账本字段 (UI 卡显示 trust badge 用)
         "trust_level": int(data.get("trust_level") or 0),
         "success_runs": int(data.get("success_runs") or 0),
         "last_failure_at": data.get("last_failure_at"),

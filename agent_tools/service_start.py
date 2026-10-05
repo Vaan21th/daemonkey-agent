@@ -1,10 +1,10 @@
 """agent_tools/service_start.py
 ================================
 
- K stage 2c++ · wish-8d6b76a6 · OPUS 启长跑后台服务的正确姿势
+K stage 2c++ · wish-8d6b76a6 · Daemonkey 启长跑后台服务的正确姿势
 
 **为什么有这个工具**:
-    shell_exec 设计来跑短任务 (默认 30s · 最长 300s)。 OPUS 启 GPT-SoVITS api.py
+    shell_exec 设计来跑短任务 (默认 30s · 最长 300s)。 Daemonkey 启 GPT-SoVITS api.py
     这种长跑 server (永不退出) 时·shell_exec 等 subprocess exit · timeout 后
     Windows 下子进程成孤儿 (PID 17720 真实事故)。
 
@@ -17,7 +17,7 @@
 
 **典型场景**:
     - 用户 装了一个 API 应用 (例如 GPT-SoVITS / Stable Diffusion / 自己造的 API)
-      OPUS 调 service_start 起服务 + 给 healthcheck_url 验通
+      Daemonkey 调 service_start 起服务 + 给 healthcheck_url 验通
     - daemon 重启不影响在跑的 service · services.json 持久化 · 重启后仍能 list/stop
 
 **tier**:
@@ -70,7 +70,24 @@ def _run(args: dict) -> ToolResult:
     if not command:
         return ToolResult(ok=False, output="", error="command 必填")
     if not working_dir:
+        # wish-8f9e4f05 · 会话挂在项目下 → 默认就用它目录（用户 2026-09-26「服务启动」那条）。
+        #   复用 shell_exec 里那个同源辅助 —— 拿不到就还是空，走下面的必填报错。
+        try:
+            from agent_tools.shell_exec import _project_cwd
+            working_dir = _project_cwd()
+        except Exception:
+            working_dir = ""
+    if not working_dir:
         return ToolResult(ok=False, output="", error="working_dir 必填 (例: 'C:/GPT-SoVITS' 或 '/opt/myservice')")
+
+    sid = ""
+    try:
+        from agent_tools import current_session_id
+        raw = str(current_session_id() or "").strip()
+        if raw and not raw.startswith("tmp-") and not (raw[0] == "t" and raw[1:].isdigit()):
+            sid = raw
+    except Exception:
+        sid = ""
 
     result = start_service(
         name=name,
@@ -80,6 +97,7 @@ def _run(args: dict) -> ToolResult:
         port=port,
         healthcheck_url=healthcheck_url,
         healthcheck_after_sec=healthcheck_after_sec,
+        session_id=sid,
     )
 
     if not result.get("ok"):
@@ -113,8 +131,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="service_start",
     description=(
-        "启动长跑后台服务（监听端口/worker），daemon 死后仍在。短任务用 shell_exec。name 限 [A-Za-z0-9_-]。配套 service_status/stop/list。"
-    ),
+        "启动长跑后台服务（监听端口/worker），daemon 死后仍在。短任务用 shell_exec。name 限 [A-Za-z0-9_-]。配套 service_status/stop/list。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

@@ -6,7 +6,7 @@
 为什么需要这个
 ----------------
 刀①已经给 app 加了 version / updated_at / changelog 三个字段(meta 层)·
-但 app 内容本身被覆盖后就没了。 用户真要回到 "v2 的 prompt 是什么样" 没办法 ·
+但 app 内容本身被覆盖后就没了。 用户 真要回到 "v2 的 prompt 是什么样" 没办法 ·
 update_app 改坏了也不能 rollback。 这一刀补上"内容层"的留痕。
 
 落点
@@ -40,6 +40,10 @@ _MAX_VERSIONS = 30
 
 
 def _aid_dir(aid: str) -> Path:
+    import re as _re
+    # B-① · 2026-08-27 · aid 白名单校验 · 防 / \\ .. 穿出 _versions (Grok 全量审计)
+    if not _re.fullmatch(r"app-[A-Za-z0-9_.\-]+", str(aid or "")):
+        raise ValueError(f"非法 aid: {aid!r}")
     return VERSIONS_DIR / aid
 
 

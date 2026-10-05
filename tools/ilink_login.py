@@ -1,8 +1,8 @@
 """
-tools/ilink_login.py · iLink/ClawBot 微信登录 · 裸 HTTP 扫码取 bot_token (卷六十一 · phase 2)
+tools/ilink_login.py · iLink/ClawBot 微信登录 · 裸 HTTP 扫码取 bot_token (phase 2)
 
 不依赖 openclaw 网关 / Node —— iLink 底层就是 HTTP/JSON。走官方 bot_type=3 个人号扫码流程：
-get_bot_qrcode → 渲染二维码 PNG → 用户微信扫 → 轮询 get_qrcode_status → 落 bot_token。
+get_bot_qrcode → 渲染二维码 PNG → 用户 微信扫 → 轮询 get_qrcode_status → 落 bot_token。
 token 是密钥，落在 gitignored 的 data/runtime/ilink_token.json，绝不进 git。
 """
 from __future__ import annotations

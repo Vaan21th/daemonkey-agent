@@ -5,7 +5,7 @@
 
 为什么有这个工具
 ------------------
-2026-06-09 事故根因之一: 主对话里的 AI 想用现成 app 也没手——工具箱里没有
+2026-06-09 事故根因之一: 主对话里的 Daemonkey 想用现成 app 也没手——工具箱里没有
 "运行某个 app" 的工具 · 只能 python_exec 从零手搓 · 标准全靠脑子记 · 每版漂移。
 有了 run_app · "用现成的" 终于比 "现搓一个" 更省力。
 
@@ -26,7 +26,11 @@ def _summarize(args: dict) -> str:
 
 def _run(args: dict) -> ToolResult:
     from daemon_runtime import RUNTIME
-    from workers.app_runner import run_app as _run_app
+    # 2026-09-30 · 铁律 6 (一件事只能有一个执行入口) · 改调 run_app_by_kind:
+    # 原先固定调 run_app → exec_kind=scripted 的 app (如 GPT Image 2 · HTTP 全写好) 也被拖进
+    # tool_loop 陪跑 6~9 轮 LLM · 实测每次白烧 2.3~6 万 input token · 多张还必撞 max_iterations。
+    # flow_runner 早已改对 · 只剩这条工具入口在分叉 · 同一条命两个价钱。
+    from workers.app_runner import run_app_by_kind
     from workers.flow_runner import _resolve_app
 
     ref = (args.get("app_id") or args.get("app_name") or "").strip()
@@ -48,7 +52,7 @@ def _run(args: dict) -> ToolResult:
     if RUNTIME.client is None:
         return ToolResult(ok=False, output="", error="RUNTIME.client 未就绪 (daemon 未完全启动?)")
 
-    result = _run_app(
+    result = run_app_by_kind(
         app=app,
         inputs=inputs,
         runtime=RUNTIME,
@@ -63,6 +67,25 @@ def _run(args: dict) -> ToolResult:
 
     text = result.get("text") or ""
     usage = result.get("usage") or {}
+    kind = (result.get("exec_kind") or "agentic").strip().lower()
+    if kind == "scripted":
+        # 0 LLM · 直接 HTTP 取数 · 没有 LLM 对话文本 · 把 outputs / http 状态摊给 用户
+        import json as _json
+        http_info = result.get("http") or {}
+        outs = result.get("outputs") or {}
+        lines = [
+            f"# ✓ app 已执行 (scripted · 0 LLM) · {app.get('icon', '')} {app.get('name')} (`{app.get('id')}`)",
+            "  - 分流: exec_kind=scripted → http_executor · 没进 tool_loop · 不烧 token",
+            f"  - HTTP: {http_info.get('status', '?')} · 耗时 {http_info.get('elapsed', '?')}s",
+            f"  - 产出目录: data/workshop/outputs/{app.get('id')}/",
+            "",
+            "## 产出",
+            _json.dumps(outs, ensure_ascii=False, indent=2) if outs else "(空)",
+        ]
+        if text:
+            lines += ["", "## 说明", text]
+        return ToolResult(ok=True, output="\n".join(lines))
+
     lines = [
         f"# ✓ app 已执行 · {app.get('icon', '')} {app.get('name')} (`{app.get('id')}`)",
         f"  - 迭代: {result.get('iterations')} 轮 · tokens in/out: "
@@ -78,8 +101,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="run_app",
     description=(
-        "执行一个工坊 app（与工坊测试按钮同路）。工坊已有能干活的 app 时必须调它，禁止 python_exec 手搓同样的活。多步接力用 run_flow。产出在 data/workshop/outputs/<app_id>/。"
-    ),
+        "执行一个工坊 app（与工坊测试按钮同路）。工坊已有能干活的 app 时必须调它，禁止 python_exec 手搓同样的活。多步接力用 run_flow。产出在 data/workshop/outputs/<app_id>/。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

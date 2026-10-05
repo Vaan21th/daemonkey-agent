@@ -2,7 +2,7 @@
 workers/opportunity_miner.py
 =============================
 
-卷二十八 · 掘金机会引擎
+掘金机会引擎
 
 目标：把"市场信号(雷达/趋势) × 用户 能力画像(OWNER-NOTEBOOK)"做交叉·
 找出对 用户 这个**超级个体**最值得切入的掘金点·并给出可操作建议。
@@ -10,7 +10,7 @@ workers/opportunity_miner.py
 输出 schema（每个机会卡）：
   - id           · 稳定 id (基于 title hash)
   - title        · 短标题 12-25 字
-  - domain       · 关联领域 (取自雷达 DOMAIN_META · 用户自己挖出来的方向)
+  - domain       · 关联领域 (ai/super-individual/game-money/wildcard)
   - summary      · 50-150 字 · 说清楚是什么机会 / 为什么是机会
   - fit          · 用户 适配度 (yes / maybe / no)
   - fit_reason   · 30-80 字 · 引用 用户 画像具体内容 · 说明匹配/不匹配原因
@@ -45,15 +45,9 @@ from pathlib import Path
 from typing import Optional
 
 # 兜底领域 & 主人画像笔记路径都是【实例配置】·解析在 identity.py 单一真源。
-try:
-    from identity import default_domain as _default_domain
-    from identity import owner_notebook_path as _owner_notebook_path
-except Exception:
-    def _default_domain():
-        return "ai"
-
-    def _owner_notebook_path(soul_dir):
-        return Path(soul_dir) / "BRO-NOTEBOOK.md"
+# 不再兜底：identity 是内核地基，且兜底路径（soul/OWNER-NOTEBOOK.md）拆格后不存在。
+from identity import default_domain as _default_domain
+from identity import owner_notebook_path as _owner_notebook_path
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
@@ -65,20 +59,28 @@ RADAR_FILE = DATA_DIR / "radar.json"
 logger = logging.getLogger("opus.opportunity")
 
 
-SYSTEM_PROMPT = """你是用户的 AI 搭档。你的任务不是给"市场趋势综述"——而是基于用户这个具体的人·从最新趋势里挑出**他能切的掘金点**。
+SYSTEM_PROMPT = """你是 Daemonkey——用户 的 AI 创业搭档。用户 是**超级个体**·正在从公司离职转向独立创业。
 
-你不是通用投资人 / 教练 / 通用 AI——你是知道用户完整画像的搭档。给出的建议必须扎根在用户的实际能力 / 状态 / 资源上·不是教科书答案。
+你的任务不是给"市场趋势综述"——而是基于 用户 这个具体的人·从最新趋势里挑出**他能切的掘金点**。
 
-**[跟着用户这个人来 · 必读]**
+你不是任何投资人 / 教练 / 通用 AI——你是知道 用户 完整画像的搭档。给出的建议必须扎根在 用户 的实际能力 / 状态 / 资源上·不是教科书答案。
 
-不要把用户当通用"想赚钱的人"·更不要假设他是程序员 / 创业者——他可能是任何人。你要做的是：
-- 看用户的画像 / 反馈历史 / outcomes / 收藏 / 打标 → 提炼用户在市场里**特殊的位置**
-- 从趋势里挑那些**只有用户这种位置的人能切的点**——而不是"任何人都能切"的赛道
-- 给建议时·**让用户看到他自己的能力切片** —— 类似"你已经在 X 表现出 Y 能力·所以这个机会的 fit 是 90"
+**[用户 定调的产品哲学 · 必读必守]**
 
-**[机会形态全谱 · 重要]**
+Daemonkey 跟 hermes-agent 等 158K-stars 通用 AI agent 的根本差异是 **「双向认知」**：
+- hermes 是单向 —— AI 越来越懂用户·帮用户干更多活
+- Daemonkey 是双向 —— AI 懂 用户 + **用户 借 AI 提炼自己的市场能力 → 找到自己的定位和赚钱机会**
 
-掘金机会**绝对不局限于"做软件 / 写代码"**——是一切有可能赚钱的点。
+你挖机会时·不要把 用户 当通用"想创业的人"。你要做的是：
+- 看 用户 的反馈历史 / outcomes / 收藏 / 打标 → 提炼 用户 在市场里**特殊的位置**
+- 然后从趋势里挑那些**只有 用户 这种位置的人能切的点**——而不是"任何人都能切"的赛道
+- 给出建议时·**让 用户 看到他自己的能力切片** —— 类似"你已经在 X 表现出 Y 能力·所以这个机会的 fit 是 90"
+
+**这不是修辞**。用户 原话："基于我本身市场能力提炼出来的雷达趋势·让 AGENT 更符合使用者需要找到自己的定位和赚钱机会这一层。"
+
+**[关键升级 · 机会形态全谱]**
+
+掘金机会**绝对不局限于"做软件 / 写代码"**。用户 明确说："Daemonkey 不是仅仅用在编程开发上的·是一切有可能赚钱的点"。
 
 你应该从下面**至少 3 种**形态里去找机会·不要全堆在"做产品"一类：
 
@@ -86,25 +88,26 @@ SYSTEM_PROMPT = """你是用户的 AI 搭档。你的任务不是给"市场趋�
 2. **实体产品** · 找工厂代工 / 1688 选品 / 跨境电商 / D2C 自营 · 信息差就是钱
 3. **服务 / 咨询** · 教程 / 一对一辅导 / 代运营 / 定制开发外包 / 私域社群
 4. **信息差套利** · 撮合 / 中介 / 收藏品 / 二手 / 跨平台搬运 · 不创造内容只搬运
-5. **软件产品** · SaaS / 浏览器扩展 / GPT App / 工具站
+5. **软件产品** · SaaS / 浏览器扩展 / GPT App / 工具站 · （这是 用户 默认会想到的·不要只想这个）
 6. **投资 / 副业组合** · 长期持有 / 套利 / 学习投资某种技能
 
 **选择哪种形态·取决于**：
-- 信息雷达里用户自己关注的类目（domain）—— 顺着他真正在追的方向来，别硬塞他没关注的领域
+- 信息雷达关注的类目（domain）—— ai 倾向软件·super-individual 倾向内容·game-money 倾向信息差·wildcard 全开
 - 用户 画像 —— 他真的擅长写代码就推软件·他有内容感就推账号·他时间紧就推套利
 - 趋势的"赚钱机制"—— 不是所有趋势都靠写代码变现·有些趋势就靠"早卡位 + 内容"赚
 
 **你必须在输出的 opportunities 里·让形态多样化**——不能 5 个全是"做个 SaaS"。
 
-**[事实较量红线]**
+**[补丁2 · 事实较量红线]**
 
 在 summary / fit_reason 里写"市场已有 X" / "竞品做了 Y" / "用户规模 Z" 这种**事实陈述**时·
 **必须诚实**：除非趋势 block 里有原文佐证·否则用"据公开信息"/"参考信号"等模糊措辞·
-**不要凭印象编造具体数字 / 项目名 / 用户量**。可信度 > 完美感。
+**不要凭印象编造具体数字 / 项目名 / 用户量**。DeepSeek 等模型在曾把 "neovim 配置"
+这种纯幻觉写进对照分析里·让 用户 当真就糟了。Daemonkey 的可信度 > 完美感。
 
-**[深度]**
+**[补丁2 · 看教材]**
 
-用户消息里附 `## 教材` 段·是历史沉淀的高质量分析样本·
+用户消息里附 `## 教材` 段·是 Daemonkey 历史沉淀的高质量分析样本·
 你输出的 summary / fit_reason 应该达到那个深度——挑战既有结论 / 给反例 / 不当 cheerleader。"""
 
 
@@ -114,13 +117,13 @@ USER_PROMPT_TEMPLATE = """## 用户 当下画像摘要
 
 ---
 
-## 用户历史反馈（拒做 / 已完成的机会）
+## 用户 历史反馈（闭环 · 拒做 / 已完成的机会）
 
 {outcomes_block}
 
 ---
 
-## 用户在雷达条目上的打标（👎 是最值钱的负反馈）
+## 用户 在雷达条目上的打标（闭环 · 👎 是最值钱的负反馈）
 
 {radar_feedback_block}
 
@@ -132,7 +135,7 @@ USER_PROMPT_TEMPLATE = """## 用户 当下画像摘要
 
 ---
 
-## 教材 · 历史沉淀的高质量分析样本
+## 教材 · Daemonkey 历史沉淀的高质量分析样本（补丁2）
 
 {learnings_block}
 
@@ -148,7 +151,7 @@ USER_PROMPT_TEMPLATE = """## 用户 当下画像摘要
 [
   {{
     "title": "短标题 · 12-25 字 · 一眼看清是干什么",
-    "domain": "从下面雷达条目里实际出现的 domain 里挑一个最贴的·拿不准就填 self-evolve",
+    "domain": "ai|super-individual|game-money|wildcard|self-evolve 之一",
     "summary": "50-150 字 · 说清这是什么机会 + 为什么是 用户 该切的而不是任意人都该切的",
     "fit": "yes|maybe|no · 用户 能不能干",
     "fit_reason": "30-80 字 · **引用 用户 画像具体段** · 比如 '画像 §3 说他有 5 年 LLM 项目经验·这事正好接得上' / '画像 §6 说他对 react native 不熟·要做 app 得先补两周课'",
@@ -174,17 +177,17 @@ USER_PROMPT_TEMPLATE = """## 用户 当下画像摘要
 2. **fit_reason 必须引用画像具体段**·不能写"用户 适合"这种空话
 3. **recommend 5 留给真正"现在不动手就晚"**·大多数应该 3-4
 4. **next_steps 必须可执行**——不是"调研市场"·而是"今晚花 2 小时跑 X 命令看 Y 数据"
-5. **别只盯一个领域**——用户关注好几个方向时·各领域的好机会都要挑进来·形态也要多样
+5. **避免堆叠 AI 一个领域**——如果有 super-individual / game-money / self-evolve 的好机会·也要选进来
 6. **不忌讳告诉 用户 "不适合做"**——fit=no 的机会也可以列·但要说清原因
 7. **看历史反馈**——如果 用户 之前拒过类似机会（abandoned）·别原样再推一遍·要么换角度·要么标 fit=no·并在 fit_reason 里说"上次 用户 因为 X 拒了·这次因为 Y 不一样"
-8. **卷三十四新增 6 字段必须填**·别留空·宁可粗估也要给数字·用户 是工程师·他要的是可比较的数字而不是"中等"
-9. **self-evolve 域的机会**·特指 OPUS 自己装修自己的活——比如 "把 OpenHands 那个 X 能力移植到本工程"·这种机会 用户 几乎一定能做（因为他正在改这个工程）·skill_match_score 可以打 85+
+8. **新增 6 字段必须填**·别留空·宁可粗估也要给数字·用户 是工程师·他要的是可比较的数字而不是"中等"
+9. **self-evolve 域的机会**·特指 Daemonkey 自己装修自己的活——比如 "把 OpenHands 那个 X 能力移植到 Daemonkey"·这种机会 用户 几乎一定能做（因为他正在改这个工程）·skill_match_score 可以打 85+
 
 不要输出超过 5 个。质量比数量重要。"""
 
 
 def _atomic_write(path: Path, text: str) -> None:
-    """同进程原子写——卷四十六 III · wish-badd4 收编到 safe_write
+    """同进程原子写——III · wish-badd4 收编到 safe_write
     opportunities.json 是 用户 决策辅助核心数据·backup=True 保险"""
     from .safe_write import atomic_write_text
     atomic_write_text(path, text, backup=True)
@@ -209,17 +212,21 @@ def _load_trends(top_n: int = 20) -> list[dict]:
 
 
 def _load_bro_profile(max_chars: int = 3500) -> str:
-    """读 soul/OWNER-NOTEBOOK.md · 截前 max_chars 字符（要点都在前面）"""
+    """读主人画像 · 截前 max_chars 字符（要点都在前面）"""
     bro_file = _owner_notebook_path(ROOT / "soul")
     if not bro_file.exists():
-        return "（画像笔记还没放到 soul/ 目录）"
+        try:
+            from identity import owner_notebook_missing_note
+            return f"（{owner_notebook_missing_note()}）"
+        except Exception:
+            return "（画像还没写。聊几句，我会记下来。）"
     try:
         text = bro_file.read_text(encoding="utf-8")
     except Exception:
-        return "（OWNER-NOTEBOOK 读不出来）"
+        return "（画像读不出来）"
     if len(text) <= max_chars:
         return text
-    return text[:max_chars] + "\n\n…（已截断 · 完整画像在 soul/OWNER-NOTEBOOK.md）"
+    return text[:max_chars] + "\n\n…（已截断）"
 
 
 def _render_trends_block(trends: list[dict]) -> str:
@@ -253,7 +260,7 @@ def _stable_id(title: str, domain: str) -> str:
     return f"opp-{h}"
 
 
-_JSON_ARRAY_RE = re.compile(r"\[\s*\{.*?\}\s*\]", re.DOTALL)
+_JSON_ARRAY_RE = re.compile(r"\[\s*\{.*\}\s*\]", re.DOTALL)  # B-② · 贪婪匹配完整数组 · 非贪婪遇内层 } 截断 (Grok 全量审计)
 
 
 def _extract_json_array(text: str) -> list:
@@ -281,7 +288,7 @@ def _extract_json_array(text: str) -> list:
     return []
 
 
-# domain 不再写死——以雷达当前实际存在的领域（DOMAIN_META）为准，按用户自己挖出来的来
+_VALID_DOMAINS = {"ai", "super-individual", "game-money", "wildcard", "self-evolve"}
 _VALID_FIT = {"yes", "maybe", "no"}
 _VALID_EFFORT = {"light", "moderate", "heavy"}
 _VALID_UPSIDE = {"low", "medium", "high"}
@@ -297,12 +304,8 @@ def _normalize_opportunity(raw: dict, trends: list[dict]) -> Optional[dict]:
         return None
 
     domain = (raw.get("domain") or _default_domain()).strip().lower()
-    try:
-        from workers.info_radar import DOMAIN_META as _DM
-        if domain not in _DM:
-            domain = "self-evolve"
-    except Exception:
-        pass
+    if domain not in _VALID_DOMAINS:
+        domain = "wildcard"
 
     fit = (raw.get("fit") or "maybe").strip().lower()
     if fit not in _VALID_FIT:
@@ -353,7 +356,7 @@ def _normalize_opportunity(raw: dict, trends: list[dict]) -> Optional[dict]:
                         "intensity": t.get("intensity", 3),
                     })
 
-    # 卷三十四新字段 · 6 个评估维度
+    # 新字段 · 6 个评估维度
     estimated_hours = (raw.get("estimated_hours") or "").strip()
     estimated_token = (raw.get("estimated_token_cost_usd") or "").strip()
     revenue_range = (raw.get("revenue_range_cny") or "").strip()
@@ -388,7 +391,7 @@ def _normalize_opportunity(raw: dict, trends: list[dict]) -> Optional[dict]:
         "recommend": recommend,
         "next_steps": next_steps,
         "trend_refs": trend_refs,
-        # 卷三十四新字段
+        # 新字段
         "estimated_hours": estimated_hours[:30],
         "estimated_token_cost_usd": estimated_token[:30],
         "revenue_range_cny": revenue_range[:40],
@@ -412,7 +415,7 @@ def mine_opportunities(*, top_n_trends: int = 15) -> dict:
     trends = _load_trends(top_n=top_n_trends)
     bro = _load_bro_profile()
 
-    # 卷三十一 · 把 用户 历史反馈塞进 prompt · 避免重蹈覆辙
+    # 把 用户 历史反馈塞进 prompt · 避免重蹈覆辙
     try:
         from workers.outcomes import load_outcomes_for_prompt
         outcomes_block = load_outcomes_for_prompt(max_chars=1000)
@@ -420,7 +423,7 @@ def mine_opportunities(*, top_n_trends: int = 15) -> dict:
         logger.debug("load outcomes for prompt failed: %s", e)
         outcomes_block = "（暂无历史反馈）"
 
-    # 卷三十二 · 雷达条目打标反馈 · 比 outcomes 粒度更细
+    # 雷达条目打标反馈 · 比 outcomes 粒度更细
     try:
         from workers.radar_feedback import load_for_prompt as _fb_prompt
         radar_feedback_block = _fb_prompt(max_chars=1000)
@@ -432,7 +435,7 @@ def mine_opportunities(*, top_n_trends: int = 15) -> dict:
         from workers.learnings import render_learnings_block
         learnings_block = render_learnings_block(
             kinds=["founder-thesis", "model-comparison"],
-            title="OPUS 历史沉淀的高质量分析样本",
+            title="Daemonkey 历史沉淀的高质量分析样本",
             limit=2,
         )
     except Exception as e:
@@ -544,7 +547,7 @@ def load_opportunities() -> dict:
         return {
             "generated_at": None,
             "opportunities": [],
-            "note": "还没跑过掘金挖掘 · 用 NLP 跟 OPUS 说'挖一下机会' 或 'mine opportunities'",
+            "note": "还没跑过掘金挖掘 · 用 NLP 跟 Daemonkey 说'挖一下机会' 或 'mine opportunities'",
         }
     try:
         return json.loads(OPPORTUNITIES_FILE.read_text(encoding="utf-8"))

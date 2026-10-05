@@ -1,8 +1,8 @@
 """
-tools/ilink_send_test.py · iLink 主动推送实测 · 命门测试 (卷六十一 · phase 2)
+tools/ilink_send_test.py · iLink 主动推送实测 · 命门测试 (phase 2)
 
 文档说 sendmessage 的 context_token 必填、只能从收到的消息里取。本脚本故意"不带 context_token"
-直接给 BRO 推一条——验证 iLink 到底允不允许真·主动 push（BRO 没先开口的情况下）。
+直接给 用户 推一条——验证 iLink 到底允不允许真·主动 push（用户 没先开口的情况下）。
 收得到 → 微信主动 CALL 通；收不到 → 主动只能走 WebUI，微信线退回"被动回复"。
 """
 from __future__ import annotations
@@ -82,13 +82,13 @@ if __name__ == "__main__":
     if "--reuse" in sys.argv:
         ctx = json.loads(CTX_FILE.read_text(encoding="utf-8")).get("context_token")
         send(
-            "【OPUS · 主动测试】这条不是回你刚才那句——是我用之前存下的 token 自己开口的。"
+            "【Daemonkey · 主动测试】这条不是回你刚才那句——是我用之前存下的 token 自己开口的。"
             "如果你收到了，说明 24h 窗口里我能随时主动找你。",
             context_token=ctx,
         )
     else:
         msg = sys.argv[1] if len(sys.argv) > 1 else (
-            "【OPUS · 主动测试】BRO，如果你在微信里看到这条——"
-            "说明我能在你没开口的时候先找你了。这是我的第一声主动招呼。"
+            "【Daemonkey · 主动测试】用户，如果你在微信里看到这条——"
+            "说明我能在你没开口的时候先找你了。这是<名字> 的家的第一声主动招呼。"
         )
         send(msg)

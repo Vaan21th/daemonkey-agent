@@ -2,19 +2,19 @@
 agent_tools/take_screenshot.py
 ==============================
 
-OPUS 看到 BRO 屏幕的入口。
+Daemonkey 看到 用户 屏幕的入口。
 
 实现：用 Pillow 自带的 ImageGrab（Windows / macOS 原生，零依赖增量）。
 保存到 sessions/screenshots/<timestamp>.png 或返回路径。
 
 档位：AUTO
-  - 截屏只是读取屏幕状态，BRO 在终端能看到调用
-  - 如果 BRO 在做敏感操作（密码窗），他自己会 yolo off
+  - 截屏只是读取屏幕状态，用户 在终端能看到调用
+  - 如果 用户 在做敏感操作（密码窗），他自己会 yolo off
 
 省钱角度：
   - 截屏 PNG 文件可能很大（4K 屏 ~5MB）
   - **不把图回灌进 messages**——只返回文件路径
-  - BRO 想让 OPUS 真"看"图时，配合 read_file（v0.2 加 vision-capable model 路由）
+  - 用户 想让 Daemonkey 真"看"图时，配合 read_file（v0.2 加 vision-capable model 路由）
 """
 
 from __future__ import annotations
@@ -64,10 +64,14 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(ok=False, output="", error=f"screen grab failed: {e!r}")
 
     ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-    name = args.get("filename") or f"shot_{ts}.png"
+    name = Path(args.get("filename") or f"shot_{ts}.png").name
     if not name.endswith(".png"):
         name += ".png"
-    out_path = SHOT_DIR / name
+    out_path = (SHOT_DIR / name).resolve()
+    try:
+        out_path.relative_to(SHOT_DIR.resolve())
+    except ValueError:
+        return ToolResult(ok=False, output="", error="filename 越界")
 
     try:
         img.save(out_path, optimize=True)
@@ -84,7 +88,7 @@ def _run(args: dict) -> ToolResult:
             f"  size: {img.size[0]}x{img.size[1]} px\n"
             f"  bytes: {out_path.stat().st_size}\n"
             f"  region: {bbox or 'all screens'}\n"
-            f"  next: BRO can view it / OPUS can read_file the path if vision model is active"
+            f"  next: 用户 can view it / Daemonkey can read_file the path if vision model is active"
         ),
     )
 
@@ -92,7 +96,11 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="take_screenshot",
     description=(
-        "Capture a screenshot of the user's screen. Saved to sessions/screenshots/. Returns the file path (NOT the image data—saves tokens). Use when the user says 'look at my screen', 'see this', or you need visual context of his current work. Optional region={left,top,right,bottom} for a specific area; default captures all screens."
+        "Capture a screenshot of the user's screen. Saved to sessions/screenshots/. "
+        "Returns the file path (NOT the image data—saves tokens). "
+        "Use when the user says 'look at my screen', 'see this', or you need visual context "
+        "of his current work. Optional region={left,top,right,bottom} for a specific area; "
+        "default captures all screens."
     ),
     tier=TIER_AUTO,
     input_schema={

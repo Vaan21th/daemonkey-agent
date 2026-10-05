@@ -1194,7 +1194,7 @@ let _mmSrcData = [];
 // source key → 可读名 (裸 key 用户看不懂 · 2026-09-16 刀5-live 收尾)
 const _MM_SRC_LABEL = {
   session: '对话记录', session_archive: '归档原文(压缩保留)', session_summary: '会话摘要',
-  skill: '操作手册', 'SELF-EVOLUTION': '自进化日志', '用户-NOTEBOOK': '活画像',
+  skill: '操作手册', 'SELF-EVOLUTION': '自进化日志', 'BRO-NOTEBOOK': '活画像',
   'OWNER-NOTEBOOK': '人物画像', 'OPUS-MEMORIES': '自传', SKILL: '灵魂技能',
 };
 function _mmSrcLabel(s) {

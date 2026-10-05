@@ -4,9 +4,9 @@
 续 12 · wish-165ea1f6 phase A · 改已有 app 的任意字段
 
 什么时候调:
-    - 用户 在工坊看到一张已有卡片 · 跟 OPUS 说「给这个 app 加一个表单」
+    - 用户 在工坊看到一张已有卡片 · 跟 Daemonkey 说「给这个 app 加一个表单」
     - 用户 说「把 SOVITS app 的 model_hint 改成 gpt-sovits-v2」
-    - OPUS 自己审视一张老 app 时发现缺 ui_form_schema · 补一发
+    - Daemonkey 自己审视一张老 app 时发现缺 ui_form_schema · 补一发
     - 不要用来「重命名 app」 — name/description 改了卡片就换味道了 · 建议新造 app
 
 tier:
@@ -33,7 +33,7 @@ def _summarize(args: dict) -> str:
     changed = [k for k in (
         "name", "description", "icon", "system_prompt",
         "tools", "model_hint", "ui_form_schema",
-        "output_schema", "exec_kind", "exec_template",
+        "output_schema", "exec_kind", "exec_template", "asset_slots",
     ) if k in args and args[k] is not None]
     if not changed:
         return f"改 app · {aid} · (没指定要改的字段?)"
@@ -131,6 +131,16 @@ def _run(args: dict) -> ToolResult:
             spec["exec_template"] = new_tpl
             changes.append("exec_template")
 
+    if "asset_slots" in args and args["asset_slots"] is not None:
+        new_slots = args["asset_slots"]
+        if not isinstance(new_slots, list):
+            return ToolResult(
+                ok=False, output="",
+                error="asset_slots 必须是 list (或 [] 清空)",
+            )
+        spec["asset_slots"] = new_slots
+        changes.append("asset_slots")
+
     if not changes:
         return ToolResult(
             ok=True,
@@ -143,6 +153,7 @@ def _run(args: dict) -> ToolResult:
 
     spec["id"] = aid
     spec["created_at"] = existing.get("created_at") or ""
+    spec["change_note"] = (args.get("change_note") or "").strip()
 
     try:
         updated = save_app(spec)
@@ -152,10 +163,16 @@ def _run(args: dict) -> ToolResult:
         return ToolResult(ok=False, output="", error=f"save_app 失败: {e}")
 
     lines = [
-        f"# ✓ 应用已更新 · `{updated['id']}`",
+        f"# ✓ 应用已更新 · `{updated['id']}` · v{updated.get('version', '?')}",
         f"  - 名字: {updated['icon']} {updated['name']}",
         f"  - 改了字段: {', '.join(changes)}",
     ]
+    if spec["change_note"]:
+        lines.append(f"  - 版本说明: {spec['change_note']}")
+    else:
+        lines.append("  - ⚠ 没传 change_note · 这版改了什么以后没人知道 · 下次记得带一句话说明")
+    for w in updated.get("_warnings") or []:
+        lines.append(f"  - ⚠ {w}")
     if "ui_form_schema" in changes:
         form = updated.get("ui_form_schema") or []
         if form:
@@ -172,8 +189,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="update_app",
     description=(
-        "改已有工坊 app 的字段（只传要改的）。每次应带 change_note。六段标准见 read_scenario('app_creation')。ui_form_schema:[] 清空表单。改 name 等于换名片，谨慎。"
-    ),
+        "改已有工坊 app 的字段（只传要改的）。每次应带 change_note。六段标准见 read_scenario('app_creation')。ui_form_schema:[] 清空表单。改 name 等于换名片，谨慎。"    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",
@@ -257,6 +273,24 @@ SPEC = ToolSpec(
             "exec_template": {
                 "type": "object",
                 "description": "改 HTTP 模板。仅 scripted；{} 清空。形状见 read_scenario('app_creation')。",
+            },
+            "asset_slots": {
+                "type": "array",
+                "description": "改资产槽声明。不传保留，[] 清空。真值走 manage_app_asset。",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "type": {"type": "string", "enum": ["text", "json", "images", "file"]},
+                        "label": {"type": "string"},
+                        "help": {"type": "string"},
+                    },
+                    "required": ["name"],
+                },
+            },
+            "change_note": {
+                "type": "string",
+                "description": "一句话版本说明，记入 changelog。每次应传。",
             },
         },
         "required": ["app_id"],

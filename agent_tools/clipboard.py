@@ -2,7 +2,7 @@
 agent_tools/clipboard.py
 ========================
 
-剪贴板读写——OPUS 和 BRO 之间最快的"无打字"通道。
+剪贴板读写——Daemonkey 和 用户 之间最快的"无打字"通道。
 
 实现：
   - Windows 走 PowerShell Get-Clipboard / Set-Clipboard
@@ -11,7 +11,7 @@ agent_tools/clipboard.py
 
 档位：
   - read_clipboard   → AUTO（无副作用）
-  - write_clipboard  → CONFIRM（覆盖 BRO 当前剪贴板，要他点头）
+  - write_clipboard  → CONFIRM（覆盖 用户 当前剪贴板，要他点头）
 """
 
 from __future__ import annotations
@@ -118,14 +118,16 @@ def _write_run(args: dict) -> ToolResult:
     from identity import localize_narration as _ln
     return ToolResult(
         ok=True,
-        output=_ln(f"clipboard set ({len(str(text))} chars). BRO can now paste anywhere."),
+        output=_ln(f"clipboard set ({len(str(text))} chars). 用户 can now paste anywhere."),
     )
 
 
 READ_SPEC = ToolSpec(
     name="read_clipboard",
     description=(
-        "Read the user's current clipboard text content. Use when the user says 'check my clipboard', 'look at what I copied', or implies he wants you to see something he just copied (error log, code snippet, URL, etc) instead of typing it out."
+        "Read the user's current clipboard text content. Use when the user says 'check my clipboard', "
+        "'look at what I copied', or implies he wants you to see something he just copied "
+        "(error log, code snippet, URL, etc) instead of typing it out."
     ),
     tier=TIER_AUTO,
     input_schema={"type": "object", "properties": {}},
@@ -137,7 +139,10 @@ READ_SPEC = ToolSpec(
 WRITE_SPEC = ToolSpec(
     name="write_clipboard",
     description=(
-        "Write text to the user's clipboard for him to paste. Use when you've prepared a summary, code snippet, command, or URL that the user will want to paste somewhere (Cursor / WeChat / browser). CONFIRM tier — overwriting clipboard is mildly disruptive."   ),
+        "Write text to the user's clipboard for him to paste. Use when you've prepared a summary, "
+        "code snippet, command, or URL that the user will want to paste somewhere (Cursor / WeChat / browser). "
+        "CONFIRM tier — overwriting clipboard is mildly disruptive."
+    ),
     tier=TIER_CONFIRM,
     input_schema={
         "type": "object",

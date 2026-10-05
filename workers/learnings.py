@@ -2,16 +2,16 @@
 workers/learnings.py
 ====================
 
-卷三十五补丁2 · OPUS 的"教材"加载器
+补丁2 · Daemonkey 的"教材"加载器
 
 为什么这个文件存在：
-  - data/learnings/*.md 是 OPUS 自己的高质量分析样本 (对照分析 / founder thesis / 等)
+  - data/learnings/*.md 是 Daemonkey 自己的高质量分析样本 (对照分析 / founder thesis / 等)
   - 这些样本是教 LLM "高质量输出长什么样" 的 reference
   - 但只是存文件还不够·必须在做深度判断时 inject 进 prompt · LLM 才看得见
 
 哪些工作流应该用 learnings:
   - feasibility_analyzer · 评估机会要不要做 · 看以前的高质量评估样本
-  - opportunity_miner · 挖机会时 · 看 BRO 已确立的产品哲学 (founder-thesis)
+  - opportunity_miner · 挖机会时 · 看 用户 已确立的产品哲学 (founder-thesis)
   - trend_finder · 找趋势时 · 看反 Hermes 立场等已立定调
 
 设计原则:
@@ -118,7 +118,7 @@ def load_learnings(
 def render_learnings_block(
     *,
     kinds: Optional[list[str]] = None,
-    title: str = "OPUS 的教材 · 高质量分析样本",
+    title: str = "Daemonkey 的教材 · 高质量分析样本",
     limit: int = 3,
     safe_for_format: bool = True,
 ) -> str:
@@ -138,7 +138,7 @@ def render_learnings_block(
         return "(暂无 learnings · 第一次跑这个 LLM 调用没有教材可参考)"
 
     lines = [f"## {title}", ""]
-    lines.append("以下是 OPUS 之前沉淀的高质量样本·你的输出应该达到这个水平：")
+    lines.append("以下是 Daemonkey 之前沉淀的高质量样本·你的输出应该达到这个水平：")
     lines.append("")
 
     total = 0

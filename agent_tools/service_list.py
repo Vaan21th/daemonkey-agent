@@ -1,11 +1,11 @@
 """agent_tools/service_list.py
 ================================
 
- K stage 2c++ · wish-8d6b76a6 · 列所有 OPUS 起过的后台服务
+K stage 2c++ · wish-8d6b76a6 · 列所有 Daemonkey 起过的后台服务
 
 调用时机:
     - 用户 问 "你后台跑着哪些服务?"
-    - OPUS 起新服务前先看一下当前有谁
+    - Daemonkey 起新服务前先看一下当前有谁
     - daemon 重启后想知道之前的服务还在不在 (services.json 持久化)
 
 tier: TIER_AUTO (只读)
@@ -42,8 +42,10 @@ def _run(args: dict) -> ToolResult:
             rss = meta.get("rss_mb", "?")
             port = s.get("port")
             port_part = f" :{port}" if port else ""
+            pid = s.get("pid")
+            pid_s = "-" if pid is None else pid
             lines.append(
-                f"  ✓ {s['name']:20s}{port_part:8s}  pid={s.get('pid'):<6}  "
+                f"  ✓ {s['name']:20s}{port_part:8s}  pid={pid_s:<6}  "
                 f"rss={rss}MB  cpu={cpu}%  started={s.get('started_at')}"
             )
             cmd = (s.get("command") or "")[:80]
@@ -56,8 +58,10 @@ def _run(args: dict) -> ToolResult:
         lines.append(f"=== 已停 / 已死 ({len(dead)}) ===")
         for s in dead:
             stopped = "stopped" if s.get("stopped") else "dead"
+            pid = s.get("pid")
+            pid_s = "-" if pid is None else pid
             lines.append(
-                f"  × {s['name']:20s}  pid={s.get('pid'):<6}  {stopped}  started={s.get('started_at')}"
+                f"  × {s['name']:20s}  pid={pid_s:<6}  {stopped}  started={s.get('started_at')}"
             )
         lines.append("")
 
@@ -68,8 +72,12 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="service_list",
     description=(
-        "列已起的后台服务（data/runtime/services.json），含是否还活着。"
-        "他问后台跑着什么、起新服务前防端口冲突、重启后对账时用。只读。"
+        "列所有 你起过的后台服务 (从 data/runtime/services.json) · 含 alive 状态 + 元信息。\n\n"
+        "调用时机:\n"
+        "  - 用户问\"你后台跑着哪些服务?\" / \"刚才那个 SOVITS 还在吗?\"\n"
+        "  - 你起新服务前先看现有 (避免端口冲突)\n"
+        "  - daemon 重启后想知道之前服务还在不在\n\n"
+        "tier: TIER_AUTO (只读)"
     ),
     tier=TIER_AUTO,
     input_schema={"type": "object", "properties": {}},

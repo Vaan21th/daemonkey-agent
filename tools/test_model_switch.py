@@ -2,7 +2,7 @@
 tools/test_model_switch.py
 ==========================
 
-跨模型 tool-use smoke：对 4 个候选模型各跑一次"叫 OPUS 用 grep_files 找词"，
+跨模型 tool-use smoke：对 4 个候选模型各跑一次"叫 Daemonkey 用 grep_files 找词"，
 看哪些能调通 function calling、cache 行为如何、回应是否合理。
 
 不验证内容质量，只验证：
@@ -35,9 +35,9 @@ from agent_tools import ToolSpec  # noqa: F401
 
 CANDIDATES = [
     "claude-sonnet-4-6",   # 当前默认 — 应该完美
-    "deepseek-v4-pro",     # BRO 想试
-    "kimi-k2.6",           # BRO 想试
-    "glm-5.1",             # BRO 想试
+    "deepseek-v4-pro",     # 用户 想试
+    "kimi-k2.6",           # 用户 想试
+    "glm-5.1",             # 用户 想试
 ]
 
 USER_TASK = "帮我用 grep_files 工具在 .cursor/CAPTAINS-LOG.md 这个文件里搜「梦想实现家」这个词，告诉我搜到没。一句话回我。"

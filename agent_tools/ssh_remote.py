@@ -2,23 +2,23 @@
 agent_tools/ssh_remote.py
 =========================
 
-通过 SSH 到用户自己配置的远程/部署服务器跑只读诊断命令——
-让用户在外面问"服务器 X 服务咋样"时能立即得到日志原文 + 系统状态。
+Daemonkey 通过 SSH 到社区客户/部署服务器跑只读诊断命令——
+让 用户 在外面问"客户 X 服务咋样"时能立即得到日志原文 + 系统状态。
 
 档位：CONFIRM
-  本机 daemon 跑会弹 CONFIRM 框等用户 y/n。远程模式默认策略 confirm 档自动走，
-  但每次执行都通过 SSE 流推送 tool_call 事件到 WebUI——用户在手机上能"看见"
-  跑了哪条命令到哪台服务器。
+  本机 daemon 跑会弹 CONFIRM 框等 用户 y/n。远程模式默认策略 confirm 档自动走，
+  但每次执行都通过 SSE 流推送 tool_call 事件到 WebUI——用户 在手机上能"看见"
+  Daemonkey 跑了哪条命令到哪台服务器。
 
 安全姿态（平衡型白名单）：
-  - host 必须在 OPUS_SSH_HOST_WHITELIST（默认空·用户自行配置 SSH 别名）
+  - host 必须在 OPUS_SSH_HOST_WHITELIST（默认 starway / caiman / aimanju）
   - command 严格只读 verb 白名单（tail / cat / docker logs / systemctl status / ...）
   - 任何写命令拒绝（rm / mv / chmod / systemctl restart / docker exec / ...）
   - 任何 shell 组合拒绝（; && || > >> < $() 反引号）
   - 仅 pipe (|) 允许，每段都得在白名单里
 
-意义：用户在外接到服务器报 bug → 1-2 分钟拿到原始日志 + 状态。
-不取代本机 SSH terminal——写操作必须用户亲手做。
+意义：用户 在外接到客户报 bug → Daemonkey 1-2 分钟拿到原始日志 + 状态。
+不取代本机 SSH terminal——写操作必须 用户 亲手做。
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def _allowed_hosts() -> set[str]:
     return set()
 
 
-# 平衡型动词白名单（ 用户 选）
+# 平衡型动词白名单（用户 选）
 _READ_VERBS = {
     # 日志/查看
     "tail", "head", "cat", "less", "more", "tac", "rev",
@@ -206,14 +206,15 @@ def _validate_command(command: str) -> tuple[bool, str]:
                 return False, f"ip {tokens[1]} not in read-only whitelist"
 
         if verb == "sed":
-            joined = " ".join(tokens)
-            if " -i" in joined or "--in-place" in joined:
+            if any(t == "-i" or t.startswith("-i") or t.startswith("--in-place") for t in tokens):
                 return False, "sed -i (in-place edit) not allowed; sed without -i is fine"
 
         if verb in ("curl", "wget"):
             for token in tokens:
                 if token in ("-o", "-O", "--output", "--output-document",
-                             "--remote-name"):
+                             "--remote-name") or token.startswith(
+                    ("--output=", "--output-document=", "-o=", "-O=")
+                ):
                     return False, (
                         f"{verb} with file output ({token}) not allowed; "
                         "would write to remote disk"
@@ -337,8 +338,9 @@ SPEC = ToolSpec(
         "properties": {
             "host": {
                 "type": "string",
-                "description": "SSH alias from ~/.ssh/config; must be listed in the "
-                               "OPUS_SSH_HOST_WHITELIST env var (comma-separated, empty by default).",
+                "description": "SSH alias from ~/.ssh/config; must be in OPUS_SSH_HOST_WHITELIST. "
+                               "Defaults: starway (115.191.73.164) / caiman (14.103.52.52) / "
+                               "aimanju (39.96.116.53).",
             },
             "command": {
                 "type": "string",

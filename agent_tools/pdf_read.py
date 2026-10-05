@@ -104,7 +104,10 @@ def _run(args: dict) -> ToolResult:
             error=f"PDF too large: {size / 1024 / 1024:.1f}MB (cap 50MB). 拆开后再读",
         )
 
-    max_chars = int(args.get("max_chars") or DEFAULT_MAX_CHARS)
+    try:
+        max_chars = int(args.get("max_chars") or DEFAULT_MAX_CHARS)
+    except (TypeError, ValueError):
+        max_chars = DEFAULT_MAX_CHARS
     max_chars = max(500, min(max_chars, 50000))
 
     try:

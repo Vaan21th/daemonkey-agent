@@ -2,7 +2,7 @@
 tools/dashboard_smoke.py
 ========================
 
-卷二十一 Day 1 · /dashboard/{domain} 端到端 smoke
+Day 1 · /dashboard/{domain} 端到端 smoke
 
 不起 server · 用 starlette TestClient 直接调 FastAPI · 验证：
   - /dashboard/radar 能读到现有 data/radar.json 数据
@@ -62,7 +62,7 @@ def main() -> int:
         else:
             print("       (no items - this is OK if radar hasn't run yet)")
 
-    print("\n[2] GET /dashboard/content (workshop · 卷二十六升级)")
+    print("\n[2] GET /dashboard/content (workshop · 升级)")
     r = client.get("/dashboard/content", headers=headers)
     if not assert_eq(r.status_code, 200, "status 200"):
         failures += 1
@@ -70,7 +70,7 @@ def main() -> int:
         d = r.json()
         if not assert_eq(d.get("domain"), "content", "domain field = 'content'"):
             failures += 1
-        # 卷二十六：从 stub 升级到 workshop · 现在应该有 items 字段
+        # 从 stub 升级到 workshop · 现在应该有 items 字段
         if not isinstance(d.get("items"), list):
             print(f"  [FAIL] items should be a list, got {type(d.get('items')).__name__}")
             failures += 1
@@ -96,7 +96,7 @@ def main() -> int:
         failures += 1
 
     # 验证 stub / 工坊 维度
-    # 卷二十六: design/dev/docs 从 stub 升级到 workshop ; service 仍是 stub
+    # design/dev/docs 从 stub 升级到 workshop ; service 仍是 stub
     print("\n[6] stub vs workshop 维度")
     for d in ["design", "dev", "docs"]:
         r = client.get(f"/dashboard/{d}", headers=headers)

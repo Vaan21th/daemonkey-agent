@@ -2,21 +2,21 @@
 agent_tools/init_domain.py
 ==========================
 
- · 一句话建领域 · NLP 主路径
+一句话建领域 · NLP 主路径
 
-用户 在对话里说"帮我关注 XX 领域·开始关注资讯" → OPUS:
+用户 在对话里说"帮我关注 XX 领域·开始关注资讯" → Daemonkey:
   1. 在 DOMAIN_META 注册新领域（slug 自动从 name 派生）
   2. 立即批量加 N 个信源进 radar_sources.json
   3. 触发一次 refresh_radar · 让 用户 立刻能在雷达里看到这个新领域的内容
 
 档位：CONFIRM
   会写盘 + 拉外部 RSS · 应该给 用户 一次 confirm
-  但 fallback：如果 OPUS 已经在对话里跟 用户 确认了"我要建 XX 领域·拉这几个源"·
+  但 fallback：如果 Daemonkey 已经在对话里跟 用户 确认了"我要建 XX 领域·拉这几个源"·
   CONFIRM 在 UI 里是一键过的·并不痛苦
 
 NLP 触发：
   - 用户: "帮我关注 D4 新赛季淘金这个领域" →
-    OPUS 先用 web_search 找几个 D4 相关 RSS / 论坛 URL → 调本工具一次过
+    Daemonkey 先用 web_search 找几个 D4 相关 RSS / 论坛 URL → 调本工具一次过
 
 入参：
   - domain_slug    · 领域 slug · 必填 · 比如 "d4-gold" / "ai-video"
@@ -154,13 +154,14 @@ def _run(args: dict) -> ToolResult:
     if not added and not failed:
         # 补丁 · 允许"占位建领域"——不再当作半失败
         # 原因：历史上 search 限流过·让 LLM 没法搜出可靠源·卡死在"search 失败 → 不敢调 init_domain"
-        # web_search 主引擎换 360（大陆中文搜得准）后这个卡点基本消除·但仍保留"先占位再补源"的兜底·稳。
+        # 续十四起 web_search 主引擎换 360（大陆中文搜得准）·这个卡点基本消除·
+        # 但仍保留"先占位再补源"的兜底·稳。
         lines.append(
             "ℹ 领域已建·但还没加源。下一步可以：\n"
             f"  - 用 web_search（360 主·大陆中文好）/ browser_fetch 找该领域的 RSS / blog URL\n"
             f"  - 按 **大陆 70% + 海外 30%** 配比挑源·别加大陆超时的（HN/HuggingFace）\n"
             f"  - 再调 manage_info_source action=add (一次加一个)·或重新调 init_domain 带 sources 一次性加多个\n"
-            f"  - 也可以让 用户 直接给几个他知道的网址·OPUS 一一验证\n"
+            f"  - 也可以让 用户 直接给几个他知道的网址·Daemonkey 一一验证\n"
             f"  - **不要因为 search 不顺就放弃这一步**·领域占位先建好·后面慢慢填"
         )
 

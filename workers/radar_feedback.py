@@ -2,11 +2,11 @@
 workers/radar_feedback.py
 =========================
 
-卷三十二 · 信息雷达打标闭环
+信息雷达打标闭环
 
-BRO 在雷达条目上能做四个动作：
-  - 👍 thumbs_up   · "这条对·OPUS 多关注这类"
-  - 👎 thumbs_down · "这条不对·OPUS 别再抓类似的"（最关键的负反馈信号）
+用户 在雷达条目上能做四个动作：
+  - 👍 thumbs_up   · "这条对·Daemonkey 多关注这类"
+  - 👎 thumbs_down · "这条不对·Daemonkey 别再抓类似的"（最关键的负反馈信号）
   - ⭐ starred     · "收藏·我以后还要看"
   - 🗑 hidden      · "藏起来·不出现在雷达视图"
 
@@ -32,13 +32,13 @@ item_id 用 url 的 md5(10) · radar.json 每条 url 唯一·hash 稳定·不依
 
 反哺时机：
   - mine_opportunities / trend_finder 跑 LLM 前 · 把 thumbs_down + thumbs_up 渲染
-    成 prompt 块塞进去——告诉 LLM 「这些信源/类型 BRO 拒过 / 这些 BRO 喜欢」
+    成 prompt 块塞进去——告诉 LLM 「这些信源/类型 用户 拒过 / 这些 用户 喜欢」
   - radar UI 渲染时 · hidden 的条目隐藏 · starred 的条目置顶
   - 软文判别用 thumbs_down 的源做 prior（同源 future items 软文嫌疑 +1）
 
 红线：
   - 不删 radar.json 里的条目 · 只在 feedback 里打标
-  - history 永远追加 · 即使 BRO 翻悔多次也留痕
+  - history 永远追加 · 即使 用户 翻悔多次也留痕
   - radar items 滚动出去后·feedback 里 title_snap 仍可读
 """
 from __future__ import annotations
@@ -71,8 +71,8 @@ def _now_iso() -> str:
 
 
 def _atomic_write(path: Path, text: str) -> None:
-    """卷四十六 III · wish-badd4 收编到 safe_write
-    radar_feedback.json 是 BRO 对雷达条目的标注·backup=True"""
+    """III · wish-badd4 收编到 safe_write
+    radar_feedback.json 是 用户 对雷达条目的标注·backup=True"""
     from .safe_write import atomic_write_text
     atomic_write_text(path, text, backup=True)
 
@@ -236,13 +236,13 @@ def feedback_map() -> dict[str, dict]:
 def load_for_prompt(*, max_chars: int = 1200) -> str:
     """
     给 trend_finder / mine_opportunities 的 LLM prompt 用·
-    渲染成纯文本块·让 LLM 知道 BRO 对哪些信源/方向是 thumbs_down·哪些是 starred。
+    渲染成纯文本块·让 LLM 知道 用户 对哪些信源/方向是 thumbs_down·哪些是 starred。
     优先放 thumbs_down——这是最关键的负反馈信号。
     """
     data = _load_all()
     items = data.get("items") or {}
     if not items:
-        return "（BRO 还没在雷达上打过标 · 这是 OPUS 跟 BRO 配合的第一次）"
+        return "（用户 还没在雷达上打过标 · 这是 Daemonkey 跟 用户 配合的第一次）"
 
     by_fb: dict[str, list[dict]] = {k: [] for k in VALID_FEEDBACK}
     for e in items.values():
@@ -253,26 +253,26 @@ def load_for_prompt(*, max_chars: int = 1200) -> str:
     lines: list[str] = []
     counts = {k: len(v) for k, v in by_fb.items()}
     lines.append(
-        f"BRO 在雷达条目上的打标: "
+        f"用户 在雷达条目上的打标: "
         f"👎 {counts['thumbs_down']} / 👍 {counts['thumbs_up']} / "
         f"⭐ {counts['starred']} / 🗑 {counts['hidden']}"
     )
     lines.append("")
 
     if by_fb["thumbs_down"]:
-        lines.append("【BRO 明确 👎 拒过的（最重要 · 别再推同源/同类）】")
+        lines.append("【用户 明确 👎 拒过的（最重要 · 别再推同源/同类）】")
         for e in by_fb["thumbs_down"][:8]:
             src = e.get("source") or "?"
             title = (e.get("title_snap") or "?")[:60]
             note = e.get("note") or ""
             line = f"- [{src}] {title}"
             if note:
-                line += f" — BRO 说：{note}"
+                line += f" — 用户 说：{note}"
             lines.append(line)
         lines.append("")
 
     if by_fb["starred"]:
-        lines.append("【BRO ⭐ 收藏的（多关注这类方向）】")
+        lines.append("【用户 ⭐ 收藏的（多关注这类方向）】")
         for e in by_fb["starred"][:6]:
             src = e.get("source") or "?"
             title = (e.get("title_snap") or "?")[:60]
@@ -280,7 +280,7 @@ def load_for_prompt(*, max_chars: int = 1200) -> str:
         lines.append("")
 
     if by_fb["thumbs_up"]:
-        lines.append("【BRO 👍 认可的（同类 OK）】")
+        lines.append("【用户 👍 认可的（同类 OK）】")
         for e in by_fb["thumbs_up"][:5]:
             src = e.get("source") or "?"
             title = (e.get("title_snap") or "?")[:60]
@@ -296,7 +296,7 @@ def load_for_prompt(*, max_chars: int = 1200) -> str:
 def source_negative_score(source: str) -> int:
     """
     某个 source（信源 slug）有多少条 thumbs_down·给软文判别当先验。
-    返回 0/1/2/3+——卷三十二 b 用。
+    返回 0/1/2/3+——b 用。
     """
     if not source:
         return 0

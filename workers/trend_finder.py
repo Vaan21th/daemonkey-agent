@@ -2,12 +2,12 @@
 workers/trend_finder.py
 ========================
 
-工作室 · 今日趋势 worker · 让 OPUS 自己看资讯找趋势
+工作室 · 今日趋势 worker · 让 Daemonkey 自己看资讯找趋势
 
 工作流：
   1. 读 data/radar.json · 取最新 50 条（按 published_at desc · 按源去重）
   2. 渲染成结构化清单
-  3. 调 RUNTIME.client.messages.create → OPUS 输出 3-5 个趋势 JSON
+  3. 调 RUNTIME.client.messages.create → Daemonkey 输出 3-5 个趋势 JSON
   4. 解析 + 落 data/trends.json
   5. /dashboard/trends 读取展示
 
@@ -42,43 +42,46 @@ TRENDS_FILE = DATA_DIR / "trends.json"
 
 logger = logging.getLogger("opus.trends")
 
-TREND_SYSTEM_PROMPT = """你是用户的 AI 搭档。用户关注自己选定的领域——看雷达条目覆盖了哪些 domain / 来自哪些来源，就知道他在乎什么。你的活是从这些资讯里找出值得他跟进的趋势和热点。
+TREND_SYSTEM_PROMPT = """你是 Daemonkey——用户 的 AI 创业搭档。用户 是超级个体·关注 AI 领域全球资讯·要从中找到值得跟进的趋势和热点。
 
-你输出的不是"今日新闻总结"——是"用户接下来能干什么"的军师视图。
+你输出的不是"今日新闻总结"——是"用户 接下来能干什么"的军师视图。
 
-**[跟着用户的兴趣走 · 最重要]**
+**[双向认知 · 必守]**
 
-雷达条目的 domain / 来源 = 用户**主动选择关注**的方向。趋势必须从这些方向里提炼·
-**不要强行往某个固定赛道（比如 AI / 科技）上靠**——用户关注动漫就提炼动漫趋势·关注独立游戏就提炼游戏趋势。
+Daemonkey 跟通用 AI agent (hermes-agent 等) 的根本差异是 **「双向认知」**——
+不只是"AI 懂 用户"·更是**「用户 借 AI 提炼自己的市场能力」**。
 
-你看趋势时·**必须先看用户的反馈历史**：
+你看趋势时·**必须先看 用户 的反馈历史**：
 - 他在 outcomes 里完成过 / 放弃过什么·说明他擅长 / 不擅长什么
 - 他在雷达里 👍 / 👎 / ⭐ 标过的条目·说明他真正关注 / 排斥什么
-- 这些累加起来 = 用户独有的位置·不是任何人都能复制
+- 这些累加起来 = 用户 在市场里**独有的位置**·不是任何人都能复制
 
-然后你挑趋势时·要挑**只有用户这种位置的人能吃下的趋势**——
-让用户看到这份趋势报告时·能反思"啊·原来我已经走到这步了·原来我现在该看 X"。
+然后你挑趋势时·要挑**只有 用户 这种位置的人能吃下的趋势**——
+让 用户 看到这份趋势报告时·能反思"啊·原来我已经走到这步了·原来我现在该看 X"。
 
-**[事实较量红线]**
+这不是修辞·是 用户 原话定的产品哲学。
+
+**[补丁2 · 事实较量红线]**
 
 你在 summary 里写"业内已有 X" / "市场规模 Y" / "用户数 Z" 这种**事实陈述**时·
 **必须诚实**——除非雷达条目里有原文佐证·否则用"据公开报道"/"参考信号"等模糊措辞·
-**不要编造具体数字**。可信度 > 完美感。
+**不要编造具体数字**。DeepSeek 等模型在曾把 "neovim 配置" 这种纯幻觉写进趋势·
+让 用户 当真就糟了。Daemonkey 的可信度 > 完美感。
 
-**[深度]**
+**[补丁2 · 看教材]**
 
-用户消息里附 `## 教材` 段·是历史沉淀的高质量分析样本·
+用户消息里附 `## 教材` 段·是 Daemonkey 历史沉淀的高质量分析样本·
 你输出的 summary 应该达到那个深度——挑战既有结论 / 给反例 / 不当 cheerleader。"""
 
 TREND_USER_PROMPT_TEMPLATE = """下面是雷达抓到的 {n} 条最新资讯。请你做以下事情：
 
-## 用户的雷达打标历史（重要！）
+## 用户 的雷达打标历史（闭环 · 重要！）
 
 {feedback_block}
 
 ---
 
-## 用户历史执行反馈（看用户真做过 / 放弃过什么）
+## 用户 历史执行反馈（闭环 · 看 用户 真做过 / 放弃过什么）
 
 {outcomes_block}
 
@@ -117,7 +120,7 @@ TREND_USER_PROMPT_TEMPLATE = """下面是雷达抓到的 {n} 条最新资讯。�
 
 ---
 
-## 教材 · 历史沉淀的高质量分析样本
+## 教材 · Daemonkey 历史沉淀的高质量分析样本（补丁2）
 
 {learnings_block}
 
@@ -128,7 +131,7 @@ TREND_USER_PROMPT_TEMPLATE = """下面是雷达抓到的 {n} 条最新资讯。�
 ---
 
 记住：
-- 用户是单打独斗的个人 · 关注"我能不能切这个赛道"·"这是不是真趋势还是炒作"·"这能不能转化为产出"
+- 用户 是超级个体 · 关注"我能不能切这个赛道"·"这是不是真趋势还是炒作"·"这能不能转化为产出"
 - 不要罗列单条新闻 · 找模式 · 把多条资讯归到一个趋势下
 - summary 里要带"前瞻性思考"·不只是描述现状·点出"如果这个趋势成立·6 个月后会怎样"
 - intensity 不要全打 5 · 大多数应该 3-4 · 真正"现在不动手就晚"才打 5
@@ -190,14 +193,14 @@ def _extract_json_array(text: str) -> Optional[list]:
 
 
 def _atomic_write(path: Path, content: str) -> None:
-    """卷四十六 III · wish-badd4 收编到 safe_write
+    """III · wish-badd4 收编到 safe_write
     trends.json 高频 (LLM 自动产) · backup=False 不占空间"""
     from .safe_write import atomic_write_text
     atomic_write_text(path, content, backup=False)
 
 
 def generate_trends(top_n: int = 50) -> dict:
-    """让 OPUS 自己看 radar.json · 输出 3-5 个趋势 · 写 data/trends.json
+    """让 Daemonkey 自己看 radar.json · 输出 3-5 个趋势 · 写 data/trends.json
 
     返回 dict · 跟 trends.json 内容一致 · 或带 error 字段
     """
@@ -208,7 +211,7 @@ def generate_trends(top_n: int = 50) -> dict:
         return {
             "generated_at": None,
             "trends": [],
-            "note": "radar.json 为空 · 先跑一次雷达再来。用户 可以跟 OPUS 说「刷新雷达」",
+            "note": "radar.json 为空 · 先跑一次雷达再来。用户 可以跟 Daemonkey 说「刷新雷达」",
         }
 
     if RUNTIME.client is None:
@@ -219,14 +222,14 @@ def generate_trends(top_n: int = 50) -> dict:
         }
 
     items_block = _render_items_block(items)
-    # 卷三十二 · 喂入 用户 的雷达打标历史
+    # 喂入 用户 的雷达打标历史
     try:
         from workers.radar_feedback import load_for_prompt as _fb_prompt
         feedback_block = _fb_prompt(max_chars=1000)
     except Exception as _e:
         feedback_block = "（暂无打标历史）"
 
-    # 卷三十四 · 喂入 用户 的执行反馈历史 · trend_finder 也开始吃 outcomes
+    # 喂入 用户 的执行反馈历史 · trend_finder 也开始吃 outcomes
     try:
         from workers.outcomes import load_outcomes_for_prompt
         outcomes_block = load_outcomes_for_prompt(max_chars=800)
@@ -237,7 +240,7 @@ def generate_trends(top_n: int = 50) -> dict:
         from workers.learnings import render_learnings_block
         learnings_block = render_learnings_block(
             kinds=["founder-thesis", "model-comparison"],
-            title="OPUS 历史沉淀的高质量分析样本",
+            title="Daemonkey 历史沉淀的高质量分析样本",
             limit=2,
         )
     except Exception as e:
@@ -380,7 +383,7 @@ def generate_trends(top_n: int = 50) -> dict:
         json.dumps(payload, ensure_ascii=False, indent=2),
     )
 
-    # 卷三十三补丁 · 归档：每天最后一份 trends 落到 archive · 用于按日检索历史趋势
+    # 补丁 · 归档：每天最后一份 trends 落到 archive · 用于按日检索历史趋势
     try:
         from datetime import datetime as _dt
         archive_dir = DATA_DIR / "trends_archive"
@@ -411,7 +414,7 @@ def load_trends() -> dict:
         return {
             "generated_at": None,
             "trends": [],
-            "note": "趋势还没生成 · 点'让 OPUS 重新总结'·或跟 OPUS 说「今日趋势」",
+            "note": "趋势还没生成 · 点'让 Daemonkey 重新总结'·或跟 Daemonkey 说「今日趋势」",
         }
     try:
         return json.loads(TRENDS_FILE.read_text(encoding="utf-8"))
@@ -420,7 +423,7 @@ def load_trends() -> dict:
 
 
 def load_trends_for_day(day: str) -> dict:
-    """卷三十三补丁 · 按日期读历史趋势
+    """补丁 · 按日期读历史趋势
 
     优先读 data/trends_archive/YYYY-MM-DD.json
     都没有 → 检查当前 trends.json 是不是这一天的 · 是就返回 · 否则返回 stub
@@ -455,7 +458,7 @@ def load_trends_for_day(day: str) -> dict:
         "_source": "empty",
         "_day": day,
         "note": (
-            f"{day} 这一天没有历史趋势归档。趋势归档从卷三十三补丁开始建立 · "
+            f"{day} 这一天没有历史趋势归档。趋势归档从补丁开始建立 · "
             "之前生成的趋势都覆盖在 trends.json·没有按日存档。今天往后的每天会留底。"
         ),
     }

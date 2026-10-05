@@ -77,7 +77,6 @@ def _run(args: dict) -> ToolResult:
             result["steps"].append({"step": "refresh_radar", "ok": False, "error": str(e)})
             lines.append(f"## ✗ Step 1 · 信息雷达 失败: {e}")
             lines.append("")
-            return ToolResult(ok=False, output="\n".join(lines), error=str(e))
     else:
         lines.append("## ⊝ Step 1 · 信息雷达 (跳过)")
         result["steps"].append({"step": "refresh_radar", "skipped": True})

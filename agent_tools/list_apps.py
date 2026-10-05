@@ -2,13 +2,13 @@
 agent_tools/list_apps.py
 ========================
 
-修补 · 让 AI 看见工坊里有什么应用 (沉淀闭环 v2 · 修用户看到的"0 个 flow / 1 个 app"假象)
+v3 修补 · Daemonkey 看见工坊里有什么应用 (沉淀闭环 v2 · 修 用户 看到的"0 个 flow / 1 个 app"假象)
 
 为什么需要这个工具 (背景):
-  之前 AI 想"看工坊里有什么 app" · 只能用 glob_files 找 data/workshop/apps/*.json
+  之前 Daemonkey 想"看工坊里有什么 app" · 只能用 glob_files 找 data/workshop/apps/*.json
   但 .gitignore 把 apps/*.json 排除了 (apps/flows 不进 git 是有意的 · 见 .gitignore 第 36/39 行)
-  → rg --files 默认尊重 .gitignore · AI 看到的是"1 个 app" · 实际磁盘有 12 个
-  → 用户一脸懵: "旧的应用怎么就都不能用了?"
+  → rg --files 默认尊重 .gitignore · Daemonkey 看到的是"1 个 app" · 实际磁盘有 12 个
+  → 用户 一脸懵: "旧的应用怎么就都不能用了?"
 
 正确做法:
   app/flow 是 daemon 内部状态 · 不该走文件系统看 · 走 workshop_assets 元数据 API
@@ -53,17 +53,21 @@ def _run(args: dict) -> ToolResult:
     query = (args.get("query") or "").strip().lower()
     shipped_only = bool(args.get("shipped_only"))
     detailed = bool(args.get("detailed"))
-    limit = int(args.get("limit") or 50)
+    try:
+        limit = int(args.get("limit") or 50)
+    except (TypeError, ValueError):
+        limit = 50
+    limit = max(1, min(limit, 50))
 
     try:
         apps = list_apps(max_items=200)
     except Exception as e:
         return ToolResult(ok=False, output="", error=f"list_apps failed: {e!r}")
 
-    # 修补 (用户反馈) · 检测坏 json (UTF-16/mojibake) · workshop_assets.list_apps
-    # 静默 skip 不可读文件 · 但 AI 应该看到"有这个 id 但文件坏了" · 不然以为应用丢了
+    # v3 修补 (用户 反馈) · 检测坏 json (UTF-16/mojibake) · workshop_assets.list_apps
+    # 静默 skip 不可读文件 · 但 Daemonkey 应该看到"有这个 id 但文件坏了" · 不然以为应用丢了
     import pathlib
-    apps_dir = pathlib.Path("data/workshop/apps")
+    apps_dir = pathlib.Path(__file__).resolve().parent.parent / "data" / "workshop" / "apps"
     corrupted: list[str] = []
     if apps_dir.exists():
         on_disk_ids = {p.stem for p in apps_dir.glob("app-*.json") if p.is_file()}
@@ -150,7 +154,8 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="list_apps",
     description=(
-        "列出工坊全部 app。想知道有哪些应用时用这个，不要 glob_files（apps/*.json 被 gitignore）。可按 query / shipped_only 过滤。只读。"
+        "列出工坊全部 app。想知道有哪些应用时用这个，不要 glob_files（apps/*.json 被 gitignore）。"
+        "可按 query / shipped_only 过滤。只读。"
     ),
     tier=TIER_AUTO,
     input_schema={

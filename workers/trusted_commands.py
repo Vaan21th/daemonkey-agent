@@ -2,13 +2,13 @@
 workers/trusted_commands.py
 ============================
 
-卷四十四 K stage 2c++ · wish-f563a56d · shell_exec 一次授权 · 30 min 信任窗口
+K stage 2c++ · wish-f563a56d · shell_exec 一次授权 · 30 min 信任窗口
 
 **为什么要这个**:
-  BRO 2026-05-25 19:36 截图: daemon OPUS 想给 BRO 找滨崎步照片 · 走 `pip install duckduckgo_search`
-  探路 · BRO 那边 auto_confirm=auto 一刀切被 skip · OPUS 没法施工。
+  用户 2026-05-25 19:36 截图: daemon Daemonkey 想给 用户 找滨崎步照片 · 走 `pip install duckduckgo_search`
+  探路 · 用户 那边 auto_confirm=auto 一刀切被 skip · Daemonkey 没法施工。
 
-  落点: BRO 在 settings 里维护一个『信任命令头』清单 + 时长 (30min/24h/永久) · shell_exec
+  落点: 用户 在 settings 里维护一个『信任命令头』清单 + 时长 (30min/24h/永久) · shell_exec
   classify 时检查命中 trusted pattern → downgrade tier 到 AUTO 自动 go。
 
 **数据 schema** (data/trusted_commands.json):
@@ -20,7 +20,7 @@ workers/trusted_commands.py
         "pattern": "pip install",   ← 命令头匹配 (空格分隔的 prefix)
         "expires_at": "2026-05-25T22:30:00" or null,  ← null 表示永久
         "added_at": "2026-05-25T22:00:00",
-        "reason": "BRO 临时让 OPUS 装 duckduckgo_search"
+        "reason": "用户 临时让 Daemonkey 装 duckduckgo_search"
       },
       ...
     ]
@@ -174,7 +174,7 @@ def add_trusted(
     with _LOCK:
         data = _load()
         items = data.get("items", []) or []
-        # 同 pattern 去重 · 用最新的覆盖 (BRO 想延长就再加一次)
+        # 同 pattern 去重 · 用最新的覆盖 (用户 想延长就再加一次)
         items = [x for x in items if _norm_pattern(x.get("pattern") or "") != pattern]
 
         now = _now()
@@ -210,7 +210,7 @@ def remove_trusted(item_id: str) -> bool:
 
 
 def clear_all() -> int:
-    """清空所有 · 返清掉的条数 (谨慎调用 · 没 confirm 防护层 · 仅给 BRO admin endpoint 用)"""
+    """清空所有 · 返清掉的条数 (谨慎调用 · 没 confirm 防护层 · 仅给 用户 admin endpoint 用)"""
     with _LOCK:
         data = _load()
         n = len(data.get("items", []) or [])

@@ -2,13 +2,13 @@
 agent_tools/read_scenario.py
 ============================
 
-卷四十六 II · wish-af1245d7 · 按需读场景化铁律细则
+II · wish-af1245d7 · 按需读场景化铁律细则
 
 设计动机:
   当前 daemon_rules.md 注入 system prompt 顶部 · 8 条铁律全部强读 ~14000 字。
   实际上每条铁律都有触发条件 · 不相关时占 LLM 注意力 + 引发铁律打架。
 
-  方案 C (BRO 钉死): system prompt 留场景索引 + 一句话纪律 ·
+  方案 C (用户 钉死): system prompt 留场景索引 + 一句话纪律 ·
   完整细则按 domain 拆到 data/cognition/scenarios/<domain>.md ·
   LLM 触发时调本工具按需读。
 

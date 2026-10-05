@@ -24,6 +24,8 @@ api_routes/intelligence.py · 智识闭环路由 (wish-413999da · phase 1)
 """
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -102,14 +104,14 @@ def _resolve_review_md(filename: str) -> "Path":
     return path
 
 
-# ─── 卷三十五补丁3 · 智识直通车 (UI → API → workers · 不烧 LLM) ───
+# ─── 补丁3 · 智识直通车 (UI → API → workers · 不烧 LLM) ───
 
 @router.post("/verify/claim")
 async def post_verify_claim(
     body: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """卷三十五补丁3 · 给 UI 的「佐证」按钮 · 验证一条具体 claim
+    """补丁3 · 给 UI 的「佐证」按钮 · 验证一条具体 claim
 
     body: { "claim": "ChatGPT 月活 1000 万", "limit": 5 }
     """
@@ -131,12 +133,12 @@ async def post_remove_domain(
     body: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """卷三十五补丁3 · 用户点 × 删 domain · 直接走 API · 不烧 LLM token
+    """补丁3 · 用户点 × 删 domain · 直接走 API · 不烧 LLM token
 
     body:
-      { "slug": "<用户自建领域 slug>",
+      { "slug": "wildcard",
         "sources_action": "reassign|delete|keep",   # 默认 reassign
-        "target_domain": "<可选·不传走 fallback 归 self-evolve>"
+        "target_domain": "wildcard"                 # 可选·不传走 fallback
       }
     """
     check_auth(authorization)
@@ -165,7 +167,7 @@ async def post_add_domain(
     body: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """卷三十五补丁3 · 配套 · 直接走 API 加 domain (无需 LLM)
+    """补丁3 · 配套 · 直接走 API 加 domain (无需 LLM)
 
     body:
       { "slug": "...", "label": "...", "icon": "...",
@@ -198,7 +200,7 @@ async def post_radar_feedback(
     body: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """卷三十二 · UI 点 👍/👎/⭐/🗑 直接落盘
+    """UI 点 👍/👎/⭐/🗑 直接落盘
 
     body:
       { "item_id": "...",  # md5(url) 前 12
@@ -245,7 +247,7 @@ async def post_outcome(
     body: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """卷三十一 · UI 直接更新 outcome 闭环 · 不走 LLM/工具循环
+    """UI 直接更新 outcome 闭环 · 不走 LLM/工具循环
 
     body 形如：
       { "opp_id": "opp-xxxx",
@@ -283,15 +285,16 @@ async def post_favorites(
     body: dict = Body(...),
     authorization: Optional[str] = Header(None),
 ):
-    """卷三十三 · UI 点 ⭐ 切换收藏
+    """UI 点 ⭐ 切换收藏
 
     body:
-      { "kind": "opportunity|feasibility",
-        "ref_id": "opp-xxxx",
-        "action": "toggle|remove|add" (默认 toggle),
-        "title_hint": "...",     # opportunities/feasibility 标题
+      { "kind": "opportunity|feasibility|output",
+        "ref_id": "opp-xxxx" / "data/reports/x.docx",
+        "action": "toggle|remove|add|set_category" (默认 toggle),
+        "title_hint": "...",     # 标题快照
         "domain": "...",         # 可选 · 雷达类目
-        "note": "..."            # 可选
+        "note": "...",           # 可选
+        "category": "..."        # 可选 · 只对 kind=output 有意义 (用户 自命名的分类)
       }
     雷达条目的 ⭐ 走 /radar/feedback?feedback=starred · 不走这里。
     """
@@ -299,10 +302,10 @@ async def post_favorites(
     if not isinstance(body, dict):
         raise HTTPException(400, "body 必须是 JSON object")
     kind = (body.get("kind") or "").strip()
-    if kind not in ("opportunity", "feasibility"):
+    if kind not in ("opportunity", "feasibility", "output"):
         raise HTTPException(
             400,
-            f"kind 必须是 opportunity 或 feasibility · 收到 {kind!r}",
+            f"kind 必须是 opportunity / feasibility / output · 收到 {kind!r}",
         )
     ref_id = (body.get("ref_id") or "").strip()
     if not ref_id:
@@ -311,9 +314,11 @@ async def post_favorites(
     title_hint = body.get("title_hint") or ""
     domain_hint = body.get("domain") or ""
     note = body.get("note")
+    category = body.get("category")
     from workers.favorites import (
         add_favorite,
         remove_favorite,
+        set_category,
         toggle_favorite,
     )
     if action == "remove":
@@ -321,19 +326,21 @@ async def post_favorites(
     elif action == "add":
         r = add_favorite(
             kind, ref_id,
-            title_snap=title_hint, domain=domain_hint, note=note,
+            title_snap=title_hint, domain=domain_hint, note=note, category=category,
         )
+    elif action == "set_category":
+        r = set_category(kind, ref_id, category or "")
     else:
         r = toggle_favorite(
             kind, ref_id,
-            title_snap=title_hint, domain=domain_hint, note=note,
+            title_snap=title_hint, domain=domain_hint, note=note, category=category,
         )
     if not r.get("ok"):
         raise HTTPException(400, r.get("error") or "favorites 失败")
     return r
 
 
-# ─── 卷二十四 + 卷三十三 · 报告库 (docx 预览 / 下载) ───
+# ─── + 报告库 (docx 预览 / 下载) ───
 
 @router.get("/reports/preview/{filename}")
 async def preview_report(
@@ -341,7 +348,7 @@ async def preview_report(
     authorization: Optional[str] = Header(None),
     token: Optional[str] = None,
 ):
-    """单个报告的在线预览数据 · 卷三十三补丁
+    """单个报告的在线预览数据 · 补丁
 
     优先：读 `<filename>.md`(新报告生成时同步落的源 · 带 YAML front-matter)
     兜底：用 python-docx 抽取 docx 里的段落 + 标题 + 列表项 · 简陋还原 markdown
@@ -389,10 +396,13 @@ async def preview_report(
         return {
             "ok": True,
             "name": filename,
+            "kind": "reports",
             "has_md_source": True,
             "source": "md",
             "markdown": md_body,
             "meta": meta,
+            "download_url": f"/reports/{filename}",
+            "open_path": f"data/reports/{filename}",
         }
 
     # ─── 方案 2 · 旧报告 · python-docx 抽段落兜底 ───
@@ -444,10 +454,13 @@ async def preview_report(
     return {
         "ok": True,
         "name": filename,
+        "kind": "reports",
         "has_md_source": False,
         "source": "docx_extract",
         "markdown": md_body,
         "meta": {"title": title_guess},
+        "download_url": f"/reports/{filename}",
+        "open_path": f"data/reports/{filename}",
         "note": (
             "这份报告是旧版本·没有 markdown 源。当前预览是从 docx 反向抽取的"
             "简陋还原 (标题/段落/列表/表格)。后续生成的报告会自动有 md 源。"
@@ -473,7 +486,7 @@ async def download_report(
     return _serve_report_file(filename)
 
 
-# ─── 卷四十六 II · 月度复盘 reviews (wish-bf190d9c) ───
+# ─── II · 月度复盘 reviews (wish-bf190d9c) ───
 
 @router.get("/reviews")
 async def list_reviews_endpoint(
@@ -531,3 +544,28 @@ async def download_review(
         media_type="text/markdown; charset=utf-8",
         filename=filename,
     )
+
+
+@router.post("/reviews/reveal/{filename}")
+async def reveal_review(
+    filename: str,
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = None,
+):
+    """单份月度复盘本机打开 · 仅 daemon 跟 用户 同一台机器时有意义 (对齐 workshop reveal)。"""
+    if token and not authorization:
+        authorization = f"Bearer {token}"
+    check_auth(authorization)
+    path = _resolve_review_md(filename)
+    try:
+        if os.name == "nt":
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            import subprocess
+            subprocess.Popen(["open", str(path)])
+        else:
+            import subprocess
+            subprocess.Popen(["xdg-open", str(path)])
+    except Exception as e:
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
+    return {"ok": True, "path": str(path)}

@@ -2,13 +2,13 @@
 agent_tools/mcp_call.py
 =======================
 
-OPUS 接入 MCP（Model Context Protocol）生态——Anthropic 推的开放协议，
+Daemonkey 接入 MCP（Model Context Protocol）生态——Anthropic 推的开放协议，
 任何兼容 MCP 的 server 都能挂上来当工具用：filesystem / github / postgres /
 slack / notion / playwright / OpenClaw 内的所有 server / 你自己写的 ……
 
 为什么这是个**入口工具**而不是给每个 MCP server 写一个原生工具：
-  - MCP server 的 tool schema 是运行时发现的——OPUS 调 mcp_list 才知道有哪些
-  - 写死成原生工具 = OPUS 必须重启才能加新 server，灵活性归零
+  - MCP server 的 tool schema 是运行时发现的——Daemonkey 调 mcp_list 才知道有哪些
+  - 写死成原生工具 = Daemonkey 必须重启才能加新 server，灵活性归零
   - 通过这个入口，**改 .mcp/servers.json 就能扩工具**，daemon 不用动
 
 三个公开工具：
@@ -17,10 +17,9 @@ slack / notion / playwright / OpenClaw 内的所有 server / 你自己写的 …
   - mcp_describe_tool(server, tool) · 看某个 tool 的 schema
 
 设计：
-  - 配置文件：.mcp/servers.json（不存在就给 .example 提示 BRO 创建）
+  - 配置文件：.mcp/servers.json（不存在就给 .example 提示 用户 创建）
   - **lazy connect**：调用时才连，不调不开 server 进程
-  - **session pooling**：同一 daemon 进程内 server 连接缓存
-    （OPUS 第一次调 github 慢 2s，后面都是 ms 级）
+  - **无连接池**：每次调用新建 session（避免跨请求状态串）
   - **超时保护**：每个工具调用 60s timeout，避免远端 hang 拖死 daemon
 
 工具档位：
@@ -57,7 +56,7 @@ def _load_servers() -> tuple[dict, str]:
                 f"复制并去掉 .example 后缀，按需要编辑"
             )
         from identity import localize_narration as _ln
-        return {}, _ln(".mcp/servers.json 不存在 + 没有模板，BRO 需要手动创建")
+        return {}, _ln(".mcp/servers.json 不存在 + 没有模板，用户 需要手动创建")
     try:
         data = json.loads(SERVERS_CONFIG.read_text(encoding="utf-8"))
         servers = data.get("servers", {})
@@ -71,7 +70,7 @@ def _load_servers() -> tuple[dict, str]:
 async def _connect_and_call(server_cfg: dict, action: str, **kwargs):
     """
     建立 MCP session 并执行一个动作。
-    每次调用建立独立 session（无 pool）——简单起见，Day 1 阶段。
+    每次调用新建独立 session（无连接池）。
 
     action:
       - 'list_tools' → return [Tool, ...]
@@ -95,18 +94,33 @@ async def _connect_and_call(server_cfg: dict, action: str, **kwargs):
                 raise ValueError("stdio server requires 'command'")
             params = StdioServerParameters(command=command, args=args, env=env)
             read, write = await stack.enter_async_context(stdio_client(params))
-        elif transport == "sse":
-            try:
-                from mcp.client.sse import sse_client
-            except ImportError:
-                raise RuntimeError("SSE transport not available in this mcp SDK version")
+        elif transport in ("sse", "http", "streamable_http", "streamable-http"):
             url = server_cfg.get("url")
             if not url:
-                raise ValueError("sse server requires 'url'")
+                raise ValueError("sse/http server requires 'url'")
             headers = server_cfg.get("headers") or {}
-            read, write = await stack.enter_async_context(sse_client(url, headers=headers))
+            # 铁律 7 · 解析 ${secret:app:name} 占位符 · 真值不落 servers.json (龙头合并包增量)
+            if headers:
+                from workers.app_secrets import resolve_placeholders
+                headers = {k: resolve_placeholders(str(v))[0] for k, v in headers.items()}
+            if transport == "sse":
+                try:
+                    from mcp.client.sse import sse_client
+                except ImportError:
+                    raise RuntimeError("SSE transport not available in this mcp SDK version")
+                read, write = await stack.enter_async_context(sse_client(url, headers=headers))
+            else:
+                # Streamable HTTP (MCP 新版协议 · 腾讯文档等官方 server 用这个)
+                try:
+                    from mcp.client.streamable_http import streamable_http_client
+                    import httpx
+                except ImportError:
+                    raise RuntimeError("streamable_http transport not available in this mcp SDK version")
+                http_client = httpx.AsyncClient(headers=headers, timeout=httpx.Timeout(60.0))
+                await stack.enter_async_context(http_client)
+                read, write = await stack.enter_async_context(streamable_http_client(url, http_client=http_client))
         else:
-            raise ValueError(f"unsupported transport: {transport!r} (only stdio/sse)")
+            raise ValueError(f"unsupported transport: {transport!r} (only stdio/sse/http)")
 
         session = await stack.enter_async_context(ClientSession(read, write))
         await session.initialize()
@@ -137,15 +151,17 @@ async def _connect_and_call(server_cfg: dict, action: str, **kwargs):
 
 def _run_async(coro):
     """同步包装。每次新建 event loop（避免污染主进程）。"""
+    loop = None
     try:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         return loop.run_until_complete(asyncio.wait_for(coro, timeout=CALL_TIMEOUT_SECONDS))
     finally:
-        try:
-            loop.close()
-        except Exception:
-            pass
+        if loop is not None:
+            try:
+                loop.close()
+            except Exception:
+                pass
 
 
 def _summarize_list(args: dict) -> str:
@@ -302,7 +318,9 @@ SPEC_DESCRIBE = ToolSpec(
 SPEC_CALL = ToolSpec(
     name="mcp_call_tool",
     description=(
-        "Call a tool on a configured MCP server. CONFIRM tier because the remote tool's actual side effects are unknown to you in advance—e.g. github 'create_issue' really creates an issue. Use mcp_list / mcp_describe_tool first to know what you're invoking."
+        "Call a tool on a configured MCP server. CONFIRM tier because the remote tool's "
+        "actual side effects are unknown to you in advance—e.g. github 'create_issue' really "
+        "creates an issue. Use mcp_list / mcp_describe_tool first to know what you're invoking."
     ),
     tier=TIER_CONFIRM,
     input_schema={

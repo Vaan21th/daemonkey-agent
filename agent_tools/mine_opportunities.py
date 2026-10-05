@@ -2,19 +2,19 @@
 agent_tools/mine_opportunities.py
 ==================================
 
- · 掘金机会引擎入口
+掘金机会引擎入口
 
-让 OPUS 主动跑一次"市场信号 × 用户 能力画像"的交叉分析·
+让 Daemonkey 主动跑一次"市场信号 × 用户 能力画像"的交叉分析·
 找出对 用户 这个**超级个体**最值得切的掘金点·并落 data/opportunities.json。
 
 档位：AUTO
   只读 trends.json + radar.json + OWNER-NOTEBOOK · 只写 opportunities.json · 不外联
   即使生成的机会卡不准 · 跑一次也就 ~5 秒 ~$0.05 · 风险足够低走 AUTO
 
-调用时机（OPUS 自己决定）：
+调用时机（Daemonkey 自己决定）：
   - 用户「最近有啥可以做的」「挖掘下机会」「看看有啥能搞钱的」 → 立刻调
   - 用户 打开 💎 掘金机会 维度 / BI 看板 · 而 opportunities.json 是空的或超过 12h → 调
-  - 用户 刚刷完一次趋势·OPUS 觉得需要把"趋势→机会"这一步走完 → 调
+  - 用户 刚刷完一次趋势·Daemonkey 觉得需要把"趋势→机会"这一步走完 → 调
 
 NLP 示例：
   - "挖一下机会" → action 默认 mine
@@ -33,23 +33,20 @@ def _summarize(args: dict) -> str:
 
 
 _FIT_ICONS = {"yes": "✅", "maybe": "⚠️", "no": "❌"}
-
-
-def _domain_icon(slug: str) -> str:
-    """领域图标取自雷达 DOMAIN_META（用户自己挖出来的领域），不再写死。"""
-    try:
-        from workers.info_radar import DOMAIN_META
-        return DOMAIN_META.get(slug, {}).get("icon", "·")
-    except Exception:
-        return "·"
+_DOMAIN_ICONS = {
+    "ai": "🤖",
+    "super-individual": "🦅",
+    "game-money": "🎮",
+    "wildcard": "✨",
+}
 
 
 def _format_opportunity(opp: dict, idx: int) -> str:
     """单个机会渲染成给 LLM / 用户 看的 markdown 段"""
     fit = opp.get("fit", "maybe")
-    domain = opp.get("domain", "self-evolve")
+    domain = opp.get("domain", "wildcard")
     lines = [
-        f"### {idx}. {_domain_icon(domain)} {opp.get('title', '?')}",
+        f"### {idx}. {_DOMAIN_ICONS.get(domain, '·')} {opp.get('title', '?')}",
         f"- 推荐度: {'⭐' * opp.get('recommend', 3)} ({opp.get('recommend', 3)}/5)",
         f"- 适配: {_FIT_ICONS.get(fit, '?')} {fit}  ·  "
         f"投入: {opp.get('cost_effort', '?')}  ·  "
@@ -140,8 +137,7 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="mine_opportunities",
     description=(
-        "雷达/趋势 × 用户画像挖掘金机会。actions: mine（跑 LLM 覆写）/ list（只读）。输出 3–5 张卡，形态须多样，fit_reason 引用画像。"
-    ),
+        "雷达/趋势 × 用户画像挖掘金机会。actions: mine（跑 LLM 覆写）/ list（只读）。输出 3–5 张卡，形态须多样，fit_reason 引用画像。"    ),
     tier=TIER_AUTO,
     input_schema={
         "type": "object",

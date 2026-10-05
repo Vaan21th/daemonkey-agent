@@ -2,12 +2,12 @@
 workers/outcomes.py
 ===================
 
-卷三十一 · 闭环反馈机制
+闭环反馈机制
 
 把"掘金机会 → 可行性分析 → 决策 → 执行 → 反馈"串成闭环：
-当 BRO 决定不做某个机会（或做完之后）·反馈记录在这里·
+当 用户 决定不做某个机会（或做完之后）·反馈记录在这里·
 下次 mine_opportunities / analyze_feasibility 跑 LLM 时·
-会把这些历史塞进 prompt——让 OPUS 不重蹈覆辙·也越来越懂 BRO 的能力边界。
+会把这些历史塞进 prompt——让 Daemonkey 不重蹈覆辙·也越来越懂 用户 的能力边界。
 
 数据结构 data/outcomes/{opp_id}.json：
   - opp_id           · 对应掘金机会 id
@@ -54,7 +54,7 @@ _STATUS_LABEL = {
 
 
 def _display_title(out: dict) -> str:
-    """机会标题兜底（卷七十四续十四）。
+    """机会标题兜底（续十四）。
 
     opp_title 是新建 outcome 时从 opportunities.json 抓的快照·但机会列表会轮替·
     旧机会被挤出后 _opp_lookup 拿不到标题·title 就成了 None·UI 只能显示裸 "?"。
@@ -73,8 +73,8 @@ def _display_title(out: dict) -> str:
 
 
 def _atomic_write(path: Path, text: str) -> None:
-    """卷四十六 III · wish-badd4 收编到 safe_write
-    outcomes.json 是 BRO 实战收益记录·backup=True"""
+    """III · wish-badd4 收编到 safe_write
+    outcomes.json 是 用户 实战收益记录·backup=True"""
     from .safe_write import atomic_write_text
     atomic_write_text(path, text, backup=True)
 
@@ -103,6 +103,9 @@ def _opp_lookup(opp_id: str) -> dict:
 
 def load_outcome(opp_id: str) -> Optional[dict]:
     """读单条 outcome · 不存在返回 None"""
+    import re as _re  # B-② · 2026-08-27 · opp_id 白名单校验 · 防路径穿越 (Grok 全量审计)
+    if not _re.fullmatch(r"opp-[A-Za-z0-9_.\-]+", str(opp_id or "")):
+        return None
     f = OUTCOMES_DIR / f"{opp_id}.json"
     if not f.exists():
         return None
@@ -221,6 +224,9 @@ def record_outcome(
     # 历史最多保留 50 条
     out["updates"] = out["updates"][-50:]
 
+    import re as _re  # B-② · 2026-08-27 · opp_id 白名单校验 · 防路径穿越 (Grok 全量审计)
+    if not _re.fullmatch(r"opp-[A-Za-z0-9_.\-]+", str(opp_id or "")):
+        return {"ok": False, "error": f"非法 opp_id: {opp_id!r}"}
     out_file = OUTCOMES_DIR / f"{opp_id}.json"
     _atomic_write(out_file, json.dumps(out, ensure_ascii=False, indent=2))
     logger.info(
@@ -268,18 +274,18 @@ def list_outcomes(*, max_items: int = 50) -> dict:
 def load_outcomes_for_prompt(*, max_chars: int = 1200) -> str:
     """
     给 mine_opportunities / analyze_feasibility 的 LLM prompt 用·
-    把所有 outcomes 渲染成纯文本块·让 LLM 知道 BRO 历史决策。
+    把所有 outcomes 渲染成纯文本块·让 LLM 知道 用户 历史决策。
 
-    重点突出"放弃 / 拒做"原因——这是 BRO 能力边界的真正信号。
+    重点突出"放弃 / 拒做"原因——这是 用户 能力边界的真正信号。
     """
     summary = list_outcomes(max_items=30)
     items = summary.get("items") or []
     if not items:
-        return "（暂无历史反馈 · 这是第一次跟 BRO 走完整闭环）"
+        return "（暂无历史反馈 · 这是第一次跟 用户 走完整闭环）"
     lines: list[str] = []
     by_st = summary.get("by_status") or {}
     lines.append(
-        f"BRO 至今对 {summary['total']} 个机会有反馈："
+        f"用户 至今对 {summary['total']} 个机会有反馈："
         f"放弃 {by_st.get('abandoned', 0)} / 完成 {by_st.get('completed', 0)} / "
         f"进行 {by_st.get('in_progress', 0)} / 未启动 {by_st.get('not_started', 0)}"
     )
@@ -299,7 +305,7 @@ def load_outcomes_for_prompt(*, max_chars: int = 1200) -> str:
         reason = it.get("decision_reason") or ""
         line = f"- [{label}·{domain}] 《{title}》"
         if reason:
-            line += f" — BRO 说：{reason[:120]}"
+            line += f" — 用户 说：{reason[:120]}"
         if st == "completed":
             rev = it.get("actual_revenue_cny")
             if rev is not None:
@@ -315,9 +321,9 @@ def load_outcomes_for_prompt(*, max_chars: int = 1200) -> str:
 
 
 # ───────────────────────────────────────────────────────────────────
-# 卷三十三 · 同类执行反馈合并分析
+# 同类执行反馈合并分析
 #
-# BRO 卷三十三原话：
+# 用户 原话：
 #   「我们执行了 A·已有结果·现在出现了新的机遇 C·可研报告生成时会抓取过去我们
 #    的同类执行反馈·做合并分析·这样评估才更有深度·并且让人机范式形成闭环。」
 #
@@ -354,7 +360,7 @@ def find_similar_outcomes(
       - 相同 domain → +2
       - 标题关键词重叠每个 → +1
       - decision_reason 关键词重叠每个 → +1
-      - 状态 abandoned/completed → +0.5 优先（说明 BRO 真有结论）
+      - 状态 abandoned/completed → +0.5 优先（说明 用户 真有结论）
     """
     all_outcomes = list_outcomes(max_items=200).get("items") or []
     if not all_outcomes:
@@ -396,18 +402,18 @@ def render_similar_outcomes_prompt(opp: dict, *, top_n: int = 5) -> str:
     """
     渲染"同类执行反馈"prompt 块 · 给 feasibility_analyzer 调用。
 
-    设计：明确告诉 LLM "这些是 BRO 过去做过 / 没做的同类事·**用它们做合并分析**"。
+    设计：明确告诉 LLM "这些是 用户 过去做过 / 没做的同类事·**用它们做合并分析**"。
     """
     similar = find_similar_outcomes(opp, top_n=top_n)
     if not similar:
         return (
-            "（BRO 还没有同类执行反馈 · 这是第一次走「机会 → 执行 → 复盘」全闭环 · "
+            "（用户 还没有同类执行反馈 · 这是第一次走「机会 → 执行 → 复盘」全闭环 · "
             "你的分析将成为未来的参考样本）"
         )
 
     lines: list[str] = []
     lines.append(
-        f"BRO 过去做过 / 评估过 {len(similar)} 个**同类**项目·"
+        f"用户 过去做过 / 评估过 {len(similar)} 个**同类**项目·"
         f"以下是按相似度排序的真实结果——**请基于这些经验·而不是通用模板·做合并分析**："
     )
     lines.append("")
@@ -436,8 +442,8 @@ def render_similar_outcomes_prompt(opp: dict, *, top_n: int = 5) -> str:
     lines.append("**LLM 你要做的事**：")
     lines.append("1. 在 verdict_reason 里**明确引用**至少 1 条同类经验（用方括号 [1] / [2] 编号）")
     lines.append("2. 如果 abandoned 的同类事跟当前机会很像 · 在 risks / threats 里复用它的失败原因")
-    lines.append("3. 如果 completed 的同类事说明 BRO 真能跑通某类 · 在 strengths / capability_match 里反映")
-    lines.append("4. **不要无视这些反馈说通用话** · 这是 BRO 这个具体人的真实历史")
+    lines.append("3. 如果 completed 的同类事说明 用户 真能跑通某类 · 在 strengths / capability_match 里反映")
+    lines.append("4. **不要无视这些反馈说通用话** · 这是 用户 这个具体人的真实历史")
     return "\n".join(lines)
 
 

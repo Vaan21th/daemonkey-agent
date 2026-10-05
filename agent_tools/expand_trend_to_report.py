@@ -5,10 +5,10 @@ agent_tools/expand_trend_to_report.py
 把工作室「今日趋势」里的某一条·一键展开成完整的 docx 报告。
 
 档位：CONFIRM
-  跑 LLM (要 token) + 落盘 docx · 用户 应该看见"OPUS 打算给我做一份《XXX 趋势报告》"。
+  跑 LLM (要 token) + 落盘 docx · 用户 应该看见"Daemonkey 打算给我做一份《XXX 趋势报告》"。
   从 WebUI 趋势卡片"📑 写报告"按钮触发时 · 走 auto_confirm=confirm 快路径。
 
-链路（ 用户 的诉求）：
+链路（用户 的诉求）：
   📡 信息雷达 (原料)
       ↓ trend_finder LLM 提炼
   🌊 今日趋势 / 军师视图
@@ -39,9 +39,9 @@ from . import TIER_CONFIRM, ToolResult, ToolSpec, register_tool
 
 
 _REPORT_SYSTEM_PROMPT = (
-    "你是用户的 AI 搭档。 "
-    "你正在把一个雷达趋势展开成一份给用户内部用的报告。 "
-    "用户看报告是为了「我能不能据此行动」 · 不要套话 · 不要总结性废话。"
+    "你是 Daemonkey——用户 的 AI 创业搭档。 "
+    "你正在把一个雷达趋势展开成一份给 用户 内部用的报告。 "
+    "用户 是超级个体 · 看报告是为了「我能不能据此行动」 · 不要套话 · 不要总结性废话。"
 )
 
 _REPORT_USER_PROMPT_TEMPLATE = """请写一份关于「{title}」的工作室内部报告。
@@ -140,8 +140,8 @@ def _run(args: dict) -> ToolResult:
     if not trends:
         return ToolResult(
             ok=False, output="",
-            error="trends.json 里没有趋势 · 先让 OPUS 生成今日趋势再来。 "
-                  "(可调 generate_trends 或在 WebUI 点'让 OPUS 重新总结')",
+            error="trends.json 里没有趋势 · 先让 Daemonkey 生成今日趋势再来。 "
+                  "(可调 generate_trends 或在 WebUI 点'让 Daemonkey 重新总结')",
         )
 
     if trend_index < 0 or trend_index >= len(trends):
@@ -265,7 +265,7 @@ def _run(args: dict) -> ToolResult:
             "title": report_title,
             "subtitle": subtitle,
             "audience": "用户 内部参考",
-            "note": "从今日趋势一键展开 · OPUS 工作室出品",
+            "note": "从今日趋势一键展开 · Daemonkey 工作室出品",
             "footer": "Daemonkey · 工作室",
         }
 
@@ -285,7 +285,10 @@ def _run(args: dict) -> ToolResult:
         )
 
     size_kb = final_path.stat().st_size / 1024
-    rel = final_path.relative_to(final_path.parent.parent.parent)
+    try:
+        rel = final_path.relative_to(ROOT)
+    except ValueError:
+        rel = final_path
 
     lines = [
         f"已生成趋势报告 · {final_path.name}",
@@ -308,7 +311,10 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="expand_trend_to_report",
     description=(
-        "把今日趋势里的某一条 · 用 LLM 展开成 3000-4500 字的完整 docx 报告 · 自动落 data/reports/。 适合: 用户在趋势卡片上点'写报告' · 或对话里「把第 N 个趋势做成报告」。这是 信息雷达→今日趋势→报告库 链路上「趋势→报告」这一环的快路径。"
+        "把今日趋势里的某一条 · 用 LLM 展开成 3000-4500 字的完整 docx 报告 · "
+        "自动落 data/reports/。 适合: 用户在趋势卡片上点'写报告' · 或对话里"
+        "「把第 N 个趋势做成报告」。这是 信息雷达→今日趋势→报告库 链路上"
+        "「趋势→报告」这一环的快路径。"
     ),
     tier=TIER_CONFIRM,
     input_schema={
@@ -323,7 +329,7 @@ SPEC = ToolSpec(
             },
             "theme": {
                 "type": "string",
-                "description": "docx 主题: opus_studio (默认) / midnight",
+                "description": "docx 主题: opus_studio (默认) / manju",
             },
         },
         "required": ["trend_index"],

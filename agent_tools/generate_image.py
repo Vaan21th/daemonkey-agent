@@ -5,13 +5,13 @@ agent_tools/generate_image.py
 文生图 · "daemonkey 的生图"那一档。 给一段画面描述 → 生成 PNG 落盘 → 返回相对路径,
 可直接被 generate_presentation 用 `<!-- image: 路径 -->` 引进 PPT / 报告封面。
 
-配图优先级链(BRO 2026-07-14 钉死 · 07-14 晚重排):
+配图优先级链(用户 2026-07-14 钉死 · 07-14 晚重排):
   ① 用户在工坊搭的【生图应用】(app)→ 直接调它(scripted 秒级/agentic)· **第一优先 · 支持并发**
   ② 配了生图模型(DAEMONKEY_IMAGE_MODEL)→ 走 OpenAI 兼容 /images/generations
   ③ 都没有 → 本工具返回"未配置" → 改用豆包网页版(browser_act 走 playbook)薅免费图
-  ④ 还不行 → 保留 <!-- prompt: 画面描述 --> 占位卡 · 交回复里给 BRO
+  ④ 还不行 → 保留 <!-- prompt: 画面描述 --> 占位卡 · 交回复里给 用户
 
-为什么 app 排第一(卷七十九续 · 脑科学 PPT 实测复盘):
+为什么 app 排第一(续 · 脑科学 PPT 实测复盘):
   豆包网页版薅图链路极脆(弹窗挡、ProseMirror selector 超时、每轮切回聊天模式、
   收 4 张变体要 look_at 挑、harvest 目录名和 PPT embed 目录对不上)——20 张图跑了 90+ 次
   工具调用只嵌进去 2 张。 用户自建生图 app(有 key、返回真实文件路径)一步到位且可并发。
@@ -24,7 +24,7 @@ agent_tools/generate_image.py
       DAEMONKEY_IMAGE_API_KEY   (回退 DAEMONKEY_API_KEY / OPUS_API_KEY)
       DAEMONKEY_IMAGE_BASE_URL  (回退 DAEMONKEY_BASE_URL / OPUS_BASE_URL)
   - 返回体同时认 b64_json 和 url 两种响应(不同家不一样)
-  - TIER_CONFIRM · 真花钱 · 让 BRO 拍板(信任 flow 内自动放行)
+  - TIER_CONFIRM · 真花钱 · 让 用户 拍板(信任 flow 内自动放行)
 """
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ _IMG_CONCURRENCY = 4         # 批量生图并发线程数
 
 # agentic 生图 app(app_runner·多半驱动浏览器/豆包网页)不是并发安全的:多个同时跑会抢同一个
 # 浏览器窗口 → 串味/失败。 用进程级锁把 agentic 生图串行化(跨会话·跨批次都串)· scripted/ENV
-# 走 HTTP 无状态·不受此锁影响·照样满并发。 (卷七十九续二十二 · BRO 问"两实例同时生图会不会出事")
+# 走 HTTP 无状态·不受此锁影响·照样满并发。 (续二十二 · 用户 问"两实例同时生图会不会出事")
 _AGENTIC_IMG_LOCK = threading.Lock()
 
 
@@ -149,6 +149,12 @@ def resolve_image_app():
     """挑一个默认生图 app。 DAEMONKEY_IMAGE_APP_ID 显式指定优先;否则 scripted 优先、runs 多优先。
     没有任何生图 app 返回 None。"""
     explicit = _env("DAEMONKEY_IMAGE_APP_ID", "OPUS_IMAGE_APP_ID")
+    if not explicit:
+        try:
+            from workers.media_defaults import pinned_app_id
+            explicit = pinned_app_id("image")
+        except Exception:
+            explicit = ""
     if explicit:
         try:
             from workers.workshop_assets import load_app
@@ -178,17 +184,36 @@ def _app_inputs(app: dict, prompt: str, size: str) -> dict:
     return inp
 
 
+def _under_root(p: Path) -> Path:
+    r = p.resolve()
+    try:
+        r.relative_to(ROOT.resolve())
+    except ValueError:
+        raise ValueError(f"路径越界工程根: {p}")
+    return r
+
+
 def _url_or_path_to_local(v: str):
-    """把 app 回的图片引用(/workshop/outputs/... URL / data/... 相对 / 绝对)归一成本地 Path。"""
+    """把 app 回的图片引用归一成本地 Path · 只认 outputs/ 与 presentations/ 白名单。"""
     v = (v or "").strip()
     if not v:
         return None
     if v.startswith("/workshop/outputs/"):
-        return ROOT / "data" / "workshop" / "outputs" / v[len("/workshop/outputs/"):]
-    if v.startswith("workshop/outputs/"):
-        return ROOT / "data" / v
-    p = Path(v)
-    return p if p.is_absolute() else (ROOT / v)
+        p = ROOT / "data" / "workshop" / "outputs" / v[len("/workshop/outputs/"):]
+    elif v.startswith("workshop/outputs/"):
+        p = ROOT / "data" / v
+    else:
+        p = Path(v)
+        if not p.is_absolute():
+            p = ROOT / v
+    try:
+        p = _under_root(p)
+        rel = p.relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        return None
+    if rel.startswith("data/workshop/outputs/") or rel.startswith("data/presentations/"):
+        return p
+    return None
 
 
 _APP_IMG_RE = re.compile(
@@ -229,7 +254,7 @@ def _copy_into(src: Path, out_dir, tag: str = "app") -> Path:
     out = _resolved_out(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     ext = src.suffix or ".png"
-    # uuid 保证并发下文件名唯一(ms+pid 在同进程同毫秒会撞·卷七十九续实测)
+    # uuid 保证并发下文件名唯一(ms+pid 在同进程同毫秒会撞·续实测)
     dst = out / f"{tag}_{uuid.uuid4().hex[:10]}{ext}"
     shutil.copy2(src, dst)
     return dst
@@ -361,11 +386,21 @@ def generate_images(prompt: str, out_dir=None, size: str = "1024x1024", n: int =
 
 def generate_one(prompt: str, out_dir=None, size: str = "1024x1024", art_boost: bool = True):
     """便捷:生成 1 张 · 成功返回 Path · 未配置/失败返回 None(不抛·给自动配图静默降级)。"""
+    prompt = (prompt or "").strip()
+    if not prompt:
+        return None
     try:
-        paths = generate_images(prompt, out_dir=out_dir, size=size, n=1, art_boost=art_boost)
-        return paths[0] if paths else None
+        app = resolve_image_app()
+        if app is not None:
+            got = generate_via_app(app, prompt, out_dir=out_dir, size=size, art_boost=art_boost)
+            if got is not None:
+                return got
+        if is_configured():
+            paths = generate_images(prompt, out_dir=out_dir, size=size, n=1, art_boost=art_boost)
+            return paths[0] if paths else None
     except Exception:
         return None
+    return None
 
 
 _NOT_CONFIGURED = (
@@ -427,7 +462,7 @@ def _gen_one_backend(prompt: str, app, env_ok: bool, out_dir, size: str, art_boo
 
 
 def _run_batch(prompts: list, size: str, art_boost: bool, out_dir) -> ToolResult:
-    """一次并发出多张【不同】图 · 治"LLM 发多个 generate_image 被 tool loop 串行跑"(卷七十九续二十)。"""
+    """一次并发出多张【不同】图 · 治"LLM 发多个 generate_image 被 tool loop 串行跑"(续二十)。"""
     prompts = prompts[:HARD_MAX_BATCH]
     app = resolve_image_app()
     env_ok = False
@@ -563,7 +598,10 @@ def _run(args: dict) -> ToolResult:
 SPEC = ToolSpec(
     name="generate_image",
     description=(
-        "文生图，PNG 落盘，给 PPT / 报告配图与封面。多张图必须一次调用 prompts:[...] 并发，禁止每张单独调（会串行卡死）。后端自动选：工坊生图 app → IMAGE_MODEL → 未配置则走 presentation scenario 的降级链。画面里不要有文字。配方、接进 PPT、封面尺寸 → read_scenario(name='presentation')。"
+        "文生图，PNG 落盘，给 PPT / 报告配图与封面。"
+        "多张图必须一次调用 prompts:[...] 并发，禁止每张单独调（会串行卡死）。"
+        "后端自动选：工坊生图 app → IMAGE_MODEL → 未配置则走 presentation scenario 的降级链。"
+        "画面里不要有文字。配方、接进 PPT、封面尺寸 → read_scenario(name='presentation')。"
     ),
     tier=TIER_CONFIRM,
     input_schema={

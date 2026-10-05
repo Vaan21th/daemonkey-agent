@@ -2,9 +2,9 @@
 workers/radar_seen.py
 =====================
 
-卷五十八续 X · 雷达条目的【首次见到台账】
+续 X · 雷达条目的【首次见到台账】
 
-为什么需要 (BRO 2026-06-06 拍板):
+为什么需要 (用户 2026-06-06 拍板):
   refresh_radar 每轮把所有抓到的条目标同一个 fetched_at (本轮抓取时间)·
   所以 fetched_at 是"最近一次抓到"而非"第一次见到"。 没有"第一次见到"·
   "今日新增"在刷新当天 = 全部条目·失真。
@@ -13,7 +13,7 @@ workers/radar_seen.py
   首次见到时刻·refresh 后增量更新: 新 url 记当天·老 url 一律不动。
   从此"今日新增"= first_seen 落在今天的可见条数 = 真·今天才冒出来的。
 
-一次性基线 (BRO 知情):
+一次性基线 (用户 知情):
   第一次建库时现有条目都没记录 → record_seen 把它们全标"今天首次见到"。
   所以建库当天"今日新增"≈ 全量·从下一次刷新起才精确。
 
@@ -119,7 +119,7 @@ def _published_day(item: dict) -> Optional[str]:
 
 
 def backfill_existing(*, now: Optional[str] = None) -> dict:
-    """一次性基线 (BRO 2026-06-06 拍板) · 给 radar.json 现有条目补首见日。
+    """一次性基线 (用户 2026-06-06 拍板) · 给 radar.json 现有条目补首见日。
 
     只补还没记录的条目 · 取值: published_at 能解析成过去日 → 用它 (让基线当天
     日历按发表日展开·不全堆今天)·否则用 now (今天建库)。 之后真实 record_seen
