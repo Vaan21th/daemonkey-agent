@@ -452,7 +452,11 @@ def _state_condenser_loop(first_delay_sec: int) -> None:
             from workers import memory_reaper as _mr
             from workers.state_condenser import DEFAULT_NOTEBOOK
 
-            _nb = _P(DEFAULT_NOTEBOOK)
+            # 2026-10-05：拆格后 DEFAULT_NOTEBOOK 是句柄对象（OwnerNotebook），
+            # 别再 Path() 硬转 —— 它的 __fspath__ 返回的是**目录** soul/notebook，
+            # 一转就变成「把目录当文件读/写」→ Windows Permission denied。
+            # 要读要写就调句柄自己的方法。
+            _nb = DEFAULT_NOTEBOOK
             if _nb.exists():
                 _raw = _nb.read_text(encoding="utf-8")
                 _new, _got = _mr.promote_by_hits(_raw)

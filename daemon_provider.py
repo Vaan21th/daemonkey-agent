@@ -68,8 +68,10 @@ def detect_provider() -> str:
 
 def setup_client(provider: str) -> tuple[object, str, str | None]:
     """初始化 client。返回 (client, default_model, base_url)。"""
-    api_key = os.getenv("ANTHROPIC_API_KEY") or os.getenv("OPUS_API_KEY")
-    base_url = os.getenv("OPUS_BASE_URL", "").strip() or None
+    # 2026-10-05 · 新名优先·旧名兼容（同 provider_configs._migrate_from_env 的理由）
+    api_key = (os.getenv("DAEMONKEY_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+               or os.getenv("OPUS_API_KEY"))
+    base_url = (os.getenv("DAEMONKEY_BASE_URL") or os.getenv("OPUS_BASE_URL", "")).strip() or None
 
     if not api_key:
         raise SystemExit(

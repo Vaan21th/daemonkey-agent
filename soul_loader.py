@@ -108,8 +108,9 @@ PLACEMENT_TABLE = (
     "  · 常驻原则（不过期、不参与升降）**不写日期** · 要沉的才写日期\n"
     "  · 别写成裸段落（没有 `- ` 开头）· 解析器认不出 = 那条等于不存在\n"
     "\n"
-    "**字数（一句话一条）**：进前缀的格各有 tok 限额（about-user 2800 · how-we-work 1700 · "
-    "state 1200 · understanding 1000）· 到限额就不再往里写 · 满了自动沉「最老/最长」的（仍可召回）。\n"
+    "**字数（一句话一条）**：每轮在场的格各有 tok 限额（about-user 2800 · how-we-work 1700 · "
+    "understanding 1000 · speech-discipline 1200 · state 1200 —— state 走独立状态卡通道、"
+    "不在 notebook 里拼）· 到限额就不再往里写 · 满了自动沉「最老/最长」的（仍可召回）。\n"
     "  · 别写小作文 —— 一条几百字的整段会把整格吃光（那种该进 stories / 知识库）\n"
     "\n"
     "**各落位的写入标准**（写之前先看这条 · 一句话说清一件事）：\n"
@@ -244,16 +245,19 @@ def write_global_then_sync(filename: str, new_text: str, daemon_root: Path) -> t
     if filename in (OWNER_NOTEBOOK_FILENAME, BRO_NOTEBOOK_FILENAME):
         try:
             from workers import notebook_store as NS
-
-            # 2026-10-05：判据 dir_exists → has_facts（与母体同修）。
-            #   首启落 14 格空骨架（目录在·格内只有注释）→ dir_exists 判成多格模式
-            #   → read_full 跳过空格 → 合成空 → 写入报 section not found（通道全哑）。
-            #   has_facts = 格子有真内容才算多格模式，与注入侧、identity 同一把尺子。
-            if NS.has_facts(daemon_root):
-                NS.write_full(daemon_root, new_text)
-                return None, daemon_root / SOUL_DIR_NAME / NS.NOTEBOOK_DIR
-        except Exception:
-            pass   # 回退老路径：写入不能因为新机制挂了而丢
+        except ImportError:
+            NS = None        # notebook_store 不在 → 真·老布局，走下面的单文件路径
+        # 2026-10-05：判据 dir_exists → has_facts。
+        #   首启落 14 格空骨架（目录在·格内只有注释）→ 判成多格模式 → read_full 跳过空格子
+        #   → 合成空 → 任何写入都报 section not found（整条记忆写入通道是哑的）。
+        #   has_facts = 格子有真内容才算多格模式，与注入侧和 identity.py 同一把尺子；
+        #   两边一致 → 不会「写单文件 / 读多格」静默分叉。
+        if NS is not None and NS.has_facts(daemon_root):
+            # 多格模式：**写失败必须抛出去**，不能静默落回单文件 ——
+            # 目录存在时 read_global_soul_file 只读目录，写进单文件的内容
+            # 再也读不回来（静默分叉、内容丢，还不报错）。
+            NS.write_full(daemon_root, new_text)
+            return None, daemon_root / SOUL_DIR_NAME / NS.NOTEBOOK_DIR
 
     local_path = daemon_root / SOUL_DIR_NAME / filename
     local_path.parent.mkdir(parents=True, exist_ok=True)
@@ -863,7 +867,7 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
     # 档位系统上线后由会话档位传参覆盖，env 仅作临时切换用）。
     if thickness is None:
         thickness = os.environ.get("OPUS_SOUL_THICKNESS", "").strip().lower() or "standard"
-    if thickness not in ("thin", "standard"):
+    if thickness not in ("thin", "standard", "companion"):
         thickness = "standard"
 
     skill_path = skill_doc_path(soul_dir)
@@ -963,7 +967,26 @@ def load_soul(daemon_root: str | os.PathLike | None = None, *, with_runtime: boo
     except Exception:
         constitution_block = ""
 
-    if thickness == "thin":
+    if thickness == "companion":
+        # 2026-10-05：闲聊档 = 人格核 + 画像 + 运行环境（轻，但记得他）。
+        #   —— 不带铁律/自传/工具全量；≈7k，介于 thin(836) 与 standard(17.9k) 之间。
+        _cc_path = soul_dir / "MINIMAL-CORE.md"
+        _cc_text = _read_text(_cc_path) if _cc_path.exists() else ""
+        _cc_parts: dict = {}
+        if with_runtime:
+            try:
+                _cc_parts = runtime_context_addendum(root, parts=True, catalog_exclude=catalog_exclude)
+            except TypeError:      # 旧签名兼容（不该发生 · 保底）
+                _cc_parts = {}
+        if not isinstance(_cc_parts, dict):
+            _cc_parts = {}
+        system_prompt = (
+            (_cc_text if _cc_text.strip()
+             else preamble + daemon_rules_block + constitution_block)
+            + (_cc_parts.get("rules") or "")        # 运行环境 / 工具纪律
+            + (_cc_parts.get("notebook") or "")     # 画像（了解层 + 本体约束 + 怎么跟他干活）
+        )
+    elif thickness == "thin":
         # 灵魂层最小核 (2026-09-17 落地 · wish 三轨实测 74.1% vs 全量 42-54%)。
         # thin 档只带 soul/MINIMAL-CORE.md；铁律/自传/画像/SE/Runtime 全部不进 ——
         # 不是删，是按档位挂载或走 recall_memory 召回。缺文件时退回全量，不阻断启动。
