@@ -329,6 +329,22 @@ def _run_complete_onboarding(args: dict) -> tuple[bool, str]:
     ONBOARDING_PATH.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    # 相遇完成 → 「她·档案」补上：生日/相遇日=今天 · 关注点=初见建的雷达频道（2026-10-07）
+    try:
+        from identity import set_she_profile
+        focus = ""
+        try:
+            _extra = ONBOARDING_PATH.parent.parent / "data" / "domains_extra.json"
+            if _extra.exists():
+                _bd = json.loads(_extra.read_text(encoding="utf-8"))
+                _labels = [v.get("label", "") for v in _bd.values() if isinstance(v, dict)]
+                focus = " / ".join([x for x in _labels if x][:4])
+        except Exception:
+            pass
+        _today = datetime.now().strftime("%Y-%m-%d")
+        set_she_profile(birthday=_today, meet_day=_today, focus=focus)
+    except Exception:
+        pass
     return True, "相遇完成·已立约。从此我记得你了。"
 
 

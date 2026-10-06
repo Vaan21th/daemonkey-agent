@@ -685,7 +685,7 @@ _REL_MOOD_ASOF_RE = re.compile(r"^关系情绪as_of:[ \t]*(.*)$", re.MULTILINE)
 _PROFILE_KEYS = ("名字", "生日", "相遇日", "关注点", "头像", "引语", "口吻", "出生地", "口癖")
 _DEFAULT_AVATAR = "/companion/assets/ip-idle.png"
 _PROFILE_LINE_RE = re.compile(
-    r"^(" + "|".join(_PROFILE_KEYS) + r"):\s*(.*)$",
+    r"^(" + "|".join(_PROFILE_KEYS) + r"):[ \t]*(.*)$",
     re.MULTILINE,
 )
 
