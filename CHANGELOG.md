@@ -7,6 +7,55 @@
 
 ---
 
+## [1.1.0] — 2026-10-07
+
+**记忆与自我管理大版本 —— 记得更准、看得更清、用得更省**
+
+本次是内核级更新：AI 的长期记忆与「每轮视野」全面重组，重要的事记得更牢、旧的流水自动归档；新增「档位装配台」，能直观看到 AI 每一轮看到了什么、一键调整详略来省成本；界面、产物库与陪伴模式整体升级。
+
+### 一、新用户安装教程
+请务必按完整流程安装，避免功能缺失：
+- 下载安装包 Daemonkey-1.1.0-win.zip，解压文件后，双击打开 Daemonkey.exe 即可使用
+- 不要单独下载一百多 KB 的单独 exe 文件！该文件只是简易启动器，并非完整软件，打开后会空白无法使用
+
+### 二、老用户升级教程
+⚠️ 本次建议直接下载新包安装，不走「升级内核」：
+- 升级能拿到绝大部分更新，但有几处基础文件（铁律 / 工艺 / 灵魂模板）不随升级下发，想拿到与官方完全一致的版本请下载新包重装
+- 你的聊天记录、个人画像、自定义修改全部保留在 data/ 和 soul/ 里，重装不会丢
+
+### 三、本次新增功能
+- **记忆分格管理**：AI 对你的了解拆成独立格子（原则 / 习惯 / 近况 / 正在做的事），常驻的保持最新，流水的自动下沉归档 —— 聊得越久记得越准
+- **自动记忆压缩**：对话超长时自动压缩沉淀，关键信息不丢，长聊更稳、成本更可控
+- **档位装配台**：看见 AI 每一轮的完整「视野」，可切薄 / 标准 / 全档位、按需勾选
+- **UI 升级**：见面页、加载过场与全站视觉焕新
+- **产物库更新**：文档预览支持划字批注（内置文档渲染引擎）
+- **中栏 CANVAS**：中栏画布升级（预览 / 批注 / 交互更顺）
+- **陪伴模式素材修复**：修复了房间与角色素材的显示问题
+- **她档案**：相遇后自动记下生日 / 相遇日 / 关注点；修复了档案字段显示错位
+- **稳定性**：修复了升级链 / 身份层 / 同步管道的一系列底层问题
+
+### 四、使用注意事项
+- 升级或重装前，建议保留一份文件夹副本（或至少别删 data/ 和 soul/）
+- 完成后请重启一次软件，确保新功能生效
+
+---
+
+**What's new:** This is a kernel-level release. The AI's long-term memory has been rebuilt into separate cells — what matters stays fresh, older logs sink into archive. A new "gear console" lets you see exactly what the AI sees each turn, with cost-saving presets. UI, artifact library and companion mode all get upgrades.
+
+### 1. New users — how to install
+- Download **Daemonkey-1.1.0-win.zip**, unzip it, then double-click `Daemonkey.exe`.
+- Do not download that ~100 KB `.exe` alone — it is only a launcher and will not run by itself.
+
+### 2. Existing users — how to upgrade
+- **Recommended: install the fresh package** instead of in-place kernel upgrade. A few base files (rules / playbooks / soul templates) are not delivered via in-place upgrade.
+- Your chat history, profile, and customizations all live in `data/` and `soul/` — reinstalling does NOT lose them.
+
+### 3. Notes
+- Keep a folder copy before upgrading/reinstalling.
+- Restart the app once after the update.
+
+---
+
 ## [1.0.3] — 2026-09-08
 
 **输入框能看见分身和服务在干什么**
