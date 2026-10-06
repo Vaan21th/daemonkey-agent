@@ -3,10 +3,10 @@
   "algo": "sha256/lf/16",
   "algo_note": "文本: CRLF/CR 归一成 LF 后 utf-8 sha256 取前 16 位 (防 git autocrlf 误判) · 二进制: 原字节 sha256",
   "core_version": "1.1.0",
-  "generated": "2026-10-07 02:35",
+  "generated": "2026-10-07 02:49",
   "file_count": 476,
   "files": {
-    "Daemonkey.exe": "0940729b46deca34",
+    "Daemonkey.exe": "46c3eafd0c071b93",
     "MAC-GUIDE.md": "3ff3c29d292530e2",
     "ROLLBACK.bat": "c169b2d3bc201157",
     "agent_tools/_browser.py": "8f9039ac0e0a9664",
